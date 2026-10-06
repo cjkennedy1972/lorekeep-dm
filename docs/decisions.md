@@ -14,3 +14,7 @@
 1. **Mature content is the default and is acceptable unless table players opt out.** It is not explicit: innuendo and allusion are fine, subject to what the configured LLM endpoint allows. Any player opting out turns it off for the table (shared scene). Per-player lines/veils/pause remain. The hard floor on sexual content involving minors stays non-configurable. Explicit sexual content stays out of scope. Supersedes the round-2 "off by default, host opt-in" wording and the "host transfer resets to off" assumption (A28/A29 follow-ups): the default now carries over.
 2. **Age attestation is a birthdate entry** at registration (18+ computed from it). Under-18 is refused and nothing is kept for them. Data minimization: store only the adult flag plus the check date unless a later need for the birthdate itself appears (architect to confirm and flag).
 3. **No scope cuts.** Plan for the full scope: 12 SRD classes, adventures #1-#3, authored plus stretch procedural maps, local-model fallback modes. Timeline stays about 23 weeks as in architecture.md v0.3 section 11.
+
+## 2026-10-06 (round 4)
+1. **Age data: store only the adult flag (`is_adult`) plus check date (`age_checked_at`).** The birthdate entered at signup is used for the server-side 18+ computation and then discarded; it is never persisted. Under-18: refused, nothing stored beyond a short retry-block cookie.
+2. **GO for M0** (Foundations + accounts). Process per docs/process.md: sub-task cards generated from the plan, nothing done until verified in code.
