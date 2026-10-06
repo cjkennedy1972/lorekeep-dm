@@ -2,6 +2,8 @@ import Fastify from 'fastify';
 import type { Pool } from 'pg';
 import pino, { type DestinationStream } from 'pino';
 import { startSpan } from './telemetry.js';
+import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
+import { registerAuthRoutes } from './routes/auth.js';
 const redact = [
   'req.headers.cookie',
   'req.headers.authorization',
@@ -38,7 +40,14 @@ export function createLogger(stream?: DestinationStream) {
     stream,
   );
 }
-export function createApp(db: Pick<Pool, 'query'>) {
+export function createApp(
+  db: Pick<Pool, 'query'> & Partial<Pool>,
+  options: {
+    sender?: EmailSender;
+    cookieSecret?: string;
+    rateLimit?: number;
+  } = {},
+) {
   const app = Fastify({
     loggerInstance: createLogger(),
     requestIdHeader: 'x-request-id',
@@ -67,6 +76,18 @@ export function createApp(db: Pick<Pool, 'query'>) {
     spans.get(request)?.recordException(error);
     done();
   });
+  if (db.connect) {
+    const cookieSecret = options.cookieSecret ?? process.env.AGE_RETRY_SECRET;
+    if (process.env.NODE_ENV === 'production' && !cookieSecret)
+      throw new Error('AGE_RETRY_SECRET is required');
+    registerAuthRoutes(
+      app,
+      db as Pool,
+      options.sender ?? new ConsoleEmailSender(),
+      cookieSecret ?? 'development-only-secret',
+      options.rateLimit,
+    );
+  }
   app.get('/healthz', async () => ({ status: 'ok' }));
   app.get('/readyz', async (_request, reply) => {
     try {
