@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-} from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -27,7 +21,11 @@ export function DeleteAccountDialog({ onCancel }: { onCancel: () => void }) {
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     box.current?.querySelector<HTMLElement>('input')?.focus();
-    return () => opener?.focus();
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      opener?.focus();
+    };
   }, []);
 
   function onKeyDown(e: KeyboardEvent) {
@@ -73,7 +71,6 @@ export function DeleteAccountDialog({ onCancel }: { onCancel: () => void }) {
         aria-modal="true"
         aria-labelledby="delete-title"
         aria-describedby="delete-warning"
-        onKeyDown={onKeyDown}
       >
         <h2 id="delete-title">Delete your account?</h2>
         <div id="delete-warning">
