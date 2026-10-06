@@ -1,0 +1,68 @@
+.form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 28rem;
+}
+.field {
+  display: grid;
+  gap: var(--space-1);
+}
+.field input,
+.field select,
+input#invite-link,
+input#room-name {
+  font: inherit;
+  padding: var(--space-2);
+  max-width: 100%;
+  box-sizing: border-box;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--border-ui);
+  border-radius: var(--radius);
+}
+input#invite-link {
+  width: 100%;
+  max-width: 28rem;
+  display: block;
+}
+.field-error,
+.form-error {
+  color: var(--danger);
+  margin: 0;
+}
+.field-hint {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.checkbox {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+}
+button {
+  font: inherit;
+  padding: var(--space-2) var(--space-3);
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.seats {
+  padding-left: var(--space-4);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

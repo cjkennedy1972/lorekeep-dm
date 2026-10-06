@@ -37,6 +37,22 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
   const users = new Map<string, { account: Account; password: string }>(); // by email
   const sessions = new Map<string, string>(); // token -> accountId
   const tickets = new Map<string, string>(); // ticket -> accountId (single use)
+  // Every mock table shares the one Room actor below; only the invite/membership bookkeeping is per table.
+  type MockRoom = {
+    id: string;
+    name: string;
+    hostId: string;
+    code: string;
+    members: Set<string>;
+  };
+  const rooms = new Map<string, MockRoom>();
+  const newCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+  const roomView = (r: MockRoom, accountId: string) => ({
+    id: r.id,
+    name: r.name,
+    isHost: r.hostId === accountId,
+    ...(r.hostId === accountId ? { code: r.code } : {}),
+  });
   const byId = (id: string) =>
     [...users.values()].find((u) => u.account.id === id)?.account;
 
@@ -146,6 +162,40 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
       return json(res, 200, {}, { 'set-cookie': 'sid=; Path=/; Max-Age=0' });
     }
 
+    if (route === 'POST /api/verify') {
+      const body = await readBody(req);
+      if (body?.token !== 'valid-token')
+        return err(
+          res,
+          400,
+          'TOKEN_INVALID',
+          'This link is invalid or has expired.',
+        );
+      return json(res, 200, {});
+    }
+    if (route === 'POST /api/password/forgot') {
+      await readBody(req);
+      return json(res, 202, {}); // same answer whether or not the email exists
+    }
+    if (route === 'POST /api/password/reset') {
+      const body = await readBody(req);
+      if (typeof body?.password !== 'string' || body.password.length < 12)
+        return err(
+          res,
+          400,
+          'INVALID_INPUT',
+          'Password must be at least 12 characters.',
+        );
+      if (body.token !== 'valid-token')
+        return err(
+          res,
+          400,
+          'TOKEN_INVALID',
+          'This link is invalid or has expired.',
+        );
+      return json(res, 200, {});
+    }
+
     const account = authed(req);
     if (url.pathname.startsWith('/api/') && !account)
       return err(res, 401, 'UNAUTHENTICATED', 'Sign in required.');
@@ -159,6 +209,58 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
       for (const [t, id] of sessions) if (id === account.id) sessions.delete(t);
       room.remove(account.id);
       return json(res, 200, {}, { 'set-cookie': 'sid=; Path=/; Max-Age=0' });
+    }
+    if (route === 'GET /api/rooms')
+      return json(res, 200, {
+        rooms: [...rooms.values()]
+          .filter((r) => r.members.has(account.id))
+          .map((r) => roomView(r, account.id)),
+      });
+    if (route === 'POST /api/rooms') {
+      const body = await readBody(req);
+      const name = typeof body?.name === 'string' ? body.name.trim() : '';
+      if (!name || name.length > 80)
+        return err(res, 400, 'INVALID_INPUT', 'Enter a table name.');
+      const r: MockRoom = {
+        id: crypto.randomUUID(),
+        name,
+        hostId: account.id,
+        code: newCode(),
+        members: new Set([account.id]),
+      };
+      rooms.set(r.id, r);
+      return json(res, 201, { room: roomView(r, account.id) });
+    }
+    const roomRoute = /^\/api\/rooms\/([^/]+)(\/invite)?$/.exec(url.pathname);
+    if (roomRoute) {
+      const r = rooms.get(roomRoute[1]!);
+      if (!r?.members.has(account.id))
+        return err(res, 404, 'NOT_FOUND', 'Not found.');
+      if (req.method === 'GET' && !roomRoute[2])
+        return json(res, 200, { room: roomView(r, account.id) });
+      if (req.method === 'POST' && roomRoute[2]) {
+        if (r.hostId !== account.id)
+          return err(res, 403, 'FORBIDDEN', 'Only the host can do that.');
+        r.code = newCode(); // old link stops working immediately
+        return json(res, 200, { room: roomView(r, account.id) });
+      }
+    }
+    const joinRoute = /^\/api\/invites\/([^/]+)\/join$/.exec(url.pathname);
+    if (req.method === 'POST' && joinRoute) {
+      const r = [...rooms.values()].find(
+        (x) => x.code === joinRoute[1]!.toUpperCase(),
+      );
+      if (!r)
+        return err(
+          res,
+          404,
+          'INVITE_INVALID',
+          'This invite link is no longer valid.',
+        );
+      if (!r.members.has(account.id) && r.members.size >= 6)
+        return err(res, 409, 'ROOM_FULL', 'This table is full.');
+      r.members.add(account.id);
+      return json(res, 200, { room: roomView(r, account.id) });
     }
     if (route === 'POST /api/ws-ticket') {
       const ticket = crypto.randomUUID();

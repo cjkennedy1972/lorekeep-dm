@@ -26,6 +26,9 @@ export function Layout() {
               </NavLink>
             </li>
             <li>
+              <NavLink to="/rooms">My tables</NavLink>
+            </li>
+            <li>
               <NavLink to="/settings">Settings</NavLink>
             </li>
           </ul>

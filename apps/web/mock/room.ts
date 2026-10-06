@@ -50,6 +50,7 @@ export class Room {
   /** Seats the account (max 6), sends StateSync to it, broadcasts presence. Returns leave(). */
   join(account: Account, send: Send): (() => void) | null {
     let seat = this.seats.get(account.id);
+    const fresh = !seat;
     if (!seat) {
       if (this.seats.size >= 6) return null;
       seat = {
@@ -64,11 +65,14 @@ export class Room {
     set.add(send);
     this.conns.set(account.id, set);
     this.setPresence(seat, 'online');
-    send({
+    const sync: ServerMessage = {
       seq: ++this.seq,
       type: 'StateSync',
       payload: { state: this.state() },
-    });
+    };
+    // The protocol has no seat-added message: a new seat is announced by re-syncing everyone.
+    if (fresh) for (const c of this.conns.values()) for (const s of c) s(sync);
+    else send(sync);
     return () => {
       set.delete(send);
       if (set.size === 0) this.setPresence(seat, 'offline');
