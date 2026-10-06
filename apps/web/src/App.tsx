@@ -1,7 +1,7 @@
 import { Link, Route, Routes } from 'react-router-dom';
 import { Layout } from './a11y/Layout';
 import { RequireAuth } from './auth';
-import { Settings } from './routes/Settings';
+import { Settings } from './screens/Settings';
 import { Login } from './screens/Login';
 import { Join } from './screens/Join';
 import { Lobby } from './screens/Lobby';

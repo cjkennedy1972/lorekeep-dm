@@ -8,14 +8,39 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import {
   AccountIdSchema,
+  ChangePasswordInputSchema,
+  DeleteAccountInputSchema,
   LoginInputSchema,
   SignupInputSchema,
   type Account,
+  type ExportJob,
 } from '@game/schema';
 import { Room } from './room.js';
 
 // The contract has no HTTP error schema yet; reuse the WS Error payload shape {code, message}.
 const MIN_AGE = 18;
+
+function deviceLabel(ua: string): string {
+  const browser = /Firefox/.test(ua)
+    ? 'Firefox'
+    : /Edg/.test(ua)
+      ? 'Edge'
+      : /Chrome/.test(ua)
+        ? 'Chrome'
+        : /Safari/.test(ua)
+          ? 'Safari'
+          : 'Browser';
+  const os = /Mac OS X/.test(ua)
+    ? 'macOS'
+    : /Windows/.test(ua)
+      ? 'Windows'
+      : /Android/.test(ua)
+        ? 'Android'
+        : /Linux/.test(ua)
+          ? 'Linux'
+          : 'unknown OS';
+  return `${browser} on ${os}`;
+}
 
 function ageOn(birthdate: string, now: Date): number {
   const [y, m, d] = birthdate.split('-').map(Number) as [
@@ -32,10 +57,20 @@ function ageOn(birthdate: string, now: Date): number {
   return age;
 }
 
-export function createMock(opts: { scriptedFlipMs?: number } = {}) {
+export function createMock(
+  opts: {
+    scriptedFlipMs?: number;
+    /** Export job turns ready after this long, then expires after exportExpireMs from request. */
+    exportReadyMs?: number;
+    exportExpireMs?: number;
+  } = {},
+) {
+  const { exportReadyMs = 1500, exportExpireMs = 60_000 } = opts;
   const room = new Room(opts.scriptedFlipMs);
   const users = new Map<string, { account: Account; password: string }>(); // by email
   const sessions = new Map<string, string>(); // token -> accountId
+  const meta = new Map<string, { id: string; label: string; at: number }>(); // token -> device info
+  const exports = new Map<string, number>(); // accountId -> requestedAt ms
   const tickets = new Map<string, string>(); // ticket -> accountId (single use)
   // Every mock table shares the one Room actor below; only the invite/membership bookkeeping is per table.
   type MockRoom = {
@@ -80,15 +115,38 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
       return undefined;
     }
   };
+  const tokenOf = (req: IncomingMessage) =>
+    /(?:^|; )sid=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
   const authed = (req: IncomingMessage) => {
-    const token = /(?:^|; )sid=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
+    const token = tokenOf(req);
     const id = token && sessions.get(token);
+    if (token && id) meta.get(token)!.at = Date.now();
     return id ? byId(id) : undefined;
   };
-  const login = (res: ServerResponse, account: Account) => {
+  const login = (req: IncomingMessage, account: Account) => {
     const token = crypto.randomUUID();
     sessions.set(token, account.id);
+    meta.set(token, {
+      id: crypto.randomUUID(),
+      label: deviceLabel(req.headers['user-agent'] ?? ''),
+      at: Date.now(),
+    });
     return { 'set-cookie': `sid=${token}; Path=/; HttpOnly; SameSite=Lax` };
+  };
+
+  const exportJob = (id: string): ExportJob | null => {
+    const at = exports.get(id);
+    if (at === undefined) return null;
+    const age = Date.now() - at;
+    const base = { requestedAt: new Date(at).toISOString() };
+    if (age < exportReadyMs) return { ...base, status: 'pending' };
+    if (age >= exportExpireMs) return { ...base, status: 'expired' };
+    return {
+      ...base,
+      status: 'ready',
+      downloadUrl: '/api/me/export',
+      expiresAt: new Date(at + exportExpireMs).toISOString(),
+    };
   };
 
   const server: Server = createServer(async (req, res) => {
@@ -99,7 +157,10 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
       res.setHeader('access-control-allow-origin', req.headers.origin);
       res.setHeader('access-control-allow-credentials', 'true');
       res.setHeader('access-control-allow-headers', 'content-type');
-      res.setHeader('access-control-allow-methods', 'GET,POST,DELETE,OPTIONS');
+      res.setHeader(
+        'access-control-allow-methods',
+        'GET,POST,PATCH,DELETE,OPTIONS',
+      );
     }
     if (req.method === 'OPTIONS') return void res.writeHead(204).end();
 
@@ -135,7 +196,7 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
         ageCheckedAt: new Date().toISOString(),
       };
       users.set(email, { account, password });
-      return json(res, 201, { account }, login(res, account));
+      return json(res, 201, { account }, login(req, account));
     }
     if (route === 'POST /api/login') {
       const parsed = LoginInputSchema.safeParse(await readBody(req));
@@ -154,11 +215,14 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
           'BAD_CREDENTIALS',
           'Email or password is incorrect.',
         );
-      return json(res, 200, { account: u.account }, login(res, u.account));
+      return json(res, 200, { account: u.account }, login(req, u.account));
     }
     if (route === 'POST /api/logout') {
-      const token = /(?:^|; )sid=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
-      if (token) sessions.delete(token);
+      const token = tokenOf(req);
+      if (token) {
+        sessions.delete(token);
+        meta.delete(token);
+      }
       return json(res, 200, {}, { 'set-cookie': 'sid=; Path=/; Max-Age=0' });
     }
 
@@ -202,11 +266,90 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
     if (!account) return err(res, 404, 'NOT_FOUND', 'Not found.');
 
     if (route === 'GET /api/me') return json(res, 200, { account });
-    if (route === 'GET /api/me/export')
+    if (route === 'PATCH /api/me') {
+      const name = (await readBody(req))?.displayName;
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 80)
+        return err(res, 400, 'INVALID_INPUT', 'Enter a display name.');
+      account.displayName = name.trim();
+      return json(res, 200, { account });
+    }
+    if (route === 'POST /api/me/password') {
+      const parsed = ChangePasswordInputSchema.safeParse(await readBody(req));
+      if (!parsed.success)
+        return err(
+          res,
+          400,
+          'INVALID_INPUT',
+          'New password must be at least 12 characters.',
+        );
+      const u = users.get(account.email)!;
+      if (u.password !== parsed.data.currentPassword)
+        return err(
+          res,
+          403,
+          'BAD_CREDENTIALS',
+          'Current password is incorrect.',
+        );
+      u.password = parsed.data.newPassword;
+      return json(res, 200, {});
+    }
+    const mine = () =>
+      [...sessions].filter(([, id]) => id === account.id).map(([t]) => t);
+    if (route === 'GET /api/me/sessions')
+      return json(res, 200, {
+        sessions: mine()
+          .map((t) => ({ t, m: meta.get(t)! }))
+          .sort((a, b) => b.m.at - a.m.at)
+          .map(({ t, m }) => ({
+            id: m.id,
+            label: m.label,
+            lastActiveAt: new Date(m.at).toISOString(),
+            current: t === tokenOf(req),
+          })),
+      });
+    if (route === 'POST /api/me/sessions/revoke-others') {
+      for (const t of mine())
+        if (t !== tokenOf(req)) {
+          sessions.delete(t);
+          meta.delete(t);
+        }
+      return json(res, 200, {});
+    }
+    const sess = /^\/api\/me\/sessions\/([^/]+)$/.exec(url.pathname);
+    if (req.method === 'DELETE' && sess) {
+      const t = mine().find((x) => meta.get(x)!.id === sess[1]);
+      if (!t) return err(res, 404, 'NOT_FOUND', 'Not found.');
+      sessions.delete(t);
+      meta.delete(t);
+      return json(res, 200, {});
+    }
+    if (route === 'POST /api/me/export') {
+      exports.set(account.id, Date.now());
+      return json(res, 202, { job: exportJob(account.id) });
+    }
+    if (route === 'GET /api/me/export-job')
+      return json(res, 200, { job: exportJob(account.id) });
+    if (route === 'GET /api/me/export') {
+      if (exportJob(account.id)?.status !== 'ready')
+        return err(res, 404, 'NOT_FOUND', 'No export is ready.');
       return json(res, 200, { account, exportedAt: new Date().toISOString() });
+    }
     if (route === 'DELETE /api/me') {
+      const parsed = DeleteAccountInputSchema.safeParse(await readBody(req));
+      if (!parsed.success)
+        return err(
+          res,
+          400,
+          'INVALID_INPUT',
+          'Type the confirmation phrase exactly.',
+        );
+      if (users.get(account.email)!.password !== parsed.data.password)
+        return err(res, 403, 'BAD_CREDENTIALS', 'Password is incorrect.');
       users.delete(account.email);
-      for (const [t, id] of sessions) if (id === account.id) sessions.delete(t);
+      for (const t of mine()) {
+        sessions.delete(t);
+        meta.delete(t);
+      }
       room.remove(account.id);
       return json(res, 200, {}, { 'set-cookie': 'sid=; Path=/; Max-Age=0' });
     }

@@ -70,8 +70,31 @@ test('under-18 birthdate is refused with {code,message} and no session', async (
 
 test('export and delete', async () => {
   const { cookie } = await signup('del@example.com', 'Del');
-  expect((await post('/api/me/export', null, cookie, 'GET')).status).toBe(200);
-  expect((await post('/api/me', null, cookie, 'DELETE')).status).toBe(200);
+  expect((await post('/api/me/export', null, cookie, 'GET')).status).toBe(404);
+  expect((await post('/api/me/export', null, cookie)).status).toBe(202);
+  const del = (body: unknown) =>
+    fetch(`http://${base}/api/me`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify(body),
+    });
+  expect((await del({ password: 'x', confirmation: 'nope' })).status).toBe(400);
+  expect(
+    (
+      await del({
+        password: 'wrong-password',
+        confirmation: 'DELETE MY ACCOUNT',
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await del({
+        password: 'correct-horse-battery',
+        confirmation: 'DELETE MY ACCOUNT',
+      })
+    ).status,
+  ).toBe(200);
   expect((await post('/api/me', null, cookie, 'GET')).status).toBe(401);
 });
 

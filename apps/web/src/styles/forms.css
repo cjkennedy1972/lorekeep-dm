@@ -66,3 +66,46 @@ button {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+button.secondary {
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--border-ui);
+}
+button.danger {
+  background: var(--danger);
+  color: var(--bg);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.6);
+}
+.modal {
+  background: var(--bg);
+  color: var(--fg);
+  max-width: 34rem;
+  max-height: 90vh;
+  overflow: auto;
+  padding: var(--space-4);
+  border: 2px solid var(--border-ui);
+  border-radius: var(--radius);
+}
+.sessions {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.sessions li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+}
