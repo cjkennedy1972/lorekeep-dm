@@ -5,9 +5,9 @@ Status: Proposed (default) · Date: 2026-10-06
 **Context.** R-M1..M3: consistent NPCs/places across sessions within a ~3k-token dynamic context budget.
 
 **Decision.**
-1. Cached static prefix (persona, safety, tools, rules cheat-sheet).
-2. Session block (settings, party, premise, scene summary), cached, changes at scene boundaries.
-3. Dynamic: state projection, registry facts for entities named in inputs/last turn (deterministic name/alias scan), last ~6 turns verbatim.
+1. Byte-stable static prefix (persona, safety, tools, rules cheat-sheet); provider prompt caching is optional (ADR-009/013) and the layout is the same with or without it.
+2. Session block (settings, party, premise, scene summary), stable, changes at scene boundaries.
+3. Dynamic: state projection (in combat includes the engine `describe()` map text, about 300-400 tokens), registry facts for entities named in inputs/last turn (deterministic name/alias scan), last ~6 turns verbatim.
 4. Retrieved: top-k summaries/registry entries via Postgres full-text + trigram.
 Registry is written through tools (not inferred from prose). Scene summaries are written by the cheap tier at scene close, append-only, rebuildable from the event log.
 

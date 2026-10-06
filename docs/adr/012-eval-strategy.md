@@ -8,6 +8,7 @@ Status: Proposed (default) · Date: 2026-10-06
 - Engine, catalog, tool-contract, replay, and Room simulation tests are deterministic and block CI.
 - The orchestrator supports **fixed seed + recorded/mock LLM** mode for reproducible e2e tests.
 - Nightly and on prompt/model changes: live-LLM eval suites (rules Q&A, puppeting, 3-session consistency, spotlight, narration-vs-tool agreement via checks + LLM judge, red-team injection and content sets).
+- Tool-contract and eval suites run per tool mode (ADR-013) and per endpoint profile; the adapter probe battery is part of CI with a recorded endpoint. Map tests: movement cost, LOS/cover, AoE shapes, opportunity attacks, and "LLM cannot supply coordinates" tool-contract cases.
 - Release gates use the spec A10 thresholds until the owner (Q10) changes them.
 
 **Alternatives.** Manual playtesting only (can't catch regressions).

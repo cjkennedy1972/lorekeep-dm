@@ -4,7 +4,7 @@ Status: Proposed (default) · Date: 2026-10-06
 
 **Context.** Autosave after every turn (US-R2), resume ≤ 3 s, host rewind of last turn (R-S7), replayable dice for tests.
 
-**Decision.** `events` table is append-only. A full-state snapshot is written in the same transaction as the last event of each resolved turn. Rewind appends `TurnReverted`, restores the prior snapshot as head, and keeps the reverted transcript hidden but retained for the abuse-review window. The retry turn draws a **new** dice seed; one rewind per turn.
+**Decision.** `events` table is append-only. A full-state snapshot is written in the same transaction as the last event of each resolved turn. Rewind appends `TurnReverted`, restores the prior snapshot as head, and keeps the reverted transcript hidden but retained for the 30-day abuse-review window (ADR-017). The log is append-only except for the retention/account-deletion redaction job (ADR-014/017). The retry turn draws a **new** dice seed; one rewind per turn.
 
 **Alternatives.** Mutable state row only (no replay/rewind); full event-sourcing with no snapshots (slow resume).
 

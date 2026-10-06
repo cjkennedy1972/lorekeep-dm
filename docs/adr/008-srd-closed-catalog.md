@@ -1,6 +1,6 @@
 # ADR-008: SRD 5.2.1 closed catalog referenced by ID; original setting
 
-Status: Proposed (default) · Date: 2026-10-06
+Status: **Accepted** (human confirmed SRD 5.2.1, 2026-10-06) · Date: 2026-10-06
 
 **Context.** CC-BY-4.0 SRD only (spec §8, research §1). LLMs readily emit non-SRD names. Trademark/attribution duties.
 
@@ -15,4 +15,4 @@ Status: Proposed (default) · Date: 2026-10-06
 
 **Consequences.** Switching versions after M1 is expensive (engine rules differ).
 
-**Needs human?** **Yes**: confirm 5.1 vs 5.2.1 and own the legal review (Q1).
+**Needs human?** Version is confirmed. Legal review before public launch (Q1) is still open. Map rules (grid, cover, areas) must be checked against SRD 5.2.1 text during M1 **[unverified]**.
