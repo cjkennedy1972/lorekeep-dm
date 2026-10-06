@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
-import { Persistence } from '../src/persistence/index.js';
-import { SessionLease } from '../src/room/lease.js';
+import { Persistence } from '../../src/persistence/index.js';
+import { SessionLease } from '../../src/room/lease.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl)

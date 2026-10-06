@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
-import { Persistence } from '../src/persistence/index.js';
+import { Persistence } from '../../src/persistence/index.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl)
