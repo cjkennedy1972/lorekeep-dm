@@ -1,1 +1,16 @@
-{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","jsx":"react-jsx","strict":true,"outDir":"dist","rootDir":"src"},"include":["src"]}
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "noUncheckedIndexedAccess": true,
+    "composite": true,
+    "declaration": true
+  },
+  "include": ["src"],
+  "extends": "../../tsconfig.base.json"
+}

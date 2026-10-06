@@ -1,1 +1,20 @@
-{"name":"lorekeep-dm","private":true,"packageManager":"pnpm@12.9.1","scripts":{"build":"pnpm -r build"}}
+{
+  "name": "lorekeep-dm",
+  "private": true,
+  "packageManager": "pnpm@12.9.1",
+  "scripts": {
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.37.0",
+    "eslint": "9.37.0",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "prettier": "3.6.2",
+    "typescript-eslint": "8.45.0",
+    "vitest": "3.2.4",
+    "typescript": "5.9.3"
+  }
+}

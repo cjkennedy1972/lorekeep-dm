@@ -1,1 +1,10 @@
-{"name":"@game/e2e","version":"0.0.0","private":true,"scripts":{"build":"node -e \"\""}}
+{
+  "name": "@game/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node -e \"\"",
+    "test": "vitest run",
+    "typecheck": "node -e \"\""
+  }
+}
