@@ -16,3 +16,18 @@ export const RoomStateSchema = z.object({
 export type Presence = z.infer<typeof PresenceSchema>;
 export type Seat = z.infer<typeof SeatSchema>;
 export type RoomState = z.infer<typeof RoomStateSchema>;
+
+export const CreateRoomInputSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+});
+/** `code` is the plaintext invite secret; only present in the response that minted it (host only). */
+export const RoomInfoSchema = z.object({
+  id: SessionIdSchema,
+  name: z.string().min(1),
+  isHost: z.boolean(),
+  code: z.string().optional(),
+});
+export const RoomOutputSchema = z.object({ room: RoomInfoSchema });
+export const RoomsOutputSchema = z.object({ rooms: z.array(RoomInfoSchema) });
+export type CreateRoomInput = z.infer<typeof CreateRoomInputSchema>;
+export type RoomInfo = z.infer<typeof RoomInfoSchema>;

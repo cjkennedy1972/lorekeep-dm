@@ -140,6 +140,25 @@ export class Room {
     });
   }
 
+  /** Seat an account without a socket; idempotent, atomic against the 6-seat cap via the actor mailbox. */
+  seat(accountId: string, displayName: string): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.state.seats.some((item) => item.accountId === accountId)) return;
+      if (this.state.seats.length >= 6) throw new Error('Room is full');
+      await this.persist('SeatJoined', {
+        seatId: randomUUID(),
+        accountId,
+        displayName,
+        presence: 'offline',
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.state },
+      });
+    });
+  }
+
   leave(accountId: string): Promise<void> {
     return this.disconnect(accountId);
   }

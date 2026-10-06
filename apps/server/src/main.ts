@@ -10,12 +10,12 @@ import { installGateway } from './gateway/ws.js';
 const config = loadConfig();
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
-const app = createApp(db);
 export const rooms = new RoomRegistry(
   new Persistence(db),
   new SessionLease(db),
   crypto.randomUUID(),
 );
+const app = createApp(db, { rooms });
 installGateway(app, db, rooms);
 let closing = false;
 async function shutdown() {

@@ -4,6 +4,14 @@ import pino, { type DestinationStream } from 'pino';
 import { startSpan } from './telemetry.js';
 import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerSessionRoutes } from './routes/sessions.js';
+import type { RoomRegistry } from './room/registry.js';
+
+/** Invite codes travel in the URL path; never log or trace them. */
+export const scrubUrl = (url: string) =>
+  url
+    .split('?', 1)[0]!
+    .replace(/(\/api\/(?:invites|join)\/)[^/]+/, '$1[REDACTED]');
 const redact = [
   'req.headers.cookie',
   'req.headers.authorization',
@@ -32,7 +40,7 @@ export function createLogger(stream?: DestinationStream) {
       serializers: {
         req: (req: { method: string; url: string; id: string }) => ({
           method: req.method,
-          url: req.url.split('?', 1)[0],
+          url: scrubUrl(req.url),
           id: req.id,
         }),
       },
@@ -46,6 +54,8 @@ export function createApp(
     sender?: EmailSender;
     cookieSecret?: string;
     rateLimit?: number;
+    joinRateLimit?: number;
+    rooms?: Pick<RoomRegistry, 'get'>;
   } = {},
 ) {
   const app = Fastify({
@@ -60,7 +70,7 @@ export function createApp(
       startSpan('http.request', {
         attributes: {
           'http.request.method': request.method,
-          'url.path': request.url.split('?', 1)[0],
+          'url.path': scrubUrl(request.url),
         },
       }),
     );
@@ -87,6 +97,13 @@ export function createApp(
       cookieSecret ?? 'development-only-secret',
       options.rateLimit,
     );
+    if (options.rooms)
+      registerSessionRoutes(
+        app,
+        db as Pool,
+        options.rooms,
+        options.joinRateLimit,
+      );
   }
   app.get('/healthz', async () => ({ status: 'ok' }));
   app.get('/readyz', async (_request, reply) => {
