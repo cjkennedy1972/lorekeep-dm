@@ -18,3 +18,6 @@
 ## 2026-10-06 (round 4)
 1. **Age data: store only the adult flag (`is_adult`) plus check date (`age_checked_at`).** The birthdate entered at signup is used for the server-side 18+ computation and then discarded; it is never persisted. Under-18: refused, nothing stored beyond a short retry-block cookie.
 2. **GO for M0** (Foundations + accounts). Process per docs/process.md: sub-task cards generated from the plan, nothing done until verified in code.
+
+## Atlas calls (overnight, human asleep; reversible, flagged for review)
+- **Model allocation (human-authorized: spread usage across OAuth-authenticated models).** Per-spawn `model` override, no config changes. forge -> openai/gpt-6-sol; proof -> openai/gpt-6-luna; sentinel (review) -> openai/gpt-6-astra (different family than author); prism/sage/compass stay anthropic/claude-sonnet-5-5; xai/* only for short jobs (OAuth expires ~5h after 02:30 EDT); OpenRouter and localai API-key providers not used (metered). If an override spawn fails, fall back to the agent default and note it here. Verification rule (docs/process.md) applies regardless of model.

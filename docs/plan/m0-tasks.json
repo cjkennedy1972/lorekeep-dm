@@ -1,0 +1,928 @@
+[
+  {
+    "id": "M0-01",
+    "title": "Monorepo scaffold and repo layout",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [],
+    "spec": [],
+    "adr": [
+      "ADR-001"
+    ],
+    "description": "Create the pnpm workspace with the fixed M0 layout: apps/server (Fastify+ws, @game/server), apps/web (React+Vite, @game/web), packages/schema (@game/schema), packages/engine (@game/rules-engine, placeholder exporting only a version const until M1), infra/ (docker-compose, CI helper scripts), tests/e2e (cross-app proof tests), docs/ (existing). Add root package.json, pnpm-workspace.yaml, .nvmrc, .gitignore and a README section stating the layout and dependency rule (apps depend on packages; packages never depend on apps; web never imports server).",
+    "acceptance": [
+      "pnpm install succeeds on a clean checkout",
+      "pnpm -r build runs in every workspace package and exits 0",
+      "README documents the layout and dependency rule",
+      "@game/rules-engine exports no game logic in M0"
+    ],
+    "expectedArtifacts": [
+      "package.json",
+      "pnpm-workspace.yaml",
+      ".nvmrc",
+      ".gitignore",
+      "README.md",
+      "apps/server/package.json",
+      "apps/web/package.json",
+      "packages/schema/package.json",
+      "packages/engine/package.json",
+      "packages/engine/src/index.ts",
+      "tests/e2e/package.json"
+    ],
+    "verify": [
+      "pnpm install --frozen-lockfile",
+      "pnpm -r build"
+    ]
+  },
+  {
+    "id": "M0-02",
+    "title": "TypeScript strict, lint, format, vitest",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-01"
+    ],
+    "spec": [],
+    "adr": [
+      "ADR-001"
+    ],
+    "description": "Add tsconfig.base.json (strict, noUncheckedIndexedAccess, project references), ESLint flat config with typescript-eslint and jsx-a11y for apps/web, Prettier, and vitest per package with a root test script. Add a no-restricted-imports rule enforcing the layout dependency rule. Include one trivial passing test per package so the pipeline is proven.",
+    "acceptance": [
+      "tsc --noEmit passes with strict on all packages",
+      "pnpm lint fails on a deliberate unused variable and on apps/web importing apps/server",
+      "pnpm format:check passes",
+      "pnpm -r test runs vitest in every package and passes"
+    ],
+    "expectedArtifacts": [
+      "tsconfig.base.json",
+      "eslint.config.js",
+      ".prettierrc",
+      "vitest.workspace.ts",
+      "apps/server/tsconfig.json",
+      "apps/web/tsconfig.json",
+      "packages/schema/tsconfig.json",
+      "packages/engine/tsconfig.json"
+    ],
+    "verify": [
+      "pnpm -r typecheck",
+      "pnpm lint",
+      "pnpm format:check",
+      "pnpm -r test"
+    ]
+  },
+  {
+    "id": "M0-03",
+    "title": "@game/schema: ids, WS envelope, event and account contracts",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-02"
+    ],
+    "spec": [
+      "US-A1",
+      "US-P2"
+    ],
+    "adr": [
+      "ADR-010",
+      "ADR-003",
+      "ADR-014"
+    ],
+    "description": "Define zod schemas and inferred types in packages/schema: branded ids (AccountId, SessionId, ...), client-to-server envelope {actionId,type,payload,lastSeq} and server-to-client sequenced messages (StateSync, PresenceChanged, Error), the event row shape {sessionId,seq,turnId,type,payload,ts}, minimal RoomState (seats, presence, phase=lobby), and API DTOs for signup/login/me (signup input carries birthdate; account output carries isAdult and ageCheckedAt but never a birthdate). This package is the Prism/Forge contract, so it must be published before server or web code consumes it.",
+    "acceptance": [
+      "Every message type has a zod schema, an inferred TS type and a valid and an invalid fixture test",
+      "Account DTOs contain no birthdate field; a type-level test asserts it",
+      "RoomState schema round-trips JSON through parse",
+      "Package has no runtime deps other than zod"
+    ],
+    "expectedArtifacts": [
+      "packages/schema/src/index.ts",
+      "packages/schema/src/ids.ts",
+      "packages/schema/src/ws.ts",
+      "packages/schema/src/events.ts",
+      "packages/schema/src/room.ts",
+      "packages/schema/src/accounts.ts",
+      "packages/schema/test/schema.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/schema test",
+      "pnpm --filter @game/schema build"
+    ]
+  },
+  {
+    "id": "M0-04",
+    "title": "Local Postgres and migration runner",
+    "owner": "keel",
+    "priority": "normal",
+    "dependsOn": [
+      "M0-01"
+    ],
+    "spec": [],
+    "adr": [
+      "ADR-001"
+    ],
+    "description": "Provide infra/docker-compose.yml with Postgres 16 for dev and test, and choose and wire a SQL migration runner (plain SQL files, node-pg-migrate or equivalent) under apps/server/migrations with up/down scripts and a test-database helper that creates a fresh schema per test file. Document the one-command local setup.",
+    "acceptance": [
+      "docker compose -f infra/docker-compose.yml up -d gives a reachable Postgres",
+      "pnpm --filter @game/server migrate:up and migrate:down run clean on an empty database",
+      "Test helper returns an isolated schema per test file and drops it afterwards",
+      "DATABASE_URL is the only required DB env var, documented in .env.example"
+    ],
+    "expectedArtifacts": [
+      "infra/docker-compose.yml",
+      ".env.example",
+      "apps/server/migrations/.gitkeep",
+      "apps/server/src/db/pool.ts",
+      "apps/server/test/helpers/testDb.ts",
+      "docs/dev-setup.md"
+    ],
+    "verify": [
+      "docker compose -f infra/docker-compose.yml up -d --wait",
+      "pnpm --filter @game/server migrate:up",
+      "pnpm --filter @game/server migrate:down"
+    ]
+  },
+  {
+    "id": "M0-05",
+    "title": "Migration: events, snapshots, session_lease",
+    "owner": "forge",
+    "priority": "normal",
+    "dependsOn": [
+      "M0-04",
+      "M0-03"
+    ],
+    "spec": [
+      "US-R2"
+    ],
+    "adr": [
+      "ADR-002",
+      "ADR-003"
+    ],
+    "description": "Create migration for events(session_id, seq, turn_id, type, payload jsonb, ts) with primary key (session_id, seq), append-only enforced by a trigger that blocks UPDATE and DELETE except through a named redaction role/function reserved for the deletion pipeline; snapshots(session_id, seq, state jsonb, created_at); sessions(id, owner_account_id, status, created_at, last_active_at, archived_at); session_lease(session_id, node_id, expires_at). Add expires_at to any log-class table needed later per ADR-017 as a nullable column.",
+    "acceptance": [
+      "Duplicate (session_id, seq) insert fails",
+      "Plain UPDATE and DELETE on events fail; the redaction function succeeds",
+      "migrate:up then migrate:down leaves no tables",
+      "session_lease has one row per session (unique session_id)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/migrations/0001_game_core.sql",
+      "apps/server/test/migrations/game-core.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test migrations/game-core"
+    ]
+  },
+  {
+    "id": "M0-06",
+    "title": "Migration: accounts, auth_sessions, ws_tickets, tokens, jobs",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-04"
+    ],
+    "spec": [
+      "US-A1",
+      "US-A2",
+      "US-A3",
+      "US-A4"
+    ],
+    "adr": [
+      "ADR-014",
+      "ADR-015",
+      "ADR-017"
+    ],
+    "description": "Create migration for accounts(id, email citext unique, password_hash, display_name, status in pending_email|active|suspended|deleting|deleted, is_adult, age_checked_at, terms_version, terms_accepted_at, mature_opt_out default false, created_at, deletion_requested_at); auth_sessions(token_hash, account_id, expires_at, absolute_expires_at, last_active_at, ua_hash, ua_label); ws_tickets(ticket_hash, account_id, session_id, expires_at, used_at); email_tokens(token_hash, account_id, kind verify|reset, expires_at, used_at); export_jobs and deletion_jobs tables. There must be no birthdate, age band, guardian or consent column anywhere (decision round 4).",
+    "acceptance": [
+      "Information-schema test asserts no column named like birthdate, dob, birth_date, age_band, guardian or consent exists",
+      "accounts.email is case-insensitively unique",
+      "Deleting an account row cascades auth_sessions, ws_tickets and email_tokens",
+      "migrate:up and migrate:down are clean"
+    ],
+    "expectedArtifacts": [
+      "apps/server/migrations/0002_accounts.sql",
+      "apps/server/test/migrations/accounts.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test migrations/accounts"
+    ]
+  },
+  {
+    "id": "M0-07",
+    "title": "Persistence module: append, loadLatest, atomic snapshot",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-05",
+      "M0-03"
+    ],
+    "spec": [
+      "US-R2"
+    ],
+    "adr": [
+      "ADR-003",
+      "ADR-002"
+    ],
+    "description": "Implement the persistence interface in apps/server/src/persistence: append(sessionId, events) with contiguous seq assignment, loadLatest(sessionId) returning latest snapshot plus trailing events, and writeTurn(sessionId, events, snapshot) that writes the last event and snapshot in one transaction. Reject non-contiguous seq. Rewind is out of scope (M3).",
+    "acceptance": [
+      "Concurrent appends to one session never produce a gap or duplicate seq",
+      "Snapshot and its last event commit atomically; a forced failure rolls back both",
+      "loadLatest returns snapshot + tail events in seq order",
+      "Integration tests run against real Postgres"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/persistence/index.ts",
+      "apps/server/src/persistence/events.ts",
+      "apps/server/src/persistence/snapshots.ts",
+      "apps/server/test/persistence.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test persistence"
+    ]
+  },
+  {
+    "id": "M0-08",
+    "title": "Session lease: acquire, renew, release, takeover",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-05"
+    ],
+    "spec": [],
+    "adr": [
+      "ADR-002"
+    ],
+    "description": "Implement lease operations over session_lease: acquire (succeeds only if no row or expired), heartbeat renew (only by holder), release, and a fencing token (monotonic lease epoch) that persistence checks on write so a stale node cannot append. Expose configurable TTL and heartbeat interval.",
+    "acceptance": [
+      "Second node cannot acquire a live lease",
+      "Second node acquires after expiry and the first node's later append is rejected by the fencing check",
+      "Renew by a non-holder fails",
+      "Release makes the lease immediately acquirable"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/room/lease.ts",
+      "apps/server/test/lease.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test lease"
+    ]
+  },
+  {
+    "id": "M0-09",
+    "title": "Room actor skeleton: mailbox, seats, presence, StateSync",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-07",
+      "M0-08"
+    ],
+    "spec": [
+      "US-P2"
+    ],
+    "adr": [
+      "ADR-002",
+      "ADR-010"
+    ],
+    "description": "Implement Room (apps/server/src/room/Room.ts): one actor per session with a serial promise mailbox, owning RoomState in lobby phase. Commands: join(accountId, connection), leave, disconnect, submit(noop echo with actionId idempotency). Presence changes append a PresenceChanged event, broadcast sequenced messages to subscribers, and send StateSync{seq,state} on subscribe/resync using lastSeq. A RoomRegistry hands out the Room for a session id after acquiring the lease. No DM, rules or turn logic.",
+    "acceptance": [
+      "Commands to one Room are processed strictly serially (test with interleaved async commands)",
+      "Two joined accounts each receive the other's PresenceChanged with increasing seq",
+      "Duplicate actionId is applied once",
+      "Subscribe with stale lastSeq receives StateSync; with current lastSeq receives only later events",
+      "Room refuses to start without holding the lease"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/room/Room.ts",
+      "apps/server/src/room/registry.ts",
+      "apps/server/src/room/reducer.ts",
+      "apps/server/test/room.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test room"
+    ]
+  },
+  {
+    "id": "M0-10",
+    "title": "Room restart recovery and graceful drain",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-09"
+    ],
+    "spec": [
+      "US-R2",
+      "US-S3"
+    ],
+    "adr": [
+      "ADR-002",
+      "ADR-003"
+    ],
+    "description": "Rebuild a Room from loadLatest (snapshot plus trailing events replayed through the reducer) when a connection arrives after a restart or lease expiry. Implement graceful drain: stop accepting commands, flush, write snapshot, release lease; SIGTERM triggers drain for all rooms. Snapshot after every state-changing command in M0 so max loss is one in-flight command.",
+    "acceptance": [
+      "Test: build state with N events, drop the Room object, rehydrate, state deep-equals the original",
+      "Rehydrate works from snapshot only and from snapshot plus tail events",
+      "SIGTERM drain releases all leases and exits 0",
+      "Clients receive StateSync with the recovered seq after reconnect"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/room/recovery.ts",
+      "apps/server/src/room/drain.ts",
+      "apps/server/test/recovery.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test recovery"
+    ]
+  },
+  {
+    "id": "M0-11",
+    "title": "Server bootstrap, config, logging, OpenTelemetry scaffold",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-02",
+      "M0-04",
+      "M0-03"
+    ],
+    "spec": [],
+    "adr": [
+      "ADR-001"
+    ],
+    "description": "Create the Fastify app factory in apps/server/src/app.ts with zod-validated env config, structured JSON logs (pino) with request ids and redaction of cookies and passwords, /healthz and /readyz (DB ping), and an OTel SDK scaffold (traces, OTLP exporter disabled by default, console exporter in dev) with a tracer helper and a sample span on each HTTP request and Room command. No cost or token metrics yet (M2).",
+    "acceptance": [
+      "GET /healthz returns 200; /readyz returns 503 when the DB is unreachable",
+      "Invalid or missing env fails fast with a clear message",
+      "Log output never contains a Cookie header or password field (test)",
+      "Spans are created for HTTP requests and Room commands (in-memory exporter test)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/app.ts",
+      "apps/server/src/config.ts",
+      "apps/server/src/main.ts",
+      "apps/server/src/telemetry.ts",
+      "apps/server/test/app.test.ts",
+      "apps/server/test/telemetry.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test app",
+      "pnpm --filter @game/server test telemetry"
+    ]
+  },
+  {
+    "id": "M0-12",
+    "title": "Age attestation: server-side 18+ gate and retry block",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-03"
+    ],
+    "spec": [
+      "US-A1"
+    ],
+    "adr": [
+      "ADR-015"
+    ],
+    "description": "Implement a pure checkAdult(birthdate, now) in apps/server/src/accounts/age.ts returning adult true/false, rejecting future or unparsable dates, and handling leap-day birthdays and the exact 18th birthday boundary using UTC date arithmetic. Add a retry-block cookie helper (short TTL, httpOnly, signed) set on under-18 refusal. The birthdate must never reach a logger, a DB call, or a response.",
+    "acceptance": [
+      "Table-driven tests: exactly 18 today true, one day short false, leap day Feb 29 cases, future date rejected, invalid string rejected",
+      "Retry-block cookie is set on refusal and blocks a subsequent attempt with a different birthdate for its TTL",
+      "Static test (grep or lint rule) that age.ts has no db or logger imports",
+      "Under-18 attempt writes no row to any table (checked in the signup ticket)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/accounts/age.ts",
+      "apps/server/src/accounts/retryBlock.ts",
+      "apps/server/test/age.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test age"
+    ]
+  },
+  {
+    "id": "M0-13",
+    "title": "Accounts and signup with email verification",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-11",
+      "M0-06",
+      "M0-12"
+    ],
+    "spec": [
+      "US-A1"
+    ],
+    "adr": [
+      "ADR-014",
+      "ADR-015"
+    ],
+    "description": "Implement POST /api/signup and GET/POST /api/verify-email. Hash passwords with argon2id (OWASP parameters, configurable cost, tuned about 250 ms), validate password length and common-password list, record terms_version and timestamp, set status pending_email, and persist only is_adult=true and age_checked_at (birthdate discarded after the check). Under-18 returns a neutral refusal and stores no account, flag or birthdate. Verification token is single-use, hashed at rest, 24 h expiry, sent through an EmailSender interface (console and in-memory implementations; SMTP provider adapter stubbed). Responses never reveal whether an email is registered; per-IP and per-email rate limits; display name passes a pluggable name filter hook (no-op until M3).",
+    "acceptance": [
+      "Adult signup creates exactly one accounts row with is_adult=true, age_checked_at set, status pending_email, and no birthdate stored anywhere (DB dump grep and column test)",
+      "Under-18 signup returns the neutral refusal, creates no row in accounts or any table, and sets the retry-block cookie",
+      "Duplicate-email signup returns the same response shape and timing class as a new email",
+      "Password stored as an argon2id hash; plaintext absent from logs",
+      "Verification link works once, fails after 24 h, activates the account; unverified accounts are marked not allowed to host or join",
+      "Rate limit returns 429 past the configured threshold"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/accounts/signup.ts",
+      "apps/server/src/accounts/password.ts",
+      "apps/server/src/accounts/verify.ts",
+      "apps/server/src/email/sender.ts",
+      "apps/server/src/routes/auth.ts",
+      "apps/server/test/accounts/signup.test.ts",
+      "apps/server/test/accounts/verify.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test accounts/signup",
+      "pnpm --filter @game/server test accounts/verify"
+    ]
+  },
+  {
+    "id": "M0-14",
+    "title": "Login, logout, cookie sessions, device sessions",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-13"
+    ],
+    "spec": [
+      "US-A2",
+      "US-A3"
+    ],
+    "adr": [
+      "ADR-014"
+    ],
+    "description": "Implement POST /api/login, /api/logout, GET /api/me, GET /api/sessions, DELETE /api/sessions/:id and sign-out-everywhere. Sessions are opaque random tokens stored as hashes in auth_sessions; cookie is httpOnly, Secure, SameSite=Lax; 30-day sliding and 90-day absolute expiry; Origin check on mutating routes; identical error for unknown email and wrong password; throttling at 5 failures in 10 minutes with exponential delay; revocation effective immediately; re-enter current password for password or email change.",
+    "acceptance": [
+      "Login with a pending_email account is refused with an actionable verification message",
+      "Wrong password and unknown email return byte-identical bodies",
+      "Logout invalidates the token on the very next request",
+      "Sixth failure within 10 minutes is delayed or blocked per the throttle",
+      "Revoking a device session blocks that session within 60 s (test asserts immediate)",
+      "Sliding expiry extends; absolute 90-day expiry rejects",
+      "Mutating request with bad Origin is rejected 403"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/accounts/login.ts",
+      "apps/server/src/accounts/sessions.ts",
+      "apps/server/src/middleware/auth.ts",
+      "apps/server/src/middleware/origin.ts",
+      "apps/server/test/accounts/login.test.ts",
+      "apps/server/test/accounts/sessions.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test accounts/login",
+      "pnpm --filter @game/server test accounts/sessions"
+    ]
+  },
+  {
+    "id": "M0-15",
+    "title": "Password reset",
+    "owner": "forge",
+    "priority": "normal",
+    "dependsOn": [
+      "M0-14"
+    ],
+    "spec": [
+      "US-A2"
+    ],
+    "adr": [
+      "ADR-014"
+    ],
+    "description": "Implement POST /api/password-reset/request and /confirm using email_tokens kind=reset: single-use, hashed at rest, 1 h expiry; request always returns the same response regardless of email existence; confirm sets a new argon2id hash and revokes all other device sessions.",
+    "acceptance": [
+      "Reset link works once and fails after use and after 1 h",
+      "Request response and timing class are identical for known and unknown emails",
+      "Successful reset revokes every other auth_session",
+      "Old password no longer logs in; new one does"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/accounts/reset.ts",
+      "apps/server/test/accounts/reset.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test accounts/reset"
+    ]
+  },
+  {
+    "id": "M0-16",
+    "title": "WS gateway with one-time tickets",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-14",
+      "M0-09",
+      "M0-03"
+    ],
+    "spec": [
+      "US-P2"
+    ],
+    "adr": [
+      "ADR-010",
+      "ADR-014",
+      "ADR-002"
+    ],
+    "description": "Implement POST /api/ws-ticket (authenticated, scoped to a session id the account is seated in or joining) issuing a 30 s single-use ticket stored hashed in ws_tickets, and a /ws endpoint on Fastify+ws that consumes the ticket on upgrade, binds the connection to accountId, validates every inbound message against @game/schema, routes to the Room by lease (sticky; refuse with a retry hint if another node holds it), heartbeats and cleans up on close. Origin check on upgrade.",
+    "acceptance": [
+      "Ticket works exactly once; second use is rejected",
+      "Expired ticket is rejected",
+      "Ticket for session A cannot open a connection to session B",
+      "Connection without a ticket or with a bad Origin is closed with a policy code",
+      "Malformed message gets an Error message and does not crash the Room",
+      "Disconnect produces PresenceChanged for remaining clients"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/gateway/tickets.ts",
+      "apps/server/src/gateway/ws.ts",
+      "apps/server/test/gateway/tickets.test.ts",
+      "apps/server/test/gateway/ws.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test gateway"
+    ]
+  },
+  {
+    "id": "M0-17",
+    "title": "Create room and invite link endpoints",
+    "owner": "forge",
+    "priority": "normal",
+    "dependsOn": [
+      "M0-16"
+    ],
+    "spec": [
+      "US-P1",
+      "US-P2"
+    ],
+    "adr": [
+      "ADR-014",
+      "ADR-002"
+    ],
+    "description": "Implement POST /api/sessions (create a lobby room owned by the account), GET /api/sessions (my rooms), POST /api/sessions/:id/invite (generate or regenerate a revocable per-session secret link), and POST /api/join/:code (requires login, seats the account, returns session id for ticket request). Unverified accounts cannot create or join. Join code is stored hashed.",
+    "acceptance": [
+      "Verified account can create a room and sees it in the list; unverified gets 403",
+      "Valid invite code seats the caller; revoked or regenerated code fails",
+      "Unauthenticated join returns 401 with a body the web app can use to redirect to login and return",
+      "Seat limit of 6 enforced"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/routes/sessions.ts",
+      "apps/server/src/rooms/invites.ts",
+      "apps/server/test/routes/sessions.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test routes/sessions"
+    ]
+  },
+  {
+    "id": "M0-18",
+    "title": "Account export and deletion skeleton",
+    "owner": "forge",
+    "priority": "normal",
+    "dependsOn": [
+      "M0-14",
+      "M0-05"
+    ],
+    "spec": [
+      "US-A4"
+    ],
+    "adr": [
+      "ADR-014",
+      "ADR-017"
+    ],
+    "description": "Implement POST /api/account/export (re-auth) creating an export_jobs row and a worker that writes a JSON archive (profile fields, own seats, session list; no birthdate since none exists) to a local-disk object store interface, with a signed link valid 7 days; and POST /api/account/delete (re-auth, typed confirmation) that sets status deleting, revokes all sessions at once and creates a deletion_jobs row. Hard-delete execution lives in the sweeper ticket. Skeleton only: characters, snapshots, transcripts are added in later milestones.",
+    "acceptance": [
+      "Export produces a downloadable JSON containing profile and seats and expires after 7 days",
+      "Delete without correct password or confirmation text is refused",
+      "After delete the user cannot log in and all existing sessions are invalid immediately",
+      "Delete request response states it cannot be undone",
+      "Object-store interface has a local-disk implementation and is swappable"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/accounts/export.ts",
+      "apps/server/src/accounts/delete.ts",
+      "apps/server/src/storage/objectStore.ts",
+      "apps/server/test/accounts/export.test.ts",
+      "apps/server/test/accounts/delete.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test accounts/export",
+      "pnpm --filter @game/server test accounts/delete"
+    ]
+  },
+  {
+    "id": "M0-19",
+    "title": "retention-sweeper skeleton (30-day)",
+    "owner": "forge",
+    "priority": "high",
+    "dependsOn": [
+      "M0-18",
+      "M0-05"
+    ],
+    "spec": [
+      "US-A4"
+    ],
+    "adr": [
+      "ADR-017"
+    ],
+    "description": "Implement the idempotent nightly sweeper (apps/server/src/retention/sweeper.ts, runnable as pnpm --filter @game/server sweep and via an in-process scheduler): purge log-class rows past expires_at (30 days), purge expired exports (7 days) and expired tokens, and run the account-deletion pipeline: for deleting accounts hard-delete the accounts row and PII, and mark membership/seats anonymized. Each job logs counts only and is individually testable; sweep records last_completed_at and exposes a metric/health flag that is stale after 26 hours. Legal-hold flag check is a stub that skips held items and writes an audit row.",
+    "acceptance": [
+      "Seed expired and unexpired rows; sweep deletes only expired ones; second run deletes nothing",
+      "A deleting test account is fully removed (accounts row, auth_sessions, tokens, export files) and a second sweep is a no-op",
+      "Held item is skipped and audited",
+      "Sweeper logs contain counts and ids, no email or text",
+      "Staleness flag turns true when last_completed_at is older than 26 h (fake clock)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/retention/sweeper.ts",
+      "apps/server/src/retention/jobs/logs.ts",
+      "apps/server/src/retention/jobs/exports.ts",
+      "apps/server/src/retention/jobs/accountDeletion.ts",
+      "apps/server/test/retention/sweeper.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test retention"
+    ]
+  },
+  {
+    "id": "M0-20",
+    "title": "Mock Room and auth server for Prism",
+    "owner": "prism",
+    "priority": "high",
+    "dependsOn": [
+      "M0-03"
+    ],
+    "spec": [
+      "US-P2",
+      "US-A1"
+    ],
+    "adr": [
+      "ADR-010"
+    ],
+    "description": "Build a standalone mock server in apps/web/mock (Node, started by pnpm --filter @game/web mock) that speaks the @game/schema contract: fake signup/login/me/export/delete endpoints with in-memory state (including birthdate under-18 refusal), ws-ticket and /ws with a trivial Room that supports join, presence, StateSync, and a scripted second participant. This unblocks Prism before the real server lands; it must import schemas from @game/schema so contract drift fails typecheck.",
+    "acceptance": [
+      "Mock starts with one command and serves all endpoints the web app calls in M0",
+      "Mock responses are validated against @game/schema in a test",
+      "Two browser tabs joined to one mock room see each other's presence",
+      "Under-18 birthdate yields the same refusal shape as the real contract"
+    ],
+    "expectedArtifacts": [
+      "apps/web/mock/server.ts",
+      "apps/web/mock/room.ts",
+      "apps/web/mock/README.md",
+      "apps/web/test/mock.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test mock"
+    ]
+  },
+  {
+    "id": "M0-21",
+    "title": "Web app shell, a11y tokens, routing, test setup",
+    "owner": "prism",
+    "priority": "high",
+    "dependsOn": [
+      "M0-02"
+    ],
+    "spec": [
+      "US-A1"
+    ],
+    "adr": [
+      "ADR-001"
+    ],
+    "description": "Create the Vite+React app shell with router, layout landmarks (header, main, nav, skip link), and a design-token layer: colors meeting 4.5:1 text and 3:1 graphical contrast in light and dark, a colorblind-safe palette option, focus-ring token, spacing and type scale, a dyslexia-friendly font option, and prefers-reduced-motion handling. Choose Radix or React Aria primitives. Set up Testing Library and jest-axe, and a Playwright config under apps/web for component and e2e runs.",
+    "acceptance": [
+      "Skip link and landmarks present; focus ring visible on every interactive element",
+      "Token contrast checks run in a unit test and fail if a pair is below threshold",
+      "prefers-reduced-motion disables transitions (test)",
+      "jest-axe reports zero violations on the shell",
+      "Text-size and dyslexia-font toggles persist in localStorage"
+    ],
+    "expectedArtifacts": [
+      "apps/web/index.html",
+      "apps/web/src/main.tsx",
+      "apps/web/src/App.tsx",
+      "apps/web/src/styles/tokens.css",
+      "apps/web/src/a11y/contrast.test.ts",
+      "apps/web/src/a11y/Layout.tsx",
+      "apps/web/playwright.config.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test",
+      "pnpm --filter @game/web build"
+    ]
+  },
+  {
+    "id": "M0-22",
+    "title": "WS client and room reducer",
+    "owner": "prism",
+    "priority": "high",
+    "dependsOn": [
+      "M0-21",
+      "M0-03",
+      "M0-20"
+    ],
+    "spec": [
+      "US-P2",
+      "US-R2"
+    ],
+    "adr": [
+      "ADR-010"
+    ],
+    "description": "Implement the Room client in apps/web/src/room: ticket fetch then WebSocket connect, auto-reconnect with exponential backoff, client-generated actionId, lastSeq resync, and a pure reducer applying StateSync and sequenced patches (PresenceChanged) to client RoomState from @game/schema. Expose a useRoom hook and a connection-status model rendered through a polite live region.",
+    "acceptance": [
+      "Reducer unit tests: StateSync replaces state, out-of-order or duplicate seq ignored, gap triggers resync request",
+      "Reconnect after socket drop resumes with lastSeq and ends in the correct state against the mock",
+      "Connection status changes are announced via aria-live=polite",
+      "Client parses all inbound messages with @game/schema and surfaces schema errors without crashing"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/room/client.ts",
+      "apps/web/src/room/reducer.ts",
+      "apps/web/src/room/useRoom.ts",
+      "apps/web/src/room/ConnectionStatus.tsx",
+      "apps/web/src/room/reducer.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test room"
+    ]
+  },
+  {
+    "id": "M0-23",
+    "title": "Lobby and invite screens",
+    "owner": "prism",
+    "priority": "normal",
+    "dependsOn": [
+      "M0-22"
+    ],
+    "spec": [
+      "US-P1",
+      "US-P2"
+    ],
+    "adr": [
+      "ADR-010",
+      "ADR-014"
+    ],
+    "description": "Build My Rooms, Create Room, Lobby (seat list with live presence, copy-invite-link, regenerate link) and Join-by-link screens. Unauthenticated visitors are redirected to login or signup and returned to the join afterwards. Everything is keyboard-operable with labelled controls; presence changes announced politely. Runs against the mock server.",
+    "acceptance": [
+      "Opening a join link while logged out redirects to login then back to the join",
+      "Lobby shows two participants live when two tabs join the mock room",
+      "Copy-link button gives accessible success feedback",
+      "jest-axe zero violations and full keyboard path covered by a Playwright test",
+      "Layout works at 360 px width"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/screens/Rooms.tsx",
+      "apps/web/src/screens/Lobby.tsx",
+      "apps/web/src/screens/Join.tsx",
+      "apps/web/e2e/lobby.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test screens",
+      "pnpm --filter @game/web e2e lobby"
+    ]
+  },
+  {
+    "id": "M0-24",
+    "title": "Signup (birthdate), verify, login, reset screens",
+    "owner": "prism",
+    "priority": "high",
+    "dependsOn": [
+      "M0-21",
+      "M0-20"
+    ],
+    "spec": [
+      "US-A1",
+      "US-A2"
+    ],
+    "adr": [
+      "ADR-014",
+      "ADR-015"
+    ],
+    "description": "Build signup (email, password, display name, native date input for birthdate, Terms/Privacy acceptance with versions, 18+ statement), check-your-email and verify-result pages, login, forgot/reset password. Under-18 refusal shows a neutral non-leaky message and no retry affordance beyond the cookie block. Errors are associated with fields (aria-describedby) and announced; no client-side age decision is trusted (display only server result). The birthdate field is never stored in client storage or logs.",
+    "acceptance": [
+      "Signup submits birthdate to the API and renders the server's under-18 refusal neutrally",
+      "Birthdate value absent from localStorage, sessionStorage and console output (Playwright check)",
+      "Field errors programmatically associated and announced",
+      "Login error text is identical for unknown email and wrong password",
+      "jest-axe zero violations on each screen; keyboard-only completion in Playwright"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/screens/Signup.tsx",
+      "apps/web/src/screens/Login.tsx",
+      "apps/web/src/screens/VerifyEmail.tsx",
+      "apps/web/src/screens/ResetPassword.tsx",
+      "apps/web/e2e/auth.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test screens",
+      "pnpm --filter @game/web e2e auth"
+    ]
+  },
+  {
+    "id": "M0-25",
+    "title": "Account settings: sessions, export, delete",
+    "owner": "prism",
+    "priority": "normal",
+    "dependsOn": [
+      "M0-24"
+    ],
+    "spec": [
+      "US-A3",
+      "US-A4"
+    ],
+    "adr": [
+      "ADR-014",
+      "ADR-017"
+    ],
+    "description": "Build the account settings screen: display name, password change (current password required), device session list with revoke and sign-out-everywhere, Export my data (status and download link), and Delete account (re-auth, typed confirmation, irreversible warning). Mature opt-out toggle is out of scope until M3.",
+    "acceptance": [
+      "Device list shows label and last active; revoking a session updates the list",
+      "Delete requires password and the exact confirmation phrase and shows the cannot-be-undone text",
+      "Export shows pending, ready (link), and expired states",
+      "jest-axe zero violations; destructive actions reachable and operable by keyboard; confirmation dialog traps and restores focus"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/screens/Settings.tsx",
+      "apps/web/src/screens/DeleteAccountDialog.tsx",
+      "apps/web/e2e/settings.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test screens/Settings",
+      "pnpm --filter @game/web e2e settings"
+    ]
+  },
+  {
+    "id": "M0-26",
+    "title": "CI workflow: typecheck, lint, test, build, Postgres service",
+    "owner": "keel",
+    "priority": "high",
+    "dependsOn": [
+      "M0-02",
+      "M0-04"
+    ],
+    "spec": [],
+    "adr": [
+      "ADR-001"
+    ],
+    "description": "Add .github/workflows/ci.yml running on push and PR: pnpm install with cache, typecheck, lint, format check, vitest across workspaces with a Postgres 16 service container and migrations applied, build, and Playwright component/e2e smoke against the mock server. Add a nightly job that runs the retention sweeper tests. Pin Node and pnpm versions; fail on lockfile drift.",
+    "acceptance": [
+      "Workflow passes on a clean branch and fails when a test, lint rule, or typecheck is broken",
+      "Postgres service is used by server tests (no skipped DB tests)",
+      "Artifacts (Playwright traces) uploaded on failure",
+      "Lockfile drift fails the job"
+    ],
+    "expectedArtifacts": [
+      ".github/workflows/ci.yml",
+      "infra/ci/run-tests.sh"
+    ],
+    "verify": [
+      "act -j test (or push a branch and read the CI run)",
+      "bash infra/ci/run-tests.sh"
+    ]
+  },
+  {
+    "id": "M0-27",
+    "title": "M0 exit-criteria proof tests",
+    "owner": "proof",
+    "priority": "high",
+    "dependsOn": [
+      "M0-10",
+      "M0-17",
+      "M0-19",
+      "M0-25",
+      "M0-23",
+      "M0-26"
+    ],
+    "spec": [
+      "US-A1",
+      "US-A2",
+      "US-A4",
+      "US-P2",
+      "US-R2"
+    ],
+    "adr": [
+      "ADR-002",
+      "ADR-014",
+      "ADR-015",
+      "ADR-017"
+    ],
+    "description": "Write the end-to-end proof suite in tests/e2e against the real server and web app (not the mock) with Postgres: (1) two verified accounts join one room and both see synced presence; (2) restart the server process mid-session and show state and seq survive and clients reconnect; (3) under-18 signup is refused, no row exists in accounts, and a DB-wide scan finds no birthdate for any adult account either; (4) a seeded test account requests deletion, the sweeper runs, and the account and its PII are gone. Produce docs/plan/m0-proof-report.md listing each exit criterion with the command, result and any gap.",
+    "acceptance": [
+      "Test 1: two accounts in one room each observe the other's presence within 3 s",
+      "Test 2: kill -TERM and restart the server; reconnected clients show identical state and seq; rehydrate completes in 3 s or less",
+      "Test 3: under-18 refused; query of all tables finds no birthdate-like data for any account",
+      "Test 4: after deletion plus sweeper, no row references the test account id or email",
+      "All four tests pass in CI and locally; report states what remains unverified"
+    ],
+    "expectedArtifacts": [
+      "tests/e2e/presence.spec.ts",
+      "tests/e2e/restart.spec.ts",
+      "tests/e2e/age-gate.spec.ts",
+      "tests/e2e/deletion.spec.ts",
+      "docs/plan/m0-proof-report.md"
+    ],
+    "verify": [
+      "pnpm --filter e2e test",
+      "pnpm -r test"
+    ]
+  }
+]
