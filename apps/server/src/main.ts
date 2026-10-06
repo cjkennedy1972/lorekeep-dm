@@ -7,6 +7,8 @@ import { SessionLease } from './room/lease.js';
 import { RoomRegistry } from './room/registry.js';
 import { installGracefulDrain } from './room/drain.js';
 import { installGateway } from './gateway/ws.js';
+import { startSweepScheduler } from './retention/sweeper.js';
+import { LocalObjectStore } from './storage/objectStore.js';
 const config = loadConfig();
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
@@ -17,10 +19,16 @@ export const rooms = new RoomRegistry(
 );
 const app = createApp(db, { rooms });
 installGateway(app, db, rooms);
+// Disabled in tests or with SWEEP_INTERVAL_MS=0.
+const stopSweeper =
+  config.NODE_ENV === 'test' || config.SWEEP_INTERVAL_MS === 0
+    ? () => undefined
+    : startSweepScheduler(db, new LocalObjectStore(), config.SWEEP_INTERVAL_MS);
 let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  stopSweeper();
   await rooms.drain();
   await app.close();
   await db.end();

@@ -6,6 +6,7 @@ const schema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),
+  SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).default(3_600_000),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
 });
 export type ServerConfig = z.infer<typeof schema>;

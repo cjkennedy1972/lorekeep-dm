@@ -5,6 +5,7 @@ import { startSpan } from './telemetry.js';
 import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
+import { retentionHealth } from './retention/sweeper.js';
 import type { RoomRegistry } from './room/registry.js';
 
 /** Invite codes travel in the URL path; never log or trace them. */
@@ -109,7 +110,8 @@ export function createApp(
   app.get('/readyz', async (_request, reply) => {
     try {
       await db.query('SELECT 1');
-      return { status: 'ready' };
+      const retention = await retentionHealth(db).catch(() => undefined);
+      return { status: 'ready', retention };
     } catch {
       return reply.code(503).send({ status: 'unavailable' });
     }
