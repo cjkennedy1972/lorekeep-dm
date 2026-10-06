@@ -4,11 +4,13 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 export function Layout() {
   const main = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
-  const first = useRef(true);
+  const shown = useRef(pathname);
   // Move focus to <main> on client-side navigation so screen readers announce the new page.
   useEffect(() => {
-    if (first.current) first.current = false;
-    else main.current?.focus();
+    // Compare paths (not a first-run flag) so StrictMode's double effect cannot steal focus on load.
+    if (shown.current === pathname) return;
+    shown.current = pathname;
+    main.current?.focus();
   }, [pathname]);
 
   return (

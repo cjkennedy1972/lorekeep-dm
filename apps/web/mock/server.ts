@@ -162,7 +162,7 @@ export function createMock(opts: { scriptedFlipMs?: number } = {}) {
       return json(res, 200, {}, { 'set-cookie': 'sid=; Path=/; Max-Age=0' });
     }
 
-    if (route === 'POST /api/verify') {
+    if (route === 'POST /api/verify-email') {
       const body = await readBody(req);
       if (body?.token !== 'valid-token')
         return err(
