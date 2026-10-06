@@ -9,3 +9,8 @@
 6. Log retention: 30 days.
 7. Combat: **2D top-down battle map with miniature tokens and terrain is the first-release view.** **3D/isometric view and importing user STL/GLB minis and 3D-printed terrain are later roadmap.**
 8. Legal/compliance questions (uploaded-model IP, upload moderation, privacy-law specifics, product-name trademark) are **deferred until the project shows it is viable**. They are a parking-lot list, not milestone gates. SRD CC-BY attribution remains an MVP requirement (license compliance).
+
+## 2026-10-06 (round 3)
+1. **Mature content is the default and is acceptable unless table players opt out.** It is not explicit: innuendo and allusion are fine, subject to what the configured LLM endpoint allows. Any player opting out turns it off for the table (shared scene). Per-player lines/veils/pause remain. The hard floor on sexual content involving minors stays non-configurable. Explicit sexual content stays out of scope. Supersedes the round-2 "off by default, host opt-in" wording and the "host transfer resets to off" assumption (A28/A29 follow-ups): the default now carries over.
+2. **Age attestation is a birthdate entry** at registration (18+ computed from it). Under-18 is refused and nothing is kept for them. Data minimization: store only the adult flag plus the check date unless a later need for the birthdate itself appears (architect to confirm and flag).
+3. **No scope cuts.** Plan for the full scope: 12 SRD classes, adventures #1-#3, authored plus stretch procedural maps, local-model fallback modes. Timeline stays about 23 weeks as in architecture.md v0.3 section 11.

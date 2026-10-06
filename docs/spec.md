@@ -1,27 +1,33 @@
 # Product Requirements Spec: AI Dungeon Master (working title "Lorekeep-DM")
 
-Status: Draft v0.3 (round-2 decisions applied) · Date: 2026-10-06 · Owner: Compass (Product & Requirements)
+Status: Draft v0.4 (round-3 decisions applied) · Date: 2026-10-06 · Owner: Compass (Product & Requirements)
 Scope: spec only. No implementation, no external messaging.
 
 Conventions: **[A#]** = labeled assumption (see §14). **[Q#]** = open question (see §13; numbers are never reused, so closed questions leave gaps). Priorities: **P0** = MVP must, **P1** = Phase 2, **P2** = Phase 3 / later. **Later roadmap** = unscheduled, outside every phase (§10.1). Gaps in A#/Q# numbering are retired items; numbers are never reused.
-Terms: **table** = one game session (lobby through end). **Device session** = a logged-in browser/device. **Age attestation** = the registrant's recorded statement that they are 18 or older [A29]. **Endpoint** = the operator-configured LLM service (§7.8).
+Terms: **table** = one game session (lobby through end). **Device session** = a logged-in browser/device. **Age attestation** = the registrant's birthdate entry at registration, from which 18+ is computed; the stored result is an adult flag plus check date [A29]. **Endpoint** = the operator-configured LLM service (§7.8).
 
 ---
 
 ## Changes since v0.1
 
-Human decisions applied (authoritative). Round 1 (items 1–7) was applied in v0.2. Round 2 (decisions log, 2026-10-06 round 2) is applied in v0.3 and overrides v0.2 text; it changes items 4, 5 and 7 and adds item 8:
+**Round 3 (v0.4, decisions log 2026-10-06 round 3) overrides the round-2 items below where they conflict:**
+
+R3-1. **Mature content is on by default and acceptable unless any player at the table opts out.** Not explicit: innuendo and allusion are fine, subject to the configured endpoint's rules; explicit sexual content stays out of scope; the hard floor on sexual content involving minors is unchanged and non-configurable. Any one player's opt-out disables mature for the table. Players see the table's content settings at join and can opt out before play and mid-session. The host no longer needs to opt in. Per-player lines/veils and pause stay. Mature (the default) carries over on host transfer. Rewritten: §3.7 tiers, US-X1, US-X2, US-P3, US-P6, R-S1/R-S3 wording, A18, A26, A28, Q18, metrics, risks, test matrix, phasing. Q26 is closed (most-restrictive-wins confirmed).
+R3-2. **Age attestation is a birthdate entry at registration** (18+ computed). Under-18 is refused and nothing is kept for them. Stored data is the adult flag plus check date, not the birthdate, unless sage's architecture says otherwise (architect to confirm and flag). US-A1, A29, R-S5, §9 privacy text updated.
+R3-3. **No scope cuts.** MVP keeps all 12 SRD classes and adventures #1-#3, authored plus stretch procedural maps, local-model fallback modes; timeline about 23 weeks per architecture.md v0.3 §11. No cut-list language remains.
+
+Round 1 and 2 decisions: Human decisions applied (authoritative). Round 1 (items 1–7) was applied in v0.2. Round 2 (decisions log, 2026-10-06 round 2) is applied in v0.3 and overrides v0.2 text; it changes items 4, 5 and 7 and adds item 8:
 
 1. **Rules base is SRD 5.2.1** (2024 rules, CC-BY-4.0). v0.1's "5.1 vs 5.2" question is closed. "Race" wording becomes "species"; character creation follows the 5.2.1 sequence.
 2. **LLM endpoint is operator-configurable** (base URL, model, key; OpenAI-compatible and Anthropic API styles; self-hosted/local allowed). Vendor-specific cost caps ($1.50/party session, $0.60/solo hour) are removed; cost is metered generically (§9.2). Latency targets are now per-endpoint baselines.
 3. **Accounts are required.** Guest-only MVP is gone: registration, login, device-session management, account export and deletion are P0 (§3.0). Every seat, host and spectator is an account.
 4. **Minimum age 18+** (round 2). Age attestation at registration, minimal data. Removed from MVP: the under-18 account tier, the verified-adult tier, parent-contact collection, the consent flow and its launch-blocking question, and all related status and table logic (US-A5, US-A5b, US-A6 deleted; ids not reused). A consent-based younger-audience option is one labeled item under Later roadmap (§10.1).
-5. **Mature content: off by default, host opt-in per table, per-player settings and pause** (round 2; §3.7). The non-configurable hard floor on sexual content involving minors stays.
+5. ~~Mature content: off by default, host opt-in~~ **Superseded by round 3 (R3-1):** mature is on by default unless any player opts out; per-player settings and pause stay; the non-configurable hard floor on sexual content involving minors stays.
 6. **Log retention is 30 days** (§9.4, A4). Scope of "log" is an assumption [A24] and an open question [Q23].
 7. **Combat is a visual tabletop**: a battle map with miniature tokens and terrain/set pieces (§3.5, §4.4). Replaces theater-of-mind/range bands (old A5) and the "no grid / no battle map" non-goal. **Round 2:** the 2D top-down grid map is the first-release view [A19]; 3D/isometric view and import of user STL/GLB minis and 3D-printed terrain are Later roadmap only (§10.1).
 8. **Legal/compliance questions are deferred** to a parking-lot list (§13, Deferred legal/compliance), not milestone gates. SRD CC-BY attribution stays an MVP requirement (§8).
 
-Derived changes: personas (miniatures hobbyist added; no under-18 personas); stories US-A1 (attestation), US-O1, US-B4–B7, US-X2 (host opt-in, personal limits, pause), US-M1; map accessibility and rendering NFRs (§9.1, §9.3); report-a-message (R-S6) raised from P1 to P0 because tables run open-ended text between strangers; "simple tactical grid" removed from Phase 2 (now MVP); "account claiming" removed from Phase 2 (accounts are day one); success metrics (map performance, mature-gate integrity); assumptions (three age-tier assumptions retired, A28 and A29 added); open questions per §13 (new Q26; closed Q2, Q3, Q5 and the two age/verification questions; legal items parked).
+Derived changes: personas (miniatures hobbyist added; no under-18 personas); stories US-A1 (attestation), US-O1, US-B4–B7, US-X2 (default-on mature, any-player opt-out, personal limits, pause), US-M1; map accessibility and rendering NFRs (§9.1, §9.3); report-a-message (R-S6) raised from P1 to P0 because tables run open-ended text between strangers; "simple tactical grid" removed from Phase 2 (now MVP); "account claiming" removed from Phase 2 (accounts are day one); success metrics (map performance, mature-gate integrity); assumptions (three age-tier assumptions retired, A28 and A29 added); open questions per §13 (new Q26; closed Q2, Q3, Q5 and the two age/verification questions; legal items parked).
 
 Downstream docs now stale (outside this file's write scope): `architecture.md` and ADRs that assume range bands/no grid, guest identity, a single LLM vendor, or $-based caps; `reuse-audit.md` §2.2 and §2.9 call a grid/battle map out of scope. Any doc that mentions the age tiers or the consent flow is also stale. Needs a follow-up pass.
 
@@ -56,8 +62,8 @@ Format: story, then acceptance criteria (AC). All AC are testable.
 ### 3.0 Accounts and age attestation
 
 **US-A1 (P0) Register.** As a new user, I create an account.
-- AC1: Registration needs email, password, display name, and an attestation checkbox (unticked by default): "I am 18 or older". No date of birth or other age data is collected [A29]. Password policy: ≥ 10 characters and not on a breached-password list [A3].
-- AC2: Registration is impossible without the attestation; the Terms state the 18+ minimum. The attestation (value, timestamp, Terms/Privacy version) is stored as a record keyed to the account, so a later age or consent flow can extend it without a schema rewrite (§10.1).
+- AC1: Registration needs email, password, display name, and a birthdate entry (age attestation); 18+ is computed from it. Under-18 registrations are refused with a neutral message and nothing is kept for them (no account, no birthdate, no flag) [A29]. Password policy: ≥ 10 characters and not on a breached-password list [A3].
+- AC2: Registration is impossible without a birthdate that computes to 18+; the Terms state the 18+ minimum. For accepted users the stored record is the adult flag, check date and Terms/Privacy version, keyed to the account; the birthdate itself is not retained unless sage's architecture decides otherwise [A29], so a later age or consent flow can extend it without a schema rewrite (§10.1).
 - AC3: Email verification link expires after 24 h; unverified accounts cannot host or join tables.
 - AC4: Current Terms and Privacy Notice versions accepted at signup are recorded with a timestamp (with the attestation, AC2).
 - AC5: Registration and login endpoints are rate-limited per IP and per email; responses never reveal whether an email is already registered.
@@ -116,12 +122,12 @@ Format: story, then acceptance criteria (AC). All AC are testable.
 
 **US-P5 (P0) Drop in/out.** As a player, I can disconnect/rejoin without breaking the table.
 - AC1: Disconnect > 30 s flags the PC "away" and the DM auto-runs it per §6.3; rejoin restores control within 2 s of reconnect.
-- AC2: A new player can join mid-session at a safe point (§6.4), subject to the mature-content rule (US-X2).
+- AC2: A new player can join mid-session at a safe point (§6.4), subject to the mature-content rule (US-X2: a late joiner sees the table settings and can opt out first).
 
 **US-P6 (P0) Host controls.** As Harper, I can manage the table.
 - AC1: Host can pause/resume, kick, mute a player, transfer host, end the table, change safety settings (§3.7), and set turn-timer mode.
 - AC2: Kicked player cannot rejoin with the same link without host re-invite.
-- AC3: If host disconnects > 2 min, host role auto-transfers to the longest-connected player (configurable off); mature content is switched off until the new host opts in again (US-X2).
+- AC3: If host disconnects > 2 min, host role auto-transfers to the longest-connected player (configurable off); the table's mature setting carries over unchanged to the new host (US-X2).
 
 ### 3.3 Character
 
@@ -206,21 +212,21 @@ Format: story, then acceptance criteria (AC). All AC are testable.
 
 ### 3.7 Safety and content
 
-Content tiers: **Family** (no graphic violence, no romance beyond hints), **Standard fantasy** (SRD-style combat violence, non-graphic; default) and **Mature** (off by default, host opt-in; scope in A18, [Q18]).
+Content tiers: **Family** (no graphic violence, no romance beyond hints), **Standard fantasy** (SRD-style combat violence, non-graphic) and **Mature** (**default**; not explicit, innuendo and allusion allowed subject to the endpoint's rules; scope in A18, [Q18]). Mature is the starting tier for every new table unless any player at the table opts out (US-X2); the host may also pick a lower tier.
 
 **US-X1 (P0) Content settings.** Host sets content boundaries at lobby.
-- AC1: Options: tone (Family / Standard fantasy / Mature if the host opts in per US-X2), hard-blocked topics (sexual content involving minors always blocked and non-configurable), violence level within the tier, lines/veils list as free text.
+- AC1: Options: tone (Mature default / Standard fantasy / Family; Mature is capped by any player's opt-out per US-X2), hard-blocked topics (sexual content involving minors always blocked and non-configurable), violence level within the tier, lines/veils list as free text.
 - AC2: Any player can trigger an anonymous **"X-card"** that makes the DM immediately steer away without explanation; effect visible in next DM turn.
 - AC3: Settings are injected into every DM generation call and checked by an output filter (§7.6) that does not depend on the DM model.
 
-**US-X2 (P0) Mature content: host opt-in, personal limits, pause.** As Harper, I can opt my table into mature content; as any player, I keep control of my own limits.
-- AC1: **Default is off** for every new table. Mature is enabled only by an explicit host opt-in in the lobby or host controls, shown with a short notice that all participants are attested 18+ but can set personal limits.
-- AC2: **Effective mature = host opt-in ON ∧ no seated player or spectator has "mature: not for me" set** [A28]. Evaluated server-side at lobby start, on every join/reconnect and on every change to either input. The effective value (not the toggle) is what is injected into DM calls and the output filter.
-- AC3: The invite page and lobby show "Mature content: on/off" before anyone joins; joining a table with mature on needs a one-click acknowledgment. Personal settings are never shown to other players by name; the table sees a neutral banner when effective mature changes.
-- AC4: **Per-player settings:** each player has personal lines/veils (free text, enforced as blocked topics for the whole table, union across players) and a "mature: not for me" switch, changeable at any time including mid-game; effect from the next DM turn.
+**US-X2 (P0) Mature content: default on, any-player opt-out, personal limits, pause.** As any player, I see the table's content settings before I play and can opt out; as Harper, I need no opt-in.
+- AC1: **Default is Mature (on, not explicit)** for every new table; the host does not opt in. Explicit sexual content is out of scope in every tier; innuendo and allusion are allowed, subject to the configured endpoint's rules.
+- AC2: **Effective mature = table default on ∧ no seated player or spectator has "mature: not for me" set** [A28]. Any one opt-out disables mature for the whole table (shared scene). Evaluated server-side at lobby start, on every join/reconnect and on every change. The effective value is what is injected into DM calls and the output filter.
+- AC3: **Disclosure and opt-out at join:** the invite page and lobby show the table content settings (tier, "Mature content: on/off", lines/veils, X-card/pause) before anyone joins; joining needs a one-click acknowledgment with the "mature: not for me" switch on the same screen, so a player can opt out before play. Personal settings are never shown to other players by name; the table sees a neutral banner when effective mature changes.
+- AC4: **Per-player settings:** each player has personal lines/veils (free text, enforced as blocked topics for the whole table, union across players) and the "mature: not for me" switch, changeable at any time including mid-session; effect from the next DM turn.
 - AC5: **Pause:** any participant can pause the table at any time (button and key) without explanation; generation stops after the in-flight turn, and the table resumes when the pausing player or the host resumes. Complements the X-card (US-X1 AC2); both take effect next generation (R-S4).
-- AC6: If effective mature becomes false mid-game, content drops to the highest non-mature tier on the next DM turn and a neutral banner is shown.
-- AC7: Audit test: across a generated matrix of ≥ 200 combinations (host opt-in, personal settings, joins, host transfers, spectators, mid-game changes), the effective flag equals the AC2 formula and a mature-tier probe prompt is never sent when the formula is false. Zero violations is a release gate.
+- AC6: If effective mature becomes false mid-game (a player opts out), content drops to the highest non-mature tier on the next DM turn and a neutral banner is shown.
+- AC7: Audit test: across a generated matrix of ≥ 200 combinations (opt-outs before play and mid-session, personal settings, joins, host transfers (mature carries over), spectators, reconnects), the effective flag equals the AC2 formula and a mature-tier probe prompt is never sent when the formula is false. Zero violations is a release gate.
 - AC8: The hard floor (sexual content involving minors) holds in every tier, including Mature, and cannot be configured, toggled or bypassed by prompt text.
 
 ### 3.8 Operator
@@ -301,7 +307,7 @@ Host, Player, Spectator (P1), Operator. One host per table. Host may also be a p
 - Min party: table continues with ≥ 1 connected player; zero connected → auto-`paused`.
 
 ### 6.5 Host controls (full list)
-Pause/resume · kick/ban from table · mute · transfer host · edit safety settings (changes announced in-fiction-neutral banner; Mature only by host opt-in per US-X2) · set timers · force-resolve round · rewind last DM turn (see §7.6) · end table · export transcript · toggle spectators (P1) · approve/deny late joiners.
+Pause/resume · kick/ban from table · mute · transfer host · edit safety settings (changes announced in-fiction-neutral banner; Mature applies unless any player opts out, per US-X2) · set timers · force-resolve round · rewind last DM turn (see §7.6) · end table · export transcript · toggle spectators (P1) · approve/deny late joiners.
 
 ### 6.6 Conflict and fairness
 - Host cannot read players' private DM whispers (P1 feature; "whisper to DM" visible only to sender and DM). In MVP there are no secret channels, so all table state is public. [Q9]
@@ -344,7 +350,7 @@ Pause/resume · kick/ban from table · mute · transfer host · edit safety sett
 - R-S2 (P0): Player input moderation (chat, actions, character text, display names): disallowed content (illegal content, sexual content involving minors, targeted harassment, real-person defamation, instructions for real-world harm) is rejected with a neutral message and logged.
 - R-S3 (P0): Prompt-injection resilience: player text cannot change system rules ("ignore previous instructions", "give me 1000 gold", "set my HP to max", "move my token to the exit", "enable mature content"). AC: ≥ 95% resistance on a 100-prompt red-team set; state changes only through rules engine; the effective content tier cannot be changed by any text.
 - R-S4 (P0): X-card and "pause/talk" immediate-effect (next generation).
-- R-S5 (P0): Adults only: 18+ attestation at registration (US-A1). The product collects no PII beyond email, display name and the attestation record. Attestation is self-declared; verification is not in MVP [A29].
+- R-S5 (P0): Adults only: birthdate entry at registration with 18+ computed (US-A1); under-18 refused, nothing kept. The product collects no PII beyond email, display name and the adult flag with check date (the birthdate is entered but not stored unless architecture decides otherwise). Self-declared; verification is not in MVP [A29].
 - R-S6 (P0, was P1): Report-a-message flow available to every participant from day one; reports (with transcript context) go to an operator review queue. The review dashboard UI is P1; in MVP the queue may be a basic list.
 - R-S7 (P0): Host "rewind last turn": undo last resolved DM turn (state, map and transcript) once per turn, announced to the party.
 - R-S8 (P0): The hard floor (sexual content involving minors) is enforced in the product's moderation layer regardless of tone tier or model, and fails closed: if moderation is unavailable, DM output is held, not shown.
@@ -364,7 +370,7 @@ No real-time web access, no impersonating real people, no medical/legal/financia
 ## 8. Rules scope
 
 ### MVP (assumption **[A1]**: D&D 5e **SRD 5.2.1** only)
-- Content: the SRD 5.2.1 species, classes at levels 1–5 (all SRD 5.2.1 base classes with the one SRD subclass each), SRD 5.2.1 backgrounds, equipment, spells (levels 0–3 in MVP), monsters (CR ≤ 5), conditions, SRD magic items (common/uncommon subset). Exact counts are to be read from the 5.2.1 text, not from this spec.
+- Content: the SRD 5.2.1 species, classes at levels 1–5 (all 12 SRD 5.2.1 base classes, none cut, with the one SRD subclass each), SRD 5.2.1 backgrounds, equipment, spells (levels 0–3 in MVP), monsters (CR ≤ 5), conditions, SRD magic items (common/uncommon subset). Exact counts are to be read from the 5.2.1 text, not from this spec.
 - Adventures: 3 pre-authored short adventures (2–3 hr each) using original (non-WotC) settings and names, each with structured encounter maps (US-M1), plus freeform AI-generated one-shot using catalog maps.
 - Rules excluded from MVP: multiclassing, feats beyond SRD, crafting, downtime, mounted/vehicle combat, siege, optional/variant rules, levels 6+, fog of war and dynamic lighting, flying/3D vertical positioning (elevation is abstracted).
 
@@ -429,9 +435,9 @@ Narration streams token-by-token; rules/dice results display before narration co
 
 ### 9.5 Reliability, security, privacy, compatibility
 - Availability target 99.5% monthly (MVP). Single-table failure must not affect others. Autosave per §3.6.
-- Authz: only seat owners control their PC and token; server is authoritative; all state mutations server-validated; every request is bound to an authenticated account in an allowed state (`active`); mature opt-in and personal limits are evaluated server-side only.
+- Authz: only seat owners control their PC and token; server is authoritative; all state mutations server-validated; every request is bound to an authenticated account in an allowed state (`active`); mature opt-out and personal limits are evaluated server-side only.
 - Account security: passwords hashed with a modern adaptive algorithm; email verification; login throttling; device-session revocation; MFA and OAuth are P1 [Q25].
-- Privacy: collect minimum data (email, display name, 18+ attestation record); transcripts and chat are stored to enable play and expire per §9.4; disclose that content is sent to the operator-configured AI endpoint and which class it is (R-L5); the product does not itself use player content for model training and the operator is responsible for the configured provider's data terms; support export and delete (US-A4); privacy notice drafted for launch; counsel review and privacy-law specifics are parked in §13 (Deferred legal/compliance).
+- Privacy: collect minimum data (email, display name, adult flag plus check date; the birthdate is used to compute the flag and is not retained unless architecture decides otherwise; nothing is kept for refused under-18 registrants); transcripts and chat are stored to enable play and expire per §9.4; disclose that content is sent to the operator-configured AI endpoint and which class it is (R-L5); the product does not itself use player content for model training and the operator is responsible for the configured provider's data terms; support export and delete (US-A4); privacy notice drafted for launch; counsel review and privacy-law specifics are parked in §13 (Deferred legal/compliance).
 - Browsers: latest 2 versions of Chrome, Firefox, Safari, Edge; responsive down to 360 px width (phone play supported incl. the 2D map; desktop optimized).
 - Concurrency target for MVP: 200 concurrent tables (≤ 1,200 connected users) [A13].
 - Localization: English only in MVP.
@@ -442,7 +448,7 @@ Narration streams token-by-token; rules/dice results display before narration co
 
 | Phase | Contents |
 |---|---|
-| **MVP (P0)** | Accounts (register, login, device sessions, export, deletion); 18+ age attestation at registration; mature content off by default with host opt-in, per-player limits and pause; SRD attribution page; operator LLM endpoint configuration and generic metering; solo + party 2–6 with invites; guided SRD 5.2.1 character creation (L1–5); collect-then-resolve turns; **2D top-down battle map with miniature tokens and first-party terrain/set-piece catalog; engine-owned movement, range, cover, areas;** keyboard/text map alternatives; rests; autosave/resume; server dice; rules engine; DM narration + memory registry; safety (settings, X-card, independent input/output moderation, report-a-message, rewind); host controls; 3 original adventures with structured maps + freeform using catalog maps; WCAG 2.2 AA; 30-day log retention job; analytics. |
+| **MVP (P0)** | Accounts (register, login, device sessions, export, deletion); birthdate-based 18+ check at registration; mature content default-on (not explicit) with any-player opt-out, per-player limits and pause; all 12 SRD classes; SRD attribution page; operator LLM endpoint configuration and generic metering; solo + party 2–6 with invites; guided SRD 5.2.1 character creation (L1–5); collect-then-resolve turns; **2D top-down battle map with miniature tokens and first-party terrain/set-piece catalog; engine-owned movement, range, cover, areas;** keyboard/text map alternatives; rests; autosave/resume; server dice; rules engine; DM narration + memory registry; safety (settings, X-card, independent input/output moderation, report-a-message, rewind); host controls; 3 original adventures with structured maps + freeform using catalog maps; WCAG 2.2 AA; 30-day log retention job; analytics. |
 | **Phase 2 (P1)** | exploration scene maps; MFA/OAuth; free-flow input mode; spectators (subject to the mature gate); whispers; TTS narration; character import/export; operator moderation dashboard; style presets; lore Q&A; levels 6–8; scene illustrations (pre-generated, license-checked). |
 | **Phase 3 (P2)** | persistent multi-session campaigns with calendar/scheduling; voice input; fog of war / dynamic lighting; homebrew content within SRD framework; adventure authoring tools; licensed/partner content; native apps; monetization. |
 | **Later roadmap** (unscheduled) | Listed in §10.1: 3D/isometric view; import of user STL/GLB models; custom token and map upload/editor; consent-based younger-audience option. |
@@ -454,7 +460,7 @@ Nothing here is in the MVP or dated. Each item needs its own spec pass, and the 
 - **L1 3D/isometric view** (was US-M2). Toggle the same combat between 2D top-down and 3D/isometric views of one authoritative state; rules and keyboard/text alternatives (US-B6) identical in both; first-party stock models; automatic 2D fallback if WebGL2 is missing or performance misses §9.1.
 - **L2 User-supplied minis and printed sets** (was US-M3). Upload STL/GLB: validated and sandboxed server-side (format, ≤ 25 MB, triangle budget with auto-decimation, no external references); scale normalized (1-inch base = one 5-ft square); private to the uploader's tables, moderated before others see them, reportable and removable; uploader attests rights. Gated on Q19, Q20.
 - **L3 Custom token image upload; custom map upload/editor.** Gated on Q19, Q20, Q21.
-- **L4 Parental consent and a 13-17 audience.** Not in MVP. The only MVP hook is the stored attestation record (US-A1 AC2). A later spec would cover: lowering the minimum age, a verifiable consent mechanism, guardian revoke/delete/export, minor-safe table rules (locked non-mature, strictest moderation) and re-consent. Prerequisites: counsel review and a choice of consent mechanism. No minor-specific states, tables or data fields are built now.
+- **L4 Parental consent and a 13-17 audience.** Not in MVP. The only MVP hook is the stored adult-flag record (US-A1 AC2); a later spec would decide whether to retain birthdates. A later spec would cover: lowering the minimum age, a verifiable consent mechanism, guardian revoke/delete/export, minor-safe table rules (locked non-mature, strictest moderation) and re-consent. Prerequisites: counsel review and a choice of consent mechanism. No minor-specific states, tables or data fields are built now.
 
 ---
 
@@ -476,7 +482,7 @@ Nothing here is in the MVP or dated. Each item needs its own spec pass, and the 
 | Map frame-rate attainment on reference devices (§9.1) | ≥ 95% of combat sessions meet target (client-reported p50 fps) |
 | Safety: X-card use leading to successful redirect | ≥ 98% |
 | Safety: moderation false negatives on red-team set | ≤ 5% (hard-floor category: 0 on the red-team set) |
-| Mature-gate integrity: tables with effective mature on while the host opt-in is off or any participant's "not for me" is set | **0** (audit job over all tables) |
+| Mature-gate integrity: tables with effective mature on while any participant's "not for me" is set | **0** (audit job over all tables) |
 | Retention compliance: items older than 30 days + 24 h in log stores | 0 (daily check) |
 | Latency SLO attainment (§9.1, against the configured endpoint's baseline) | ≥ 95% of turns |
 | Metering coverage: DM turns with a recorded usage entry | ≥ 99%; share of tables under the operator budget (when set) ≥ 90% |
@@ -487,8 +493,8 @@ Nothing here is in the MVP or dated. Each item needs its own spec pass, and the 
 
 - LLM endpoint cost/latency/outage and model-behavior drift; large quality spread across configurable models. Mitigation: endpoint abstraction, per-endpoint qualification evals, fallback endpoint/slot, metering.
 - Self-hosted or permissive models may emit unsafe content. Mitigation: independent moderation pass that fails closed (R-S1, R-S8), hard floor in product code.
-- Underage users despite the 18+ attestation (self-declared; no verification in MVP). Mitigation: Terms state 18+, minimal data, report-a-message (R-S6), hard floor in product code, removal on discovery; verification options are parked in §13.
-- Mature-content setting errors (race on join, stale personal setting). Mitigation: server-side evaluation on every join/transfer, matrix test as release gate (US-X2 AC7).
+- Underage users despite the 18+ attestation (self-declared; no verification in MVP). Mitigation: birthdate check at registration, Terms state 18+, minimal data, report-a-message (R-S6), hard floor in product code, removal on discovery; verification options are parked in §13.
+- Mature-content setting errors (race on join, stale personal setting) and default-on exposure (a player misses the disclosure). Mitigation: settings shown at join before play, one-click opt-out, server-side evaluation on every join/transfer, matrix test as release gate (US-X2 AC7).
 - Hallucinated rules or non-SRD content. Mitigation: rules engine ownership + allow/deny lists.
 - Map/engine complexity (pathfinding, cover, AoE) and client rendering performance on phones. Mitigation: bounded map size, geometry test suite, low-graphics fallback.
 - Later roadmap: user-uploaded 3D models carry IP, malware (file parsing), and abusive-content risks; see §13 Deferred legal/compliance (Q19, Q20) before scheduling.
@@ -499,7 +505,7 @@ Nothing here is in the MVP or dated. Each item needs its own spec pass, and the 
 
 ## 13. Open questions and decisions for the human (prioritized)
 
-Closed since v0.1: Q2 (provider/budget → configurable endpoint, generic metering), Q3 (accounts → required), Q5 (combat → battle map). Closed in round 2: the age/consent question (minimum age 18+; consent-based younger audience is Later roadmap L4), the adult-verification question (no verification tier), and the 3D/own-model timing question (both are Later roadmap, §10.1). Narrowed: Q1 (SRD version decided; attribution is an MVP requirement; legal review and naming parked), Q4 (min age and retention decided), Q21 (first release is 2D, no uploads), Q23 (design scope only; legal holds parked).
+Closed in round 3: Q26 (any player's opt-out disables mature for the table, confirmed), and the host-opt-in/host-transfer-reset questions (mature is default-on and carries over). Closed since v0.1: Q2 (provider/budget → configurable endpoint, generic metering), Q3 (accounts → required), Q5 (combat → battle map). Closed in round 2: the age/consent question (minimum age 18+; consent-based younger audience is Later roadmap L4), the adult-verification question (no verification tier), and the 3D/own-model timing question (both are Later roadmap, §10.1). Narrowed: Q1 (SRD version decided; attribution is an MVP requirement; legal review and naming parked), Q4 (min age and retention decided), Q21 (first release is 2D, no uploads), Q23 (design scope only; legal holds parked).
 
 **Blockers (need answer before build starts)**
 1. **[Q24] Moderation classifier:** which classifier (separate configured endpoint vs built-in) provides the independent moderation pass (R-S1, R-S8). The fail-closed requirement is fixed; the choice is open.
@@ -510,10 +516,9 @@ Closed since v0.1: Q2 (provider/budget → configurable endpoint, generic meteri
 4. **[Q8] Dice fudging / fail-forward:** should the AI DM ever soften outcomes (hidden fudging), or strict honest dice only (assumed; fail-forward only for narrative stakes, never altering rolls)?
 5. **[Q9] Private info:** do we need DM whispers/secret rolls (e.g., Perception, hidden info) in MVP or after?
 6. **[Q10] Quality bar and eval:** who owns the rules/consistency/geometry eval sets, and what is the minimum pass rate that qualifies an endpoint for production?
-7. **[Q18] Scope of "mature":** assumed graphic violence/gore, horror, dark themes, strong language and non-explicit romantic themes; explicit sexual content not offered [A18]. Confirm, or define otherwise.
+7. **[Q18] Scope of "mature":** decided round 3: default on, not explicit; innuendo/allusion allowed subject to the endpoint's rules; explicit sexual content out of scope [A18]. Remaining: exact wording of the DM-facing tier prompt and endpoint-rule handling.
 8. **[Q21] Map authoring and source of maps:** assumed first-party structured maps and catalog templates picked by the DM, no uploads and no AI-generated images in MVP [A19]. Alternatives: AI-generated map images (needs a vision step to derive walls/cover, plus model licensing), procedural dungeon generator, user-drawn maps (Later roadmap). Who creates the art and set-piece catalog, and under what license?
 9. **[Q23] Retention scope:** does 30 days cover only operational/safety logs and raw transcripts (assumed [A24]) or also game state and summaries?
-10. **[Q26] Per-player mature limit:** assumed most-restrictive-wins: any player's "mature: not for me" turns effective mature off for the table [A28]. Alternatives: that player sits out mature scenes, or leaves. Confirm.
 
 **Nice to decide**
 11. **[Q11]** Pre-authored adventure themes/tone for the 3 MVP adventures; original setting name/lore.
@@ -552,7 +557,7 @@ Not launch blockers and not milestone gates (human decision, round 2). Revisit w
 - **A13** MVP concurrency 200 tables.
 - **A14** English only.
 - **A15** The AI DM is the only DM; humans do not take over the DM role.
-- **A18** *(new)* "Mature" covers graphic violence/gore, horror, dark themes, strong language, and non-explicit romantic themes; explicit sexual content is not offered. The hard floor on sexual content involving minors applies in every tier. Open: Q18.
+- **A18** *(round 3)* "Mature" is the default tier: graphic violence/gore, horror, dark themes, strong language, and non-explicit romantic or sexual themes (innuendo and allusion), subject to the configured endpoint's rules; explicit sexual content is out of scope. The hard floor on sexual content involving minors applies in every tier. Open: Q18.
 - **A19** *(new)* MVP maps are structured data (grid + catalog objects), authored first-party or picked from catalog templates; MVP tokens and terrain are first-party/CC0 2D assets with a license manifest; no user uploads and no AI-generated map images in MVP. Open: Q21.
 - **A20** *(new)* The first release is 2D top-down only. 3D/isometric view and import of user-supplied STL/GLB and 3D-printed set models are Later roadmap (§10.1), gated on the deferred legal and moderation questions.
 - **A21** *(new)* MVP map limits: ≤ 50 × 50 squares, ≤ 40 tokens, ≤ 200 terrain objects; elevation abstracted.
@@ -560,9 +565,9 @@ Not launch blockers and not milestone gates (human decision, round 2). Revisit w
 - **A23** *(new)* Reference devices: a ~2020 laptop with integrated GPU and a ~2022 mid-range phone with ~4 GB RAM.
 - **A24** *(new)* "Logs" (30-day rule) = server/app logs, moderation records, raw LLM request/response logs, chat and raw transcripts, auth/security events. Game state, summaries, registry, account and age-attestation records are not logs. Open: Q23.
 - **A25** *(new)* Account deletion: immediate lock-out; purge from live stores ≤ 30 days; backups purge on a ≤ 30-day cycle; PCs in others' tables become anonymized NPCs; owned tables transfer host or archive.
-- **A26** *(new)* Spectators count as participants for the mature content rule (US-X2): their personal settings apply.
-- **A28** *(new, round 2)* Personal limits apply table-wide because the scene is shared and the DM narrates once: lines/veils are unioned, and any player's "mature: not for me" lowers the effective tier (most restrictive wins). Open: Q26.
-- **A29** *(new, round 2)* Self-attestation of 18+ is sufficient for the MVP: no age verification, no date of birth. The attestation record is the only age data stored.
+- **A26** *(new)* Spectators count as participants for the mature content rule (US-X2): their opt-out disables mature for the table, and they see the table settings at join.
+- **A28** *(new, round 2)* Personal limits apply table-wide because the scene is shared and the DM narrates once: lines/veils are unioned, and any player's "mature: not for me" lowers the effective tier (most restrictive wins; confirmed round 3, Q26 closed). Mature is default-on with no host opt-in and carries over on host transfer.
+- **A29** *(new, round 2)* Self-declared birthdate at registration is sufficient for the MVP: 18+ is computed, under-18 is refused with nothing kept, and no verification is performed. Stored: adult flag plus check date, unless sage's architecture says otherwise (to confirm and flag).
 
 ## 15. Self-consistency checklist (verified by reading and by grep, not executed)
 
@@ -572,6 +577,6 @@ Not launch blockers and not milestone gates (human decision, round 2). Revisit w
 - Levels 1–5 consistent across §4.2, §7.4, §8, A6; spells ≤ level 3 matches L5 casters.
 - Safety: hard floor on sexual content involving minors consistent across US-X1, US-X2 AC8, R-S2, R-S8, A18.
 - Dice authority is server-side in US-E2, R-D1, §7.1; map geometry authority is engine-side in US-B5, US-B7, §7.1, R-R1, R-N5.
-- Mature rule is stated once (US-X2 AC2) and referenced from US-P6 AC3, §6.5, A26, A28.
+- Round-3 grep (off by default, opt-in, opts in, host transfer, checkbox, attestation) leaves only superseded-note, birthdate-attestation and carry-over hits. Mature rule is stated once (US-X2 AC2) and referenced from US-P6 AC3, §6.5, A26, A28.
 - Retention: 30 days stated in §9.4 and A4/A24; resume and recap rely on summaries and registry (US-S3, R-M2, R-M4), not raw transcripts.
 - Round-2 grep for the retired age/consent/verification terms and ids: the only remaining hits are L4 (§10.1, Later roadmap). Earlier stale-term grep (guest, theater-of-mind, range band, Anthropic, $1.50, $0.60, no grid, SRD 5.1) still holds: hits are the change log, non-goals, the Anthropic API-style option, and "ranged-attack range bands" in US-B7. Not verified: cost, latency, fps and success-metric thresholds are targets, not measurements; SRD 5.2.1 specifics (counts, encounter guidance, diagonal rule, creation order) must be read from the 5.2.1 text; legal statements are not legal advice.

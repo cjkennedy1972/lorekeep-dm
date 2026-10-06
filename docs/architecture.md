@@ -1,25 +1,25 @@
 # Architecture: AI Dungeon Master web game (working title "Lorekeep-DM")
 
-Status: Draft v0.3 · 2026-10-06 · Author: Sage (Software Architect) · Inputs: `spec.md` v0.1, `research.md`, `reuse-audit.md`, human decisions of 2026-10-06 (rounds 1 and 2; round 2 is authoritative)
+Status: Draft v0.4 · 2026-10-06 · Author: Sage (Software Architect) · Inputs: `spec.md` v0.1, `research.md`, `reuse-audit.md`, human decisions of 2026-10-06 (rounds 1-3; newest round is authoritative)
 Scope: design only, no code. ADRs in `adr/` (one decision each). Spec refs are `§`/`R-`/`US-`/`[A#]`/`[Q#]`.
 Unverified items are marked **[unverified]**: nothing here has been built, benchmarked, or load-tested.
 
 ## Changes since v0.1
 
-Human decisions applied (all authoritative): SRD 5.2.1 confirmed; configurable LLM endpoint; accounts required; round 2 (2026-10-06) overrides parts of v0.2: **18+ minimum with age attestation**, mature content opt-in per table, 2D top-down map first with 3D later, legal/compliance items deferred to a parking lot; 30-day log retention; configurable LLM endpoint.
+Human decisions applied (all authoritative): SRD 5.2.1 confirmed; configurable LLM endpoint; accounts required; round 2 (2026-10-06) overrides parts of v0.2: **18+ minimum with age attestation**, mature content (superseded by round 3), 2D top-down map first with 3D later, legal/compliance items deferred to a parking lot; 30-day log retention; configurable LLM endpoint.
 
 | # | Change | Where | ADR |
 |---|---|---|---|
 | 1 | SRD 5.2.1 confirmed (D1 closed; legal review still open) | §7 | 008 (Accepted) |
 | 2 | LLM provider is an operator-configured adapter per tier (`fast`/`frontier`): OpenAI-compatible and Anthropic-style dialects, local models; tool-call capability probe and four fallback modes; **prompt caching is optional** | §8, §9, §16 | 013, 009 (revised) |
 | 3 | **Guest identity removed.** Accounts required (email+password, argon2id, server-side sessions); export and deletion; Room actor model unchanged, identity is `accountId` | §1, §5, §14 | 014; 011 Superseded |
-| 4 | **v0.3:** minimum age 18+, age attestation at registration (DOB or checkbox, minimal data); under-18 refused. Parental consent and a 13-17 audience are a later-roadmap extension point only: no consent flows, guardian entities, `pending_consent` state, or minors' restrictions in MVP | §14 | 015 (retitled) |
-| 5 | **v0.3:** content tiers `family/standard/mature`; mature off by default, host opt-in per table, per-player lines/veils and pause; hard floor unchanged; verified-adult and minor-table-lock predicate removed | §6, §14.3 | 016, 007 (amended) |
+| 4 | **v0.3/v0.4:** minimum age 18+, age attestation by **birthdate entry** at registration (round 3; 18+ computed server-side; store only adult flag + check date, DOB discarded: **human to confirm**); under-18 refused. Parental consent and a 13-17 audience are a later-roadmap extension point only: no consent flows, guardian entities, `pending_consent` state, or minors' restrictions in MVP | §14 | 015 (retitled) |
+| 5 | **v0.4 (round 3):** content tiers `family/standard/mature`; **mature is the default, off only if any seated player opts out** (live, re-evaluated each round open and before each narration; carries over on host transfer); not explicit; per-player lines/veils/pause kept; hard floor unchanged; `endpoint_allows_mature` degrade path | §6, §14.3 | 016, 007 (amended) |
 | 6 | 30-day log retention, nightly deletion jobs, account-deletion pipeline | §5, §14 | 017 |
 | 7 | **Combat is a tactical grid map.** Range bands and theater-of-mind removed. Rules-engine-owned map model, 2D canvas renderer, accessibility alternatives, map sources, later 3D and STL/GLB import | §2.4, §3, §15 | 018-021; 005 (amended) |
 | 8 | Cost and latency re-derived **without** caching; the $1.50/$0.60 figures are operator-configurable budgets, not product requirements (reference estimate about $1.8-2.2 per party session) | §9 | 009 |
 | 9 | New event types, schema fields, tools | §3, §5 | 018 |
-| 10 | **v0.3 build plan: about 23 weeks** (v0.2 was about 26); cut list brings it to about 19-20 | §11 | |
+| 10 | **Build plan: about 23 weeks**, full scope kept (round 3: no scope cuts; §11.1 cut list declined by human, reference only) | §11 | |
 | 11 | **v0.3:** legal/compliance items (upload IP, upload moderation, privacy-law specifics, trademark) parked in §17, not milestone gates; SRD CC-BY attribution stays an MVP requirement | §7, §17 | 008, 020, 021 |
 | 12 | **v0.3:** 3D/isometric view and STL/GLB import is a later-phase sketch only (ADR-021), no milestone work | §15 | 021 |
 
@@ -81,7 +81,7 @@ flowchart LR
 | `identity` | `signup/login/logout`, `export`, `delete` | Password hashing, sessions, age attestation (ADR-014/015) |
 | `retention` | nightly sweeper | Deletion jobs, redaction (ADR-017) |
 | `memory` | `contextFor(scene) -> {registryFacts, summaries}`, `closeScene()` | Registry upserts, summarization, retrieval |
-| `moderation` | `checkInput(text, settings)`, `checkOutputChunk(text, settings)`, `matureEnabled(session)` | Classifier choice, hard-floor rules, content tiers, redirect templates |
+| `moderation` | `checkInput(text, settings)`, `checkOutputChunk(text, settings)`, `tableTier(session, seatedPlayers)` | Classifier choice, hard-floor rules, content tiers, redirect templates |
 | `persistence` | `append(events)`, `loadLatest(sessionId)`, `rewind(sessionId)` | Postgres schema, snapshotting, leases |
 | `gateway` | HTTP/WS endpoints, authN | Session cookies, WS tickets, rate limits, invite links |
 
@@ -205,8 +205,8 @@ Forbidden outputs are structurally impossible: HP changes come only from engine 
 ### 3.4 Structured game state schema (logical, not code)
 
 ```
-Session      {id, mode, status, adventureId, settings{tone, contentTier(family|standard|mature; default standard), matureEnabled(host opt-in, default false), playerSettings{accountId: lines[], veils[]}, violence, lines[], veils[], timerMode, seatCap}, hostId, catalogVersion, mapId?}
-Account      {accountId, email, passwordHash, displayName, ageAttestedAt, termsVersion, status(pending_email|active|suspended|deleting|deleted)}   (not in session snapshots; identity module)
+Session      {id, mode, status, adventureId, settings{tone, contentTier(family|standard|mature; computed per round, see §14.3), playerSettings{accountId: matureOptOut, lines[], veils[]}, violence, lines[], veils[], timerMode, seatCap}, hostId, catalogVersion, mapId?}
+Account      {accountId, email, passwordHash, displayName, isAdult, ageCheckedAt, termsVersion, matureOptOut, status(pending_email|active|suspended|deleting|deleted)}   (not in session snapshots; identity module)
 Seat/Player  {accountId, displayName, role(host|player), connection, pcId?, away}
 Character    {id, owner, level, xp, species, class, subclass?, background, abilities{6}, proficiencies,
               hp{cur,max,temp}, ac, speed, hitDice, deathSaves, conditions[], slots{lvl:{cur,max}},
@@ -264,12 +264,12 @@ flowchart LR
 - **Input:** classifier (provider moderation endpoint or fast-tier model with a fixed rubric; choose in M3; the `moderate` role may have its own endpoint) plus deterministic rules for the **hard floor** (sexual content involving minors: always blocked, not configurable, identical at every tier). Runs in parallel with other submissions; rejection is private to the sender and logged (30 days, ADR-017).
 - **Prompt-injection (R-S3):** player text is placed in a delimited `<player_input player="Name">` block as quoted data; system prompt states it carries no authority. The real defense is architectural: no tool path lets text set state. Red-team set (100 prompts) runs in CI (§12).
 - **Output:** streaming is broadcast **only after** each sentence chunk passes the classifier, so nothing unsafe is shown and retracted. Cost: ~1 sentence of added latency on the first token (budget in §9; mitigated by running classifier on partial chunk at ~12 tokens for the first chunk). **[unverified]** against the 2.5 s first-token target; M3 gate.
-- **Content tiers (ADR-016):** `family | standard | mature`. `mature` is **off by default** and enabled only by the host per table (server-written `contentTier`; text and the LLM cannot flip it). Per-player lines/veils and pause/X-card apply at every tier and the strictest active setting shapes the shared narration. The mature clause appears in the prompt only when enabled, and the classifier rubric is tier-specific. `mature` also requires `moderationVerified` on the moderation endpoint (ADR-013). Mature means graphic violence, dark themes, strong language; explicit sexual content is out of scope (flagged). The hard floor is identical at every tier.
+- **Content tiers (ADR-016):** `family | standard | mature`. **Mature is the default** and applies unless a seated player has opted out (`matureOptOut`; settable at join and any time). The server computes the table tier: mature only if no seated player opted out, `moderationVerified`, and the operator probe flag `endpoint_allows_mature` hold; it is re-evaluated at each round open and before each narration, so mid-session toggles, joins, and leaves take effect on the next narration. Text and the LLM cannot flip it; the host can lower but not override an opt-out; host transfer changes nothing. Per-player lines/veils and pause/X-card apply at every tier (strictest active setting shapes the shared narration). The mature clause is in the safety block only while the predicate holds; the rubric is tier-specific. Mature means graphic violence, dark themes, strong language, innuendo/allusion; explicit sexual content is out of scope. An endpoint that refuses mature prompts degrades to `standard` for the turn and clears the flag. The hard floor (sexual content involving minors, etc.) is deterministic and identical at every tier.
 - **Table settings** (tone/violence/lines/veils) live in the session block and in the classifier rubric.
 - **X-card / pause:** write `SafetyFlag` event; the next prompt gets a steer-away instruction; host may configure immediate abort of in-flight generation. X-card is anonymous in the UI; the event stores the seat internally for abuse handling but the broadcast excludes it.
 - **SRD entity check (non-SRD names):** output chunk entity scan against a denylist (beholder, mind flayer, Forgotten Realms proper nouns, etc.) as part of the same gate; registry entities are original names. Backed by closed-catalog tools (the LLM cannot *spawn* a non-SRD monster; it can only mention one in prose, which the denylist catches).
 - **No human reading by default:** transcripts are accessible to operators only for flagged items (report flow, P1) with audit log. Documented in privacy copy (AI Dungeon 2021 lesson, research §6).
-- **Provider AUP:** moderation logs + hard floor support whichever provider's usage-policy duties apply (research §6). The chosen endpoint's AUP must permit the `mature` tier or the tier stays off. Local models carry no provider AUP but also no built-in safety, so the hold-back classifier is mandatory for them.
+- **Provider AUP:** moderation logs + hard floor support whichever provider's usage-policy duties apply (research §6). The chosen endpoint's AUP bounds the `mature` tier; if it refuses, the table degrades to `standard` (`endpoint_allows_mature`). Local models carry no provider AUP but also no built-in safety, so the hold-back classifier is mandatory for them.
 
 ## 7. SRD-only content catalog
 
@@ -355,12 +355,12 @@ Deterministic first, LLM-judged second (research §3.6). Rows below are v0.1 plu
 | Catalog validation | Schema, ID uniqueness, scope bounds, denylist scan, attribution presence | CI |
 | Tool-contract tests | Invalid/illegal tool args rejected; retry path; fallback narration; **(new) coordinates and unknown handles rejected; run per tool mode (native, json-schema, prompt-json, engine-assist)** | CI |
 | **Adapter conformance (new)** | Recorded-endpoint probe battery per dialect; mode selection and circuit-breaker downgrade | CI; live probe on config change |
-| **Identity tests (new)** | Signup, login, session expiry, WS ticket single-use, age attestation (under 18 refused), export, deletion pipeline | CI |
+| **Identity tests (new)** | Signup, login, session expiry, WS ticket single-use, age attestation (birthdate; under-18 refused, nothing stored; adult flag only), export, deletion pipeline | CI |
 | **Retention tests (new)** | Seed expired rows per class; sweeper deletes them; redaction removes a deleted user's text; monitor alarms on a missed sweep | CI |
 | Event-log/replay tests | Rebuild state from log == snapshot; rewind; crash mid-turn; lease takeover; map state included | CI |
 | Room/multiplayer sim | N scripted fake players, drops, races, timer expiry, queueing; invariant: one in-flight turn, state seq monotonic | CI |
 | **DM eval harness** (nightly + on prompt/model/endpoint change) | Recorded/mock LLM for deterministic runs plus live runs: rules Q&A (R-R3 ≥ 90%), puppeting (< 2%), 3-session consistency (≥ 95%), spotlight fairness, narration-vs-tool agreement; **(new) map-reference accuracy: LLM resolves "the nearest goblin / behind the pillar" to correct IDs** | Release gates (A10 targets; owner per Q10) |
-| Red-team | 100 injection prompts (≥ 95%), 100 content-boundary prompts (FN ≤ 5%), X-card redirect (≥ 98%); **(new) per-tier rubric; mature gate cannot be enabled by text; hard floor holds at `mature`** | Release gate |
+| Red-team | 100 injection prompts (≥ 95%), 100 content-boundary prompts (FN ≤ 5%), X-card redirect (≥ 98%); **(new) per-tier rubric; opt-out (join and mid-session) flips tier by next narration and cannot be reversed by text or host; host transfer keeps tier; endpoint refusal degrades to `standard`; hard floor holds at `mature`** | Release gate |
 | Latency/cost | Replay a 150-turn script (exploration + combat) against the reference endpoint; record stage timings and spend uncached | Gate vs §9 |
 | Load | 200 sessions × up to 6 sockets, synthetic players, mock LLM + a live sample | M5 gate |
 | Frontend | Component tests, Playwright e2e (signup → invite → play → combat on map → resume), axe-core, **keyboard-only combat script**, manual screen-reader pass per release | 0 critical a11y defects |
@@ -373,10 +373,10 @@ Lanes: **Forge** = backend/engine/orchestrator; **Prism** = frontend/UX/a11y. Ro
 
 | Milestone | Forge (backend) | Prism (frontend) | Exit criteria |
 |---|---|---|---|
-| **M0 Foundations + accounts** (wk 1-3; v0.2: 1-4) | Monorepo, shared schema, Postgres schema (events/snapshots/lease), Room skeleton, WS gateway, CI, OTel. Accounts: signup/login/verify email/reset, argon2id, sessions + WS tickets, **18+ age attestation**, account export and deletion skeleton, `retention-sweeper` skeleton, email provider | App shell, a11y tokens, WS client + reducer, lobby/invite (mock server). Signup, login, age-attestation checkbox, account settings (export/delete) | Two **accounts** join one room and see synced presence; state survives restart; under-18 attestation is refused; a deletion job removes a test account |
+| **M0 Foundations + accounts** (wk 1-3; v0.2: 1-4) | Monorepo, shared schema, Postgres schema (events/snapshots/lease), Room skeleton, WS gateway, CI, OTel. Accounts: signup/login/verify email/reset, argon2id, sessions + WS tickets, **18+ birthdate attestation**, account export and deletion skeleton, `retention-sweeper` skeleton, email provider | App shell, a11y tokens, WS client + reducer, lobby/invite (mock server). Signup, login, birthdate entry, account settings (export/delete) | Two **accounts** join one room and see synced presence; state survives restart; under-18 attestation is refused; a deletion job removes a test account |
 | **M1 Engine core + 2D tactical engine** (wk 3-10; v0.2: 3-11) | `rules-engine` + catalog v0 (wk 3-7). Map module (wk 6-10): `Battlemap` schema and validator, reachable/path, occupancy, LOS, cover, AoE templates, opportunity attacks, `describe()`, authored-map loader, property tests | Character creation, live sheet, dice breakdown. 2D top-down canvas renderer v1 (static map, tokens, terrain, pan/zoom, selection, overlays) and keyboard cursor + text description baseline | Property tests green; scripted solo combat **on a 2D map** with no LLM, incl. an opportunity attack and an area spell; legal PCs |
 | **M2 DM vertical slice (solo)** (wk 8-12; v0.2: 8-13) | dm-orchestrator, tool contract, prompt layout, narration streaming, retry/fallback, memory v1, autosave/resume, recorded-LLM mode. `llm-adapter` with two dialects, endpoint config, probe, native + json-schema modes (ADR-013) | Narration log (live regions), input + quick actions, resume + recap, operator endpoint settings screen | Quick start to narration in 3 min or less; resume works; solo adventure #1 playable on the reference endpoint **and** one local OpenAI-compatible model with probe-selected mode; eval harness v0 |
-| **M3 Safety + moderation** (wk 11-14; v0.2: 12-16) | Input/output moderation, hard floor, X-card, SRD denylist, rewind, red-team suite. Content tiers with **host opt-in mature (off by default)** and per-player lines/veils/pause, per-tier rubric | Safety settings UI, per-player content settings, X-card/pause, rewind banners, mature opt-in UI | Red-team + injection gates met; first-token latency measured uncached; mature cannot be enabled by text or by a non-host |
+| **M3 Safety + moderation** (wk 11-14; v0.2: 12-16) | Input/output moderation, hard floor, X-card, SRD denylist, rewind, red-team suite. Content tiers with **mature default-on with per-player opt-out (live predicate)**, per-player lines/veils/pause, per-tier rubric | Safety settings UI, per-player content settings, X-card/pause, rewind banners, join-time content settings and opt-out UI | Red-team + injection gates met; first-token latency measured uncached; opt-out is honored by the next narration; text cannot change the tier |
 | **M4 Party play + 2D combat on map** (wk 12-19; v0.2: 13-21) | Collect-then-resolve rounds, queueing, timers, away/autopilot, drop-in/out, host controls, rest votes, spotlight. Combat on the 2D map end to end: map tools (`move_to`, area aiming by `optionId`), reactions/opportunity attacks in the Room, monster pathing policy, one-narration-per-turn, authored maps for adventure #1 | Party lobby, round status, initiative tracker, reaction prompt, host panel, 360 px. Map interactions (move preview, attack, area aim), list-driven combat mode, keyboard movement, reduced-motion, mobile fallback | 6-sim-player scripted sessions green; real 3-4 person playtest **including combat on the map**; spotlight measured; keyboard-only combat passes |
 | **M5 Hardening + content** (wk 18-23; v0.2: 20-26) | Cost meter with per-endpoint pricing (operator budgets), load test 200 sessions, retention jobs and account-deletion/redaction e2e, backups at 30 days, transcript export, adventures #2-#3 data and maps, eval gates in CI, ops dashboards, `prompt-json` and `engine-assist` fallback modes, procedural maps (stretch) | WCAG 2.2 AA audit **incl. map**, polish, **SRD CC-BY attribution/credits page**, error states | All P0 ACs traced to tests; a11y critical = 0; cost/latency measured (uncached); SRD attribution present |
 | **Beta/launch gate** (wk 23+) | Runbooks, alerting, provider fallback drill | Feedback UI | Success-metric instrumentation live. Deferred legal items (§17) are **not** a gate |
@@ -387,7 +387,7 @@ Parallelism: Prism builds against a **mock Room server** from M0. The shared `@g
 
 **Timeline impact vs v0.2 (about -3 wk):** consent flow and consent-pending UI (-1 wk, M0), verifier seam + age predicate + minors' restrictions (-1 wk, M3), legal-review work removed from M5 and the launch gate (-0.5 wk), plus simpler content-settings tests (-0.5 wk). The critical path is still M1 map engine -> M4 combat-on-map; accounts stay in M0.
 
-### 11.1 Cut list if the timeline explodes (in order; target about 19-20 weeks)
+### 11.1 Cut list (declined by human, round 3: reference only; full scope and ~23 weeks stay)
 
 1. Ship **6 classes** first, not 12 (D8): about -2 wk (largest single lever; M1/M5). **Recommended.**
 2. **Authored maps only**; procedural maps and upload out: -1.5 wk. **Recommended.**
@@ -405,7 +405,7 @@ Parallelism: Prism builds against a **mock Room server** from M0. The shared `@g
 - Weak or local models may fail tool calling; fallback modes mitigate safety, not quality. Valid-call threshold is an assumption.
 - Grid conventions (diagonals, cover, area shapes) not yet checked against SRD 5.2.1 text; our LOS/cover algorithm is custom.
 - Map accessibility is a design, not a built or tested thing; keyboard and text modes are required to ship.
-- Age attestation is self-declared and circumventable; accepted for launch (ADR-015).
+- Age attestation (birthdate) is self-declared and circumventable; accepted for launch (ADR-015).
 - Redaction vs append-only log: the deletion job is the one mutation and needs careful replay tests.
 - Account friction may hurt the 60% activation target.
 - Single-node-per-session sticky routing is not load-tested; Alt A would shift this to the platform.
@@ -429,13 +429,13 @@ Parallelism: Prism builds against a **mock Room server** from M0. The shared `@g
 | D10 | Memory retrieval | Postgres FTS, no vector store | 006 | No |
 | D11 | Output moderation mode | Hold-back by sentence chunk | 007 | No |
 | D12 | Eval owners and thresholds | Spec A10 targets | 012 | **Yes** (Q10) |
-| D13 | Mature content | **Decided: off by default, host opt-in, per-player settings/pause; hard floor fixed**; no explicit sexual content (flagged) | 016 | Confirm scope |
+| D13 | Mature content | **Decided (round 3): default on unless any player opts out; not explicit; per-player settings/pause; hard floor fixed** | 016 | Confirm scope |
 | D14 | Cost budgets | Operator-configurable; $1.50/$0.60 are default budgets only | 009 | Pick defaults |
 | D15 | Timeline | about 23 weeks, cut list to about 19-20 | §11 | **Yes** (which cuts) |
 | D16 | Map sources | Authored MVP; procedural stretch; upload later | 020 | Confirm |
 | D17 | 3D/STL/GLB import | **Later roadmap, sketch only** | 021 | Later |
 | D18 | Auth methods | Email+password MVP; OAuth later | 014 | Confirm |
-| D19 | Attestation form | Checkbox (default) vs DOB | 015 | Confirm |
+| D19 | Attestation form | **Decided: birthdate entry**; open: store only adult flag + check date (recommended) vs keep DOB | 015 | **Confirm** |
 
 ## 14. Identity, age attestation, retention (ADR-014/015/016/017)
 
@@ -443,12 +443,12 @@ Parallelism: Prism builds against a **mock Room server** from M0. The shared `@g
 Account state machine: `pending_email -> active -> suspended` (moderation action); `-> deleting -> deleted`. Seats and the Room use `accountId`. Join link flow: link -> login/signup (with age attestation) -> seat. Rate limits per IP and account. Auth tables: `accounts`, `auth_sessions(token_hash, account_id, expires_at, ua_hash)`, `ws_tickets` (30 s, single-use).
 
 ### 14.2 Age attestation (18+)
-Signup requires an attestation that the user is 18 or older (checkbox by default, or DOB reduced to an adult flag). Under-18: refused, nothing retained but a short retry-block cookie. Stored: `age_attested_at`, `terms_version`. No verifier, no guardian data, no age bands in MVP.
+Signup asks for a birthdate; the server computes 18+ (never the client). Under-18: refused, nothing stored beyond a short retry-block cookie. Over-18: store `is_adult` and `age_checked_at` plus `terms_version`; the DOB is discarded (recommended; keeping it needs a stated need, **human to confirm**). No verifier, guardian data, or age bands in MVP.
 
 **Later roadmap extension point (no MVP work):** a 13-17 audience with parental consent would add an age band, guardian consent entity/flow, pending-consent state, and minors' restrictions, after legal review. See ADR-015.
 
 ### 14.3 Mature content
-`contentTier` defaults to `standard`; `mature` is enabled only by the host per table; per-player lines/veils and pause apply always (ADR-016, §6). Hard floor unchanged.
+Mature is the default. Per-account `matureOptOut` (shown at join, changeable any time); the server recomputes the table tier at each round open and before each narration: mature only if no seated player opted out, the endpoint is verified and `endpoint_allows_mature`. Per-player lines/veils and pause apply always; host transfer changes nothing; hard floor unchanged (ADR-016, §6).
 
 ### 14.4 Retention and deletion jobs
 Classes and clocks per ADR-017: logs and reverted turns 30 days; exports 7 days; archived gameplay data 14d idle + 90d; backups rolling 30 days. One idempotent nightly `retention-sweeper` runs: log expiry by `expires_at`, session archive/delete, export purge, account-deletion pipeline (deactivate now, PII hard delete within 30 days, solo sessions deleted, shared-session redaction of the user's text and display name). Alert if a sweep misses 26 hours. Legal hold flag suspends deletion per item with an audit entry.
@@ -506,6 +506,6 @@ Per human decision 2026-10-06 (round 2), these are revisited once the project sh
 - Privacy-law specifics: jurisdictional privacy rules, retention-policy review, legal-hold policy, privacy copy (ADR-017).
 - Age: legal wording of the 18+ attestation; any 13-17 audience with parental consent (ADR-015 extension point).
 - Product-name trademark and "5E compatible" phrasing review.
-- Provider AUP review for the `mature` tier.
+- Provider AUP review for the `mature` tier (runtime degrade covers refusals).
 
 **Not deferred:** SRD 5.2.1 CC-BY-4.0 attribution text in the footer and credits page remains an MVP requirement (license compliance, ADR-008).

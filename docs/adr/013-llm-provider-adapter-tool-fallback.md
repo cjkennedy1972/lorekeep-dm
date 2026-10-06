@@ -11,7 +11,7 @@ Status: Proposed (human decision 2026-10-06: endpoint is operator-configurable) 
 4. **Capability detection:** an `adapter probe` battery (fixed synthetic scenarios, including invalid-argument traps and map-reference scenarios) measures valid-call rate, schema-violation rate, streaming-with-tools, and time to first token. Result is stored as an endpoint profile and selects the tool mode (threshold 0.95 valid-call rate is an assumption to calibrate). Probe runs at config time and on demand, never per player request.
 5. **Runtime circuit breaker:** per session, a rolling tool-error rate above threshold drops one mode level and shows a neutral host notice. Orchestrator behavior on invalid calls is unchanged (2 retries, then safe narrated fallback, no state change).
 6. **Option-selection protocol** (used in `engine-assist`, and optionally in combat for weaker models): the engine returns `legalOptions[{optionId, label}]` and the LLM must return an `optionId`. Cannot hallucinate IDs; costs one extra decision step.
-7. Moderation endpoint gate: mature content (ADR-016) is unavailable unless the configured `moderate` endpoint has passed the red-team set (`moderationVerified`).
+7. Moderation endpoint gate: mature content (ADR-016) is unavailable unless the configured `moderate` endpoint has passed the red-team set (`moderationVerified`). The probe also records operator flag `endpoint_allows_mature`; if false (or the endpoint refuses mature prompts at runtime) the table degrades to `standard` gracefully.
 
 **Alternatives.** Single provider SDK (rejected by decision 2). A generic proxy such as LiteLLM in front (extra service; may be used by an operator but is not required). Per-user bring-your-own key (key custody and abuse risk; not adopted).
 
