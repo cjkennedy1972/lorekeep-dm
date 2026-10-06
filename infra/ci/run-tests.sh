@@ -11,6 +11,7 @@ pnpm format:check
 pnpm -r test
 pnpm --filter @game/server migrate:up
 pnpm --filter @game/server test:db
+pnpm --filter e2e test
 pnpm -r build
 pnpm install --lockfile-only --ignore-scripts
 git diff --exit-code -- pnpm-lock.yaml

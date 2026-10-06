@@ -19,7 +19,7 @@ export function installGateway(
   rooms: RoomRegistry,
   connections: ConnectionRegistry = new ConnectionRegistry(db),
   revalidateMs = 15_000,
-): void {
+): () => Promise<void> {
   app.post<{ Body?: { sessionId?: string } }>(
     '/api/ws-ticket',
     async (request, reply) => {
@@ -42,12 +42,17 @@ export function installGateway(
       };
     },
   );
+  let shuttingDown = false;
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_BYTES,
     perMessageDeflate: false,
   });
   app.server.on('upgrade', (request, socket, head) => {
+    if (shuttingDown) {
+      socket.destroy();
+      return;
+    }
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (url.pathname !== '/ws') {
       socket.destroy();
@@ -92,15 +97,18 @@ export function installGateway(
           ws.close(1013, 'Room unavailable; retry');
           return;
         }
-        const send = (message: ServerMessage) => {
-          if (ws.readyState === WebSocket.OPEN) {
-            if (ws.bufferedAmount > MAX_BYTES * 4) {
-              ws.close(1013, 'Slow consumer');
-              return;
+        const connection = {
+          send: (message: ServerMessage) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              if (ws.bufferedAmount > MAX_BYTES * 4) {
+                ws.close(1013, 'Slow consumer');
+                return;
+              }
+              ws.send(JSON.stringify(message));
             }
-            ws.send(JSON.stringify(message));
-          }
+          },
         };
+        const send = connection.send;
         let active = true;
         let alive = true;
         const heartbeat = setInterval(() => {
@@ -118,7 +126,11 @@ export function installGateway(
         ws.on('close', () => {
           active = false;
           clearInterval(heartbeat);
-          void room.disconnect(identity.accountId).catch(() => {});
+          if (room.isCurrentConnection(identity.accountId, connection)) {
+            const task = room.disconnect(identity.accountId).catch(() => {});
+            disconnectTasks.add(task);
+            void task.finally(() => disconnectTasks.delete(task));
+          }
         });
         ws.on('error', () => {});
         try {
@@ -128,7 +140,7 @@ export function installGateway(
           );
           await room.join(
             identity.accountId,
-            { send },
+            connection,
             name.rows[0]?.display_name ?? identity.accountId,
           );
           if (!active) {
@@ -171,7 +183,7 @@ export function installGateway(
           const msg = parsed.data;
           if (msg.type === 'Resync') {
             void room
-              .subscribe(identity.accountId, { send }, -1)
+              .subscribe(identity.accountId, connection, -1)
               .catch(() => ws.close(1011));
             return;
           }
@@ -192,9 +204,35 @@ export function installGateway(
     void connections.sweep().catch(() => {});
   }, revalidateMs);
   tick.unref();
-  app.addHook('onClose', async () => {
+  const disconnectTasks = new Set<Promise<void>>();
+  let closingGateway: Promise<void> | undefined;
+  const closeSockets = () => {
+    if (closingGateway) return closingGateway;
+    shuttingDown = true;
     clearInterval(tick);
-    for (const ws of wss.clients) ws.close(1001, 'Server shutdown');
-    wss.close();
+    closingGateway = (async () => {
+      await Promise.all(
+        [...wss.clients].map(
+          (ws) =>
+            new Promise<void>((resolve) => {
+              if (ws.readyState === WebSocket.CLOSED) return resolve();
+              ws.once('close', () => resolve());
+              ws.close(1001, 'Server shutdown');
+              const timeout = setTimeout(() => {
+                ws.terminate();
+                resolve();
+              }, 500);
+              timeout.unref();
+            }),
+        ),
+      );
+      await Promise.all([...disconnectTasks]);
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+    })();
+    return closingGateway;
+  };
+  app.addHook('onClose', async () => {
+    await closeSockets();
   });
+  return closeSockets;
 }

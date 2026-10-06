@@ -20,7 +20,7 @@ export const rooms = new RoomRegistry(
 );
 const connections = new ConnectionRegistry(db);
 const app = createApp(db, { rooms, connections });
-installGateway(app, db, rooms, connections);
+const closeGateway = installGateway(app, db, rooms, connections);
 // Disabled in tests or with SWEEP_INTERVAL_MS=0.
 const stopSweeper =
   config.NODE_ENV === 'test' || config.SWEEP_INTERVAL_MS === 0
@@ -31,18 +31,20 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   stopSweeper();
+  await closeGateway();
   await rooms.drain();
   await app.close();
   await db.end();
   await telemetry?.shutdown();
 }
+installGracefulDrain(shutdown, process.exit, (error) =>
+  app.log.error(error, 'server shutdown failed'),
+);
 process.once('SIGINT', () => {
-  void shutdown();
-});
-installGracefulDrain(rooms, async () => {
-  await app.close();
-  await db.end();
-  await telemetry?.shutdown();
+  void shutdown().catch((error) => {
+    app.log.error(error, 'server shutdown failed');
+    process.exitCode = 1;
+  });
 });
 try {
   await app.listen({ host: config.HOST, port: config.PORT });

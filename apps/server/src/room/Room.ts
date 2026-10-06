@@ -159,6 +159,10 @@ export class Room {
     });
   }
 
+  isCurrentConnection(accountId: string, connection: Connection): boolean {
+    return this.connections.get(accountId) === connection;
+  }
+
   get connectionCount(): number {
     return this.connections.size;
   }

@@ -92,7 +92,7 @@ describe('graceful drain', () => {
     const { vi } = await import('vitest');
     const drain = vi.fn(async () => {});
     const exit = vi.fn();
-    const uninstall = installGracefulDrain({ drain }, async () => {}, exit);
+    const uninstall = installGracefulDrain(async () => drain(), exit);
     try {
       process.emit('SIGTERM');
       await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));

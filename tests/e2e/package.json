@@ -4,7 +4,20 @@
   "private": true,
   "scripts": {
     "build": "node -e \"\"",
-    "test": "vitest run",
-    "typecheck": "node -e \"\""
-  }
+    "pretest": "pnpm --filter @game/server build",
+    "test": "vitest run --no-file-parallelism",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@game/server": "workspace:*",
+    "pg": "8.16.3",
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "@types/pg": "8.15.5",
+    "typescript": "5.9.3",
+    "@types/ws": "8.18.1"
+  },
+  "type": "module"
 }

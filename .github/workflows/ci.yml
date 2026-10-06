@@ -42,6 +42,7 @@ jobs:
       - run: pnpm -r test
       - run: pnpm --filter @game/server migrate:up
       - run: pnpm --filter @game/server test:db
+      - run: pnpm --filter e2e test
       - run: pnpm -r build
       - name: Verify lockfile is stable
         run: |

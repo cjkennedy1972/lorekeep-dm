@@ -323,7 +323,30 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  tests/e2e: {}
+  tests/e2e:
+    dependencies:
+      '@game/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+      pg:
+        specifier: 8.16.3
+        version: 8.16.3
+      ws:
+        specifier: 8.18.3
+        version: 8.18.3
+    devDependencies:
+      '@types/node':
+        specifier: 26.0.0
+        version: 26.0.0
+      '@types/pg':
+        specifier: 8.15.5
+        version: 8.15.5
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
 packages:
 
