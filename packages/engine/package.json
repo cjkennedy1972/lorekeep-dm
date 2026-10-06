@@ -1,0 +1,1 @@
+{"name":"@game/rules-engine","version":"0.0.0","private":true,"type":"module","exports":"./dist/index.js","scripts":{"build":"tsc -p tsconfig.json"},"devDependencies":{"typescript":"5.9.3"}}

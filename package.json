@@ -1,0 +1,1 @@
+{"name":"lorekeep-dm","private":true,"packageManager":"pnpm@12.9.1","scripts":{"build":"pnpm -r build"}}

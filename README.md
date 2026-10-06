@@ -13,3 +13,15 @@ Lorekeep-DM is not affiliated with or endorsed by Wizards of the Coast.
 ## License
 
 Code is released under the [MIT License](LICENSE). SRD-derived content remains under CC-BY-4.0 as noted above.
+
+## Repository layout
+
+- `apps/server` — Fastify and WebSocket service (`@game/server`)
+- `apps/web` — React and Vite browser app (`@game/web`)
+- `packages/schema` — shared contracts (`@game/schema`)
+- `packages/engine` — deterministic rules engine (`@game/rules-engine`)
+- `infra` — Docker Compose and CI helpers
+- `tests/e2e` — cross-app proofs
+- `docs` — architecture and plans
+
+Apps may depend on packages; packages never depend on apps. The web app never imports the server.
