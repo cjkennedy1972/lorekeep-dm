@@ -16,6 +16,12 @@ import {
 import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
 import { LoginInputSchema } from '@game/schema';
+import { z } from 'zod';
+import {
+  requestPasswordReset,
+  confirmPasswordReset,
+} from '../accounts/reset.js';
+import { validPassword } from '../accounts/password.js';
 
 export function registerAuthRoutes(
   app: FastifyInstance<
@@ -47,6 +53,60 @@ export function registerAuthRoutes(
         .code(403)
         .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
   });
+  const forgotSchema = z.object({ email: z.email() }).strict();
+  const resetSchema = z
+    .object({ token: z.string(), password: z.string() })
+    .strict();
+  const forgot = async (
+    request: { body: unknown; ip: string },
+    reply: { code: (status: number) => { send: (body: unknown) => unknown } },
+  ) => {
+    const parsed = forgotSchema.safeParse(request.body);
+    if (!parsed.success)
+      return reply
+        .code(400)
+        .send({ code: 'INVALID_INPUT', message: 'Invalid email.' });
+    const email = parsed.data.email.trim().toLowerCase();
+    const throttled =
+      limited(`forgot-ip:${request.ip}`) || limited(`forgot-email:${email}`);
+    if (!throttled) await requestPasswordReset(db, sender, email);
+    return reply.code(202).send({});
+  };
+  app.post('/api/password/forgot', forgot);
+  app.post('/api/password-reset/request', forgot);
+  const reset = async (
+    request: { body: unknown; ip: string },
+    reply: { code: (status: number) => { send: (body: unknown) => unknown } },
+  ) => {
+    const parsed = resetSchema.safeParse(request.body);
+    if (!parsed.success || !validPassword(parsed.data.password))
+      return reply.code(400).send({
+        code: 'INVALID_INPUT',
+        message: 'Password must be at least 12 characters.',
+      });
+    if (
+      limited(`reset-ip:${request.ip}`) ||
+      limited(`reset-token:${request.ip}:${parsed.data.token}`)
+    )
+      return reply
+        .code(429)
+        .send({ code: 'RATE_LIMITED', message: 'Too many requests.' });
+    const ok = await confirmPasswordReset(
+      db,
+      parsed.data.token,
+      parsed.data.password,
+    );
+    return reply.code(ok ? 200 : 400).send(
+      ok
+        ? {}
+        : {
+            code: 'TOKEN_INVALID',
+            message: 'This link is invalid or has expired.',
+          },
+    );
+  };
+  app.post('/api/password/reset', reset);
+  app.post('/api/password-reset/confirm', reset);
   app.post('/api/login', async (request, reply) => {
     const parsed = LoginInputSchema.safeParse(request.body);
     if (!parsed.success)
