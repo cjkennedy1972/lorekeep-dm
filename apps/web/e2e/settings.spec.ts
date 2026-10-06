@@ -22,7 +22,14 @@ test('keyboard: sessions, export, and delete confirmation', async ({
     page.getByRole('list', { name: 'Signed-in devices' }),
   ).toContainText('(this device)');
 
-  await page.getByRole('button', { name: 'Export my data' }).click();
+  const exportBtn = page.getByRole('button', { name: 'Export my data' });
+  await expect(exportBtn).toBeDisabled();
+  await page.locator('#export-password').focus();
+  await page.keyboard.type(PW);
+  await expect(exportBtn).toBeEnabled();
+  await page.keyboard.press('Tab');
+  await expect(exportBtn).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(
     page.getByRole('status').filter({ hasText: 'Preparing' }),
   ).toBeVisible();
