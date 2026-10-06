@@ -14,9 +14,15 @@
     "prebuild": "pnpm --filter @game/schema build"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.205.0",
+    "@opentelemetry/sdk-trace-base": "2.1.0",
+    "@opentelemetry/sdk-trace-node": "2.1.0",
     "fastify": "5.6.2",
     "pg": "8.16.3",
-    "ws": "8.18.3"
+    "pino": "9.14.0",
+    "ws": "8.18.3",
+    "zod": "4.1.12"
   },
   "devDependencies": {
     "@types/node": "26.0.0",
