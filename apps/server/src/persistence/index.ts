@@ -5,6 +5,11 @@ import { insertSnapshot, type Snapshot } from './snapshots.js';
 export type { EventInput, StoredEvent } from './events.js';
 export type { Snapshot } from './snapshots.js';
 
+export interface LeaseFence {
+  nodeId: string;
+  epoch: number;
+}
+
 export interface LatestState {
   snapshot: Snapshot | null;
   events: StoredEvent[];
@@ -15,6 +20,7 @@ export class Persistence {
 
   private async transaction<T>(
     sessionId: string,
+    lease: LeaseFence | undefined,
     work: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
     const client = await this.pool.connect();
@@ -26,6 +32,24 @@ export class Persistence {
       );
       if (locked.rowCount !== 1)
         throw new Error(`Session not found: ${sessionId}`);
+      const fence = await client.query<{
+        node_id: string;
+        epoch: string;
+        live: boolean;
+      }>(
+        'SELECT node_id, epoch, expires_at > clock_timestamp() AS live FROM session_lease WHERE session_id=$1 FOR UPDATE',
+        [sessionId],
+      );
+      const current = fence.rows[0];
+      if (
+        current &&
+        (!lease ||
+          !current.live ||
+          current.node_id !== lease.nodeId ||
+          Number(current.epoch) !== lease.epoch)
+      ) {
+        throw new Error('Lease fencing check failed');
+      }
       const result = await work(client);
       await client.query('COMMIT');
       return result;
@@ -40,8 +64,9 @@ export class Persistence {
   append(
     sessionId: string,
     events: readonly EventInput[],
+    lease?: LeaseFence,
   ): Promise<StoredEvent[]> {
-    return this.transaction(sessionId, (client) =>
+    return this.transaction(sessionId, lease, (client) =>
       appendEvents(client, sessionId, events),
     );
   }
@@ -50,9 +75,10 @@ export class Persistence {
     sessionId: string,
     events: readonly EventInput[],
     state: unknown,
+    lease?: LeaseFence,
   ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
-    return this.transaction(sessionId, async (client) => {
+    return this.transaction(sessionId, lease, async (client) => {
       const inserted = await appendEvents(client, sessionId, events);
       const last = inserted.at(-1);
       if (!last) throw new Error('A turn needs at least one event');
