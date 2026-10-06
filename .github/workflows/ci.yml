@@ -27,13 +27,13 @@ jobs:
       DATABASE_URL: postgres://lorekeep:lorekeep@localhost:5432/lorekeep
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.9.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @game/schema build
       - run: pnpm -r typecheck
