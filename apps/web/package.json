@@ -8,7 +8,10 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "mock": "tsx mock/server.ts",
-    "dev": "vite"
+    "dev": "vite",
+    "pretypecheck": "pnpm --filter @game/schema build",
+    "pretest": "pnpm --filter @game/schema build",
+    "prebuild": "pnpm --filter @game/schema build"
   },
   "dependencies": {
     "@game/schema": "workspace:*",

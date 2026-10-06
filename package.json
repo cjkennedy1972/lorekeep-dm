@@ -3,10 +3,11 @@
   "private": true,
   "packageManager": "pnpm@12.9.1",
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "pnpm --filter @game/schema build && pnpm -r build",
     "lint": "eslint .",
     "format:check": "prettier --check .",
-    "test": "pnpm -r test"
+    "test": "pnpm --filter @game/schema build && pnpm -r test",
+    "typecheck": "pnpm --filter @game/schema build && pnpm -r typecheck"
   },
   "devDependencies": {
     "@eslint/js": "9.37.0",
@@ -16,5 +17,6 @@
     "typescript-eslint": "8.45.0",
     "vitest": "3.2.4",
     "typescript": "5.9.3"
-  }
+  },
+  "type": "module"
 }
