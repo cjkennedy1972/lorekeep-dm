@@ -4,3 +4,4 @@ packages:
   - tests/e2e
 allowBuilds:
   esbuild: true
+  protobufjs: false

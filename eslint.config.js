@@ -14,6 +14,10 @@ const boundaries = [
 export default [
   { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**'] },
   js.configs.recommended,
+  {
+    files: ['apps/server/migrations/**/*.js'],
+    languageOptions: { globals: { URL: 'readonly' } },
+  },
   ...tseslint.configs.recommended,
   {
     files: ['packages/**/*.{ts,tsx}'],

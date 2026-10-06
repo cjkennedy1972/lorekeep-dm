@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run --exclude=**/test/migrations/**",
+    "test:db": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required for test:db'); process.exit(1); }\" && vitest run test/migrations",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "migrate:up": "node-pg-migrate up -m migrations --ignore-pattern \"(.*[.]sql|[.].*)\"",
     "migrate:down": "node-pg-migrate down -m migrations --ignore-pattern \"(.*[.]sql|[.].*)\"",
