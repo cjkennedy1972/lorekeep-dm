@@ -42,7 +42,12 @@ describe('signup persistence', () => {
       ).rows[0].n,
     ).toBe(0);
     expect(
-      (await db.query('SELECT count(*)::int AS n FROM email_tokens')).rows[0].n,
+      (
+        await db.query(
+          'SELECT count(*)::int AS n FROM email_tokens t JOIN accounts a ON a.id=t.account_id WHERE a.email=$1',
+          [email],
+        )
+      ).rows[0].n,
     ).toBe(0);
     const adult = await signup(db, sender, input(email), {
       cookieSecret: 'test-secret',
