@@ -190,6 +190,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@game/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       '@node-rs/argon2':
         specifier: 2.0.2
         version: 2.0.2

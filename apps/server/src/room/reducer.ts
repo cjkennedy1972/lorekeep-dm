@@ -1,0 +1,30 @@
+import { RoomStateSchema, type RoomState, type Seat } from '@game/schema';
+import type { StoredEvent } from '../persistence/index.js';
+
+export function emptyRoom(sessionId: string): RoomState {
+  return RoomStateSchema.parse({ sessionId, phase: 'lobby', seats: [] });
+}
+
+export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
+  if (event.type === 'SeatJoined') {
+    const seat = event.payload as Seat;
+    if (state.seats.some((item) => item.accountId === seat.accountId))
+      return state;
+    return RoomStateSchema.parse({ ...state, seats: [...state.seats, seat] });
+  }
+  if (event.type === 'PresenceChanged') {
+    const payload = event.payload as {
+      seatId: string;
+      presence: Seat['presence'];
+    };
+    return RoomStateSchema.parse({
+      ...state,
+      seats: state.seats.map((seat) =>
+        seat.seatId === payload.seatId
+          ? { ...seat, presence: payload.presence }
+          : seat,
+      ),
+    });
+  }
+  return state;
+}
