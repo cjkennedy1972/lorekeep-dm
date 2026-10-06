@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '23 4 * * *'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: lorekeep
+          POSTGRES_USER: lorekeep
+          POSTGRES_PASSWORD: lorekeep
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lorekeep -d lorekeep"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://lorekeep:lorekeep@localhost:5432/lorekeep
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @game/schema build
+      - run: pnpm -r typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm -r test
+      - run: pnpm --filter @game/server migrate:up
+      - run: pnpm --filter @game/server test:db
+      - run: pnpm -r build
+      - name: Verify lockfile is stable
+        run: |
+          pnpm install --lockfile-only --ignore-scripts
+          git diff --exit-code -- pnpm-lock.yaml
+      - run: pnpm --filter @game/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @game/web exec playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: '**/test-results/**/trace.zip'
+          if-no-files-found: ignore
