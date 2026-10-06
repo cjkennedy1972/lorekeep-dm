@@ -72,7 +72,8 @@ describe('persistence', () => {
         `CREATE OR REPLACE FUNCTION fail_snapshot_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'snapshot failed'; END $$`,
       );
       await pool.query(
-        'CREATE TRIGGER fail_snapshot_test BEFORE INSERT ON snapshots FOR EACH ROW EXECUTE FUNCTION fail_snapshot_test()',
+        // Scoped to this session: other test files write snapshots in parallel against the same schema.
+        `CREATE TRIGGER fail_snapshot_test BEFORE INSERT ON snapshots FOR EACH ROW WHEN (NEW.session_id = '${id}'::uuid) EXECUTE FUNCTION fail_snapshot_test()`,
       );
       try {
         await expect(
