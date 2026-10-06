@@ -9,12 +9,22 @@ export function sessionCookie(token: string, secure = true): string {
 export function clearSessionCookie(secure = true): string {
   return `${secure ? COOKIE_NAME : 'sid'}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`;
 }
-export function tokenFromCookie(header?: string): string | undefined {
-  const pair = header
-    ?.split(';')
+/** Production accepts only `__Host-sid`; plain `sid` is a dev/test fallback. More than one session cookie is ambiguous (injection) and means unauthenticated. */
+export function tokenFromCookie(
+  header?: string,
+  production = process.env.NODE_ENV === 'production',
+): string | undefined {
+  const pairs = (header ?? '')
+    .split(';')
     .map((v) => v.trim())
-    .find((v) => v.startsWith(`${COOKIE_NAME}=`) || v.startsWith('sid='));
-  const token = pair?.slice(pair.indexOf('=') + 1);
+    .filter(
+      (v) =>
+        v.startsWith(`${COOKIE_NAME}=`) ||
+        (!production && v.startsWith('sid=')),
+    );
+  if (pairs.length !== 1) return undefined;
+  const pair = pairs[0]!;
+  const token = pair.slice(pair.indexOf('=') + 1);
   return token && /^[A-Za-z0-9_-]{43}$/.test(token) ? token : undefined;
 }
 export async function createSession(

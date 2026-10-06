@@ -9,6 +9,7 @@ import { installGracefulDrain } from './room/drain.js';
 import { installGateway } from './gateway/ws.js';
 import { startSweepScheduler } from './retention/sweeper.js';
 import { LocalObjectStore } from './storage/objectStore.js';
+import { ConnectionRegistry } from './gateway/connections.js';
 const config = loadConfig();
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
@@ -17,8 +18,9 @@ export const rooms = new RoomRegistry(
   new SessionLease(db),
   crypto.randomUUID(),
 );
-const app = createApp(db, { rooms });
-installGateway(app, db, rooms);
+const connections = new ConnectionRegistry(db);
+const app = createApp(db, { rooms, connections });
+installGateway(app, db, rooms, connections);
 // Disabled in tests or with SWEEP_INTERVAL_MS=0.
 const stopSweeper =
   config.NODE_ENV === 'test' || config.SWEEP_INTERVAL_MS === 0

@@ -6,6 +6,7 @@ import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { consumeTicket, issueTicket } from '../../src/gateway/tickets.js';
 import { createSession } from '../../src/accounts/sessions.js';
+import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
@@ -76,13 +77,23 @@ afterAll(async () => {
 });
 describe('one-time gateway', () => {
   it('enforces expiry, scope and atomic reuse', async () => {
-    const t = await issueTicket(db, accounts[0], sessionId);
+    const t = await issueTicket(
+      db,
+      accounts[0],
+      sessionId,
+      hashToken(tokens[0]),
+    );
     expect(await consumeTicket(db, t, randomUUID())).toBeUndefined();
     expect(await consumeTicket(db, t, sessionId)).toMatchObject({
       accountId: accounts[0],
     });
     expect(await consumeTicket(db, t, sessionId)).toBeUndefined();
-    const expired = await issueTicket(db, accounts[0], sessionId);
+    const expired = await issueTicket(
+      db,
+      accounts[0],
+      sessionId,
+      hashToken(tokens[0]),
+    );
     await db.query(
       "UPDATE ws_tickets SET expires_at=now()-interval '1 second' WHERE ticket_hash=$1",
       [createHash('sha256').update(expired).digest('hex')],

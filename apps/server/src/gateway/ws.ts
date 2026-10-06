@@ -10,12 +10,15 @@ import {
   issueTicket,
   validOrigin,
 } from './tickets.js';
+import { ConnectionRegistry } from './connections.js';
 
 const MAX_BYTES = 64 * 1024;
 export function installGateway(
   app: ReturnType<typeof createApp>,
   db: Pool,
   rooms: RoomRegistry,
+  connections: ConnectionRegistry = new ConnectionRegistry(db),
+  revalidateMs = 15_000,
 ): void {
   app.post<{ Body?: { sessionId?: string } }>(
     '/api/ws-ticket',
@@ -29,7 +32,14 @@ export function installGateway(
         return reply.code(400).send({ error: 'sessionId' });
       const eligible = await eligibleSession(db, auth.account_id, sessionId);
       if (!eligible) return reply.code(403).send({ error: 'not seated' });
-      return { ticket: await issueTicket(db, auth.account_id, eligible) };
+      return {
+        ticket: await issueTicket(
+          db,
+          auth.account_id,
+          eligible,
+          auth.token_hash,
+        ),
+      };
     },
   );
   const wss = new WebSocketServer({
@@ -70,6 +80,11 @@ export function installGateway(
           reject();
           return;
         }
+        connections.add(ws, identity.authTokenHash);
+        ws.on('close', () => connections.remove(ws));
+        // Close the consume->register race: revocation may have landed in between.
+        await connections.sweep();
+        if (ws.readyState !== WebSocket.OPEN) return;
         let room;
         try {
           room = await rooms.get(identity.sessionId);
@@ -126,6 +141,14 @@ export function installGateway(
           return;
         }
         ws.on('message', (data) => {
+          void connections
+            .sweepIfStale()
+            .catch(() => {})
+            .then(() => {
+              if (ws.readyState === WebSocket.OPEN) handle(data);
+            });
+        });
+        const handle = (data: import('ws').RawData) => {
           let parsed;
           try {
             parsed = ClientEnvelopeSchema.safeParse(
@@ -161,11 +184,16 @@ export function installGateway(
               actionId: msg.actionId,
             },
           });
-        });
+        };
       })().catch(() => reject());
     });
   });
+  const tick = setInterval(() => {
+    void connections.sweep().catch(() => {});
+  }, revalidateMs);
+  tick.unref();
   app.addHook('onClose', async () => {
+    clearInterval(tick);
     for (const ws of wss.clients) ws.close(1001, 'Server shutdown');
     wss.close();
   });

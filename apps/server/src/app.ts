@@ -7,6 +7,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { retentionHealth } from './retention/sweeper.js';
 import type { RoomRegistry } from './room/registry.js';
+import type { ConnectionRegistry } from './gateway/connections.js';
 
 /** Invite codes travel in the URL path; never log or trace them. */
 export const scrubUrl = (url: string) =>
@@ -56,7 +57,9 @@ export function createApp(
     cookieSecret?: string;
     rateLimit?: number;
     joinRateLimit?: number;
+    roomLimits?: { maxRooms?: number; createPerHour?: number };
     rooms?: Pick<RoomRegistry, 'get'>;
+    connections?: Pick<ConnectionRegistry, 'sweep'>;
   } = {},
 ) {
   const app = Fastify({
@@ -97,6 +100,7 @@ export function createApp(
       options.sender ?? new ConsoleEmailSender(),
       cookieSecret ?? 'development-only-secret',
       options.rateLimit,
+      options.connections,
     );
     if (options.rooms)
       registerSessionRoutes(
@@ -104,6 +108,7 @@ export function createApp(
         db as Pool,
         options.rooms,
         options.joinRateLimit,
+        options.roomLimits,
       );
   }
   app.get('/healthz', async () => ({ status: 'ok' }));

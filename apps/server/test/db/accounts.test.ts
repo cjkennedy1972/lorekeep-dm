@@ -31,8 +31,8 @@ describe('accounts migration', () => {
         ['auth', id],
       );
       await client.query(
-        'INSERT INTO ws_tickets(ticket_hash,account_id,session_id,expires_at) VALUES ($1,$2,$3,now())',
-        ['ws', id, sessionId],
+        'INSERT INTO ws_tickets(ticket_hash,account_id,session_id,auth_token_hash,expires_at) VALUES ($1,$2,$3,$4,now())',
+        ['ws', id, sessionId, 'auth'],
       );
       await client.query(
         'INSERT INTO email_tokens(token_hash,account_id,kind,expires_at) VALUES ($1,$2,$3,now())',

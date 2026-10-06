@@ -42,12 +42,13 @@ export async function issueTicket(
   db: Pool,
   accountId: string,
   sessionId: string,
+  authTokenHash: string,
 ): Promise<string> {
   const ticket = randomBytes(32).toString('base64url');
   await db.query(
-    `INSERT INTO ws_tickets(ticket_hash,account_id,session_id,expires_at)
-    VALUES($1,$2,$3,clock_timestamp() + interval '30 seconds')`,
-    [hash(ticket), accountId, sessionId],
+    `INSERT INTO ws_tickets(ticket_hash,account_id,session_id,auth_token_hash,expires_at)
+    VALUES($1,$2,$3,$4,clock_timestamp() + interval '30 seconds')`,
+    [hash(ticket), accountId, sessionId, authTokenHash],
   );
   return ticket;
 }
@@ -55,16 +56,32 @@ export async function consumeTicket(
   db: Pool,
   ticket: string,
   sessionId?: string,
-): Promise<{ accountId: string; sessionId: string } | undefined> {
+): Promise<
+  { accountId: string; sessionId: string; authTokenHash: string } | undefined
+> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) return undefined;
-  const result = await db.query<{ account_id: string; session_id: string }>(
-    `UPDATE ws_tickets SET used_at=clock_timestamp() WHERE ticket_hash=$1 AND used_at IS NULL
-      AND expires_at>clock_timestamp() AND ($2::uuid IS NULL OR session_id=$2)
-      RETURNING account_id,session_id`,
+  // Consumable only while the originating auth session is valid and the account active.
+  const result = await db.query<{
+    account_id: string;
+    session_id: string;
+    auth_token_hash: string;
+  }>(
+    `UPDATE ws_tickets t SET used_at=clock_timestamp()
+      FROM auth_sessions s, accounts a
+      WHERE t.ticket_hash=$1 AND t.used_at IS NULL
+      AND t.expires_at>clock_timestamp() AND ($2::uuid IS NULL OR t.session_id=$2)
+      AND s.token_hash=t.auth_token_hash AND s.account_id=t.account_id
+      AND s.expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp()
+      AND a.id=t.account_id AND a.status='active'
+      RETURNING t.account_id,t.session_id,t.auth_token_hash`,
     [hash(ticket), sessionId ?? null],
   );
   const row = result.rows[0];
   return row
-    ? { accountId: row.account_id, sessionId: row.session_id }
+    ? {
+        accountId: row.account_id,
+        sessionId: row.session_id,
+        authTokenHash: row.auth_token_hash,
+      }
     : undefined;
 }

@@ -159,6 +159,10 @@ export class Room {
     });
   }
 
+  get connectionCount(): number {
+    return this.connections.size;
+  }
+
   leave(accountId: string): Promise<void> {
     return this.disconnect(accountId);
   }

@@ -20,3 +20,10 @@ Status: Proposed (human decision 2026-10-06: accounts required) · Date: 2026-10
 **Needs human?** Confirm OAuth is acceptable as post-launch; spec stories US-S1/US-P2 need amending by Compass.
 
 **M0-14 CSRF addendum.** Cookie sessions use SameSite=Lax, which prevents cross-site POST/DELETE cookie attachment in modern browsers. Every mutating API request with an Origin header is also checked against the request's own scheme and Host; a mismatched or malformed Origin is rejected with 403. Requests without Origin remain possible for command-line and other non-browser clients; those clients cannot be induced by another website to attach the user's browser cookie. Cookie is host-only (`__Host-sid`, Path=/, Secure in production) and httpOnly. Deployments behind a proxy must configure Fastify's trusted proxy policy and Host enforcement before relying on forwarded scheme/host.
+
+
+## Security review addendum (M0-FIX-07)
+
+- **WebSocket/session binding.** `ws_tickets.auth_token_hash` references `auth_sessions` (ON DELETE CASCADE). A ticket is consumable only while that auth session is unexpired and the account is `active`. The gateway keeps a `ConnectionRegistry` of open sockets by auth session; logout, device revoke, revoke-others, password change/reset and account deletion sweep it and close affected sockets with code 4401 `session revoked`. A ~15 s tick (and a throttled check on inbound messages) re-validates against the database so revocations performed on another node also land.
+- **Cookie rule.** Production accepts only `__Host-sid`; plain `sid` is accepted only when `NODE_ENV` is not `production`. More than one session cookie present means unauthenticated.
+- **Reset tokens.** A successful reset or authenticated password change marks every outstanding reset token for the account used (row-locked transaction); a new forgot request retires older unused tokens.

@@ -6,6 +6,8 @@ import type { EmailSender } from '../email/sender.js';
 import { signup, signupSchema } from '../accounts/signup.js';
 import { verifyEmail } from '../accounts/verify.js';
 import { login, badCredentials } from '../accounts/login.js';
+import { BoundedCounter, BusyError } from '../accounts/throttle.js';
+import type { ConnectionRegistry } from '../gateway/connections.js';
 import {
   clearSessionCookie,
   deviceLabel,
@@ -24,6 +26,7 @@ import { z } from 'zod';
 import {
   requestPasswordReset,
   confirmPasswordReset,
+  changePassword,
 } from '../accounts/reset.js';
 import {
   verifyPassword,
@@ -50,7 +53,10 @@ export function registerAuthRoutes(
   sender: EmailSender,
   cookieSecret: string,
   rateLimit = 5,
+  connections?: Pick<ConnectionRegistry, 'sweep'>,
 ) {
+  /** Close sockets whose auth session/account is gone; call after any revocation. */
+  const closeRevoked = () => connections?.sweep().catch(() => {});
   const store = new LocalObjectStore();
   const exportHits = new Map<string, number>();
   const hits = new Map<string, { count: number; reset: number }>();
@@ -64,7 +70,11 @@ export function registerAuthRoutes(
     item.count++;
     return item.count > rateLimit;
   }
-  const failures = new Map<string, { count: number; reset: number }>();
+  // Failed-login limiters (bounded, TTL-evicted): per IP+email and per IP across emails.
+  const emailFailures = new BoundedCounter(600_000);
+  const ipFailures = new BoundedCounter(600_000);
+  const EMAIL_FAIL_LIMIT = 5;
+  const IP_FAIL_LIMIT = 20;
   app.addHook('onRequest', async (request, reply) => {
     if (!validOrigin(request))
       return reply
@@ -114,6 +124,7 @@ export function registerAuthRoutes(
       parsed.data.token,
       parsed.data.password,
     );
+    if (ok) await closeRevoked();
     return reply.code(ok ? 200 : 400).send(
       ok
         ? {}
@@ -133,25 +144,31 @@ export function registerAuthRoutes(
         .send({ code: 'INVALID_INPUT', message: 'Invalid login details.' });
     const email = parsed.data.email.trim().toLowerCase();
     const key = `${request.ip}:${email}`;
-    const now = Date.now();
-    let attempt = failures.get(key);
-    if (!attempt || attempt.reset <= now) {
-      attempt = { count: 0, reset: now + 600_000 };
-      failures.set(key, attempt);
-    }
-    // Perform the password verification even when blocked to preserve response timing.
-    const result = await login(
-      db,
-      email,
-      parsed.data.password,
-      deviceLabel(request.headers['user-agent'] ?? ''),
-    );
-    if (attempt.count >= 5) {
-      if (result.kind === 'ok') await revokeSession(db, result.token);
+    // Throttle first so blocked requests never reach argon2.
+    if (
+      emailFailures.count(key) >= EMAIL_FAIL_LIMIT ||
+      ipFailures.count(request.ip) >= IP_FAIL_LIMIT
+    )
       return reply.code(429).send(badCredentials);
+    let result;
+    try {
+      result = await login(
+        db,
+        email,
+        parsed.data.password,
+        deviceLabel(request.headers['user-agent'] ?? ''),
+      );
+    } catch (error) {
+      if (error instanceof BusyError)
+        return reply.code(503).header('retry-after', '2').send({
+          code: 'BUSY',
+          message: 'Server is busy. Try again shortly.',
+        });
+      throw error;
     }
     if (result.kind === 'invalid') {
-      attempt.count++;
+      emailFailures.hit(key);
+      ipFailures.hit(request.ip);
       return reply.code(401).send(badCredentials);
     }
     if (result.kind === 'deleting')
@@ -164,7 +181,7 @@ export function registerAuthRoutes(
         code: 'EMAIL_UNVERIFIED',
         message: 'Check your email and verify your account before signing in.',
       });
-    failures.delete(key);
+    emailFailures.clear(key);
     reply.header(
       'set-cookie',
       sessionCookie(result.token, process.env.NODE_ENV === 'production'),
@@ -182,7 +199,10 @@ export function registerAuthRoutes(
   });
   app.post('/api/logout', async (request, reply) => {
     const token = tokenFromCookie(request.headers.cookie);
-    if (token) await revokeSession(db, token);
+    if (token) {
+      await revokeSession(db, token);
+      await closeRevoked();
+    }
     reply.header(
       'set-cookie',
       clearSessionCookie(process.env.NODE_ENV === 'production'),
@@ -267,14 +287,13 @@ export function registerAuthRoutes(
         code: 'BAD_CREDENTIALS',
         message: 'Current password is incorrect.',
       });
-    await db.query('UPDATE accounts SET password_hash=$2 WHERE id=$1', [
+    await changePassword(
+      db,
       session.account_id,
+      session.token_hash,
       await hashPassword(parsed.data.newPassword),
-    ]);
-    await db.query(
-      'DELETE FROM auth_sessions WHERE account_id=$1 AND token_hash<>$2',
-      [session.account_id, session.token_hash],
     );
+    await closeRevoked();
     return {};
   });
   app.post('/api/me/export', async (request, reply) => {
@@ -366,6 +385,7 @@ export function registerAuthRoutes(
       return reply
         .code(403)
         .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
+    await closeRevoked();
     reply.header(
       'set-cookie',
       clearSessionCookie(process.env.NODE_ENV === 'production'),
@@ -401,6 +421,7 @@ export function registerAuthRoutes(
     );
     if (!result.rowCount)
       return reply.code(404).send({ code: 'NOT_FOUND', message: 'Not found.' });
+    await closeRevoked();
     if (id === session.token_hash)
       reply.header(
         'set-cookie',
@@ -415,6 +436,7 @@ export function registerAuthRoutes(
       'DELETE FROM auth_sessions WHERE account_id=$1 AND token_hash<>$2',
       [session.account_id, session.token_hash],
     );
+    await closeRevoked();
     return {};
   });
   app.post('/api/signup', async (request, reply) => {

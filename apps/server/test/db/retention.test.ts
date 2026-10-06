@@ -138,8 +138,8 @@ describe('retention sweeper (Postgres)', () => {
       [`e-${gone}`, gone],
     );
     await q(
-      "INSERT INTO ws_tickets(ticket_hash,account_id,session_id,expires_at) VALUES($1,$2,$3,'2099-01-01')",
-      [`w-${gone}`, gone, shared],
+      "INSERT INTO ws_tickets(ticket_hash,account_id,session_id,auth_token_hash,expires_at) VALUES($1,$2,$3,$4,'2099-01-01')",
+      [`w-${gone}`, gone, shared, `t-${gone}`],
     );
     const exp = randomUUID();
     await store.put(`${exp}.json`, '{"pii":1}');

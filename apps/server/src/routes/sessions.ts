@@ -8,9 +8,12 @@ import { tokenFromCookie } from '../accounts/sessions.js';
 import { hashToken } from '../accounts/signup.js';
 import { revokeInvite, sessionForCode, setInvite } from '../rooms/invites.js';
 import type { RoomRegistry } from '../room/registry.js';
+import { BoundedCounter } from '../accounts/throttle.js';
 
 type Seater = Pick<RoomRegistry, 'get'>;
 const JOIN_LIMIT = 10;
+export const MAX_ACTIVE_ROOMS = 20;
+const CREATE_PER_HOUR = 10;
 const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host FROM sessions s
   WHERE s.status='active' AND (s.owner_account_id=$1 OR EXISTS (
     SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$1::text))`;
@@ -22,7 +25,11 @@ export function registerSessionRoutes(
   db: Pool,
   rooms: Seater,
   joinLimit = JOIN_LIMIT,
+  limits: { maxRooms?: number; createPerHour?: number } = {},
 ) {
+  const maxRooms = limits.maxRooms ?? MAX_ACTIVE_ROOMS;
+  const createPerHour = limits.createPerHour ?? CREATE_PER_HOUR;
+  const createHits = new BoundedCounter(3_600_000);
   const joinHits = new Map<string, { count: number; reset: number }>();
   const throttled = (key: string) => {
     const now = Date.now();
@@ -87,11 +94,23 @@ export function registerSessionRoutes(
         return reply
           .code(400)
           .send({ code: 'INVALID_INPUT', message: 'Enter a table name.' });
+      if (createHits.hit(accountId) > createPerHour)
+        return reply.code(429).send({
+          code: 'RATE_LIMITED',
+          message: 'You are creating tables too quickly. Try again later.',
+        });
       const id = randomUUID();
-      await db.query(
-        'INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)',
-        [id, accountId, parsed.data.name],
+      // ponytail: count+insert is not serialized; concurrent creates can overshoot by a few. Add an advisory lock if that matters.
+      const inserted = await db.query(
+        `INSERT INTO sessions(id,owner_account_id,name) SELECT $1,$2,$3
+          WHERE (SELECT count(*) FROM sessions WHERE owner_account_id=$2 AND status='active') < $4`,
+        [id, accountId, parsed.data.name, maxRooms],
       );
+      if (!inserted.rowCount)
+        return reply.code(409).send({
+          code: 'ROOM_LIMIT',
+          message: `You can have at most ${maxRooms} active tables. Close one before creating another.`,
+        });
       try {
         await (
           await rooms.get(id)
