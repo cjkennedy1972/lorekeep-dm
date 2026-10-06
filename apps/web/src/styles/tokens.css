@@ -1,0 +1,194 @@
+/* Design tokens. Colors are hex only: src/a11y/contrast.test.ts parses this file and checks ratios. */
+:root {
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.5rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+  --radius: 0.375rem;
+  --focus-width: 3px;
+  --transition: 150ms ease;
+  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --letter-spacing: normal;
+  --word-spacing: normal;
+}
+
+/* Light (default) */
+:root,
+[data-theme='light'] {
+  --bg: #ffffff;
+  --surface: #f4f4f6;
+  --fg: #1a1a1a;
+  --fg-muted: #595959;
+  --border-ui: #767676;
+  --accent: #1d4ed8;
+  --on-accent: #ffffff;
+  --danger: #b00020;
+  --success: #1b6e2d;
+  --focus: #1d4ed8;
+}
+
+[data-theme='dark'] {
+  --bg: #121214;
+  --surface: #1e1e22;
+  --fg: #f2f2f2;
+  --fg-muted: #a8a8b0;
+  --border-ui: #8a8a92;
+  --accent: #8ab4ff;
+  --on-accent: #0b1020;
+  --danger: #ff8a8a;
+  --success: #6fd38a;
+  --focus: #8ab4ff;
+}
+
+/* Colorblind-safe (Okabe-Ito derived): status never relies on red/green alone */
+[data-theme='light'][data-palette='cvd'] {
+  --accent: #0072b2;
+  --danger: #a84300;
+  --success: #00695c;
+  --focus: #0072b2;
+}
+
+[data-theme='dark'][data-palette='cvd'] {
+  --accent: #56b4e9;
+  --danger: #ffa05c;
+  --success: #5fd1b0;
+  --focus: #56b4e9;
+}
+
+/* Text size: scales every rem */
+html {
+  font-size: 100%;
+}
+html[data-text-size='large'] {
+  font-size: 125%;
+}
+html[data-text-size='xlarge'] {
+  font-size: 150%;
+}
+
+/* Dyslexia-friendly option: legible face where installed, wider spacing. No webfont is bundled. */
+html[data-dyslexia-font='on'] {
+  --font-body:
+    'OpenDyslexic', 'Atkinson Hyperlegible', 'Lexend', 'Comic Sans MS',
+    sans-serif;
+  --letter-spacing: 0.05em;
+  --word-spacing: 0.16em;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  letter-spacing: var(--letter-spacing);
+  word-spacing: var(--word-spacing);
+}
+
+a {
+  color: var(--accent);
+  transition: color var(--transition);
+}
+
+/* Visible on every interactive element */
+:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: var(--radius);
+  transform: translateY(-300%);
+}
+.skip-link:focus {
+  transform: none;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-ui);
+}
+.app-nav ul {
+  display: flex;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.app-nav a[aria-current='page'] {
+  font-weight: 700;
+}
+main {
+  padding: var(--space-4) var(--space-3);
+  max-width: 60rem;
+}
+main:focus {
+  outline: none;
+}
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block: var(--space-3);
+}
+.switch {
+  width: 2.75rem;
+  height: 1.5rem;
+  border: 2px solid var(--border-ui);
+  border-radius: 999px;
+  background: var(--bg);
+  padding: 0;
+  position: relative;
+  transition: background var(--transition);
+}
+.switch[data-state='checked'] {
+  background: var(--accent);
+}
+.switch-thumb {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--fg);
+  transform: translateX(0.2rem);
+  transition: transform var(--transition);
+}
+.switch[data-state='checked'] .switch-thumb {
+  background: var(--on-accent);
+  transform: translateX(1.45rem);
+}
+select {
+  font: inherit;
+  padding: var(--space-1) var(--space-2);
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--border-ui);
+  border-radius: var(--radius);
+}

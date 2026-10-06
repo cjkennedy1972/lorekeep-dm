@@ -10,8 +10,15 @@
     "noUncheckedIndexedAccess": true,
     "composite": true,
     "declaration": true,
-    "types": ["node"]
+    "types": ["node", "vite/client"]
   },
-  "include": ["src", "mock", "test"],
+  "include": [
+    "src",
+    "mock",
+    "test",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "e2e"
+  ],
   "extends": "../../tsconfig.base.json"
 }
