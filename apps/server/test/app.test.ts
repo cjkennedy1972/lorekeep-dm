@@ -9,6 +9,50 @@ describe('server app', () => {
     expect((await app.inject('/readyz')).statusCode).toBe(200);
     await app.close();
   });
+  it('returns an explicit refusal without touching the database, including retry-blocked adults', async () => {
+    let calls = 0;
+    const db = {
+      connect: async () => {
+        calls++;
+        throw new Error('database accessed');
+      },
+      query: async () => {
+        calls++;
+        throw new Error('database accessed');
+      },
+    } as never;
+    const app = createApp(db, { cookieSecret: 'test-secret', rateLimit: 100 });
+    const payload = {
+      email: 'minor@example.test',
+      password: 'a-unique-password-123',
+      displayName: 'Player',
+      birthdate: '2015-01-01',
+      termsVersion: 'v1',
+    };
+    const minor = await app.inject({
+      method: 'POST',
+      url: '/api/signup',
+      payload,
+    });
+    expect(minor.statusCode).toBe(403);
+    expect(minor.json()).toEqual({
+      code: 'UNDERAGE',
+      message: 'You must be 18 or older to create an account.',
+    });
+    expect(minor.body).not.toContain(payload.birthdate);
+    const cookie = minor.headers['set-cookie'];
+    expect(cookie).toBeTruthy();
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/api/signup',
+      headers: { cookie },
+      payload: { ...payload, birthdate: '1990-01-01' },
+    });
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json()).toEqual(minor.json());
+    expect(calls).toBe(0);
+    await app.close();
+  });
   it('reports database outage without revealing details', async () => {
     const app = createApp({
       query: async () => {

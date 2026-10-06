@@ -18,6 +18,10 @@ export type SignupInput = z.infer<typeof signupSchema>;
 export const signupResponse = {
   message: 'If eligible, check your email for a verification link.',
 };
+export const underageResponse = {
+  code: 'UNDERAGE',
+  message: 'You must be 18 or older to create an account.',
+};
 export type NameFilter = (name: string) => boolean;
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -32,7 +36,11 @@ export async function signup(
     nameFilter?: NameFilter;
     now?: Date;
   },
-): Promise<{ response: typeof signupResponse; retryBlockCookie?: string }> {
+): Promise<{
+  response: typeof signupResponse | typeof underageResponse;
+  retryBlockCookie?: string;
+  refused?: boolean;
+}> {
   const now = options.now ?? new Date();
   const age = attestAdult(
     input.birthdate,
@@ -41,7 +49,11 @@ export async function signup(
     now,
   );
   if (!age.allowed)
-    return { response: signupResponse, retryBlockCookie: age.retryBlockCookie };
+    return {
+      response: underageResponse,
+      retryBlockCookie: age.retryBlockCookie,
+      refused: true,
+    };
   if (
     !validPassword(input.password) ||
     !(options.nameFilter ?? (() => true))(input.displayName)

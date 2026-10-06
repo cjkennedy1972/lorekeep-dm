@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { MemoryEmailSender } from '../../src/email/sender.js';
-import { signup } from '../../src/accounts/signup.js';
+import { signup, underageResponse } from '../../src/accounts/signup.js';
 import { verifyEmail } from '../../src/accounts/verify.js';
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 afterAll(async () => db.end());
@@ -20,7 +20,19 @@ describe('signup persistence', () => {
     const minor = await signup(db, sender, input(email, '2015-01-01'), {
       cookieSecret: 'test-secret',
     });
+    expect(minor.response).toEqual(underageResponse);
+    expect(minor.refused).toBe(true);
     expect(minor.retryBlockCookie).toContain('age_retry_block');
+    expect(JSON.stringify(minor.response)).not.toMatch(
+      /2015-01-01|\b10\b|\b11\b/,
+    );
+    const blocked = await signup(db, sender, input(email), {
+      cookieSecret: 'test-secret',
+      cookie: minor.retryBlockCookie,
+    });
+    expect(blocked.response).toEqual(underageResponse);
+    expect(blocked.refused).toBe(true);
+    expect(sender.messages).toHaveLength(0);
     expect(
       (
         await db.query(
@@ -28,6 +40,9 @@ describe('signup persistence', () => {
           [email],
         )
       ).rows[0].n,
+    ).toBe(0);
+    expect(
+      (await db.query('SELECT count(*)::int AS n FROM email_tokens')).rows[0].n,
     ).toBe(0);
     const adult = await signup(db, sender, input(email), {
       cookieSecret: 'test-secret',

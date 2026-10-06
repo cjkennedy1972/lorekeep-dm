@@ -43,7 +43,7 @@ export function registerAuthRoutes(
       });
       if (result.retryBlockCookie)
         reply.header('set-cookie', result.retryBlockCookie);
-      return reply.code(202).send(result.response);
+      return reply.code(result.refused ? 403 : 202).send(result.response);
     } catch (error) {
       if (error instanceof RangeError)
         return reply.code(400).send({ message: 'Invalid signup details' });
