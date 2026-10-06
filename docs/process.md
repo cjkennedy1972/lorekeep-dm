@@ -20,3 +20,6 @@ Rules:
 - A card with missing proof, or a milestone claimed from design docs alone, stays in `review` or `blocked`, and the gap is written on the card.
 - Docs, specs, and ADRs count as done only for documentation cards, never for implementation cards.
 - Milestone status reported to the human is derived from the board plus code verification, never from memory.
+
+## Mandatory full gate before reporting a ticket done
+Every agent works in its own clone (never the reference checkout), rebases on origin/main, then on a fresh `pnpm install --frozen-lockfile` runs: `pnpm -r typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm -r test`, `pnpm -r build` (plus the ticket's own verify commands, with Postgres via docker compose and an exported `DATABASE_URL` when DB-backed). All must exit 0 or the failure must be reported as a blocker, never described as "unrelated". Atlas re-runs the gate on a fresh clone of origin/main after every wave; a red main blocks starting dependent tickets.
