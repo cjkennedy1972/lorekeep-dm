@@ -71,7 +71,15 @@ test('under-18 birthdate is refused with {code,message} and no session', async (
 test('export and delete', async () => {
   const { cookie } = await signup('del@example.com', 'Del');
   expect((await post('/api/me/export', null, cookie, 'GET')).status).toBe(404);
-  expect((await post('/api/me/export', null, cookie)).status).toBe(202);
+  expect(
+    (
+      await post(
+        '/api/me/export',
+        { password: 'correct-horse-battery' },
+        cookie,
+      )
+    ).status,
+  ).toBe(202);
   const del = (body: unknown) =>
     fetch(`http://${base}/api/me`, {
       method: 'DELETE',

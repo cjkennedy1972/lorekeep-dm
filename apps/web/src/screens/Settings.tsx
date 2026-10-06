@@ -177,6 +177,7 @@ export const exportPoll = { ms: 1000 };
 
 function Export() {
   const [job, setJob] = useState<ExportJob | null | undefined>();
+  const [exportPassword, setExportPassword] = useState('');
   const [error, setError] = useState('');
   const pending = job?.status === 'pending';
   useEffect(() => {
@@ -198,9 +199,13 @@ function Export() {
 
   async function request() {
     setError('');
-    const r = await api<{ job: ExportJob }>('/api/me/export', {});
-    if (r.ok) setJob(r.data.job);
-    else setError(r.message);
+    const r = await api<{ job: ExportJob }>('/api/me/export', {
+      password: exportPassword,
+    });
+    if (r.ok) {
+      setJob(r.data.job);
+      setExportPassword('');
+    } else setError(r.message);
   }
   return (
     <section aria-labelledby="export-h">
@@ -209,11 +214,19 @@ function Export() {
         Get an archive of your profile, characters, game snapshots, summaries
         and transcripts still within retention. It is ready within 24 hours.
       </p>
+      <label htmlFor="export-password">Confirm password</label>
+      <input
+        id="export-password"
+        type="password"
+        autoComplete="current-password"
+        value={exportPassword}
+        onChange={(event) => setExportPassword(event.target.value)}
+      />
       <div className="actions">
         <button
           type="button"
           className="secondary"
-          disabled={pending}
+          disabled={pending || !exportPassword}
           onClick={() => void request()}
         >
           {job?.status === 'expired'

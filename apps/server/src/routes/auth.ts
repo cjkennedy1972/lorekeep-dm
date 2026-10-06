@@ -15,13 +15,29 @@ import {
 } from '../accounts/sessions.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
-import { LoginInputSchema } from '@game/schema';
+import {
+  LoginInputSchema,
+  ChangePasswordInputSchema,
+  DeleteAccountInputSchema,
+} from '@game/schema';
 import { z } from 'zod';
 import {
   requestPasswordReset,
   confirmPasswordReset,
 } from '../accounts/reset.js';
-import { validPassword } from '../accounts/password.js';
+import {
+  verifyPassword,
+  hashPassword,
+  validPassword,
+} from '../accounts/password.js';
+import {
+  createExport,
+  latestExport,
+  exportStatus,
+  validExportSignature,
+} from '../accounts/export.js';
+import { requestDeletion } from '../accounts/delete.js';
+import { LocalObjectStore } from '../storage/objectStore.js';
 
 export function registerAuthRoutes(
   app: FastifyInstance<
@@ -35,6 +51,8 @@ export function registerAuthRoutes(
   cookieSecret: string,
   rateLimit = 5,
 ) {
+  const store = new LocalObjectStore();
+  const exportHits = new Map<string, number>();
   const hits = new Map<string, { count: number; reset: number }>();
   function limited(key: string): boolean {
     const now = Date.now();
@@ -136,6 +154,11 @@ export function registerAuthRoutes(
       attempt.count++;
       return reply.code(401).send(badCredentials);
     }
+    if (result.kind === 'deleting')
+      return reply.code(403).send({
+        code: 'ACCOUNT_DELETING',
+        message: 'This account is being deleted and cannot be signed in.',
+      });
     if (result.kind === 'pending')
       return reply.code(403).send({
         code: 'EMAIL_UNVERIFIED',
@@ -195,6 +218,161 @@ export function registerAuthRoutes(
         isAdult: a.is_adult,
         ageCheckedAt: new Date(a.age_checked_at).toISOString(),
       },
+    };
+  });
+  app.patch('/api/me', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const name = (request.body as { displayName?: unknown } | null)
+      ?.displayName;
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 80)
+      return reply
+        .code(400)
+        .send({ code: 'INVALID_INPUT', message: 'Enter a display name.' });
+    const a = (
+      await db.query(
+        'UPDATE accounts SET display_name=$2 WHERE id=$1 RETURNING id,email,display_name,is_adult,age_checked_at',
+        [session.account_id, name.trim()],
+      )
+    ).rows[0];
+    return {
+      account: {
+        id: a.id,
+        email: a.email,
+        displayName: a.display_name,
+        isAdult: a.is_adult,
+        ageCheckedAt: new Date(a.age_checked_at).toISOString(),
+      },
+    };
+  });
+  app.post('/api/me/password', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const parsed = ChangePasswordInputSchema.safeParse(request.body);
+    if (!parsed.success || !validPassword(parsed.data.newPassword))
+      return reply.code(400).send({
+        code: 'INVALID_INPUT',
+        message: 'New password must be at least 12 characters.',
+      });
+    const row = (
+      await db.query('SELECT password_hash FROM accounts WHERE id=$1', [
+        session.account_id,
+      ])
+    ).rows[0];
+    if (
+      !row ||
+      !(await verifyPassword(row.password_hash, parsed.data.currentPassword))
+    )
+      return reply.code(403).send({
+        code: 'BAD_CREDENTIALS',
+        message: 'Current password is incorrect.',
+      });
+    await db.query('UPDATE accounts SET password_hash=$2 WHERE id=$1', [
+      session.account_id,
+      await hashPassword(parsed.data.newPassword),
+    ]);
+    await db.query(
+      'DELETE FROM auth_sessions WHERE account_id=$1 AND token_hash<>$2',
+      [session.account_id, session.token_hash],
+    );
+    return {};
+  });
+  app.post('/api/me/export', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const previous = exportHits.get(session.account_id) ?? 0;
+    if (Date.now() - previous < 60_000)
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Please wait before requesting another export.',
+      });
+    const body = request.body as { password?: unknown } | null;
+    {
+      const row = (
+        await db.query('SELECT password_hash FROM accounts WHERE id=$1', [
+          session.account_id,
+        ])
+      ).rows[0];
+      if (
+        typeof body?.password !== 'string' ||
+        !row ||
+        !(await verifyPassword(row.password_hash, body.password))
+      )
+        return reply
+          .code(403)
+          .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
+    }
+    exportHits.set(session.account_id, Date.now());
+    return reply
+      .code(202)
+      .send({ job: await createExport(db, session.account_id, store) });
+  });
+  app.get('/api/me/export-job', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    return {
+      job: exportStatus(
+        await latestExport(db, session.account_id),
+        cookieSecret,
+      ),
+    };
+  });
+  app.get('/api/me/export', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const query = request.query as {
+      id?: string;
+      expires?: string;
+      sig?: string;
+    };
+    const row = await latestExport(db, session.account_id);
+    if (
+      !row ||
+      row.id !== query.id ||
+      !query.expires ||
+      !query.sig ||
+      row.status !== 'completed' ||
+      new Date(row.expires_at).toISOString() !== query.expires ||
+      !validExportSignature(row.id, query.expires, query.sig, cookieSecret)
+    )
+      return reply
+        .code(404)
+        .send({ code: 'NOT_FOUND', message: 'No export is ready.' });
+    try {
+      const archive = await store.get(row.archive_key);
+      reply.header('content-type', 'application/json; charset=utf-8');
+      reply.header(
+        'content-disposition',
+        'attachment; filename="lorekeep-export.json"',
+      );
+      reply.header('cache-control', 'no-store');
+      return archive;
+    } catch {
+      return reply
+        .code(404)
+        .send({ code: 'NOT_FOUND', message: 'No export is ready.' });
+    }
+  });
+  app.delete('/api/me', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const parsed = DeleteAccountInputSchema.safeParse(request.body);
+    if (!parsed.success)
+      return reply.code(400).send({
+        code: 'INVALID_INPUT',
+        message: 'Type the confirmation phrase exactly.',
+      });
+    if (!(await requestDeletion(db, session.account_id, parsed.data.password)))
+      return reply
+        .code(403)
+        .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
+    reply.header(
+      'set-cookie',
+      clearSessionCookie(process.env.NODE_ENV === 'production'),
+    );
+    return {
+      message:
+        'Account deletion requested. This cannot be undone. Personal data will be purged within 30 days.',
     };
   });
   app.get('/api/me/sessions', async (request, reply) => {

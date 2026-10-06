@@ -105,6 +105,7 @@ test('export goes pending then ready with a download link', async () => {
   useJar();
   await signup('s4@example.com');
   renderApp('/settings');
+  await userEvent.type(await screen.findByLabelText('Confirm password'), PW);
   await userEvent.click(
     await screen.findByRole('button', { name: 'Export my data' }),
   );
@@ -138,6 +139,10 @@ test('expired export shows how to request a new one', async () => {
   expect(
     await screen.findByText(/Your export has expired/),
   ).toBeInTheDocument();
+  await userEvent.type(
+    screen.getByLabelText('Confirm password'),
+    'correct-password',
+  );
   expect(
     screen.getByRole('button', { name: 'Request a new export' }),
   ).toBeEnabled();

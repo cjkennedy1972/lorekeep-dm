@@ -23,6 +23,7 @@ export async function authenticate(db: Pool, email: string, password: string) {
   );
   if (!account || !valid) return { kind: 'invalid' as const };
   if (account.status === 'pending_email') return { kind: 'pending' as const };
+  if (account.status === 'deleting') return { kind: 'deleting' as const };
   if (account.status !== 'active') return { kind: 'invalid' as const };
   return { kind: 'ok' as const, account };
 }

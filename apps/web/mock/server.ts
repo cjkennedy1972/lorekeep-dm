@@ -324,6 +324,10 @@ export function createMock(
       return json(res, 200, {});
     }
     if (route === 'POST /api/me/export') {
+      if (
+        (await readBody(req))?.password !== users.get(account.email)?.password
+      )
+        return err(res, 403, 'BAD_CREDENTIALS', 'Password is incorrect.');
       exports.set(account.id, Date.now());
       return json(res, 202, { job: exportJob(account.id) });
     }
