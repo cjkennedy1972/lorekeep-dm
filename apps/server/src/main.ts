@@ -6,6 +6,7 @@ import { Persistence } from './persistence/index.js';
 import { SessionLease } from './room/lease.js';
 import { RoomRegistry } from './room/registry.js';
 import { installGracefulDrain } from './room/drain.js';
+import { installGateway } from './gateway/ws.js';
 const config = loadConfig();
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
@@ -15,6 +16,7 @@ export const rooms = new RoomRegistry(
   new SessionLease(db),
   crypto.randomUUID(),
 );
+installGateway(app, db, rooms);
 let closing = false;
 async function shutdown() {
   if (closing) return;

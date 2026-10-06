@@ -1,0 +1,172 @@
+import type { createApp } from '../app.js';
+import type { Pool } from 'pg';
+import { WebSocketServer, WebSocket } from 'ws';
+import { ClientEnvelopeSchema, type ServerMessage } from '@game/schema';
+import { authenticateRequest } from '../middleware/auth.js';
+import type { RoomRegistry } from '../room/registry.js';
+import {
+  consumeTicket,
+  eligibleSession,
+  issueTicket,
+  validOrigin,
+} from './tickets.js';
+
+const MAX_BYTES = 64 * 1024;
+export function installGateway(
+  app: ReturnType<typeof createApp>,
+  db: Pool,
+  rooms: RoomRegistry,
+): void {
+  app.post<{ Body?: { sessionId?: string } }>(
+    '/api/ws-ticket',
+    async (request, reply) => {
+      if (!validOrigin(request.headers.origin, request.headers.host))
+        return reply.code(403).send({ error: 'origin' });
+      const auth = await authenticateRequest(db, request);
+      if (!auth) return reply.code(401).send({ error: 'unauthorized' });
+      const sessionId = request.body?.sessionId;
+      if (sessionId && !/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(sessionId))
+        return reply.code(400).send({ error: 'sessionId' });
+      const eligible = await eligibleSession(db, auth.account_id, sessionId);
+      if (!eligible) return reply.code(403).send({ error: 'not seated' });
+      return { ticket: await issueTicket(db, auth.account_id, eligible) };
+    },
+  );
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_BYTES,
+    perMessageDeflate: false,
+  });
+  app.server.on('upgrade', (request, socket, head) => {
+    const url = new URL(request.url ?? '/', 'http://localhost');
+    if (url.pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      const reject = () => ws.close(1008, 'Policy violation');
+      if (!validOrigin(request.headers.origin, request.headers.host)) {
+        reject();
+        return;
+      }
+      const ticket = url.searchParams.get('ticket');
+      const sessionId = url.searchParams.get('sessionId') ?? undefined;
+      if (!ticket) {
+        reject();
+        return;
+      }
+      void (async () => {
+        const identity = await consumeTicket(db, ticket, sessionId);
+        if (!identity) {
+          reject();
+          return;
+        }
+        const eligible = await eligibleSession(
+          db,
+          identity.accountId,
+          identity.sessionId,
+        );
+        if (!eligible) {
+          reject();
+          return;
+        }
+        let room;
+        try {
+          room = await rooms.get(identity.sessionId);
+        } catch {
+          ws.close(1013, 'Room unavailable; retry');
+          return;
+        }
+        const send = (message: ServerMessage) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            if (ws.bufferedAmount > MAX_BYTES * 4) {
+              ws.close(1013, 'Slow consumer');
+              return;
+            }
+            ws.send(JSON.stringify(message));
+          }
+        };
+        let active = true;
+        let alive = true;
+        const heartbeat = setInterval(() => {
+          if (!alive) {
+            ws.terminate();
+            return;
+          }
+          alive = false;
+          ws.ping();
+        }, 10_000);
+        heartbeat.unref();
+        ws.on('pong', () => {
+          alive = true;
+        });
+        ws.on('close', () => {
+          active = false;
+          clearInterval(heartbeat);
+          void room.disconnect(identity.accountId).catch(() => {});
+        });
+        ws.on('error', () => {});
+        try {
+          const name = await db.query<{ display_name: string }>(
+            'SELECT display_name FROM accounts WHERE id=$1',
+            [identity.accountId],
+          );
+          await room.join(
+            identity.accountId,
+            { send },
+            name.rows[0]?.display_name ?? identity.accountId,
+          );
+          if (!active) {
+            await room.disconnect(identity.accountId);
+            return;
+          }
+        } catch {
+          clearInterval(heartbeat);
+          ws.close(1011, 'Join failed');
+          return;
+        }
+        ws.on('message', (data) => {
+          let parsed;
+          try {
+            parsed = ClientEnvelopeSchema.safeParse(
+              JSON.parse(data.toString()),
+            );
+          } catch {
+            parsed = { success: false } as const;
+          }
+          if (!parsed.success) {
+            send({
+              seq: room.seq,
+              type: 'Error',
+              payload: {
+                code: 'INVALID_ENVELOPE',
+                message: 'Malformed message',
+              },
+            });
+            return;
+          }
+          const msg = parsed.data;
+          if (msg.type === 'Resync') {
+            void room
+              .subscribe(identity.accountId, { send }, -1)
+              .catch(() => ws.close(1011));
+            return;
+          }
+          send({
+            seq: room.seq,
+            type: 'Error',
+            payload: {
+              code: 'UNSUPPORTED_ACTION',
+              message: 'Action not supported',
+              actionId: msg.actionId,
+            },
+          });
+        });
+      })().catch(() => reject());
+    });
+  });
+  app.addHook('onClose', async () => {
+    for (const ws of wss.clients) ws.close(1001, 'Server shutdown');
+    wss.close();
+  });
+}
