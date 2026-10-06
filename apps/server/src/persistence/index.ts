@@ -1,0 +1,114 @@
+import type { Pool, PoolClient } from 'pg';
+import { appendEvents, type EventInput, type StoredEvent } from './events.js';
+import { insertSnapshot, type Snapshot } from './snapshots.js';
+
+export type { EventInput, StoredEvent } from './events.js';
+export type { Snapshot } from './snapshots.js';
+
+export interface LatestState {
+  snapshot: Snapshot | null;
+  events: StoredEvent[];
+}
+
+export class Persistence {
+  constructor(private readonly pool: Pool) {}
+
+  private async transaction<T>(
+    sessionId: string,
+    work: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query(
+        'SELECT id FROM sessions WHERE id = $1 FOR UPDATE',
+        [sessionId],
+      );
+      if (locked.rowCount !== 1)
+        throw new Error(`Session not found: ${sessionId}`);
+      const result = await work(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  append(
+    sessionId: string,
+    events: readonly EventInput[],
+  ): Promise<StoredEvent[]> {
+    return this.transaction(sessionId, (client) =>
+      appendEvents(client, sessionId, events),
+    );
+  }
+
+  writeTurn(
+    sessionId: string,
+    events: readonly EventInput[],
+    state: unknown,
+  ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
+    if (events.length === 0) throw new Error('A turn needs at least one event');
+    return this.transaction(sessionId, async (client) => {
+      const inserted = await appendEvents(client, sessionId, events);
+      const last = inserted.at(-1);
+      if (!last) throw new Error('A turn needs at least one event');
+      const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
+      return { events: inserted, snapshot };
+    });
+  }
+
+  async loadLatest(sessionId: string): Promise<LatestState> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const snapshots = await client.query<{
+        seq: string;
+        state: unknown;
+        created_at: Date;
+      }>(
+        'SELECT seq, state, created_at FROM snapshots WHERE session_id = $1 ORDER BY seq DESC LIMIT 1',
+        [sessionId],
+      );
+      const row = snapshots.rows[0];
+      const snapshot = row
+        ? {
+            sessionId,
+            seq: Number(row.seq),
+            state: row.state,
+            createdAt: row.created_at,
+          }
+        : null;
+      const tail = await client.query<{
+        seq: string;
+        turn_id: string;
+        type: string;
+        payload: unknown;
+        ts: Date;
+      }>(
+        'SELECT seq,turn_id,type,payload,ts FROM events WHERE session_id = $1 AND seq > $2 ORDER BY seq',
+        [sessionId, snapshot?.seq ?? 0],
+      );
+      await client.query('COMMIT');
+      return {
+        snapshot,
+        events: tail.rows.map((event) => ({
+          sessionId,
+          seq: Number(event.seq),
+          turnId: event.turn_id,
+          type: event.type,
+          payload: event.payload,
+          ts: event.ts,
+        })),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
