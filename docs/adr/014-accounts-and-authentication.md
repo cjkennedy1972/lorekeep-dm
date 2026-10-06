@@ -18,3 +18,5 @@ Status: Proposed (human decision 2026-10-06: accounts required) · Date: 2026-10
 **Consequences.** Activation target (spec: 60% landing to first turn) is at risk from signup friction plus email verification; measure it. Email delivery becomes a hard dependency (transactional provider). Quick-start flow must create the account first, then character.
 
 **Needs human?** Confirm OAuth is acceptable as post-launch; spec stories US-S1/US-P2 need amending by Compass.
+
+**M0-14 CSRF addendum.** Cookie sessions use SameSite=Lax, which prevents cross-site POST/DELETE cookie attachment in modern browsers. Every mutating API request with an Origin header is also checked against the request's own scheme and Host; a mismatched or malformed Origin is rejected with 403. Requests without Origin remain possible for command-line and other non-browser clients; those clients cannot be induced by another website to attach the user's browser cookie. Cookie is host-only (`__Host-sid`, Path=/, Secure in production) and httpOnly. Deployments behind a proxy must configure Fastify's trusted proxy policy and Host enforcement before relying on forwarded scheme/host.

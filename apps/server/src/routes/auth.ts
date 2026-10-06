@@ -5,6 +5,17 @@ import type { Pool } from 'pg';
 import type { EmailSender } from '../email/sender.js';
 import { signup, signupSchema } from '../accounts/signup.js';
 import { verifyEmail } from '../accounts/verify.js';
+import { login, badCredentials } from '../accounts/login.js';
+import {
+  clearSessionCookie,
+  deviceLabel,
+  revokeSession,
+  sessionCookie,
+  tokenFromCookie,
+} from '../accounts/sessions.js';
+import { authenticateRequest } from '../middleware/auth.js';
+import { validOrigin } from '../middleware/origin.js';
+import { LoginInputSchema } from '@game/schema';
 
 export function registerAuthRoutes(
   app: FastifyInstance<
@@ -29,6 +40,145 @@ export function registerAuthRoutes(
     item.count++;
     return item.count > rateLimit;
   }
+  const failures = new Map<string, { count: number; reset: number }>();
+  app.addHook('onRequest', async (request, reply) => {
+    if (!validOrigin(request))
+      return reply
+        .code(403)
+        .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
+  });
+  app.post('/api/login', async (request, reply) => {
+    const parsed = LoginInputSchema.safeParse(request.body);
+    if (!parsed.success)
+      return reply
+        .code(400)
+        .send({ code: 'INVALID_INPUT', message: 'Invalid login details.' });
+    const email = parsed.data.email.trim().toLowerCase();
+    const key = `${request.ip}:${email}`;
+    const now = Date.now();
+    let attempt = failures.get(key);
+    if (!attempt || attempt.reset <= now) {
+      attempt = { count: 0, reset: now + 600_000 };
+      failures.set(key, attempt);
+    }
+    // Perform the password verification even when blocked to preserve response timing.
+    const result = await login(
+      db,
+      email,
+      parsed.data.password,
+      deviceLabel(request.headers['user-agent'] ?? ''),
+    );
+    if (attempt.count >= 5) {
+      if (result.kind === 'ok') await revokeSession(db, result.token);
+      return reply.code(429).send(badCredentials);
+    }
+    if (result.kind === 'invalid') {
+      attempt.count++;
+      return reply.code(401).send(badCredentials);
+    }
+    if (result.kind === 'pending')
+      return reply.code(403).send({
+        code: 'EMAIL_UNVERIFIED',
+        message: 'Check your email and verify your account before signing in.',
+      });
+    failures.delete(key);
+    reply.header(
+      'set-cookie',
+      sessionCookie(result.token, process.env.NODE_ENV === 'production'),
+    );
+    const a = result.account;
+    return {
+      account: {
+        id: a.id,
+        email: a.email,
+        displayName: a.display_name,
+        isAdult: a.is_adult,
+        ageCheckedAt: new Date(a.age_checked_at).toISOString(),
+      },
+    };
+  });
+  app.post('/api/logout', async (request, reply) => {
+    const token = tokenFromCookie(request.headers.cookie);
+    if (token) await revokeSession(db, token);
+    reply.header(
+      'set-cookie',
+      clearSessionCookie(process.env.NODE_ENV === 'production'),
+    );
+    return {};
+  });
+  const authed = async (
+    request: Parameters<typeof authenticateRequest>[1],
+    reply: { code: (status: number) => { send: (body: unknown) => unknown } },
+  ) => {
+    const session = await authenticateRequest(db, request);
+    if (!session) {
+      reply
+        .code(401)
+        .send({ code: 'UNAUTHENTICATED', message: 'Sign in required.' });
+      return undefined;
+    }
+    return session;
+  };
+  app.get('/api/me', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const result = await db.query(
+      'SELECT id,email,display_name,is_adult,age_checked_at FROM accounts WHERE id=$1',
+      [session.account_id],
+    );
+    const a = result.rows[0];
+    return {
+      account: {
+        id: a.id,
+        email: a.email,
+        displayName: a.display_name,
+        isAdult: a.is_adult,
+        ageCheckedAt: new Date(a.age_checked_at).toISOString(),
+      },
+    };
+  });
+  app.get('/api/me/sessions', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const rows = await db.query(
+      'SELECT token_hash,ua_label,last_active_at FROM auth_sessions WHERE account_id=$1 AND expires_at>now() AND absolute_expires_at>now() ORDER BY last_active_at DESC',
+      [session.account_id],
+    );
+    return {
+      sessions: rows.rows.map((s) => ({
+        id: s.token_hash,
+        label: s.ua_label ?? 'Unknown device',
+        lastActiveAt: new Date(s.last_active_at).toISOString(),
+        current: s.token_hash === session.token_hash,
+      })),
+    };
+  });
+  app.delete('/api/me/sessions/:id', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    const { id } = request.params as { id: string };
+    const result = await db.query(
+      'DELETE FROM auth_sessions WHERE token_hash=$1 AND account_id=$2',
+      [id, session.account_id],
+    );
+    if (!result.rowCount)
+      return reply.code(404).send({ code: 'NOT_FOUND', message: 'Not found.' });
+    if (id === session.token_hash)
+      reply.header(
+        'set-cookie',
+        clearSessionCookie(process.env.NODE_ENV === 'production'),
+      );
+    return {};
+  });
+  app.post('/api/me/sessions/revoke-others', async (request, reply) => {
+    const session = await authed(request, reply);
+    if (!session) return reply;
+    await db.query(
+      'DELETE FROM auth_sessions WHERE account_id=$1 AND token_hash<>$2',
+      [session.account_id, session.token_hash],
+    );
+    return {};
+  });
   app.post('/api/signup', async (request, reply) => {
     const parsed = signupSchema.safeParse(request.body);
     if (!parsed.success)
