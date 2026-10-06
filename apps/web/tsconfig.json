@@ -6,11 +6,12 @@
     "jsx": "react-jsx",
     "strict": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "noUncheckedIndexedAccess": true,
     "composite": true,
-    "declaration": true
+    "declaration": true,
+    "types": ["node"]
   },
-  "include": ["src"],
+  "include": ["src", "mock", "test"],
   "extends": "../../tsconfig.base.json"
 }
