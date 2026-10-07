@@ -18,6 +18,12 @@ await admin.query('CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public');
 const dbUrl = new URL(baseUrl);
 dbUrl.pathname = `/${schema}`;
 export const proofDb = new Pool({ connectionString: dbUrl.toString() });
+// Attach no-op error handlers to prevent unhandled error events on pool
+// This is a workaround for intermittent Postgres 57P01 errors during afterAll cleanup
+// The underlying issue: DROP DATABASE may occur while pool has pending work or
+// background keep-alive connections; the error is benign and can be safely ignored.
+admin.on('error', () => {});
+proofDb.on('error', () => {});
 export const proofSchema = 'public';
 export const apiOrigin = 'http://127.0.0.1';
 
@@ -40,6 +46,7 @@ for (const file of [
 
 const processes = new Set<ChildProcess>();
 afterAll(async () => {
+  // Wait for any pending server processes to finish before closing DB pools
   await Promise.all(
     [...processes].map(async (child) => {
       if (child.exitCode !== null) return;
@@ -47,6 +54,9 @@ afterAll(async () => {
       await once(child, 'exit');
     }),
   );
+  // Close proofDb pool first, then admin pool
+  // The error handlers added during pool creation catch any race-condition errors
+  // during DROP DATABASE that occur when connections are being torn down concurrently.
   await proofDb.end();
   await admin.query(`DROP DATABASE "${schema}" WITH (FORCE)`);
   await admin.end();
