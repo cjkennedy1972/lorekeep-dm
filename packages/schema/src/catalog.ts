@@ -78,15 +78,96 @@ export const SpellEntrySchema = z.object({
   school: z.string().min(1),
   classes: z.array(z.string()),
 });
-export const MonsterEntrySchema = z.object({
-  ...base,
-  kind: z.literal('monster'),
-  cr: z.number().nonnegative(),
-  hp: z.int().positive(),
-  ac: z.int().positive(),
-  speed: z.int().nonnegative(),
-  size: z.enum(['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']),
+export const MonsterSizeSchema = z.enum([
+  'tiny',
+  'small',
+  'medium',
+  'large',
+  'huge',
+  'gargantuan',
+]);
+/** Cells per side occupied on the 5 ft grid (Tiny uses one whole cell). */
+export const SIZE_FOOTPRINT_CELLS = {
+  tiny: 1,
+  small: 1,
+  medium: 1,
+  large: 2,
+  huge: 3,
+  gargantuan: 4,
+} as const satisfies Record<z.infer<typeof MonsterSizeSchema>, number>;
+
+/** "NdM", "NdM+K", "NdM-K", or a flat integer ("1"). */
+const DiceSchema = z.string().regex(/^\d+(?:d\d+)?(?:[+-]\d+)?$/);
+export const MonsterAttackSchema = z
+  .object({
+    name: z.string().min(1),
+    toHit: z.int(),
+    reachFt: z.int().positive().optional(),
+    range: z
+      .object({
+        normalFt: z.int().positive(),
+        longFt: z.int().positive().optional(),
+      })
+      .optional(),
+    /** damage[0] is the primary hit; later entries are SRD riders (see effect). */
+    damage: z
+      .array(z.object({ dice: DiceSchema, type: z.string().min(1) }))
+      .min(1),
+    /** SRD hit text when it has more than plain damage. */
+    effect: z.string().min(1).optional(),
+    /** SRD parenthetical on the to-hit, e.g. "with Advantage if ...". */
+    toHitNote: z.string().min(1).optional(),
+  })
+  .refine((a) => a.reachFt !== undefined || a.range !== undefined, {
+    message: 'Attack needs a reach or a range band',
+  });
+export const MonsterTraitSchema = z.object({
+  name: z.string().min(1),
+  kind: z.enum(['trait', 'action', 'bonus-action', 'reaction']),
+  text: z.string().min(1),
 });
+export const MonsterEntrySchema = z
+  .object({
+    ...base,
+    kind: z.literal('monster'),
+    cr: z.number().nonnegative(),
+    creatureType: z.string().min(1).optional(),
+    hp: z.int().positive(),
+    hpDice: DiceSchema.optional(),
+    ac: z.int().positive(),
+    initiative: z.int().optional(),
+    /** Walking speed in ft. */
+    speed: z.int().nonnegative(),
+    otherSpeeds: z
+      .object({
+        burrow: z.int().positive().optional(),
+        climb: z.int().positive().optional(),
+        fly: z.int().positive().optional(),
+        swim: z.int().positive().optional(),
+      })
+      .optional(),
+    size: MonsterSizeSchema,
+    footprint: z.int().min(1).max(4).optional(),
+    abilities: z.record(AbilitySchema, z.int().min(1).max(30)).optional(),
+    saves: z.partialRecord(AbilitySchema, z.int()).optional(),
+    skills: z.record(z.string(), z.int()).optional(),
+    damageResistances: z.array(z.string()).optional(),
+    damageVulnerabilities: z.array(z.string()).optional(),
+    damageImmunities: z.array(z.string()).optional(),
+    conditionImmunities: z.array(z.string()).optional(),
+    senses: z.record(z.string(), z.int().positive()).optional(),
+    passivePerception: z.int().optional(),
+    attacks: z.array(MonsterAttackSchema).optional(),
+    traits: z.array(MonsterTraitSchema).optional(),
+  })
+  .refine(
+    (m) =>
+      m.footprint === undefined || m.footprint === SIZE_FOOTPRINT_CELLS[m.size],
+    {
+      path: ['footprint'],
+      message: 'Footprint must match the size category',
+    },
+  );
 export const ConditionEntrySchema = z.object({
   ...base,
   kind: z.literal('condition'),
