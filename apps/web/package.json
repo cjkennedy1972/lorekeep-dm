@@ -10,11 +10,12 @@
     "mock": "tsx mock/server.ts",
     "dev": "vite",
     "e2e": "playwright test",
-    "pretypecheck": "pnpm --filter @game/schema build",
-    "pretest": "pnpm --filter @game/schema build",
-    "prebuild": "pnpm --filter @game/schema build"
+    "pretypecheck": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build",
+    "pretest": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build",
+    "prebuild": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build"
   },
   "dependencies": {
+    "@game/rules-engine": "workspace:*",
     "@game/schema": "workspace:*",
     "@radix-ui/react-switch": "1.3.7",
     "react": "19.2.0",
