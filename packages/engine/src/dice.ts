@@ -27,17 +27,34 @@ export interface RollOptions {
 // NdM[kh|kl K][+/-K]
 const EXPR = /^(\d+)d(\d+)(?:k([hl])(\d+))?([+-]\d+)?$/;
 
+/** Hard cap on dice count to prevent OOM. */
+export const MAX_DICE_COUNT = 100;
+/** Hard cap on dice sides to prevent precision loss and OOM. */
+export const MAX_DICE_SIDES = 1000;
+
 export function roll(
   expression: string,
   state: RngState,
   opts: RollOptions = {},
 ): [RollBreakdown, RngState] {
-  const m = EXPR.exec(expression.replace(/\s+/g, '').toLowerCase());
+  const normalized = expression.replace(/\s+/g, '').toLowerCase();
+  const m = EXPR.exec(normalized);
   if (!m) throw new Error(`invalid dice expression: ${expression}`);
   let count = Number(m[1]);
   const sides = Number(m[2]);
-  if (count < 1 || sides < 1)
-    throw new Error(`invalid dice expression: ${expression}`);
+
+  // Validate count and sides: must be positive integers within bounds
+  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_DICE_COUNT) {
+    throw new Error(
+      `dice count must be a safe integer between 1 and ${MAX_DICE_COUNT}: ${expression}`,
+    );
+  }
+  if (!Number.isSafeInteger(sides) || sides < 1 || sides > MAX_DICE_SIDES) {
+    throw new Error(
+      `dice sides must be a safe integer between 1 and ${MAX_DICE_SIDES}: ${expression}`,
+    );
+  }
+
   let keep = m[3] ? Number(m[4]) : count;
   let keepHigh = m[3] !== 'l';
   const mode = opts.mode ?? 'normal';
@@ -48,7 +65,7 @@ export function roll(
     keep = 1;
     keepHigh = mode === 'advantage';
   }
-  if (keep < 1 || keep > count)
+  if (!Number.isSafeInteger(keep) || keep < 1 || keep > count)
     throw new Error(`invalid keep count: ${expression}`);
 
   const dice: DieResult[] = [];
@@ -73,7 +90,7 @@ export function roll(
   const total =
     dice.filter((d) => d.kept).reduce((s, d) => s + d.value, 0) +
     modifiers.reduce((s, x) => s + x.value, 0);
-  return [{ expression, dice, modifiers, total }, state];
+  return [{ expression: normalized, dice, modifiers, total }, state];
 }
 
 export const abilityModifier = (score: number): number =>
