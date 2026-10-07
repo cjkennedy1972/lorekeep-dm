@@ -1,0 +1,8031 @@
+[
+  {
+    "id": "monster:animated-armor",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Animated Armor (p. 259)"
+    },
+    "name": "Animated Armor",
+    "cr": 1,
+    "creatureType": "construct",
+    "hp": 33,
+    "hpDice": "6d8+6",
+    "ac": 18,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 25,
+    "abilities": {
+      "str": 14,
+      "dex": 11,
+      "con": 13,
+      "int": 1,
+      "wis": 3,
+      "cha": 1
+    },
+    "damageImmunities": ["poison", "psychic"],
+    "conditionImmunities": [
+      "charmed",
+      "deafened",
+      "exhaustion",
+      "frightened",
+      "paralyzed",
+      "petrified",
+      "poisoned"
+    ],
+    "passivePerception": 6,
+    "senses": {
+      "blindsight": 60
+    },
+    "attacks": [
+      {
+        "name": "Slam",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The armor makes two Slam attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:animated-flying-sword",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Animated Flying Sword (p. 259)"
+    },
+    "name": "Animated Flying Sword",
+    "cr": 0.25,
+    "creatureType": "construct",
+    "hp": 14,
+    "hpDice": "4d6",
+    "ac": 17,
+    "initiative": 4,
+    "size": "small",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "fly": 50
+    },
+    "abilities": {
+      "str": 12,
+      "dex": 15,
+      "con": 11,
+      "int": 1,
+      "wis": 5,
+      "cha": 1
+    },
+    "saves": {
+      "dex": 4
+    },
+    "damageImmunities": ["poison", "psychic"],
+    "conditionImmunities": [
+      "charmed",
+      "deafened",
+      "exhaustion",
+      "frightened",
+      "paralyzed",
+      "petrified",
+      "poisoned"
+    ],
+    "passivePerception": 7,
+    "senses": {
+      "blindsight": 60
+    },
+    "attacks": [
+      {
+        "name": "Slash",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:ape",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Ape (p. 344)"
+    },
+    "name": "Ape",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 19,
+    "hpDice": "3d8+6",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 16,
+      "dex": 14,
+      "con": 14,
+      "int": 6,
+      "wis": 12,
+      "cha": 7
+    },
+    "skills": {
+      "athletics": 5,
+      "perception": 3
+    },
+    "passivePerception": 13,
+    "attacks": [
+      {
+        "name": "Fist",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "bludgeoning"
+          }
+        ]
+      },
+      {
+        "name": "Rock (Recharge 6)",
+        "toHit": 5,
+        "range": {
+          "normalFt": 25,
+          "longFt": 50
+        },
+        "damage": [
+          {
+            "dice": "2d6+3",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The ape makes two Fist attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:awakened-shrub",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Awakened Shrub (p. 260)"
+    },
+    "name": "Awakened Shrub",
+    "cr": 0,
+    "creatureType": "plant",
+    "hp": 10,
+    "hpDice": "3d6",
+    "ac": 9,
+    "initiative": -1,
+    "size": "small",
+    "footprint": 1,
+    "speed": 20,
+    "abilities": {
+      "str": 3,
+      "dex": 8,
+      "con": 11,
+      "int": 10,
+      "wis": 10,
+      "cha": 6
+    },
+    "damageResistances": ["piercing"],
+    "damageVulnerabilities": ["fire"],
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Rake",
+        "toHit": 1,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "slashing"
+          }
+        ],
+        "effect": "1 Slashing damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:axe-beak",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Axe Beak (p. 260)"
+    },
+    "name": "Axe Beak",
+    "cr": 0.25,
+    "creatureType": "monstrosity",
+    "hp": 19,
+    "hpDice": "3d10+3",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 50,
+    "abilities": {
+      "str": 14,
+      "dex": 12,
+      "con": 12,
+      "int": 2,
+      "wis": 10,
+      "cha": 5
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Beak",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:baboon",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Baboon (p. 345)"
+    },
+    "name": "Baboon",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 3,
+    "hpDice": "1d6",
+    "ac": 12,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 8,
+      "dex": 14,
+      "con": 11,
+      "int": 4,
+      "wis": 12,
+      "cha": 6
+    },
+    "passivePerception": 11,
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 1,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4-1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The baboon has Advantage on an attack roll against a creature if at least one of the baboon’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:badger",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Badger (p. 345)"
+    },
+    "name": "Badger",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 5,
+    "hpDice": "1d4+3",
+    "ac": 11,
+    "initiative": 0,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "burrow": 5
+    },
+    "abilities": {
+      "str": 10,
+      "dex": 11,
+      "con": 16,
+      "int": 2,
+      "wis": 12,
+      "cha": 5
+    },
+    "skills": {
+      "perception": 3
+    },
+    "damageResistances": ["poison"],
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:bandit",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Bandit (p. 261)"
+    },
+    "name": "Bandit",
+    "cr": 0.125,
+    "creatureType": "humanoid",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 12,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 11,
+      "dex": 12,
+      "con": 12,
+      "int": 10,
+      "wis": 10,
+      "cha": 10
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Scimitar",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "slashing"
+          }
+        ]
+      },
+      {
+        "name": "Light Crossbow",
+        "toHit": 3,
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "damage": [
+          {
+            "dice": "1d8+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:bat",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Bat (p. 345)"
+    },
+    "name": "Bat",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 12,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "fly": 30
+    },
+    "abilities": {
+      "str": 2,
+      "dex": 15,
+      "con": 8,
+      "int": 2,
+      "wis": 12,
+      "cha": 4
+    },
+    "passivePerception": 11,
+    "senses": {
+      "blindsight": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:black-bear",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Black Bear (p. 345)"
+    },
+    "name": "Black Bear",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 19,
+    "hpDice": "3d8+6",
+    "ac": 11,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30,
+      "swim": 30
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 12,
+      "con": 14,
+      "int": 2,
+      "wis": 12,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 5
+    },
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The bear makes two Rend attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:blink-dog",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Blink Dog (p. 266)"
+    },
+    "name": "Blink Dog",
+    "cr": 0.25,
+    "creatureType": "fey",
+    "hp": 22,
+    "hpDice": "4d8+4",
+    "ac": 13,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 12,
+      "dex": 17,
+      "con": 12,
+      "int": 10,
+      "wis": 13,
+      "cha": 11
+    },
+    "skills": {
+      "perception": 5,
+      "stealth": 5
+    },
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Teleport (Recharge 4–6)",
+        "kind": "bonus-action",
+        "text": "The dog teleports up to 40 feet to an unoccupied space it can see."
+      }
+    ]
+  },
+  {
+    "id": "monster:blood-hawk",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Blood Hawk (p. 345)"
+    },
+    "name": "Blood Hawk",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 7,
+    "hpDice": "2d6",
+    "ac": 12,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 14,
+      "con": 10,
+      "int": 3,
+      "wis": 14,
+      "cha": 5
+    },
+    "skills": {
+      "perception": 6
+    },
+    "passivePerception": 16,
+    "attacks": [
+      {
+        "name": "Beak",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d8+2",
+            "type": "piercing"
+          }
+        ],
+        "effect": "4 (1d4 + 2) Piercing damage, or 6 (1d8 + 2) Piercing damage if the target is Bloodied."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The hawk has Advantage on an attack roll against a creature if at least one of the hawk’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:boar",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Boar (p. 346)"
+    },
+    "name": "Boar",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 13,
+    "hpDice": "2d8+4",
+    "ac": 11,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 13,
+      "dex": 11,
+      "con": 14,
+      "int": 2,
+      "wis": 9,
+      "cha": 5
+    },
+    "passivePerception": 9,
+    "attacks": [
+      {
+        "name": "Gore",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d6",
+            "type": "piercing"
+          }
+        ],
+        "effect": "4 (1d6 + 1) Piercing damage. If the target is a Medium or smaller creature and the boar moved 20+ feet straight toward it immediately before the hit, the target takes an extra 3 (1d6) Piercing damage and has the Prone condition."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Bloodied Fury",
+        "kind": "trait",
+        "text": "While Bloodied, the boar has Advantage on attack rolls."
+      }
+    ]
+  },
+  {
+    "id": "monster:brass-dragon-wyrmling",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Brass Dragon Wyrmling (p. 268)"
+    },
+    "name": "Brass Dragon Wyrmling",
+    "cr": 1,
+    "creatureType": "dragon",
+    "hp": 22,
+    "hpDice": "4d8+4",
+    "ac": 15,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "burrow": 15,
+      "fly": 60
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 10,
+      "con": 13,
+      "int": 10,
+      "wis": 11,
+      "cha": 13
+    },
+    "saves": {
+      "dex": 2,
+      "wis": 2
+    },
+    "skills": {
+      "perception": 4,
+      "stealth": 2
+    },
+    "damageImmunities": ["fire"],
+    "passivePerception": 14,
+    "senses": {
+      "blindsight": 10,
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d10+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Fire Breath (Recharge 5–6)",
+        "kind": "action",
+        "text": "Dexterity Saving Throw: DC 11, each creature in a 20-foot-long, 5-footwide Line. Failure: 14 (4d6) Fire damage. Success: Half damage."
+      },
+      {
+        "name": "Sleep Breath",
+        "kind": "action",
+        "text": "Constitution Saving Throw: DC 11, each creature in a 15-foot Cone. Failure: The target has the Incapacitated condition until the end of its next turn, at which point it repeats the save. Second Failure: The target has the Unconscious condition for 1 minute. This effect ends for the target if it takes damage or a creature within 5 feet of it takes an action to wake it."
+      }
+    ]
+  },
+  {
+    "id": "monster:brown-bear",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Brown Bear (p. 346)"
+    },
+    "name": "Brown Bear",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 22,
+    "hpDice": "3d10+6",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 40,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 17,
+      "dex": 12,
+      "con": 15,
+      "int": 2,
+      "wis": 13,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 3
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+3",
+            "type": "piercing"
+          }
+        ]
+      },
+      {
+        "name": "Claw",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "slashing"
+          }
+        ],
+        "effect": "5 (1d4 + 3) Slashing damage. If the target is a Large or smaller creature, it has the Prone condition."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The bear makes one Bite attack and one Claw attack."
+      }
+    ]
+  },
+  {
+    "id": "monster:bugbear-warrior",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Bugbear Warrior (p. 272)"
+    },
+    "name": "Bugbear Warrior",
+    "cr": 1,
+    "creatureType": "fey",
+    "hp": 33,
+    "hpDice": "6d8+6",
+    "ac": 14,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 15,
+      "dex": 14,
+      "con": 13,
+      "int": 8,
+      "wis": 11,
+      "cha": 9
+    },
+    "skills": {
+      "stealth": 6,
+      "survival": 2
+    },
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Grab",
+        "toHit": 4,
+        "reachFt": 10,
+        "damage": [
+          {
+            "dice": "2d6+2",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "9 (2d6 + 2) Bludgeoning damage. If the target is a Medium or smaller creature, it has the Grappled condition (escape DC 12)."
+      },
+      {
+        "name": "Light Hammer",
+        "toHit": 4,
+        "toHitNote": "with Advantage if the target is Grappled by the bugbear",
+        "reachFt": 10,
+        "range": {
+          "normalFt": 20,
+          "longFt": 60
+        },
+        "damage": [
+          {
+            "dice": "3d4+2",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Abduct",
+        "kind": "trait",
+        "text": "The bugbear needn’t spend extra movement to move a creature it is grappling."
+      }
+    ]
+  },
+  {
+    "id": "monster:camel",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Camel (p. 346)"
+    },
+    "name": "Camel",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 17,
+    "hpDice": "2d10+6",
+    "ac": 10,
+    "initiative": -1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 50,
+    "abilities": {
+      "str": 15,
+      "dex": 8,
+      "con": 17,
+      "int": 2,
+      "wis": 11,
+      "cha": 5
+    },
+    "saves": {
+      "con": 5
+    },
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:cat",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Cat (p. 346)"
+    },
+    "name": "Cat",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 2,
+    "hpDice": "1d4",
+    "ac": 12,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 40,
+    "otherSpeeds": {
+      "climb": 40
+    },
+    "abilities": {
+      "str": 3,
+      "dex": 15,
+      "con": 10,
+      "int": 3,
+      "wis": 12,
+      "cha": 7
+    },
+    "saves": {
+      "dex": 4
+    },
+    "skills": {
+      "perception": 3,
+      "stealth": 4
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Scratch",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "slashing"
+          }
+        ],
+        "effect": "1 Slashing damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Jumper",
+        "kind": "trait",
+        "text": "The cat’s jump distance is determined using its Dexterity rather than its Strength."
+      }
+    ]
+  },
+  {
+    "id": "monster:cockatrice",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Cockatrice (p. 275)"
+    },
+    "name": "Cockatrice",
+    "cr": 0.5,
+    "creatureType": "monstrosity",
+    "hp": 22,
+    "hpDice": "5d6+5",
+    "ac": 11,
+    "initiative": 1,
+    "size": "small",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "fly": 40
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 12,
+      "con": 12,
+      "int": 2,
+      "wis": 13,
+      "cha": 5
+    },
+    "conditionImmunities": ["petrified"],
+    "passivePerception": 11,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Petrifying Bite",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "3 (1d4 + 1) Piercing damage. If the target is a creature, it is subjected to the following effect. Constitution Saving Throw: DC 11. First Failure: The target has the Restrained condition. The target repeats the save at the end of its next turn if it is still Restrained, ending the effect on itself on a success. Second Failure: The target has the Petrified condition, instead of the Restrained condition, for 24 hours."
+      }
+    ]
+  },
+  {
+    "id": "monster:commoner",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Commoner (p. 275)"
+    },
+    "name": "Commoner",
+    "cr": 0,
+    "creatureType": "humanoid",
+    "hp": 4,
+    "hpDice": "1d8",
+    "ac": 10,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 10,
+      "dex": 10,
+      "con": 10,
+      "int": 10,
+      "wis": 10,
+      "cha": 10
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Club",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Training",
+        "kind": "trait",
+        "text": "The commoner has proficiency in one skill of the GM’s choice and has Advantage whenever it makes an ability check using that skill."
+      }
+    ]
+  },
+  {
+    "id": "monster:constrictor-snake",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Constrictor Snake (p. 346)"
+    },
+    "name": "Constrictor Snake",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 13,
+    "hpDice": "2d10+2",
+    "ac": 13,
+    "initiative": 2,
+    "size": "large",
+    "footprint": 2,
+    "speed": 30,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 14,
+      "con": 12,
+      "int": 1,
+      "wis": 10,
+      "cha": 3
+    },
+    "skills": {
+      "perception": 2,
+      "stealth": 4
+    },
+    "passivePerception": 12,
+    "senses": {
+      "blindsight": 10
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Constrict",
+        "kind": "action",
+        "text": "Strength Saving Throw: DC 12, one Medium or smaller creature the snake can see within 5 feet. Failure: 7 (3d4) Bludgeoning damage, and the target has the Grappled condition (escape DC 12)."
+      }
+    ]
+  },
+  {
+    "id": "monster:copper-dragon-wyrmling",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Copper Dragon Wyrmling (p. 275)"
+    },
+    "name": "Copper Dragon Wyrmling",
+    "cr": 1,
+    "creatureType": "dragon",
+    "hp": 22,
+    "hpDice": "4d8+4",
+    "ac": 16,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30,
+      "fly": 60
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 12,
+      "con": 13,
+      "int": 14,
+      "wis": 11,
+      "cha": 13
+    },
+    "saves": {
+      "dex": 3,
+      "wis": 2
+    },
+    "skills": {
+      "perception": 4,
+      "stealth": 3
+    },
+    "damageImmunities": ["acid"],
+    "passivePerception": 14,
+    "senses": {
+      "blindsight": 10,
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d10+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Acid Breath (Recharge 5–6)",
+        "kind": "action",
+        "text": "Dexterity Saving Throw: DC 11, each creature in a 20-foot-long, 5-footwide Line. Failure: 18 (4d8) Acid damage. Success: Half damage."
+      },
+      {
+        "name": "Slowing Breath",
+        "kind": "action",
+        "text": "Constitution Saving Throw: DC 11, each creature in a 15-foot Cone. Failure: The target can’t take Reactions; its Speed is halved; and it can take either an action or a Bonus Action on its turn, not both. This effect lasts until the end of its next turn."
+      }
+    ]
+  },
+  {
+    "id": "monster:crab",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Crab (p. 347)"
+    },
+    "name": "Crab",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 3,
+    "hpDice": "1d4+1",
+    "ac": 11,
+    "initiative": 0,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "swim": 20
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 11,
+      "con": 12,
+      "int": 1,
+      "wis": 8,
+      "cha": 2
+    },
+    "skills": {
+      "stealth": 2
+    },
+    "passivePerception": 9,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "1 Bludgeoning damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amphibious",
+        "kind": "trait",
+        "text": "The crab can breathe air and water."
+      }
+    ]
+  },
+  {
+    "id": "monster:crocodile",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Crocodile (p. 347)"
+    },
+    "name": "Crocodile",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 13,
+    "hpDice": "2d10+2",
+    "ac": 12,
+    "initiative": 0,
+    "size": "large",
+    "footprint": 2,
+    "speed": 20,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 10,
+      "con": 13,
+      "int": 2,
+      "wis": 10,
+      "cha": 5
+    },
+    "saves": {
+      "con": 3
+    },
+    "skills": {
+      "stealth": 2
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+2",
+            "type": "piercing"
+          }
+        ],
+        "effect": "6 (1d8 + 2) Piercing damage. If the target is a Medium or smaller creature, it has the Grappled condition (escape DC 12). While Grappled, the target has the Restrained condition."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Hold Breath",
+        "kind": "trait",
+        "text": "The crocodile can hold its breath for 1 hour."
+      }
+    ]
+  },
+  {
+    "id": "monster:cultist",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Cultist (p. 278)"
+    },
+    "name": "Cultist",
+    "cr": 0.125,
+    "creatureType": "humanoid",
+    "hp": 9,
+    "hpDice": "2d8",
+    "ac": 12,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 11,
+      "dex": 12,
+      "con": 10,
+      "int": 10,
+      "wis": 11,
+      "cha": 10
+    },
+    "saves": {
+      "wis": 2
+    },
+    "skills": {
+      "deception": 2,
+      "religion": 2
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Ritual Sickle",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+1",
+            "type": "slashing"
+          }
+        ],
+        "effect": "3 (1d4 + 1) Slashing damage plus 1 Necrotic damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:darkmantle",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Darkmantle (p. 278)"
+    },
+    "name": "Darkmantle",
+    "cr": 0.5,
+    "creatureType": "aberration",
+    "hp": 22,
+    "hpDice": "5d6+5",
+    "ac": 11,
+    "initiative": 3,
+    "size": "small",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 30
+    },
+    "abilities": {
+      "str": 16,
+      "dex": 12,
+      "con": 13,
+      "int": 2,
+      "wis": 10,
+      "cha": 5
+    },
+    "skills": {
+      "stealth": 3
+    },
+    "passivePerception": 10,
+    "senses": {
+      "blindsight": 60
+    },
+    "attacks": [
+      {
+        "name": "Crush",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "6 (1d6 + 3) Bludgeoning damage, and the darkmantle attaches to the target. If the target is a Medium or smaller creature and the darkmantle had Advantage on the attack roll, it covers the target, which has the Blinded condition and is suffocating while the darkmantle is attached in this way. While attached to a target, the darkmantle can attack only the target but has Advantage on its attack rolls. Its Speed becomes 0, it can’t benefit from any bonus to its Speed, and it moves with the target. A creature can take an action to try to detach the darkmantle from itself, doing so with a successful DC 13 Strength (Athletics) check. On its turn, the darkmantle can detach itself by using 5 feet of movement."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Darkness Aura (1/Day)",
+        "kind": "action",
+        "text": "Magical Darkness fills a 15-foot Emanation originating from the darkmantle. This effect lasts while the darkmantle maintains Concentration on it, up to 10 minutes. Darkvision can’t penetrate this area, and no light can illuminate it."
+      }
+    ]
+  },
+  {
+    "id": "monster:death-dog",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Death Dog (p. 279)"
+    },
+    "name": "Death Dog",
+    "cr": 1,
+    "creatureType": "monstrosity",
+    "hp": 39,
+    "hpDice": "6d8+12",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 15,
+      "dex": 14,
+      "con": 14,
+      "int": 3,
+      "wis": 13,
+      "cha": 6
+    },
+    "skills": {
+      "perception": 5,
+      "stealth": 4
+    },
+    "conditionImmunities": [
+      "blinded",
+      "charmed",
+      "deafened",
+      "frightened",
+      "stunned",
+      "unconscious"
+    ],
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 120
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "piercing"
+          }
+        ],
+        "effect": "4 (1d4 + 2) Piercing damage. If the target is a creature, it is subjected to the following effect. Constitution Saving Throw: DC 12. First Failure: The target has the Poisoned condition. While Poisoned, the target’s Hit Point maximum doesn’t return to normal when finishing a Long Rest, and it repeats the save every 24 hours that elapse, ending the effect on itself on a success. Subsequent Failures: The Poisoned target’s Hit Point maximum decreases by 5 (1d10)."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The death dog makes two Bite attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:deer",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Deer (p. 347)"
+    },
+    "name": "Deer",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 4,
+    "hpDice": "1d8",
+    "ac": 13,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 50,
+    "abilities": {
+      "str": 11,
+      "dex": 16,
+      "con": 11,
+      "int": 2,
+      "wis": 14,
+      "cha": 5
+    },
+    "skills": {
+      "perception": 4
+    },
+    "passivePerception": 14,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Ram",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Agile",
+        "kind": "trait",
+        "text": "The deer doesn’t provoke an Opportunity Attack when it moves out of an enemy’s reach."
+      }
+    ]
+  },
+  {
+    "id": "monster:dire-wolf",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Dire Wolf (p. 347)"
+    },
+    "name": "Dire Wolf",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 22,
+    "hpDice": "3d10+6",
+    "ac": 14,
+    "initiative": 2,
+    "size": "large",
+    "footprint": 2,
+    "speed": 50,
+    "abilities": {
+      "str": 17,
+      "dex": 15,
+      "con": 15,
+      "int": 3,
+      "wis": 12,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 5,
+      "stealth": 4
+    },
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d10+3",
+            "type": "piercing"
+          }
+        ],
+        "effect": "8 (1d10 + 3) Piercing damage. If the target is a Large or smaller creature, it has the Prone condition."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The wolf has Advantage on an attack roll against a creature if at least one of the wolf’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:draft-horse",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Draft Horse (p. 347)"
+    },
+    "name": "Draft Horse",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 15,
+    "hpDice": "2d10+4",
+    "ac": 10,
+    "initiative": 0,
+    "size": "large",
+    "footprint": 2,
+    "speed": 40,
+    "abilities": {
+      "str": 18,
+      "dex": 10,
+      "con": 15,
+      "int": 2,
+      "wis": 11,
+      "cha": 7
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Hooves",
+        "toHit": 6,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+4",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:dretch",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Dretch (p. 281)"
+    },
+    "name": "Dretch",
+    "cr": 0.25,
+    "creatureType": "fiend",
+    "hp": 18,
+    "hpDice": "4d6+4",
+    "ac": 11,
+    "initiative": 0,
+    "size": "small",
+    "footprint": 1,
+    "speed": 20,
+    "abilities": {
+      "str": 12,
+      "dex": 11,
+      "con": 12,
+      "int": 5,
+      "wis": 8,
+      "cha": 3
+    },
+    "damageResistances": ["cold", "fire", "lightning"],
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["poisoned"],
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Fetid Cloud (1/Day)",
+        "kind": "action",
+        "text": "Constitution Saving Throw: DC 11, each creature in a 10-foot Emanation originating from the dretch. Failure: The target has the Poisoned condition until the end of its next turn. While Poisoned, the creature can take either an action or a Bonus Action on its turn, not both, and it can’t take Reactions."
+      }
+    ]
+  },
+  {
+    "id": "monster:dryad",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Dryad (p. 282)"
+    },
+    "name": "Dryad",
+    "cr": 1,
+    "creatureType": "fey",
+    "hp": 22,
+    "hpDice": "5d8",
+    "ac": 16,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 10,
+      "dex": 12,
+      "con": 11,
+      "int": 14,
+      "wis": 15,
+      "cha": 18
+    },
+    "skills": {
+      "perception": 4,
+      "stealth": 5
+    },
+    "passivePerception": 14,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Vine Lash",
+        "toHit": 6,
+        "reachFt": 10,
+        "damage": [
+          {
+            "dice": "1d8+4",
+            "type": "slashing"
+          }
+        ]
+      },
+      {
+        "name": "Thorn Burst",
+        "toHit": 6,
+        "range": {
+          "normalFt": 60
+        },
+        "damage": [
+          {
+            "dice": "1d6+4",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Magic Resistance",
+        "kind": "trait",
+        "text": "The dryad has Advantage on saving throws against spells and other magical effects."
+      },
+      {
+        "name": "Speak with Beasts and Plants",
+        "kind": "trait",
+        "text": "The dryad can communicate with Beasts and Plants as if they shared a language."
+      },
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The dryad makes one Vine Lash or Thorn Burst attack, and it can use Spellcasting to cast Charm Monster."
+      },
+      {
+        "name": "Spellcasting",
+        "kind": "action",
+        "text": "The dryad casts one of the following spells, requiring no Material components and using Charisma as the spellcasting ability (spell save DC 14): At Will: Animal Friendship, Charm Monster (lasts 24 hours; ends early if the dryad casts the spell again), Druidcraft 1/Day Each: Entangle, Pass without Trace Tree Stride. If within 5 feet of a Large or bigger tree, the dryad teleports to an unoccupied space within 5 feet of a second Large or bigger tree that is within 60 feet of the previous tree."
+      }
+    ]
+  },
+  {
+    "id": "monster:dust-mephit",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Dust Mephit (p. 307)"
+    },
+    "name": "Dust Mephit",
+    "cr": 0.5,
+    "creatureType": "elemental",
+    "hp": 17,
+    "hpDice": "5d6",
+    "ac": 12,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "fly": 30
+    },
+    "abilities": {
+      "str": 5,
+      "dex": 14,
+      "con": 10,
+      "int": 9,
+      "wis": 11,
+      "cha": 10
+    },
+    "skills": {
+      "perception": 2,
+      "stealth": 4
+    },
+    "damageVulnerabilities": ["fire"],
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["exhaustion", "poisoned"],
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Death Burst",
+        "kind": "trait",
+        "text": "The mephit explodes when it dies. Dexterity Saving Throw: DC 10, each creature in a 5-foot Emanation originating from the mephit. Failure: 5 (2d4) Bludgeoning damage. Success: Half damage."
+      },
+      {
+        "name": "Blinding Breath (Recharge 6)",
+        "kind": "action",
+        "text": "Dexterity Saving Throw: DC 10, each creature in a 15-foot Cone. Failure: The target has the Blinded condition until the end of the mephit’s next turn."
+      },
+      {
+        "name": "Sleep (1/Day)",
+        "kind": "action",
+        "text": "The mephit casts the Sleep spell, requiring no spell components and using Charisma as the spellcasting ability (spell save DC 10)."
+      }
+    ]
+  },
+  {
+    "id": "monster:eagle",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Eagle (p. 348)"
+    },
+    "name": "Eagle",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 4,
+    "hpDice": "1d6+1",
+    "ac": 12,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 15,
+      "con": 12,
+      "int": 2,
+      "wis": 14,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 6
+    },
+    "passivePerception": 16,
+    "attacks": [
+      {
+        "name": "Talons",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:elk",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Elk (p. 348)"
+    },
+    "name": "Elk",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 11,
+    "hpDice": "2d10",
+    "ac": 10,
+    "initiative": 0,
+    "size": "large",
+    "footprint": 2,
+    "speed": 50,
+    "abilities": {
+      "str": 16,
+      "dex": 10,
+      "con": 11,
+      "int": 2,
+      "wis": 10,
+      "cha": 6
+    },
+    "skills": {
+      "perception": 2
+    },
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Ram",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "bludgeoning"
+          },
+          {
+            "dice": "1d6",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "6 (1d6 + 3) Bludgeoning damage. If the target is a Large or smaller creature and the elk moved 20+ feet straight toward it immediately before the hit, the target takes an extra 3 (1d6) Bludgeoning damage and has the Prone condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:flying-snake",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Flying Snake (p. 348)"
+    },
+    "name": "Flying Snake",
+    "cr": 0.125,
+    "creatureType": "monstrosity",
+    "hp": 5,
+    "hpDice": "2d4",
+    "ac": 14,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "fly": 60,
+      "swim": 30
+    },
+    "abilities": {
+      "str": 4,
+      "dex": 15,
+      "con": 11,
+      "int": 2,
+      "wis": 12,
+      "cha": 5
+    },
+    "passivePerception": 11,
+    "senses": {
+      "blindsight": 10
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4",
+            "type": "poison"
+          },
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage plus 5 (2d4) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Flyby",
+        "kind": "trait",
+        "text": "The snake doesn’t provoke an Opportunity Attack when it flies out of an enemy’s reach."
+      }
+    ]
+  },
+  {
+    "id": "monster:frog",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Frog (p. 348)"
+    },
+    "name": "Frog",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 11,
+    "initiative": 1,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "swim": 20
+    },
+    "abilities": {
+      "str": 1,
+      "dex": 13,
+      "con": 8,
+      "int": 1,
+      "wis": 8,
+      "cha": 3
+    },
+    "skills": {
+      "perception": 1,
+      "stealth": 3
+    },
+    "passivePerception": 11,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amphibious",
+        "kind": "trait",
+        "text": "The frog can breathe air and water."
+      },
+      {
+        "name": "Standing Leap",
+        "kind": "trait",
+        "text": "The frog’s Long Jump is up to 10 feet and its High Jump is up to 5 feet with or without a running start."
+      }
+    ]
+  },
+  {
+    "id": "monster:ghoul",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Ghoul (p. 288)"
+    },
+    "name": "Ghoul",
+    "cr": 1,
+    "creatureType": "undead",
+    "hp": 22,
+    "hpDice": "5d8",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 13,
+      "dex": 15,
+      "con": 10,
+      "int": 7,
+      "wis": 10,
+      "cha": 6
+    },
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["charmed", "exhaustion", "poisoned"],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d6",
+            "type": "necrotic"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage plus 3 (1d6) Necrotic damage."
+      },
+      {
+        "name": "Claw",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "slashing"
+          }
+        ],
+        "effect": "4 (1d4 + 2) Slashing damage. If the target is a creature that isn’t an Undead or elf, it is subjected to the following effect. Constitution Saving Throw: DC 10. Failure: The target has the Paralyzed condition until the end of its next turn."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The ghoul makes two Bite attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-badger",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Badger (p. 349)"
+    },
+    "name": "Giant Badger",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 15,
+    "hpDice": "2d8+6",
+    "ac": 13,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "burrow": 10
+    },
+    "abilities": {
+      "str": 13,
+      "dex": 10,
+      "con": 17,
+      "int": 2,
+      "wis": 12,
+      "cha": 5
+    },
+    "skills": {
+      "perception": 3
+    },
+    "damageResistances": ["poison"],
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-bat",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Bat (p. 349)"
+    },
+    "name": "Giant Bat",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 22,
+    "hpDice": "4d10",
+    "ac": 13,
+    "initiative": 3,
+    "size": "large",
+    "footprint": 2,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 16,
+      "con": 11,
+      "int": 2,
+      "wis": 12,
+      "cha": 6
+    },
+    "passivePerception": 11,
+    "senses": {
+      "blindsight": 120
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "piercing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-centipede",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Centipede (p. 349)"
+    },
+    "name": "Giant Centipede",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 9,
+    "hpDice": "2d6+2",
+    "ac": 14,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 5,
+      "dex": 14,
+      "con": 12,
+      "int": 1,
+      "wis": 7,
+      "cha": 3
+    },
+    "passivePerception": 8,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "piercing"
+          }
+        ],
+        "effect": "4 (1d4 + 2) Piercing damage, and the target has the Poisoned condition until the start of the centipede’s next turn."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-crab",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Crab (p. 350)"
+    },
+    "name": "Giant Crab",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 13,
+    "hpDice": "3d8",
+    "ac": 15,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 13,
+      "dex": 13,
+      "con": 11,
+      "int": 1,
+      "wis": 9,
+      "cha": 3
+    },
+    "skills": {
+      "stealth": 3
+    },
+    "passivePerception": 9,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "4 (1d6 + 1) Bludgeoning damage. If the target is a Medium or smaller creature, it has the Grappled condition (escape DC 11) from one of two claws."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amphibious",
+        "kind": "trait",
+        "text": "The crab can breathe air and water."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-eagle",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Eagle (p. 350)"
+    },
+    "name": "Giant Eagle",
+    "cr": 1,
+    "creatureType": "celestial",
+    "hp": 26,
+    "hpDice": "4d10+4",
+    "ac": 13,
+    "initiative": 3,
+    "size": "large",
+    "footprint": 2,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 80
+    },
+    "abilities": {
+      "str": 16,
+      "dex": 17,
+      "con": 13,
+      "int": 8,
+      "wis": 14,
+      "cha": 10
+    },
+    "skills": {
+      "perception": 6
+    },
+    "damageResistances": ["necrotic", "radiant"],
+    "passivePerception": 16,
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "slashing"
+          },
+          {
+            "dice": "1d6",
+            "type": "radiant"
+          }
+        ],
+        "effect": "5 (1d4 + 3) Slashing damage plus 3 (1d6) Radiant damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The eagle makes two Rend attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-fire-beetle",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Fire Beetle (p. 351)"
+    },
+    "name": "Giant Fire Beetle",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 4,
+    "hpDice": "1d6+1",
+    "ac": 13,
+    "initiative": 0,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 8,
+      "dex": 10,
+      "con": 12,
+      "int": 1,
+      "wis": 7,
+      "cha": 3
+    },
+    "damageResistances": ["fire"],
+    "passivePerception": 8,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 1,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "fire"
+          }
+        ],
+        "effect": "1 Fire damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Illumination",
+        "kind": "trait",
+        "text": "The beetle sheds Bright Light in a 10-foot radius and Dim Light for an additional 10 feet."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-frog",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Frog (p. 351)"
+    },
+    "name": "Giant Frog",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 18,
+    "hpDice": "4d8",
+    "ac": 11,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 12,
+      "dex": 13,
+      "con": 11,
+      "int": 2,
+      "wis": 10,
+      "cha": 3
+    },
+    "skills": {
+      "perception": 2,
+      "stealth": 4
+    },
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage. If the target is a Medium or smaller creature, it has the Grappled condition (escape DC 11)."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amphibious",
+        "kind": "trait",
+        "text": "The frog can breathe air and water."
+      },
+      {
+        "name": "Standing Leap",
+        "kind": "trait",
+        "text": "The frog’s Long Jump is up to 20 feet and its High Jump is up to 10 feet with or without a running start."
+      },
+      {
+        "name": "Swallow",
+        "kind": "action",
+        "text": "The frog swallows a Small or smaller target it is grappling. While swallowed, the target isn’t Grappled but has the Blinded and Restrained conditions, and it has Total Cover against attacks and other effects outside the frog. While swallowing the target, the frog can’t use Bite, and if the frog dies, the swallowed target is no longer Restrained and can escape from the corpse using 5 feet of movement, exiting with the Prone condition. At the end of the frog’s next turn, the swallowed target takes 5 (2d4) Acid damage. If that damage doesn’t kill it, the frog disgorges it, causing it to exit Prone."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-goat",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Goat (p. 351)"
+    },
+    "name": "Giant Goat",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 19,
+    "hpDice": "3d10+3",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 40,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 17,
+      "dex": 13,
+      "con": 12,
+      "int": 3,
+      "wis": 12,
+      "cha": 6
+    },
+    "saves": {
+      "str": 5
+    },
+    "skills": {
+      "perception": 3
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Ram",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "bludgeoning"
+          },
+          {
+            "dice": "2d4",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "6 (1d6 + 3) Bludgeoning damage. If the target is a Large or smaller creature and the goat moved 20+ feet straight toward it immediately before the hit, the target takes an extra 5 (2d4) Bludgeoning damage and has the Prone condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-hyena",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Hyena (p. 352)"
+    },
+    "name": "Giant Hyena",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 45,
+    "hpDice": "6d10+12",
+    "ac": 12,
+    "initiative": 2,
+    "size": "large",
+    "footprint": 2,
+    "speed": 50,
+    "abilities": {
+      "str": 16,
+      "dex": 14,
+      "con": 14,
+      "int": 2,
+      "wis": 12,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 3
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d6+3",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Rampage (1/Day)",
+        "kind": "bonus-action",
+        "text": "Immediately after dealing damage to a creature that was already Bloodied, the hyena can move up to half its Speed, and it makes one Bite attack."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-lizard",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Lizard (p. 352)"
+    },
+    "name": "Giant Lizard",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 19,
+    "hpDice": "3d10+3",
+    "ac": 12,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 40,
+    "otherSpeeds": {
+      "climb": 40
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 12,
+      "con": 13,
+      "int": 2,
+      "wis": 10,
+      "cha": 5
+    },
+    "saves": {
+      "dex": 3
+    },
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Spider Climb",
+        "kind": "trait",
+        "text": "The lizard can climb difficult surfaces, including along ceilings, without needing to make an ability check."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-octopus",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Octopus (p. 352)"
+    },
+    "name": "Giant Octopus",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 45,
+    "hpDice": "7d10+7",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 10,
+    "otherSpeeds": {
+      "swim": 60
+    },
+    "abilities": {
+      "str": 17,
+      "dex": 13,
+      "con": 13,
+      "int": 5,
+      "wis": 10,
+      "cha": 4
+    },
+    "skills": {
+      "perception": 4,
+      "stealth": 5
+    },
+    "passivePerception": 14,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Tentacles",
+        "toHit": 5,
+        "reachFt": 10,
+        "damage": [
+          {
+            "dice": "2d6+3",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "10 (2d6 + 3) Bludgeoning damage. If the target is a Medium or smaller creature, it has the Grappled condition (escape DC 13) from all eight tentacles. While Grappled, the target has the Restrained condition."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Water Breathing",
+        "kind": "trait",
+        "text": "The octopus can breathe only underwater. It can hold its breath for 1 hour outside water."
+      },
+      {
+        "name": "Ink Cloud (1/Day)",
+        "kind": "reaction",
+        "text": "Trigger: The octopus takes damage while underwater. Response: The octopus releases ink that fills a 10-foot Cube centered on itself, and the octopus moves up to its Swim Speed. The Cube is Heavily Obscured for 1 minute or until a strong current or similar effect disperses the ink."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-owl",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Owl (p. 352)"
+    },
+    "name": "Giant Owl",
+    "cr": 0.25,
+    "creatureType": "celestial",
+    "hp": 19,
+    "hpDice": "3d10+3",
+    "ac": 12,
+    "initiative": 2,
+    "size": "large",
+    "footprint": 2,
+    "speed": 5,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 13,
+      "dex": 15,
+      "con": 12,
+      "int": 10,
+      "wis": 14,
+      "cha": 10
+    },
+    "saves": {
+      "wis": 4
+    },
+    "skills": {
+      "perception": 6,
+      "stealth": 6
+    },
+    "damageResistances": ["necrotic", "radiant"],
+    "passivePerception": 16,
+    "senses": {
+      "darkvision": 120
+    },
+    "attacks": [
+      {
+        "name": "Talons",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d10+2",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Flyby",
+        "kind": "trait",
+        "text": "The owl doesn’t provoke an Opportunity Attack when it flies out of an enemy’s reach."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-rat",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Rat (p. 353)"
+    },
+    "name": "Giant Rat",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 7,
+    "hpDice": "2d6",
+    "ac": 13,
+    "initiative": 3,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 7,
+      "dex": 16,
+      "con": 11,
+      "int": 2,
+      "wis": 10,
+      "cha": 4
+    },
+    "saves": {
+      "dex": 5
+    },
+    "skills": {
+      "perception": 2
+    },
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The rat has Advantage on an attack roll against a creature if at least one of the rat’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-seahorse",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Seahorse (p. 353)"
+    },
+    "name": "Giant Seahorse",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 16,
+    "hpDice": "3d10",
+    "ac": 14,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 5,
+    "otherSpeeds": {
+      "swim": 40
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 12,
+      "con": 11,
+      "int": 2,
+      "wis": 12,
+      "cha": 5
+    },
+    "passivePerception": 11,
+    "attacks": [
+      {
+        "name": "Ram",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d6+2",
+            "type": "bludgeoning"
+          },
+          {
+            "dice": "2d8+2",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "9 (2d6 + 2) Bludgeoning damage, or 11 (2d8 + 2) Bludgeoning damage if the seahorse moved 20+ feet straight toward the target immediately before the hit."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Water Breathing",
+        "kind": "trait",
+        "text": "The seahorse can breathe only underwater."
+      },
+      {
+        "name": "Bubble Dash",
+        "kind": "bonus-action",
+        "text": "While underwater, the seahorse moves up to half its Swim Speed without provoking Opportunity Attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-spider",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Spider (p. 353)"
+    },
+    "name": "Giant Spider",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 26,
+    "hpDice": "4d10+4",
+    "ac": 14,
+    "initiative": 3,
+    "size": "large",
+    "footprint": 2,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 14,
+      "dex": 16,
+      "con": 12,
+      "int": 2,
+      "wis": 11,
+      "cha": 4
+    },
+    "skills": {
+      "perception": 4,
+      "stealth": 7
+    },
+    "passivePerception": 14,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+3",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d6",
+            "type": "poison"
+          }
+        ],
+        "effect": "7 (1d8 + 3) Piercing damage plus 7 (2d6) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Spider Climb",
+        "kind": "trait",
+        "text": "The spider can climb difficult surfaces, including along ceilings, without needing to make an ability check."
+      },
+      {
+        "name": "Web Walker",
+        "kind": "trait",
+        "text": "The spider ignores movement restrictions caused by webs, and it knows the location of any other creature in contact with the same web."
+      },
+      {
+        "name": "Web (Recharge 5–6)",
+        "kind": "action",
+        "text": "Dexterity Saving Throw: DC 13, one creature the spider can see within 60 feet. Failure: The target has the Restrained condition until the web is destroyed (AC 10; HP 5; Vulnerability to Fire damage; Immunity to Poison and Psychic damage)."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-toad",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Toad (p. 354)"
+    },
+    "name": "Giant Toad",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 39,
+    "hpDice": "6d10+6",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 30,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 13,
+      "con": 13,
+      "int": 2,
+      "wis": 10,
+      "cha": 3
+    },
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d4",
+            "type": "poison"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage plus 5 (2d4) Poison damage. If the target is a Medium or smaller creature, it has the Grappled condition (escape DC 12)."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amphibious",
+        "kind": "trait",
+        "text": "The toad can breathe air and water."
+      },
+      {
+        "name": "Standing Leap",
+        "kind": "trait",
+        "text": "The toad’s Long Jump is up to 20 feet and its High Jump is up to 10 feet with or without a running start."
+      },
+      {
+        "name": "Swallow",
+        "kind": "action",
+        "text": "The toad swallows a Medium or smaller target it is grappling. While swallowed, the target isn’t Grappled but has the Blinded and Restrained conditions, and it has Total Cover against attacks and other effects outside the toad. In addition, the target takes 10 (3d6) Acid damage at the end of each of the toad’s turns. The toad can have only one target swallowed at a time, and it can’t use Bite while it has a swallowed target. If the toad dies, a swallowed creature is no longer Restrained and can escape from the corpse using 5 feet of movement, exiting with the Prone condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-venomous-snake",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Venomous Snake (p. 354)"
+    },
+    "name": "Giant Venomous Snake",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 14,
+    "initiative": 4,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "otherSpeeds": {
+      "swim": 40
+    },
+    "abilities": {
+      "str": 10,
+      "dex": 18,
+      "con": 13,
+      "int": 2,
+      "wis": 10,
+      "cha": 3
+    },
+    "skills": {
+      "perception": 2
+    },
+    "passivePerception": 12,
+    "senses": {
+      "blindsight": 10
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 6,
+        "reachFt": 10,
+        "damage": [
+          {
+            "dice": "1d4+4",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d8",
+            "type": "poison"
+          }
+        ],
+        "effect": "6 (1d4 + 4) Piercing damage plus 4 (1d8) Poison damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-vulture",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Vulture (p. 354)"
+    },
+    "name": "Giant Vulture",
+    "cr": 1,
+    "creatureType": "monstrosity",
+    "hp": 25,
+    "hpDice": "3d10+9",
+    "ac": 10,
+    "initiative": 0,
+    "size": "large",
+    "footprint": 2,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 15,
+      "dex": 10,
+      "con": 16,
+      "int": 6,
+      "wis": 12,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 3
+    },
+    "damageResistances": ["necrotic"],
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Gouge",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d6+2",
+            "type": "piercing"
+          }
+        ],
+        "effect": "9 (2d6 + 2) Piercing damage, and the target has the Poisoned condition until the end of its next turn."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The vulture has Advantage on an attack roll against a creature if at least one of the vulture’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-wasp",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Wasp (p. 354)"
+    },
+    "name": "Giant Wasp",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 22,
+    "hpDice": "5d8",
+    "ac": 13,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 50
+    },
+    "abilities": {
+      "str": 10,
+      "dex": 14,
+      "con": 10,
+      "int": 1,
+      "wis": 10,
+      "cha": 3
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Sting",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d4",
+            "type": "poison"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage plus 5 (2d4) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Flyby",
+        "kind": "trait",
+        "text": "The wasp doesn’t provoke an Opportunity Attack when it flies out of an enemy’s reach."
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-weasel",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Weasel (p. 355)"
+    },
+    "name": "Giant Weasel",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 9,
+    "hpDice": "2d8",
+    "ac": 13,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 11,
+      "dex": 17,
+      "con": 10,
+      "int": 4,
+      "wis": 12,
+      "cha": 5
+    },
+    "skills": {
+      "acrobatics": 5,
+      "perception": 3,
+      "stealth": 5
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "piercing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:giant-wolf-spider",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Giant Wolf Spider (p. 355)"
+    },
+    "name": "Giant Wolf Spider",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 13,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "otherSpeeds": {
+      "climb": 40
+    },
+    "abilities": {
+      "str": 12,
+      "dex": 16,
+      "con": 13,
+      "int": 3,
+      "wis": 12,
+      "cha": 4
+    },
+    "skills": {
+      "perception": 3,
+      "stealth": 7
+    },
+    "passivePerception": 13,
+    "senses": {
+      "blindsight": 10,
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d4",
+            "type": "poison"
+          }
+        ],
+        "effect": "5 (1d4 + 3) Piercing damage plus 5 (2d4) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Spider Climb",
+        "kind": "trait",
+        "text": "The spider can climb difficult surfaces, including along ceilings, without needing to make an ability check."
+      }
+    ]
+  },
+  {
+    "id": "monster:gnoll-warrior",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Gnoll Warrior (p. 289)"
+    },
+    "name": "Gnoll Warrior",
+    "cr": 0.5,
+    "creatureType": "fiend",
+    "hp": 27,
+    "hpDice": "6d8",
+    "ac": 15,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 14,
+      "dex": 12,
+      "con": 11,
+      "int": 6,
+      "wis": 10,
+      "cha": 7
+    },
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          }
+        ]
+      },
+      {
+        "name": "Bone Bow",
+        "toHit": 3,
+        "range": {
+          "normalFt": 150,
+          "longFt": 600
+        },
+        "damage": [
+          {
+            "dice": "1d10+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Rampage (1/Day)",
+        "kind": "bonus-action",
+        "text": "Immediately after dealing damage to a creature that is already Bloodied, the gnoll moves up to half its Speed, and it makes one Rend attack."
+      }
+    ]
+  },
+  {
+    "id": "monster:goat",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Goat (p. 355)"
+    },
+    "name": "Goat",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 4,
+    "hpDice": "1d8",
+    "ac": 10,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 11,
+      "dex": 10,
+      "con": 11,
+      "int": 2,
+      "wis": 10,
+      "cha": 5
+    },
+    "saves": {
+      "str": 2
+    },
+    "skills": {
+      "perception": 2
+    },
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Ram",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4",
+            "type": "bludgeoning"
+          },
+          {
+            "dice": "1",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "1 Bludgeoning damage, or 2 (1d4) Bludgeoning damage if the goat moved 20+ feet straight toward the target immediately before the hit."
+      }
+    ]
+  },
+  {
+    "id": "monster:goblin-boss",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Goblin Boss (p. 290)"
+    },
+    "name": "Goblin Boss",
+    "cr": 1,
+    "creatureType": "fey",
+    "hp": 21,
+    "hpDice": "6d6",
+    "ac": 17,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 10,
+      "dex": 15,
+      "con": 10,
+      "int": 10,
+      "wis": 8,
+      "cha": 10
+    },
+    "skills": {
+      "stealth": 6
+    },
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Scimitar",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "slashing"
+          },
+          {
+            "dice": "1d4",
+            "type": "slashing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Slashing damage, plus 2 (1d4) Slashing damage if the attack roll had Advantage."
+      },
+      {
+        "name": "Shortbow",
+        "toHit": 4,
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage, plus 2 (1d4) Piercing damage if the attack roll had Advantage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The goblin makes two attacks, using Scimitar or Shortbow in any combination."
+      },
+      {
+        "name": "Nimble Escape",
+        "kind": "bonus-action",
+        "text": "The goblin takes the Disengage or Hide action."
+      },
+      {
+        "name": "Redirect Attack",
+        "kind": "reaction",
+        "text": "Trigger: A creature the goblin can see makes an attack roll against it. Response: The goblin chooses a Small or Medium ally within 5 feet of itself. The goblin and that ally swap places, and the ally becomes the target of the attack instead."
+      }
+    ]
+  },
+  {
+    "id": "monster:goblin-minion",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Goblin Minion (p. 290)"
+    },
+    "name": "Goblin Minion",
+    "cr": 0.125,
+    "creatureType": "fey",
+    "hp": 7,
+    "hpDice": "2d6",
+    "ac": 12,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 8,
+      "dex": 15,
+      "con": 10,
+      "int": 10,
+      "wis": 8,
+      "cha": 8
+    },
+    "skills": {
+      "stealth": 6
+    },
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Dagger",
+        "toHit": 4,
+        "reachFt": 5,
+        "range": {
+          "normalFt": 20,
+          "longFt": 60
+        },
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Nimble Escape",
+        "kind": "bonus-action",
+        "text": "The goblin takes the Disengage or Hide action."
+      }
+    ]
+  },
+  {
+    "id": "monster:goblin-warrior",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Goblin Warrior (p. 290)"
+    },
+    "name": "Goblin Warrior",
+    "cr": 0.25,
+    "creatureType": "fey",
+    "hp": 10,
+    "hpDice": "3d6",
+    "ac": 15,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 8,
+      "dex": 15,
+      "con": 10,
+      "int": 10,
+      "wis": 8,
+      "cha": 8
+    },
+    "skills": {
+      "stealth": 6
+    },
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Scimitar",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "slashing"
+          },
+          {
+            "dice": "1d4",
+            "type": "slashing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Slashing damage, plus 2 (1d4) Slashing damage if the attack roll had Advantage."
+      },
+      {
+        "name": "Shortbow",
+        "toHit": 4,
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage, plus 2 (1d4) Piercing damage if the attack roll had Advantage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Nimble Escape",
+        "kind": "bonus-action",
+        "text": "The goblin takes the Disengage or Hide action."
+      }
+    ]
+  },
+  {
+    "id": "monster:gray-ooze",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Gray Ooze (p. 293)"
+    },
+    "name": "Gray Ooze",
+    "cr": 0.5,
+    "creatureType": "ooze",
+    "hp": 22,
+    "hpDice": "3d8+9",
+    "ac": 9,
+    "initiative": -2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "climb": 10
+    },
+    "abilities": {
+      "str": 12,
+      "dex": 6,
+      "con": 16,
+      "int": 1,
+      "wis": 6,
+      "cha": 2
+    },
+    "skills": {
+      "stealth": 2
+    },
+    "damageResistances": ["acid", "cold", "fire"],
+    "conditionImmunities": [
+      "blinded",
+      "charmed",
+      "deafened",
+      "exhaustion",
+      "frightened",
+      "grappled",
+      "prone",
+      "restrained"
+    ],
+    "passivePerception": 8,
+    "senses": {
+      "blindsight": 60
+    },
+    "attacks": [
+      {
+        "name": "Pseudopod",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d8+1",
+            "type": "acid"
+          }
+        ],
+        "effect": "10 (2d8 + 1) Acid damage. Nonmagical armor worn by the target takes a −1 penalty to the AC it offers. The armor is destroyed if the penalty reduces its AC to 10. The penalty can be removed by casting the Mending spell on the armor."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amorphous",
+        "kind": "trait",
+        "text": "The ooze can move through a space as narrow as 1 inch without expending extra movement to do so."
+      },
+      {
+        "name": "Corrosive Form",
+        "kind": "trait",
+        "text": "Nonmagical ammunition is destroyed immediately after hitting the ooze and dealing any damage. Any nonmagical weapon takes a cumulative −1 penalty to attack rolls immediately after dealing damage to the ooze and coming into contact with it. The weapon is destroyed if the penalty reaches −5. The penalty can be removed by casting the Mending spell on the weapon. The ooze can eat through 2-inch-thick, nonmagical metal or wood in 1 round."
+      }
+    ]
+  },
+  {
+    "id": "monster:grimlock",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Grimlock (p. 296)"
+    },
+    "name": "Grimlock",
+    "cr": 0.25,
+    "creatureType": "aberration",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 11,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 16,
+      "dex": 12,
+      "con": 12,
+      "int": 9,
+      "wis": 8,
+      "cha": 6
+    },
+    "skills": {
+      "athletics": 5,
+      "perception": 3,
+      "stealth": 5
+    },
+    "passivePerception": 13,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Bone Cudgel",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "bludgeoning"
+          },
+          {
+            "dice": "1d4",
+            "type": "psychic"
+          }
+        ],
+        "effect": "6 (1d6 + 3) Bludgeoning damage plus 2 (1d4) Psychic damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:guard",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Guard (p. 296)"
+    },
+    "name": "Guard",
+    "cr": 0.125,
+    "creatureType": "humanoid",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 16,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 13,
+      "dex": 12,
+      "con": 12,
+      "int": 10,
+      "wis": 11,
+      "cha": 10
+    },
+    "skills": {
+      "perception": 2
+    },
+    "passivePerception": 12,
+    "attacks": [
+      {
+        "name": "Spear",
+        "toHit": 3,
+        "reachFt": 5,
+        "range": {
+          "normalFt": 20,
+          "longFt": 60
+        },
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:harpy",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Harpy (p. 297)"
+    },
+    "name": "Harpy",
+    "cr": 1,
+    "creatureType": "monstrosity",
+    "hp": 38,
+    "hpDice": "7d8+7",
+    "ac": 11,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "fly": 40
+    },
+    "abilities": {
+      "str": 12,
+      "dex": 13,
+      "con": 12,
+      "int": 7,
+      "wis": 10,
+      "cha": 13
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+1",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Luring Song",
+        "kind": "action",
+        "text": "The harpy sings a magical melody, which lasts until the harpy’s Concentration ends on it. Wisdom Saving Throw: DC 11, each Humanoid and Giant in a 300-foot Emanation originating from the harpy when the song starts. Failure: The target has the Charmed condition until the song ends and repeats the save at the end of each of its turns. While Charmed, the target has the Incapacitated condition and ignores the Luring Song of other harpies. If the target is more than 5 feet from the harpy, the target moves on its turn toward the harpy by the most direct route, trying to get within 5 feet of the harpy. It doesn’t avoid Opportunity Attacks; however, before moving into damaging terrain (such as lava or a pit) and whenever it takes damage from a source other than the harpy, the target repeats the save. Success: The target is immune to this harpy’s Luring Song for 24 hours."
+      }
+    ]
+  },
+  {
+    "id": "monster:hawk",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Hawk (p. 355)"
+    },
+    "name": "Hawk",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 13,
+    "initiative": 3,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 5,
+      "dex": 16,
+      "con": 8,
+      "int": 2,
+      "wis": 14,
+      "cha": 6
+    },
+    "skills": {
+      "perception": 6
+    },
+    "passivePerception": 16,
+    "attacks": [
+      {
+        "name": "Talons",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "slashing"
+          }
+        ],
+        "effect": "1 Slashing damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:hippogriff",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Hippogriff (p. 298)"
+    },
+    "name": "Hippogriff",
+    "cr": 1,
+    "creatureType": "monstrosity",
+    "hp": 26,
+    "hpDice": "4d10+4",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 40,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 17,
+      "dex": 13,
+      "con": 13,
+      "int": 2,
+      "wis": 12,
+      "cha": 8
+    },
+    "skills": {
+      "perception": 5
+    },
+    "passivePerception": 15,
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+3",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Flyby",
+        "kind": "trait",
+        "text": "The hippogriff doesn’t provoke an Opportunity Attack when it flies out of an enemy’s reach."
+      },
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The hippogriff makes two Rend attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:hobgoblin-warrior",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Hobgoblin Warrior (p. 298)"
+    },
+    "name": "Hobgoblin Warrior",
+    "cr": 0.5,
+    "creatureType": "fey",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 18,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 13,
+      "dex": 12,
+      "con": 12,
+      "int": 10,
+      "wis": 10,
+      "cha": 9
+    },
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Longsword",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d10+1",
+            "type": "slashing"
+          }
+        ]
+      },
+      {
+        "name": "Longbow",
+        "toHit": 3,
+        "range": {
+          "normalFt": 150,
+          "longFt": 600
+        },
+        "damage": [
+          {
+            "dice": "1d8+1",
+            "type": "piercing"
+          },
+          {
+            "dice": "3d4",
+            "type": "poison"
+          }
+        ],
+        "effect": "5 (1d8 + 1) Piercing damage plus 7 (3d4) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The hobgoblin has Advantage on an attack roll against a creature if at least one of the hobgoblin’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:homunculus",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Homunculus (p. 299)"
+    },
+    "name": "Homunculus",
+    "cr": 0,
+    "creatureType": "construct",
+    "hp": 4,
+    "hpDice": "1d4+2",
+    "ac": 13,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "fly": 40
+    },
+    "abilities": {
+      "str": 4,
+      "dex": 15,
+      "con": 14,
+      "int": 10,
+      "wis": 10,
+      "cha": 7
+    },
+    "saves": {
+      "wis": 2,
+      "cha": 0
+    },
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["charmed", "poisoned"],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage, and the target is subjected to the following effect. Constitution Saving Throw: DC 12. Failure: The target has the Poisoned condition until the end of the homunculus’s next turn. Failure by 5 or More: The target has the Poisoned condition for 1 minute. While Poisoned, the target has the Unconscious condition, which ends early if the target takes any damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Telepathic Bond",
+        "kind": "trait",
+        "text": "While the homunculus is on the same plane of existence as its master, the two of them can communicate telepathically with each other."
+      }
+    ]
+  },
+  {
+    "id": "monster:hyena",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Hyena (p. 356)"
+    },
+    "name": "Hyena",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 5,
+    "hpDice": "1d8+1",
+    "ac": 11,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 50,
+    "abilities": {
+      "str": 11,
+      "dex": 13,
+      "con": 12,
+      "int": 2,
+      "wis": 12,
+      "cha": 5
+    },
+    "skills": {
+      "perception": 3
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The hyena has Advantage on an attack roll against a creature if at least one of the hyena’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:ice-mephit",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Ice Mephit (p. 307)"
+    },
+    "name": "Ice Mephit",
+    "cr": 0.5,
+    "creatureType": "elemental",
+    "hp": 21,
+    "hpDice": "6d6",
+    "ac": 11,
+    "initiative": 1,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "fly": 30
+    },
+    "abilities": {
+      "str": 7,
+      "dex": 13,
+      "con": 10,
+      "int": 9,
+      "wis": 11,
+      "cha": 12
+    },
+    "skills": {
+      "perception": 2,
+      "stealth": 3
+    },
+    "damageVulnerabilities": ["fire"],
+    "damageImmunities": ["cold", "poison"],
+    "conditionImmunities": ["exhaustion", "poisoned"],
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+1",
+            "type": "slashing"
+          },
+          {
+            "dice": "1d4",
+            "type": "cold"
+          }
+        ],
+        "effect": "3 (1d4 + 1) Slashing damage plus 2 (1d4) Cold damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Death Burst",
+        "kind": "trait",
+        "text": "The mephit explodes when it dies. Constitution Saving Throw: DC 10, each creature in a 5-foot Emanation originating from the mephit. Failure: 5 (2d4) Cold damage. Success: Half damage."
+      },
+      {
+        "name": "Fog Cloud (1/Day)",
+        "kind": "action",
+        "text": "The mephit casts Fog Cloud, requiring no spell components and using Charisma as the spellcasting ability."
+      },
+      {
+        "name": "Frost Breath (Recharge 6)",
+        "kind": "action",
+        "text": "Constitution Saving Throw: DC 10, each creature in a 15-foot Cone. Failure: 7 (3d4) Cold damage. Success: Half damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:imp",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Imp (p. 300)"
+    },
+    "name": "Imp",
+    "cr": 1,
+    "creatureType": "fiend",
+    "hp": 21,
+    "hpDice": "6d4+6",
+    "ac": 13,
+    "initiative": 3,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "fly": 40
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 17,
+      "con": 13,
+      "int": 11,
+      "wis": 12,
+      "cha": 14
+    },
+    "skills": {
+      "deception": 4,
+      "insight": 3,
+      "stealth": 5
+    },
+    "damageResistances": ["cold"],
+    "damageImmunities": ["fire", "poison"],
+    "conditionImmunities": ["poisoned"],
+    "passivePerception": 11,
+    "senses": {
+      "darkvision": 120
+    },
+    "attacks": [
+      {
+        "name": "Sting",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d6",
+            "type": "poison"
+          }
+        ],
+        "effect": "6 (1d6 + 3) Piercing damage plus 7 (2d6) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Magic Resistance",
+        "kind": "trait",
+        "text": "The imp has Advantage on saving throws against spells and other magical effects."
+      },
+      {
+        "name": "Invisibility",
+        "kind": "action",
+        "text": "The imp casts Invisibility on itself, requiring no spell components and using Charisma as the spellcasting ability."
+      },
+      {
+        "name": "Shape-Shift",
+        "kind": "action",
+        "text": "The imp shape-shifts to resemble a rat (Speed 20 ft.), a raven (20 ft., Fly 60 ft.), or a spider (20 ft., Climb 20 ft.), or it returns to its true form. Its game statistics are the same in each form, except for its Speed. Any equipment it is wearing or carrying isn’t transformed."
+      }
+    ]
+  },
+  {
+    "id": "monster:jackal",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Jackal (p. 356)"
+    },
+    "name": "Jackal",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 3,
+    "hpDice": "1d6",
+    "ac": 12,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 8,
+      "dex": 15,
+      "con": 11,
+      "int": 3,
+      "wis": 12,
+      "cha": 6
+    },
+    "skills": {
+      "perception": 5,
+      "stealth": 4
+    },
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 90
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 1,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4-1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:kobold-warrior",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Kobold Warrior (p. 302)"
+    },
+    "name": "Kobold Warrior",
+    "cr": 0.125,
+    "creatureType": "dragon",
+    "hp": 7,
+    "hpDice": "3d6-3",
+    "ac": 14,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 7,
+      "dex": 15,
+      "con": 9,
+      "int": 8,
+      "wis": 7,
+      "cha": 8
+    },
+    "passivePerception": 8,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Dagger",
+        "toHit": 4,
+        "reachFt": 5,
+        "range": {
+          "normalFt": 20,
+          "longFt": 60
+        },
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The kobold has Advantage on an attack roll against a creature if at least one of the kobold’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      },
+      {
+        "name": "Sunlight Sensitivity",
+        "kind": "trait",
+        "text": "While in sunlight, the kobold has Disadvantage on ability checks and attack rolls."
+      }
+    ]
+  },
+  {
+    "id": "monster:lemure",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Lemure (p. 304)"
+    },
+    "name": "Lemure",
+    "cr": 0,
+    "creatureType": "fiend",
+    "hp": 9,
+    "hpDice": "2d8",
+    "ac": 9,
+    "initiative": -3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 20,
+    "abilities": {
+      "str": 10,
+      "dex": 5,
+      "con": 11,
+      "int": 1,
+      "wis": 11,
+      "cha": 3
+    },
+    "damageResistances": ["cold"],
+    "damageImmunities": ["fire", "poison"],
+    "conditionImmunities": ["charmed", "frightened", "poisoned"],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 120
+    },
+    "attacks": [
+      {
+        "name": "Vile Slime",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4",
+            "type": "poison"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Hellish Restoration",
+        "kind": "trait",
+        "text": "If the lemure dies in the Nine Hells, it revives with all its Hit Points in 1d10 days unless it is killed by a creature under the effects of a Bless spell or its remains are sprinkled with Holy Water."
+      }
+    ]
+  },
+  {
+    "id": "monster:lion",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Lion (p. 356)"
+    },
+    "name": "Lion",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 22,
+    "hpDice": "4d10",
+    "ac": 12,
+    "initiative": 2,
+    "size": "large",
+    "footprint": 2,
+    "speed": 50,
+    "abilities": {
+      "str": 17,
+      "dex": 15,
+      "con": 11,
+      "int": 3,
+      "wis": 12,
+      "cha": 8
+    },
+    "skills": {
+      "perception": 3,
+      "stealth": 4
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+3",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The lion has Advantage on an attack roll against a creature if at least one of the lion’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      },
+      {
+        "name": "Running Leap",
+        "kind": "trait",
+        "text": "With a 10-foot running start, the lion can Long Jump up to 25 feet."
+      },
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The lion makes two Rend attacks. It can replace one attack with a use of Roar."
+      },
+      {
+        "name": "Roar",
+        "kind": "action",
+        "text": "Wisdom Saving Throw: DC 11, one creature within 15 feet. Failure: The target has the Frightened condition until the start of the lion’s next turn."
+      }
+    ]
+  },
+  {
+    "id": "monster:lizard",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Lizard (p. 357)"
+    },
+    "name": "Lizard",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 2,
+    "hpDice": "1d4",
+    "ac": 10,
+    "initiative": 0,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "climb": 20
+    },
+    "abilities": {
+      "str": 2,
+      "dex": 11,
+      "con": 10,
+      "int": 1,
+      "wis": 8,
+      "cha": 3
+    },
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Spider Climb",
+        "kind": "trait",
+        "text": "The lizard can climb difficult surfaces, including along ceilings, without needing to make an ability check."
+      }
+    ]
+  },
+  {
+    "id": "monster:magma-mephit",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Magma Mephit (p. 307)"
+    },
+    "name": "Magma Mephit",
+    "cr": 0.5,
+    "creatureType": "elemental",
+    "hp": 18,
+    "hpDice": "4d6+4",
+    "ac": 11,
+    "initiative": 1,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "fly": 30
+    },
+    "abilities": {
+      "str": 8,
+      "dex": 12,
+      "con": 12,
+      "int": 7,
+      "wis": 10,
+      "cha": 10
+    },
+    "skills": {
+      "stealth": 3
+    },
+    "damageVulnerabilities": ["cold"],
+    "damageImmunities": ["fire", "poison"],
+    "conditionImmunities": ["exhaustion", "poisoned"],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+1",
+            "type": "slashing"
+          },
+          {
+            "dice": "1d6",
+            "type": "fire"
+          }
+        ],
+        "effect": "3 (1d4 + 1) Slashing damage plus 3 (1d6) Fire damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Death Burst",
+        "kind": "trait",
+        "text": "The mephit explodes when it dies. Dexterity Saving Throw: DC 11, each creature in a 5-foot Emanation originating from the mephit. Failure: 7 (2d6) Fire damage. Success: Half damage."
+      },
+      {
+        "name": "Fire Breath (Recharge 6)",
+        "kind": "action",
+        "text": "Dexterity Saving Throw: DC 11, each creature in a 15-foot Cone. Failure: 7 (2d6) Fire damage. Success: Half damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:magmin",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Magmin (p. 305)"
+    },
+    "name": "Magmin",
+    "cr": 0.5,
+    "creatureType": "elemental",
+    "hp": 13,
+    "hpDice": "3d6+3",
+    "ac": 14,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 7,
+      "dex": 15,
+      "con": 12,
+      "int": 8,
+      "wis": 11,
+      "cha": 10
+    },
+    "damageImmunities": ["fire"],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Touch",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+2",
+            "type": "fire"
+          }
+        ],
+        "effect": "7 (2d4 + 2) Fire damage. If the target is a creature or a flammable object that isn’t being worn or carried, it starts burning."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Death Burst",
+        "kind": "trait",
+        "text": "The magmin explodes when it dies. Dexterity Saving Throw: DC 11, each creature in a 10-foot Emanation originating from the magmin. Failure: 7 (2d6) Fire damage. Success: Half damage."
+      },
+      {
+        "name": "Ignited Illumination",
+        "kind": "bonus-action",
+        "text": "The magmin sets itself ablaze or extinguishes its flames. While ablaze, the magmin sheds Bright Light in a 10-foot radius and Dim Light for an additional 10 feet."
+      }
+    ]
+  },
+  {
+    "id": "monster:mastiff",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Mastiff (p. 357)"
+    },
+    "name": "Mastiff",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 5,
+    "hpDice": "1d8+1",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 13,
+      "dex": 14,
+      "con": 12,
+      "int": 3,
+      "wis": 12,
+      "cha": 7
+    },
+    "saves": {
+      "wis": 3
+    },
+    "skills": {
+      "perception": 5
+    },
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "4 (1d6 + 1) Piercing damage. If the target is a Medium or smaller creature, it has the Prone condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:merfolk-skirmisher",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Merfolk Skirmisher (p. 308)"
+    },
+    "name": "Merfolk Skirmisher",
+    "cr": 0.125,
+    "creatureType": "elemental",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 11,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "swim": 40
+    },
+    "abilities": {
+      "str": 10,
+      "dex": 13,
+      "con": 12,
+      "int": 11,
+      "wis": 14,
+      "cha": 12
+    },
+    "passivePerception": 12,
+    "attacks": [
+      {
+        "name": "Ocean Spear",
+        "toHit": 2,
+        "reachFt": 5,
+        "range": {
+          "normalFt": 20,
+          "longFt": 60
+        },
+        "damage": [
+          {
+            "dice": "1d6",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4",
+            "type": "cold"
+          }
+        ],
+        "effect": "3 (1d6) Piercing damage plus 2 (1d4) Cold damage. If the target is a creature, its Speed decreases by 10 feet until the end of its next turn. Hit or Miss: The spear magically returns to the merfolk’s hand immediately after a ranged attack."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amphibious",
+        "kind": "trait",
+        "text": "The merfolk can breathe air and water."
+      }
+    ]
+  },
+  {
+    "id": "monster:mule",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Mule (p. 357)"
+    },
+    "name": "Mule",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 10,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 14,
+      "dex": 10,
+      "con": 13,
+      "int": 2,
+      "wis": 10,
+      "cha": 5
+    },
+    "saves": {
+      "str": 4
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Hooves",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Beast of Burden",
+        "kind": "trait",
+        "text": "The mule counts as one size larger for the purpose of determining its carrying capacity."
+      }
+    ]
+  },
+  {
+    "id": "monster:noble",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Noble (p. 312)"
+    },
+    "name": "Noble",
+    "cr": 0.125,
+    "creatureType": "humanoid",
+    "hp": 9,
+    "hpDice": "2d8",
+    "ac": 15,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 11,
+      "dex": 12,
+      "con": 11,
+      "int": 12,
+      "wis": 14,
+      "cha": 16
+    },
+    "skills": {
+      "deception": 5,
+      "insight": 4,
+      "persuasion": 5
+    },
+    "passivePerception": 12,
+    "attacks": [
+      {
+        "name": "Rapier",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Parry",
+        "kind": "reaction",
+        "text": "Trigger: The noble is hit by a melee attack roll while holding a weapon. Response: The noble adds 2 to its AC against that attack, possibly causing it to miss."
+      }
+    ]
+  },
+  {
+    "id": "monster:octopus",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Octopus (p. 357)"
+    },
+    "name": "Octopus",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 3,
+    "hpDice": "1d6",
+    "ac": 12,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 4,
+      "dex": 15,
+      "con": 11,
+      "int": 3,
+      "wis": 10,
+      "cha": 4
+    },
+    "skills": {
+      "perception": 2,
+      "stealth": 6
+    },
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Tentacles",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "1 Bludgeoning damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Compression",
+        "kind": "trait",
+        "text": "The octopus can move through a space as narrow as 1 inch without expending extra movement to do so."
+      },
+      {
+        "name": "Water Breathing",
+        "kind": "trait",
+        "text": "The octopus can breathe only underwater."
+      },
+      {
+        "name": "Ink Cloud (1/Day)",
+        "kind": "reaction",
+        "text": "Trigger: A creature ends its turn within 5 feet of the octopus while underwater. Response: The octopus releases ink that fills a 5-foot Cube centered on itself, and the octopus moves up to its Swim Speed. The Cube is Heavily Obscured for 1 minute or until a strong current or similar effect disperses the ink."
+      }
+    ]
+  },
+  {
+    "id": "monster:owl",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Owl (p. 358)"
+    },
+    "name": "Owl",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 11,
+    "initiative": 1,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 3,
+      "dex": 13,
+      "con": 8,
+      "int": 2,
+      "wis": 12,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 5,
+      "stealth": 5
+    },
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 120
+    },
+    "attacks": [
+      {
+        "name": "Talons",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "slashing"
+          }
+        ],
+        "effect": "1 Slashing damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Flyby",
+        "kind": "trait",
+        "text": "The owl doesn’t provoke an Opportunity Attack when it flies out of an enemy’s reach."
+      }
+    ]
+  },
+  {
+    "id": "monster:panther",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Panther (p. 358)"
+    },
+    "name": "Panther",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 13,
+    "hpDice": "3d8",
+    "ac": 13,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 50,
+    "otherSpeeds": {
+      "climb": 40
+    },
+    "abilities": {
+      "str": 14,
+      "dex": 16,
+      "con": 10,
+      "int": 3,
+      "wis": 14,
+      "cha": 7
+    },
+    "skills": {
+      "perception": 4,
+      "stealth": 7
+    },
+    "passivePerception": 14,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Nimble Escape",
+        "kind": "bonus-action",
+        "text": "The panther takes the Disengage or Hide action."
+      }
+    ]
+  },
+  {
+    "id": "monster:piranha",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Piranha (p. 358)"
+    },
+    "name": "Piranha",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 13,
+    "initiative": 3,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "swim": 40
+    },
+    "abilities": {
+      "str": 2,
+      "dex": 16,
+      "con": 9,
+      "int": 1,
+      "wis": 7,
+      "cha": 2
+    },
+    "passivePerception": 8,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "toHitNote": "with Advantage if the target doesn’t have all its Hit Points",
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Water Breathing",
+        "kind": "trait",
+        "text": "The piranha can breathe only underwater."
+      }
+    ]
+  },
+  {
+    "id": "monster:pirate",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Pirate (p. 314)"
+    },
+    "name": "Pirate",
+    "cr": 1,
+    "creatureType": "humanoid",
+    "hp": 33,
+    "hpDice": "6d8+6",
+    "ac": 14,
+    "initiative": 5,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 10,
+      "dex": 16,
+      "con": 12,
+      "int": 8,
+      "wis": 12,
+      "cha": 14
+    },
+    "saves": {
+      "dex": 5,
+      "cha": 4
+    },
+    "passivePerception": 11,
+    "attacks": [
+      {
+        "name": "Dagger",
+        "toHit": 5,
+        "reachFt": 5,
+        "range": {
+          "normalFt": 20,
+          "longFt": 60
+        },
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The pirate makes two Dagger attacks. It can replace one attack with a use of Enthralling Panache."
+      },
+      {
+        "name": "Enthralling Panache",
+        "kind": "action",
+        "text": "Wisdom Saving Throw: DC 12, one creature the pirate can see within 30 feet. Failure: The target has the Charmed condition until the start of the pirate’s next turn."
+      }
+    ]
+  },
+  {
+    "id": "monster:pony",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Pony (p. 359)"
+    },
+    "name": "Pony",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 10,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 15,
+      "dex": 10,
+      "con": 13,
+      "int": 2,
+      "wis": 11,
+      "cha": 7
+    },
+    "saves": {
+      "str": 4
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Hooves",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:priest-acolyte",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Priest Acolyte (p. 316)"
+    },
+    "name": "Priest Acolyte",
+    "cr": 0.25,
+    "creatureType": "humanoid",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 13,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 14,
+      "dex": 10,
+      "con": 12,
+      "int": 10,
+      "wis": 14,
+      "cha": 11
+    },
+    "skills": {
+      "medicine": 4,
+      "religion": 2
+    },
+    "passivePerception": 12,
+    "attacks": [
+      {
+        "name": "Mace",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "bludgeoning"
+          },
+          {
+            "dice": "1d4",
+            "type": "radiant"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Bludgeoning damage plus 2 (1d4) Radiant damage."
+      },
+      {
+        "name": "Radiant Flame",
+        "toHit": 4,
+        "range": {
+          "normalFt": 60
+        },
+        "damage": [
+          {
+            "dice": "2d6",
+            "type": "radiant"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Spellcasting",
+        "kind": "action",
+        "text": "The priest casts one of the following spells, using Wisdom as the spellcasting ability: At Will: Light, Thaumaturgy Divine Aid (1/Day). The priest casts Bless, Healing Word, or Sanctuary, using the same spellcasting ability as Spellcasting."
+      }
+    ]
+  },
+  {
+    "id": "monster:pseudodragon",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Pseudodragon (p. 316)"
+    },
+    "name": "Pseudodragon",
+    "cr": 0.25,
+    "creatureType": "dragon",
+    "hp": 10,
+    "hpDice": "3d4+3",
+    "ac": 14,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 15,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 15,
+      "con": 13,
+      "int": 10,
+      "wis": 12,
+      "cha": 10
+    },
+    "skills": {
+      "perception": 5,
+      "stealth": 4
+    },
+    "passivePerception": 15,
+    "senses": {
+      "blindsight": 10,
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Magic Resistance",
+        "kind": "trait",
+        "text": "The pseudodragon has Advantage on saving throws against spells and other magical effects."
+      },
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The pseudodragon makes two Bite attacks."
+      },
+      {
+        "name": "Sting",
+        "kind": "action",
+        "text": "Constitution Saving Throw: DC 12, one creature the pseudodragon can see within 5 feet. Failure: 5 (2d4) Poison damage, and the target has the Poisoned condition for 1 hour. Failure by 5 or More: While Poisoned, the target also has the Unconscious condition, which ends early if the target takes damage or a creature within 5 feet of it takes an action to wake it."
+      }
+    ]
+  },
+  {
+    "id": "monster:pteranodon",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Pteranodon (p. 359)"
+    },
+    "name": "Pteranodon",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 13,
+    "hpDice": "3d8",
+    "ac": 13,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 60
+    },
+    "abilities": {
+      "str": 12,
+      "dex": 15,
+      "con": 10,
+      "int": 2,
+      "wis": 9,
+      "cha": 5
+    },
+    "skills": {
+      "perception": 1
+    },
+    "passivePerception": 11,
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Flyby",
+        "kind": "trait",
+        "text": "The pteranodon doesn’t provoke an Opportunity Attack when it flies out of an enemy’s reach."
+      }
+    ]
+  },
+  {
+    "id": "monster:quasit",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Quasit (p. 317)"
+    },
+    "name": "Quasit",
+    "cr": 1,
+    "creatureType": "fiend",
+    "hp": 25,
+    "hpDice": "10d4",
+    "ac": 13,
+    "initiative": 3,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 5,
+      "dex": 17,
+      "con": 10,
+      "int": 7,
+      "wis": 10,
+      "cha": 10
+    },
+    "skills": {
+      "stealth": 5
+    },
+    "damageResistances": ["cold", "fire", "lightning"],
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["poisoned"],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 120
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "slashing"
+          }
+        ],
+        "effect": "5 (1d4 + 3) Slashing damage, and the target has the Poisoned condition until the start of the quasit’s next turn."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Magic Resistance",
+        "kind": "trait",
+        "text": "The quasit has Advantage on saving throws against spells and other magical effects."
+      },
+      {
+        "name": "Invisibility",
+        "kind": "action",
+        "text": "The quasit casts Invisibility on itself, requiring no spell components and using Charisma as the spellcasting ability."
+      },
+      {
+        "name": "Scare (1/Day)",
+        "kind": "action",
+        "text": "Wisdom Saving Throw: DC 10, one creature within 20 feet. Failure: The target has the Frightened condition. At the end of each of its turns, the target repeats the save, ending the effect on itself on a success. After 1 minute, it succeeds automatically."
+      },
+      {
+        "name": "Shape-Shift",
+        "kind": "action",
+        "text": "The quasit shape-shifts to resemble a bat (Speed 10 ft., Fly 40 ft.), a centipede (40 ft., Climb 40 ft.), or a toad (40 ft., Swim 40 ft.), or it returns to its true form. Its game statistics are the same in each form, except for its Speed. Any equipment it is wearing or carrying isn’t transformed."
+      }
+    ]
+  },
+  {
+    "id": "monster:rat",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Rat (p. 359)"
+    },
+    "name": "Rat",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 10,
+    "initiative": 0,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "climb": 20
+    },
+    "abilities": {
+      "str": 2,
+      "dex": 11,
+      "con": 9,
+      "int": 2,
+      "wis": 10,
+      "cha": 4
+    },
+    "skills": {
+      "perception": 2
+    },
+    "passivePerception": 12,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Agile",
+        "kind": "trait",
+        "text": "The rat doesn’t provoke an Opportunity Attack when it moves out of an enemy’s reach."
+      }
+    ]
+  },
+  {
+    "id": "monster:raven",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Raven (p. 359)"
+    },
+    "name": "Raven",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 2,
+    "hpDice": "1d4",
+    "ac": 12,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 50
+    },
+    "abilities": {
+      "str": 2,
+      "dex": 14,
+      "con": 10,
+      "int": 5,
+      "wis": 13,
+      "cha": 6
+    },
+    "skills": {
+      "perception": 3
+    },
+    "passivePerception": 13,
+    "attacks": [
+      {
+        "name": "Beak",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Mimicry",
+        "kind": "trait",
+        "text": "The raven can mimic simple sounds it has heard, such as a whisper or chitter. A hearer can discern the sounds are imitations with a successful DC 10 Wisdom (Insight) check."
+      }
+    ]
+  },
+  {
+    "id": "monster:reef-shark",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Reef Shark (p. 360)"
+    },
+    "name": "Reef Shark",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 22,
+    "hpDice": "4d8+4",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 14,
+      "dex": 15,
+      "con": 13,
+      "int": 1,
+      "wis": 10,
+      "cha": 4
+    },
+    "skills": {
+      "perception": 2
+    },
+    "passivePerception": 12,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The shark has Advantage on an attack roll against a creature if at least one of the shark’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      },
+      {
+        "name": "Water Breathing",
+        "kind": "trait",
+        "text": "The shark can breathe only underwater."
+      }
+    ]
+  },
+  {
+    "id": "monster:riding-horse",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Riding Horse (p. 360)"
+    },
+    "name": "Riding Horse",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 13,
+    "hpDice": "2d10+2",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 60,
+    "abilities": {
+      "str": 16,
+      "dex": 13,
+      "con": 12,
+      "int": 2,
+      "wis": 11,
+      "cha": 7
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Hooves",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+3",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:rust-monster",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Rust Monster (p. 320)"
+    },
+    "name": "Rust Monster",
+    "cr": 0.5,
+    "creatureType": "monstrosity",
+    "hp": 33,
+    "hpDice": "6d8+6",
+    "ac": 14,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 13,
+      "dex": 12,
+      "con": 13,
+      "int": 2,
+      "wis": 13,
+      "cha": 6
+    },
+    "passivePerception": 11,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Iron Scent",
+        "kind": "trait",
+        "text": "The rust monster can pinpoint the location of ferrous metal within 30 feet of itself."
+      },
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The rust monster makes one Bite attack and uses Antennae twice."
+      },
+      {
+        "name": "Antennae",
+        "kind": "action",
+        "text": "The rust monster targets one nonmagical metal object—armor or a weapon—worn or carried by a creature within 5 feet of itself. Dexterity Saving Throw: DC 11, the creature with the object. Failure: The object takes a −1 penalty to the AC it offers (armor) or to its attack rolls (weapon). Armor is destroyed if the penalty reduces its AC to 10, and a weapon is destroyed if its penalty reaches −5. The penalty can be removed by casting the Mending spell on the armor or weapon."
+      },
+      {
+        "name": "Destroy Metal",
+        "kind": "action",
+        "text": "The rust monster touches a nonmagical metal object within 5 feet of itself that isn’t being worn or carried. The touch destroys a 1-foot Cube of the object."
+      },
+      {
+        "name": "Reflexive Antennae",
+        "kind": "reaction",
+        "text": "Trigger: An attack roll hits the rust monster. Response: The rust monster uses Antennae."
+      }
+    ]
+  },
+  {
+    "id": "monster:sahuagin-warrior",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Sahuagin Warrior (p. 321)"
+    },
+    "name": "Sahuagin Warrior",
+    "cr": 0.5,
+    "creatureType": "fiend",
+    "hp": 22,
+    "hpDice": "4d8+4",
+    "ac": 12,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "swim": 40
+    },
+    "abilities": {
+      "str": 13,
+      "dex": 11,
+      "con": 12,
+      "int": 12,
+      "wis": 13,
+      "cha": 9
+    },
+    "skills": {
+      "perception": 5
+    },
+    "damageResistances": ["acid", "cold"],
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 120
+    },
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Blood Frenzy",
+        "kind": "trait",
+        "text": "The sahuagin has Advantage on attack rolls against any creature that doesn’t have all its Hit Points."
+      },
+      {
+        "name": "Limited Amphibiousness",
+        "kind": "trait",
+        "text": "The sahuagin can breathe air and water, but it must be submerged at least once every 4 hours to avoid suffocating outside water."
+      },
+      {
+        "name": "Shark Telepathy",
+        "kind": "trait",
+        "text": "The sahuagin can magically control sharks within 120 feet of itself, using a special telepathy."
+      },
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The sahuagin makes two Claw attacks."
+      },
+      {
+        "name": "Aquatic Charge",
+        "kind": "bonus-action",
+        "text": "The sahuagin swims up to its Swim Speed straight toward an enemy it can see."
+      }
+    ]
+  },
+  {
+    "id": "monster:satyr",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Satyr (p. 321)"
+    },
+    "name": "Satyr",
+    "cr": 0.5,
+    "creatureType": "fey",
+    "hp": 31,
+    "hpDice": "7d8",
+    "ac": 13,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 12,
+      "dex": 16,
+      "con": 11,
+      "int": 12,
+      "wis": 10,
+      "cha": 14
+    },
+    "skills": {
+      "perception": 2,
+      "performance": 6,
+      "stealth": 5
+    },
+    "passivePerception": 12,
+    "attacks": [
+      {
+        "name": "Hooves",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "5 (1d4 + 3) Bludgeoning damage. If the target is a Medium or smaller creature, the satyr pushes the target up to 10 feet straight away from itself."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Magic Resistance",
+        "kind": "trait",
+        "text": "The satyr has Advantage on saving throws against spells and other magical effects."
+      },
+      {
+        "name": "Mockery",
+        "kind": "action",
+        "text": "Wisdom Saving Throw: DC 12, one creature the satyr can see within 90 feet. Failure: 5 (1d6 + 2) Psychic damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:scorpion",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Scorpion (p. 360)"
+    },
+    "name": "Scorpion",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 11,
+    "initiative": 0,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 10,
+    "abilities": {
+      "str": 2,
+      "dex": 11,
+      "con": 8,
+      "int": 1,
+      "wis": 8,
+      "cha": 2
+    },
+    "passivePerception": 9,
+    "senses": {
+      "blindsight": 10
+    },
+    "attacks": [
+      {
+        "name": "Sting",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6",
+            "type": "poison"
+          },
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage plus 3 (1d6) Poison damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:scout",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Scout (p. 322)"
+    },
+    "name": "Scout",
+    "cr": 0.5,
+    "creatureType": "humanoid",
+    "hp": 16,
+    "hpDice": "3d8+3",
+    "ac": 13,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 11,
+      "dex": 14,
+      "con": 12,
+      "int": 11,
+      "wis": 13,
+      "cha": 11
+    },
+    "skills": {
+      "nature": 4,
+      "perception": 5,
+      "stealth": 6,
+      "survival": 5
+    },
+    "passivePerception": 15,
+    "attacks": [
+      {
+        "name": "Shortsword",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          }
+        ]
+      },
+      {
+        "name": "Longbow",
+        "toHit": 4,
+        "range": {
+          "normalFt": 150,
+          "longFt": 600
+        },
+        "damage": [
+          {
+            "dice": "1d8+2",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The scout makes two attacks, using Shortsword and Longbow in any combination."
+      }
+    ]
+  },
+  {
+    "id": "monster:seahorse",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Seahorse (p. 361)"
+    },
+    "name": "Seahorse",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 12,
+    "initiative": 1,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "swim": 20
+    },
+    "abilities": {
+      "str": 1,
+      "dex": 12,
+      "con": 8,
+      "int": 1,
+      "wis": 10,
+      "cha": 2
+    },
+    "skills": {
+      "perception": 2,
+      "stealth": 5
+    },
+    "passivePerception": 12,
+    "attacks": [],
+    "traits": [
+      {
+        "name": "Water Breathing",
+        "kind": "trait",
+        "text": "The seahorse can breathe only underwater."
+      },
+      {
+        "name": "Bubble Dash",
+        "kind": "action",
+        "text": "While underwater, the seahorse moves up to its Swim Speed without provoking Opportunity Attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:shadow",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Shadow (p. 322)"
+    },
+    "name": "Shadow",
+    "cr": 0.5,
+    "creatureType": "undead",
+    "hp": 27,
+    "hpDice": "5d8+5",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 6,
+      "dex": 14,
+      "con": 13,
+      "int": 6,
+      "wis": 10,
+      "cha": 8
+    },
+    "skills": {
+      "stealth": 6
+    },
+    "damageResistances": ["acid", "cold", "fire", "lightning", "thunder"],
+    "damageVulnerabilities": ["radiant"],
+    "damageImmunities": ["necrotic", "poison"],
+    "conditionImmunities": [
+      "exhaustion",
+      "frightened",
+      "grappled",
+      "paralyzed",
+      "petrified",
+      "poisoned",
+      "prone",
+      "restrained",
+      "unconscious"
+    ],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Draining Swipe",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "necrotic"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Necrotic damage, and the target’s Strength score decreases by 1d4. The target dies if this reduces that score to 0. If a Humanoid is slain by this attack, a Shadow rises from the corpse 1d4 hours later."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Amorphous",
+        "kind": "trait",
+        "text": "The shadow can move through a space as narrow as 1 inch without expending extra movement to do so."
+      },
+      {
+        "name": "Sunlight Weakness",
+        "kind": "trait",
+        "text": "While in sunlight, the shadow has Disadvantage on D20 Tests."
+      },
+      {
+        "name": "Shadow Stealth",
+        "kind": "bonus-action",
+        "text": "While in Dim Light or Darkness, the shadow takes the Hide action."
+      }
+    ]
+  },
+  {
+    "id": "monster:shrieker-fungus",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Shrieker Fungus (p. 286)"
+    },
+    "name": "Shrieker Fungus",
+    "cr": 0,
+    "creatureType": "plant",
+    "hp": 13,
+    "hpDice": "3d8",
+    "ac": 5,
+    "initiative": -5,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 5,
+    "abilities": {
+      "str": 1,
+      "dex": 1,
+      "con": 10,
+      "int": 1,
+      "wis": 3,
+      "cha": 1
+    },
+    "conditionImmunities": ["blinded", "charmed", "deafened", "frightened"],
+    "passivePerception": 6,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [],
+    "traits": [
+      {
+        "name": "Shriek",
+        "kind": "reaction",
+        "text": "Trigger: A creature or a source of Bright Light moves within 30 feet of the shrieker. Response: The shrieker emits a shriek audible within 300 feet of itself for 1 minute or until the shrieker dies."
+      }
+    ]
+  },
+  {
+    "id": "monster:skeleton",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Skeleton (p. 325)"
+    },
+    "name": "Skeleton",
+    "cr": 0.25,
+    "creatureType": "undead",
+    "hp": 13,
+    "hpDice": "2d8+4",
+    "ac": 14,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 10,
+      "dex": 16,
+      "con": 15,
+      "int": 6,
+      "wis": 8,
+      "cha": 5
+    },
+    "damageVulnerabilities": ["bludgeoning"],
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["exhaustion", "poisoned"],
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Shortsword",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "piercing"
+          }
+        ]
+      },
+      {
+        "name": "Shortbow",
+        "toHit": 5,
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "piercing"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monster:specter",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Specter (p. 327)"
+    },
+    "name": "Specter",
+    "cr": 1,
+    "creatureType": "undead",
+    "hp": 22,
+    "hpDice": "5d8",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "fly": 50
+    },
+    "abilities": {
+      "str": 1,
+      "dex": 14,
+      "con": 11,
+      "int": 10,
+      "wis": 10,
+      "cha": 11
+    },
+    "damageResistances": [
+      "acid",
+      "bludgeoning",
+      "cold",
+      "fire",
+      "lightning",
+      "piercing",
+      "slashing",
+      "thunder"
+    ],
+    "damageImmunities": ["necrotic", "poison"],
+    "conditionImmunities": [
+      "charmed",
+      "exhaustion",
+      "grappled",
+      "paralyzed",
+      "petrified",
+      "poisoned",
+      "prone",
+      "restrained",
+      "unconscious"
+    ],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Life Drain",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d6",
+            "type": "necrotic"
+          }
+        ],
+        "effect": "7 (2d6) Necrotic damage. If the target is a creature, its Hit Point maximum decreases by an amount equal to the damage taken."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Incorporeal Movement",
+        "kind": "trait",
+        "text": "The specter can move through other creatures and objects as if they were Difficult Terrain. It takes 5 (1d10) Force damage if it ends its turn inside an object."
+      },
+      {
+        "name": "Sunlight Sensitivity",
+        "kind": "trait",
+        "text": "While in sunlight, the specter has Disadvantage on ability checks and attack rolls."
+      }
+    ]
+  },
+  {
+    "id": "monster:sphinx-of-wonder",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Sphinx of Wonder (p. 327)"
+    },
+    "name": "Sphinx of Wonder",
+    "cr": 1,
+    "creatureType": "celestial",
+    "hp": 24,
+    "hpDice": "7d4+7",
+    "ac": 13,
+    "initiative": 3,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "fly": 40
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 17,
+      "con": 13,
+      "int": 15,
+      "wis": 12,
+      "cha": 11
+    },
+    "skills": {
+      "arcana": 4,
+      "religion": 4,
+      "stealth": 5
+    },
+    "damageResistances": ["necrotic", "psychic", "radiant"],
+    "passivePerception": 11,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+3",
+            "type": "slashing"
+          },
+          {
+            "dice": "2d6",
+            "type": "radiant"
+          }
+        ],
+        "effect": "5 (1d4 + 3) Slashing damage plus 7 (2d6) Radiant damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Magic Resistance",
+        "kind": "trait",
+        "text": "The sphinx has Advantage on saving throws against spells and other magical effects."
+      },
+      {
+        "name": "Burst of Ingenuity (2/Day)",
+        "kind": "reaction",
+        "text": "Trigger: The sphinx or another creature within 30 feet makes an ability check or a saving throw. Response: The sphinx adds 2 to the roll."
+      }
+    ]
+  },
+  {
+    "id": "monster:spider",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Spider (p. 361)"
+    },
+    "name": "Spider",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 12,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "climb": 20
+    },
+    "abilities": {
+      "str": 2,
+      "dex": 14,
+      "con": 8,
+      "int": 1,
+      "wis": 10,
+      "cha": 2
+    },
+    "skills": {
+      "stealth": 4
+    },
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4",
+            "type": "poison"
+          },
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage plus 2 (1d4) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Spider Climb",
+        "kind": "trait",
+        "text": "The spider can climb difficult surfaces, including along ceilings, without needing to make an ability check."
+      },
+      {
+        "name": "Web Walker",
+        "kind": "trait",
+        "text": "The spider ignores movement restrictions caused by webs, and the spider knows the location of any other creature in contact with the same web."
+      }
+    ]
+  },
+  {
+    "id": "monster:sprite",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Sprite (p. 329)"
+    },
+    "name": "Sprite",
+    "cr": 0.25,
+    "creatureType": "fey",
+    "hp": 10,
+    "hpDice": "4d4",
+    "ac": 15,
+    "initiative": 4,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 40
+    },
+    "abilities": {
+      "str": 3,
+      "dex": 18,
+      "con": 10,
+      "int": 14,
+      "wis": 13,
+      "cha": 11
+    },
+    "skills": {
+      "perception": 3,
+      "stealth": 8
+    },
+    "passivePerception": 13,
+    "attacks": [
+      {
+        "name": "Needle Sword",
+        "toHit": 6,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+4",
+            "type": "piercing"
+          }
+        ]
+      },
+      {
+        "name": "Enchanting Bow",
+        "toHit": 6,
+        "range": {
+          "normalFt": 40,
+          "longFt": 160
+        },
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage, and the target has the Charmed condition until the start of the sprite’s next turn."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Heart Sight",
+        "kind": "action",
+        "text": "Charisma Saving Throw: DC 10, one creature within 5 feet the sprite can see (Celestials, Fiends, and Undead automatically fail the save). Failure: The sprite knows the target’s emotions and alignment."
+      },
+      {
+        "name": "Invisibility",
+        "kind": "action",
+        "text": "The sprite casts Invisibility on itself, requiring no spell components and using Charisma as the spellcasting ability."
+      }
+    ]
+  },
+  {
+    "id": "monster:spy",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Spy (p. 329)"
+    },
+    "name": "Spy",
+    "cr": 1,
+    "creatureType": "humanoid",
+    "hp": 27,
+    "hpDice": "6d8",
+    "ac": 12,
+    "initiative": 4,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 10,
+      "dex": 15,
+      "con": 10,
+      "int": 12,
+      "wis": 14,
+      "cha": 16
+    },
+    "skills": {
+      "deception": 5,
+      "insight": 4,
+      "investigation": 5,
+      "perception": 6,
+      "sleight-of-hand": 4,
+      "stealth": 6
+    },
+    "passivePerception": 16,
+    "attacks": [
+      {
+        "name": "Shortsword",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d6",
+            "type": "poison"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage plus 7 (2d6) Poison damage."
+      },
+      {
+        "name": "Hand Crossbow",
+        "toHit": 4,
+        "range": {
+          "normalFt": 30,
+          "longFt": 120
+        },
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d6",
+            "type": "poison"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage plus 7 (2d6) Poison damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Cunning Action",
+        "kind": "bonus-action",
+        "text": "The spy takes the Dash, Disengage, or Hide action."
+      }
+    ]
+  },
+  {
+    "id": "monster:steam-mephit",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Steam Mephit (p. 308)"
+    },
+    "name": "Steam Mephit",
+    "cr": 0.25,
+    "creatureType": "elemental",
+    "hp": 17,
+    "hpDice": "5d6",
+    "ac": 10,
+    "initiative": 0,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "fly": 30
+    },
+    "abilities": {
+      "str": 5,
+      "dex": 11,
+      "con": 10,
+      "int": 11,
+      "wis": 10,
+      "cha": 12
+    },
+    "skills": {
+      "stealth": 2
+    },
+    "damageImmunities": ["fire", "poison"],
+    "conditionImmunities": ["exhaustion", "poisoned"],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Claw",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4",
+            "type": "slashing"
+          },
+          {
+            "dice": "1d4",
+            "type": "fire"
+          }
+        ],
+        "effect": "2 (1d4) Slashing damage plus 2 (1d4) Fire damage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Blurred Form",
+        "kind": "trait",
+        "text": "Attack rolls against the mephit are made with Disadvantage unless the mephit has the Incapacitated condition."
+      },
+      {
+        "name": "Death Burst",
+        "kind": "trait",
+        "text": "The mephit explodes when it dies. Dexterity Saving Throw: DC 10, each creature in a 5-foot Emanation originating from the mephit. Failure: 5 (2d4) Fire damage. Success: Half damage."
+      },
+      {
+        "name": "Steam Breath (Recharge 6)",
+        "kind": "action",
+        "text": "Constitution Saving Throw: DC 10, each creature in a 15-foot Cone. Failure: 5 (2d4) Fire damage, and the target’s Speed decreases by 10 feet until the end of the mephit’s next turn. Success: Half damage only. Failure or Success: Being underwater doesn’t grant Resistance to this Fire damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:stirge",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Stirge (p. 329)"
+    },
+    "name": "Stirge",
+    "cr": 0.125,
+    "creatureType": "monstrosity",
+    "hp": 5,
+    "hpDice": "2d4",
+    "ac": 13,
+    "initiative": 3,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 40
+    },
+    "abilities": {
+      "str": 4,
+      "dex": 16,
+      "con": 11,
+      "int": 2,
+      "wis": 8,
+      "cha": 6
+    },
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Proboscis",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+3",
+            "type": "piercing"
+          },
+          {
+            "dice": "2d4",
+            "type": "necrotic"
+          }
+        ],
+        "effect": "6 (1d6 + 3) Piercing damage, and the stirge attaches to the target. While attached, the stirge can’t make Proboscis attacks, and the target takes 5 (2d4) Necrotic damage at the start of each of the stirge’s turns. The stirge can detach itself by spending 5 feet of its movement. The target or a creature within 5 feet of it can detach the stirge as an action."
+      }
+    ]
+  },
+  {
+    "id": "monster:swarm-of-bats",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Swarm of Bats (p. 361)"
+    },
+    "name": "Swarm of Bats",
+    "cr": 0.25,
+    "creatureType": "swarm",
+    "hp": 11,
+    "hpDice": "2d10",
+    "ac": 12,
+    "initiative": 2,
+    "size": "large",
+    "footprint": 2,
+    "speed": 5,
+    "otherSpeeds": {
+      "fly": 30
+    },
+    "abilities": {
+      "str": 5,
+      "dex": 15,
+      "con": 10,
+      "int": 2,
+      "wis": 12,
+      "cha": 4
+    },
+    "damageResistances": ["bludgeoning", "piercing", "slashing"],
+    "conditionImmunities": [
+      "charmed",
+      "frightened",
+      "grappled",
+      "paralyzed",
+      "petrified",
+      "prone",
+      "restrained",
+      "stunned"
+    ],
+    "passivePerception": 11,
+    "senses": {
+      "blindsight": 60
+    },
+    "attacks": [
+      {
+        "name": "Bites",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (2d4) Piercing damage, or 2 (1d4) Piercing damage if the swarm is Bloodied."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Swarm",
+        "kind": "trait",
+        "text": "The swarm can occupy another creature’s space and vice versa, and the swarm can move through any opening large enough for a Tiny bat. The swarm can’t regain Hit Points or gain Temporary Hit Points."
+      }
+    ]
+  },
+  {
+    "id": "monster:swarm-of-insects",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Swarm of Insects (p. 361)"
+    },
+    "name": "Swarm of Insects",
+    "cr": 0.5,
+    "creatureType": "swarm",
+    "hp": 19,
+    "hpDice": "3d8+6",
+    "ac": 11,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 20,
+    "otherSpeeds": {
+      "climb": 20,
+      "fly": 20
+    },
+    "abilities": {
+      "str": 3,
+      "dex": 13,
+      "con": 14,
+      "int": 1,
+      "wis": 7,
+      "cha": 1
+    },
+    "damageResistances": ["bludgeoning", "piercing", "slashing"],
+    "conditionImmunities": [
+      "charmed",
+      "frightened",
+      "grappled",
+      "paralyzed",
+      "petrified",
+      "prone",
+      "restrained",
+      "stunned"
+    ],
+    "passivePerception": 8,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Bites",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+1",
+            "type": "poison"
+          },
+          {
+            "dice": "1d4+1",
+            "type": "poison"
+          }
+        ],
+        "effect": "6 (2d4 + 1) Poison damage, or 3 (1d4 + 1) Poison damage if the swarm is Bloodied."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Climb or Fly Speed",
+        "kind": "trait",
+        "text": "SRD speed: 20 ft., Climb or Fly 20 ft. (GM’s choice)"
+      },
+      {
+        "name": "Spider Climb",
+        "kind": "trait",
+        "text": "If the swarm has a Climb Speed, the swarm can climb difficult surfaces, including along ceilings, without needing to make an ability check."
+      },
+      {
+        "name": "Swarm",
+        "kind": "trait",
+        "text": "The swarm can occupy another creature’s space and vice versa, and the swarm can move through any opening large enough for a Tiny insect. The swarm can’t regain Hit Points or gain Temporary Hit Points."
+      }
+    ]
+  },
+  {
+    "id": "monster:swarm-of-piranhas",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Swarm of Piranhas (p. 362)"
+    },
+    "name": "Swarm of Piranhas",
+    "cr": 1,
+    "creatureType": "swarm",
+    "hp": 28,
+    "hpDice": "8d8-8",
+    "ac": 13,
+    "initiative": 3,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 5,
+    "otherSpeeds": {
+      "swim": 40
+    },
+    "abilities": {
+      "str": 13,
+      "dex": 16,
+      "con": 9,
+      "int": 1,
+      "wis": 7,
+      "cha": 2
+    },
+    "damageResistances": ["bludgeoning", "piercing", "slashing"],
+    "conditionImmunities": [
+      "charmed",
+      "frightened",
+      "grappled",
+      "paralyzed",
+      "petrified",
+      "prone",
+      "restrained",
+      "stunned"
+    ],
+    "passivePerception": 8,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bites",
+        "toHit": 5,
+        "toHitNote": "with Advantage if the target doesn’t have all its Hit Points",
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+3",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4+3",
+            "type": "piercing"
+          }
+        ],
+        "effect": "8 (2d4 + 3) Piercing damage, or 5 (1d4 + 3) Piercing damage if the swarm is Bloodied."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Swarm",
+        "kind": "trait",
+        "text": "The swarm can occupy another creature’s space and vice versa, and the swarm can move through any opening large enough for a Tiny piranha. The swarm can’t regain Hit Points or gain Temporary Hit Points."
+      },
+      {
+        "name": "Water Breathing",
+        "kind": "trait",
+        "text": "The swarm can breathe only underwater."
+      }
+    ]
+  },
+  {
+    "id": "monster:swarm-of-rats",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Swarm of Rats (p. 362)"
+    },
+    "name": "Swarm of Rats",
+    "cr": 0.25,
+    "creatureType": "swarm",
+    "hp": 14,
+    "hpDice": "4d8-4",
+    "ac": 10,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 9,
+      "dex": 11,
+      "con": 9,
+      "int": 2,
+      "wis": 10,
+      "cha": 3
+    },
+    "saves": {
+      "dex": 2
+    },
+    "damageResistances": ["bludgeoning", "piercing", "slashing"],
+    "conditionImmunities": [
+      "charmed",
+      "frightened",
+      "grappled",
+      "paralyzed",
+      "petrified",
+      "prone",
+      "restrained",
+      "stunned"
+    ],
+    "passivePerception": 10,
+    "senses": {
+      "darkvision": 30
+    },
+    "attacks": [
+      {
+        "name": "Bites",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (2d4) Piercing damage, or 2 (1d4) Piercing damage if the swarm is Bloodied."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Swarm",
+        "kind": "trait",
+        "text": "The swarm can occupy another creature’s space and vice versa, and the swarm can move through any opening large enough for a Tiny rat. The swarm can’t regain Hit Points or gain Temporary Hit Points."
+      }
+    ]
+  },
+  {
+    "id": "monster:swarm-of-ravens",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Swarm of Ravens (p. 362)"
+    },
+    "name": "Swarm of Ravens",
+    "cr": 0.25,
+    "creatureType": "swarm",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 50
+    },
+    "abilities": {
+      "str": 6,
+      "dex": 14,
+      "con": 12,
+      "int": 5,
+      "wis": 12,
+      "cha": 6
+    },
+    "skills": {
+      "perception": 5
+    },
+    "damageResistances": ["bludgeoning", "piercing", "slashing"],
+    "conditionImmunities": [
+      "charmed",
+      "frightened",
+      "grappled",
+      "paralyzed",
+      "petrified",
+      "prone",
+      "restrained",
+      "stunned"
+    ],
+    "passivePerception": 15,
+    "attacks": [
+      {
+        "name": "Beaks",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage, or 2 (1d4) Piercing damage if the swarm is Bloodied."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Swarm",
+        "kind": "trait",
+        "text": "The swarm can occupy another creature’s space and vice versa, and the swarm can move through any opening large enough for a Tiny raven. The swarm can’t regain Hit Points or gain Temporary Hit Points."
+      },
+      {
+        "name": "Cacophony (Recharge 6)",
+        "kind": "action",
+        "text": "Wisdom Saving Throw: DC 10, one creature in the swarm’s space. Failure: The target has the Deafened condition until the start of the swarm’s next turn. While Deafened, the target also has Disadvantage on ability checks and attack rolls."
+      }
+    ]
+  },
+  {
+    "id": "monster:tiger",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Tiger (p. 363)"
+    },
+    "name": "Tiger",
+    "cr": 1,
+    "creatureType": "beast",
+    "hp": 30,
+    "hpDice": "4d10+8",
+    "ac": 13,
+    "initiative": 3,
+    "size": "large",
+    "footprint": 2,
+    "speed": 40,
+    "abilities": {
+      "str": 17,
+      "dex": 16,
+      "con": 14,
+      "int": 3,
+      "wis": 12,
+      "cha": 8
+    },
+    "skills": {
+      "perception": 3,
+      "stealth": 7
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d6+3",
+            "type": "slashing"
+          }
+        ],
+        "effect": "10 (2d6 + 3) Slashing damage. If the target is a Large or smaller creature, it has the Prone condition."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Nimble Escape",
+        "kind": "bonus-action",
+        "text": "The tiger takes the Disengage or Hide action."
+      }
+    ]
+  },
+  {
+    "id": "monster:tough",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Tough (p. 332)"
+    },
+    "name": "Tough",
+    "cr": 0.5,
+    "creatureType": "humanoid",
+    "hp": 32,
+    "hpDice": "5d8+10",
+    "ac": 12,
+    "initiative": 1,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 15,
+      "dex": 12,
+      "con": 14,
+      "int": 10,
+      "wis": 10,
+      "cha": 11
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Mace",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "bludgeoning"
+          }
+        ]
+      },
+      {
+        "name": "Heavy Crossbow",
+        "toHit": 3,
+        "range": {
+          "normalFt": 100,
+          "longFt": 400
+        },
+        "damage": [
+          {
+            "dice": "1d10+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The tough has Advantage on an attack roll against a creature if at least one of the tough’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:troll-limb",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Troll Limb (p. 333)"
+    },
+    "name": "Troll Limb",
+    "cr": 0.5,
+    "creatureType": "giant",
+    "hp": 14,
+    "hpDice": "4d6",
+    "ac": 13,
+    "initiative": 1,
+    "size": "small",
+    "footprint": 1,
+    "speed": 20,
+    "abilities": {
+      "str": 18,
+      "dex": 12,
+      "con": 10,
+      "int": 1,
+      "wis": 9,
+      "cha": 1
+    },
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Rend",
+        "toHit": 6,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+4",
+            "type": "slashing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Regeneration",
+        "kind": "trait",
+        "text": "The limb regains 5 Hit Points at the start of each of its turns. If the limb takes Acid or Fire damage, this trait doesn’t function on the limb’s next turn. The limb dies only if it starts its turn with 0 Hit Points and doesn’t regenerate."
+      },
+      {
+        "name": "Troll Spawn",
+        "kind": "trait",
+        "text": "The limb uncannily has the same senses as a whole troll. If the limb isn’t destroyed within 24 hours, roll 1d12. On a 12, the limb turns into a Troll. Otherwise, the limb withers away."
+      }
+    ]
+  },
+  {
+    "id": "monster:venomous-snake",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Venomous Snake (p. 363)"
+    },
+    "name": "Venomous Snake",
+    "cr": 0.125,
+    "creatureType": "beast",
+    "hp": 5,
+    "hpDice": "2d4",
+    "ac": 12,
+    "initiative": 2,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "swim": 30
+    },
+    "abilities": {
+      "str": 2,
+      "dex": 15,
+      "con": 11,
+      "int": 1,
+      "wis": 10,
+      "cha": 3
+    },
+    "passivePerception": 10,
+    "senses": {
+      "blindsight": 10
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d6",
+            "type": "poison"
+          }
+        ],
+        "effect": "4 (1d4 + 2) Piercing damage plus 3 (1d6) Poison damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:violet-fungus",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Violet Fungus (p. 286)"
+    },
+    "name": "Violet Fungus",
+    "cr": 0.25,
+    "creatureType": "plant",
+    "hp": 18,
+    "hpDice": "4d8",
+    "ac": 5,
+    "initiative": -5,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 5,
+    "abilities": {
+      "str": 3,
+      "dex": 1,
+      "con": 10,
+      "int": 1,
+      "wis": 3,
+      "cha": 1
+    },
+    "conditionImmunities": ["blinded", "charmed", "deafened", "frightened"],
+    "passivePerception": 6,
+    "senses": {
+      "blindsight": 30
+    },
+    "attacks": [
+      {
+        "name": "Rotting Touch",
+        "toHit": 2,
+        "reachFt": 10,
+        "damage": [
+          {
+            "dice": "1d8",
+            "type": "necrotic"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Multiattack",
+        "kind": "action",
+        "text": "The fungus makes two Rotting Touch attacks."
+      }
+    ]
+  },
+  {
+    "id": "monster:vulture",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Vulture (p. 363)"
+    },
+    "name": "Vulture",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 5,
+    "hpDice": "1d8+1",
+    "ac": 10,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 10,
+    "otherSpeeds": {
+      "fly": 50
+    },
+    "abilities": {
+      "str": 7,
+      "dex": 10,
+      "con": 13,
+      "int": 2,
+      "wis": 12,
+      "cha": 4
+    },
+    "skills": {
+      "perception": 3
+    },
+    "passivePerception": 13,
+    "attacks": [
+      {
+        "name": "Beak",
+        "toHit": 2,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d4",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The vulture has Advantage on an attack roll against a creature if at least one of the vulture’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:warhorse",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Warhorse (p. 364)"
+    },
+    "name": "Warhorse",
+    "cr": 0.5,
+    "creatureType": "beast",
+    "hp": 19,
+    "hpDice": "3d10+3",
+    "ac": 11,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 60,
+    "abilities": {
+      "str": 18,
+      "dex": 12,
+      "con": 13,
+      "int": 2,
+      "wis": 12,
+      "cha": 7
+    },
+    "saves": {
+      "wis": 3
+    },
+    "passivePerception": 11,
+    "attacks": [
+      {
+        "name": "Hooves",
+        "toHit": 6,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "2d4+4",
+            "type": "bludgeoning"
+          },
+          {
+            "dice": "2d4",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "9 (2d4 + 4) Bludgeoning damage. If the target is a Large or smaller creature and the horse moved 20+ feet straight toward it immediately before the hit, the target takes an extra 5 (2d4) Bludgeoning damage and has the Prone condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:warhorse-skeleton",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Warhorse Skeleton (p. 326)"
+    },
+    "name": "Warhorse Skeleton",
+    "cr": 0.5,
+    "creatureType": "undead",
+    "hp": 22,
+    "hpDice": "3d10+6",
+    "ac": 13,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 60,
+    "abilities": {
+      "str": 18,
+      "dex": 12,
+      "con": 15,
+      "int": 2,
+      "wis": 8,
+      "cha": 5
+    },
+    "damageVulnerabilities": ["bludgeoning"],
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["exhaustion", "poisoned"],
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Hooves",
+        "toHit": 6,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+4",
+            "type": "bludgeoning"
+          }
+        ],
+        "effect": "7 (1d6 + 4) Bludgeoning damage. If the target is a Large or smaller creature and the skeleton moved 20+ feet straight toward it immediately before the hit, the target has the Prone condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:warrior-infantry",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Warrior Infantry (p. 336)"
+    },
+    "name": "Warrior Infantry",
+    "cr": 0.125,
+    "creatureType": "humanoid",
+    "hp": 9,
+    "hpDice": "2d8",
+    "ac": 13,
+    "initiative": 0,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 13,
+      "dex": 11,
+      "con": 11,
+      "int": 8,
+      "wis": 11,
+      "cha": 8
+    },
+    "passivePerception": 10,
+    "attacks": [
+      {
+        "name": "Spear",
+        "toHit": 3,
+        "reachFt": 5,
+        "range": {
+          "normalFt": 20,
+          "longFt": 60
+        },
+        "damage": [
+          {
+            "dice": "1d6+1",
+            "type": "piercing"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The warrior has Advantage on an attack roll against a creature if at least one of the warrior’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:weasel",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Weasel (p. 364)"
+    },
+    "name": "Weasel",
+    "cr": 0,
+    "creatureType": "beast",
+    "hp": 1,
+    "hpDice": "1d4-1",
+    "ac": 13,
+    "initiative": 3,
+    "size": "tiny",
+    "footprint": 1,
+    "speed": 30,
+    "otherSpeeds": {
+      "climb": 30
+    },
+    "abilities": {
+      "str": 3,
+      "dex": 16,
+      "con": 8,
+      "int": 2,
+      "wis": 12,
+      "cha": 3
+    },
+    "skills": {
+      "acrobatics": 5,
+      "perception": 3,
+      "stealth": 5
+    },
+    "passivePerception": 13,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1",
+            "type": "piercing"
+          }
+        ],
+        "effect": "1 Piercing damage."
+      }
+    ]
+  },
+  {
+    "id": "monster:wolf",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Wolf (p. 364)"
+    },
+    "name": "Wolf",
+    "cr": 0.25,
+    "creatureType": "beast",
+    "hp": 11,
+    "hpDice": "2d8+2",
+    "ac": 12,
+    "initiative": 2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 40,
+    "abilities": {
+      "str": 14,
+      "dex": 15,
+      "con": 12,
+      "int": 3,
+      "wis": 12,
+      "cha": 6
+    },
+    "skills": {
+      "perception": 5,
+      "stealth": 4
+    },
+    "passivePerception": 15,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage. If the target is a Medium or smaller creature, it has the Prone condition."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Pack Tactics",
+        "kind": "trait",
+        "text": "The wolf has Advantage on attack rolls against a creature if at least one of the wolf’s allies is within 5 feet of the creature and the ally doesn’t have the Incapacitated condition."
+      }
+    ]
+  },
+  {
+    "id": "monster:worg",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Worg (p. 342)"
+    },
+    "name": "Worg",
+    "cr": 0.5,
+    "creatureType": "fey",
+    "hp": 26,
+    "hpDice": "4d10+4",
+    "ac": 13,
+    "initiative": 1,
+    "size": "large",
+    "footprint": 2,
+    "speed": 50,
+    "abilities": {
+      "str": 16,
+      "dex": 13,
+      "con": 13,
+      "int": 7,
+      "wis": 11,
+      "cha": 8
+    },
+    "skills": {
+      "perception": 4
+    },
+    "passivePerception": 14,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Bite",
+        "toHit": 5,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+3",
+            "type": "piercing"
+          }
+        ],
+        "effect": "7 (1d8 + 3) Piercing damage, and the next attack roll made against the target before the start of the worg’s next turn has Advantage."
+      }
+    ]
+  },
+  {
+    "id": "monster:zombie",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Zombie (p. 343)"
+    },
+    "name": "Zombie",
+    "cr": 0.25,
+    "creatureType": "undead",
+    "hp": 15,
+    "hpDice": "2d8+6",
+    "ac": 8,
+    "initiative": -2,
+    "size": "medium",
+    "footprint": 1,
+    "speed": 20,
+    "abilities": {
+      "str": 13,
+      "dex": 6,
+      "con": 16,
+      "int": 3,
+      "wis": 6,
+      "cha": 5
+    },
+    "saves": {
+      "wis": 0
+    },
+    "damageImmunities": ["poison"],
+    "conditionImmunities": ["exhaustion", "poisoned"],
+    "passivePerception": 8,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Slam",
+        "toHit": 3,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d8+1",
+            "type": "bludgeoning"
+          }
+        ]
+      }
+    ],
+    "traits": [
+      {
+        "name": "Undead Fortitude",
+        "kind": "trait",
+        "text": "If damage reduces the zombie to 0 Hit Points, it makes a Constitution saving throw (DC 5 plus the damage taken) unless the damage is Radiant or from a Critical Hit. On a successful save, the zombie drops to 1 Hit Point instead."
+      }
+    ]
+  }
+]
