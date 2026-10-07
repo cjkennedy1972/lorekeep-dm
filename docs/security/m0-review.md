@@ -51,3 +51,6 @@ Reviewer: bastion on openai/gpt-6-astra (static, scoped, commit e1ae1b5). All si
 5. MEDIUM only the submitted reset token is consumed; other outstanding reset links stay valid: confirmed in accounts/reset.ts. -> M0-FIX-07
 6. MEDIUM unlimited room creation with permanent actors/timers: confirmed by reading routes/sessions.ts + room/registry.ts. -> M0-FIX-07
 Out of scope / unverified by the review: proxy/TLS/Host behavior, deletion workers (M0-19), dependency advisories, telemetry internals.
+
+## Invite link recovery (card 316f34f0)
+Invites stay hash-only at rest (M0-FIX-07), so the plaintext cannot be re-fetched after a reload. Chosen design: the code is shown only from the response that minted it (create/regenerate; create hands it to the lobby via router state, cleared from history immediately). After a reload the host sees an explanation and a "Create new invite link" button; regenerating replaces the hash and invalidates the old link. No server change.

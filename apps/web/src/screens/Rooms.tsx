@@ -18,7 +18,10 @@ export function Rooms() {
   async function create(e: FormEvent) {
     e.preventDefault();
     const r = await api<{ room: RoomInfo }>('/api/rooms', { name });
-    if (r.ok) return navigate(`/rooms/${r.data.room.id}`);
+    if (r.ok)
+      return navigate(`/rooms/${r.data.room.id}`, {
+        state: { room: r.data.room },
+      });
     setError(r.message);
     input.current?.focus();
   }

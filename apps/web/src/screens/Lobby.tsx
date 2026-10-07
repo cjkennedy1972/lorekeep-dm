@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Seat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
 import { ConnectionStatus } from '../room/ConnectionStatus';
@@ -31,11 +31,18 @@ function usePresenceAnnouncement(seats: Seat[]) {
 
 export function Lobby() {
   const { id } = useParams();
-  const [room, setRoom] = useState<RoomInfo | null>(null);
+  const nav = useNavigate();
+  const minted = (useLocation().state as { room?: RoomInfo } | null)?.room;
+  const [room, setRoom] = useState<RoomInfo | null>(
+    minted && minted.id === id ? minted : null,
+  );
   const [missing, setMissing] = useState(false);
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
+    // The plaintext code exists only in the create response; drop it from history state so a reload never replays it.
+    if (minted) nav('.', { replace: true, state: null });
+    if (room) return;
     void api<{ room: RoomInfo }>(`/api/rooms/${id}`).then((r) =>
       r.ok ? setRoom(r.data.room) : setMissing(true),
     );
@@ -88,17 +95,29 @@ export function Lobby() {
       {room.isHost && (
         <section aria-labelledby="invite-heading">
           <h2 id="invite-heading">Invite players</h2>
-          <p>
-            Code: <strong>{room.code}</strong>
-          </p>
-          <label htmlFor="invite-link">Invite link</label>
-          <input id="invite-link" readOnly value={link} />
+          {room.code ? (
+            <>
+              <p>
+                Code: <strong>{room.code}</strong>
+              </p>
+              <label htmlFor="invite-link">Invite link</label>
+              <input id="invite-link" readOnly value={link} />
+            </>
+          ) : (
+            <p>
+              For security the invite link is only shown when it is created and
+              cannot be shown again. Create a new link to share; the previous
+              link will stop working.
+            </p>
+          )}
           <div className="actions">
-            <button type="button" onClick={copy}>
-              Copy invite link
-            </button>
+            {room.code && (
+              <button type="button" onClick={copy}>
+                Copy invite link
+              </button>
+            )}
             <button type="button" onClick={regenerate}>
-              Regenerate link
+              {room.code ? 'Regenerate link' : 'Create new invite link'}
             </button>
           </div>
           <p role="status" aria-live="polite">

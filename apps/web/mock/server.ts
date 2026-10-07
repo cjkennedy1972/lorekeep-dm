@@ -82,11 +82,12 @@ export function createMock(
   };
   const rooms = new Map<string, MockRoom>();
   const newCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
-  const roomView = (r: MockRoom, accountId: string) => ({
+  // Like the real server: the plaintext code is only in the response that minted it.
+  const roomView = (r: MockRoom, accountId: string, minted = false) => ({
     id: r.id,
     name: r.name,
     isHost: r.hostId === accountId,
-    ...(r.hostId === accountId ? { code: r.code } : {}),
+    ...(minted && r.hostId === accountId ? { code: r.code } : {}),
   });
   const byId = (id: string) =>
     [...users.values()].find((u) => u.account.id === id)?.account;
@@ -376,7 +377,7 @@ export function createMock(
         members: new Set([account.id]),
       };
       rooms.set(r.id, r);
-      return json(res, 201, { room: roomView(r, account.id) });
+      return json(res, 201, { room: roomView(r, account.id, true) });
     }
     const roomRoute = /^\/api\/rooms\/([^/]+)(\/invite)?$/.exec(url.pathname);
     if (roomRoute) {
@@ -389,7 +390,7 @@ export function createMock(
         if (r.hostId !== account.id)
           return err(res, 403, 'FORBIDDEN', 'Only the host can do that.');
         r.code = newCode(); // old link stops working immediately
-        return json(res, 200, { room: roomView(r, account.id) });
+        return json(res, 200, { room: roomView(r, account.id, true) });
       }
     }
     const joinRoute = /^\/api\/invites\/([^/]+)\/join$/.exec(url.pathname);

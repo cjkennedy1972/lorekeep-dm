@@ -81,6 +81,29 @@ test('rooms list, create, lobby shows live seats and announces presence politely
   ).not.toBe(before);
 });
 
+test('host reloading the lobby gets no stale/blank link and can create a new one', async () => {
+  const host = useJar();
+  await seedAccount('h4@example.com', 'Reloader');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Reload Hall' }),
+    })
+  ).json();
+  renderApp(`/rooms/${created.room.id}`);
+  expect(await screen.findByText(/cannot be shown again/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText('Invite link')).toBeNull();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create new invite link' }),
+  );
+  const input = (await screen.findByLabelText(
+    'Invite link',
+  )) as HTMLInputElement;
+  expect(input.value).toMatch(/\/join\/[A-Z0-9]{6}$/);
+  expect(input.value).not.toContain(created.room.code);
+});
+
 test('invalid invite shows a clear error', async () => {
   useJar();
   await seedAccount('x@example.com', 'X');
