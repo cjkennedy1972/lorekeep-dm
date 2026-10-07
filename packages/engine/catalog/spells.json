@@ -1,0 +1,7369 @@
+[
+  {
+    "id": "spell:acid-splash",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Acid Splash (p. 107)"
+    },
+    "name": "Acid Splash",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "types": ["acid"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d6", "3d6", "4d6"]
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "sphere",
+      "size": 5
+    }
+  },
+  {
+    "id": "spell:chill-touch",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Chill Touch (p. 115)"
+    },
+    "name": "Chill Touch",
+    "level": 0,
+    "school": "necromancy",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "melee"
+    },
+    "damage": [
+      {
+        "dice": "1d10",
+        "types": ["necrotic"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d10", "3d10", "4d10"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:dancing-lights",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Dancing Lights (p. 121)"
+    },
+    "name": "Dancing Lights",
+    "level": 0,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of phosphorus"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:druidcraft",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Druidcraft (p. 126)"
+    },
+    "name": "Druidcraft",
+    "level": 0,
+    "school": "transmutation",
+    "classes": ["druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:eldritch-blast",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Eldritch Blast (p. 127)"
+    },
+    "name": "Eldritch Blast",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["warlock"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "1d10",
+        "types": ["force"],
+        "scaling": {
+          "cantrip": {
+            "count": [2, 3, 4]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:elementalism",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Elementalism (p. 127)"
+    },
+    "name": "Elementalism",
+    "level": 0,
+    "school": "transmutation",
+    "classes": ["druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:fire-bolt",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Fire Bolt (p. 132)"
+    },
+    "name": "Fire Bolt",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "1d10",
+        "types": ["fire"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d10", "3d10", "4d10"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:guidance",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Guidance (p. 138)"
+    },
+    "name": "Guidance",
+    "level": 0,
+    "school": "divination",
+    "classes": ["cleric", "druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:light",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Light (p. 144)"
+    },
+    "name": "Light",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["bard", "cleric", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": true,
+      "materials": "a firefly or phosphorescent moss"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:mage-hand",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Mage Hand (p. 145)"
+    },
+    "name": "Mage Hand",
+    "level": 0,
+    "school": "conjuration",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:mending",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Mending (p. 148)"
+    },
+    "name": "Mending",
+    "level": 0,
+    "school": "transmutation",
+    "classes": ["bard", "cleric", "druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "two lodestones"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:message",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Message (p. 148)"
+    },
+    "name": "Message",
+    "level": 0,
+    "school": "transmutation",
+    "classes": ["bard", "druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": true,
+      "materials": "a copper wire"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "round",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:minor-illusion",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Minor Illusion (p. 149)"
+    },
+    "name": "Minor Illusion",
+    "level": 0,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of fleece"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 5
+    }
+  },
+  {
+    "id": "spell:poison-spray",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Poison Spray (p. 153)"
+    },
+    "name": "Poison Spray",
+    "level": 0,
+    "school": "necromancy",
+    "classes": ["druid", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "1d12",
+        "types": ["poison"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d12", "3d12", "4d12"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:prestidigitation",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Prestidigitation (p. 154)"
+    },
+    "name": "Prestidigitation",
+    "level": 0,
+    "school": "transmutation",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 10
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:produce-flame",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Produce Flame (p. 156)"
+    },
+    "name": "Produce Flame",
+    "level": 0,
+    "school": "conjuration",
+    "classes": ["druid"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": ["fire"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d8", "3d8", "4d8"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:ray-of-frost",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Ray of Frost (p. 157)"
+    },
+    "name": "Ray of Frost",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": ["cold"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d8", "3d8", "4d8"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:resistance",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Resistance (p. 158)"
+    },
+    "name": "Resistance",
+    "level": 0,
+    "school": "abjuration",
+    "classes": ["cleric", "druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:sacred-flame",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Sacred Flame (p. 159)"
+    },
+    "name": "Sacred Flame",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": ["radiant"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d8", "3d8", "4d8"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:shillelagh",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Shillelagh (p. 162)"
+    },
+    "name": "Shillelagh",
+    "level": 0,
+    "school": "transmutation",
+    "classes": ["druid"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "mistletoe"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:shocking-grasp",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Shocking Grasp (p. 162)"
+    },
+    "name": "Shocking Grasp",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "melee"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": ["lightning"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d8", "3d8", "4d8"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:sorcerous-burst",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Sorcerous Burst (p. 163)"
+    },
+    "name": "Sorcerous Burst",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["sorcerer"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": [
+          "acid",
+          "cold",
+          "fire",
+          "lightning",
+          "poison",
+          "psychic",
+          "thunder"
+        ],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d8", "3d8", "4d8"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:spare-the-dying",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Spare the Dying (p. 163)"
+    },
+    "name": "Spare the Dying",
+    "level": 0,
+    "school": "necromancy",
+    "classes": ["cleric", "druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 15
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:starry-wisp",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Starry Wisp (p. 165)"
+    },
+    "name": "Starry Wisp",
+    "level": 0,
+    "school": "evocation",
+    "classes": ["bard", "druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": ["radiant"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d8", "3d8", "4d8"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:thaumaturgy",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Thaumaturgy (p. 169)"
+    },
+    "name": "Thaumaturgy",
+    "level": 0,
+    "school": "transmutation",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:true-strike",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > True Strike (p. 171)"
+    },
+    "name": "True Strike",
+    "level": 0,
+    "school": "divination",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": true,
+      "materials": "a weapon with which you have proficiency and that is worth 1+ CP"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "weapon"
+    }
+  },
+  {
+    "id": "spell:vicious-mockery",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Vicious Mockery (p. 171)"
+    },
+    "name": "Vicious Mockery",
+    "level": 0,
+    "school": "enchantment",
+    "classes": ["bard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "types": ["psychic"],
+        "scaling": {
+          "cantrip": {
+            "dice": ["2d6", "3d6", "4d6"]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:alarm",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Alarm (p. 107)"
+    },
+    "name": "Alarm",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["ranger", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bell and silver wire"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:animal-friendship",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Animal Friendship (p. 107)"
+    },
+    "name": "Animal Friendship",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard", "druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a morsel of food"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 24,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:bane",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Bane (p. 112)"
+    },
+    "name": "Bane",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard", "cleric", "warlock"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a drop of blood"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "cha",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:bless",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Bless (p. 113)"
+    },
+    "name": "Bless",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["cleric", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a Holy Symbol worth 5+ GP"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:burning-hands",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Burning Hands (p. 114)"
+    },
+    "name": "Burning Hands",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "3d6",
+        "types": ["fire"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "cone",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:charm-person",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Charm Person (p. 115)"
+    },
+    "name": "Charm Person",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard", "druid", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:chromatic-orb",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Chromatic Orb (p. 115)"
+    },
+    "name": "Chromatic Orb",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 90
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a diamond worth 50+ GP"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "3d8",
+        "types": ["acid", "cold", "fire", "lightning", "poison", "thunder"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:color-spray",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Color Spray (p. 116)"
+    },
+    "name": "Color Spray",
+    "level": 1,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of colorful sand"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "cone",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:command",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Command (p. 116)"
+    },
+    "name": "Command",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard", "cleric", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:comprehend-languages",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Comprehend Languages (p. 117)"
+    },
+    "name": "Comprehend Languages",
+    "level": 1,
+    "school": "divination",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of soot and salt"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:create-or-destroy-water",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Create or Destroy Water (p. 121)"
+    },
+    "name": "Create or Destroy Water",
+    "level": 1,
+    "school": "transmutation",
+    "classes": ["cleric", "druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a mix of water and sand"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 30
+    }
+  },
+  {
+    "id": "spell:cure-wounds",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Cure Wounds (p. 121)"
+    },
+    "name": "Cure Wounds",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["bard", "cleric", "druid", "paladin", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    },
+    "healing": {
+      "dice": "2d8",
+      "addsModifier": true,
+      "slotDice": "2d8"
+    }
+  },
+  {
+    "id": "spell:detect-evil-and-good",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Detect Evil and Good (p. 123)"
+    },
+    "name": "Detect Evil and Good",
+    "level": 1,
+    "school": "divination",
+    "classes": ["cleric", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:detect-magic",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Detect Magic (p. 123)"
+    },
+    "name": "Detect Magic",
+    "level": 1,
+    "school": "divination",
+    "classes": [
+      "bard",
+      "cleric",
+      "druid",
+      "paladin",
+      "ranger",
+      "sorcerer",
+      "warlock",
+      "wizard"
+    ],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:detect-poison-and-disease",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Detect Poison and Disease (p. 123)"
+    },
+    "name": "Detect Poison and Disease",
+    "level": 1,
+    "school": "divination",
+    "classes": ["cleric", "druid", "paladin", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a yew leaf"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:disguise-self",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Disguise Self (p. 124)"
+    },
+    "name": "Disguise Self",
+    "level": 1,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:dissonant-whispers",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Dissonant Whispers (p. 124)"
+    },
+    "name": "Dissonant Whispers",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "3d6",
+        "types": ["psychic"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:divine-favor",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Divine Favor (p. 125)"
+    },
+    "name": "Divine Favor",
+    "level": 1,
+    "school": "transmutation",
+    "classes": ["paladin"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "1d4",
+        "types": ["radiant"],
+        "note": "extra weapon damage"
+      }
+    ]
+  },
+  {
+    "id": "spell:divine-smite",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Divine Smite (p. 125)"
+    },
+    "name": "Divine Smite",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["paladin"],
+    "castingTime": {
+      "unit": "bonus-action",
+      "trigger": "you take immediately after hitting a target with a Melee weapon or an Unarmed Strike"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "2d8",
+        "types": ["radiant"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        },
+        "note": "+1d8 if the target is a Fiend or an Undead"
+      }
+    ]
+  },
+  {
+    "id": "spell:ensnaring-strike",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Ensnaring Strike (p. 128)"
+    },
+    "name": "Ensnaring Strike",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["ranger"],
+    "castingTime": {
+      "unit": "bonus-action",
+      "trigger": "you take immediately after hitting a creature with a weapon"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "str",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "types": ["piercing"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        },
+        "note": "at the start of each of the restrained target's turns"
+      }
+    ]
+  },
+  {
+    "id": "spell:entangle",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Entangle (p. 128)"
+    },
+    "name": "Entangle",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 90
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "str",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "square",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:expeditious-retreat",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Expeditious Retreat (p. 129)"
+    },
+    "name": "Expeditious Retreat",
+    "level": 1,
+    "school": "transmutation",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:faerie-fire",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Faerie Fire (p. 129)"
+    },
+    "name": "Faerie Fire",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["bard", "druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:false-life",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > False Life (p. 129)"
+    },
+    "name": "False Life",
+    "level": 1,
+    "school": "necromancy",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a drop of alcohol"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:feather-fall",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Feather Fall (p. 130)"
+    },
+    "name": "Feather Fall",
+    "level": 1,
+    "school": "transmutation",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "reaction",
+      "trigger": "you take when you or a creature you can see within 60 feet of you falls"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": true,
+      "materials": "a small feather or piece of down"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:find-familiar",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Find Familiar (p. 130)"
+    },
+    "name": "Find Familiar",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["wizard"],
+    "castingTime": {
+      "unit": "hour",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 10
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "burning incense worth 10+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:floating-disk",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Floating Disk (p. 133)"
+    },
+    "name": "Floating Disk",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a drop of mercury"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:fog-cloud",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Fog Cloud (p. 133)"
+    },
+    "name": "Fog Cloud",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["druid", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:goodberry",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Goodberry (p. 137)"
+    },
+    "name": "Goodberry",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a sprig of mistletoe"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 24,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:grease",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Grease (p. 137)"
+    },
+    "name": "Grease",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of pork rind or butter"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "square",
+      "size": 10
+    }
+  },
+  {
+    "id": "spell:guiding-bolt",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Guiding Bolt (p. 138)"
+    },
+    "name": "Guiding Bolt",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "round",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "4d6",
+        "types": ["radiant"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:healing-word",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Healing Word (p. 139)"
+    },
+    "name": "Healing Word",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["bard", "cleric", "druid"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    },
+    "healing": {
+      "dice": "2d4",
+      "addsModifier": true,
+      "slotDice": "2d4"
+    }
+  },
+  {
+    "id": "spell:hellish-rebuke",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Hellish Rebuke (p. 140)"
+    },
+    "name": "Hellish Rebuke",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["warlock"],
+    "castingTime": {
+      "unit": "reaction",
+      "trigger": "you take in response to taking damage from a creature that you can see within 60 feet of yourself"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "2d10",
+        "types": ["fire"],
+        "scaling": {
+          "slot": {
+            "dice": "1d10"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:heroism",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Heroism (p. 140)"
+    },
+    "name": "Heroism",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:hex",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Hex (p. 140)"
+    },
+    "name": "Hex",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["warlock"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 90
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "the petrified eye of a newt"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "types": ["necrotic"],
+        "note": "extra damage whenever you hit the target with an attack roll"
+      }
+    ]
+  },
+  {
+    "id": "spell:hideous-laughter",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Hideous Laughter (p. 140)"
+    },
+    "name": "Hideous Laughter",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a tart and a feather"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:hunters-mark",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Hunter’s Mark (p. 141)"
+    },
+    "name": "Hunter’s Mark",
+    "level": 1,
+    "school": "divination",
+    "classes": ["ranger"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 90
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "types": ["force"],
+        "note": "extra damage whenever you hit the target with an attack roll"
+      }
+    ]
+  },
+  {
+    "id": "spell:ice-knife",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Ice Knife (p. 141)"
+    },
+    "name": "Ice Knife",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": true,
+      "materials": "a drop of water or a piece of ice"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged",
+      "alsoSave": {
+        "ability": "dex",
+        "onSuccess": "none"
+      }
+    },
+    "damage": [
+      {
+        "dice": "1d10",
+        "types": ["piercing"],
+        "note": "on a hit"
+      },
+      {
+        "dice": "2d6",
+        "types": ["cold"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        },
+        "note": "explosion; the target and creatures within 5 feet make a Dexterity save"
+      }
+    ],
+    "template": {
+      "shape": "sphere",
+      "size": 5
+    }
+  },
+  {
+    "id": "spell:identify",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Identify (p. 142)"
+    },
+    "name": "Identify",
+    "level": 1,
+    "school": "divination",
+    "classes": ["bard", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pearl worth 100+ GP"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:illusory-script",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Illusory Script (p. 142)"
+    },
+    "name": "Illusory Script",
+    "level": 1,
+    "school": "illusion",
+    "classes": ["bard", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": true,
+      "materials": "ink worth 10+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "day",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:inflict-wounds",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Inflict Wounds (p. 143)"
+    },
+    "name": "Inflict Wounds",
+    "level": 1,
+    "school": "necromancy",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "2d10",
+        "types": ["necrotic"],
+        "scaling": {
+          "slot": {
+            "dice": "1d10"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:jump",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Jump (p. 143)"
+    },
+    "name": "Jump",
+    "level": 1,
+    "school": "transmutation",
+    "classes": ["druid", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a grasshopper’s hind leg"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:longstrider",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Longstrider (p. 145)"
+    },
+    "name": "Longstrider",
+    "level": 1,
+    "school": "transmutation",
+    "classes": ["bard", "druid", "ranger", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of dirt"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:mage-armor",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Mage Armor (p. 145)"
+    },
+    "name": "Mage Armor",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a piece of cured leather"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:magic-missile",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Magic Missile (p. 146)"
+    },
+    "name": "Magic Missile",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "1d4+1",
+        "types": ["force"],
+        "count": 3,
+        "scaling": {
+          "slot": {
+            "count": 1
+          }
+        },
+        "note": "per dart"
+      }
+    ]
+  },
+  {
+    "id": "spell:protection-from-evil-and-good",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Protection from Evil and Good (p. 157)"
+    },
+    "name": "Protection from Evil and Good",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["cleric", "druid", "paladin", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a flask of Holy Water worth 25+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:purify-food-and-drink",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Purify Food and Drink (p. 157)"
+    },
+    "name": "Purify Food and Drink",
+    "level": 1,
+    "school": "transmutation",
+    "classes": ["cleric", "druid", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 10
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 5
+    }
+  },
+  {
+    "id": "spell:ray-of-sickness",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Ray of Sickness (p. 158)"
+    },
+    "name": "Ray of Sickness",
+    "level": 1,
+    "school": "necromancy",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "2d8",
+        "types": ["poison"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:sanctuary",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Sanctuary (p. 159)"
+    },
+    "name": "Sanctuary",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a shard of glass from a mirror"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:searing-smite",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Searing Smite (p. 160)"
+    },
+    "name": "Searing Smite",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["paladin"],
+    "castingTime": {
+      "unit": "bonus-action",
+      "trigger": "you take immediately after hitting a target with a Melee weapon or an Unarmed Strike"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "types": ["fire"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        },
+        "note": "extra damage from the attack"
+      },
+      {
+        "dice": "1d6",
+        "types": ["fire"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        },
+        "note": "at the start of each of the target's turns"
+      }
+    ]
+  },
+  {
+    "id": "spell:shield",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Shield (p. 161)"
+    },
+    "name": "Shield",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "reaction",
+      "trigger": "you take when you are hit by an attack roll or targeted by the Magic Missile spell"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "round",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:shield-of-faith",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Shield of Faith (p. 162)"
+    },
+    "name": "Shield of Faith",
+    "level": 1,
+    "school": "abjuration",
+    "classes": ["cleric", "paladin"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a prayer scroll"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:silent-image",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Silent Image (p. 162)"
+    },
+    "name": "Silent Image",
+    "level": 1,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of fleece"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:sleep",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Sleep (p. 163)"
+    },
+    "name": "Sleep",
+    "level": 1,
+    "school": "enchantment",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of sand or rose petals"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 5
+    }
+  },
+  {
+    "id": "spell:speak-with-animals",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Speak with Animals (p. 164)"
+    },
+    "name": "Speak with Animals",
+    "level": 1,
+    "school": "divination",
+    "classes": ["bard", "druid", "ranger", "warlock"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:thunderwave",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Thunderwave (p. 169)"
+    },
+    "name": "Thunderwave",
+    "level": 1,
+    "school": "evocation",
+    "classes": ["bard", "druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "2d8",
+        "types": ["thunder"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "cube",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:unseen-servant",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Unseen Servant (p. 171)"
+    },
+    "name": "Unseen Servant",
+    "level": 1,
+    "school": "conjuration",
+    "classes": ["bard", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of string and of wood"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:acid-arrow",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Acid Arrow (p. 107)"
+    },
+    "name": "Acid Arrow",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 90
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "powdered rhubarb leaf"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "4d4",
+        "types": ["acid"],
+        "scaling": {
+          "slot": {
+            "dice": "1d4"
+          }
+        },
+        "note": "initial hit; half on a miss"
+      },
+      {
+        "dice": "2d4",
+        "types": ["acid"],
+        "scaling": {
+          "slot": {
+            "dice": "1d4"
+          }
+        },
+        "note": "at the end of the target's next turn"
+      }
+    ]
+  },
+  {
+    "id": "spell:aid",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Aid (p. 107)"
+    },
+    "name": "Aid",
+    "level": 2,
+    "school": "abjuration",
+    "classes": ["bard", "cleric", "druid", "paladin", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a strip of white cloth"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:alter-self",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Alter Self (p. 107)"
+    },
+    "name": "Alter Self",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:animal-messenger",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Animal Messenger (p. 108)"
+    },
+    "name": "Animal Messenger",
+    "level": 2,
+    "school": "enchantment",
+    "classes": ["bard", "druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a morsel of food"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 24,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "cha",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:arcane-lock",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Arcane Lock (p. 110)"
+    },
+    "name": "Arcane Lock",
+    "level": 2,
+    "school": "abjuration",
+    "classes": ["wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "gold dust worth 25+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "until-dispelled"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:arcanists-magic-aura",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Arcanist’s Magic Aura (p. 110)"
+    },
+    "name": "Arcanist’s Magic Aura",
+    "level": 2,
+    "school": "illusion",
+    "classes": ["wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a small square of silk"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 24,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:augury",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Augury (p. 111)"
+    },
+    "name": "Augury",
+    "level": 2,
+    "school": "divination",
+    "classes": ["cleric", "druid", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "specially marked sticks, bones, cards, or other divinatory tokens worth 25+ GP"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:barkskin",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Barkskin (p. 112)"
+    },
+    "name": "Barkskin",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["druid", "ranger"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a handful of bark"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:blindness-deafness",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Blindness/Deafness (p. 113)"
+    },
+    "name": "Blindness/Deafness",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["bard", "cleric", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:blur",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Blur (p. 114)"
+    },
+    "name": "Blur",
+    "level": 2,
+    "school": "illusion",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:calm-emotions",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Calm Emotions (p. 114)"
+    },
+    "name": "Calm Emotions",
+    "level": 2,
+    "school": "enchantment",
+    "classes": ["bard", "cleric"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:continual-flame",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Continual Flame (p. 119)"
+    },
+    "name": "Continual Flame",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["cleric", "druid", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "ruby dust worth 50+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "until-dispelled"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:darkness",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Darkness (p. 122)"
+    },
+    "name": "Darkness",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": true,
+      "materials": "bat fur and a piece of coal"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:darkvision",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Darkvision (p. 122)"
+    },
+    "name": "Darkvision",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["druid", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a dried carrot"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:detect-thoughts",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Detect Thoughts (p. 123)"
+    },
+    "name": "Detect Thoughts",
+    "level": 2,
+    "school": "divination",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "1 Copper Piece"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:dragons-breath",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Dragon’s Breath (p. 126)"
+    },
+    "name": "Dragon’s Breath",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a hot pepper"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "3d6",
+        "types": ["acid", "cold", "fire", "lightning", "poison"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "cone",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:enhance-ability",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Enhance Ability (p. 127)"
+    },
+    "name": "Enhance Ability",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["bard", "cleric", "druid", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "fur or a feather"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:enlarge-reduce",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Enlarge/Reduce (p. 127)"
+    },
+    "name": "Enlarge/Reduce",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["bard", "druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of powdered iron"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:enthrall",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Enthrall (p. 128)"
+    },
+    "name": "Enthrall",
+    "level": 2,
+    "school": "enchantment",
+    "classes": ["bard", "warlock"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:find-steed",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Find Steed (p. 130)"
+    },
+    "name": "Find Steed",
+    "level": 2,
+    "school": "conjuration",
+    "classes": ["paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:find-traps",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Find Traps (p. 131)"
+    },
+    "name": "Find Traps",
+    "level": 2,
+    "school": "divination",
+    "classes": ["cleric", "druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:flame-blade",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Flame Blade (p. 132)"
+    },
+    "name": "Flame Blade",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["druid", "sorcerer"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a sumac leaf"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "attack",
+      "attack": "melee"
+    },
+    "damage": [
+      {
+        "dice": "3d6",
+        "types": ["fire"],
+        "addsModifier": true,
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:flaming-sphere",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Flaming Sphere (p. 132)"
+    },
+    "name": "Flaming Sphere",
+    "level": 2,
+    "school": "conjuration",
+    "classes": ["druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a ball of wax"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "2d6",
+        "types": ["fire"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:gentle-repose",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Gentle Repose (p. 135)"
+    },
+    "name": "Gentle Repose",
+    "level": 2,
+    "school": "necromancy",
+    "classes": ["cleric", "paladin", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "2 Copper Pieces, which the spell consumes"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "day",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:gust-of-wind",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Gust of Wind (p. 138)"
+    },
+    "name": "Gust of Wind",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["druid", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a legume seed"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "str",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "line",
+      "size": 60,
+      "width": 10
+    }
+  },
+  {
+    "id": "spell:heat-metal",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Heat Metal (p. 139)"
+    },
+    "name": "Heat Metal",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["bard", "druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a piece of iron and a flame"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "2d8",
+        "types": ["fire"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        },
+        "note": "on cast and again on each later Bonus Action"
+      }
+    ]
+  },
+  {
+    "id": "spell:hold-person",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Hold Person (p. 141)"
+    },
+    "name": "Hold Person",
+    "level": 2,
+    "school": "enchantment",
+    "classes": ["bard", "cleric", "druid", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a straight piece of iron"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:invisibility",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Invisibility (p. 143)"
+    },
+    "name": "Invisibility",
+    "level": 2,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "an eyelash in gum arabic"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:knock",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Knock (p. 143)"
+    },
+    "name": "Knock",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:lesser-restoration",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Lesser Restoration (p. 144)"
+    },
+    "name": "Lesser Restoration",
+    "level": 2,
+    "school": "abjuration",
+    "classes": ["bard", "cleric", "druid", "paladin", "ranger"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:levitate",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Levitate (p. 144)"
+    },
+    "name": "Levitate",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a metal spring"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:locate-animals-or-plants",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Locate Animals or Plants (p. 144)"
+    },
+    "name": "Locate Animals or Plants",
+    "level": 2,
+    "school": "divination",
+    "classes": ["bard", "druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "fur from a bloodhound"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:locate-object",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Locate Object (p. 145)"
+    },
+    "name": "Locate Object",
+    "level": 2,
+    "school": "divination",
+    "classes": ["bard", "cleric", "druid", "paladin", "ranger", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a forked twig"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:magic-mouth",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Magic Mouth (p. 146)"
+    },
+    "name": "Magic Mouth",
+    "level": 2,
+    "school": "illusion",
+    "classes": ["bard", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "jade dust worth 10+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "until-dispelled"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:magic-weapon",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Magic Weapon (p. 146)"
+    },
+    "name": "Magic Weapon",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["paladin", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:mind-spike",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Mind Spike (p. 149)"
+    },
+    "name": "Mind Spike",
+    "level": 2,
+    "school": "divination",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "3d8",
+        "types": ["psychic"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:mirror-image",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Mirror Image (p. 150)"
+    },
+    "name": "Mirror Image",
+    "level": 2,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:misty-step",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Misty Step (p. 150)"
+    },
+    "name": "Misty Step",
+    "level": 2,
+    "school": "conjuration",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:moonbeam",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Moonbeam (p. 150)"
+    },
+    "name": "Moonbeam",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a moonseed leaf"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "2d10",
+        "types": ["radiant"],
+        "scaling": {
+          "slot": {
+            "dice": "1d10"
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "cylinder",
+      "size": 5,
+      "height": 40
+    }
+  },
+  {
+    "id": "spell:pass-without-trace",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Pass without Trace (p. 151)"
+    },
+    "name": "Pass without Trace",
+    "level": 2,
+    "school": "abjuration",
+    "classes": ["druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "ashes from burned mistletoe"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "emanation",
+      "size": 30
+    }
+  },
+  {
+    "id": "spell:phantasmal-force",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Phantasmal Force (p. 151)"
+    },
+    "name": "Phantasmal Force",
+    "level": 2,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of fleece"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "int",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "2d8",
+        "types": ["psychic"],
+        "note": "each of your turns while the target is in or within 5 feet of the phantasm"
+      }
+    ],
+    "template": {
+      "shape": "cube",
+      "size": 10
+    }
+  },
+  {
+    "id": "spell:prayer-of-healing",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Prayer of Healing (p. 154)"
+    },
+    "name": "Prayer of Healing",
+    "level": 2,
+    "school": "abjuration",
+    "classes": ["cleric", "paladin"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 10
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    },
+    "healing": {
+      "dice": "2d8",
+      "addsModifier": false,
+      "slotDice": "1d8"
+    }
+  },
+  {
+    "id": "spell:protection-from-poison",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Protection from Poison (p. 157)"
+    },
+    "name": "Protection from Poison",
+    "level": 2,
+    "school": "abjuration",
+    "classes": ["cleric", "druid", "paladin", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:ray-of-enfeeblement",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Ray of Enfeeblement (p. 157)"
+    },
+    "name": "Ray of Enfeeblement",
+    "level": 2,
+    "school": "necromancy",
+    "classes": ["warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "partial"
+    }
+  },
+  {
+    "id": "spell:rope-trick",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Rope Trick (p. 159)"
+    },
+    "name": "Rope Trick",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a segment of rope"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:scorching-ray",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Scorching Ray (p. 159)"
+    },
+    "name": "Scorching Ray",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "attack",
+      "attack": "ranged"
+    },
+    "damage": [
+      {
+        "dice": "2d6",
+        "types": ["fire"],
+        "count": 3,
+        "scaling": {
+          "slot": {
+            "count": 1
+          }
+        },
+        "note": "per ray"
+      }
+    ]
+  },
+  {
+    "id": "spell:see-invisibility",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > See Invisibility (p. 160)"
+    },
+    "name": "See Invisibility",
+    "level": 2,
+    "school": "divination",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of talc"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:shatter",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Shatter (p. 161)"
+    },
+    "name": "Shatter",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a chip of mica"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "3d8",
+        "types": ["thunder"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "sphere",
+      "size": 10
+    }
+  },
+  {
+    "id": "spell:shining-smite",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Shining Smite (p. 162)"
+    },
+    "name": "Shining Smite",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["paladin"],
+    "castingTime": {
+      "unit": "bonus-action",
+      "trigger": "you take immediately after hitting a creature with a Melee weapon or an Unarmed Strike"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "2d6",
+        "types": ["radiant"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        },
+        "note": "extra damage from the attack"
+      }
+    ]
+  },
+  {
+    "id": "spell:silence",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Silence (p. 162)"
+    },
+    "name": "Silence",
+    "level": 2,
+    "school": "illusion",
+    "classes": ["bard", "cleric", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:spider-climb",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Spider Climb (p. 164)"
+    },
+    "name": "Spider Climb",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a drop of bitumen and a spider"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:spike-growth",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Spike Growth (p. 164)"
+    },
+    "name": "Spike Growth",
+    "level": 2,
+    "school": "transmutation",
+    "classes": ["druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 150
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "seven thorns"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    },
+    "damage": [
+      {
+        "dice": "2d4",
+        "types": ["piercing"],
+        "note": "for every 5 feet a creature travels in the area"
+      }
+    ],
+    "template": {
+      "shape": "sphere",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:spiritual-weapon",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Spiritual Weapon (p. 165)"
+    },
+    "name": "Spiritual Weapon",
+    "level": 2,
+    "school": "evocation",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "attack",
+      "attack": "melee"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": ["force"],
+        "addsModifier": true,
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:suggestion",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Suggestion (p. 166)"
+    },
+    "name": "Suggestion",
+    "level": 2,
+    "school": "enchantment",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": true,
+      "materials": "a drop of honey"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:warding-bond",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Warding Bond (p. 173)"
+    },
+    "name": "Warding Bond",
+    "level": 2,
+    "school": "abjuration",
+    "classes": ["cleric", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pair of platinum rings worth 50+ GP each, which you and the target must wear for the duration"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:web",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Web (p. 174)"
+    },
+    "name": "Web",
+    "level": 2,
+    "school": "conjuration",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of spiderweb"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "2d4",
+        "types": ["fire"],
+        "note": "burning webs, to a creature that starts its turn in the fire"
+      }
+    ],
+    "template": {
+      "shape": "cube",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:zone-of-truth",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Zone of Truth (p. 175)"
+    },
+    "name": "Zone of Truth",
+    "level": 2,
+    "school": "enchantment",
+    "classes": ["bard", "cleric", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "cha",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:animate-dead",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Animate Dead (p. 108)"
+    },
+    "name": "Animate Dead",
+    "level": 3,
+    "school": "necromancy",
+    "classes": ["cleric", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 10
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a drop of blood, a piece of flesh, and a pinch of bone dust"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:beacon-of-hope",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Beacon of Hope (p. 112)"
+    },
+    "name": "Beacon of Hope",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:bestow-curse",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Bestow Curse (p. 112)"
+    },
+    "name": "Bestow Curse",
+    "level": 3,
+    "school": "necromancy",
+    "classes": ["bard", "cleric", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "types": ["necrotic"],
+        "note": "extra damage when you hit the cursed target (one of four curse options)"
+      }
+    ]
+  },
+  {
+    "id": "spell:blink",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Blink (p. 113)"
+    },
+    "name": "Blink",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:call-lightning",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Call Lightning (p. 114)"
+    },
+    "name": "Call Lightning",
+    "level": 3,
+    "school": "conjuration",
+    "classes": ["druid"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "3d10",
+        "types": ["lightning"],
+        "scaling": {
+          "slot": {
+            "dice": "1d10"
+          }
+        },
+        "note": "each strike; +1d10 when outdoors in a storm"
+      }
+    ],
+    "template": {
+      "shape": "cylinder",
+      "size": 60,
+      "height": 10
+    }
+  },
+  {
+    "id": "spell:clairvoyance",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Clairvoyance (p. 115)"
+    },
+    "name": "Clairvoyance",
+    "level": 3,
+    "school": "divination",
+    "classes": ["bard", "cleric", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 10
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 5280
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a focus worth 100+ GP, either a jeweled horn for hearing or a glass eye for seeing"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:conjure-animals",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Conjure Animals (p. 117)"
+    },
+    "name": "Conjure Animals",
+    "level": 3,
+    "school": "conjuration",
+    "classes": ["druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "none"
+    },
+    "damage": [
+      {
+        "dice": "3d10",
+        "types": ["slashing"],
+        "scaling": {
+          "slot": {
+            "dice": "1d10"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "spell:counterspell",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Counterspell (p. 120)"
+    },
+    "name": "Counterspell",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "reaction",
+      "trigger": "you take when you see a creature within 60 feet of yourself casting a spell with Verbal, Somatic, or Material components"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "none"
+    }
+  },
+  {
+    "id": "spell:create-food-and-water",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Create Food and Water (p. 120)"
+    },
+    "name": "Create Food and Water",
+    "level": 3,
+    "school": "conjuration",
+    "classes": ["cleric", "paladin"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:daylight",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Daylight (p. 122)"
+    },
+    "name": "Daylight",
+    "level": 3,
+    "school": "evocation",
+    "classes": ["cleric", "druid", "paladin", "ranger", "sorcerer"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 60
+    }
+  },
+  {
+    "id": "spell:dispel-magic",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Dispel Magic (p. 124)"
+    },
+    "name": "Dispel Magic",
+    "level": 3,
+    "school": "abjuration",
+    "classes": [
+      "bard",
+      "cleric",
+      "druid",
+      "paladin",
+      "ranger",
+      "sorcerer",
+      "warlock",
+      "wizard"
+    ],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:fear",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Fear (p. 130)"
+    },
+    "name": "Fear",
+    "level": 3,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a white feather"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "cone",
+      "size": 30
+    }
+  },
+  {
+    "id": "spell:fireball",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Fireball (p. 131)"
+    },
+    "name": "Fireball",
+    "level": 3,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 150
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a ball of bat guano and sulfur"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "8d6",
+        "types": ["fire"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "sphere",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:fly",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Fly (p. 133)"
+    },
+    "name": "Fly",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a feather"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:gaseous-form",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Gaseous Form (p. 134)"
+    },
+    "name": "Gaseous Form",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of gauze"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:glyph-of-warding",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Glyph of Warding (p. 136)"
+    },
+    "name": "Glyph of Warding",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["bard", "cleric", "wizard"],
+    "castingTime": {
+      "unit": "hour",
+      "amount": 1
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "powdered diamond worth 200+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "until-dispelled-or-triggered"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "5d8",
+        "types": ["acid", "cold", "fire", "lightning", "thunder"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        },
+        "note": "Explosive Rune option"
+      }
+    ],
+    "template": {
+      "shape": "sphere",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:haste",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Haste (p. 139)"
+    },
+    "name": "Haste",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a shaving of licorice root"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:hypnotic-pattern",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Hypnotic Pattern (p. 141)"
+    },
+    "name": "Hypnotic Pattern",
+    "level": 3,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": false,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of confetti"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 30
+    }
+  },
+  {
+    "id": "spell:lightning-bolt",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Lightning Bolt (p. 144)"
+    },
+    "name": "Lightning Bolt",
+    "level": 3,
+    "school": "evocation",
+    "classes": ["sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of fur and a crystal rod"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "8d6",
+        "types": ["lightning"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        }
+      }
+    ],
+    "template": {
+      "shape": "line",
+      "size": 100,
+      "width": 5
+    }
+  },
+  {
+    "id": "spell:magic-circle",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Magic Circle (p. 145)"
+    },
+    "name": "Magic Circle",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["cleric", "paladin", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 10
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "salt and powdered silver worth 100+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "cylinder",
+      "size": 10,
+      "height": 20
+    }
+  },
+  {
+    "id": "spell:major-image",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Major Image (p. 147)"
+    },
+    "name": "Major Image",
+    "level": 3,
+    "school": "illusion",
+    "classes": ["bard", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a bit of fleece"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:mass-healing-word",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Mass Healing Word (p. 148)"
+    },
+    "name": "Mass Healing Word",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["bard", "cleric"],
+    "castingTime": {
+      "unit": "bonus-action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 60
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    },
+    "healing": {
+      "dice": "2d4",
+      "addsModifier": true,
+      "slotDice": "1d4"
+    }
+  },
+  {
+    "id": "spell:meld-into-stone",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Meld into Stone (p. 148)"
+    },
+    "name": "Meld into Stone",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["cleric", "druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:nondetection",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Nondetection (p. 151)"
+    },
+    "name": "Nondetection",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["bard", "ranger", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a pinch of diamond dust worth 25+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:phantom-steed",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Phantom Steed (p. 152)"
+    },
+    "name": "Phantom Steed",
+    "level": 3,
+    "school": "illusion",
+    "classes": ["wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:plant-growth",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Plant Growth (p. 153)"
+    },
+    "name": "Plant Growth",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["bard", "druid", "ranger"],
+    "castingTime": {
+      "unit": "action",
+      "note": "or 8 hours (Enrichment)"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 150
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 100
+    }
+  },
+  {
+    "id": "spell:protection-from-energy",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Protection from Energy (p. 157)"
+    },
+    "name": "Protection from Energy",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["cleric", "druid", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:remove-curse",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Remove Curse (p. 158)"
+    },
+    "name": "Remove Curse",
+    "level": 3,
+    "school": "abjuration",
+    "classes": ["cleric", "paladin", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:revivify",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Revivify (p. 159)"
+    },
+    "name": "Revivify",
+    "level": 3,
+    "school": "necromancy",
+    "classes": ["cleric", "druid", "paladin", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a diamond worth 300+ GP, which the spell consumes"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:sending",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Sending (p. 161)"
+    },
+    "name": "Sending",
+    "level": 3,
+    "school": "divination",
+    "classes": ["bard", "cleric", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "unlimited"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a copper wire"
+    },
+    "duration": {
+      "kind": "instantaneous"
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:sleet-storm",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Sleet Storm (p. 163)"
+    },
+    "name": "Sleet Storm",
+    "level": 3,
+    "school": "conjuration",
+    "classes": ["druid", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 150
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a miniature umbrella"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "dex",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "cylinder",
+      "size": 20,
+      "height": 40
+    }
+  },
+  {
+    "id": "spell:slow",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Slow (p. 163)"
+    },
+    "name": "Slow",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a drop of molasses"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "cube",
+      "size": 40
+    }
+  },
+  {
+    "id": "spell:speak-with-dead",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Speak with Dead (p. 164)"
+    },
+    "name": "Speak with Dead",
+    "level": 3,
+    "school": "necromancy",
+    "classes": ["bard", "cleric", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 10
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "burning incense"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:speak-with-plants",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Speak with Plants (p. 164)"
+    },
+    "name": "Speak with Plants",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["bard", "druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "emanation",
+      "size": 30
+    }
+  },
+  {
+    "id": "spell:spirit-guardians",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Spirit Guardians (p. 164)"
+    },
+    "name": "Spirit Guardians",
+    "level": 3,
+    "school": "conjuration",
+    "classes": ["cleric"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a prayer scroll"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 10,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "wis",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "3d8",
+        "types": ["radiant", "necrotic"],
+        "scaling": {
+          "slot": {
+            "dice": "1d8"
+          }
+        },
+        "note": "radiant if you are good or neutral, necrotic if evil"
+      }
+    ],
+    "template": {
+      "shape": "emanation",
+      "size": 15
+    }
+  },
+  {
+    "id": "spell:stinking-cloud",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Stinking Cloud (p. 165)"
+    },
+    "name": "Stinking Cloud",
+    "level": 3,
+    "school": "conjuration",
+    "classes": ["bard", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 90
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a rotten egg"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "con",
+      "onSuccess": "none"
+    },
+    "template": {
+      "shape": "sphere",
+      "size": 20
+    }
+  },
+  {
+    "id": "spell:tiny-hut",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Tiny Hut (p. 169)"
+    },
+    "name": "Tiny Hut",
+    "level": 3,
+    "school": "evocation",
+    "classes": ["bard", "wizard"],
+    "castingTime": {
+      "unit": "minute",
+      "amount": 1
+    },
+    "ritual": true,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a crystal bead"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 8,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    },
+    "template": {
+      "shape": "emanation",
+      "size": 10
+    }
+  },
+  {
+    "id": "spell:tongues",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Tongues (p. 169)"
+    },
+    "name": "Tongues",
+    "level": 3,
+    "school": "divination",
+    "classes": ["bard", "cleric", "sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "touch"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": false,
+      "material": true,
+      "materials": "a miniature ziggurat"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "utility"
+    }
+  },
+  {
+    "id": "spell:vampiric-touch",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Vampiric Touch (p. 171)"
+    },
+    "name": "Vampiric Touch",
+    "level": 3,
+    "school": "necromancy",
+    "classes": ["sorcerer", "warlock", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "self"
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": false
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "attack",
+      "attack": "melee"
+    },
+    "damage": [
+      {
+        "dice": "3d6",
+        "types": ["necrotic"],
+        "scaling": {
+          "slot": {
+            "dice": "1d6"
+          }
+        },
+        "note": "you regain half the damage dealt as Hit Points"
+      }
+    ]
+  },
+  {
+    "id": "spell:water-breathing",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Water Breathing (p. 173)"
+    },
+    "name": "Water Breathing",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["druid", "ranger", "sorcerer", "wizard"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a short reed"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 24,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:water-walk",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Water Walk (p. 173)"
+    },
+    "name": "Water Walk",
+    "level": 3,
+    "school": "transmutation",
+    "classes": ["cleric", "druid", "ranger", "sorcerer"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": true,
+    "range": {
+      "kind": "feet",
+      "feet": 30
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a piece of cork"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "hour",
+      "upTo": false
+    },
+    "concentration": false,
+    "resolution": {
+      "kind": "auto"
+    }
+  },
+  {
+    "id": "spell:wind-wall",
+    "kind": "spell",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Spells > Spell Descriptions > Wind Wall (p. 174)"
+    },
+    "name": "Wind Wall",
+    "level": 3,
+    "school": "evocation",
+    "classes": ["druid", "ranger"],
+    "castingTime": {
+      "unit": "action"
+    },
+    "ritual": false,
+    "range": {
+      "kind": "feet",
+      "feet": 120
+    },
+    "components": {
+      "verbal": true,
+      "somatic": true,
+      "material": true,
+      "materials": "a fan and a feather"
+    },
+    "duration": {
+      "kind": "timed",
+      "amount": 1,
+      "unit": "minute",
+      "upTo": true
+    },
+    "concentration": true,
+    "resolution": {
+      "kind": "save",
+      "ability": "str",
+      "onSuccess": "half"
+    },
+    "damage": [
+      {
+        "dice": "4d8",
+        "types": ["bludgeoning"]
+      }
+    ],
+    "template": {
+      "shape": "line",
+      "size": 50,
+      "width": 1,
+      "height": 15
+    }
+  }
+]
