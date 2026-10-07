@@ -10,12 +10,14 @@ const expected = JSON.parse(
   ),
 );
 const cat = loadCatalog();
-const monsters = cat.entries.flatMap((e) => (e.kind === 'monster' ? [e] : []));
+const monsters = cat.entries.flatMap((e) =>
+  e.kind === 'monster' && e.cr <= 1 ? [e] : [],
+);
 
 describe('catalog monsters CR 0-1', () => {
   // SRD 5.2.1 Monsters A-Z (pp. 258-364) has 330 stat blocks; 134 have CR <= 1.
   test('count matches expected-counts file and is 134', () => {
-    expect(monsters).toHaveLength(expected.monster);
+    expect(monsters).toHaveLength(expected.monster.low);
     expect(monsters).toHaveLength(134);
   });
   test('all are CR 0 to 1 and cite an SRD page', () => {
@@ -60,7 +62,7 @@ describe('catalog monsters CR 0-1', () => {
     for (const m of monsters)
       expect(m.footprint, m.id).toBe(SIZE_FOOTPRINT_CELLS[m.size]);
     expect(cat.get('monster', 'monster:brown-bear')?.footprint).toBe(2);
-    expect(cat.get('monster', 'monster:killer-whale')).toBeUndefined();
+    expect(cat.get('monster', 'monster:tarrasque')).toBeUndefined();
   });
   test('stat blocks carry hp dice matching hp average, abilities and saves', () => {
     for (const m of monsters) {

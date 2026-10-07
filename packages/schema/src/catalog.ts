@@ -235,8 +235,24 @@ export const SIZE_FOOTPRINT_CELLS = {
 
 /** "NdM", "NdM+K", "NdM-K", or a flat integer ("1"). */
 const DiceSchema = z.string().regex(/^\d+(?:d\d+)?(?:[+-]\d+)?$/);
+/** Structured saving throw on a save-based action or attack rider. */
+export const MonsterSaveSchema = z.object({
+  ability: AbilitySchema,
+  dc: z.int().positive(),
+  /** SRD trigger description, e.g. "each creature in a 5-foot Emanation". */
+  note: z.string().optional(),
+  onSuccess: z.string().optional(),
+  onFailure: z.string().optional(),
+});
+/** One step of a Multiattack: which attack and how many times. */
+export const MonsterMultiattackStepSchema = z.object({
+  attackId: z.string().min(1),
+  count: z.int().positive(),
+});
 export const MonsterAttackSchema = z
   .object({
+    /** Stable kebab-case id referenced by multiattack steps. */
+    id: z.string().min(1).optional(),
     name: z.string().min(1),
     toHit: z.int(),
     reachFt: z.int().positive().optional(),
@@ -254,6 +270,8 @@ export const MonsterAttackSchema = z
     effect: z.string().min(1).optional(),
     /** SRD parenthetical on the to-hit, e.g. "with Advantage if ...". */
     toHitNote: z.string().min(1).optional(),
+    /** Structured save when the hit (or its rider) triggers a saving throw. */
+    save: MonsterSaveSchema.optional(),
   })
   .refine((a) => a.reachFt !== undefined || a.range !== undefined, {
     message: 'Attack needs a reach or a range band',
@@ -262,6 +280,8 @@ export const MonsterTraitSchema = z.object({
   name: z.string().min(1),
   kind: z.enum(['trait', 'action', 'bonus-action', 'reaction']),
   text: z.string().min(1),
+  /** Structured save when this action/trait triggers a saving throw. */
+  save: MonsterSaveSchema.optional(),
 });
 export const MonsterEntrySchema = z
   .object({
@@ -296,6 +316,8 @@ export const MonsterEntrySchema = z
     passivePerception: z.int().optional(),
     attacks: z.array(MonsterAttackSchema).optional(),
     traits: z.array(MonsterTraitSchema).optional(),
+    /** Structured Multiattack: which attacks and how many times. */
+    multiattack: z.array(MonsterMultiattackStepSchema).optional(),
   })
   .refine(
     (m) =>
