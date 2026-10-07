@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { loadCatalog } from '../src/index.js';
+import { loadCatalog } from '../src/catalog-node.js';
 
 const cat = loadCatalog();
 const classes = cat.entries.filter((e) => e.kind === 'class');
