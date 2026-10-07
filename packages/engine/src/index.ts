@@ -11,3 +11,4 @@ export * from './character/builder.js';
 
 export * from './combat/state.js';
 export * from './combat/commands.js';
+export * from './combat/attack.js';
