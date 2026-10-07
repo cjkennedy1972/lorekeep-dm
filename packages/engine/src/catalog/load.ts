@@ -16,6 +16,7 @@ export const DEFAULT_CATALOG_DIR = fileURLToPath(
 // ponytail: class entries carry no level data yet, so the L1-5 class gate has nothing to check.
 export const MAX_SPELL_LEVEL = 3;
 export const MAX_MONSTER_CR = 5;
+export const MAX_CATALOG_FILE_BYTES = 1_048_576;
 
 export class CatalogError extends Error {}
 
@@ -45,9 +46,15 @@ export function loadCatalog(dir: string = DEFAULT_CATALOG_DIR): Catalog {
     .filter((f) => f.endsWith('.json'))
     .sort();
   for (const file of files) {
+    const path = join(dir, file);
+    const size = readFileSync(path).byteLength;
+    if (size > MAX_CATALOG_FILE_BYTES)
+      throw new CatalogError(
+        `${file}: file exceeds ${MAX_CATALOG_FILE_BYTES} byte limit`,
+      );
     let raw: unknown;
     try {
-      raw = JSON.parse(readFileSync(join(dir, file), 'utf8'));
+      raw = JSON.parse(readFileSync(path, 'utf8'));
     } catch (err) {
       throw new CatalogError(
         `${file}: invalid JSON: ${(err as Error).message}`,
@@ -77,6 +84,29 @@ export function loadCatalog(dir: string = DEFAULT_CATALOG_DIR): Catalog {
     });
   }
   const entries = [...byId.values()].map((v) => v.entry);
+  for (const { entry, file } of byId.values()) {
+    const refs =
+      entry.kind === 'species'
+        ? (entry.conditionRefs ?? [])
+        : entry.kind === 'subclass'
+          ? [entry.classId]
+          : [];
+    for (const ref of refs) {
+      const target = byId.get(ref)?.entry;
+      if (!target)
+        throw new CatalogError(
+          `${file}: ${entry.id}: unresolved reference ${ref}`,
+        );
+      if (entry.kind === 'subclass' && target.kind !== 'class')
+        throw new CatalogError(
+          `${file}: ${entry.id}: classId ${ref} must reference a class`,
+        );
+      if (entry.kind === 'species' && target.kind !== 'condition')
+        throw new CatalogError(
+          `${file}: ${entry.id}: conditionRefs ${ref} must reference a condition`,
+        );
+    }
+  }
   return {
     catalogVersion: catalogVersionOf(entries),
     entries,
