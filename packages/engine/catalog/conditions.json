@@ -1,0 +1,167 @@
+[
+  {
+    "id": "condition:blinded",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Blinded"
+    },
+    "name": "Blinded",
+    "description": "Cannot see and automatically fails any ability check that requires sight. Attack rolls against you have Advantage, and your attack rolls have Disadvantage."
+  },
+  {
+    "id": "condition:charmed",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Charmed"
+    },
+    "name": "Charmed",
+    "description": "Cannot attack the charmer or target the charmer with damaging abilities or magical effects. The charmer has Advantage on any ability check to interact socially with you."
+  },
+  {
+    "id": "condition:deafened",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Deafened"
+    },
+    "name": "Deafened",
+    "description": "Cannot hear and automatically fails any ability check that requires hearing."
+  },
+  {
+    "id": "condition:exhaustion",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Exhaustion"
+    },
+    "name": "Exhaustion",
+    "description": "Cumulative levels 1-6. D20 Tests are reduced by 2 times the Exhaustion level, and Speed is reduced by 5 feet times the level. Death at level 6. A Long Rest removes 1 level."
+  },
+  {
+    "id": "condition:frightened",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Frightened"
+    },
+    "name": "Frightened",
+    "description": "Disadvantage on ability checks and attack rolls while the source of fear is in line of sight, and cannot willingly move closer to the source."
+  },
+  {
+    "id": "condition:grappled",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Grappled"
+    },
+    "name": "Grappled",
+    "description": "Speed is 0 and cannot increase. Disadvantage on attack rolls against any target other than the grappler. The grappler can drag or carry you."
+  },
+  {
+    "id": "condition:incapacitated",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Incapacitated"
+    },
+    "name": "Incapacitated",
+    "description": "Cannot take any action, Bonus Action, or Reaction. Concentration is broken, and you cannot speak. Disadvantage on Initiative rolls if incapacitated when rolling."
+  },
+  {
+    "id": "condition:invisible",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Invisible"
+    },
+    "name": "Invisible",
+    "description": "Not affected by effects that require being seen unless the effect gives sight. Attack rolls against you have Disadvantage and your attack rolls have Advantage. Gain Advantage on Initiative rolls."
+  },
+  {
+    "id": "condition:paralyzed",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Paralyzed"
+    },
+    "name": "Paralyzed",
+    "description": "Incapacitated, Speed 0, automatically fails Strength and Dexterity saves. Attack rolls against you have Advantage, and any hit from within 5 feet is a Critical Hit."
+  },
+  {
+    "id": "condition:petrified",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Petrified"
+    },
+    "name": "Petrified",
+    "description": "Transformed into a solid substance; Incapacitated, Speed 0, unaware of surroundings. Attack rolls against you have Advantage, you automatically fail Strength and Dexterity saves, and you have Resistance to all damage and Immunity to the Poisoned condition."
+  },
+  {
+    "id": "condition:poisoned",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Poisoned"
+    },
+    "name": "Poisoned",
+    "description": "Disadvantage on attack rolls and ability checks."
+  },
+  {
+    "id": "condition:prone",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Prone"
+    },
+    "name": "Prone",
+    "description": "Only movement option is crawling unless you stand up. Disadvantage on attack rolls. Attacks against you have Advantage if the attacker is within 5 feet, otherwise Disadvantage."
+  },
+  {
+    "id": "condition:restrained",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Restrained"
+    },
+    "name": "Restrained",
+    "description": "Speed is 0 and cannot increase. Attack rolls against you have Advantage and your attack rolls have Disadvantage. Disadvantage on Dexterity saving throws."
+  },
+  {
+    "id": "condition:stunned",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Stunned"
+    },
+    "name": "Stunned",
+    "description": "Incapacitated and automatically fails Strength and Dexterity saves. Attack rolls against you have Advantage."
+  },
+  {
+    "id": "condition:unconscious",
+    "kind": "condition",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Rules Glossary > Conditions > Unconscious"
+    },
+    "name": "Unconscious",
+    "description": "Incapacitated, Prone, and unaware of surroundings; drops what you are holding. Automatically fails Strength and Dexterity saves. Attack rolls against you have Advantage, and any hit from within 5 feet is a Critical Hit."
+  }
+]

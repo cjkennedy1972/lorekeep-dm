@@ -17,6 +17,7 @@ export const SpeciesEntrySchema = z.object({
   kind: z.literal('species'),
   size: z.enum(['tiny', 'small', 'medium', 'large']),
   speed: z.int().nonnegative(),
+  conditionRefs: z.array(CatalogIdSchema).optional(),
 });
 export const ClassEntrySchema = z.object({
   ...base,
@@ -29,6 +30,7 @@ export const BackgroundEntrySchema = z.object({
   ...base,
   kind: z.literal('background'),
   skillProficiencies: z.array(z.string()),
+  abilityOptions: z.array(AbilitySchema).optional(),
 });
 export const EquipmentEntrySchema = z.object({
   ...base,

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "background:acolyte",
+    "kind": "background",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Backgrounds > Acolyte"
+    },
+    "name": "Acolyte",
+    "skillProficiencies": ["insight", "religion"],
+    "abilityOptions": ["int", "wis", "cha"]
+  },
+  {
+    "id": "background:criminal",
+    "kind": "background",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Backgrounds > Criminal"
+    },
+    "name": "Criminal",
+    "skillProficiencies": ["sleight-of-hand", "stealth"],
+    "abilityOptions": ["dex", "con", "int"]
+  },
+  {
+    "id": "background:sage",
+    "kind": "background",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Backgrounds > Sage"
+    },
+    "name": "Sage",
+    "skillProficiencies": ["arcana", "history"],
+    "abilityOptions": ["con", "int", "wis"]
+  },
+  {
+    "id": "background:soldier",
+    "kind": "background",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Backgrounds > Soldier"
+    },
+    "name": "Soldier",
+    "skillProficiencies": ["athletics", "intimidation"],
+    "abilityOptions": ["str", "dex", "con"]
+  }
+]

@@ -1,0 +1,113 @@
+[
+  {
+    "id": "species:dragonborn",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Dragonborn"
+    },
+    "name": "Dragonborn",
+    "size": "medium",
+    "speed": 30
+  },
+  {
+    "id": "species:dwarf",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Dwarf"
+    },
+    "name": "Dwarf",
+    "size": "medium",
+    "speed": 30,
+    "conditionRefs": ["condition:poisoned"]
+  },
+  {
+    "id": "species:elf",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Elf"
+    },
+    "name": "Elf",
+    "size": "medium",
+    "speed": 30,
+    "conditionRefs": ["condition:charmed"]
+  },
+  {
+    "id": "species:gnome",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Gnome"
+    },
+    "name": "Gnome",
+    "size": "small",
+    "speed": 30
+  },
+  {
+    "id": "species:goliath",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Goliath"
+    },
+    "name": "Goliath",
+    "size": "medium",
+    "speed": 35
+  },
+  {
+    "id": "species:halfling",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Halfling"
+    },
+    "name": "Halfling",
+    "size": "small",
+    "speed": 30,
+    "conditionRefs": ["condition:frightened"]
+  },
+  {
+    "id": "species:human",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Human"
+    },
+    "name": "Human",
+    "size": "medium",
+    "speed": 30
+  },
+  {
+    "id": "species:orc",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Orc"
+    },
+    "name": "Orc",
+    "size": "medium",
+    "speed": 30
+  },
+  {
+    "id": "species:tiefling",
+    "kind": "species",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Character Origins > Character Species > Tiefling"
+    },
+    "name": "Tiefling",
+    "size": "medium",
+    "speed": 30
+  }
+]

@@ -1,0 +1,847 @@
+[
+  {
+    "id": "equipment:club",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Club"
+    },
+    "name": "Club",
+    "category": "weapon",
+    "costCp": 10,
+    "weight": 2
+  },
+  {
+    "id": "equipment:dagger",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Dagger"
+    },
+    "name": "Dagger",
+    "category": "weapon",
+    "costCp": 200,
+    "weight": 1
+  },
+  {
+    "id": "equipment:greatclub",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Greatclub"
+    },
+    "name": "Greatclub",
+    "category": "weapon",
+    "costCp": 20,
+    "weight": 10
+  },
+  {
+    "id": "equipment:handaxe",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Handaxe"
+    },
+    "name": "Handaxe",
+    "category": "weapon",
+    "costCp": 500,
+    "weight": 2
+  },
+  {
+    "id": "equipment:javelin",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Javelin"
+    },
+    "name": "Javelin",
+    "category": "weapon",
+    "costCp": 50,
+    "weight": 2
+  },
+  {
+    "id": "equipment:light-hammer",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Light Hammer"
+    },
+    "name": "Light Hammer",
+    "category": "weapon",
+    "costCp": 200,
+    "weight": 2
+  },
+  {
+    "id": "equipment:mace",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Mace"
+    },
+    "name": "Mace",
+    "category": "weapon",
+    "costCp": 500,
+    "weight": 4
+  },
+  {
+    "id": "equipment:quarterstaff",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Quarterstaff"
+    },
+    "name": "Quarterstaff",
+    "category": "weapon",
+    "costCp": 20,
+    "weight": 4
+  },
+  {
+    "id": "equipment:sickle",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Sickle"
+    },
+    "name": "Sickle",
+    "category": "weapon",
+    "costCp": 100,
+    "weight": 2
+  },
+  {
+    "id": "equipment:spear",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Spear"
+    },
+    "name": "Spear",
+    "category": "weapon",
+    "costCp": 100,
+    "weight": 3
+  },
+  {
+    "id": "equipment:dart",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Dart"
+    },
+    "name": "Dart",
+    "category": "weapon",
+    "costCp": 5,
+    "weight": 0.25
+  },
+  {
+    "id": "equipment:light-crossbow",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Light Crossbow"
+    },
+    "name": "Light Crossbow",
+    "category": "weapon",
+    "costCp": 2500,
+    "weight": 5
+  },
+  {
+    "id": "equipment:shortbow",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Shortbow"
+    },
+    "name": "Shortbow",
+    "category": "weapon",
+    "costCp": 2500,
+    "weight": 2
+  },
+  {
+    "id": "equipment:sling",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Sling"
+    },
+    "name": "Sling",
+    "category": "weapon",
+    "costCp": 10,
+    "weight": 0
+  },
+  {
+    "id": "equipment:battleaxe",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Battleaxe"
+    },
+    "name": "Battleaxe",
+    "category": "weapon",
+    "costCp": 1000,
+    "weight": 4
+  },
+  {
+    "id": "equipment:flail",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Flail"
+    },
+    "name": "Flail",
+    "category": "weapon",
+    "costCp": 1000,
+    "weight": 2
+  },
+  {
+    "id": "equipment:glaive",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Glaive"
+    },
+    "name": "Glaive",
+    "category": "weapon",
+    "costCp": 2000,
+    "weight": 6
+  },
+  {
+    "id": "equipment:greataxe",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Greataxe"
+    },
+    "name": "Greataxe",
+    "category": "weapon",
+    "costCp": 3000,
+    "weight": 7
+  },
+  {
+    "id": "equipment:greatsword",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Greatsword"
+    },
+    "name": "Greatsword",
+    "category": "weapon",
+    "costCp": 5000,
+    "weight": 6
+  },
+  {
+    "id": "equipment:halberd",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Halberd"
+    },
+    "name": "Halberd",
+    "category": "weapon",
+    "costCp": 2000,
+    "weight": 6
+  },
+  {
+    "id": "equipment:lance",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Lance"
+    },
+    "name": "Lance",
+    "category": "weapon",
+    "costCp": 1000,
+    "weight": 6
+  },
+  {
+    "id": "equipment:longsword",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Longsword"
+    },
+    "name": "Longsword",
+    "category": "weapon",
+    "costCp": 1500,
+    "weight": 3
+  },
+  {
+    "id": "equipment:maul",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Maul"
+    },
+    "name": "Maul",
+    "category": "weapon",
+    "costCp": 1000,
+    "weight": 10
+  },
+  {
+    "id": "equipment:morningstar",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Morningstar"
+    },
+    "name": "Morningstar",
+    "category": "weapon",
+    "costCp": 1500,
+    "weight": 4
+  },
+  {
+    "id": "equipment:pike",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Pike"
+    },
+    "name": "Pike",
+    "category": "weapon",
+    "costCp": 500,
+    "weight": 18
+  },
+  {
+    "id": "equipment:rapier",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Rapier"
+    },
+    "name": "Rapier",
+    "category": "weapon",
+    "costCp": 2500,
+    "weight": 2
+  },
+  {
+    "id": "equipment:scimitar",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Scimitar"
+    },
+    "name": "Scimitar",
+    "category": "weapon",
+    "costCp": 2500,
+    "weight": 3
+  },
+  {
+    "id": "equipment:shortsword",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Shortsword"
+    },
+    "name": "Shortsword",
+    "category": "weapon",
+    "costCp": 1000,
+    "weight": 2
+  },
+  {
+    "id": "equipment:trident",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Trident"
+    },
+    "name": "Trident",
+    "category": "weapon",
+    "costCp": 500,
+    "weight": 4
+  },
+  {
+    "id": "equipment:warhammer",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Warhammer"
+    },
+    "name": "Warhammer",
+    "category": "weapon",
+    "costCp": 1500,
+    "weight": 5
+  },
+  {
+    "id": "equipment:war-pick",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > War Pick"
+    },
+    "name": "War Pick",
+    "category": "weapon",
+    "costCp": 500,
+    "weight": 2
+  },
+  {
+    "id": "equipment:whip",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Whip"
+    },
+    "name": "Whip",
+    "category": "weapon",
+    "costCp": 200,
+    "weight": 3
+  },
+  {
+    "id": "equipment:blowgun",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Blowgun"
+    },
+    "name": "Blowgun",
+    "category": "weapon",
+    "costCp": 1000,
+    "weight": 1
+  },
+  {
+    "id": "equipment:hand-crossbow",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Hand Crossbow"
+    },
+    "name": "Hand Crossbow",
+    "category": "weapon",
+    "costCp": 7500,
+    "weight": 3
+  },
+  {
+    "id": "equipment:heavy-crossbow",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Heavy Crossbow"
+    },
+    "name": "Heavy Crossbow",
+    "category": "weapon",
+    "costCp": 5000,
+    "weight": 18
+  },
+  {
+    "id": "equipment:longbow",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Weapons > Longbow"
+    },
+    "name": "Longbow",
+    "category": "weapon",
+    "costCp": 5000,
+    "weight": 2
+  },
+  {
+    "id": "equipment:padded-armor",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Padded Armor"
+    },
+    "name": "Padded Armor",
+    "category": "armor",
+    "costCp": 500,
+    "weight": 8
+  },
+  {
+    "id": "equipment:leather-armor",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Leather Armor"
+    },
+    "name": "Leather Armor",
+    "category": "armor",
+    "costCp": 1000,
+    "weight": 10
+  },
+  {
+    "id": "equipment:studded-leather-armor",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Studded Leather Armor"
+    },
+    "name": "Studded Leather Armor",
+    "category": "armor",
+    "costCp": 4500,
+    "weight": 13
+  },
+  {
+    "id": "equipment:hide-armor",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Hide Armor"
+    },
+    "name": "Hide Armor",
+    "category": "armor",
+    "costCp": 1000,
+    "weight": 12
+  },
+  {
+    "id": "equipment:chain-shirt",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Chain Shirt"
+    },
+    "name": "Chain Shirt",
+    "category": "armor",
+    "costCp": 5000,
+    "weight": 20
+  },
+  {
+    "id": "equipment:scale-mail",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Scale Mail"
+    },
+    "name": "Scale Mail",
+    "category": "armor",
+    "costCp": 5000,
+    "weight": 45
+  },
+  {
+    "id": "equipment:breastplate",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Breastplate"
+    },
+    "name": "Breastplate",
+    "category": "armor",
+    "costCp": 40000,
+    "weight": 20
+  },
+  {
+    "id": "equipment:half-plate-armor",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Half Plate Armor"
+    },
+    "name": "Half Plate Armor",
+    "category": "armor",
+    "costCp": 75000,
+    "weight": 40
+  },
+  {
+    "id": "equipment:ring-mail",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Ring Mail"
+    },
+    "name": "Ring Mail",
+    "category": "armor",
+    "costCp": 3000,
+    "weight": 40
+  },
+  {
+    "id": "equipment:chain-mail",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Chain Mail"
+    },
+    "name": "Chain Mail",
+    "category": "armor",
+    "costCp": 7500,
+    "weight": 55
+  },
+  {
+    "id": "equipment:splint-armor",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Splint Armor"
+    },
+    "name": "Splint Armor",
+    "category": "armor",
+    "costCp": 20000,
+    "weight": 60
+  },
+  {
+    "id": "equipment:plate-armor",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Plate Armor"
+    },
+    "name": "Plate Armor",
+    "category": "armor",
+    "costCp": 150000,
+    "weight": 65
+  },
+  {
+    "id": "equipment:shield",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Armor > Shield"
+    },
+    "name": "Shield",
+    "category": "armor",
+    "costCp": 1000,
+    "weight": 6
+  },
+  {
+    "id": "equipment:backpack",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Backpack"
+    },
+    "name": "Backpack",
+    "category": "gear",
+    "costCp": 200,
+    "weight": 5
+  },
+  {
+    "id": "equipment:bedroll",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Bedroll"
+    },
+    "name": "Bedroll",
+    "category": "gear",
+    "costCp": 100,
+    "weight": 7
+  },
+  {
+    "id": "equipment:rope",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Rope"
+    },
+    "name": "Rope",
+    "category": "gear",
+    "costCp": 100,
+    "weight": 5
+  },
+  {
+    "id": "equipment:rations",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Rations"
+    },
+    "name": "Rations",
+    "category": "gear",
+    "costCp": 50,
+    "weight": 2
+  },
+  {
+    "id": "equipment:torch",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Torch"
+    },
+    "name": "Torch",
+    "category": "gear",
+    "costCp": 1,
+    "weight": 1
+  },
+  {
+    "id": "equipment:waterskin",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Waterskin"
+    },
+    "name": "Waterskin",
+    "category": "gear",
+    "costCp": 20,
+    "weight": 5
+  },
+  {
+    "id": "equipment:arrows",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Arrows"
+    },
+    "name": "Arrows",
+    "category": "gear",
+    "costCp": 100,
+    "weight": 1
+  },
+  {
+    "id": "equipment:crossbow-bolts",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Crossbow Bolts"
+    },
+    "name": "Crossbow Bolts",
+    "category": "gear",
+    "costCp": 100,
+    "weight": 1.5
+  },
+  {
+    "id": "equipment:component-pouch",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Component Pouch"
+    },
+    "name": "Component Pouch",
+    "category": "gear",
+    "costCp": 2500,
+    "weight": 2
+  },
+  {
+    "id": "equipment:arcane-focus",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Arcane Focus"
+    },
+    "name": "Arcane Focus",
+    "category": "gear",
+    "costCp": 1000,
+    "weight": 1
+  },
+  {
+    "id": "equipment:holy-symbol",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Holy Symbol"
+    },
+    "name": "Holy Symbol",
+    "category": "gear",
+    "costCp": 500,
+    "weight": 1
+  },
+  {
+    "id": "equipment:druidic-focus",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Druidic Focus"
+    },
+    "name": "Druidic Focus",
+    "category": "gear",
+    "costCp": 100,
+    "weight": 0
+  },
+  {
+    "id": "equipment:thieves-tools",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Thieves Tools"
+    },
+    "name": "Thieves Tools",
+    "category": "gear",
+    "costCp": 2500,
+    "weight": 1
+  },
+  {
+    "id": "equipment:spellbook",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Spellbook"
+    },
+    "name": "Spellbook",
+    "category": "gear",
+    "costCp": 5000,
+    "weight": 3
+  },
+  {
+    "id": "equipment:healers-kit",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Healers Kit"
+    },
+    "name": "Healers Kit",
+    "category": "gear",
+    "costCp": 500,
+    "weight": 3
+  },
+  {
+    "id": "equipment:lute",
+    "kind": "equipment",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Equipment > Adventuring Gear > Lute"
+    },
+    "name": "Lute",
+    "category": "gear",
+    "costCp": 3500,
+    "weight": 2
+  }
+]

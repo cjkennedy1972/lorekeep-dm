@@ -1,0 +1,6 @@
+{
+  "species": 9,
+  "background": 4,
+  "condition": 15,
+  "equipment": { "weapon": 36, "armor": 13, "gear": 16 }
+}
