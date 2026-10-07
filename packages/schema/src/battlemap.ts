@@ -43,8 +43,17 @@ export type Edge = z.infer<typeof EdgeSchema>;
 export const FeatureSchema = z.object({
   featureId: z.string().min(1),
   kind: z.string().min(1),
-  cells: z.array(CellSchema).min(1).max(MAX_FEATURE_CELLS, { error: `FEATURE_CELLS_TOO_LARGE: at most ${MAX_FEATURE_CELLS} cells` }),
-  tags: z.array(z.string()).max(MAX_FEATURE_TAGS, { error: `FEATURE_TAGS_TOO_LARGE: at most ${MAX_FEATURE_TAGS} tags` }),
+  cells: z
+    .array(CellSchema)
+    .min(1)
+    .max(MAX_FEATURE_CELLS, {
+      error: `FEATURE_CELLS_TOO_LARGE: at most ${MAX_FEATURE_CELLS} cells`,
+    }),
+  tags: z
+    .array(z.string())
+    .max(MAX_FEATURE_TAGS, {
+      error: `FEATURE_TAGS_TOO_LARGE: at most ${MAX_FEATURE_TAGS} tags`,
+    }),
 });
 
 export const MarkerSchema = z.object({
@@ -56,7 +65,12 @@ export const MarkerSchema = z.object({
 export const ZoneSchema = z.object({
   zoneId: z.string().min(1),
   kind: z.enum(['spawn', 'light']),
-  cells: z.array(CellSchema).min(1).max(MAX_MAP_CELLS, { error: `ZONE_CELLS_TOO_LARGE: at most ${MAX_MAP_CELLS} cells` }),
+  cells: z
+    .array(CellSchema)
+    .min(1)
+    .max(MAX_MAP_CELLS, {
+      error: `ZONE_CELLS_TOO_LARGE: at most ${MAX_MAP_CELLS} cells`,
+    }),
   light: z.enum(['bright', 'dim', 'dark']).optional(),
   anchorMarkerId: z.string().optional(),
 });
@@ -68,10 +82,26 @@ export const BattlemapSchema = z.object({
   palette: z.array(PaletteEntrySchema).min(1),
   // flat [paletteIndex, runLength, ...] pairs, row-major
   cells: z.array(z.int().nonnegative()).max(MAX_RLE_LEN),
-  edges: z.array(EdgeSchema).max(MAX_MAP_EDGES, { error: `EDGES_TOO_LARGE: at most ${MAX_MAP_EDGES} edges` }),
-  features: z.array(FeatureSchema).max(MAX_MAP_FEATURES, { error: `FEATURES_TOO_LARGE: at most ${MAX_MAP_FEATURES} features` }),
-  markers: z.array(MarkerSchema).max(MAX_MAP_MARKERS, { error: `MARKERS_TOO_LARGE: at most ${MAX_MAP_MARKERS} markers` }),
-  zones: z.array(ZoneSchema).max(MAX_MAP_ZONES, { error: `ZONES_TOO_LARGE: at most ${MAX_MAP_ZONES} zones` }),
+  edges: z
+    .array(EdgeSchema)
+    .max(MAX_MAP_EDGES, {
+      error: `EDGES_TOO_LARGE: at most ${MAX_MAP_EDGES} edges`,
+    }),
+  features: z
+    .array(FeatureSchema)
+    .max(MAX_MAP_FEATURES, {
+      error: `FEATURES_TOO_LARGE: at most ${MAX_MAP_FEATURES} features`,
+    }),
+  markers: z
+    .array(MarkerSchema)
+    .max(MAX_MAP_MARKERS, {
+      error: `MARKERS_TOO_LARGE: at most ${MAX_MAP_MARKERS} markers`,
+    }),
+  zones: z
+    .array(ZoneSchema)
+    .max(MAX_MAP_ZONES, {
+      error: `ZONES_TOO_LARGE: at most ${MAX_MAP_ZONES} zones`,
+    }),
   diagonalRule: z.enum(['5ft', 'alternate']).default('5ft'),
 });
 export type Battlemap = z.infer<typeof BattlemapSchema>;
