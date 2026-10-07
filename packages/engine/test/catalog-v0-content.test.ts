@@ -16,6 +16,8 @@ describe('catalog v0 content', () => {
     expect(of('species')).toHaveLength(expected.species);
     expect(of('background')).toHaveLength(expected.background);
     expect(of('condition')).toHaveLength(expected.condition);
+    expect(of('class')).toHaveLength(expected.class);
+    expect(of('subclass')).toHaveLength(expected.subclass);
     for (const c of ['weapon', 'armor', 'gear'])
       expect(
         of('equipment').filter(

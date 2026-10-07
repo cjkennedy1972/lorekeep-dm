@@ -1,0 +1,760 @@
+[
+  {
+    "id": "class:barbarian",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Barbarian"
+    },
+    "name": "Barbarian",
+    "hitDie": 12,
+    "primaryAbility": ["str"],
+    "saveProficiencies": ["str", "con"],
+    "armorProficiencies": ["Light armor", "Medium armor", "Shields"],
+    "weaponProficiencies": ["Simple weapons", "Martial weapons"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Animal Handling",
+        "Athletics",
+        "Intimidation",
+        "Nature",
+        "Perception",
+        "Survival"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": ["Greataxe", "4 Handaxes", "Explorer's Pack", "15 GP"]
+      },
+      {
+        "option": "B",
+        "items": ["75 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:barbarian:rage",
+        "level": 1,
+        "name": "Rage",
+        "summary": "Bonus action: gain resistance to bludgeoning, piercing and slashing damage and a Rage Damage bonus on Strength attacks."
+      },
+      {
+        "id": "feature:barbarian:unarmored-defense",
+        "level": 1,
+        "name": "Unarmored Defense",
+        "summary": "Without armor, AC equals 10 plus Dexterity and Constitution modifiers."
+      },
+      {
+        "id": "feature:barbarian:weapon-mastery",
+        "level": 1,
+        "name": "Weapon Mastery",
+        "summary": "Use the mastery properties of two kinds of Simple or Martial Melee weapons."
+      },
+      {
+        "id": "feature:barbarian:danger-sense",
+        "level": 2,
+        "name": "Danger Sense",
+        "summary": "Advantage on Dexterity saving throws against effects you can see while not Incapacitated."
+      },
+      {
+        "id": "feature:barbarian:reckless-attack",
+        "level": 2,
+        "name": "Reckless Attack",
+        "summary": "Gain advantage on Strength attacks this turn; attacks against you have advantage until your next turn."
+      },
+      {
+        "id": "feature:barbarian:barbarian-subclass",
+        "level": 3,
+        "name": "Barbarian Subclass",
+        "summary": "Choose a Barbarian subclass."
+      },
+      {
+        "id": "feature:barbarian:primal-knowledge",
+        "level": 3,
+        "name": "Primal Knowledge",
+        "summary": "Gain proficiency in another Barbarian skill; use Strength for certain skill checks while raging."
+      },
+      {
+        "id": "feature:barbarian:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:barbarian:extra-attack",
+        "level": 5,
+        "name": "Extra Attack",
+        "summary": "Attack twice when you take the Attack action."
+      },
+      {
+        "id": "feature:barbarian:fast-movement",
+        "level": 5,
+        "name": "Fast Movement",
+        "summary": "Speed increases by 10 feet while not wearing Heavy armor."
+      }
+    ]
+  },
+  {
+    "id": "subclass:path-of-the-berserker",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Barbarian Subclass: Path of the Berserker"
+    },
+    "name": "Path of the Berserker",
+    "classId": "class:barbarian",
+    "features": [
+      {
+        "id": "feature:berserker:frenzy",
+        "level": 3,
+        "name": "Frenzy",
+        "summary": "While raging and using Reckless Attack, deal extra damage to the first target you hit on your turn."
+      }
+    ]
+  },
+  {
+    "id": "class:bard",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Bard"
+    },
+    "name": "Bard",
+    "hitDie": 8,
+    "primaryAbility": ["cha"],
+    "saveProficiencies": ["dex", "cha"],
+    "armorProficiencies": ["Light armor"],
+    "weaponProficiencies": ["Simple weapons"],
+    "toolProficiencies": ["Three Musical Instruments"],
+    "skillChoices": {
+      "count": 3,
+      "from": [
+        "Acrobatics",
+        "Animal Handling",
+        "Arcana",
+        "Athletics",
+        "Deception",
+        "History",
+        "Insight",
+        "Intimidation",
+        "Investigation",
+        "Medicine",
+        "Nature",
+        "Perception",
+        "Performance",
+        "Persuasion",
+        "Religion",
+        "Sleight of Hand",
+        "Stealth",
+        "Survival"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Leather Armor",
+          "2 Daggers",
+          "Musical Instrument (any)",
+          "Entertainer's Pack",
+          "19 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["90 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:bard:bardic-inspiration",
+        "level": 1,
+        "name": "Bardic Inspiration",
+        "summary": "Bonus action: give a creature a Bardic Inspiration die to add to a d20 Test."
+      },
+      {
+        "id": "feature:bard:spellcasting",
+        "level": 1,
+        "name": "Spellcasting",
+        "summary": "Cast Bard spells using Charisma; prepare spells from the Bard list."
+      },
+      {
+        "id": "feature:bard:expertise",
+        "level": 2,
+        "name": "Expertise",
+        "summary": "Gain Expertise in two of your skill proficiencies."
+      },
+      {
+        "id": "feature:bard:jack-of-all-trades",
+        "level": 2,
+        "name": "Jack of All Trades",
+        "summary": "Add half your Proficiency Bonus to ability checks that lack your proficiency."
+      },
+      {
+        "id": "feature:bard:bard-subclass",
+        "level": 3,
+        "name": "Bard Subclass",
+        "summary": "Choose a Bard subclass."
+      },
+      {
+        "id": "feature:bard:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:bard:font-of-inspiration",
+        "level": 5,
+        "name": "Font of Inspiration",
+        "summary": "Regain expended Bardic Inspiration uses on a Short or Long Rest; spend a spell slot to regain one use."
+      }
+    ],
+    "spellcastingAbility": "cha",
+    "spellSlots": [[2], [3], [4, 2], [4, 3], [4, 3, 2]],
+    "cantripsKnown": [2, 2, 2, 3, 3],
+    "preparedSpells": [4, 5, 6, 7, 9]
+  },
+  {
+    "id": "subclass:college-of-lore",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Bard Subclass: College of Lore"
+    },
+    "name": "College of Lore",
+    "classId": "class:bard",
+    "features": [
+      {
+        "id": "feature:lore:bonus-proficiencies",
+        "level": 3,
+        "name": "Bonus Proficiencies",
+        "summary": "Gain proficiency with three skills of your choice."
+      },
+      {
+        "id": "feature:lore:cutting-words",
+        "level": 3,
+        "name": "Cutting Words",
+        "summary": "Use Bardic Inspiration as a reaction to reduce an enemy's damage roll, attack roll or ability check."
+      }
+    ]
+  },
+  {
+    "id": "class:cleric",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Cleric"
+    },
+    "name": "Cleric",
+    "hitDie": 8,
+    "primaryAbility": ["wis"],
+    "saveProficiencies": ["wis", "cha"],
+    "armorProficiencies": ["Light armor", "Medium armor", "Shields"],
+    "weaponProficiencies": ["Simple weapons"],
+    "skillChoices": {
+      "count": 2,
+      "from": ["History", "Insight", "Medicine", "Persuasion", "Religion"]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Chain Mail",
+          "Shield",
+          "Mace",
+          "Holy Symbol",
+          "Priest's Pack",
+          "7 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["110 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:cleric:spellcasting",
+        "level": 1,
+        "name": "Spellcasting",
+        "summary": "Cast Cleric spells using Wisdom; prepare spells from the Cleric list."
+      },
+      {
+        "id": "feature:cleric:divine-order",
+        "level": 1,
+        "name": "Divine Order",
+        "summary": "Choose Protector or Thaumaturge."
+      },
+      {
+        "id": "feature:cleric:channel-divinity",
+        "level": 2,
+        "name": "Channel Divinity",
+        "summary": "Use Channel Divinity for Divine Spark or Turn Undead; uses recover on rests."
+      },
+      {
+        "id": "feature:cleric:cleric-subclass",
+        "level": 3,
+        "name": "Cleric Subclass",
+        "summary": "Choose a Cleric subclass."
+      },
+      {
+        "id": "feature:cleric:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:cleric:sear-undead",
+        "level": 5,
+        "name": "Sear Undead",
+        "summary": "Turn Undead also deals Radiant damage to the affected undead."
+      }
+    ],
+    "spellcastingAbility": "wis",
+    "spellSlots": [[2], [3], [4, 2], [4, 3], [4, 3, 2]],
+    "cantripsKnown": [3, 3, 3, 4, 4],
+    "preparedSpells": [4, 5, 6, 7, 9]
+  },
+  {
+    "id": "subclass:life-domain",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Cleric Subclass: Life Domain"
+    },
+    "name": "Life Domain",
+    "classId": "class:cleric",
+    "features": [
+      {
+        "id": "feature:life:disciple-of-life",
+        "level": 3,
+        "name": "Disciple of Life",
+        "summary": "Healing spells restore extra Hit Points."
+      },
+      {
+        "id": "feature:life:life-domain-spells",
+        "level": 3,
+        "name": "Life Domain Spells",
+        "summary": "Always have certain Life Domain spells prepared."
+      },
+      {
+        "id": "feature:life:preserve-life",
+        "level": 3,
+        "name": "Preserve Life",
+        "summary": "Channel Divinity: distribute healing among Bloodied creatures within 30 feet."
+      }
+    ]
+  },
+  {
+    "id": "class:druid",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Druid"
+    },
+    "name": "Druid",
+    "hitDie": 8,
+    "primaryAbility": ["wis"],
+    "saveProficiencies": ["int", "wis"],
+    "armorProficiencies": ["Light armor", "Shields"],
+    "weaponProficiencies": [],
+    "toolProficiencies": ["Herbalism Kit"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Arcana",
+        "Animal Handling",
+        "Insight",
+        "Medicine",
+        "Nature",
+        "Perception",
+        "Religion",
+        "Survival"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Leather Armor",
+          "Shield",
+          "Sickle",
+          "Druidic Focus (Quarterstaff)",
+          "Explorer's Pack",
+          "Herbalism Kit",
+          "9 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["50 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:druid:spellcasting",
+        "level": 1,
+        "name": "Spellcasting",
+        "summary": "Cast Druid spells using Wisdom; prepare spells from the Druid list."
+      },
+      {
+        "id": "feature:druid:druidic",
+        "level": 1,
+        "name": "Druidic",
+        "summary": "Know Druidic and always have Speak with Animals prepared."
+      },
+      {
+        "id": "feature:druid:primal-order",
+        "level": 1,
+        "name": "Primal Order",
+        "summary": "Choose Magician or Warden."
+      },
+      {
+        "id": "feature:druid:wild-shape",
+        "level": 2,
+        "name": "Wild Shape",
+        "summary": "Bonus action: expend a use to assume a beast form."
+      },
+      {
+        "id": "feature:druid:wild-companion",
+        "level": 2,
+        "name": "Wild Companion",
+        "summary": "Expend a Wild Shape use or spell slot to cast Find Familiar."
+      },
+      {
+        "id": "feature:druid:druid-subclass",
+        "level": 3,
+        "name": "Druid Subclass",
+        "summary": "Choose a Druid subclass."
+      },
+      {
+        "id": "feature:druid:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:druid:wild-resurgence",
+        "level": 5,
+        "name": "Wild Resurgence",
+        "summary": "Trade spell slots and Wild Shape uses for one another."
+      }
+    ],
+    "spellcastingAbility": "wis",
+    "spellSlots": [[2], [3], [4, 2], [4, 3], [4, 3, 2]],
+    "cantripsKnown": [2, 2, 2, 3, 3],
+    "preparedSpells": [4, 5, 6, 7, 9]
+  },
+  {
+    "id": "subclass:circle-of-the-land",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Druid Subclass: Circle of the Land"
+    },
+    "name": "Circle of the Land",
+    "classId": "class:druid",
+    "features": [
+      {
+        "id": "feature:land:circle-of-the-land-spells",
+        "level": 3,
+        "name": "Circle of the Land Spells",
+        "summary": "Always have spells prepared based on a chosen land type."
+      },
+      {
+        "id": "feature:land:lands-aid",
+        "level": 3,
+        "name": "Land's Aid",
+        "summary": "Expend Wild Shape to deal Necrotic damage and heal a creature nearby."
+      }
+    ]
+  },
+  {
+    "id": "class:fighter",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Fighter"
+    },
+    "name": "Fighter",
+    "hitDie": 10,
+    "primaryAbility": ["str", "dex"],
+    "saveProficiencies": ["str", "con"],
+    "armorProficiencies": [
+      "Light armor",
+      "Medium armor",
+      "Heavy armor",
+      "Shields"
+    ],
+    "weaponProficiencies": ["Simple weapons", "Martial weapons"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Acrobatics",
+        "Animal Handling",
+        "Athletics",
+        "History",
+        "Insight",
+        "Intimidation",
+        "Persuasion",
+        "Perception",
+        "Survival"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Chain Mail",
+          "Greatsword",
+          "Flail",
+          "8 Javelins",
+          "Dungeoneer's Pack",
+          "4 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": [
+          "Studded Leather Armor",
+          "Scimitar",
+          "Shortsword",
+          "Longbow",
+          "20 Arrows",
+          "Quiver",
+          "Dungeoneer's Pack",
+          "11 GP"
+        ]
+      },
+      {
+        "option": "C",
+        "items": ["155 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:fighter:fighting-style",
+        "level": 1,
+        "name": "Fighting Style",
+        "summary": "Gain a Fighting Style feat."
+      },
+      {
+        "id": "feature:fighter:second-wind",
+        "level": 1,
+        "name": "Second Wind",
+        "summary": "Bonus action: regain Hit Points equal to 1d10 plus Fighter level."
+      },
+      {
+        "id": "feature:fighter:weapon-mastery",
+        "level": 1,
+        "name": "Weapon Mastery",
+        "summary": "Use the mastery properties of three kinds of Simple or Martial weapons."
+      },
+      {
+        "id": "feature:fighter:action-surge",
+        "level": 2,
+        "name": "Action Surge",
+        "summary": "Take one additional action on your turn, except the Magic action."
+      },
+      {
+        "id": "feature:fighter:tactical-mind",
+        "level": 2,
+        "name": "Tactical Mind",
+        "summary": "Spend a Second Wind use to add 1d10 to a failed ability check."
+      },
+      {
+        "id": "feature:fighter:fighter-subclass",
+        "level": 3,
+        "name": "Fighter Subclass",
+        "summary": "Choose a Fighter subclass."
+      },
+      {
+        "id": "feature:fighter:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:fighter:extra-attack",
+        "level": 5,
+        "name": "Extra Attack",
+        "summary": "Attack twice when you take the Attack action."
+      },
+      {
+        "id": "feature:fighter:tactical-shift",
+        "level": 5,
+        "name": "Tactical Shift",
+        "summary": "Second Wind also lets you move half your Speed without provoking Opportunity Attacks."
+      }
+    ]
+  },
+  {
+    "id": "subclass:champion",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Fighter Subclass: Champion"
+    },
+    "name": "Champion",
+    "classId": "class:fighter",
+    "features": [
+      {
+        "id": "feature:champion:improved-critical-hit",
+        "level": 3,
+        "name": "Improved Critical Hit",
+        "summary": "Weapon and Unarmed Strike attacks score a Critical Hit on a roll of 19 or 20."
+      },
+      {
+        "id": "feature:champion:remarkable-athlete",
+        "level": 3,
+        "name": "Remarkable Athlete",
+        "summary": "Advantage on Initiative rolls and Athletics checks; extra movement after a Critical Hit."
+      }
+    ]
+  },
+  {
+    "id": "class:monk",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Monk"
+    },
+    "name": "Monk",
+    "hitDie": 8,
+    "primaryAbility": ["dex", "wis"],
+    "saveProficiencies": ["str", "dex"],
+    "armorProficiencies": [],
+    "weaponProficiencies": [
+      "Simple weapons",
+      "Martial weapons with the Light property"
+    ],
+    "toolProficiencies": ["One Artisan's Tool or Musical Instrument"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Acrobatics",
+        "Athletics",
+        "History",
+        "Insight",
+        "Religion",
+        "Stealth"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Spear",
+          "5 Daggers",
+          "Artisan's Tools or Musical Instrument (one)",
+          "Explorer's Pack",
+          "11 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["50 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:monk:martial-arts",
+        "level": 1,
+        "name": "Martial Arts",
+        "summary": "Use Dexterity for Unarmed Strikes and Monk weapons; roll a Martial Arts die; make a Bonus Unarmed Strike."
+      },
+      {
+        "id": "feature:monk:unarmored-defense",
+        "level": 1,
+        "name": "Unarmored Defense",
+        "summary": "Without armor or a shield, AC equals 10 plus Dexterity and Wisdom modifiers."
+      },
+      {
+        "id": "feature:monk:monks-focus",
+        "level": 2,
+        "name": "Monk's Focus",
+        "summary": "Gain Focus Points to fuel Flurry of Blows, Patient Defense and Step of the Wind."
+      },
+      {
+        "id": "feature:monk:unarmored-movement",
+        "level": 2,
+        "name": "Unarmored Movement",
+        "summary": "Speed increases while not wearing armor or wielding a shield."
+      },
+      {
+        "id": "feature:monk:uncanny-metabolism",
+        "level": 2,
+        "name": "Uncanny Metabolism",
+        "summary": "Once per Long Rest on Initiative, regain Focus Points and heal."
+      },
+      {
+        "id": "feature:monk:deflect-attacks",
+        "level": 3,
+        "name": "Deflect Attacks",
+        "summary": "Reaction: reduce damage from an attack and possibly redirect it."
+      },
+      {
+        "id": "feature:monk:monk-subclass",
+        "level": 3,
+        "name": "Monk Subclass",
+        "summary": "Choose a Monk subclass."
+      },
+      {
+        "id": "feature:monk:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:monk:slow-fall",
+        "level": 4,
+        "name": "Slow Fall",
+        "summary": "Reaction: reduce falling damage."
+      },
+      {
+        "id": "feature:monk:extra-attack",
+        "level": 5,
+        "name": "Extra Attack",
+        "summary": "Attack twice when you take the Attack action."
+      },
+      {
+        "id": "feature:monk:stunning-strike",
+        "level": 5,
+        "name": "Stunning Strike",
+        "summary": "Spend a Focus Point after a hit to force a Constitution save or Stun the target."
+      }
+    ]
+  },
+  {
+    "id": "subclass:warrior-of-the-open-hand",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Monk Subclass: Warrior of the Open Hand"
+    },
+    "name": "Warrior of the Open Hand",
+    "classId": "class:monk",
+    "features": [
+      {
+        "id": "feature:open-hand:open-hand-technique",
+        "level": 3,
+        "name": "Open Hand Technique",
+        "summary": "Flurry of Blows hits can push, knock Prone or prevent reactions."
+      }
+    ]
+  }
+]

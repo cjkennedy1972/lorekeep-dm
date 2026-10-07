@@ -2,5 +2,11 @@
   "species": 9,
   "background": 4,
   "condition": 15,
-  "equipment": { "weapon": 36, "armor": 13, "gear": 16 }
+  "equipment": {
+    "weapon": 36,
+    "armor": 13,
+    "gear": 16
+  },
+  "class": 6,
+  "subclass": 6
 }

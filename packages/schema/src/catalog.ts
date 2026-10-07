@@ -19,12 +19,39 @@ export const SpeciesEntrySchema = z.object({
   speed: z.int().nonnegative(),
   conditionRefs: z.array(CatalogIdSchema).optional(),
 });
+export const ClassFeatureSchema = z.object({
+  id: CatalogIdSchema,
+  level: z.int().min(1).max(20),
+  name: z.string().min(1),
+  summary: z.string().min(1),
+});
 export const ClassEntrySchema = z.object({
   ...base,
   kind: z.literal('class'),
   hitDie: z.int().positive(),
   primaryAbility: z.array(AbilitySchema).min(1),
   saveProficiencies: z.array(AbilitySchema),
+  armorProficiencies: z.array(z.string()).optional(),
+  weaponProficiencies: z.array(z.string()).optional(),
+  toolProficiencies: z.array(z.string()).optional(),
+  skillChoices: z
+    .object({ count: z.int().positive(), from: z.array(z.string()).min(1) })
+    .optional(),
+  startingEquipment: z
+    .array(z.object({ option: z.string().min(1), items: z.array(z.string()) }))
+    .optional(),
+  features: z.array(ClassFeatureSchema).optional(),
+  spellcastingAbility: AbilitySchema.optional(),
+  /** Index = class level - 1; value[i] = slots of spell level i+1. */
+  spellSlots: z.array(z.array(z.int().nonnegative())).optional(),
+  cantripsKnown: z.array(z.int().nonnegative()).optional(),
+  preparedSpells: z.array(z.int().nonnegative()).optional(),
+});
+export const SubclassEntrySchema = z.object({
+  ...base,
+  kind: z.literal('subclass'),
+  classId: CatalogIdSchema,
+  features: z.array(ClassFeatureSchema),
 });
 export const BackgroundEntrySchema = z.object({
   ...base,
@@ -64,6 +91,7 @@ export const ConditionEntrySchema = z.object({
 export const CatalogEntrySchema = z.discriminatedUnion('kind', [
   SpeciesEntrySchema,
   ClassEntrySchema,
+  SubclassEntrySchema,
   BackgroundEntrySchema,
   EquipmentEntrySchema,
   SpellEntrySchema,
