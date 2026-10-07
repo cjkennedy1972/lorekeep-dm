@@ -1,13 +1,9 @@
-import {
-  BattlemapSchema,
-  rleDecode,
-  type Battlemap,
-  type Cell,
-} from '@game/schema';
+import { BattlemapSchema, type Battlemap, type Cell } from '@game/schema';
 
 export type MapErrorCode =
   | 'SCHEMA_INVALID'
   | 'DIMENSION_MISMATCH'
+  | 'BAD_RLE_RUN'
   | 'BAD_PALETTE_INDEX'
   | 'UNKNOWN_ID'
   | 'DUPLICATE_ID'
@@ -46,13 +42,15 @@ export function validateBattlemap(input: unknown): MapValidation {
   let total = 0;
   for (let i = 0; i + 1 < rle.length; i += 2) {
     total += rle[i + 1]!;
+    if (rle[i + 1] === 0)
+      err('BAD_RLE_RUN', `zero-length run at index ${i + 1}`);
     if (rle[i]! >= map.palette.length)
       err('BAD_PALETTE_INDEX', `palette index ${rle[i]} out of range`);
   }
   if (rle.length % 2 !== 0 || total !== map.w * map.h) {
     err(
       'DIMENSION_MISMATCH',
-      `cells decode to ${rleDecode(rle).length}, expected ${map.w * map.h}`,
+      `cells decode to ${total}, expected ${map.w * map.h}`,
     );
   }
 

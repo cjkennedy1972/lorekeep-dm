@@ -69,6 +69,19 @@ describe('validateBattlemap', () => {
   test('dimension mismatch', () => {
     expect(codes({ ...fixture(), w: 59 })).toContain('DIMENSION_MISMATCH');
   });
+  test('huge run returns an error instead of throwing', () => {
+    expect(codes({ ...fixture(), cells: [0, 200_000_000] })).toContain(
+      'DIMENSION_MISMATCH',
+    );
+  });
+  test('zero-length run and odd length', () => {
+    expect(codes({ ...fixture(), cells: [0, 0, 0, 3600] })).toContain(
+      'BAD_RLE_RUN',
+    );
+    expect(codes({ ...fixture(), cells: [0, 3600, 0] })).toContain(
+      'DIMENSION_MISMATCH',
+    );
+  });
   test('bad palette index', () => {
     expect(codes({ ...fixture(), cells: [7, 3600] })).toContain(
       'BAD_PALETTE_INDEX',

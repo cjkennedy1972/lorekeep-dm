@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { rleDecode, rleEncode } from '../src/index.js';
+import { RleError, rleDecode, rleEncode } from '../src/index.js';
 
 describe('rle codec', () => {
   test('round-trips 200 random grids', () => {
@@ -16,5 +16,27 @@ describe('rle codec', () => {
       expect(rleDecode(rleEncode(grid))).toEqual(grid);
     }
     expect(rleEncode([])).toEqual([]);
+  });
+});
+
+describe('rleDecode bounds', () => {
+  const code = (rle: number[]) => {
+    try {
+      rleDecode(rle);
+    } catch (e) {
+      return e instanceof RleError ? e.code : 'other';
+    }
+    return 'none';
+  };
+  test('huge run rejected without allocating', () => {
+    expect(code([0, 200_000_000])).toBe('RLE_TOO_LARGE');
+  });
+  test('negative, zero, odd rejected', () => {
+    expect(code([0, -1])).toBe('RLE_BAD_RUN');
+    expect(code([0, 0])).toBe('RLE_BAD_RUN');
+    expect(code([0, 4, 1])).toBe('RLE_ODD_LENGTH');
+  });
+  test('max-size map still decodes', () => {
+    expect(rleDecode([0, 3600])).toHaveLength(3600);
   });
 });
