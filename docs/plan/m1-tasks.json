@@ -1,0 +1,1385 @@
+[
+  {
+    "id": "M1-01",
+    "title": "Engine foundations: seeded RNG, dice, roll breakdown",
+    "owner": "forge",
+    "priority": "high",
+    "est": "S",
+    "dependsOn": [],
+    "spec": [
+      "US-E2",
+      "US-B1"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "In packages/engine add a deterministic seeded PRNG (explicit seed in, next-state out, no Math.random), a dice-expression roller (NdM+K, advantage/disadvantage, keep-highest) and a RollBreakdown value (dice, kept/dropped, modifiers each with a label, total) that is the single shape later shown in the UI. Add ability modifier and proficiency-bonus helpers.",
+    "acceptance": [
+      "Same seed and inputs always produce identical rolls (test)",
+      "Advantage/disadvantage breakdown lists both dice and marks the dropped one",
+      "RollBreakdown total equals sum of kept dice plus labelled modifiers (property test, 1000 runs)",
+      "No import of Math.random or Date in packages/engine/src (lint or grep test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/rng.ts",
+      "packages/engine/src/dice.ts",
+      "packages/engine/test/dice.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-02",
+    "title": "Schema: character, catalog entries, engine state and events",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [],
+    "spec": [
+      "US-C1",
+      "US-B1",
+      "US-E2"
+    ],
+    "adr": [
+      "ADR-004",
+      "ADR-008"
+    ],
+    "description": "In packages/schema add zod schemas and inferred types for Character (class, level, abilities, proficiencies, equipment, spells known/prepared, slots, HP, conditions), catalog entry kinds (species, class, background, equipment, spell, monster, condition), CombatState (initiative order, turn resources, entities with pos/size) and the M1 event types from architecture 15.6 (RollEvent, CombatStarted, InitiativeRolled, ReactionAvailable/Resolved, CombatEnded, MapLoaded, EntityPlaced, EntityMoved, OpportunityTriggered, AreaResolved, HpChanged, ConditionApplied/Removed, SlotSpent). Export from the package index.",
+    "acceptance": [
+      "Every schema parses a valid fixture and rejects an invalid one (table test per kind)",
+      "Event union is discriminated on type and exhaustively switchable (compile-time check)",
+      "Catalog entries carry id, catalogVersion and srd source reference fields",
+      "No runtime dependency from @game/schema on engine or apps"
+    ],
+    "expectedArtifacts": [
+      "packages/schema/src/character.ts",
+      "packages/schema/src/catalog.ts",
+      "packages/schema/src/combat.ts",
+      "packages/schema/src/events.ts",
+      "packages/schema/test/m1-schemas.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/schema test",
+      "pnpm --filter @game/schema typecheck"
+    ]
+  },
+  {
+    "id": "M1-03",
+    "title": "Catalog loader, scope gating and version hash",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-02"
+    ],
+    "spec": [
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Add packages/engine/src/catalog/ with a loader that reads JSON from packages/engine/catalog/, validates each file against the schema, rejects duplicate ids, computes a stable catalogVersion hash over canonicalized content, and enforces scope gating (classes L1-5, spells <= L3, monsters CR <= 5); out-of-scope ids are not loadable. Provide typed lookups by id.",
+    "acceptance": [
+      "Loader fails with a file+id message on a schema-invalid entry (test with a bad fixture)",
+      "Duplicate ids across files are rejected",
+      "catalogVersion is identical across runs and changes when any entry changes (test)",
+      "Spell level 4 and CR 6 fixtures fail to load (scope gate test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/catalog/load.ts",
+      "packages/engine/src/catalog/hash.ts",
+      "packages/engine/test/catalog-load.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-04",
+    "title": "Catalog v0 data: species, backgrounds, equipment, conditions",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-03"
+    ],
+    "spec": [
+      "US-C1",
+      "US-B1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Author hand-curated SRD 5.2.1 JSON for all SRD species, backgrounds (with ability-score increases and proficiencies), weapons/armor/gear used by the classes, and the SRD conditions. Each entry cites its SRD section. Content is data only; no rules code.",
+    "acceptance": [
+      "Catalog loads cleanly via M1-03 loader",
+      "Counts match the SRD 5.2.1 lists recorded in a checked-in expected-counts file",
+      "Every background lists its ability-score options and two skill proficiencies",
+      "Every condition id referenced anywhere in catalog resolves"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/catalog/species.json",
+      "packages/engine/catalog/backgrounds.json",
+      "packages/engine/catalog/equipment.json",
+      "packages/engine/catalog/conditions.json",
+      "packages/engine/test/catalog-v0-content.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-05",
+    "title": "Catalog v0 data: classes 1-6 (levels 1-5)",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-03",
+      "M1-04"
+    ],
+    "spec": [
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Author SRD 5.2.1 class data for Barbarian, Bard, Cleric, Druid, Fighter, Monk: hit die, proficiencies, saves, starting equipment options, per-level features through L5, spell slots and the SRD subclass for each. Data only.",
+    "acceptance": [
+      "All six classes load and each has features for levels 1-5",
+      "Spellcasting classes have slot tables for levels 1-5",
+      "Each class has exactly one SRD subclass entry",
+      "Feature ids referenced by classes are unique"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/catalog/classes-a.json",
+      "packages/engine/test/catalog-classes-a.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-06",
+    "title": "Catalog v0 data: classes 7-12 (levels 1-5)",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-03",
+      "M1-04"
+    ],
+    "spec": [
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Same as M1-05 for Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard (no scope cut: all 12 classes ship per decisions round 3). Data only.",
+    "acceptance": [
+      "All six classes load with features L1-5 and one SRD subclass each",
+      "Together with M1-05, exactly 12 classes load",
+      "Warlock pact slots and Sorcerer points are represented in schema fields, not prose"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/catalog/classes-b.json",
+      "packages/engine/test/catalog-classes-b.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-07",
+    "title": "Catalog v0 data: spells level 0-3",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-03",
+      "M1-04"
+    ],
+    "spec": [
+      "US-B7",
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Author every SRD 5.2.1 spell of level 0-3 as structured data: level, school, casting time, range (feet or self/touch), components, duration, concentration flag, class lists, resolution kind (attack, save{ability,onSuccess}, auto, utility), damage/heal dice with upcast scaling, and for area spells the template {shape, size}. Include at least one sphere, one cube and one cone area spell.",
+    "acceptance": [
+      "All level 0-3 SRD spells load; spell count matches the expected-counts file",
+      "Every damaging spell has dice and damage type; every save spell names ability and onSuccess",
+      "Each area spell has template shape in {sphere,cube,cone,line,cylinder} and a size in feet",
+      "Fireball, Burning Hands and a cube spell are present and load"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/catalog/spells.json",
+      "packages/engine/test/catalog-spells.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-08",
+    "title": "Catalog v0 data: monsters CR 0-1",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-03",
+      "M1-04"
+    ],
+    "spec": [
+      "US-B1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Author SRD 5.2.1 monsters CR 0 to 1 as stat blocks: size, AC, HP dice, speed, abilities, saves, skills, resistances, attacks (to-hit, reach/range, damage), traits needed by rules. Must include Goblin and a ranged monster.",
+    "acceptance": [
+      "All CR<=1 SRD monsters load; count matches expected-counts file",
+      "Each attack has to-hit bonus, reach or range band, and damage dice+type",
+      "Size maps to a footprint in cells"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/catalog/monsters-low.json",
+      "packages/engine/test/catalog-monsters-low.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-09",
+    "title": "Catalog v0 data: monsters CR 2-5",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-03",
+      "M1-04"
+    ],
+    "spec": [
+      "US-B1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Author SRD 5.2.1 monsters CR 2 to 5 as in M1-08, including multiattack and save-based actions represented as structured data (no prose-only mechanics).",
+    "acceptance": [
+      "All CR 2-5 SRD monsters load; count matches expected-counts file",
+      "Multiattack is a structured list of attack ids",
+      "CR 6 fixture is rejected by the scope gate"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/catalog/monsters-mid.json",
+      "packages/engine/test/catalog-monsters-mid.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-10",
+    "title": "Character legality validator and sheet derivation",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-01",
+      "M1-02",
+      "M1-04",
+      "M1-05",
+      "M1-06"
+    ],
+    "spec": [
+      "US-C1",
+      "US-C2"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Add packages/engine/src/character/ with validateCharacter(char, catalog) returning a list of rule violations (point-buy cap 27 and 8-15 range, standard array use, background ASI rules, invalid or duplicate proficiencies, wrong equipment, bad spell picks) and deriveSheet(char, catalog) computing AC, max HP, initiative, saves, skill bonuses, attack bonuses, spell DC and slots.",
+    "acceptance": [
+      "Illegal fixtures (point buy 28, ASI on a non-offered ability, 3 skills from a 2-skill background, spell not on class list) each return a specific violation code",
+      "Property test: any character built by the legal builder validates with zero violations (200 seeds)",
+      "deriveSheet matches hand-computed values for 5 reference characters",
+      "Validator is pure: same input same output"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/character/validate.ts",
+      "packages/engine/src/character/derive.ts",
+      "packages/engine/test/character.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-11",
+    "title": "Quick build and legal-by-construction builder",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-10"
+    ],
+    "spec": [
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Add a step-wise CharacterBuilder (class, background, species, ability method, equipment, name) that exposes available options at each step and a quickBuild(classId?, seed) that returns a legal level-1 PC with a one-line explanation per choice (data from catalog).",
+    "acceptance": [
+      "quickBuild returns a character with zero violations for each of the 12 classes",
+      "Each builder step lists only legal options (test: choosing an illegal id throws)",
+      "Every option exposed carries a non-empty plain-language one-line explanation"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/character/builder.ts",
+      "packages/engine/test/builder.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-12",
+    "title": "Combat state, initiative, turn order and action economy",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-01",
+      "M1-02",
+      "M1-04",
+      "M1-08"
+    ],
+    "spec": [
+      "US-B1"
+    ],
+    "adr": [
+      "ADR-004",
+      "ADR-005"
+    ],
+    "description": "Add packages/engine/src/combat/ with pure reducer apply(state, event) and commands startCombat, rollInitiative (SRD tie-breaking, server RNG), startTurn, endTurn, and per-turn resources (action, bonus action, reaction, movement remaining in feet). Commands return {ok, events} or {error, hint}.",
+    "acceptance": [
+      "Initiative order is deterministic for a fixed seed and sorted correctly with ties (test)",
+      "Spending an action twice in a turn returns an error with a hint",
+      "Movement remaining resets at turn start and decrements via events only",
+      "Replaying the emitted events from the start state reproduces the end state (property test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/combat/state.ts",
+      "packages/engine/src/combat/commands.ts",
+      "packages/engine/test/combat-core.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-13",
+    "title": "Attack resolution and damage",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-01",
+      "M1-12",
+      "M1-08"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Implement attack(attackerId, targetId, attackId) in the combat module: attack roll with advantage/disadvantage inputs, crit on natural 20, damage dice incl. crit doubling, resistance/vulnerability/immunity, HP change event and RollEvent with full RollBreakdown. Distance, cover and reach are inputs here (supplied by M1-24), not computed.",
+    "acceptance": [
+      "Natural 20 hits and doubles damage dice; natural 1 misses (test)",
+      "Resistance halves and vulnerability doubles damage, rounded per SRD (table test)",
+      "Each resolution emits a RollEvent whose breakdown total equals the final roll",
+      "Reducing HP to 0 emits HpChanged and an unconscious/dead outcome per M1-14 hook"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/combat/attack.ts",
+      "packages/engine/test/attack.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-14",
+    "title": "Saves, checks, conditions, death saves",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-01",
+      "M1-04",
+      "M1-12"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B3",
+      "US-E2"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Add request_check/request_save style engine functions (ability check with skill and DC with stored dcReason, saving throw, contested check), condition application/removal with durations and their mechanical effects needed in M1 (prone, grappled, restrained, poisoned, frightened, stunned, unconscious, incapacitated), and death saves and stabilizing.",
+    "acceptance": [
+      "Check result records dcReason and breakdown (test)",
+      "Prone grants advantage to adjacent attackers and disadvantage to ranged (table test)",
+      "Three death-save failures yield dead; three successes stabilize; natural 20 restores 1 HP",
+      "Conditions that prevent actions make startTurn skip action resources with a reason"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/combat/checks.ts",
+      "packages/engine/src/combat/conditions.ts",
+      "packages/engine/test/checks-conditions.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-15",
+    "title": "Spellcasting: slots, concentration, single-target spells",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-07",
+      "M1-10",
+      "M1-12",
+      "M1-13",
+      "M1-14"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Add castSpell(casterId, spellId, slotLevel, target) for attack, save, auto and heal resolution kinds: slot validation and spend (SlotSpent), upcasting, spell save DC and attack bonus, concentration start/drop and concentration saves on damage. Area targeting is added in M1-24.",
+    "acceptance": [
+      "Casting with no slot or wrong class spell returns {error, hint}",
+      "Concentration is dropped when a new concentration spell is cast and when the save fails (test)",
+      "Upcast damage dice scale per the spell data (table test)",
+      "Every cast emits events that replay to the same state"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/combat/spells.ts",
+      "packages/engine/test/spells.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-16",
+    "title": "Rests, XP and level-up legality",
+    "owner": "forge",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M1-10",
+      "M1-11"
+    ],
+    "spec": [
+      "US-R1",
+      "US-C2"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Implement shortRest/longRest per SRD (hit dice, slot and feature recovery) and awardXp with SRD thresholds for levels 1-5, plus levelUp(char, choices) that validates choices with M1-10.",
+    "acceptance": [
+      "Long rest restores HP and slots; short rest spends hit dice with rolled breakdown (test)",
+      "XP thresholds for levels 2-5 match the SRD table",
+      "levelUp rejects an illegal subclass or ASI choice with a violation code"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/character/rest.ts",
+      "packages/engine/src/character/levelup.ts",
+      "packages/engine/test/rest-levelup.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-17",
+    "title": "Battlemap schema, RLE codec and validator",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-02"
+    ],
+    "spec": [
+      "US-B4",
+      "US-M1"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Add the Battlemap schema (mapId, w, h up to 60x60, palette with moveCost/blocksMove/blocksSight/cover/elevation, RLE-encoded cells, edges for walls/doors(open,closed,locked)/windows, features, markers, zones, diagonalRule) to @game/schema and validateBattlemap in the engine that reports structural errors (dimension mismatch, bad palette index, unknown ids, door on non-edge).",
+    "acceptance": [
+      "RLE encode/decode round-trips any grid (property test, 200 random maps)",
+      "60x60 map RLE JSON stays under 20 KB for a typical fixture",
+      "Validator returns a specific error code per defect class (5 bad fixtures)",
+      "61x61 map is rejected"
+    ],
+    "expectedArtifacts": [
+      "packages/schema/src/battlemap.ts",
+      "packages/engine/src/map/validate.ts",
+      "packages/engine/test/map-validate.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/schema test",
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-18",
+    "title": "Map geometry: occupancy, distance, diagonal rule, reach",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-17",
+      "M1-12"
+    ],
+    "spec": [
+      "US-B5",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Add packages/engine/src/map/geometry.ts: footprint for entity size, occupancy index, distance(a,b) in feet under the map diagonalRule (default 5 ft per diagonal; value to be confirmed against SRD 5.2.1 and recorded in a code comment), and reach/range predicates (melee reach, normal and long range bands).",
+    "acceptance": [
+      "Distance is symmetric and satisfies the triangle inequality (property tests)",
+      "Large (2x2) footprint occupies four cells and blocks others",
+      "Range-band helper returns normal, long (disadvantage) or out-of-range (table test)",
+      "The diagonal convention is documented in the module and in docs/decisions.md as an open item if unconfirmed"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/geometry.ts",
+      "packages/engine/test/map-geometry.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-19",
+    "title": "reachable() and path() with terrain, doors and conditions",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-18",
+      "M1-14"
+    ],
+    "spec": [
+      "US-B5"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Implement reachable(state, entityId) (cost-aware flood limited by remaining movement) and path(state, entityId, goal) (A*), honoring moveCost (difficult terrain double), walls/closed doors, occupancy (no ending on occupied; ally pass-through; hostile blocked), size, prone (crawl cost) and grappled/restrained (speed 0).",
+    "acceptance": [
+      "Difficult terrain costs 10 ft per cell (test)",
+      "Path never crosses a wall or closed door; open door is passable",
+      "Every cell returned by reachable has a path whose cost <= remaining movement (property test)",
+      "Ending on an occupied cell is rejected with reason 'occupied'",
+      "path returns {error, hint} with a specific reason code for unreachable goals"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/reachable.ts",
+      "packages/engine/src/map/path.ts",
+      "packages/engine/test/map-path.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-20",
+    "title": "Line of sight (cell-corner trace)",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-18"
+    ],
+    "spec": [
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Implement hasLineOfSight(a, b) with the documented cell-corner trace (any unobstructed corner-to-corner line between the two footprints), blocked by blocksSight cells, walls, closed doors.",
+    "acceptance": [
+      "LOS is symmetric for all random pairs (property test, 1000 cases)",
+      "Wall between two cells blocks; window edge does not (table test)",
+      "Algorithm is described in a doc comment with an ASCII example and covered by 15 named cases"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/los.ts",
+      "packages/engine/test/map-los.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-21",
+    "title": "Cover computation",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-20"
+    ],
+    "spec": [
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Implement coverBetween(a, b): count blocked lines to produce none/half/three-quarters/full from terrain and feature cover values; export the AC or save bonus (+2, +5) and a display string like 'cover: half (+2 AC)'.",
+    "acceptance": [
+      "Pillar between attacker and target yields half or better (named case)",
+      "Full cover makes the target untargetable by attacks (error reason 'no line')",
+      "Cover grade is monotone in number of blocked lines (property test)",
+      "Display string matches 'cover: half (+2 AC)' exactly"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/cover.ts",
+      "packages/engine/test/map-cover.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-22",
+    "title": "AoE templates: sphere, cube, cone, line, cylinder",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-18",
+      "M1-20"
+    ],
+    "spec": [
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Implement areaCells(template, origin, direction) rasterizing sphere/cube/cone first (line and cylinder after, all in this ticket) and a spreads-around-corners flood for sphere; affectedEntities(areaCells, state) with a cover-from-origin save bonus input. Footprints are deterministic and documented.",
+    "acceptance": [
+      "Sphere radius 20 ft yields the documented cell count for 5 sizes (table test)",
+      "Cube and cone cell counts match the documented table for each size",
+      "Area is blocked by walls and never includes cells without line from origin where the template requires it (named cases)",
+      "Template output is rotation-consistent for cone in 8 directions (property test on cell count)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/area.ts",
+      "packages/engine/test/map-area.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-23",
+    "title": "Movement command and opportunity attacks",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-19",
+      "M1-13"
+    ],
+    "spec": [
+      "US-B5",
+      "US-B1"
+    ],
+    "adr": [
+      "ADR-018",
+      "ADR-005"
+    ],
+    "description": "Implement moveAlong(state, entityId, path, mode) resolving cell by cell: spend movement, emit EntityMoved{path,cost}, and when a step leaves a hostile's reach without Disengage or forced movement pause and emit OpportunityTriggered + ReactionAvailable{opportunityAttack}. Add resolveReaction(state, reactionId, choice) that takes or declines the attack (spending the reaction) and resumes the path if the mover is still able. threatenedBy(entity) is exported.",
+    "acceptance": [
+      "Moving out of a hostile's reach triggers exactly one ReactionAvailable per eligible hostile (test)",
+      "Disengage or forced movement suppresses it",
+      "A hostile with no reaction left or incapacitated does not trigger",
+      "If the opportunity attack drops the mover to 0 HP the path does not resume",
+      "Declining the reaction resumes the path with identical final cell and cost"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/movement.ts",
+      "packages/engine/src/map/threat.ts",
+      "packages/engine/test/movement-oa.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-24",
+    "title": "Map-aware attack and area spell resolution",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-13",
+      "M1-15",
+      "M1-21",
+      "M1-22",
+      "M1-18",
+      "M1-23"
+    ],
+    "spec": [
+      "US-B7",
+      "US-B1"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Wire map facts into attack and castSpell: reach/range/long-range disadvantage, cover AC and save bonus, LOS requirement; add area targeting to castSpell(target{kind:'anchor'|'option'}) resolving a save per affected entity and emitting AreaResolved{cells, affected[]} plus map facts (cover, distance) inside the attack RollEvent.",
+    "acceptance": [
+      "Fireball at a point resolves one save per creature in the sphere and emits AreaResolved listing the same ids (test)",
+      "Creature behind full cover from the origin is excluded",
+      "Ranged attack beyond normal range rolls with disadvantage and breakdown says so",
+      "Attack roll event records cover grade and distance in feet"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/combat/attack.ts",
+      "packages/engine/src/combat/spells.ts",
+      "packages/engine/test/map-combat.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-25",
+    "title": "suggest_area_target and legalOptions",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-22",
+      "M1-24",
+      "M1-19"
+    ],
+    "spec": [
+      "US-B5",
+      "US-B6"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Add engine-issued handles: suggestAreaTargets(state, caster, spell) returning optionIds with affected-entity preview, and legalOptions(state, entityId) listing legal moves (by destination handle), attacks, spells and end-turn, so list-driven play and later LLM tools never need coordinates.",
+    "acceptance": [
+      "Every optionId returned resolves to a legal action; a stale or unknown optionId is rejected with {error, hint}",
+      "legalOptions is empty of actions for an unconscious entity except none",
+      "No public tool-facing function accepts raw x/y (type-level test / grep test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/options.ts",
+      "packages/engine/test/options.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-26",
+    "title": "describe() with verbosity levels",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-18",
+      "M1-20",
+      "M1-21"
+    ],
+    "spec": [
+      "US-B6"
+    ],
+    "adr": [
+      "ADR-018",
+      "ADR-019"
+    ],
+    "description": "Implement describe(state, viewerId, {verbosity: brief|standard|full}) producing deterministic text with distances in feet, clock and compass directions, cover notes and remaining movement, e.g. 'Goblin 2 is 15 ft northeast behind a barrel (half cover)'. Also a threatsWithin(30) summary for start-of-turn.",
+    "acceptance": [
+      "Snapshot test of the quick-start example string for brief, standard and full",
+      "Output is stable under entity insertion order (property test)",
+      "Hidden entities never appear in output for a viewer without visibility"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/describe.ts",
+      "packages/engine/test/describe.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-27",
+    "title": "Authored-map loader and sample maps",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-17",
+      "M1-04"
+    ],
+    "spec": [
+      "US-M1",
+      "US-B4"
+    ],
+    "adr": [
+      "ADR-018",
+      "ADR-020"
+    ],
+    "description": "Add loadAuthoredMap(json) (schema + validator + feature/marker id uniqueness + catalog terrain ids) and two authored maps in packages/engine/maps/: a 20x20 room with pillars/door/difficult terrain and a 30x30 outdoor map with water/trees. Each has spawn zones and markers.",
+    "acceptance": [
+      "Both maps load and validate",
+      "Invalid map file yields the validator error list, never a throw with a stack",
+      "Each map has at least one door, one cover feature and one difficult-terrain region (test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map/load.ts",
+      "packages/engine/maps/crypt-room.json",
+      "packages/engine/maps/forest-clearing.json",
+      "packages/engine/test/map-load.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-28",
+    "title": "Property-test suite and 100-case geometry gate",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-19",
+      "M1-20",
+      "M1-21",
+      "M1-22",
+      "M1-23"
+    ],
+    "spec": [
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Build packages/engine/test/geometry-gate.test.ts with exactly 100 named cases across movement cost, reach, range, cover and AoE (release gate A10) plus fast-check properties: path cost vs reachable, LOS symmetry, distance metric laws, AoE shape counts, RLE round-trip, replay determinism. Add a pnpm script test:geometry that prints pass/total.",
+    "acceptance": [
+      "test:geometry reports 100/100 passing",
+      "Properties run at least 500 cases each in CI",
+      "A deliberately broken diagonalRule fails at least 5 cases (mutation check recorded in the ticket log)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/test/geometry-gate.test.ts",
+      "packages/engine/test/properties.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test:geometry",
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-29",
+    "title": "Scripted solo combat harness (no LLM)",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-24",
+      "M1-25",
+      "M1-27",
+      "M1-12",
+      "M1-16"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B5",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-004",
+      "ADR-018"
+    ],
+    "description": "Add packages/engine/src/scripted/ with a deterministic policy driver (monster policy: A* approach, attack, flee) and a scripted PC script, plus a runnable scenario on the authored crypt map: one L1 quick-build PC vs goblins that includes (a) a PC move that triggers an opportunity attack and (b) an area spell (e.g. Burning Hands or Fireball) hitting at least two enemies. Output is a full event log and final state; scenario ends in CombatEnded.",
+    "acceptance": [
+      "Scenario with fixed seed ends in CombatEnded and the event log contains OpportunityTriggered, ReactionResolved and AreaResolved with >=2 affected",
+      "Re-running with the same seed gives a byte-identical event log (golden file)",
+      "Replaying the log reproduces the final state",
+      "No network or LLM module is imported (grep test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/scripted/policy.ts",
+      "packages/engine/src/scripted/scenario-crypt.ts",
+      "packages/engine/test/scripted-combat.test.ts",
+      "packages/engine/test/golden/scripted-combat.json"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M1-30",
+    "title": "Web engine bridge and client state store",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-02",
+      "M1-12"
+    ],
+    "spec": [
+      "US-C2",
+      "US-B4"
+    ],
+    "adr": [
+      "ADR-010",
+      "ADR-019"
+    ],
+    "description": "In apps/web add a store that holds character, CombatState and Battlemap, applies engine events via the shared reducer, and exposes selectors for the sheet, tracker and map. Web imports pure functions from @game/rules-engine for previews (never the server).",
+    "acceptance": [
+      "Applying the golden event log from M1-29 yields the same final state as the engine (test)",
+      "Selector for active combatant equals first entry of initiative order (US-B4 AC3 test)",
+      "Lint dependency rule still passes (web does not import apps/server)"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/state/gameStore.ts",
+      "apps/web/src/state/selectors.ts",
+      "apps/web/test/gameStore.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test",
+      "pnpm lint"
+    ]
+  },
+  {
+    "id": "M1-31",
+    "title": "Character creation wizard",
+    "owner": "prism",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-11",
+      "M1-30"
+    ],
+    "spec": [
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Build the guided creation flow in apps/web driven by CharacterBuilder: steps class, background, species, ability scores (standard array / point buy / rolled), equipment, name and personality; each option shows its one-line explanation; the Save button is disabled with the reason while validateCharacter has violations. Fully keyboard operable with labelled controls.",
+    "acceptance": [
+      "Component test completes a Fighter build by keyboard only and saves a character with zero violations",
+      "Point buy over cap disables Save and shows the violation message",
+      "Every option renders its explanation text (test iterates all options)",
+      "jest-axe / axe check reports no violations on each step"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/character/CreationWizard.tsx",
+      "apps/web/test/creation-wizard.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-32",
+    "title": "Quick build button",
+    "owner": "prism",
+    "priority": "normal",
+    "est": "S",
+    "dependsOn": [
+      "M1-11",
+      "M1-31"
+    ],
+    "spec": [
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Add a Quick build action (class picker optional) that calls quickBuild and saves a legal level-1 PC in at most two clicks from the creation entry screen.",
+    "acceptance": [
+      "Test counts clicks from entry to saved PC and asserts <= 2",
+      "Quick-built PC for each of 12 classes passes validateCharacter in the UI test",
+      "Result is editable afterwards in the wizard"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/character/QuickBuild.tsx",
+      "apps/web/test/quick-build.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-33",
+    "title": "Live character sheet",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-30",
+      "M1-10"
+    ],
+    "spec": [
+      "US-C2"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Build the live sheet view (abilities, AC, HP, conditions, slots, inventory, XP/level) bound to the store; values update from events in the same render tick, and HP/condition changes announce in a polite live region.",
+    "acceptance": [
+      "Dispatching HpChanged, ConditionApplied and SlotSpent updates the DOM in the same act() flush (test)",
+      "Live region text announced for an HP change",
+      "Sheet renders for all 12 class fixtures without error",
+      "axe check passes"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/character/Sheet.tsx",
+      "apps/web/test/sheet.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-34",
+    "title": "Dice breakdown display",
+    "owner": "prism",
+    "priority": "normal",
+    "est": "S",
+    "dependsOn": [
+      "M1-30",
+      "M1-01"
+    ],
+    "spec": [
+      "US-E2"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Render RollBreakdown from RollEvent: dice with dropped ones struck through and labelled, each modifier with its label, total, and DC with the stored dcReason on demand ('why DC 15?'). Accessible text equivalent for every visual part.",
+    "acceptance": [
+      "Advantage roll shows both dice and marks the dropped one (test)",
+      "Check roll shows DC and a 'why' disclosure revealing dcReason",
+      "Text alternative reads the full computation in one string (test)"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/dice/RollBreakdown.tsx",
+      "apps/web/test/roll-breakdown.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-35",
+    "title": "MapRenderer interface and canvas static map + terrain",
+    "owner": "prism",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-30",
+      "M1-17",
+      "M1-27"
+    ],
+    "spec": [
+      "US-B4"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Define the MapRenderer interface and implement Canvas2DRenderer v1 drawing grid, terrain by palette with pattern-coded (not color-only) fills, walls/doors/windows edges, features and markers, from a Battlemap. Rendering is a pure function of state; a headless draw-command list is exposed for tests.",
+    "acceptance": [
+      "Render of the crypt map produces a draw-command list matching a snapshot",
+      "Each terrain kind has a distinct pattern id (test asserts uniqueness)",
+      "60x60 map initial draw completes within 100 ms in a vitest benchmark guard (documented machine)",
+      "Renderer has no engine mutation calls (type-level: takes readonly state)"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/map/MapRenderer.ts",
+      "apps/web/src/features/map/Canvas2DRenderer.ts",
+      "apps/web/test/map-render.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-36",
+    "title": "Tokens with team markers and HP display",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-35",
+      "M1-30"
+    ],
+    "spec": [
+      "US-B4"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Draw tokens for every combatant sized by footprint, labelled with name and a non-color team marker (shape/letter), exact HP for PCs and qualitative for enemies, condition icons with text labels, and highlight the active combatant.",
+    "acceptance": [
+      "Draw list contains one token per combatant with a team marker distinct per team without relying on color (test)",
+      "Enemy HP shows 'bloodied' at <=50% and never exact numbers (test)",
+      "Active token highlight equals first initiative entry (test)",
+      "Large creature occupies 2x2 cells"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/map/tokens.ts",
+      "apps/web/test/map-tokens.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-37",
+    "title": "Pan, zoom and selection",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-35"
+    ],
+    "spec": [
+      "US-B4",
+      "US-B6"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Add pan and zoom (wheel, pinch, drag, plus keyboard +/- and arrow-pan equivalents for WCAG 2.5.7) with clamping, hit-testing to select a token or cell, and a selection state in the store.",
+    "acceptance": [
+      "Hit-test maps screen point to the correct cell at three zoom levels (table test)",
+      "Zoom clamps to documented min and max",
+      "Every pointer pan has a keyboard equivalent (test)",
+      "Selection survives zoom/pan"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/map/viewport.ts",
+      "apps/web/src/features/map/hitTest.ts",
+      "apps/web/test/map-viewport.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-38",
+    "title": "Overlays: reach, threat, path cost, area, LOS, cover",
+    "owner": "prism",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M1-37",
+      "M1-36",
+      "M1-19",
+      "M1-21",
+      "M1-22",
+      "M1-20"
+    ],
+    "spec": [
+      "US-B5",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-018",
+      "ADR-019"
+    ],
+    "description": "Add toggleable overlays computed from the engine's shared functions: reachable cells with remaining-movement cost, path preview with total cost in feet, threatened squares, area template preview with affected-creature list before commit, LOS line, and cover badge ('cover: half (+2 AC)'). Overlays are pattern/outline coded, high-contrast capable.",
+    "acceptance": [
+      "Overlay data for a fixture equals the engine's reachable/areaCells/cover output (test)",
+      "Area preview lists affected creatures identical to affectedEntities",
+      "Path preview shows total cost in feet and is flagged illegal with the engine's reason",
+      "Overlays are off by default and individually toggleable"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/map/overlays.ts",
+      "apps/web/test/map-overlays.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-39",
+    "title": "Keyboard cursor and move mode",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-37",
+      "M1-19",
+      "M1-23"
+    ],
+    "spec": [
+      "US-B6",
+      "US-B5"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Make the map one focusable region: arrow keys move the cursor one square with running path cost announced, Enter confirms the move through the engine command, Esc cancels, [ and ] cycle creatures, hotkeys jump to nearest enemy and my token. Opportunity-attack prompts surface as an accessible dialog.",
+    "acceptance": [
+      "Keyboard-only test moves a token 3 squares, confirms, and the store position matches the engine",
+      "Cost announcement text updates per keypress (live region test)",
+      "Illegal destination announces the engine's reason and does not move",
+      "Opportunity-attack prompt is focusable, has accept/decline, and resolves via resolveReaction"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/map/keyboard.ts",
+      "apps/web/test/map-keyboard.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-40",
+    "title": "Describe battlefield, live region and token list",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-26",
+      "M1-39"
+    ],
+    "spec": [
+      "US-B6"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Add a Describe battlefield button and hotkey calling describe() at selectable verbosity, a start-of-turn live region with remaining movement and threats within 30 ft, and a 'Tokens and terrain' table sortable by distance with coordinates and state.",
+    "acceptance": [
+      "Describe output in the DOM equals engine describe() text for the fixture",
+      "Start-of-turn live region fires once per turn change (test)",
+      "Table sorts by distance and lists every token and feature (count assertion)",
+      "axe check passes"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/map/Describe.tsx",
+      "apps/web/src/features/map/TokenTable.tsx",
+      "apps/web/test/map-describe.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M1-41",
+    "title": "Solo combat sandbox page driven by the scripted harness",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-29",
+      "M1-38",
+      "M1-40",
+      "M1-33",
+      "M1-34"
+    ],
+    "spec": [
+      "US-B4",
+      "US-B6"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Add a /sandbox/combat route (dev build) that loads the crypt map and scripted scenario, lets a human play the PC via pointer or keyboard against the scripted monster policy, shows sheet, dice breakdown, initiative tracker and the map. No network and no LLM.",
+    "acceptance": [
+      "Playwright test plays the scenario to CombatEnded by keyboard only",
+      "Playwright asserts a path-preview, an opportunity-attack prompt and an area-spell preview occurred",
+      "Page makes zero network requests besides static assets (Playwright request assertion)"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/routes/sandboxCombat.tsx",
+      "apps/web/e2e/sandbox-combat.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web exec playwright test sandbox-combat"
+    ]
+  },
+  {
+    "id": "M1-42",
+    "title": "M1 exit-criteria proof tests",
+    "owner": "proof",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M1-28",
+      "M1-29",
+      "M1-32",
+      "M1-41",
+      "M1-16"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B5",
+      "US-B7",
+      "US-C1",
+      "US-C2",
+      "US-E2"
+    ],
+    "adr": [
+      "ADR-004",
+      "ADR-018",
+      "ADR-019"
+    ],
+    "description": "Write the proof suite in tests/e2e and produce docs/plan/m1-proof-report.md. Prove on a fresh clone of origin/main: (1) property tests green (100/100 geometry gate plus properties); (2) scripted solo combat on the 2D map with no LLM, including an opportunity attack and an area spell, ends in CombatEnded and is reproducible by seed; same flow rendered in the web sandbox by keyboard; (3) legal PCs: all 12 classes quick-build with zero violations, and illegal builds are rejected; (4) catalog scope gate and catalogVersion hash. The report lists each exit criterion with command, result and any gap, and states what remains unverified (diagonal rule vs SRD, monster coverage vs SRD counts).",
+    "acceptance": [
+      "Test 1: pnpm --filter @game/rules-engine test:geometry reports 100/100 and the property suite passes",
+      "Test 2: scripted scenario event log contains OpportunityTriggered and AreaResolved(>=2 affected) and ends CombatEnded; Playwright sandbox keyboard run also ends CombatEnded with no LLM or network call",
+      "Test 3: 12/12 classes produce legal quick-build PCs; 5 illegal fixtures are rejected with violation codes",
+      "Full gate from docs/process.md exits 0 on a fresh clone",
+      "Report states what remains unverified"
+    ],
+    "expectedArtifacts": [
+      "tests/e2e/m1-geometry-gate.spec.ts",
+      "tests/e2e/m1-scripted-combat.spec.ts",
+      "tests/e2e/m1-legal-pcs.spec.ts",
+      "docs/plan/m1-proof-report.md"
+    ],
+    "verify": [
+      "pnpm --filter e2e test",
+      "pnpm -r test",
+      "pnpm --filter @game/web exec playwright test"
+    ]
+  }
+]
