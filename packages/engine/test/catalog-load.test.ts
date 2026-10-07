@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { loadCatalog } from '../src/index.js';
+import { loadCatalog } from '../src/catalog-node.js';
 
 const base = {
   catalogVersion: '1',

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
-import { loadCatalog } from '../src/index.js';
+import { loadCatalog } from '../src/catalog-node.js';
 
 const expected = JSON.parse(
   readFileSync(
