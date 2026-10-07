@@ -1,12 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  CatalogEntrySchema,
-  type CatalogEntry,
-  type CatalogKind,
-} from '@game/schema';
+import { CatalogEntrySchema, type CatalogEntry } from '@game/schema';
 import { catalogVersionOf } from './hash.js';
+import type { Catalog } from './types.js';
+export type { Catalog } from './types.js';
 
 export const DEFAULT_CATALOG_DIR = fileURLToPath(
   new URL('../../catalog', import.meta.url),
@@ -26,17 +24,6 @@ function scopeViolation(e: CatalogEntry): string | undefined {
   if (e.kind === 'monster' && e.cr > MAX_MONSTER_CR)
     return `monster CR ${e.cr} is out of scope (max ${MAX_MONSTER_CR})`;
   return undefined;
-}
-
-export interface Catalog {
-  catalogVersion: string;
-  entries: readonly CatalogEntry[];
-  get<K extends CatalogKind>(
-    kind: K,
-    id: string,
-  ): Extract<CatalogEntry, { kind: K }> | undefined;
-  /** Any kind; undefined when not loaded (including out-of-scope ids). */
-  getAny(id: string): CatalogEntry | undefined;
 }
 
 /** Load every *.json file (each an array of entries) in `dir`. Throws CatalogError on any problem. */
