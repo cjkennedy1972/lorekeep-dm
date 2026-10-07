@@ -3,3 +3,6 @@ export * from './room.js';
 export * from './ws.js';
 export * from './events.js';
 export * from './accounts.js';
+export * from './catalog.js';
+export * from './character.js';
+export * from './combat.js';
