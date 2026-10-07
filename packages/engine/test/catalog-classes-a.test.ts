@@ -2,8 +2,13 @@ import { describe, expect, test } from 'vitest';
 import { loadCatalog } from '../src/catalog-node.js';
 
 const cat = loadCatalog();
-const classes = cat.entries.filter((e) => e.kind === 'class');
-const subclasses = cat.entries.filter((e) => e.kind === 'subclass');
+const namesA = ['barbarian', 'bard', 'cleric', 'druid', 'fighter', 'monk'];
+const classes = cat.entries.filter(
+  (e) => e.kind === 'class' && namesA.includes(e.id.slice(6)),
+);
+const subclasses = cat.entries.filter(
+  (e) => e.kind === 'subclass' && namesA.includes(e.classId.slice(6)),
+);
 const casters = ['bard', 'cleric', 'druid'];
 
 describe('catalog classes A (Barbarian..Monk)', () => {
