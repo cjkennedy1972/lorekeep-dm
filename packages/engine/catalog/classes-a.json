@@ -266,7 +266,7 @@
       {
         "option": "A",
         "items": [
-          "Chain Mail",
+          "Chain Shirt",
           "Shield",
           "Mace",
           "Holy Symbol",
@@ -314,7 +314,7 @@
         "id": "feature:cleric:sear-undead",
         "level": 5,
         "name": "Sear Undead",
-        "summary": "Turn Undead also deals Radiant damage to the affected undead."
+        "summary": "When you use Turn Undead, roll a number of d8s equal to your Wisdom modifier (minimum 1). Each Undead that fails its saving throw takes Radiant damage equal to the roll’s total."
       }
     ],
     "spellcastingAbility": "wis",
@@ -366,7 +366,7 @@
     "primaryAbility": ["wis"],
     "saveProficiencies": ["int", "wis"],
     "armorProficiencies": ["Light armor", "Shields"],
-    "weaponProficiencies": [],
+    "weaponProficiencies": ["Simple weapons"],
     "toolProficiencies": ["Herbalism Kit"],
     "skillChoices": {
       "count": 2,
@@ -611,9 +611,9 @@
     "classId": "class:fighter",
     "features": [
       {
-        "id": "feature:champion:improved-critical-hit",
+        "id": "feature:champion:improved-critical",
         "level": 3,
-        "name": "Improved Critical Hit",
+        "name": "Improved Critical",
         "summary": "Weapon and Unarmed Strike attacks score a Critical Hit on a roll of 19 or 20."
       },
       {
