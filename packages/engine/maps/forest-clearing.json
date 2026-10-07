@@ -1,0 +1,506 @@
+{
+  "mapId": "forest-clearing",
+  "w": 30,
+  "h": 30,
+  "palette": [
+    {
+      "terrainId": "grass",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "tree",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": false,
+      "cover": "three-quarters",
+      "elevation": 0
+    },
+    {
+      "terrainId": "water",
+      "moveCost": 2,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": -1
+    },
+    {
+      "terrainId": "mud",
+      "moveCost": 2,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    }
+  ],
+  "cells": [
+    0, 135, 1, 1, 0, 50, 1, 2, 0, 74, 1, 2, 0, 108, 2, 6, 0, 24, 2, 6, 0, 24, 2,
+    6, 0, 2, 1, 1, 0, 13, 1, 1, 0, 7, 2, 6, 0, 24, 2, 6, 0, 24, 2, 6, 0, 30, 3,
+    3, 0, 27, 3, 3, 0, 19, 1, 1, 0, 7, 3, 3, 0, 20, 1, 1, 0, 42, 1, 1, 0, 215
+  ],
+  "edges": [
+    {
+      "a": {
+        "x": 25,
+        "y": 4
+      },
+      "b": {
+        "x": 25,
+        "y": 5
+      },
+      "kind": "door",
+      "state": "open"
+    }
+  ],
+  "features": [
+    {
+      "featureId": "feat_tree1",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 6,
+          "y": 6
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree2",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 7,
+          "y": 6
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree3",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 22,
+          "y": 8
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree4",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 23,
+          "y": 8
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree5",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 10,
+          "y": 20
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree6",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 11,
+          "y": 21
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree7",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 24,
+          "y": 22
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree8",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 4,
+          "y": 15
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree9",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 15,
+          "y": 4
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_tree10",
+      "kind": "tree",
+      "cells": [
+        {
+          "x": 20,
+          "y": 14
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_hut_door",
+      "kind": "door",
+      "cells": [
+        {
+          "x": 25,
+          "y": 5
+        }
+      ],
+      "tags": ["entrance"]
+    },
+    {
+      "featureId": "feat_pond",
+      "kind": "water",
+      "cells": [
+        {
+          "x": 12,
+          "y": 12
+        },
+        {
+          "x": 13,
+          "y": 12
+        },
+        {
+          "x": 14,
+          "y": 12
+        },
+        {
+          "x": 15,
+          "y": 12
+        },
+        {
+          "x": 16,
+          "y": 12
+        },
+        {
+          "x": 17,
+          "y": 12
+        },
+        {
+          "x": 12,
+          "y": 13
+        },
+        {
+          "x": 13,
+          "y": 13
+        },
+        {
+          "x": 14,
+          "y": 13
+        },
+        {
+          "x": 15,
+          "y": 13
+        },
+        {
+          "x": 16,
+          "y": 13
+        },
+        {
+          "x": 17,
+          "y": 13
+        },
+        {
+          "x": 12,
+          "y": 14
+        },
+        {
+          "x": 13,
+          "y": 14
+        },
+        {
+          "x": 14,
+          "y": 14
+        },
+        {
+          "x": 15,
+          "y": 14
+        },
+        {
+          "x": 16,
+          "y": 14
+        },
+        {
+          "x": 17,
+          "y": 14
+        },
+        {
+          "x": 12,
+          "y": 15
+        },
+        {
+          "x": 13,
+          "y": 15
+        },
+        {
+          "x": 14,
+          "y": 15
+        },
+        {
+          "x": 15,
+          "y": 15
+        },
+        {
+          "x": 16,
+          "y": 15
+        },
+        {
+          "x": 17,
+          "y": 15
+        },
+        {
+          "x": 12,
+          "y": 16
+        },
+        {
+          "x": 13,
+          "y": 16
+        },
+        {
+          "x": 14,
+          "y": 16
+        },
+        {
+          "x": 15,
+          "y": 16
+        },
+        {
+          "x": 16,
+          "y": 16
+        },
+        {
+          "x": 17,
+          "y": 16
+        },
+        {
+          "x": 12,
+          "y": 17
+        },
+        {
+          "x": 13,
+          "y": 17
+        },
+        {
+          "x": 14,
+          "y": 17
+        },
+        {
+          "x": 15,
+          "y": 17
+        },
+        {
+          "x": 16,
+          "y": 17
+        },
+        {
+          "x": 17,
+          "y": 17
+        }
+      ],
+      "tags": ["difficult"]
+    },
+    {
+      "featureId": "feat_mud",
+      "kind": "difficult-terrain",
+      "cells": [
+        {
+          "x": 18,
+          "y": 18
+        },
+        {
+          "x": 19,
+          "y": 18
+        },
+        {
+          "x": 20,
+          "y": 18
+        },
+        {
+          "x": 18,
+          "y": 19
+        },
+        {
+          "x": 19,
+          "y": 19
+        },
+        {
+          "x": 20,
+          "y": 19
+        },
+        {
+          "x": 18,
+          "y": 20
+        },
+        {
+          "x": 19,
+          "y": 20
+        },
+        {
+          "x": 20,
+          "y": 20
+        }
+      ],
+      "tags": ["difficult"]
+    }
+  ],
+  "markers": [
+    {
+      "markerId": "mk_path_south",
+      "cell": {
+        "x": 14,
+        "y": 28
+      },
+      "label": "South path"
+    },
+    {
+      "markerId": "mk_camp",
+      "cell": {
+        "x": 14,
+        "y": 2
+      },
+      "label": "Ruined camp"
+    }
+  ],
+  "zones": [
+    {
+      "zoneId": "zone_party",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 12,
+          "y": 26
+        },
+        {
+          "x": 13,
+          "y": 26
+        },
+        {
+          "x": 14,
+          "y": 26
+        },
+        {
+          "x": 15,
+          "y": 26
+        },
+        {
+          "x": 16,
+          "y": 26
+        },
+        {
+          "x": 17,
+          "y": 26
+        },
+        {
+          "x": 12,
+          "y": 27
+        },
+        {
+          "x": 13,
+          "y": 27
+        },
+        {
+          "x": 14,
+          "y": 27
+        },
+        {
+          "x": 15,
+          "y": 27
+        },
+        {
+          "x": 16,
+          "y": 27
+        },
+        {
+          "x": 17,
+          "y": 27
+        }
+      ],
+      "anchorMarkerId": "mk_path_south"
+    },
+    {
+      "zoneId": "zone_foes",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 12,
+          "y": 2
+        },
+        {
+          "x": 13,
+          "y": 2
+        },
+        {
+          "x": 14,
+          "y": 2
+        },
+        {
+          "x": 15,
+          "y": 2
+        },
+        {
+          "x": 16,
+          "y": 2
+        },
+        {
+          "x": 17,
+          "y": 2
+        },
+        {
+          "x": 12,
+          "y": 3
+        },
+        {
+          "x": 13,
+          "y": 3
+        },
+        {
+          "x": 14,
+          "y": 3
+        },
+        {
+          "x": 15,
+          "y": 3
+        },
+        {
+          "x": 16,
+          "y": 3
+        },
+        {
+          "x": 17,
+          "y": 3
+        }
+      ],
+      "anchorMarkerId": "mk_camp"
+    }
+  ],
+  "diagonalRule": "5ft"
+}

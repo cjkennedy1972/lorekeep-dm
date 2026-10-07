@@ -1,0 +1,303 @@
+{
+  "mapId": "crypt-room",
+  "w": 20,
+  "h": 20,
+  "palette": [
+    {
+      "terrainId": "floor",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "rubble",
+      "moveCost": 2,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "pillar",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    },
+    {
+      "terrainId": "stone-wall",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    }
+  ],
+  "cells": [
+    3, 21, 0, 18, 3, 2, 0, 18, 3, 2, 0, 18, 3, 2, 0, 18, 3, 2, 0, 4, 2, 1, 0, 8,
+    2, 1, 0, 4, 3, 2, 0, 18, 3, 2, 0, 18, 3, 2, 0, 7, 1, 4, 0, 7, 3, 2, 0, 7, 1,
+    4, 0, 7, 3, 2, 0, 7, 1, 4, 0, 7, 3, 2, 0, 18, 3, 2, 0, 18, 3, 2, 0, 18, 3,
+    2, 0, 4, 2, 1, 0, 8, 2, 1, 0, 4, 3, 2, 0, 18, 3, 2, 0, 18, 3, 2, 0, 18, 3,
+    2, 0, 18, 3, 21
+  ],
+  "edges": [
+    {
+      "a": {
+        "x": 9,
+        "y": 0
+      },
+      "b": {
+        "x": 9,
+        "y": 1
+      },
+      "kind": "door",
+      "state": "closed"
+    }
+  ],
+  "features": [
+    {
+      "featureId": "feat_pillar1",
+      "kind": "pillar",
+      "cells": [
+        {
+          "x": 5,
+          "y": 5
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_pillar2",
+      "kind": "pillar",
+      "cells": [
+        {
+          "x": 14,
+          "y": 5
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_pillar3",
+      "kind": "pillar",
+      "cells": [
+        {
+          "x": 5,
+          "y": 14
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_pillar4",
+      "kind": "pillar",
+      "cells": [
+        {
+          "x": 14,
+          "y": 14
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat_rubble",
+      "kind": "difficult-terrain",
+      "cells": [
+        {
+          "x": 8,
+          "y": 8
+        },
+        {
+          "x": 9,
+          "y": 8
+        },
+        {
+          "x": 10,
+          "y": 8
+        },
+        {
+          "x": 11,
+          "y": 8
+        },
+        {
+          "x": 8,
+          "y": 9
+        },
+        {
+          "x": 9,
+          "y": 9
+        },
+        {
+          "x": 10,
+          "y": 9
+        },
+        {
+          "x": 11,
+          "y": 9
+        },
+        {
+          "x": 8,
+          "y": 10
+        },
+        {
+          "x": 9,
+          "y": 10
+        },
+        {
+          "x": 10,
+          "y": 10
+        },
+        {
+          "x": 11,
+          "y": 10
+        }
+      ],
+      "tags": ["difficult"]
+    },
+    {
+      "featureId": "feat_north_door",
+      "kind": "door",
+      "cells": [
+        {
+          "x": 9,
+          "y": 1
+        }
+      ],
+      "tags": ["entrance"]
+    }
+  ],
+  "markers": [
+    {
+      "markerId": "mk_entrance",
+      "cell": {
+        "x": 9,
+        "y": 1
+      },
+      "label": "North door"
+    },
+    {
+      "markerId": "mk_altar",
+      "cell": {
+        "x": 9,
+        "y": 17
+      },
+      "label": "Altar"
+    }
+  ],
+  "zones": [
+    {
+      "zoneId": "zone_party",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 7,
+          "y": 2
+        },
+        {
+          "x": 8,
+          "y": 2
+        },
+        {
+          "x": 9,
+          "y": 2
+        },
+        {
+          "x": 10,
+          "y": 2
+        },
+        {
+          "x": 11,
+          "y": 2
+        },
+        {
+          "x": 12,
+          "y": 2
+        },
+        {
+          "x": 7,
+          "y": 3
+        },
+        {
+          "x": 8,
+          "y": 3
+        },
+        {
+          "x": 9,
+          "y": 3
+        },
+        {
+          "x": 10,
+          "y": 3
+        },
+        {
+          "x": 11,
+          "y": 3
+        },
+        {
+          "x": 12,
+          "y": 3
+        }
+      ],
+      "anchorMarkerId": "mk_entrance"
+    },
+    {
+      "zoneId": "zone_foes",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 7,
+          "y": 16
+        },
+        {
+          "x": 8,
+          "y": 16
+        },
+        {
+          "x": 9,
+          "y": 16
+        },
+        {
+          "x": 10,
+          "y": 16
+        },
+        {
+          "x": 11,
+          "y": 16
+        },
+        {
+          "x": 12,
+          "y": 16
+        },
+        {
+          "x": 7,
+          "y": 17
+        },
+        {
+          "x": 8,
+          "y": 17
+        },
+        {
+          "x": 9,
+          "y": 17
+        },
+        {
+          "x": 10,
+          "y": 17
+        },
+        {
+          "x": 11,
+          "y": 17
+        },
+        {
+          "x": 12,
+          "y": 17
+        }
+      ],
+      "anchorMarkerId": "mk_altar"
+    }
+  ],
+  "diagonalRule": "5ft"
+}
