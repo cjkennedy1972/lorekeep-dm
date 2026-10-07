@@ -3,3 +3,7 @@ export * from './rng.js';
 export * from './dice.js';
 export * from './map/validate.js';
 export * from './map/load.js';
+export type { Catalog } from './catalog/types.js';
+export * from './character/types.js';
+export * from './character/validate.js';
+export * from './character/derive.js';
