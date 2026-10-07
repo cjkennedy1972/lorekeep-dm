@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 export const MAX_MAP_DIM = 60;
+export const MAX_MAP_CELLS = MAX_MAP_DIM * MAX_MAP_DIM;
+// one [index, run] pair per cell is the worst case
+const MAX_RLE_LEN = MAX_MAP_CELLS * 2;
 
 export const CoverSchema = z.enum(['none', 'half', 'three-quarters', 'full']);
 export type Cover = z.infer<typeof CoverSchema>;
@@ -57,7 +60,7 @@ export const BattlemapSchema = z.object({
   h: z.int().min(1).max(MAX_MAP_DIM),
   palette: z.array(PaletteEntrySchema).min(1),
   // flat [paletteIndex, runLength, ...] pairs, row-major
-  cells: z.array(z.int().nonnegative()),
+  cells: z.array(z.int().nonnegative()).max(MAX_RLE_LEN),
   edges: z.array(EdgeSchema),
   features: z.array(FeatureSchema),
   markers: z.array(MarkerSchema),
@@ -77,10 +80,31 @@ export function rleEncode(grid: readonly number[]): number[] {
   return out;
 }
 
+export type RleErrorCode = 'RLE_ODD_LENGTH' | 'RLE_BAD_RUN' | 'RLE_TOO_LARGE';
+
+export class RleError extends Error {
+  constructor(
+    readonly code: RleErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RleError';
+  }
+}
+
 export function rleDecode(rle: readonly number[]): number[] {
+  if (rle.length % 2 !== 0)
+    throw new RleError('RLE_ODD_LENGTH', 'rle has a trailing element');
   const out: number[] = [];
-  for (let i = 0; i + 1 < rle.length; i += 2) {
-    for (let n = 0; n < rle[i + 1]!; n++) out.push(rle[i]!);
+  let total = 0;
+  for (let i = 0; i < rle.length; i += 2) {
+    const run = rle[i + 1]!;
+    if (!Number.isInteger(run) || run < 1)
+      throw new RleError('RLE_BAD_RUN', `invalid run length ${run}`);
+    total += run;
+    if (total > MAX_MAP_CELLS)
+      throw new RleError('RLE_TOO_LARGE', `rle exceeds ${MAX_MAP_CELLS} cells`);
+    for (let n = 0; n < run; n++) out.push(rle[i]!);
   }
   return out;
 }
