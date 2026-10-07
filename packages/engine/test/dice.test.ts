@@ -89,7 +89,9 @@ test('invalid expressions throw', () => {
 
 test('no Math.random or Date in src', () => {
   const dir = join(import.meta.dirname, '../src');
-  for (const f of readdirSync(dir)) {
+  for (const f of readdirSync(dir, { recursive: true })
+    .map(String)
+    .filter((f) => f.endsWith('.ts'))) {
     expect(readFileSync(join(dir, f), 'utf8'), f).not.toMatch(
       /Math\.random|\bDate\b/,
     );
