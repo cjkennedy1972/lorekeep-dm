@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   createServer,
   type IncomingMessage,
@@ -81,7 +82,7 @@ export function createMock(
     members: Set<string>;
   };
   const rooms = new Map<string, MockRoom>();
-  const newCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+  const newCode = () => randomBytes(16).toString('base64url');
   // Like the real server: the plaintext code is only in the response that minted it.
   const roomView = (r: MockRoom, accountId: string, minted = false) => ({
     id: r.id,
@@ -395,9 +396,7 @@ export function createMock(
     }
     const joinRoute = /^\/api\/invites\/([^/]+)\/join$/.exec(url.pathname);
     if (req.method === 'POST' && joinRoute) {
-      const r = [...rooms.values()].find(
-        (x) => x.code === joinRoute[1]!.toUpperCase(),
-      );
+      const r = [...rooms.values()].find((x) => x.code === joinRoute[1]);
       if (!r)
         return err(
           res,

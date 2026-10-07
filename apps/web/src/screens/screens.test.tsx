@@ -64,7 +64,7 @@ test('rooms list, create, lobby shows live seats and announces presence politely
     screen.getByRole('button', { name: 'Copy invite link' }),
   );
   expect(writeText).toHaveBeenCalledWith(
-    expect.stringMatching(/\/join\/[A-Z0-9]{6}$/),
+    expect.stringMatching(/\/join\/[A-Za-z0-9_-]{22}$/),
   );
   expect(
     await screen.findByText('Invite link copied to clipboard.'),
@@ -100,8 +100,10 @@ test('host reloading the lobby gets no stale/blank link and can create a new one
   const input = (await screen.findByLabelText(
     'Invite link',
   )) as HTMLInputElement;
-  expect(input.value).toMatch(/\/join\/[A-Z0-9]{6}$/);
+  expect(input.value).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
   expect(input.value).not.toContain(created.room.code);
+  // The lobby has replaced its former invite URL with the newly minted code.
+  expect(input.value).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
 });
 
 test('invalid invite shows a clear error', async () => {

@@ -109,9 +109,23 @@ describe('rooms + invites (postgres)', () => {
     ).json().room;
     expect(regen.code).not.toBe(room.code);
     const late = await account();
-    expect(
-      (await call(late, 'POST', `/api/join/${room.code}`)).statusCode,
-    ).toBe(404);
+    const invalidOld = await call(
+      late,
+      'POST',
+      `/api/invites/${room.code}/join`,
+    );
+    expect(invalidOld.statusCode).toBe(404);
+    expect(invalidOld.json()).toMatchObject({ code: 'INVITE_INVALID' });
+    const acceptedNew = await call(
+      late,
+      'POST',
+      `/api/invites/${regen.code}/join`,
+    );
+    expect(acceptedNew.statusCode).toBe(200);
+    expect(acceptedNew.json().room).toMatchObject({
+      id: room.id,
+      isHost: false,
+    });
     // revoke kills the new one
     expect(
       (await call(host, 'DELETE', `/api/rooms/${room.id}/invite`)).statusCode,
