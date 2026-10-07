@@ -103,6 +103,7 @@ test('host reloading the lobby gets no stale/blank link and can create a new one
   expect(input.value).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
   expect(input.value).not.toContain(created.room.code);
   // The lobby has replaced its former invite URL with the newly minted code.
+  expect(input.value.split('/join/')[1]).not.toBe(created.room.code);
   expect(input.value).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
 });
 

@@ -56,6 +56,28 @@ test('keyboard-only: create a table, copy the invite, two players see each other
   );
 });
 
+test('navigation to a new lobby clears the plaintext invite from history.state', async ({
+  browser,
+}) => {
+  const host = await browser.newContext();
+  await signedIn(host, 'History');
+  const page = await host.newPage();
+  await page.goto('/rooms');
+  await page.getByLabel('Table name').fill('History Hall');
+  await page.getByRole('button', { name: 'Create table' }).click();
+  await page.getByRole('heading', { name: 'History Hall' }).waitFor();
+
+  const invite = (await page.getByLabel('Invite link').inputValue()).split(
+    '/join/',
+  )[1];
+  expect(invite).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  await expect.poll(() => page.evaluate(() => history.state?.usr)).toBeNull();
+  expect(
+    JSON.stringify(await page.evaluate(() => history.state)),
+  ).not.toContain(invite);
+  await host.close();
+});
+
 test('lobby fits a 360px viewport without horizontal scroll', async ({
   browser,
 }) => {

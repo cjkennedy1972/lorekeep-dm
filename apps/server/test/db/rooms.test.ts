@@ -47,6 +47,26 @@ afterAll(async () => {
 });
 
 describe('rooms + invites (postgres)', () => {
+  it('host room fetch omits the invite code and the database stores only its hash', async () => {
+    const host = await account();
+    const made = await call(host, 'POST', '/api/rooms', {
+      name: 'Private Code',
+    });
+    expect(made.statusCode).toBe(201);
+    const created = made.json().room;
+    const fetched = await call(host, 'GET', `/api/rooms/${created.id}`);
+    expect(fetched.statusCode).toBe(200);
+    expect(fetched.json().room).toMatchObject({ id: created.id, isHost: true });
+    expect(fetched.json().room).not.toHaveProperty('code');
+
+    const stored = await db.query(
+      'SELECT to_jsonb(s) AS row FROM sessions s WHERE id=$1',
+      [created.id],
+    );
+    expect(stored.rows[0].row.invite_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.rows[0].row.invite_hash).not.toBe(created.code);
+    expect(stored.rows[0].row).not.toHaveProperty('code');
+  });
   it('create/list, hashed invite, regenerate + revoke, idempotent join', async () => {
     const host = await account();
     const guest = await account();
