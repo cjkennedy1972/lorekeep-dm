@@ -6,7 +6,9 @@ import type { Battlemap, GridPos } from '@game/schema';
  * Diagonal convention (map `diagonalRule`):
  * - '5ft' (default): every step, including diagonals, costs 5 ft, so the
  *   distance between cells is Chebyshev distance x 5.
- * - 'alternate': the 5-10-5 variant; diagonals alternate 5 ft and 10 ft.
+ * - 'alternate': the 5-10-5 variant; diagonals alternate 5 ft and 10 ft. The
+ *   closed form is symmetric but NOT a metric (parity is path dependent, so
+ *   the triangle inequality can fail); the property tests cover '5ft' only.
  *
  * OPEN ITEM (docs/decisions.md): the SRD 5.2.1 text has not been read to
  * confirm that 5 ft per diagonal is its default. Treated as unconfirmed.

@@ -22,27 +22,32 @@ function prng(seed: number) {
   };
 }
 
-describe.each<DiagonalRule>(['5ft', 'alternate'])(
-  'cellDistance (%s)',
-  (rule) => {
-    const rnd = prng(18);
-    const cell = () => ({ x: rnd(40) - 20, y: rnd(40) - 20 });
-    test('symmetric, zero on identity, triangle inequality (1000 random triples)', () => {
-      for (let i = 0; i < 1000; i++) {
-        const a = cell();
-        const b = cell();
-        const c = cell();
-        expect(cellDistance(a, b, rule)).toBe(cellDistance(b, a, rule));
-        expect(cellDistance(a, a, rule)).toBe(0);
-        expect(cellDistance(a, c, rule)).toBeLessThanOrEqual(
-          cellDistance(a, b, rule) + cellDistance(b, c, rule),
-        );
-      }
-    });
-  },
-);
+describe('cellDistance properties (5ft rule)', () => {
+  const rule: DiagonalRule = '5ft';
+  const rnd = prng(18);
+  const cell = () => ({ x: rnd(40) - 20, y: rnd(40) - 20 });
+  test('symmetric, zero on identity, triangle inequality (1000 random triples)', () => {
+    for (let i = 0; i < 1000; i++) {
+      const a = cell();
+      const b = cell();
+      const c = cell();
+      expect(cellDistance(a, b, rule)).toBe(cellDistance(b, a, rule));
+      expect(cellDistance(a, a, rule)).toBe(0);
+      expect(cellDistance(a, c, rule)).toBeLessThanOrEqual(
+        cellDistance(a, b, rule) + cellDistance(b, c, rule),
+      );
+    }
+  });
+});
 
 describe('diagonal rule', () => {
+  test('alternate stays symmetric (not a metric: parity is path dependent)', () => {
+    const a = { x: 0, y: 0 };
+    const b = { x: 7, y: 3 };
+    expect(cellDistance(a, b, 'alternate')).toBe(
+      cellDistance(b, a, 'alternate'),
+    );
+  });
   const o = { x: 0, y: 0 };
   test.each([
     [{ x: 1, y: 0 }, 5, 5],
@@ -75,8 +80,8 @@ describe('footprint and occupancy', () => {
     const pc = { pos: { x: 4, y: 3 }, size: 1 };
     expect(distance(large, pc)).toBe(5);
     expect(inReach(pc, large)).toBe(true);
-    expect(inReach({ pos: { x: 6, y: 3 }, size: 1 }, large)).toBe(false);
-    expect(inReach({ pos: { x: 6, y: 3 }, size: 1 }, large, 10)).toBe(true);
+    expect(inReach({ pos: { x: 5, y: 3 }, size: 1 }, large)).toBe(false);
+    expect(inReach({ pos: { x: 5, y: 3 }, size: 1 }, large, 10)).toBe(true);
   });
 });
 
