@@ -52,7 +52,8 @@ describe('catalog entries', () => {
     expect(CatalogEntrySchema.parse(e)).toEqual(e);
   });
   test.each(catalogValid)('rejects $kind missing catalogVersion', (e) => {
-    const { catalogVersion: _v, ...rest } = e;
+    const rest: Record<string, unknown> = { ...e };
+    delete rest.catalogVersion;
     expect(CatalogEntrySchema.safeParse(rest).success).toBe(false);
   });
   test.each(catalogValid)('rejects $kind with non-SRD source', (e) => {
