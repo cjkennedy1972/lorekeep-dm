@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-export const CatalogIdSchema = z.string().min(1);
+export const CatalogIdSchema = z
+  .string()
+  .regex(
+    /^(species|class|subclass|background|equipment|spell|monster|condition):[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    'Expected a lowercase kebab-case catalog id with a kind prefix',
+  );
 
 const base = {
   id: CatalogIdSchema,
@@ -20,7 +25,7 @@ export const SpeciesEntrySchema = z.object({
   conditionRefs: z.array(CatalogIdSchema).optional(),
 });
 export const ClassFeatureSchema = z.object({
-  id: CatalogIdSchema,
+  id: z.string().min(1),
   level: z.int().min(1).max(20),
   name: z.string().min(1),
   summary: z.string().min(1),
@@ -88,15 +93,20 @@ export const ConditionEntrySchema = z.object({
   description: z.string().min(1),
 });
 
-export const CatalogEntrySchema = z.discriminatedUnion('kind', [
-  SpeciesEntrySchema,
-  ClassEntrySchema,
-  SubclassEntrySchema,
-  BackgroundEntrySchema,
-  EquipmentEntrySchema,
-  SpellEntrySchema,
-  MonsterEntrySchema,
-  ConditionEntrySchema,
-]);
+export const CatalogEntrySchema = z
+  .discriminatedUnion('kind', [
+    SpeciesEntrySchema,
+    ClassEntrySchema,
+    SubclassEntrySchema,
+    BackgroundEntrySchema,
+    EquipmentEntrySchema,
+    SpellEntrySchema,
+    MonsterEntrySchema,
+    ConditionEntrySchema,
+  ])
+  .refine((entry) => entry.id.startsWith(`${entry.kind}:`), {
+    path: ['id'],
+    message: 'Catalog id prefix must match entry kind',
+  });
 export type CatalogEntry = z.infer<typeof CatalogEntrySchema>;
 export type CatalogKind = CatalogEntry['kind'];

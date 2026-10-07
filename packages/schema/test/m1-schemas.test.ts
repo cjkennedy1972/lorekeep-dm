@@ -12,39 +12,43 @@ const b = { catalogVersion: '1', srd, name: 'X' };
 const uuid = '123e4567-e89b-42d3-a456-426614174000';
 
 const catalogValid = [
-  { kind: 'species', id: 'human', size: 'medium', speed: 30 },
+  { kind: 'species', id: 'species:human', size: 'medium', speed: 30 },
   {
     kind: 'class',
-    id: 'fighter',
+    id: 'class:fighter',
     hitDie: 10,
     primaryAbility: ['str'],
     saveProficiencies: ['str', 'con'],
   },
-  { kind: 'background', id: 'soldier', skillProficiencies: ['athletics'] },
+  {
+    kind: 'background',
+    id: 'background:soldier',
+    skillProficiencies: ['athletics'],
+  },
   {
     kind: 'equipment',
-    id: 'longsword',
+    id: 'equipment:longsword',
     category: 'weapon',
     costCp: 1500,
     weight: 3,
   },
   {
     kind: 'spell',
-    id: 'fire-bolt',
+    id: 'spell:fire-bolt',
     level: 0,
     school: 'evocation',
     classes: ['wizard'],
   },
   {
     kind: 'monster',
-    id: 'goblin',
+    id: 'monster:goblin',
     cr: 0.25,
     hp: 7,
     ac: 15,
     speed: 30,
     size: 'small',
   },
-  { kind: 'condition', id: 'prone', description: 'Lying down.' },
+  { kind: 'condition', id: 'condition:prone', description: 'Lying down.' },
 ].map((e) => ({ ...e, ...b }));
 
 describe('catalog entries', () => {
@@ -62,6 +66,16 @@ describe('catalog entries', () => {
         .success,
     ).toBe(false);
   });
+  test('rejects malformed catalog ids', () => {
+    expect(
+      CatalogEntrySchema.safeParse({ ...catalogValid[0], id: 'Species:Bad_ID' })
+        .success,
+    ).toBe(false);
+    expect(
+      CatalogEntrySchema.safeParse({ ...catalogValid[0], id: 'class:human' })
+        .success,
+    ).toBe(false);
+  });
   test('rejects unknown kind', () => {
     expect(
       CatalogEntrySchema.safeParse({ ...b, id: 'x', kind: 'beholder' }).success,
@@ -72,18 +86,18 @@ describe('catalog entries', () => {
 const character = {
   id: uuid,
   name: 'Ayla',
-  speciesId: 'human',
-  classId: 'fighter',
-  backgroundId: 'soldier',
+  speciesId: 'species:human',
+  classId: 'class:fighter',
+  backgroundId: 'background:soldier',
   level: 1,
   abilities: { str: 16, dex: 12, con: 14, int: 8, wis: 10, cha: 10 },
   proficiencies: { skills: ['athletics'], saves: ['str', 'con'], tools: [] },
-  equipment: [{ itemId: 'longsword', qty: 1, equipped: true }],
+  equipment: [{ itemId: 'equipment:longsword', qty: 1, equipped: true }],
   spellsKnown: [],
   spellsPrepared: [],
   slots: { '1': { max: 2, used: 0 } },
   hp: { current: 12, max: 12, temp: 0 },
-  conditions: [{ conditionId: 'prone' }],
+  conditions: [{ conditionId: 'condition:prone' }],
 };
 
 test('Character parses valid and rejects invalid', () => {
@@ -146,8 +160,8 @@ const events: EngineEvent[] = [
   { type: 'OpportunityTriggered', moverId: 'a', attackerId: 'b' },
   { type: 'AreaResolved', cells: [p], affected: ['a'] },
   { type: 'HpChanged', entityId: 'a', delta: -3, hp: 9 },
-  { type: 'ConditionApplied', entityId: 'a', conditionId: 'prone' },
-  { type: 'ConditionRemoved', entityId: 'a', conditionId: 'prone' },
+  { type: 'ConditionApplied', entityId: 'a', conditionId: 'condition:prone' },
+  { type: 'ConditionRemoved', entityId: 'a', conditionId: 'condition:prone' },
   { type: 'SlotSpent', entityId: 'a', level: 1 },
 ];
 
