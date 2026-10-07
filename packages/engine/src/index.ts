@@ -10,3 +10,5 @@ export * from './character/derive.js';
 
 export * from './combat/state.js';
 export * from './combat/commands.js';
+export * from './combat/checks.js';
+export * from './combat/conditions.js';
