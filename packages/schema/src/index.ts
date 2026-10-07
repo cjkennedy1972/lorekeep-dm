@@ -6,3 +6,4 @@ export * from './accounts.js';
 export * from './catalog.js';
 export * from './character.js';
 export * from './combat.js';
+export * from './battlemap.js';
