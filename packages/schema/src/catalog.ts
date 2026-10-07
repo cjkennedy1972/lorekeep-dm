@@ -79,12 +79,141 @@ export const EquipmentEntrySchema = z.object({
   costCp: z.int().nonnegative(),
   weight: z.number().nonnegative(),
 });
+export const SpellDamageTypeSchema = z.enum([
+  'acid',
+  'bludgeoning',
+  'cold',
+  'fire',
+  'force',
+  'lightning',
+  'necrotic',
+  'piercing',
+  'poison',
+  'psychic',
+  'radiant',
+  'slashing',
+  'thunder',
+]);
+const DiceSchema = z
+  .string()
+  .regex(/^\d+d\d+(?:\+\d+)?$/, 'Expected dice like 2d8 or 1d4+1');
+export const SpellRangeSchema = z.union([
+  z.object({ kind: z.enum(['self', 'touch', 'unlimited']) }),
+  z.object({ kind: z.literal('feet'), feet: z.int().positive() }),
+]);
+export const SpellDurationSchema = z.union([
+  z.object({
+    kind: z.enum([
+      'instantaneous',
+      'until-dispelled',
+      'until-dispelled-or-triggered',
+    ]),
+  }),
+  z.object({
+    kind: z.literal('timed'),
+    amount: z.int().positive(),
+    unit: z.enum(['round', 'minute', 'hour', 'day']),
+    upTo: z.boolean(),
+  }),
+]);
+const SaveOutcomeSchema = z.object({
+  ability: AbilitySchema,
+  /** none: success negates the effect; half: half damage; partial: a reduced effect. */
+  onSuccess: z.enum(['none', 'half', 'partial']),
+});
+export const SpellResolutionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('attack'),
+    attack: z.enum(['ranged', 'melee', 'weapon']),
+    /** A second effect that forces a save regardless of the attack result. */
+    alsoSave: SaveOutcomeSchema.optional(),
+  }),
+  z.object({ kind: z.literal('save'), ...SaveOutcomeSchema.shape }),
+  /** Applies to chosen targets (or self) with no attack roll or save. */
+  z.object({ kind: z.literal('auto') }),
+  /** No direct effect on a target: detection, creation, environment, communication. */
+  z.object({ kind: z.literal('utility') }),
+]);
+export const SpellDamageSchema = z.object({
+  dice: DiceSchema,
+  /** One type, or the types the caster chooses between. */
+  types: z.array(SpellDamageTypeSchema).min(1),
+  /** Instances of `dice` (darts, rays, beams); defaults to 1. */
+  count: z.int().positive().optional(),
+  addsModifier: z.boolean().optional(),
+  scaling: z
+    .object({
+      /** Added per spell slot level above the spell's level. */
+      slot: z
+        .object({
+          dice: DiceSchema.optional(),
+          count: z.int().positive().optional(),
+        })
+        .optional(),
+      /** Totals at character levels 5, 11 and 17. */
+      cantrip: z
+        .object({
+          dice: z.array(DiceSchema).length(3).optional(),
+          count: z.array(z.int().positive()).length(3).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  note: z.string().min(1).optional(),
+});
+export const SpellHealingSchema = z.object({
+  dice: DiceSchema,
+  addsModifier: z.boolean(),
+  slotDice: DiceSchema.optional(),
+});
+/**
+ * size: sphere/cylinder = radius, cube/square = edge, cone/line = length,
+ * emanation = distance from the origin, all in feet; width/height in feet.
+ */
+export const SpellTemplateSchema = z.object({
+  shape: z.enum([
+    'sphere',
+    'cube',
+    'cone',
+    'line',
+    'cylinder',
+    'emanation',
+    'square',
+  ]),
+  size: z.int().positive(),
+  width: z.int().positive().optional(),
+  height: z.int().positive().optional(),
+});
 export const SpellEntrySchema = z.object({
   ...base,
   kind: z.literal('spell'),
   level: z.int().min(0).max(9),
   school: z.string().min(1),
   classes: z.array(z.string()),
+  castingTime: z
+    .object({
+      unit: z.enum(['action', 'bonus-action', 'reaction', 'minute', 'hour']),
+      amount: z.int().positive().optional(),
+      trigger: z.string().min(1).optional(),
+      note: z.string().min(1).optional(),
+    })
+    .optional(),
+  ritual: z.boolean().optional(),
+  range: SpellRangeSchema.optional(),
+  components: z
+    .object({
+      verbal: z.boolean(),
+      somatic: z.boolean(),
+      material: z.boolean(),
+      materials: z.string().min(1).optional(),
+    })
+    .optional(),
+  duration: SpellDurationSchema.optional(),
+  concentration: z.boolean().optional(),
+  resolution: SpellResolutionSchema.optional(),
+  damage: z.array(SpellDamageSchema).optional(),
+  healing: SpellHealingSchema.optional(),
+  template: SpellTemplateSchema.optional(),
 });
 export const MonsterSizeSchema = z.enum([
   'tiny',

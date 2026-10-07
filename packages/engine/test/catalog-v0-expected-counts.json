@@ -9,5 +9,14 @@
   },
   "class": 12,
   "subclass": 12,
-  "monster": 134
+  "monster": 134,
+  "spell": {
+    "total": 183,
+    "byLevel": {
+      "0": 27,
+      "1": 57,
+      "2": 57,
+      "3": 42
+    }
+  }
 }
