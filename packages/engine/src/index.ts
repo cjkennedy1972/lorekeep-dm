@@ -7,6 +7,7 @@ export type { Catalog } from './catalog/types.js';
 export * from './character/types.js';
 export * from './character/validate.js';
 export * from './character/derive.js';
+export * from './character/builder.js';
 
 export * from './combat/state.js';
 export * from './combat/commands.js';
