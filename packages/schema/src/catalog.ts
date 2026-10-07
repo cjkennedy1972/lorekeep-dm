@@ -94,7 +94,7 @@ export const SpellDamageTypeSchema = z.enum([
   'slashing',
   'thunder',
 ]);
-const DiceSchema = z
+const SpellDiceSchema = z
   .string()
   .regex(/^\d+d\d+(?:\+\d+)?$/, 'Expected dice like 2d8 or 1d4+1');
 export const SpellRangeSchema = z.union([
@@ -135,7 +135,7 @@ export const SpellResolutionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('utility') }),
 ]);
 export const SpellDamageSchema = z.object({
-  dice: DiceSchema,
+  dice: SpellDiceSchema,
   /** One type, or the types the caster chooses between. */
   types: z.array(SpellDamageTypeSchema).min(1),
   /** Instances of `dice` (darts, rays, beams); defaults to 1. */
@@ -146,14 +146,14 @@ export const SpellDamageSchema = z.object({
       /** Added per spell slot level above the spell's level. */
       slot: z
         .object({
-          dice: DiceSchema.optional(),
+          dice: SpellDiceSchema.optional(),
           count: z.int().positive().optional(),
         })
         .optional(),
       /** Totals at character levels 5, 11 and 17. */
       cantrip: z
         .object({
-          dice: z.array(DiceSchema).length(3).optional(),
+          dice: z.array(SpellDiceSchema).length(3).optional(),
           count: z.array(z.int().positive()).length(3).optional(),
         })
         .optional(),
@@ -162,9 +162,9 @@ export const SpellDamageSchema = z.object({
   note: z.string().min(1).optional(),
 });
 export const SpellHealingSchema = z.object({
-  dice: DiceSchema,
+  dice: SpellDiceSchema,
   addsModifier: z.boolean(),
-  slotDice: DiceSchema.optional(),
+  slotDice: SpellDiceSchema.optional(),
 });
 /**
  * size: sphere/cylinder = radius, cube/square = edge, cone/line = length,
