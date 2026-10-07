@@ -37,7 +37,7 @@ test('keyboard-only: create a table, copy the invite, two players see each other
     page.getByText('Invite link copied to clipboard.'),
   ).toBeVisible();
   const link = await page.evaluate(() => navigator.clipboard.readText());
-  expect(link).toMatch(/\/join\/[\w-]{20,}$/);
+  expect(link).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
 
   // Second browser profile: logged out first, then redirected back after sign-in.
   const guest = await browser.newContext();
