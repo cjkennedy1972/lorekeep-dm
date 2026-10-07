@@ -1,0 +1,784 @@
+[
+  {
+    "id": "class:paladin",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Paladin, p. 53"
+    },
+    "name": "Paladin",
+    "hitDie": 10,
+    "primaryAbility": ["str", "cha"],
+    "saveProficiencies": ["wis", "cha"],
+    "armorProficiencies": [
+      "Light armor",
+      "Medium armor",
+      "Heavy armor",
+      "Shields"
+    ],
+    "weaponProficiencies": ["Simple weapons", "Martial weapons"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Athletics",
+        "Insight",
+        "Intimidation",
+        "Medicine",
+        "Persuasion",
+        "Religion"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Chain Mail",
+          "Shield",
+          "Longsword",
+          "6 Javelins",
+          "Holy Symbol",
+          "Priest's Pack",
+          "9 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["150 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:paladin:lay-on-hands",
+        "level": 1,
+        "name": "Lay On Hands",
+        "summary": "Healing pool of five times your Paladin level, refreshed on a Long Rest; Bonus Action touch restores Hit Points or spends 5 points to remove the Poisoned condition."
+      },
+      {
+        "id": "feature:paladin:spellcasting",
+        "level": 1,
+        "name": "Spellcasting",
+        "summary": "Cast prepared Paladin spells using Charisma; regain all spell slots after a Long Rest; a Holy Symbol is your Spellcasting Focus."
+      },
+      {
+        "id": "feature:paladin:weapon-mastery",
+        "level": 1,
+        "name": "Weapon Mastery",
+        "summary": "Use the mastery properties of two kinds of weapons you are proficient with; change the choices after a Long Rest."
+      },
+      {
+        "id": "feature:paladin:fighting-style",
+        "level": 2,
+        "name": "Fighting Style",
+        "summary": "Gain a Fighting Style feat or the Blessed Warrior option (two Cleric cantrips)."
+      },
+      {
+        "id": "feature:paladin:paladins-smite",
+        "level": 2,
+        "name": "Paladin's Smite",
+        "summary": "Always have Divine Smite prepared and cast it once per Long Rest without expending a spell slot."
+      },
+      {
+        "id": "feature:paladin:channel-divinity",
+        "level": 3,
+        "name": "Channel Divinity",
+        "summary": "Two uses, one regained on a Short Rest and all on a Long Rest; initially gain Divine Sense."
+      },
+      {
+        "id": "feature:paladin:paladin-subclass",
+        "level": 3,
+        "name": "Paladin Subclass",
+        "summary": "Choose a Paladin subclass."
+      },
+      {
+        "id": "feature:paladin:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:paladin:extra-attack",
+        "level": 5,
+        "name": "Extra Attack",
+        "summary": "Attack twice when you take the Attack action."
+      },
+      {
+        "id": "feature:paladin:faithful-steed",
+        "level": 5,
+        "name": "Faithful Steed",
+        "summary": "Always have Find Steed prepared and cast it once per Long Rest without expending a spell slot."
+      }
+    ],
+    "spellcastingAbility": "cha",
+    "spellSlots": [[2], [2], [3], [3], [4, 2]],
+    "preparedSpells": [2, 3, 4, 5, 6]
+  },
+  {
+    "id": "class:ranger",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Ranger, p. 57"
+    },
+    "name": "Ranger",
+    "hitDie": 10,
+    "primaryAbility": ["dex", "wis"],
+    "saveProficiencies": ["str", "dex"],
+    "armorProficiencies": ["Light armor", "Medium armor", "Shields"],
+    "weaponProficiencies": ["Simple weapons", "Martial weapons"],
+    "skillChoices": {
+      "count": 3,
+      "from": [
+        "Animal Handling",
+        "Athletics",
+        "Insight",
+        "Investigation",
+        "Nature",
+        "Perception",
+        "Stealth",
+        "Survival"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Studded Leather Armor",
+          "Scimitar",
+          "Shortsword",
+          "Longbow",
+          "20 Arrows",
+          "Quiver",
+          "Druidic Focus (sprig of mistletoe)",
+          "Explorer's Pack",
+          "7 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["150 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:ranger:spellcasting",
+        "level": 1,
+        "name": "Spellcasting",
+        "summary": "Cast prepared Ranger spells using Wisdom; regain all spell slots after a Long Rest; a Druidic Focus is your Spellcasting Focus."
+      },
+      {
+        "id": "feature:ranger:favored-enemy",
+        "level": 1,
+        "name": "Favored Enemy",
+        "summary": "Always have Hunter's Mark prepared and cast it without a spell slot twice per Long Rest (three times from level 5)."
+      },
+      {
+        "id": "feature:ranger:weapon-mastery",
+        "level": 1,
+        "name": "Weapon Mastery",
+        "summary": "Use the mastery properties of two kinds of weapons you are proficient with; change the choices after a Long Rest."
+      },
+      {
+        "id": "feature:ranger:deft-explorer",
+        "level": 2,
+        "name": "Deft Explorer",
+        "summary": "Gain Expertise in one skill proficiency and learn two languages."
+      },
+      {
+        "id": "feature:ranger:fighting-style",
+        "level": 2,
+        "name": "Fighting Style",
+        "summary": "Gain a Fighting Style feat or the Druidic Warrior option (two Druid cantrips)."
+      },
+      {
+        "id": "feature:ranger:ranger-subclass",
+        "level": 3,
+        "name": "Ranger Subclass",
+        "summary": "Choose a Ranger subclass."
+      },
+      {
+        "id": "feature:ranger:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:ranger:extra-attack",
+        "level": 5,
+        "name": "Extra Attack",
+        "summary": "Attack twice when you take the Attack action."
+      }
+    ],
+    "spellcastingAbility": "wis",
+    "spellSlots": [[2], [2], [3], [3], [4, 2]],
+    "preparedSpells": [2, 3, 4, 5, 6]
+  },
+  {
+    "id": "class:rogue",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Rogue, p. 61"
+    },
+    "name": "Rogue",
+    "hitDie": 8,
+    "primaryAbility": ["dex"],
+    "saveProficiencies": ["dex", "int"],
+    "armorProficiencies": ["Light armor"],
+    "weaponProficiencies": [
+      "Simple weapons",
+      "Martial weapons that have the Finesse or Light property"
+    ],
+    "toolProficiencies": ["Thieves' Tools"],
+    "skillChoices": {
+      "count": 4,
+      "from": [
+        "Acrobatics",
+        "Athletics",
+        "Deception",
+        "Insight",
+        "Intimidation",
+        "Investigation",
+        "Perception",
+        "Persuasion",
+        "Sleight of Hand",
+        "Stealth"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Leather Armor",
+          "2 Daggers",
+          "Shortsword",
+          "Shortbow",
+          "20 Arrows",
+          "Quiver",
+          "Thieves' Tools",
+          "Burglar's Pack",
+          "8 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["100 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:rogue:expertise",
+        "level": 1,
+        "name": "Expertise",
+        "summary": "Gain Expertise in two skill proficiencies of your choice."
+      },
+      {
+        "id": "feature:rogue:sneak-attack",
+        "level": 1,
+        "name": "Sneak Attack",
+        "summary": "Once per turn, extra damage (1d6 at level 1, 2d6 at 3, 3d6 at 5) on a Finesse or Ranged weapon hit with Advantage or an adjacent non-Incapacitated ally of the target."
+      },
+      {
+        "id": "feature:rogue:thieves-cant",
+        "level": 1,
+        "name": "Thieves' Cant",
+        "summary": "Know Thieves' Cant and one other language of your choice."
+      },
+      {
+        "id": "feature:rogue:weapon-mastery",
+        "level": 1,
+        "name": "Weapon Mastery",
+        "summary": "Use the mastery properties of two kinds of weapons you are proficient with; change the choices after a Long Rest."
+      },
+      {
+        "id": "feature:rogue:cunning-action",
+        "level": 2,
+        "name": "Cunning Action",
+        "summary": "Take the Dash, Disengage or Hide action as a Bonus Action."
+      },
+      {
+        "id": "feature:rogue:rogue-subclass",
+        "level": 3,
+        "name": "Rogue Subclass",
+        "summary": "Choose a Rogue subclass."
+      },
+      {
+        "id": "feature:rogue:steady-aim",
+        "level": 3,
+        "name": "Steady Aim",
+        "summary": "If you have not moved this turn, Bonus Action for Advantage on your next attack roll; your Speed is then 0 until the turn ends."
+      },
+      {
+        "id": "feature:rogue:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:rogue:cunning-strike",
+        "level": 5,
+        "name": "Cunning Strike",
+        "summary": "Forgo Sneak Attack dice to add Poison, Trip or Withdraw effects to a Sneak Attack."
+      },
+      {
+        "id": "feature:rogue:uncanny-dodge",
+        "level": 5,
+        "name": "Uncanny Dodge",
+        "summary": "Reaction to halve the damage of an attack that hits you from an attacker you can see."
+      }
+    ]
+  },
+  {
+    "id": "class:sorcerer",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Sorcerer, p. 64"
+    },
+    "name": "Sorcerer",
+    "hitDie": 6,
+    "primaryAbility": ["cha"],
+    "saveProficiencies": ["con", "cha"],
+    "weaponProficiencies": ["Simple weapons"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Arcana",
+        "Deception",
+        "Insight",
+        "Intimidation",
+        "Persuasion",
+        "Religion"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Spear",
+          "2 Daggers",
+          "Arcane Focus (crystal)",
+          "Dungeoneer's Pack",
+          "28 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["50 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:sorcerer:spellcasting",
+        "level": 1,
+        "name": "Spellcasting",
+        "summary": "Cast Sorcerer spells using Charisma; four cantrips and prepared spells per the class table; an Arcane Focus is your Spellcasting Focus."
+      },
+      {
+        "id": "feature:sorcerer:innate-sorcery",
+        "level": 1,
+        "name": "Innate Sorcery",
+        "summary": "Bonus Action for 1 minute: +1 to Sorcerer spell save DC and Advantage on Sorcerer spell attack rolls; two uses per Long Rest."
+      },
+      {
+        "id": "feature:sorcerer:font-of-magic",
+        "level": 2,
+        "name": "Font of Magic",
+        "summary": "Gain Sorcery Points; convert spell slots to points and points to spell slots."
+      },
+      {
+        "id": "feature:sorcerer:metamagic",
+        "level": 2,
+        "name": "Metamagic",
+        "summary": "Learn two Metamagic options that spend Sorcery Points to modify spells."
+      },
+      {
+        "id": "feature:sorcerer:sorcerer-subclass",
+        "level": 3,
+        "name": "Sorcerer Subclass",
+        "summary": "Choose a Sorcerer subclass."
+      },
+      {
+        "id": "feature:sorcerer:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:sorcerer:sorcerous-restoration",
+        "level": 5,
+        "name": "Sorcerous Restoration",
+        "summary": "On a Short Rest, regain Sorcery Points up to half your Sorcerer level (rounded down); once per Long Rest."
+      }
+    ],
+    "spellcastingAbility": "cha",
+    "spellSlots": [[2], [3], [4, 2], [4, 3], [4, 3, 2]],
+    "cantripsKnown": [4, 4, 4, 5, 5],
+    "preparedSpells": [2, 4, 6, 7, 9],
+    "sorceryPoints": [0, 2, 3, 4, 5]
+  },
+  {
+    "id": "class:warlock",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Warlock, p. 70"
+    },
+    "name": "Warlock",
+    "hitDie": 8,
+    "primaryAbility": ["cha"],
+    "saveProficiencies": ["wis", "cha"],
+    "armorProficiencies": ["Light armor"],
+    "weaponProficiencies": ["Simple weapons"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Arcana",
+        "Deception",
+        "History",
+        "Intimidation",
+        "Investigation",
+        "Nature",
+        "Religion"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "Leather Armor",
+          "Sickle",
+          "2 Daggers",
+          "Arcane Focus (orb)",
+          "Book (occult lore)",
+          "Scholar's Pack",
+          "15 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["100 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:warlock:eldritch-invocations",
+        "level": 1,
+        "name": "Eldritch Invocations",
+        "summary": "Gain invocations of your choice (1 at level 1, 3 at level 2, 5 at level 5)."
+      },
+      {
+        "id": "feature:warlock:pact-magic",
+        "level": 1,
+        "name": "Pact Magic",
+        "summary": "Cast Warlock spells using Charisma with Pact Magic slots that all recover on a Short or Long Rest; an Arcane Focus is your Spellcasting Focus."
+      },
+      {
+        "id": "feature:warlock:magical-cunning",
+        "level": 2,
+        "name": "Magical Cunning",
+        "summary": "Once per Long Rest, a 1-minute rite regains expended Pact Magic slots up to half your maximum (rounded up)."
+      },
+      {
+        "id": "feature:warlock:warlock-subclass",
+        "level": 3,
+        "name": "Warlock Subclass",
+        "summary": "Choose a Warlock subclass."
+      },
+      {
+        "id": "feature:warlock:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      }
+    ],
+    "spellcastingAbility": "cha",
+    "cantripsKnown": [2, 2, 2, 3, 3],
+    "preparedSpells": [2, 3, 4, 5, 6],
+    "pactMagic": [
+      {
+        "slots": 1,
+        "slotLevel": 1
+      },
+      {
+        "slots": 2,
+        "slotLevel": 1
+      },
+      {
+        "slots": 2,
+        "slotLevel": 2
+      },
+      {
+        "slots": 2,
+        "slotLevel": 2
+      },
+      {
+        "slots": 2,
+        "slotLevel": 3
+      }
+    ]
+  },
+  {
+    "id": "class:wizard",
+    "kind": "class",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Wizard, p. 77"
+    },
+    "name": "Wizard",
+    "hitDie": 6,
+    "primaryAbility": ["int"],
+    "saveProficiencies": ["int", "wis"],
+    "weaponProficiencies": ["Simple weapons"],
+    "skillChoices": {
+      "count": 2,
+      "from": [
+        "Arcana",
+        "History",
+        "Insight",
+        "Investigation",
+        "Medicine",
+        "Nature",
+        "Religion"
+      ]
+    },
+    "startingEquipment": [
+      {
+        "option": "A",
+        "items": [
+          "2 Daggers",
+          "Arcane Focus (Quarterstaff)",
+          "Robe",
+          "Spellbook",
+          "Scholar's Pack",
+          "5 GP"
+        ]
+      },
+      {
+        "option": "B",
+        "items": ["55 GP"]
+      }
+    ],
+    "features": [
+      {
+        "id": "feature:wizard:spellcasting",
+        "level": 1,
+        "name": "Spellcasting",
+        "summary": "Cast Wizard spells using Intelligence; prepare spells from your spellbook; an Arcane Focus or spellbook is your Spellcasting Focus."
+      },
+      {
+        "id": "feature:wizard:ritual-adept",
+        "level": 1,
+        "name": "Ritual Adept",
+        "summary": "Cast Ritual-tagged spells from your spellbook as Rituals without preparing them."
+      },
+      {
+        "id": "feature:wizard:arcane-recovery",
+        "level": 1,
+        "name": "Arcane Recovery",
+        "summary": "On a Short Rest, recover spell slots with combined level up to half your Wizard level (rounded up), none of level 6 or higher; once per Long Rest."
+      },
+      {
+        "id": "feature:wizard:scholar",
+        "level": 2,
+        "name": "Scholar",
+        "summary": "Gain Expertise in one skill you are proficient in from Arcana, History, Investigation, Medicine, Nature or Religion."
+      },
+      {
+        "id": "feature:wizard:wizard-subclass",
+        "level": 3,
+        "name": "Wizard Subclass",
+        "summary": "Choose a Wizard subclass."
+      },
+      {
+        "id": "feature:wizard:ability-score-improvement",
+        "level": 4,
+        "name": "Ability Score Improvement",
+        "summary": "Gain the Ability Score Improvement feat or another feat you qualify for."
+      },
+      {
+        "id": "feature:wizard:memorize-spell",
+        "level": 5,
+        "name": "Memorize Spell",
+        "summary": "On a Short Rest, replace one prepared level 1+ Wizard spell with another from your spellbook."
+      }
+    ],
+    "spellcastingAbility": "int",
+    "spellSlots": [[2], [3], [4, 2], [4, 3], [4, 3, 2]],
+    "cantripsKnown": [3, 3, 3, 4, 4],
+    "preparedSpells": [4, 5, 6, 7, 9]
+  },
+  {
+    "id": "subclass:oath-of-devotion",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Paladin Subclass: Oath of Devotion, p. 56"
+    },
+    "name": "Oath of Devotion",
+    "classId": "class:paladin",
+    "features": [
+      {
+        "id": "feature:devotion:oath-spells",
+        "level": 3,
+        "name": "Oath of Devotion Spells",
+        "summary": "Always have Protection from Evil and Good and Shield of Faith prepared."
+      },
+      {
+        "id": "feature:devotion:sacred-weapon",
+        "level": 3,
+        "name": "Sacred Weapon",
+        "summary": "Expend a Channel Divinity use to imbue a melee weapon for 10 minutes: add Charisma modifier to attack rolls, choose radiant or normal damage, and emit light."
+      },
+      {
+        "id": "feature:devotion:oath-spells-5",
+        "level": 5,
+        "name": "Oath of Devotion Spells (Level 5)",
+        "summary": "Always have Aid and Zone of Truth prepared."
+      }
+    ]
+  },
+  {
+    "id": "subclass:hunter",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Ranger Subclass: Hunter, p. 61"
+    },
+    "name": "Hunter",
+    "classId": "class:ranger",
+    "features": [
+      {
+        "id": "feature:hunter:hunters-lore",
+        "level": 3,
+        "name": "Hunter's Lore",
+        "summary": "While a creature is marked by Hunter's Mark, you know its Immunities, Resistances and Vulnerabilities."
+      },
+      {
+        "id": "feature:hunter:hunters-prey",
+        "level": 3,
+        "name": "Hunter's Prey",
+        "summary": "Choose Colossus Slayer or Horde Breaker; swap the choice after a Short or Long Rest."
+      }
+    ]
+  },
+  {
+    "id": "subclass:thief",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Rogue Subclass: Thief, p. 64"
+    },
+    "name": "Thief",
+    "classId": "class:rogue",
+    "features": [
+      {
+        "id": "feature:thief:fast-hands",
+        "level": 3,
+        "name": "Fast Hands",
+        "summary": "Bonus Action Sleight of Hand check to pick a lock, disarm a trap, pick a pocket, Utilize, or use a magic item with the Magic action."
+      },
+      {
+        "id": "feature:thief:second-story-work",
+        "level": 3,
+        "name": "Second-Story Work",
+        "summary": "Gain a Climb Speed equal to your Speed and use Dexterity for jump distance."
+      }
+    ]
+  },
+  {
+    "id": "subclass:draconic-sorcery",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Sorcerer Subclass: Draconic Sorcery, p. 69"
+    },
+    "name": "Draconic Sorcery",
+    "classId": "class:sorcerer",
+    "features": [
+      {
+        "id": "feature:draconic:draconic-resilience",
+        "level": 3,
+        "name": "Draconic Resilience",
+        "summary": "Hit Point maximum +3 and +1 per Sorcerer level; unarmored AC is 10 + Dexterity modifier + Charisma modifier."
+      },
+      {
+        "id": "feature:draconic:draconic-spells",
+        "level": 3,
+        "name": "Draconic Spells",
+        "summary": "Always have Alter Self, Chromatic Orb, Command and Dragon's Breath prepared."
+      },
+      {
+        "id": "feature:draconic:draconic-spells-5",
+        "level": 5,
+        "name": "Draconic Spells (Level 5)",
+        "summary": "Always have Fear and Fly prepared."
+      }
+    ]
+  },
+  {
+    "id": "subclass:fiend-patron",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Warlock Subclass: Fiend Patron, p. 76"
+    },
+    "name": "Fiend Patron",
+    "classId": "class:warlock",
+    "features": [
+      {
+        "id": "feature:fiend:dark-ones-blessing",
+        "level": 3,
+        "name": "Dark One's Blessing",
+        "summary": "Gain Temporary Hit Points equal to Charisma modifier + Warlock level (minimum 1) when an enemy near you drops to 0 Hit Points."
+      },
+      {
+        "id": "feature:fiend:fiend-spells",
+        "level": 3,
+        "name": "Fiend Spells",
+        "summary": "Always have Burning Hands, Command, Scorching Ray and Suggestion prepared."
+      },
+      {
+        "id": "feature:fiend:fiend-spells-5",
+        "level": 5,
+        "name": "Fiend Spells (Level 5)",
+        "summary": "Always have Fireball and Stinking Cloud prepared."
+      }
+    ]
+  },
+  {
+    "id": "subclass:evoker",
+    "kind": "subclass",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Classes > Wizard Subclass: Evoker, p. 82"
+    },
+    "name": "Evoker",
+    "classId": "class:wizard",
+    "features": [
+      {
+        "id": "feature:evoker:evocation-savant",
+        "level": 3,
+        "name": "Evocation Savant",
+        "summary": "Add Evocation spells to your spellbook for free (two of level 2 or lower now, one more each time you gain a new spell slot level)."
+      },
+      {
+        "id": "feature:evoker:potent-cantrip",
+        "level": 3,
+        "name": "Potent Cantrip",
+        "summary": "A target that saves against or is missed by your damaging cantrip still takes half the cantrip's damage."
+      }
+    ]
+  }
+]

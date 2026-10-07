@@ -51,6 +51,14 @@ export const ClassEntrySchema = z.object({
   spellSlots: z.array(z.array(z.int().nonnegative())).optional(),
   cantripsKnown: z.array(z.int().nonnegative()).optional(),
   preparedSpells: z.array(z.int().nonnegative()).optional(),
+  /** Index = class level - 1; Sorcerer Sorcery Points maximum (0 before level 2). */
+  sorceryPoints: z.array(z.int().nonnegative()).optional(),
+  /** Index = class level - 1; Warlock Pact Magic: all slots share one slot level. */
+  pactMagic: z
+    .array(
+      z.object({ slots: z.int().positive(), slotLevel: z.int().min(1).max(5) }),
+    )
+    .optional(),
 });
 export const SubclassEntrySchema = z.object({
   ...base,
