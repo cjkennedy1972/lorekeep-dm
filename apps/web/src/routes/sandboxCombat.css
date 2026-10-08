@@ -1,0 +1,41 @@
+.sandbox {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1rem;
+  outline-offset: 0.35rem;
+}
+.sandbox-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.sandbox-grid > section,
+.sandbox aside > section {
+  border: 1px solid #81786d;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: #fffdf8;
+}
+#crypt-map {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  border: 2px solid #34302a;
+}
+.sandbox dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+}
+.sandbox dd {
+  margin: 0;
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .sandbox-grid {
+    grid-template-columns: 1fr;
+  }
+}

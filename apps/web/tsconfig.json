@@ -9,6 +9,7 @@
     "rootDir": ".",
     "noUncheckedIndexedAccess": true,
     "composite": true,
+    "resolveJsonModule": true,
     "declaration": true,
     "types": ["node", "vite/client"]
   },

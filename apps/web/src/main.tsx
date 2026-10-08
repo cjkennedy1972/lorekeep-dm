@@ -11,9 +11,13 @@ applyPrefs(loadPrefs());
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
+      {window.location.pathname === '/sandbox/combat' ? (
         <App />
-      </AuthProvider>
+      ) : (
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      )}
     </BrowserRouter>
   </StrictMode>,
 );
