@@ -26,10 +26,19 @@ test('keyboard-only crypt combat resolves engine path, reaction, area spell and 
   await expect(
     page.getByRole('dialog', { name: 'Opportunity attack' }),
   ).toBeVisible();
-  await page.keyboard.press('y');
-  await expect(
-    page.locator('section[aria-labelledby=map-title]').getByRole('status'),
-  ).toContainText('Reaction resolved');
+  const status = page
+    .locator('section[aria-labelledby=map-title]')
+    .getByRole('status');
+  for (let reaction = 0; reaction < 3; reaction++) {
+    if (
+      !(await page
+        .getByRole('dialog', { name: 'Opportunity attack' })
+        .isVisible())
+    )
+      break;
+    await page.keyboard.press('y');
+  }
+  await expect(status).toContainText('Preview the Burning Hands area');
   await expect(page.getByRole('region', { name: 'Combat log' })).toContainText(
     'OpportunityTriggered',
   );

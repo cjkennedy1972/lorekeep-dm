@@ -96,7 +96,7 @@ const moveState = (fighters: Fighter[]): MovementCommandState => ({
     opportunityAttack:
       e.kind === 'monster'
         ? {
-            seed: 611,
+            seed: 0,
             attackId: 'opportunity',
             attackBonus: e.attackBonus,
             damage: e.damage,
@@ -163,6 +163,9 @@ export function SandboxCombat() {
   const [goal, setGoal] = useState<GridPos | null>(null);
   const [pendingReaction, setPendingReaction] =
     useState<PendingReaction | null>(null);
+  const [pendingState, setPendingState] = useState<MovementCommandState | null>(
+    null,
+  );
   const [areaPreview, setAreaPreview] = useState(false);
   const commands = useMemo(() => new Canvas2DRenderer().render(map), []);
   const pc = fighters[0]!;
@@ -351,6 +354,7 @@ export function SandboxCombat() {
     const pending = result.pending[0];
     if (pending) {
       setPendingReaction(pending);
+      setPendingState(result.state);
       setStage('reaction');
       setMessage(
         `Opportunity attack from ${pending.hostileId}. Press Y to accept or N to decline.`,
@@ -362,12 +366,9 @@ export function SandboxCombat() {
     }
   };
   const answerReaction = (choice: 'take' | 'decline') => {
-    if (!pendingReaction) return;
+    if (!pendingReaction || !pendingState) return;
     const result = resolveReaction(
-      {
-        ...moveState(fighters),
-        pendingReactions: { [pendingReaction.reactionId]: pendingReaction },
-      },
+      pendingState,
       pendingReaction.reactionId,
       choice,
     );
@@ -386,12 +387,14 @@ export function SandboxCombat() {
     const nextReaction = result.pending[0];
     if (nextReaction) {
       setPendingReaction(nextReaction);
+      setPendingState(result.state);
       setMessage(
         `Opportunity attack from ${nextReaction.hostileId}. Press Y to accept or N to decline.`,
       );
       return;
     }
     setPendingReaction(null);
+    setPendingState(null);
     setStage('area');
     setMessage(
       'Reaction resolved. Preview the Burning Hands area, then press Enter to cast.',
@@ -544,7 +547,13 @@ export function SandboxCombat() {
             <h2>Combat log</h2>
             <ol>
               {events.map((entry, i) => (
-                <li key={`${entry.type}-${i}`}>{entry.type}</li>
+                <li key={`${entry.type}-${i}`}>
+                  {entry.type === 'MonsterPolicy'
+                    ? `${entry.type}: ${String(entry.decision)}`
+                    : entry.type === 'CombatEnded'
+                      ? `${entry.type}: ${String(entry.reason)}`
+                      : entry.type}
+                </li>
               ))}
             </ol>
           </section>
