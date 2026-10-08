@@ -103,7 +103,6 @@ export type DayState = {
   secondWind: number;
   actionSurge: number;
   layOnHands: number;
-  potions: number;
 };
 
 export type Pc = {
@@ -191,6 +190,7 @@ export function buildPc(
         e.kind === 'spell' &&
         e.classes.includes(klass.name.toLowerCase()) &&
         !e.concentration &&
+        (e.castingTime?.unit ?? 'action') === 'action' &&
         (e.resolution?.kind === 'attack' ||
           e.resolution?.kind === 'save' ||
           !!e.healing) &&
@@ -210,7 +210,11 @@ export function buildPc(
         .slice(0, n)
         .map((s) => s.id);
     cantripIds = rank(
-      onList.filter((s) => s.level === 0),
+      // a solo caster wants distance: cantrips reaching at least 60 ft
+      onList.filter(
+        (s) =>
+          s.level === 0 && s.range?.kind === 'feet' && s.range.feet >= 60,
+      ),
       Math.max(1, character.spellsKnown.length),
     );
     spellIds = rank(
@@ -222,6 +226,9 @@ export function buildPc(
   const cantrips = useSpells ? cantripIds : [];
   const spells = useSpells ? spellIds : [];
 
+  // v2 only: a prepared arcanist casts Mage Armor (8 h, so one 1st-level slot per day).
+  const mageArmor =
+    policy === 'v2' && (slug === 'wizard' || slug === 'sorcerer');
   const strMod = m(a, 'str');
   const dexMod = m(a, 'dex');
   const meleeMod = kit.melee.finesse ? Math.max(strMod, dexMod) : strMod;
@@ -241,7 +248,7 @@ export function buildPc(
     pos: { x: 12, y: 18 },
     size: 1,
     hp: maxHp,
-    ac: kit.ac(a),
+    ac: mageArmor ? 13 + dexMod : kit.ac(a),
     speed: 30,
     abilities: a,
     attackBonus: meleeMod + pb,
@@ -263,12 +270,11 @@ export function buildPc(
   const full = maxUses(slug, level);
   const fresh = (): DayState => ({
     hp: maxHp,
-    slotsUsed: {},
+    slotsUsed: mageArmor ? { '1': 1 } : {},
     rage: full.rage,
     secondWind: full.secondWind,
     actionSurge: full.actionSurge,
     layOnHands: full.layOnHands,
-    potions: policy === 'v2' ? 2 : 0,
   });
 
   const rest: Pc['rest'] = (day, kind) => {
@@ -311,7 +317,8 @@ export function buildPc(
   const spellOptions = (sim: Sim, day: DayState, healing: boolean): Opt[] => {
     const opts: Opt[] = [];
     for (const s of spellPool([...cantrips, ...spells])) {
-      if (healing !== !!s.healing) continue;
+      if (healing !== !!s.healing || (s.castingTime?.unit ?? 'action') !== 'action')
+        continue;
       for (let slot = s.level; slot <= (s.level === 0 ? 0 : maxSlot); slot++) {
         if (s.level > 0 && slotLeft(sim, day, slot) <= 0) continue;
         if (healing) {
@@ -354,11 +361,6 @@ export function buildPc(
     if (spec.caster)
       for (const o of spellOptions(sim, day, true))
         if (cast(sim, o, e.id)) return 'action';
-    if (day.potions > 0) {
-      day.potions -= 1;
-      sim.heal(e.id, 7); // Potion of Healing: 2d4+2, average
-      return 'action';
-    }
     return null;
   };
 
