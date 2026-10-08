@@ -60,11 +60,73 @@ function cellCover(
   return result;
 }
 
+/** Whether every footprint ray is blocked by an obstruction providing Total Cover. */
+export function totalCoverBetween(
+  map: Battlemap,
+  a: Placed,
+  b: Placed,
+): boolean {
+  const terrain = decode(map);
+  const blockedEdges = new Set(
+    map.edges
+      .filter(
+        (e) => e.kind === 'wall' || (e.kind === 'door' && e.state !== 'open'),
+      )
+      .map((e) => edgeKey(e.a, e.b)),
+  );
+  const blocks = (cell: Cell) => cellCover(map, terrain, cell) === 'full';
+  const clearRay = (start: Cell, end: Cell): boolean => {
+    let x = start.x,
+      y = start.y;
+    const dx = end.x - x,
+      dy = end.y - y;
+    const nx = Math.abs(dx),
+      ny = Math.abs(dy),
+      sx = Math.sign(dx),
+      sy = Math.sign(dy);
+    let ix = 0,
+      iy = 0,
+      previous: Cell = { x, y };
+    while (ix < nx || iy < ny) {
+      const decision = (1 + 2 * ix) * ny - (1 + 2 * iy) * nx;
+      if (decision === 0) {
+        const h = { x: x + sx, y },
+          v = { x, y: y + sy },
+          d = { x: x + sx, y: y + sy };
+        const laneClear = (mid: Cell) =>
+          !blockedEdges.has(edgeKey(previous, mid)) &&
+          !blockedEdges.has(edgeKey(mid, d)) &&
+          !blocks(mid);
+        if (!laneClear(h) && !laneClear(v)) return false;
+        x = d.x;
+        y = d.y;
+        ix++;
+        iy++;
+        previous = d;
+      } else {
+        const next = decision < 0 ? { x: x + sx, y } : { x, y: y + sy };
+        if (blockedEdges.has(edgeKey(previous, next)) || blocks(next))
+          return false;
+        x = next.x;
+        y = next.y;
+        if (decision < 0) ix++;
+        else iy++;
+        previous = next;
+      }
+    }
+    return true;
+  };
+  return !footprint(a).some((start) =>
+    footprint(b).some((end) => clearRay(start, end)),
+  );
+}
+
 /** Trace all occupied cell-center rays; the clearest ray determines direct cover. */
 export function coverBetween(
   map: Battlemap,
   a: Placed,
   b: Placed,
+  creatures: readonly (Placed & { id?: string })[] = [],
 ): CoverResult {
   const terrain = decode(map);
   const blockedEdges = new Set(
@@ -73,6 +135,9 @@ export function coverBetween(
         (e) => e.kind === 'wall' || (e.kind === 'door' && e.state !== 'open'),
       )
       .map((e) => edgeKey(e.a, e.b)),
+  );
+  const creatureCells = new Set(
+    creatures.flatMap((creature) => footprint(creature).map(cellKey)),
   );
   const trace = (start: Cell, end: Cell): CoverGrade => {
     let x = start.x,
@@ -104,6 +169,8 @@ export function coverBetween(
         const hg = lane(h),
           vg = lane(v);
         add(rank[hg] <= rank[vg] ? hg : vg);
+        if (creatureCells.has(cellKey(h)) || creatureCells.has(cellKey(v)))
+          add('half');
         x = d.x;
         y = d.y;
         ix++;
@@ -114,7 +181,9 @@ export function coverBetween(
         add(
           blockedEdges.has(edgeKey(previous, next))
             ? 'full'
-            : cellCover(map, terrain, next),
+            : creatureCells.has(cellKey(next))
+              ? 'half'
+              : cellCover(map, terrain, next),
         );
         x = next.x;
         ix++;
@@ -124,7 +193,9 @@ export function coverBetween(
         add(
           blockedEdges.has(edgeKey(previous, next))
             ? 'full'
-            : cellCover(map, terrain, next),
+            : creatureCells.has(cellKey(next))
+              ? 'half'
+              : cellCover(map, terrain, next),
         );
         y = next.y;
         iy++;
@@ -150,7 +221,7 @@ export function coverBetween(
   return {
     grade: best,
     acBonus: bonus,
-    saveBonus: bonus,
+    saveBonus: best === 'full' ? 0 : bonus,
     bonus,
     display: best === 'none' ? 'cover: none' : `cover: ${best} (+${bonus} AC)`,
     targetable,

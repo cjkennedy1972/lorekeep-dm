@@ -1,14 +1,22 @@
 import { rleDecode, type Battlemap, type GridPos } from '@game/schema';
 import { cellKey, type Placed } from './geometry.js';
-import { hasLineOfSight } from './los.js';
+import { coverBetween, totalCoverBetween } from './cover.js';
 
-export type AreaShape = 'sphere' | 'cube' | 'cone' | 'line' | 'cylinder';
+export type AreaShape =
+  | 'sphere'
+  | 'cube'
+  | 'cone'
+  | 'line'
+  | 'cylinder'
+  | 'emanation';
 export interface AreaTemplate {
   shape: AreaShape;
   /** Radius for sphere/cylinder; edge for cube; length for cone/line, in feet. */
   size: number;
   width?: number;
   height?: number;
+  /** Include the origin square for shapes whose creator may exclude it. */
+  includeOrigin?: boolean;
 }
 export interface AreaState {
   map: Battlemap;
@@ -27,10 +35,10 @@ function dirVector(direction: GridPos): GridPos {
   if (!d.x && !d.y) throw new Error('Area direction must be non-zero.');
   return d;
 }
-function lineOfSight(map: Battlemap, origin: GridPos, cell: GridPos) {
+function lineOfEffect(map: Battlemap, origin: GridPos, cell: GridPos) {
   return (
     key(origin) === key(cell) ||
-    hasLineOfSight(map, { pos: origin, size: 1 }, { pos: cell, size: 1 })
+    !totalCoverBetween(map, { pos: origin, size: 1 }, { pos: cell, size: 1 })
   );
 }
 function circleContains(a: GridPos, b: GridPos, radiusFt: number) {
@@ -42,10 +50,10 @@ function circleContains(a: GridPos, b: GridPos, radiusFt: number) {
 /**
  * Deterministic planar rasterization: cells are 5-ft squares represented by
  * centers, output is row-major. Sphere/cylinder use Euclidean radius; cube is
- * centered on origin; cone is a 90-degree wedge; line is 5 ft wide by default.
- * Cone extends along the centerline in 8 compass directions. Sphere floods
- * through diagonal corners when either corner lane is open. Sight-blocking
- * terrain, walls and closed doors obstruct. `height` is ignored on this 2-D map.
+ * centered by default or placed against a face in the chosen direction; cone
+ * width equals its length at each distance; line is 5 ft wide by default.
+ * Emanation uses a Euclidean radius. Only Total Cover blocks areas. `height`
+ * is ignored on this 2-D map.
  */
 export function areaCells(
   map: Battlemap,
@@ -55,8 +63,7 @@ export function areaCells(
 ): GridPos[] {
   if (!Number.isFinite(template.size) || template.size <= 0)
     throw new Error('Area size must be positive.');
-  const dir = dirVector(direction),
-    decoded = rleDecode(map.cells);
+  const dir = dirVector(direction);
   const radius = template.size / 5,
     extent = Math.ceil(radius + 1);
   const candidates: GridPos[] = [];
@@ -75,20 +82,38 @@ export function areaCells(
         dy = y - origin.y;
       const forward = dx * dir.x + dy * dir.y,
         lateral = Math.abs(dx * dir.y - dy * dir.x);
+      const orientedForwardFt =
+        Math.hypot(dir.x, dir.y) === Math.SQRT2
+          ? (forward * 5) / Math.SQRT2
+          : forward * 5;
       let include = false;
       switch (template.shape) {
         case 'sphere':
         case 'cylinder':
+        case 'emanation':
           include = circleContains(origin, c, template.size);
           break;
         case 'cube': {
-          const side = Math.max(1, Math.ceil(template.size / 5)),
-            start = -Math.floor(side / 2);
+          if (template.includeOrigin !== false) {
+            const side = Math.max(1, Math.ceil(template.size / 5));
+            const start = -Math.floor(side / 2);
+            include =
+              dx >= start &&
+              dx < start + side &&
+              dy >= start &&
+              dy < start + side;
+            break;
+          }
+          const side = Math.max(1, Math.ceil(template.size / 5));
+          const forward = dx * dir.x + dy * dir.y;
+          const lateral = dx * dir.y - dy * dir.x;
+          // A directional cube begins at its origin face and extends forward.
+          const start =
+            template.includeOrigin === false ? 0 : -Math.floor(side / 2);
           include =
-            dx >= start &&
-            dx < start + side &&
-            dy >= start &&
-            dy < start + side;
+            forward >= start &&
+            forward < start + side &&
+            Math.abs(lateral) <= Math.floor((side - 1) / 2);
           break;
         }
         case 'cone': {
@@ -96,26 +121,35 @@ export function areaCells(
           const forwardDot = dx * dir.x + dy * dir.y;
           include =
             range <= radius &&
-            ((forwardDot > 0 && lateral <= forwardDot) ||
-              (dx === 0 && dy === 0));
+            ((forwardDot > 0 && lateral <= forwardDot / 2) ||
+              (template.includeOrigin === true && dx === 0 && dy === 0));
           break;
         }
-        case 'line':
+        case 'line': {
+          const width = Math.max(1, Math.ceil((template.width ?? 5) / 5));
           include =
-            forward >= 0 &&
-            forward <= radius &&
-            lateral <= Math.max(0, (template.width ?? 5) / 10);
+            forward > 0 &&
+            orientedForwardFt > 0 &&
+            orientedForwardFt <= template.size &&
+            (width % 2 === 0
+              ? Math.abs(lateral) > (width - 2) / 2 &&
+                Math.abs(lateral) <= width / 2
+              : Math.abs(lateral) <= (width - 1) / 2);
           break;
+        }
       }
       if (include) candidates.push(c);
     }
-  const walkable = (c: GridPos) =>
-    inside(map, c) &&
-    !map.palette[decoded[c.y * map.w + c.x] ?? 0]?.blocksSight;
+  const walkable = (c: GridPos) => inside(map, c);
   const candidateKeys = new Set(candidates.map(key));
-  const reached = new Set<string>([key(origin)]);
+  const originMayBeIncluded =
+    template.shape !== 'cone' &&
+    template.shape !== 'line' &&
+    !(template.shape === 'cube' && template.includeOrigin === false) &&
+    !(template.shape === 'emanation' && template.includeOrigin === false);
+  const reached = new Set<string>(originMayBeIncluded ? [key(origin)] : []);
   if (template.shape === 'sphere') {
-    const queue = [origin];
+    const queue = originMayBeIncluded ? [origin] : [];
     for (let head = 0; head < queue.length; head++) {
       const current = queue[head]!;
       for (let dy = -1; dy <= 1; dy++)
@@ -135,15 +169,15 @@ export function areaCells(
               sideB = { x: current.x, y: current.y + dy };
             const laneA =
               walkable(sideA) &&
-              lineOfSight(map, origin, sideA) &&
-              lineOfSight(map, sideA, next);
+              lineOfEffect(map, origin, sideA) &&
+              lineOfEffect(map, sideA, next);
             const laneB =
               walkable(sideB) &&
-              lineOfSight(map, origin, sideB) &&
-              lineOfSight(map, sideB, next);
+              lineOfEffect(map, origin, sideB) &&
+              lineOfEffect(map, sideB, next);
             if (!laneA && !laneB) continue;
-          } else if (!lineOfSight(map, current, next)) continue;
-          if (!lineOfSight(map, origin, next)) continue;
+          } else if (!lineOfEffect(map, current, next)) continue;
+          if (!lineOfEffect(map, origin, next)) continue;
           reached.add(nextKey);
           queue.push(next);
         }
@@ -151,8 +185,8 @@ export function areaCells(
   } else {
     for (const c of candidates)
       if (
-        key(c) === key(origin) ||
-        (walkable(c) && lineOfSight(map, origin, c))
+        (key(c) === key(origin) && originMayBeIncluded) ||
+        (key(c) !== key(origin) && walkable(c) && lineOfEffect(map, origin, c))
       )
         reached.add(key(c));
   }
@@ -160,19 +194,21 @@ export function areaCells(
 }
 
 function coverBonus(map: Battlemap, origin: GridPos, target: Placed): number {
+  const result = coverBetween(map, { pos: origin, size: 1 }, target);
+  let bonus =
+    result.grade === 'three-quarters' ? 5 : result.grade === 'half' ? 2 : 0;
+  // Cover in the target's own occupied squares is explicitly represented by terrain.
   const decoded = rleDecode(map.cells);
-  let max = 0;
   for (let y = 0; y < target.size; y++)
     for (let x = 0; x < target.size; x++) {
-      const c = { x: target.pos.x + x, y: target.pos.y + y };
-      if (!inside(map, c) || !lineOfSight(map, origin, c)) continue;
-      const grade = map.palette[decoded[c.y * map.w + c.x] ?? 0]?.cover;
-      max = Math.max(
-        max,
+      const cell = { x: target.pos.x + x, y: target.pos.y + y };
+      const grade = map.palette[decoded[cell.y * map.w + cell.x] ?? 0]?.cover;
+      bonus = Math.max(
+        bonus,
         grade === 'three-quarters' ? 5 : grade === 'half' ? 2 : 0,
       );
     }
-  return max;
+  return bonus;
 }
 /** Return intersecting entities once, sorted by id, with their cover bonus
  * (+2 half, +5 three-quarters; full cover prevents area inclusion via LOS). */

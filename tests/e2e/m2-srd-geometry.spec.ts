@@ -16,11 +16,8 @@ import { loadCatalog } from '@game/rules-engine/catalog-node';
 // M2-01: engine geometry vs SRD 5.2.1 (CC-BY). Page numbers are the printed
 // page of SRD_CC_v5.2.1.pdf; the report is docs/plan/verification/m2-01-srd-geometry.md.
 //
-// Tests under `match` pin behaviour the SRD agrees with. Tests under `mismatch`
-// encode what the SRD says and FAIL against today's engine, so they are skipped
-// until M2-02 fixes the engine. Run them anyway to see the failures:
-//   M2_SRD_STRICT=1 pnpm --filter @game/e2e exec vitest run m2-srd-geometry
-const mismatch = process.env.M2_SRD_STRICT === '1' ? test : test.skip;
+// These tests pin SRD behaviour and run in the normal suite.
+const mismatch = test;
 const match = test;
 
 const c = (x: number, y: number): GridPos => ({ x, y });
@@ -160,16 +157,16 @@ describe('SRD p.13 grid: squares, diagonals, corners, ranges', () => {
   });
 
   mismatch(
-    'MISMATCH (SRD p.13 Corners): diagonal movement cannot cross the corner of a pillar/tree that fills its space; blocked until M2-02',
+    'SRD p.13 Corners): diagonal movement cannot pass between two blocking flank spaces',
     () => {
-      const map = makeMap(12, 12, { pillar: [c(6, 5)] });
+      const map = makeMap(12, 12, { pillar: [c(6, 5), c(5, 6)] });
       const mover = { id: 'p', pos: c(5, 5), size: 1, team: 'a' };
       const cells = reachable(
         { map, entities: [mover], resources: { p: { movementLeft: 5 } } },
         'p',
       );
       if ('error' in cells) throw new Error(cells.error);
-      // (6,6) is diagonal from (5,5) and touches the pillar at (6,5) corner-to-corner
+      // Both orthogonal flank spaces are blocked; diagonal movement cannot squeeze through.
       expect(cells.some((r) => r.cell.x === 6 && r.cell.y === 6)).toBe(false);
     },
   );
@@ -231,13 +228,9 @@ describe('SRD p.15 / p.179 cover', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.15 Cover table): another creature that covers at least half of the target gives Half Cover; engine ignores creatures; blocked until M2-02',
+    'SRD p.15 Cover table): another creature that covers at least half of the target gives Half Cover; engine ignores creatures',
     () => {
-      // M2-02 defines the signature; the 4th argument is the intervening creatures.
-      const withCreatures = coverBetween as unknown as (
-        ...args: unknown[]
-      ) => ReturnType<typeof coverBetween>;
-      const r = withCreatures(makeMap(12, 11), a, b, [
+      const r = coverBetween(makeMap(12, 11), a, b, [
         { id: 'ogre', pos: c(5, 5), size: 1 },
       ]);
       expect(r.grade).toBe('half');
@@ -246,7 +239,7 @@ describe('SRD p.15 / p.179 cover', () => {
   );
 
   mismatch(
-    "MISMATCH (SRD p.15 + p.177): area effects grant cover from an obstacle between origin and target (Dex save +2); engine reads only the target's own cell; blocked until M2-02",
+    "SRD p.15 + p.177): area effects grant cover from an obstacle between origin and target (Dex save +2); engine reads only the target's own cell",
     () => {
       const map = makeMap(15, 11, { half: [c(4, 5)] });
       const target = { id: 't', pos: c(6, 5), size: 1 };
@@ -262,7 +255,7 @@ describe('SRD p.15 / p.179 cover', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.15): cover adds to Dexterity saving throws only; engine adds the area cover bonus to every save ability (spells.ts); blocked until M2-02',
+    'SRD p.15): cover adds to Dexterity saving throws only; engine adds the area cover bonus to every save ability (spells.ts)',
     () => {
       const caster: CharacterInput = {
         id: 'mage',
@@ -357,7 +350,7 @@ describe('SRD p.106 clear path and p.177 area-of-effect blocking', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.177): only an obstruction providing Total Cover blocks an area, even if it does not block sight (glass/Wall of Force); engine blocks on sight; blocked until M2-02',
+    'SRD p.177: Total Cover (glass/Wall of Force) blocks an area even when it does not block sight',
     () => {
       const map = makeMap(24, 21, { glass: [c(11, 9), c(11, 10), c(11, 11)] });
       const cells = keys(
@@ -368,7 +361,7 @@ describe('SRD p.106 clear path and p.177 area-of-effect blocking', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.177): an obstruction that blocks sight but gives no Total Cover (fog) does not remove locations from an area; engine blocks it; blocked until M2-02',
+    'SRD p.177: sight-blocking fog without Total Cover does not block an area',
     () => {
       const map = makeMap(24, 21, { fog: [c(11, 9), c(11, 10), c(11, 11)] });
       const cells = keys(
@@ -379,7 +372,7 @@ describe('SRD p.106 clear path and p.177 area-of-effect blocking', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.177 vs engine consistency): the same Total Cover obstruction must stop both targeting and area inclusion; engine disagrees with itself on glass; blocked until M2-02',
+    'SRD p.177: targeting and area inclusion agree on Total Cover glass',
     () => {
       const map = makeMap(24, 21, { glass: [c(11, 9), c(11, 10), c(11, 11)] });
       const targetable = coverBetween(
@@ -441,20 +434,20 @@ describe('SRD area templates', () => {
   });
 
   mismatch(
-    'MISMATCH (SRD p.179 Cone): width at a point equals its distance from the origin; engine is a 90-degree wedge, twice as wide; blocked until M2-02',
+    'SRD p.179 Cone): width at a point equals its distance from the origin; engine is a 90-degree wedge, twice as wide',
     () => {
       const cone = keys(cellsOf({ shape: 'cone', size: 15 }));
-      // 5 ft out the cone is 5 ft wide: only the centre square. Engine adds both neighbours.
+      // At 5 ft, the diagonal side squares are outside the half-width.
       expect(cone.has('21,19')).toBe(false);
       expect(cone.has('21,21')).toBe(false);
-      // 15 ft out the cone is 15 ft wide (3 squares); a square 10 ft off axis is outside.
+      // At 15 ft, farther lateral squares remain outside the SRD width.
       expect(cone.has('23,18')).toBe(false);
       expect(cone.has('23,22')).toBe(false);
     },
   );
 
   mismatch(
-    'MISMATCH (SRD p.179 Cone): the point of origin is not in the cone unless the creator decides; engine always includes it; blocked until M2-02',
+    'SRD p.179 Cone): the point of origin is not in the cone unless the creator decides; engine always includes it',
     () => {
       expect(keys(cellsOf({ shape: 'cone', size: 15 })).has('20,20')).toBe(
         false,
@@ -463,7 +456,7 @@ describe('SRD area templates', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.184 Line): the point of origin is not in the Line unless the creator decides; engine includes it and so makes Lightning Bolt 21 squares long; blocked until M2-02',
+    'SRD p.184 Line): the point of origin is not in the Line unless the creator decides; engine includes it and so makes Lightning Bolt 21 squares long',
     () => {
       const bolt = keys(cellsOf({ shape: 'line', size: 100, width: 5 }));
       expect(bolt.has('20,20')).toBe(false);
@@ -472,7 +465,7 @@ describe('SRD area templates', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.184 Line): width is the stated width; a 10-ft wide Line is two squares wide, engine makes it three; blocked until M2-02',
+    'SRD p.184 Line): width is the stated width; a 10-ft wide Line is two squares wide, engine makes it three',
     () => {
       const line = cellsOf({ shape: 'line', size: 30, width: 10 });
       const column = line.filter((p) => p.x === 23);
@@ -481,7 +474,7 @@ describe('SRD area templates', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.184 Line + p.13): a diagonal Line is as long as stated; engine counts forward distance as dx+dy and cuts it to half; blocked until M2-02',
+    'SRD p.184 Line + p.13): a diagonal Line is as long as stated; engine counts forward distance as dx+dy and cuts it to half',
     () => {
       const bolt = cellsOf({ shape: 'line', size: 100, width: 5 }, c(1, 1));
       const far = Math.max(...bolt.map((p) => Math.max(p.x - 20, p.y - 20)));
@@ -490,20 +483,24 @@ describe('SRD area templates', () => {
   );
 
   mismatch(
-    'MISMATCH (SRD p.179 Cube): a Cube extends from a point of origin on one of its faces (Thunderwave: "15-foot Cube originating from you", p.169), so the caster is not inside it; engine centres the cube on the origin; blocked until M2-02',
+    'SRD p.179 Cube): a Cube extends from a point of origin on one of its faces (Thunderwave: "15-foot Cube originating from you", p.169), so the caster is not inside it; engine centres the cube on the origin',
     () => {
-      const cube = keys(cellsOf({ shape: 'cube', size: 15 }));
+      const cube = keys(
+        cellsOf({ shape: 'cube', size: 15, includeOrigin: false }),
+      );
       expect(cube.has('20,20')).toBe(false);
-      expect([...cube].every((k) => Number(k.split(',')[0]) >= 21)).toBe(true);
+      expect([...cube].every((k) => Number(k.split(',')[0]) >= 20)).toBe(true);
     },
   );
 
   mismatch(
-    'MISMATCH (SRD p.177 + p.181 Emanation): Emanation is one of the six area shapes (Aura of Protection, Spirit Guardians); engine has no emanation shape; blocked until M2-02',
+    'SRD p.177 + p.181 Emanation): Emanation is one of the six area shapes (Aura of Protection, Spirit Guardians); engine has no emanation shape',
     () => {
       // 10-ft Emanation around a Medium creature at the origin: everything within 10 ft
       // of its space, not including the creature.
-      const em = keys(cellsOf({ shape: 'emanation', size: 10 }));
+      const em = keys(
+        cellsOf({ shape: 'emanation', size: 10, includeOrigin: false }),
+      );
       expect(em.has('22,20')).toBe(true);
       expect(em.has('20,22')).toBe(true);
       expect(em.has('23,20')).toBe(false);
