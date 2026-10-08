@@ -18,7 +18,7 @@ beforeAll(async () => {
   await database.pool.query(`CREATE TABLE endpoint_usage (
     id bigserial PRIMARY KEY, session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     turn_id uuid NOT NULL, purpose text NOT NULL, model_id text NOT NULL,
-    input_tokens integer NOT NULL, output_tokens integer NOT NULL, cached_tokens integer NOT NULL,
+    input_tokens integer NOT NULL, output_tokens integer NOT NULL, cached_tokens integer NOT NULL, cache_write_tokens integer NOT NULL DEFAULT 0,
     estimated boolean NOT NULL, latency_ms integer NOT NULL, retries integer NOT NULL,
     error_code text, created_at timestamptz NOT NULL DEFAULT now())`);
   await database.pool.query(
@@ -55,6 +55,7 @@ describe('usage metering Postgres and route', () => {
       inputTokens: 10,
       outputTokens: 2,
       cachedTokens: 1,
+      cacheWriteTokens: 2,
       estimated: false,
       latencyMs: 5,
       retries: 1,
@@ -70,6 +71,7 @@ describe('usage metering Postgres and route', () => {
       inputTokens: 10,
       outputTokens: 2,
       cachedTokens: 1,
+      cacheWriteTokens: 2,
       retries: 1,
     });
     expect(await readUsage(database.pool)).toHaveLength(1);
