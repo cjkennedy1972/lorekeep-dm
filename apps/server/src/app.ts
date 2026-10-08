@@ -7,6 +7,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { retentionHealth } from './retention/sweeper.js';
 import { registerUsageRoutes } from './llm/usageRoutes.js';
+import { registerOperatorRoutes } from './routes/operator.js';
 import type { RoomRegistry } from './room/registry.js';
 import type { ConnectionRegistry } from './gateway/connections.js';
 
@@ -110,6 +111,7 @@ export function createApp(
       options.connections,
     );
     registerUsageRoutes(app, db as Pool, options.isOperator);
+    registerOperatorRoutes(app, db as Pool, options.isOperator);
     if (options.rooms)
       registerSessionRoutes(
         app,
