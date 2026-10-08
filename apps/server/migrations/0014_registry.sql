@@ -1,5 +1,11 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
+-- array_to_string is STABLE, which Postgres rejects in a stored generated column; the
+-- result for text[] is deterministic, so wrap it in an IMMUTABLE function.
+CREATE FUNCTION registry_immutable_join(parts text[], sep text) RETURNS text
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE
+  AS $$ SELECT array_to_string(parts, sep) $$;
+
 CREATE TABLE registry_entries (
   id bigserial PRIMARY KEY,
   session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -9,7 +15,7 @@ CREATE TABLE registry_entries (
   name text NOT NULL DEFAULT '',
   aliases text[] NOT NULL DEFAULT '{}',
   payload jsonb NOT NULL,
-  search_names text GENERATED ALWAYS AS (lower(name || ' ' || array_to_string(aliases, ' '))) STORED,
+  search_names text GENERATED ALWAYS AS (lower(name || ' ' || registry_immutable_join(aliases, ' '))) STORED,
   search_document text NOT NULL DEFAULT '',
   search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', search_document)) STORED,
   supersedes_id bigint REFERENCES registry_entries(id),

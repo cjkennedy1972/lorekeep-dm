@@ -16,7 +16,7 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
     await database.pool.query('INSERT INTO sessions(id) VALUES ($1)', [gameA]);
     await database.pool.query('INSERT INTO sessions(id) VALUES ($1)', [gameB]);
     const migration = await readFile(
-      new URL('../../migrations/0013_registry.sql', import.meta.url),
+      new URL('../../migrations/0014_registry.sql', import.meta.url),
       'utf8',
     );
     await database.pool.query(migration);
