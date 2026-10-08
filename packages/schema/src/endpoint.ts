@@ -24,10 +24,17 @@ export const EndpointConfigSchema = z
   .strict();
 export const UsageEntrySchema = z
   .object({
+    sessionId: z.string().uuid(),
     turnId: z.string().min(1),
+    purpose: z.enum(['narration', 'summary', 'classification', 'moderation']),
+    modelId: z.string().min(1),
     inputTokens: z.int().nonnegative(),
     outputTokens: z.int().nonnegative(),
     cacheReadTokens: z.int().nonnegative().optional(),
+    estimated: z.boolean(),
+    latencyMs: z.int().nonnegative(),
+    retries: z.int().nonnegative(),
+    errorCode: z.string().nullable(),
     costMicros: z.int().nonnegative().optional(),
   })
   .strict();
