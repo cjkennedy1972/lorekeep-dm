@@ -211,60 +211,76 @@ export async function saveEndpoint(
   slot: EndpointSlot,
   raw: unknown,
   egress: EgressGuard,
+  actorId: string,
   master?: string,
 ): Promise<EndpointConfig> {
   const config = inputSchema.parse(raw);
   await validateEndpointUrl(config.baseUrl, egress);
-  const prior = await db.query(
-    'SELECT encrypted_key FROM operator_endpoints WHERE slot=$1',
-    [slot],
-  );
-  const keyValue =
-    config.apiKey === undefined
-      ? prior.rows[0]?.encrypted_key
-        ? decryptEndpointKey(String(prior.rows[0].encrypted_key), master)
-        : ''
-      : config.apiKey;
-  const encrypted = keyValue ? encryptEndpointKey(keyValue, master) : null;
-  const fingerprint = keyValue
-    ? createHash('sha256').update(keyValue).digest('hex').slice(0, 12)
-    : null;
-  const result = await db.query(
-    `INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,context_window,unsupported_tool_schema_keywords,probe,updated_at)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,NULL,now()) ON CONFLICT(slot) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,api_style=EXCLUDED.api_style,encrypted_key=EXCLUDED.encrypted_key,key_fingerprint=EXCLUDED.key_fingerprint,context_window=EXCLUDED.context_window,unsupported_tool_schema_keywords=EXCLUDED.unsupported_tool_schema_keywords,probe=NULL,updated_at=now() RETURNING slot,base_url,model,api_style,key_fingerprint,context_window,unsupported_tool_schema_keywords,updated_at`,
-    [
-      slot,
-      config.baseUrl,
-      config.model,
-      config.apiStyle,
-      encrypted,
-      fingerprint,
-      config.contextWindow ?? null,
-      JSON.stringify(config.unsupportedToolSchemaKeywords),
-    ],
-  );
-  await db.query(
-    'INSERT INTO operator_endpoint_audit(slot,action) VALUES($1,$2)',
-    [slot, prior.rowCount ? 'updated' : 'created'],
-  );
-  return {
-    ...rowConfig(result.rows[0]!, null),
-    keySet: Boolean(encrypted),
-    keyFingerprint: fingerprint,
-  };
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const prior = await client.query(
+      'SELECT encrypted_key FROM operator_endpoints WHERE slot=$1 FOR UPDATE',
+      [slot],
+    );
+    const keyValue =
+      config.apiKey === undefined
+        ? prior.rows[0]?.encrypted_key
+          ? decryptEndpointKey(String(prior.rows[0].encrypted_key), master)
+          : ''
+        : config.apiKey;
+    const encrypted = keyValue ? encryptEndpointKey(keyValue, master) : null;
+    const fingerprint = keyValue
+      ? createHash('sha256').update(keyValue).digest('hex').slice(0, 12)
+      : null;
+    const result = await client.query(
+      `INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,context_window,unsupported_tool_schema_keywords,probe,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,NULL,now()) ON CONFLICT(slot) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,api_style=EXCLUDED.api_style,encrypted_key=EXCLUDED.encrypted_key,key_fingerprint=EXCLUDED.key_fingerprint,context_window=EXCLUDED.context_window,unsupported_tool_schema_keywords=EXCLUDED.unsupported_tool_schema_keywords,probe=NULL,updated_at=now() RETURNING slot,base_url,model,api_style,key_fingerprint,context_window,unsupported_tool_schema_keywords,updated_at`,
+      [
+        slot,
+        config.baseUrl,
+        config.model,
+        config.apiStyle,
+        encrypted,
+        fingerprint,
+        config.contextWindow ?? null,
+        JSON.stringify(config.unsupportedToolSchemaKeywords),
+      ],
+    );
+    await client.query(
+      'INSERT INTO operator_endpoint_audit(slot,action,actor_id) VALUES($1,$2,$3)',
+      [slot, prior.rowCount ? 'updated' : 'created', actorId],
+    );
+    await client.query('COMMIT');
+    return {
+      ...rowConfig(result.rows[0]!, null),
+      keySet: Boolean(encrypted),
+      keyFingerprint: fingerprint,
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 export async function testEndpoint(
   db: Pool,
   slot: EndpointSlot,
   egress: EgressGuard,
+  actorId: string,
   master?: string,
 ): Promise<EndpointProfile> {
   const result = await db.query(
-    'SELECT base_url,model,api_style,encrypted_key,context_window FROM operator_endpoints WHERE slot=$1',
+    'SELECT base_url,model,api_style,encrypted_key,context_window,unsupported_tool_schema_keywords FROM operator_endpoints WHERE slot=$1',
     [slot],
   );
   const row = result.rows[0];
   if (!row) throw new Error('Endpoint configuration unavailable');
+  await db.query(
+    "INSERT INTO operator_endpoint_audit(slot,action,actor_id) VALUES($1,'tested',$2)",
+    [slot, actorId],
+  );
   const apiKey = row.encrypted_key
     ? new Secret(decryptEndpointKey(String(row.encrypted_key), master))
     : undefined;
@@ -281,6 +297,11 @@ export async function testEndpoint(
           model: String(row.model),
           apiKey,
           egress,
+          unsupportedToolSchemaKeywords: Array.isArray(
+            row.unsupported_tool_schema_keywords,
+          )
+            ? row.unsupported_tool_schema_keywords.map(String)
+            : [],
         });
   const probe = await probeEndpoint(adapter, {
     id: slot,
@@ -294,6 +315,36 @@ export async function testEndpoint(
   );
   return probe;
 }
+export async function deleteEndpoint(
+  db: Pool,
+  slot: EndpointSlot,
+  actorId: string,
+): Promise<boolean> {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const deleted = await client.query(
+      'DELETE FROM operator_endpoints WHERE slot=$1 RETURNING slot',
+      [slot],
+    );
+    if (!deleted.rowCount) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    await client.query(
+      "INSERT INTO operator_endpoint_audit(slot,action,actor_id) VALUES($1,'deleted',$2)",
+      [slot, actorId],
+    );
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function rowConfig(
   row: Record<string, unknown>,
   probe: EndpointProfile | null,

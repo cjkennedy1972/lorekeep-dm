@@ -16,6 +16,7 @@ export interface OpenAICompatibleConfig {
   timeoutMs?: number;
   /** The only outbound HTTP path; enforces the SSRF policy (M2-19). */
   egress: EgressGuard;
+  unsupportedToolSchemaKeywords?: readonly string[];
 }
 
 type JsonObject = Record<string, unknown>;
@@ -23,6 +24,100 @@ const isObject = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const endpointUrl = (baseUrl: string) =>
   `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+
+const SCHEMA_KEYWORDS = new Set([
+  '$schema',
+  '$id',
+  '$ref',
+  '$defs',
+  'definitions',
+  'type',
+  'title',
+  'description',
+  'default',
+  'examples',
+  'enum',
+  'const',
+  'allOf',
+  'anyOf',
+  'oneOf',
+  'not',
+  'if',
+  'then',
+  'else',
+  'required',
+  'properties',
+  'patternProperties',
+  'additionalProperties',
+  'propertyNames',
+  'items',
+  'prefixItems',
+  'contains',
+  'minItems',
+  'maxItems',
+  'uniqueItems',
+  'minProperties',
+  'maxProperties',
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+  'minLength',
+  'maxLength',
+  'pattern',
+  'format',
+  'contentEncoding',
+  'contentMediaType',
+]);
+
+function stripUnsupportedSchemaKeywords(
+  value: unknown,
+  unsupported: readonly string[],
+  inSchema = true,
+): unknown {
+  if (Array.isArray(value))
+    return value.map((item) =>
+      stripUnsupportedSchemaKeywords(item, unsupported, inSchema),
+    );
+  if (!isObject(value)) return value;
+  const result: JsonObject = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (inSchema && SCHEMA_KEYWORDS.has(key) && unsupported.includes(key))
+      continue;
+    // Property names are user data, not schema keywords. Their values are schemas.
+    if (key === 'properties' || key === 'patternProperties') {
+      if (isObject(child)) {
+        result[key] = Object.fromEntries(
+          Object.entries(child).map(([name, schema]) => [
+            name,
+            stripUnsupportedSchemaKeywords(schema, unsupported, true),
+          ]),
+        );
+      } else result[key] = child;
+    } else if (
+      key === 'propertyNames' ||
+      key === 'items' ||
+      key === 'additionalProperties' ||
+      key === 'contains' ||
+      key === 'not' ||
+      key === 'if' ||
+      key === 'then' ||
+      key === 'else' ||
+      key === '$defs' ||
+      key === 'definitions' ||
+      key === 'allOf' ||
+      key === 'anyOf' ||
+      key === 'oneOf' ||
+      key === 'prefixItems'
+    ) {
+      result[key] = stripUnsupportedSchemaKeywords(child, unsupported, true);
+    } else {
+      result[key] = child;
+    }
+  }
+  return result;
+}
 
 /** OpenAI-compatible chat-completions wire dialect; config owns URL and model. */
 export class OpenAICompatibleAdapter implements LlmAdapter {
@@ -144,7 +239,10 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
         function: {
           name: tool.name,
           description: tool.description,
-          parameters: tool.parameters,
+          parameters: stripUnsupportedSchemaKeywords(
+            tool.parameters,
+            this.config.unsupportedToolSchemaKeywords ?? [],
+          ),
         },
       }));
       body.tool_choice = 'auto';
