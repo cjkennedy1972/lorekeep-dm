@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Secret } from './llm/secret.js';
 const schema = z.object({
   DATABASE_URL: z.url(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -8,6 +9,22 @@ const schema = z.object({
     .default('development'),
   SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).default(3_600_000),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  /** LLM provider key: env only, wrapped so it cannot be logged or serialized. */
+  LLM_API_KEY: z
+    .string()
+    .min(1)
+    .transform((v) => new Secret(v))
+    .optional(),
+  /** Comma-separated exact hosts allowed to be local/private (e.g. a local model). */
+  LLM_ALLOW_LOCAL_HOSTS: z
+    .string()
+    .default('')
+    .transform((v) =>
+      v
+        .split(',')
+        .map((h) => h.trim())
+        .filter(Boolean),
+    ),
 });
 export type ServerConfig = z.infer<typeof schema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {

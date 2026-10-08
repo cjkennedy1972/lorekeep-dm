@@ -35,6 +35,9 @@ export async function runSweep(db: Pool, options: SweepOptions) {
         log: options.log ?? consoleLog,
       };
       const logs = await purgeLogs(ctx);
+      await db.query('DELETE FROM endpoint_usage WHERE created_at < $1', [
+        new Date(ctx.now.getTime() - 30 * 86_400_000),
+      ]);
       const exports = await purgeExports(ctx);
       const accounts = await runAccountDeletions(ctx);
       if (accounts.failed === 0) {

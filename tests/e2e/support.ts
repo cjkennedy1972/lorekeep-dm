@@ -29,6 +29,7 @@ for (const file of [
   '0004_room_invites.sql',
   '0005_ws_ticket_auth_session.sql',
   '0006_retention.sql',
+  '0008_usage.sql',
 ]) {
   const { readFile } = await import('node:fs/promises');
   const sql = await readFile(
