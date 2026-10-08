@@ -143,6 +143,8 @@ export function validateCharacter(
     if (gen.asi?.length) {
       const expected = { ...gen.baseAbilities };
       for (const asi of gen.asi) expected[asi.ability] += asi.amount;
+      for (const asi of char.levelUpAsi ?? [])
+        expected[asi.ability] += asi.amount;
       if (ABILITIES.some((a) => expected[a] !== char.abilities[a]))
         out.push(
           violation(
