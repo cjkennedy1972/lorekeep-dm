@@ -160,7 +160,10 @@ describe('operator endpoint configuration', () => {
         'pattern',
         'maxLength',
       ]);
-      expect(second.unsupportedToolSchemaKeywords).toEqual(['pattern', 'maxLength']);
+      expect(second.unsupportedToolSchemaKeywords).toEqual([
+        'pattern',
+        'maxLength',
+      ]);
       expect(
         (await readEndpoints(db.pool))[0]?.unsupportedToolSchemaKeywords,
       ).toEqual(['pattern', 'maxLength']);
