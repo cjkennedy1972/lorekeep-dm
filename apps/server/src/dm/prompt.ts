@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { DMToolArgsSchema } from '@game/schema';
+import { DMToolArgsSchema, DMToolCallSchema } from '@game/schema';
 import { z } from 'zod';
 import { projectState, stableJson } from './projection.js';
 
@@ -33,6 +33,8 @@ export interface BuildPromptInput {
   session: PromptSession;
   turn: PromptTurn;
   activeMode: 'exploration' | 'combat';
+  /** Optional versioned JSON schemas for schema-registry integrations. */
+  toolSchemas?: Readonly<Record<string, unknown>>;
 }
 export interface PromptResult {
   blocks: [string, string, string, string];
@@ -73,23 +75,27 @@ export const TOKEN_ESTIMATE_METHOD =
   'UTF-8 bytes / 3, rounded up (conservative English approximation; typically within ±35%, not a model tokenizer)';
 
 function quoteData(label: string, text: string): string {
-  return `<<<${label}_DATA>>>\n${JSON.stringify(text)}\n<<<END_${label}_DATA>>>`;
+  return `<<<${label}_DATA encoding=base64>>>\n${Buffer.from(text, 'utf8').toString('base64')}\n<<<END_${label}_DATA>>>`;
 }
 function makeStatic(input: BuildPromptInput): string {
-  const modeTools = Object.keys(DMToolArgsSchema).filter((name) => {
-    if (input.activeMode === 'combat') return true;
-    return ![
-      'attack',
-      'cast_spell',
-      'move_to',
-      'suggest_area_target',
-      'start_combat',
-      'end_combat',
-    ].includes(name);
-  });
+  const modeTools = DMToolCallSchema.options
+    .map((tool) => tool.shape.name.value)
+    .filter((name) => {
+      if (input.activeMode === 'combat') return true;
+      return ![
+        'attack',
+        'cast_spell',
+        'move_to',
+        'suggest_area_target',
+        'start_combat',
+        'end_combat',
+      ].includes(name);
+    });
   const schemas = modeTools.map((name) => ({
     name,
-    schema: zodSchema(DMToolArgsSchema[name as keyof typeof DMToolArgsSchema]),
+    schema:
+      input.toolSchemas?.[name] ??
+      zodSchema(DMToolArgsSchema[name as keyof typeof DMToolArgsSchema]),
   }));
   return [
     STATIC_PERSONA,
@@ -101,8 +107,24 @@ function makeStatic(input: BuildPromptInput): string {
 function zodSchema(
   schema: (typeof DMToolArgsSchema)[keyof typeof DMToolArgsSchema],
 ): unknown {
-  return z.toJSONSchema(schema);
+  return sortSchemaKeys(z.toJSONSchema(schema));
 }
+
+function sortSchemaKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortSchemaKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [
+          key,
+          sortSchemaKeys((value as Record<string, unknown>)[key]),
+        ]),
+    );
+  }
+  return value;
+}
+
 function makeSession(input: BuildPromptInput): string {
   return stableJson({
     contentTier: input.session.contentTier,
@@ -164,7 +186,6 @@ export function buildPrompt(input: BuildPromptInput): PromptResult {
   const sessionBlock = makeSession(input);
   const prefix = `${staticBlock}\n\n${sessionBlock}`;
   const promptPrefixHash = `sha256:${createHash('sha256').update(prefix).digest('hex')}`;
-  const turns = input.turn.turns ?? [];
   const memories = input.turn.retrievedMemory ?? [];
   const trimsApplied: string[] = [];
   let selectedTurns = 6;
@@ -210,16 +231,28 @@ export function buildPrompt(input: BuildPromptInput): PromptResult {
       brief = true;
     });
   const tokens = estimateTokens(flatten(blocks));
-  if (estimateTokens(blocks[0]) > BLOCK_LIMITS.static)
-    throw new Error(
-      `Static prefix exceeds 5,500-token hard cap (${estimateTokens(blocks[0])}).`,
-    );
+  const blockTokens = blocks.map(estimateTokens);
+  for (const [index, name] of [
+    'static',
+    'session',
+    'dynamic',
+    'memory',
+  ].entries()) {
+    if (blockTokens[index]! > BLOCK_LIMITS[name as keyof typeof BLOCK_LIMITS]) {
+      trimsApplied.push(`${name}:block-budget-exceeded`);
+    }
+  }
   return {
     blocks,
     messages: flatten(blocks),
     promptPrefixHash,
     tokens,
     trimsApplied,
-    overBudget: tokens > TOTAL_CAP || tokens > TOTAL_TARGET,
+    overBudget:
+      tokens > TOTAL_CAP ||
+      tokens > TOTAL_TARGET ||
+      blockTokens.some(
+        (count, index) => count > Object.values(BLOCK_LIMITS)[index]!,
+      ),
   };
 }

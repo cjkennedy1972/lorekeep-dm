@@ -28,6 +28,8 @@ export function projectState(input: ProjectionInput): string {
       round: input.combat.state.round,
       turnIndex: input.combat.state.turnIndex,
       initiative: input.combat.state.initiative,
+      activeEntityId:
+        input.combat.state.initiative[input.combat.state.turnIndex]?.entityId,
       description: input.combat.description,
     };
   }
