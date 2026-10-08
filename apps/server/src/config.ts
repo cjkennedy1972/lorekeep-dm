@@ -15,6 +15,10 @@ const schema = z.object({
     .min(1)
     .transform((v) => new Secret(v))
     .optional(),
+  OPERATOR_EMAILS: z.string().default(''),
+  /** AES-256-GCM master key: exactly 32 bytes in hex or base64. */
+  OPERATOR_ENDPOINT_MASTER_KEY: z.string().optional(),
+  OPERATOR_ENDPOINT_ACTIVE_KEY_ID: z.string().optional(),
   /** Comma-separated exact hosts allowed to be local/private (e.g. a local model). */
   LLM_ALLOW_LOCAL_HOSTS: z
     .string()
