@@ -1,0 +1,424 @@
+{
+  "scenario": "crypt-solo-v1",
+  "seed": 2901,
+  "events": [
+    {
+      "type": "CombatStarted",
+      "combatants": [
+        {
+          "id": "pc-aria",
+          "speed": 30
+        },
+        {
+          "id": "goblin-1",
+          "speed": 30
+        },
+        {
+          "id": "goblin-2",
+          "speed": 30
+        }
+      ]
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-aria",
+      "path": [
+        {
+          "x": 9,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-aria",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-aria",
+      "path": [
+        {
+          "x": 9,
+          "y": 2
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-aria",
+      "feet": 5
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "pc-aria",
+      "attackerId": "goblin-1"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "goblin-1",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "pc-aria",
+      "attackerId": "goblin-2"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "goblin-2",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "goblin-1",
+      "used": true,
+      "reactionId": "goblin-1->pc-aria@9,2"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 10
+      }
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "goblin-2",
+      "used": true,
+      "reactionId": "goblin-2->pc-aria@9,2"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 10
+      }
+    },
+    {
+      "type": "SlotSpent",
+      "entityId": "pc-aria",
+      "slotLevel": 1
+    },
+    {
+      "type": "SpellCast",
+      "entityId": "pc-aria",
+      "spellId": "spell:burning-hands",
+      "slotLevel": 1
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "spellId": "spell:burning-hands",
+      "kind": "save",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 9,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "dex",
+            "value": 2
+          }
+        ],
+        "total": 11
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-aria",
+      "spellId": "spell:burning-hands",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "3d6",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 2,
+            "kept": true
+          },
+          {
+            "sides": 6,
+            "value": 5,
+            "kept": true
+          },
+          {
+            "sides": 6,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [],
+        "total": 13
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-1",
+      "from": 4,
+      "to": 0,
+      "amount": 4,
+      "kind": "damage",
+      "damageType": "fire"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "spellId": "spell:burning-hands",
+      "kind": "save",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 13,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "dex",
+            "value": 2
+          }
+        ],
+        "total": 15
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-aria",
+      "spellId": "spell:burning-hands",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "3d6",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 3,
+            "kept": true
+          },
+          {
+            "sides": 6,
+            "value": 5,
+            "kept": true
+          },
+          {
+            "sides": 6,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [],
+        "total": 9
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-2",
+      "from": 4,
+      "to": 0,
+      "amount": 4,
+      "kind": "damage",
+      "damageType": "fire"
+    },
+    {
+      "type": "AreaResolved",
+      "cells": [
+        {
+          "x": 9,
+          "y": 2
+        },
+        {
+          "x": 8,
+          "y": 3
+        },
+        {
+          "x": 9,
+          "y": 3
+        },
+        {
+          "x": 10,
+          "y": 3
+        },
+        {
+          "x": 7,
+          "y": 4
+        },
+        {
+          "x": 8,
+          "y": 4
+        },
+        {
+          "x": 9,
+          "y": 4
+        },
+        {
+          "x": 10,
+          "y": 4
+        },
+        {
+          "x": 11,
+          "y": 4
+        },
+        {
+          "x": 6,
+          "y": 5
+        },
+        {
+          "x": 7,
+          "y": 5
+        },
+        {
+          "x": 8,
+          "y": 5
+        },
+        {
+          "x": 9,
+          "y": 5
+        },
+        {
+          "x": 10,
+          "y": 5
+        },
+        {
+          "x": 11,
+          "y": 5
+        },
+        {
+          "x": 12,
+          "y": 5
+        }
+      ],
+      "affected": [
+        "goblin-1",
+        "goblin-2"
+      ]
+    },
+    {
+      "type": "CombatEnded",
+      "reason": "script-complete"
+    }
+  ],
+  "finalState": {
+    "mapId": "crypt-room",
+    "entities": [
+      {
+        "id": "pc-aria",
+        "team": "pc",
+        "size": 1,
+        "hp": 10,
+        "maxHp": 10,
+        "ac": 12,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 14,
+          "con": 14,
+          "int": 16,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "pos": {
+          "x": 9,
+          "y": 2
+        }
+      },
+      {
+        "id": "goblin-1",
+        "team": "goblin",
+        "size": 1,
+        "hp": 0,
+        "maxHp": 4,
+        "ac": 15,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 15,
+          "con": 10,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "pos": {
+          "x": 8,
+          "y": 5
+        }
+      },
+      {
+        "id": "goblin-2",
+        "team": "goblin",
+        "size": 1,
+        "hp": 0,
+        "maxHp": 4,
+        "ac": 15,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 15,
+          "con": 10,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "pos": {
+          "x": 10,
+          "y": 5
+        }
+      }
+    ],
+    "outcome": "CombatEnded"
+  }
+}
