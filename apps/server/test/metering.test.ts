@@ -52,7 +52,13 @@ describe('LLM usage metering', () => {
         { type: 'text', delta: 'answer' },
         {
           type: 'usage',
-          usage: { input: 12, output: 2, cacheRead: 4, estimate: false },
+          usage: {
+            input: 12,
+            output: 2,
+            cacheRead: 4,
+            cacheWrite: 2,
+            estimate: false,
+          },
         },
       ]),
       sink,
@@ -64,6 +70,7 @@ describe('LLM usage metering', () => {
       inputTokens: 12,
       outputTokens: 2,
       cachedTokens: 4,
+      cacheWriteTokens: 2,
       estimated: false,
       retries: 1,
       errorCode: null,

@@ -9,11 +9,18 @@ import type { CheckToolState } from './check.js';
 import type { AttackToolState } from './attack.js';
 import type { SpellToolState } from './spell.js';
 import type { ConditionToolState } from './conditions.js';
+import { executeStartCombat, executeEndCombat } from './combat.js';
+import { executeMoveTo, executeSuggestAreaTarget } from './movement.js';
+import type { CombatToolState } from './combat.js';
+import type { MovementToolState, AreaToolState } from './movement.js';
 
 export type ToolExecutorState = CheckToolState &
   AttackToolState &
   SpellToolState &
-  ConditionToolState;
+  ConditionToolState &
+  CombatToolState &
+  MovementToolState &
+  AreaToolState;
 export function execute(
   state: ToolExecutorState,
   toolCall: unknown,
@@ -37,6 +44,10 @@ export function execute(
     'cast_spell',
     'apply_condition',
     'remove_condition',
+    'start_combat',
+    'end_combat',
+    'move_to',
+    'suggest_area_target',
   ];
   if (!supported.includes(call.name))
     return fail('unknown-tool', 'Use one of the supported M2-10 tools.');
@@ -73,6 +84,12 @@ export function execute(
   if (call.name === 'cast_spell') return executeSpell(state, call.args, rng);
   if (call.name === 'apply_condition' || call.name === 'remove_condition')
     return executeCondition(state, call.name, call.args);
+  if (call.name === 'start_combat')
+    return executeStartCombat(state, call.args, rng);
+  if (call.name === 'end_combat') return executeEndCombat(state, call.args);
+  if (call.name === 'move_to') return executeMoveTo(state, call.args);
+  if (call.name === 'suggest_area_target')
+    return executeSuggestAreaTarget(state, call.args);
   const checked = DMToolCallSchema.safeParse(toolCall);
   return checked.success
     ? fail('unknown-tool', 'This tool is not implemented by this executor.')

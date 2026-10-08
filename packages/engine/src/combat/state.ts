@@ -36,7 +36,17 @@ export type CombatEvent =
   | { type: 'ActionSpent'; entityId: string }
   | { type: 'BonusActionSpent'; entityId: string }
   | { type: 'ReactionSpent'; entityId: string }
-  | { type: 'MovementSpent'; entityId: string; feet: number };
+  | { type: 'MovementSpent'; entityId: string; feet: number }
+  | {
+      type: 'CombatEnded';
+      outcome:
+        | 'party-victory'
+        | 'party-fled'
+        | 'enemies-fled'
+        | 'truce'
+        | 'party-defeated';
+      xp: number;
+    };
 
 export const emptyCombatState = (): CombatState => ({
   combatants: [],
@@ -50,6 +60,8 @@ export const emptyCombatState = (): CombatState => ({
 /** Pure event reducer. Invalid event sequences are rejected rather than repaired. */
 export function apply(state: CombatState, event: CombatEvent): CombatState {
   switch (event.type) {
+    case 'CombatEnded':
+      return emptyCombatState();
     case 'CombatStarted':
       return {
         combatants: event.combatants.map((c) => ({ ...c })),
