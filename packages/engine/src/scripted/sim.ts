@@ -60,6 +60,16 @@ export type SimSpec = {
   caster?: { classId: string; level: number; slots: Record<string, number> };
   /** Starts the fight already at 0 HP and dying. */
   startsDying?: boolean;
+  /** Damage-type relations of this creature, e.g. a raging barbarian's `{ slashing: 'resistant' }`. */
+  relations?: Record<string, 'resistant' | 'vulnerable' | 'immune'>;
+  /** Starting HP when the fight begins mid-day (defaults to `hp`, the maximum). */
+  currentHp?: number;
+};
+/** Per-attack tweaks a policy may apply to one strike (riders, advantage). */
+export type StrikeOverride = {
+  attackBonus?: number;
+  damage?: string;
+  mode?: 'normal' | 'advantage' | 'disadvantage';
 };
 export type SimEntity = {
   id: string;
@@ -77,6 +87,7 @@ export type SimEntity = {
   range?: { normalFt: number; longFt: number };
   saveProficiencies: Ability[];
   caster?: SimSpec['caster'];
+  relations?: SimSpec['relations'];
   slotsUsed: Record<string, number>;
   conditions: ActiveCondition[];
   status: 'up' | 'dying' | 'stable' | 'dead';
@@ -234,7 +245,7 @@ export class Sim {
       team: s.team,
       pos: { ...s.pos },
       size: s.size,
-      hp: s.startsDying ? 0 : s.hp,
+      hp: s.startsDying ? 0 : (s.currentHp ?? s.hp),
       maxHp: s.hp,
       ac: s.ac,
       speed: s.speed,
@@ -245,6 +256,7 @@ export class Sim {
       ...(s.range ? { range: s.range } : {}),
       saveProficiencies: s.saveProficiencies ?? [],
       ...(s.caster ? { caster: s.caster } : {}),
+      ...(s.relations ? { relations: s.relations } : {}),
       slotsUsed: {},
       conditions: s.startsDying ? [{ id: 'unconscious' as const }] : [],
       status: s.startsDying ? 'dying' : 'up',
@@ -588,11 +600,11 @@ export class Sim {
     return this.move(id, cut);
   }
 
-  melee(attackerId: string, targetId: string) {
-    return this.strike(attackerId, targetId, false);
+  melee(attackerId: string, targetId: string, over?: StrikeOverride) {
+    return this.strike(attackerId, targetId, false, over);
   }
-  shoot(attackerId: string, targetId: string) {
-    const r = this.strike(attackerId, targetId, true);
+  shoot(attackerId: string, targetId: string, over?: StrikeOverride) {
+    const r = this.strike(attackerId, targetId, true, over);
     if ('error' in r)
       this.emit({
         type: 'AttackRefused',
@@ -602,7 +614,26 @@ export class Sim {
       });
     return r;
   }
-  private strike(attackerId: string, targetId: string, ranged: boolean) {
+  /** Restore HP outside the spell engine (second wind, potions, lay on hands); never above max. */
+  heal(id: string, amount: number) {
+    const e = this.get(id);
+    const to = Math.min(e.maxHp, e.hp + amount);
+    if (e.status !== 'up' || to <= e.hp) return 0;
+    this.emit({
+      type: 'HpChanged',
+      entityId: id,
+      from: e.hp,
+      to,
+      amount: to - e.hp,
+    });
+    return to - e.hp;
+  }
+  private strike(
+    attackerId: string,
+    targetId: string,
+    ranged: boolean,
+    over: StrikeOverride = {},
+  ) {
     const a = this.get(attackerId);
     const t = this.get(targetId);
     const dist = this.d(a, t);
@@ -612,11 +643,14 @@ export class Sim {
       targetId,
       attackId: ranged ? 'ranged' : 'melee',
       seed: this.rng,
-      attackBonus: a.attackBonus,
-      damage: a.damage,
+      attackBonus: over.attackBonus ?? a.attackBonus,
+      damage: over.damage ?? a.damage,
       damageType: a.damageType,
       targetAc: t.ac,
-      mode: this.attackMode(a, t, dist, ranged),
+      mode: this.combineMode(
+        this.attackMode(a, t, dist, ranged),
+        over.mode ?? 'normal',
+      ),
       map: {
         map: this.mapNow(),
         attacker: a,
@@ -627,6 +661,7 @@ export class Sim {
       target: {
         hp: dying ? 1 : t.hp,
         kind: t.team === 'pc' ? ('pc' as const) : ('monster' as const),
+        ...(t.relations ? { relations: t.relations } : {}),
       },
     };
     const result = attack(input);
@@ -655,6 +690,13 @@ export class Sim {
       });
     }
     return { ok: true as const, hit: result.hit };
+  }
+  /** SRD: advantage and disadvantage from different sources cancel. */
+  private combineMode(
+    a: 'normal' | 'advantage' | 'disadvantage',
+    b: 'normal' | 'advantage' | 'disadvantage',
+  ) {
+    return a === b ? a : a === 'normal' ? b : b === 'normal' ? a : 'normal';
   }
   /** Condition-derived mode, plus the SRD rule that a ranged attack with a hostile within 5 ft has disadvantage. */
   private attackMode(
@@ -918,6 +960,20 @@ export class Sim {
     this.emit({ type: 'MovementSpent', entityId: id, feet: cost });
     this.movementLeft[id] = (this.movementLeft[id] ?? 0) - cost;
     return { ok: true as const };
+  }
+
+  /** Close on the nearest opponent with this turn's movement and make no attack. */
+  approach(e: SimEntity) {
+    const choice = monsterPolicy({
+      map: this.mapNow(),
+      entities: this.state.entities.map((x) => ({
+        ...x,
+        conditions: x.conditions.map((c) => c.id),
+        hp: this.standing(x) ? x.hp : 0,
+      })),
+      monsterId: e.id,
+    });
+    if (choice.kind === 'approach') this.moveWithinBudget(e.id, choice.path);
   }
 
   /** Default turn: monsterPolicy drives approach / attack / flee for any entity. */
