@@ -1,0 +1,1487 @@
+{
+  "scenario": "door-rubble-v1",
+  "seed": 3102,
+  "events": [
+    {
+      "type": "CombatStarted",
+      "mapId": "crypt-partition",
+      "combatants": [
+        {
+          "id": "pc-garrick",
+          "speed": 30
+        },
+        {
+          "id": "pc-wren",
+          "speed": 30
+        },
+        {
+          "id": "skeleton-1",
+          "speed": 30
+        },
+        {
+          "id": "zombie-1",
+          "speed": 20
+        }
+      ],
+      "entities": [
+        {
+          "id": "pc-garrick",
+          "team": "pc",
+          "pos": {
+            "x": 8,
+            "y": 15
+          },
+          "size": 1,
+          "hp": 13,
+          "maxHp": 13,
+          "ac": 16,
+          "speed": 30,
+          "abilities": {
+            "str": 16,
+            "dex": 12,
+            "con": 14,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 5,
+          "damage": "1d8+3",
+          "damageType": "slashing",
+          "saveProficiencies": [
+            "str",
+            "con"
+          ],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "pc-wren",
+          "team": "pc",
+          "pos": {
+            "x": 10,
+            "y": 16
+          },
+          "size": 1,
+          "hp": 15,
+          "maxHp": 15,
+          "ac": 14,
+          "speed": 30,
+          "abilities": {
+            "str": 10,
+            "dex": 16,
+            "con": 12,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 5,
+          "damage": "1d6+3",
+          "damageType": "piercing",
+          "range": {
+            "normalFt": 80,
+            "longFt": 320
+          },
+          "saveProficiencies": [
+            "str",
+            "dex"
+          ],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "skeleton-1",
+          "team": "foe",
+          "pos": {
+            "x": 8,
+            "y": 4
+          },
+          "size": 1,
+          "hp": 13,
+          "maxHp": 13,
+          "ac": 14,
+          "speed": 30,
+          "abilities": {
+            "str": 10,
+            "dex": 16,
+            "con": 15,
+            "int": 6,
+            "wis": 8,
+            "cha": 5
+          },
+          "attackBonus": 5,
+          "damage": "1d6+3",
+          "damageType": "piercing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "zombie-1",
+          "team": "foe",
+          "pos": {
+            "x": 11,
+            "y": 5
+          },
+          "size": 1,
+          "hp": 15,
+          "maxHp": 15,
+          "ac": 8,
+          "speed": 20,
+          "abilities": {
+            "str": 13,
+            "dex": 6,
+            "con": 16,
+            "int": 3,
+            "wis": 6,
+            "cha": 5
+          },
+          "attackBonus": 3,
+          "damage": "1d8+1",
+          "damageType": "bludgeoning",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        }
+      ],
+      "doors": {
+        "9,0|9,1": "closed",
+        "9,11|9,12": "closed"
+      }
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-garrick",
+      "total": 5
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-wren",
+      "total": 8
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "skeleton-1",
+      "total": 7
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "zombie-1",
+      "total": 13
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "zombie-1",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "zombie-1",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "zombie-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 1
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 9,
+          "y": 15
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 8,
+          "y": 14
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 8,
+          "y": 13
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 9,
+          "y": 12
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "DoorOpened",
+      "entityId": "pc-wren",
+      "a": {
+        "x": 9,
+        "y": 11
+      },
+      "b": {
+        "x": 9,
+        "y": 12
+      }
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 9,
+          "y": 11
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "approach"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "skeleton-1",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-1",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-1",
+      "path": [
+        {
+          "x": 7,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-1",
+      "path": [
+        {
+          "x": 6,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-1",
+      "path": [
+        {
+          "x": 5,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-1",
+      "path": [
+        {
+          "x": 6,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-1",
+      "path": [
+        {
+          "x": 7,
+          "y": 9
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-1",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-1",
+      "kind": "approach"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "skeleton-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "zombie-1",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "zombie-1",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "zombie-1",
+      "path": [
+        {
+          "x": 10,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "zombie-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "zombie-1",
+      "path": [
+        {
+          "x": 11,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "zombie-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "zombie-1",
+      "path": [
+        {
+          "x": 12,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "zombie-1",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "zombie-1",
+      "kind": "approach"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "zombie-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 8,
+          "y": 10
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 17,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 22
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "skeleton-1",
+      "from": 13,
+      "to": 6,
+      "damage": 7,
+      "damageType": "piercing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "skeleton-1",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-1",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-1",
+      "path": [
+        {
+          "x": 6,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-1",
+      "feet": 5
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "skeleton-1",
+      "attackerId": "pc-wren"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "pc-wren",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "pc-wren",
+      "used": true,
+      "reactionId": "pc-wren->skeleton-1@6,8"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 12,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 17
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "opportunity",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "skeleton-1",
+      "from": 6,
+      "to": 0,
+      "damage": 7,
+      "damageType": "piercing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "skeleton-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "skeleton-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 7,
+          "y": 14
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 8,
+          "y": 13
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 9,
+          "y": 12
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 9,
+          "y": 11
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 10,
+          "y": 10
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "zombie-1",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "zombie-1",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "zombie-1",
+      "path": [
+        {
+          "x": 11,
+          "y": 9
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "zombie-1",
+      "feet": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "zombie-1",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "zombie-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 20,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 3
+          }
+        ],
+        "total": 23
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "zombie-1",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "2d8+1",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 5,
+            "kept": true
+          },
+          {
+            "sides": 8,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 1
+          }
+        ],
+        "total": 10
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-garrick",
+      "from": 13,
+      "to": 3,
+      "damage": 10,
+      "damageType": "bludgeoning"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "zombie-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 9,
+          "y": 9
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 10
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 10,
+          "y": 8
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 2,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 7
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 15,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 20
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "zombie-1",
+      "from": 15,
+      "to": 9,
+      "damage": 6,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "zombie-1",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "zombie-1",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "zombie-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 7,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 3
+          }
+        ],
+        "total": 10
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "zombie-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 2,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 7
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 7,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 12
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "zombie-1",
+      "from": 9,
+      "to": 2,
+      "damage": 7,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "zombie-1",
+      "round": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "zombie-1",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "zombie-1",
+      "path": [
+        {
+          "x": 12,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "zombie-1",
+      "feet": 5
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "zombie-1",
+      "attackerId": "pc-garrick"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "pc-garrick",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "zombie-1",
+      "attackerId": "pc-wren"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "pc-wren",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "pc-garrick",
+      "used": true,
+      "reactionId": "pc-garrick->zombie-1@12,8"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 5,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 10
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "opportunity",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 8,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 11
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "zombie-1",
+      "from": 2,
+      "to": 0,
+      "damage": 11,
+      "damageType": "slashing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "zombie-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "pc-wren",
+      "used": false,
+      "reactionId": "pc-wren->zombie-1@12,8"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "zombie-1"
+    },
+    {
+      "type": "CombatEnded",
+      "reason": "foes-defeated"
+    }
+  ],
+  "finalState": {
+    "mapId": "crypt-partition",
+    "entities": [
+      {
+        "id": "pc-garrick",
+        "team": "pc",
+        "pos": {
+          "x": 10,
+          "y": 10
+        },
+        "size": 1,
+        "hp": 3,
+        "maxHp": 13,
+        "ac": 16,
+        "speed": 30,
+        "abilities": {
+          "str": 16,
+          "dex": 12,
+          "con": 14,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 5,
+        "damage": "1d8+3",
+        "damageType": "slashing",
+        "saveProficiencies": [
+          "str",
+          "con"
+        ],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "pc-wren",
+        "team": "pc",
+        "pos": {
+          "x": 10,
+          "y": 8
+        },
+        "size": 1,
+        "hp": 15,
+        "maxHp": 15,
+        "ac": 14,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 16,
+          "con": 12,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 5,
+        "damage": "1d6+3",
+        "damageType": "piercing",
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "saveProficiencies": [
+          "str",
+          "dex"
+        ],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "skeleton-1",
+        "team": "foe",
+        "pos": {
+          "x": 6,
+          "y": 8
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 13,
+        "ac": 14,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 16,
+          "con": 15,
+          "int": 6,
+          "wis": 8,
+          "cha": 5
+        },
+        "attackBonus": 5,
+        "damage": "1d6+3",
+        "damageType": "piercing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "zombie-1",
+        "team": "foe",
+        "pos": {
+          "x": 12,
+          "y": 8
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 15,
+        "ac": 8,
+        "speed": 20,
+        "abilities": {
+          "str": 13,
+          "dex": 6,
+          "con": 16,
+          "int": 3,
+          "wis": 6,
+          "cha": 5
+        },
+        "attackBonus": 3,
+        "damage": "1d8+1",
+        "damageType": "bludgeoning",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      }
+    ],
+    "doors": {
+      "9,0|9,1": "closed",
+      "9,11|9,12": "open"
+    },
+    "round": 5,
+    "outcome": "CombatEnded",
+    "reason": "foes-defeated"
+  }
+}

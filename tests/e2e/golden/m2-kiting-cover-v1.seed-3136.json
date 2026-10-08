@@ -1,0 +1,2485 @@
+{
+  "scenario": "kiting-cover-v1",
+  "seed": 3136,
+  "events": [
+    {
+      "type": "CombatStarted",
+      "mapId": "crypt-room",
+      "combatants": [
+        {
+          "id": "pc-wren",
+          "speed": 30
+        },
+        {
+          "id": "goblin-1",
+          "speed": 30
+        },
+        {
+          "id": "goblin-2",
+          "speed": 30
+        }
+      ],
+      "entities": [
+        {
+          "id": "pc-wren",
+          "team": "pc",
+          "pos": {
+            "x": 14,
+            "y": 16
+          },
+          "size": 1,
+          "hp": 15,
+          "maxHp": 15,
+          "ac": 14,
+          "speed": 30,
+          "abilities": {
+            "str": 10,
+            "dex": 16,
+            "con": 12,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 5,
+          "damage": "1d6+3",
+          "damageType": "piercing",
+          "range": {
+            "normalFt": 80,
+            "longFt": 320
+          },
+          "saveProficiencies": [
+            "str",
+            "dex"
+          ],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "goblin-1",
+          "team": "foe",
+          "pos": {
+            "x": 8,
+            "y": 2
+          },
+          "size": 1,
+          "hp": 10,
+          "maxHp": 10,
+          "ac": 15,
+          "speed": 30,
+          "abilities": {
+            "str": 8,
+            "dex": 15,
+            "con": 10,
+            "int": 10,
+            "wis": 8,
+            "cha": 8
+          },
+          "attackBonus": 4,
+          "damage": "1d6+2",
+          "damageType": "slashing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "goblin-2",
+          "team": "foe",
+          "pos": {
+            "x": 14,
+            "y": 2
+          },
+          "size": 1,
+          "hp": 10,
+          "maxHp": 10,
+          "ac": 15,
+          "speed": 30,
+          "abilities": {
+            "str": 8,
+            "dex": 15,
+            "con": 10,
+            "int": 10,
+            "wis": 8,
+            "cha": 8
+          },
+          "attackBonus": 4,
+          "damage": "1d6+2",
+          "damageType": "slashing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        }
+      ],
+      "doors": {
+        "9,0|9,1": "closed"
+      }
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-wren",
+      "total": 22
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "goblin-1",
+      "total": 4
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "goblin-2",
+      "total": 14
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 1
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "ranged",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 19,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 24
+      },
+      "mapFacts": {
+        "distanceFt": 70,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "ranged",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-1",
+      "from": 10,
+      "to": 4,
+      "damage": 6,
+      "damageType": "piercing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 13,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 11,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 10,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 11,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-1",
+      "path": [
+        {
+          "x": 7,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-1",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 2
+    },
+    {
+      "type": "AttackRefused",
+      "attackerId": "pc-wren",
+      "targetId": "goblin-2",
+      "reason": "Target is blocked by full cover."
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "ranged",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 14,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 19
+      },
+      "mapFacts": {
+        "distanceFt": 75,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "ranged",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-1",
+      "from": 4,
+      "to": 0,
+      "damage": 6,
+      "damageType": "piercing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "goblin-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 9
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 10
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 11,
+          "y": 11
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 10,
+          "y": 12
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 11,
+          "y": 13
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 14
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 3
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "ranged",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 10,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 15
+      },
+      "mapFacts": {
+        "distanceFt": 10,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "ranged",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 4
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-2",
+      "from": 10,
+      "to": 6,
+      "damage": 4,
+      "damageType": "piercing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 13,
+          "y": 15
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 16,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 20
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-wren",
+      "from": 15,
+      "to": 9,
+      "damage": 6,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 4
+    },
+    {
+      "type": "Disengaged",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 15,
+          "y": 15
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 16,
+          "y": 14
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 17,
+          "y": 13
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 18,
+          "y": 12
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 14,
+          "y": 15
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 15,
+          "y": 15
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 16,
+          "y": 14
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 17,
+          "y": 13
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 10
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 5
+    },
+    {
+      "type": "Disengaged",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 17,
+          "y": 11
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 16,
+          "y": 10
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 15,
+          "y": 9
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 14,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 13,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 12,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 16,
+          "y": 12
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 15,
+          "y": 11
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 14,
+          "y": 10
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 13,
+          "y": 9
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 11,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 15,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 19
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 8
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-wren",
+      "from": 9,
+      "to": 1,
+      "damage": 8,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 6
+    },
+    {
+      "type": "Disengaged",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 13,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 14,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 15,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 16,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 17,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 18,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 6
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 13,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 14,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 15,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 16,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 17,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 2,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 6
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 7
+    },
+    {
+      "type": "Disengaged",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 17,
+          "y": 2
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 16,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 15,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 14,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 13,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 12,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 7
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 16,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 15,
+          "y": 2
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 14,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 13,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 7,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 11
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 8
+    },
+    {
+      "type": "Disengaged",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 11,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 10,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 9,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 8,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 7,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 6,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 8
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 12,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 11,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 10,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 9,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 8,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 7,
+          "y": 2
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 5
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 9
+    },
+    {
+      "type": "Disengaged",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 5,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 4,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 3,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 2,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 1,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 9
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 6,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 5,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 4,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 3,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 2,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 8
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 10
+    },
+    {
+      "type": "Disengaged",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 1,
+          "y": 2
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 1,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 1,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 1,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 1,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 1,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 1,
+          "y": 2
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 1,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 1,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 1,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 1,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 7
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "CombatEnded",
+      "reason": "round-cap"
+    }
+  ],
+  "finalState": {
+    "mapId": "crypt-room",
+    "entities": [
+      {
+        "id": "pc-wren",
+        "team": "pc",
+        "pos": {
+          "x": 1,
+          "y": 7
+        },
+        "size": 1,
+        "hp": 1,
+        "maxHp": 15,
+        "ac": 14,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 16,
+          "con": 12,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 5,
+        "damage": "1d6+3",
+        "damageType": "piercing",
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "saveProficiencies": [
+          "str",
+          "dex"
+        ],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "goblin-1",
+        "team": "foe",
+        "pos": {
+          "x": 7,
+          "y": 1
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 10,
+        "ac": 15,
+        "speed": 30,
+        "abilities": {
+          "str": 8,
+          "dex": 15,
+          "con": 10,
+          "int": 10,
+          "wis": 8,
+          "cha": 8
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "damageType": "slashing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "goblin-2",
+        "team": "foe",
+        "pos": {
+          "x": 1,
+          "y": 6
+        },
+        "size": 1,
+        "hp": 6,
+        "maxHp": 10,
+        "ac": 15,
+        "speed": 30,
+        "abilities": {
+          "str": 8,
+          "dex": 15,
+          "con": 10,
+          "int": 10,
+          "wis": 8,
+          "cha": 8
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "damageType": "slashing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      }
+    ],
+    "doors": {
+      "9,0|9,1": "closed"
+    },
+    "round": 10,
+    "outcome": "CombatEnded",
+    "reason": "round-cap"
+  }
+}

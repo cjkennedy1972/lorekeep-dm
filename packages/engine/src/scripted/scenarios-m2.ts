@@ -107,7 +107,7 @@ const archer = (id: string, pos: GridPos): SimSpec => ({
   team: 'pc',
   pos,
   size: 1,
-  hp: 11,
+  hp: 15,
   ac: 14,
   speed: 30,
   abilities: abilities({ str: 10, dex: 16, con: 12 }),
@@ -239,7 +239,7 @@ export const M2_SCENARIOS: M2Scenario[] = [
     name: 'kiting-cover-v1',
     purpose:
       'Archer kites two goblin warriors around the crypt pillars; surviving goblins take approach/attack/flee policy turns.',
-    seed: 3101,
+    seed: 3136,
     run(seed) {
       const sim = new Sim('kiting-cover-v1', seed, crypt(), [
         archer('pc-wren', { x: 14, y: 16 }),
@@ -275,7 +275,7 @@ export const M2_SCENARIOS: M2Scenario[] = [
     name: 'concentration-v1',
     purpose:
       'Wizard concentrates on Hideous Laughter; a goblin hits the wizard, forcing a concentration save that (at the reviewed seed) fails and frees the target.',
-    seed: 3103,
+    seed: 3106,
     run(seed) {
       const sim = new Sim('concentration-v1', seed, crypt(), [
         wizard('pc-merel', { x: 9, y: 4 }, 3, { '1': 4, '2': 2 }),
@@ -320,28 +320,43 @@ export const M2_SCENARIOS: M2Scenario[] = [
   {
     name: 'fireball-partial-v1',
     purpose:
-      'Level-5 wizard fireballs a goblin cluster on the forest map: some goblins are outside the 20 ft sphere and untouched, inside ones save for half or full damage.',
-    seed: 3104,
+      'Level-5 wizard fireballs an undead cluster on the forest map: some foes are outside the 20 ft sphere and untouched, inside ones save for half or full damage.',
+    seed: 3103,
     run(seed) {
       const sim = new Sim('fireball-partial-v1', seed, forest(), [
-        wizard('pc-merel', { x: 12, y: 10 }, 5, { '1': 4, '2': 3, '3': 2 }),
-        fighter('pc-garrick', { x: 14, y: 10 }),
-        monster('monster:goblin-warrior', 'goblin-1', { x: 12, y: 3 }),
-        monster('monster:goblin-warrior', 'goblin-2', { x: 13, y: 4 }),
-        monster('monster:goblin-warrior', 'goblin-3', { x: 14, y: 3 }),
-        monster('monster:goblin-warrior', 'goblin-4', { x: 21, y: 3 }),
-        monster('monster:goblin-warrior', 'goblin-5', { x: 22, y: 4 }),
+        wizard('pc-merel', { x: 12, y: 23 }, 5, { '1': 4, '2': 3, '3': 2 }),
+        fighter('pc-garrick', { x: 15, y: 23 }),
+        monster('monster:zombie', 'zombie-1', { x: 12, y: 3 }),
+        monster('monster:zombie', 'zombie-2', { x: 13, y: 4 }),
+        monster('monster:skeleton', 'skeleton-3', { x: 14, y: 3 }),
+        monster('monster:zombie', 'zombie-4', { x: 22, y: 3 }),
+        monster('monster:skeleton', 'skeleton-5', { x: 23, y: 4 }),
       ]);
-      let opened = false;
+      let thrown = false;
       return sim.run(
         (s, e) => {
           if (e.team === 'foe') return policy(s, e);
-          if (e.caster && !opened) {
-            opened = true;
-            const r = s.cast(e.id, 'spell:fireball', 3, {
-              anchor: { x: 13, y: 4 },
-            });
-            if (!('error' in r)) return;
+          if (e.caster && !thrown) {
+            // Aim at the foe with the most other foes inside the 20 ft sphere (4 cells), never catching an ally.
+            const within = (a: GridPos, b: GridPos) =>
+              (a.x - b.x) ** 2 + (a.y - b.y) ** 2 <= 16;
+            const foes = s.opponents(e);
+            const score = (c: GridPos) =>
+              foes.filter((f) => within(c, f.pos)).length -
+              9 *
+                s.state.entities.filter(
+                  (x) => x.team === 'pc' && x.hp > 0 && within(c, x.pos),
+                ).length;
+            const best = [...foes]
+              .map((f) => ({ f, n: score(f.pos) }))
+              .sort((a, b) => b.n - a.n || a.f.id.localeCompare(b.f.id))[0];
+            if (best && best.n >= 2) {
+              thrown = true;
+              const r = s.cast(e.id, 'spell:fireball', 3, {
+                anchor: best.f.pos,
+              });
+              if (!('error' in r)) return;
+            }
           }
           if (e.caster) {
             for (const f of nearest(s, e))
@@ -361,7 +376,7 @@ export const M2_SCENARIOS: M2Scenario[] = [
     name: 'death-saves-stable-v1',
     purpose:
       'A cleric begins the fight dying at 0 HP while the fighter handles a goblin out of reach; death saves accumulate to stable (3 successes).',
-    seed: 3105,
+    seed: 3112,
     run(seed) {
       const sim = new Sim('death-saves-stable-v1', seed, crypt(), [
         { ...cleric('pc-ines', { x: 3, y: 3 }), startsDying: true },
@@ -375,7 +390,7 @@ export const M2_SCENARIOS: M2Scenario[] = [
     name: 'death-saves-dead-v1',
     purpose:
       'The same dying cleric, but a goblin stands next to her and attacks: a hit at 0 HP from within 5 ft is a crit death-save failure, so she dies.',
-    seed: 3106,
+    seed: 3101,
     run(seed) {
       const sim = new Sim('death-saves-dead-v1', seed, crypt(), [
         { ...cleric('pc-ines', { x: 3, y: 3 }), startsDying: true },
@@ -401,7 +416,7 @@ export const M2_SCENARIOS: M2Scenario[] = [
     name: 'grapple-prone-v1',
     purpose:
       'A bandit grapples the fighter (speed 0, cannot walk away) while a wolf bite knocks the archer prone (doubled movement, melee attackers get advantage, standing costs half speed).',
-    seed: 3107,
+    seed: 3124,
     run(seed) {
       const sim = new Sim('grapple-prone-v1', seed, crypt(), [
         fighter('pc-garrick', { x: 9, y: 8 }),
@@ -456,7 +471,7 @@ export const M2_SCENARIOS: M2Scenario[] = [
     name: 'forest-4v6-v1',
     purpose:
       'Four PCs (fighter, archer, wizard, cleric) against six goblins on the forest clearing with the pond and trees; all foes run the monster policy.',
-    seed: 3108,
+    seed: 3106,
     run(seed) {
       const sim = new Sim('forest-4v6-v1', seed, forest(), [
         fighter('pc-garrick', { x: 13, y: 10 }),

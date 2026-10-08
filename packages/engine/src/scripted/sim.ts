@@ -26,7 +26,6 @@ import {
 import {
   castSpell,
   concentrationSave,
-  type SpellEvent,
   type SpellState,
 } from '../combat/spells.js';
 import { abilityModifier } from '../dice.js';
@@ -321,11 +320,11 @@ export class Sim {
         entityId: id,
         condition: { id: 'unconscious' },
       });
-    if (e.concentration)
-      this.dropConcentration(e, 'dropped to 0 HP', e.concentration);
+    if (e.concentration) this.dropConcentration(e, e.concentration, true);
   }
-  private dropConcentration(e: SimEntity, why: string, spellId: string) {
-    this.emit({ type: 'ConcentrationDropped', entityId: e.id, spellId, why });
+  private dropConcentration(e: SimEntity, spellId: string, emitDrop: boolean) {
+    if (emitDrop)
+      this.emit({ type: 'ConcentrationDropped', entityId: e.id, spellId });
     for (const o of this.state.entities)
       for (const c of o.conditions)
         if (c.source === `${spellId}@${e.id}`)
@@ -593,7 +592,15 @@ export class Sim {
     return this.strike(attackerId, targetId, false);
   }
   shoot(attackerId: string, targetId: string) {
-    return this.strike(attackerId, targetId, true);
+    const r = this.strike(attackerId, targetId, true);
+    if ('error' in r)
+      this.emit({
+        type: 'AttackRefused',
+        attackerId,
+        targetId,
+        reason: r.error,
+      });
+    return r;
   }
   private strike(attackerId: string, targetId: string, ranged: boolean) {
     const a = this.get(attackerId);
@@ -693,7 +700,7 @@ export class Sim {
     for (const e of res.events) {
       this.emit(e);
       if (e.type === 'ConcentrationDropped')
-        this.dropConcentration(live, 'failed save', spellId);
+        this.dropConcentration(live, spellId, false);
     }
   }
 
@@ -917,8 +924,8 @@ export class Sim {
   policyTurn(e: SimEntity, opts: { fleeBelow?: number } = {}) {
     const fleeing =
       opts.fleeBelow !== undefined && e.hp <= e.maxHp * opts.fleeBelow;
-    const decide = () =>
-      monsterPolicy({
+    const decide = () => {
+      const choice = monsterPolicy({
         map: this.mapNow(),
         entities: this.state.entities.map((x) => ({
           ...x,
@@ -928,13 +935,16 @@ export class Sim {
         monsterId: e.id,
         fleeing,
       });
+      this.emit({ type: 'PolicyDecision', entityId: e.id, kind: choice.kind });
+      return choice;
+    };
     let d = decide();
     if (d.kind === 'flee') {
       // flee in 5 ft steps until movement runs out (provokes unless nobody is in reach)
       for (let guard = 0; guard < 12 && d.kind === 'flee'; guard++) {
         if (this.get(e.id).hp <= 0) return;
         const r = this.moveWithinBudget(e.id, d.path);
-        if ('error' in r) break;
+        if ('error' in r || this.get(e.id).hp <= 0) break;
         d = decide();
       }
       return;

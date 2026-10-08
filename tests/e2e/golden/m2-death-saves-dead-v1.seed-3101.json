@@ -1,0 +1,878 @@
+{
+  "scenario": "death-saves-dead-v1",
+  "seed": 3101,
+  "events": [
+    {
+      "type": "CombatStarted",
+      "mapId": "crypt-room",
+      "combatants": [
+        {
+          "id": "pc-ines",
+          "speed": 30
+        },
+        {
+          "id": "pc-garrick",
+          "speed": 30
+        },
+        {
+          "id": "goblin-1",
+          "speed": 30
+        }
+      ],
+      "entities": [
+        {
+          "id": "pc-ines",
+          "team": "pc",
+          "pos": {
+            "x": 3,
+            "y": 3
+          },
+          "size": 1,
+          "hp": 0,
+          "maxHp": 11,
+          "ac": 16,
+          "speed": 30,
+          "abilities": {
+            "str": 12,
+            "dex": 10,
+            "con": 14,
+            "int": 10,
+            "wis": 16,
+            "cha": 10
+          },
+          "attackBonus": 3,
+          "damage": "1d6+1",
+          "damageType": "bludgeoning",
+          "saveProficiencies": [
+            "wis",
+            "cha"
+          ],
+          "caster": {
+            "classId": "class:cleric",
+            "level": 1,
+            "slots": {
+              "1": 2
+            }
+          },
+          "slotsUsed": {},
+          "conditions": [
+            {
+              "id": "unconscious"
+            }
+          ],
+          "status": "dying",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "pc-garrick",
+          "team": "pc",
+          "pos": {
+            "x": 12,
+            "y": 10
+          },
+          "size": 1,
+          "hp": 13,
+          "maxHp": 13,
+          "ac": 16,
+          "speed": 30,
+          "abilities": {
+            "str": 16,
+            "dex": 12,
+            "con": 14,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 5,
+          "damage": "1d8+3",
+          "damageType": "slashing",
+          "saveProficiencies": [
+            "str",
+            "con"
+          ],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "goblin-1",
+          "team": "foe",
+          "pos": {
+            "x": 4,
+            "y": 3
+          },
+          "size": 1,
+          "hp": 10,
+          "maxHp": 10,
+          "ac": 15,
+          "speed": 30,
+          "abilities": {
+            "str": 8,
+            "dex": 15,
+            "con": 10,
+            "int": 10,
+            "wis": 8,
+            "cha": 8
+          },
+          "attackBonus": 4,
+          "damage": "1d6+2",
+          "damageType": "slashing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        }
+      ],
+      "doors": {
+        "9,0|9,1": "closed"
+      }
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-ines",
+      "total": 13
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-garrick",
+      "total": 21
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "goblin-1",
+      "total": 6
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 11,
+          "y": 9
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 10
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 10,
+          "y": 8
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 10
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 9,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 8,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-ines",
+      "round": 1
+    },
+    {
+      "type": "ActionSpent",
+      "entityId": "pc-ines"
+    },
+    {
+      "type": "BonusActionSpent",
+      "entityId": "pc-ines"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "pc-ines"
+    },
+    {
+      "type": "ActionsSkipped",
+      "entityId": "pc-ines",
+      "reason": "unconscious creatures cannot take actions or reactions"
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-ines",
+      "feet": 30
+    },
+    {
+      "type": "DeathSave",
+      "entityId": "pc-ines",
+      "die": 6,
+      "successes": 0,
+      "failures": 1,
+      "stable": false,
+      "dead": false,
+      "revived": false
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-ines"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 1
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 17,
+            "kept": true
+          },
+          {
+            "sides": 20,
+            "value": 14,
+            "kept": false
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          },
+          {
+            "label": "advantage",
+            "value": 0
+          }
+        ],
+        "total": 21
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 2,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 4
+      }
+    },
+    {
+      "type": "DeathSave",
+      "entityId": "pc-ines",
+      "die": null,
+      "source": "damage-at-0hp",
+      "successes": 0,
+      "failures": 3,
+      "stable": false,
+      "dead": true,
+      "revived": false
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 7,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 6,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 5,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 7,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 12
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 16,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 20
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 5,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-garrick",
+      "from": 13,
+      "to": 6,
+      "damage": 7,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 12,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 17
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-1",
+      "from": 10,
+      "to": 4,
+      "damage": 6,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 7,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 12
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 11,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 16
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 2,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 5
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-1",
+      "from": 4,
+      "to": 0,
+      "damage": 5,
+      "damageType": "slashing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "goblin-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "CombatEnded",
+      "reason": "foes-defeated"
+    }
+  ],
+  "finalState": {
+    "mapId": "crypt-room",
+    "entities": [
+      {
+        "id": "pc-ines",
+        "team": "pc",
+        "pos": {
+          "x": 3,
+          "y": 3
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 11,
+        "ac": 16,
+        "speed": 30,
+        "abilities": {
+          "str": 12,
+          "dex": 10,
+          "con": 14,
+          "int": 10,
+          "wis": 16,
+          "cha": 10
+        },
+        "attackBonus": 3,
+        "damage": "1d6+1",
+        "damageType": "bludgeoning",
+        "saveProficiencies": [
+          "wis",
+          "cha"
+        ],
+        "caster": {
+          "classId": "class:cleric",
+          "level": 1,
+          "slots": {
+            "1": 2
+          }
+        },
+        "slotsUsed": {},
+        "conditions": [
+          {
+            "id": "unconscious"
+          }
+        ],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 3
+        },
+        "concentration": null
+      },
+      {
+        "id": "pc-garrick",
+        "team": "pc",
+        "pos": {
+          "x": 5,
+          "y": 3
+        },
+        "size": 1,
+        "hp": 6,
+        "maxHp": 13,
+        "ac": 16,
+        "speed": 30,
+        "abilities": {
+          "str": 16,
+          "dex": 12,
+          "con": 14,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 5,
+        "damage": "1d8+3",
+        "damageType": "slashing",
+        "saveProficiencies": [
+          "str",
+          "con"
+        ],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "goblin-1",
+        "team": "foe",
+        "pos": {
+          "x": 4,
+          "y": 3
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 10,
+        "ac": 15,
+        "speed": 30,
+        "abilities": {
+          "str": 8,
+          "dex": 15,
+          "con": 10,
+          "int": 10,
+          "wis": 8,
+          "cha": 8
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "damageType": "slashing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      }
+    ],
+    "doors": {
+      "9,0|9,1": "closed"
+    },
+    "round": 5,
+    "outcome": "CombatEnded",
+    "reason": "foes-defeated"
+  }
+}
