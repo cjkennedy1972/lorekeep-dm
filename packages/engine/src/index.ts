@@ -42,3 +42,8 @@ export * from './map/options.js';
 export * from './scripted/policy.js';
 
 export { cryptScenario } from './scripted/crypt-data.js';
+export {
+  runCryptScenario,
+  replayCryptCombat,
+} from './scripted/scenario-crypt.js';
+export type { ScriptedCombatLog } from './scripted/scenario-crypt.js';
