@@ -1,6 +1,6 @@
 import type { JobContext } from '../types.js';
 
-/** Log-class rows (events.expires_at) and expired tokens/sessions/tickets. */
+/** Log-class rows and expired tokens/sessions/tickets, including endpoint audit. */
 export async function purgeLogs(ctx: JobContext) {
   const { db, now } = ctx;
   const events = (
@@ -18,11 +18,16 @@ export async function purgeLogs(ctx: JobContext) {
     'DELETE FROM ws_tickets WHERE expires_at < $1',
     [now],
   );
+  const endpointAudit = await db.query(
+    'DELETE FROM operator_endpoint_audit WHERE expires_at < $1',
+    [now],
+  );
   const counts = {
     events: Number(events),
     emailTokens: tokens.rowCount ?? 0,
     authSessions: authSessions.rowCount ?? 0,
     wsTickets: tickets.rowCount ?? 0,
+    operatorEndpointAudit: endpointAudit.rowCount ?? 0,
   };
   ctx.log({ job: 'logs', ...counts });
   return counts;

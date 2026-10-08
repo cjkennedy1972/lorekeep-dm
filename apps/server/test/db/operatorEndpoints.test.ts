@@ -41,7 +41,7 @@ describe('operator endpoint configuration', () => {
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
       );
       await db.pool.query(
         "INSERT INTO accounts VALUES($1,'op@example.test','active'),($2,'player@example.test','active')",
@@ -60,13 +60,19 @@ describe('operator endpoint configuration', () => {
         resolver: async () => [{ address: '93.184.216.34', family: 4 }],
         transport: async (req) => {
           sent.push(req);
-          return {
-            status: 200,
-            headers: {},
-            body: new Response(
-              'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
-            ).body,
+          const body = JSON.parse(req.body ?? '{}') as {
+            tools?: unknown[];
+            messages?: { content?: string }[];
           };
+          const id =
+            body.messages
+              ?.map((message) => message.content ?? '')
+              .join(' ')
+              .match(/scenario-\d+/)?.[0] ?? 'scenario-00';
+          const result = body.tools?.length
+            ? `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'probe-call', function: { name: 'probe_capability', arguments: JSON.stringify({ scenarioId: id, accepted: true }) } }] } }] })}\n\ndata: [DONE]\n\n`
+            : `data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify({ scenarioId: id, accepted: true }) } }] })}\n\ndata: [DONE]\n\n`;
+          return { status: 200, headers: {}, body: new Response(result).body };
         },
       });
       // Exercise route auth with an operator resolver backed by the actual account email.
@@ -167,6 +173,31 @@ describe('operator endpoint configuration', () => {
       expect(
         (await readEndpoints(db.pool))[0]?.unsupportedToolSchemaKeywords,
       ).toEqual(['pattern', 'maxLength']);
+      const tested = await app.inject({
+        method: 'POST',
+        url: '/api/operator/endpoints/fast/test',
+        headers: { cookie: `sid=${token}` },
+      });
+      expect(tested.statusCode).toBe(200);
+      const deleted = await app.inject({
+        method: 'DELETE',
+        url: '/api/operator/endpoints/fast',
+        headers: { cookie: `sid=${token}` },
+      });
+      expect(deleted.statusCode).toBe(200);
+      const audit = await db.pool.query(
+        'SELECT * FROM operator_endpoint_audit ORDER BY id',
+      );
+      expect(audit.rows.map((row) => [row.action, row.actor_id])).toEqual([
+        ['created', operatorId],
+        ['updated', operatorId],
+        ['tested', operatorId],
+        ['deleted', operatorId],
+      ]);
+      expect(JSON.stringify(audit.rows)).not.toContain(
+        ['operator-', 'credential', '-sentinel'].join(''),
+      );
+      expect(JSON.stringify(audit.rows)).not.toContain(firstCipher);
     } finally {
       await app.close();
       await db.close();
@@ -174,12 +205,13 @@ describe('operator endpoint configuration', () => {
   });
   it('validates and defaults unsupported tool schema keyword lists', async () => {
     const db = await createTestDatabase();
+    const actorId = randomUUID();
     try {
       await db.pool.query(
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
       );
       const egress = createEgressGuard({
         resolver: async () => [{ address: '93.184.216.34', family: 4 }],
@@ -196,15 +228,17 @@ describe('operator endpoint configuration', () => {
           'fast',
           { ...base, unsupportedToolSchemaKeywords: ['pattern', 'pattern'] },
           egress,
+          actorId,
         ),
       ).rejects.toMatchObject({ name: 'ZodError' });
-      const saved = await saveEndpoint(db.pool, 'fast', base, egress);
+      const saved = await saveEndpoint(db.pool, 'fast', base, egress, actorId);
       expect(saved.unsupportedToolSchemaKeywords).toEqual([]);
       const configured = await saveEndpoint(
         db.pool,
         'fast',
         { ...base, unsupportedToolSchemaKeywords: ['pattern', 'maxLength'] },
         egress,
+        actorId,
       );
       expect(configured.unsupportedToolSchemaKeywords).toEqual([
         'pattern',
