@@ -16,7 +16,7 @@ import {
   movementNeighbors,
   type MovementState,
 } from './reachable.js';
-import { threatenedBy, type ThreatEntity } from './threat.js';
+import type { ThreatEntity } from './threat.js';
 
 export type MovementCombatant = ThreatEntity & {
   hp: number;
@@ -30,18 +30,17 @@ export type MovementMode = 'normal' | 'disengage' | 'forced';
 export type MovementEvent =
   | { type: 'MovementSpent'; entityId: string; feet: number }
   | { type: 'EntityMoved'; entityId: string; path: GridPos[]; cost: number }
-  | {
-      type: 'OpportunityTriggered';
-      entityId: string;
-      moverId: string;
-      reactionId: string;
-    }
+  | { type: 'OpportunityTriggered'; moverId: string; attackerId: string }
   | {
       type: 'ReactionAvailable';
-      reactionId: string;
       entityId: string;
-      moverId: string;
-      kind: 'opportunityAttack';
+      trigger: 'opportunityAttack';
+    }
+  | {
+      type: 'ReactionResolved';
+      entityId: string;
+      used: boolean;
+      reactionId: string;
     }
   | { type: 'ReactionSpent'; entityId: string }
   | AttackEvent;
@@ -217,7 +216,7 @@ export function moveAlong(
     events.push({
       type: 'EntityMoved',
       entityId,
-      path: [...traversed],
+      path: [next],
       cost: stepCost,
     });
     if (mode !== 'forced')
@@ -235,16 +234,13 @@ export function moveAlong(
       events.push(
         {
           type: 'OpportunityTriggered',
-          entityId: hostile.id,
           moverId: entityId,
-          reactionId,
+          attackerId: hostile.id,
         },
         {
           type: 'ReactionAvailable',
-          reactionId,
           entityId: hostile.id,
-          moverId: entityId,
-          kind: 'opportunityAttack',
+          trigger: 'opportunityAttack',
         },
       );
     }
@@ -285,6 +281,12 @@ export function resolveReaction(
     reactions: { ...state.reactions, [hostile.id]: false },
   };
   const events: MovementEvent[] = [];
+  events.push({
+    type: 'ReactionResolved',
+    entityId: hostile.id,
+    used: choice === 'take',
+    reactionId,
+  });
   if (choice === 'take') {
     events.push({ type: 'ReactionSpent', entityId: hostile.id });
     if (hostile.opportunityAttack) {
