@@ -1,7 +1,11 @@
 import type { createApp } from '../app.js';
 import type { Pool } from 'pg';
 import { WebSocketServer, WebSocket } from 'ws';
-import { ClientEnvelopeSchema, type ServerMessage } from '@game/schema';
+import {
+  ClientEnvelopeSchema,
+  PlayerActionSchema,
+  type ServerMessage,
+} from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
@@ -185,6 +189,51 @@ export function installGateway(
             void room
               .subscribe(identity.accountId, connection, -1)
               .catch(() => ws.close(1011));
+            return;
+          }
+          if (msg.type === 'PlayerAction') {
+            const action = PlayerActionSchema.safeParse(msg);
+            if (!action.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Action is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            void room
+              .submitAction(
+                identity.accountId,
+                action.data.actionId,
+                action.data.payload.text,
+              )
+              .then((accepted) => {
+                if (!accepted)
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'DUPLICATE_ACTION',
+                      message: 'This action was already received.',
+                      actionId: msg.actionId,
+                    },
+                  });
+              })
+              .catch(() =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ACTION_REJECTED',
+                    message: 'Action could not be accepted.',
+                    actionId: msg.actionId,
+                  },
+                }),
+              );
             return;
           }
           send({
