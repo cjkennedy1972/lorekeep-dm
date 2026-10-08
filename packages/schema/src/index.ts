@@ -11,3 +11,4 @@ export * from './dm-tools.js';
 export * from './dm-events.js';
 export * from './registry.js';
 export * from './endpoint.js';
+export * from './adventure.js';
