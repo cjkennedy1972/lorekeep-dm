@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "pretypecheck": "pnpm --filter @game/schema build",
     "pretest": "pnpm --filter @game/schema build",
-    "prebuild": "pnpm --filter @game/schema build"
+    "prebuild": "pnpm --filter @game/schema build",
+    "test:geometry": "vitest run test/geometry-gate.test.ts test/properties.test.ts",
+    "pretest:geometry": "pnpm --filter @game/schema build"
   },
   "devDependencies": {
     "typescript": "5.9.3",
