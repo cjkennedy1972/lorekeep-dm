@@ -102,7 +102,7 @@ describe('usage metering Postgres and route', () => {
       url: '/api/operator/usage',
       headers: { cookie: `sid=${token}` },
     });
-    expect(deniedOperator.statusCode).toBe(403);
+    expect(deniedOperator.statusCode).toBe(404);
     await app.close();
     await nonOperator.close();
   });

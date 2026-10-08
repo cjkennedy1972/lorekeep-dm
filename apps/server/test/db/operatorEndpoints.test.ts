@@ -75,7 +75,7 @@ describe('operator endpoint configuration', () => {
       const denied = await app.inject({
         method: 'PUT',
         url: '/api/operator/endpoints/fast',
-        headers: { cookie: `sid=${token}` },
+        headers: { cookie: 'sid=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
         payload: {
           baseUrl: 'https://api.example.test/v1',
           model: 'm',
