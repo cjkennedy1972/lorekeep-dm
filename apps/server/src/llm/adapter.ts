@@ -19,6 +19,8 @@ export interface LlmRequest {
   tools?: LlmTool[];
   responseSchema?: Record<string, unknown>;
   signal?: AbortSignal;
+  /** Stable prefix boundary, used for provider prompt caching when profile.cache is enabled. */
+  cacheHints?: { stablePrefixMessages: number };
 }
 export interface LlmCapabilities {
   streaming: boolean;
@@ -29,6 +31,7 @@ export interface TokenUsage {
   input: number;
   output: number;
   cacheRead?: number;
+  cacheWrite?: number;
   estimate: boolean;
 }
 export type LlmChunk =
