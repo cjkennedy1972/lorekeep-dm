@@ -73,6 +73,17 @@ describe('tactical movement pathfinding', () => {
     expect(result.find((r) => r.cell.x === 2 && r.cell.y === 0)?.cost).toBe(10);
     for (const r of result) expect(r.cost).toBeLessThanOrEqual(30);
   });
+  test('mud (moveCost 2) costs 10 feet to enter', () => {
+    const s = fixture();
+    s.entities = [s.entities[0]!];
+    const result = reachable(s, 'a');
+    expect(Array.isArray(result)).toBe(true);
+    if (!Array.isArray(result)) return;
+    // (0,0) -> (1,1) floor 5ft -> (2,2) mud 10ft
+    expect(result.find((r) => r.cell.x === 2 && r.cell.y === 2)?.cost).toBe(15);
+    // mud is entered at double cost: (3,3) is one more diagonal floor step
+    expect(result.find((r) => r.cell.x === 3 && r.cell.y === 3)?.cost).toBe(20);
+  });
   test('closed doors and walls block; open doors pass', () => {
     const s = fixture();
     s.map.edges.push(
