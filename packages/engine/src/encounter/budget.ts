@@ -56,7 +56,12 @@ export function encounterBudget(
     throw new EncounterBuildError(
       'Party size must be an integer from 1 through 6.',
     );
-  return XP_BUDGET[level]![DIFFICULTY_INDEX[difficulty]] * partySize;
+  const row = XP_BUDGET[level];
+  const index = DIFFICULTY_INDEX[difficulty];
+  const perCharacter = row?.[index];
+  if (perCharacter === undefined)
+    throw new EncounterBuildError('Unknown encounter difficulty.');
+  return perCharacter * partySize;
 }
 
 export function buildEncounter(
@@ -71,9 +76,9 @@ export function buildEncounter(
   );
   let state = seedRng(request.seed);
   const eligible = catalog.entries
+    .filter((entry) => entry.kind === 'monster')
     .filter(
       (entry) =>
-        entry.kind === 'monster' &&
         entry.cr <= 5 &&
         (XP_BY_CR[entry.cr] ?? 0) > 0 &&
         (XP_BY_CR[entry.cr] ?? 0) <= budget,
