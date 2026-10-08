@@ -62,6 +62,11 @@ describe('retention sweeper (Postgres)', () => {
         "INSERT INTO events(session_id,seq,turn_id,type,payload,expires_at) VALUES($1,$2,$1,'Log','{}',$3)",
         [sess, seq, exp],
       );
+    await q(
+      `INSERT INTO operator_endpoint_audit(slot,action,actor_id,expires_at) VALUES
+       ('fast','tested',$1,'2020-01-01'),('frontier','tested',$1,'2099-01-01')`,
+      [acc],
+    );
     const oldTok = `old-${randomUUID()}`,
       newTok = `new-${randomUUID()}`;
     for (const [t, exp] of [
@@ -90,6 +95,12 @@ describe('retention sweeper (Postgres)', () => {
         sess,
       ]),
     ).toEqual([{ seq: '2' }, { seq: '3' }]);
+    expect(
+      await count(
+        'SELECT count(*)::int n FROM operator_endpoint_audit WHERE actor_id=$1',
+        [acc],
+      ),
+    ).toBe(1);
     expect(
       await count(
         'SELECT count(*)::int n FROM email_tokens WHERE account_id=$1',
