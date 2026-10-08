@@ -26,17 +26,23 @@ export function registerOperatorRoutes(
   dependencies: { egress?: EgressGuard } = {},
 ) {
   const egress = dependencies.egress ?? createEndpointEgress();
-  app.addHook('onRequest', async (request, reply) => {
-    if (!request.url.startsWith('/api/operator/')) return;
+  const authorize = async (
+    request: Parameters<typeof authenticateRequest>[1],
+    reply: { code: (status: number) => { send: (body: unknown) => unknown } },
+  ) => {
     const session = await authenticateRequest(db, request);
-    if (!session) return reply.code(404).send({ code: 'NOT_FOUND' });
-    if (!(await isOperator(session.account_id)))
+    if (!session || !(await isOperator(session.account_id)))
       return reply.code(404).send({ code: 'NOT_FOUND' });
+    return undefined;
+  };
+  app.get('/api/operator/endpoints', async (request, reply) => {
+    const denied = await authorize(request, reply);
+    if (denied) return denied;
+    return { endpoints: await readEndpoints(db) };
   });
-  app.get('/api/operator/endpoints', async () => ({
-    endpoints: await readEndpoints(db),
-  }));
   app.put('/api/operator/endpoints/:slot', async (request, reply) => {
+    const denied = await authorize(request, reply);
+    if (denied) return denied;
     const { slot } = request.params as { slot: string };
     if (!ENDPOINT_SLOTS.includes(slot as EndpointSlot))
       return reply.code(400).send({ code: 'INVALID_SLOT' });
@@ -66,6 +72,8 @@ export function registerOperatorRoutes(
     }
   });
   app.post('/api/operator/endpoints/:slot/test', async (request, reply) => {
+    const denied = await authorize(request, reply);
+    if (denied) return denied;
     const { slot } = request.params as { slot: string };
     if (!ENDPOINT_SLOTS.includes(slot as EndpointSlot))
       return reply.code(400).send({ code: 'INVALID_SLOT' });

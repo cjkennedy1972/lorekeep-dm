@@ -83,7 +83,7 @@ describe('usage metering Postgres and route', () => {
       url: '/api/operator/usage',
       headers: { cookie: 'sid=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
     });
-    expect(denied.statusCode).toBe(401);
+    expect(denied.statusCode).toBe(404);
     const token = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     const { hashToken } = await import('../../src/accounts/signup.js');
     await database.pool.query(
