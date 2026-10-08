@@ -6610,7 +6610,14 @@
     "concentration": false,
     "resolution": {
       "kind": "utility"
-    }
+    },
+    "damage": [
+      {
+        "dice": "6d6",
+        "types": ["force"],
+        "condition": "If the stone is destroyed"
+      }
+    ]
   },
   {
     "id": "spell:nondetection",

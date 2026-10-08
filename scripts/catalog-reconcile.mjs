@@ -445,6 +445,15 @@ const diff = {
   statMismatches: stat,
 };
 const totalMissing = Object.values(summary).reduce((n, s) => n + s.missing, 0);
+// Spellbook is intentionally retained: the Wizard's class starting-equipment text names it,
+// although the SRD equipment index has no corresponding gear-table entry.
+const reviewedExtras = { 'equipment:gear-and-tools': ['Spellbook'] };
+const unexpectedExtras = Object.entries(kinds).flatMap(([kind, value]) =>
+  value.extra
+    .filter((name) => !(reviewedExtras[kind] ?? []).includes(name))
+    .map((name) => ({ kind, name })),
+);
+diff.reviewedExceptions = { extras: reviewedExtras, deferredGear: [] };
 
 if (process.argv.includes('--json')) console.log(JSON.stringify(diff, null, 2));
 else {
@@ -475,9 +484,13 @@ if (process.argv.includes('--report')) {
   writeFileSync(outPath, JSON.stringify(diff, null, 2) + '\n');
   console.error(`wrote ${outPath}`);
 }
-if (totalMissing > 0) {
+if (
+  totalMissing > 0 ||
+  unexpectedExtras.length > 0 ||
+  Object.values(summary).some((s) => s.nameMismatch > 0 || s.statMismatches > 0)
+) {
   console.error(
-    `catalog is missing ${totalMissing} SRD 5.2.1 entries (expected until M2-04)`,
+    `catalog reconciliation failed: ${totalMissing} missing entries; ${unexpectedExtras.length} unreviewed extras; ${Object.values(summary).reduce((n, s) => n + s.nameMismatch + s.statMismatches, 0)} name/stat mismatches`,
   );
   process.exit(1);
 }
