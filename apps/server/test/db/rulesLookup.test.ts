@@ -16,7 +16,10 @@ type Corpus = {
 };
 const corpus = JSON.parse(
   await readFile(
-    new URL('../../../packages/engine/srd-text/chunks.json', import.meta.url),
+    new URL(
+      '../../../../packages/engine/srd-text/chunks.json',
+      import.meta.url,
+    ),
     'utf8',
   ),
 ) as Corpus;
