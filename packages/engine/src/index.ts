@@ -35,18 +35,6 @@ export type {
 } from './map/reachable.js';
 export * from './map/threat.js';
 export * from './map/movement.js';
-export {
-  reachable,
-  movementBudget,
-  movementCost,
-  movementNeighbors,
-  canEndAt,
-} from './map/reachable.js';
-export type {
-  MovementState,
-  MovementEntity,
-  ReachableCell,
-} from './map/reachable.js';
 export * from './map/path.js';
 export * from './map/area.js';
 export * from './map/describe.js';
