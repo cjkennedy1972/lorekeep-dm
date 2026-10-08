@@ -7,3 +7,7 @@ export * from './catalog.js';
 export * from './character.js';
 export * from './combat.js';
 export * from './battlemap.js';
+export * from './dm-tools.js';
+export * from './dm-events.js';
+export * from './registry.js';
+export * from './endpoint.js';
