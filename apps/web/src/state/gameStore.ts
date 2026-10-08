@@ -39,20 +39,33 @@ export function applyCharacterEvent(
       return {
         ...character,
         conditions: [
-          ...character.conditions.filter((item) => item.conditionId !== event.conditionId),
-          { conditionId: event.conditionId, ...(event.source ? { source: event.source } : {}) },
+          ...character.conditions.filter(
+            (item) => item.conditionId !== event.conditionId,
+          ),
+          {
+            conditionId: event.conditionId,
+            ...(event.source ? { source: event.source } : {}),
+          },
         ],
       };
     case 'ConditionRemoved':
       return {
         ...character,
-        conditions: character.conditions.filter((item) => item.conditionId !== event.conditionId),
+        conditions: character.conditions.filter(
+          (item) => item.conditionId !== event.conditionId,
+        ),
       };
     case 'SlotSpent': {
       const key = String(event.level);
       const slot = character.slots[key];
       if (!slot) return character;
-      return { ...character, slots: { ...character.slots, [key]: { ...slot, used: Math.min(slot.max, slot.used + 1) } } };
+      return {
+        ...character,
+        slots: {
+          ...character.slots,
+          [key]: { ...slot, used: Math.min(slot.max, slot.used + 1) },
+        },
+      };
     }
     default:
       return character;
@@ -81,16 +94,26 @@ export function createGameStore(initial = initialGameState()): GameStore {
       return () => void listeners.delete(listener);
     },
     applyEvent(event) {
-      if (event.type === 'HpChanged' || event.type === 'ConditionApplied' || event.type === 'ConditionRemoved' || event.type === 'SlotSpent') {
+      if (
+        event.type === 'HpChanged' ||
+        event.type === 'ConditionApplied' ||
+        event.type === 'ConditionRemoved' ||
+        event.type === 'SlotSpent'
+      ) {
         const character = applyCharacterEvent(state.character, event);
-        const message = event.type === 'HpChanged' && character?.id === event.entityId
-          ? `Hit points changed to ${event.hp} of ${character.hp.max}`
-          : event.type === 'ConditionApplied' && character?.id === event.entityId
-            ? `${event.conditionId.replace(/^condition:/, '').replaceAll('-', ' ')} condition applied`
-            : event.type === 'ConditionRemoved' && character?.id === event.entityId
-              ? `${event.conditionId.replace(/^condition:/, '').replaceAll('-', ' ')} condition removed`
-              : '';
-        const announcement = message ? [state.announcement, message].filter(Boolean).slice(-3).join('. ') : state.announcement;
+        const message =
+          event.type === 'HpChanged' && character?.id === event.entityId
+            ? `Hit points changed to ${event.hp} of ${character.hp.max}`
+            : event.type === 'ConditionApplied' &&
+                character?.id === event.entityId
+              ? `${event.conditionId.replace(/^condition:/, '').replaceAll('-', ' ')} condition applied`
+              : event.type === 'ConditionRemoved' &&
+                  character?.id === event.entityId
+                ? `${event.conditionId.replace(/^condition:/, '').replaceAll('-', ' ')} condition removed`
+                : '';
+        const announcement = message
+          ? [state.announcement, message].filter(Boolean).slice(-3).join('. ')
+          : state.announcement;
         set({ ...state, character, announcement });
       } else {
         set(applyEvent(state, event as CombatEvent));
