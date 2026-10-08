@@ -19,14 +19,25 @@ export function shortRest(
   const klass = catalog.get('class', char.classId);
   if (!klass) throw new Error(`Unknown class ${char.classId}`);
   const available = char.level - (char.hitDiceSpent ?? 0);
-  if (!Number.isInteger(hitDiceToSpend) || hitDiceToSpend < 0 || hitDiceToSpend > available)
-    throw new Error(`Cannot spend ${hitDiceToSpend} Hit Dice; ${available} available`);
+  if (
+    !Number.isInteger(hitDiceToSpend) ||
+    hitDiceToSpend < 0 ||
+    hitDiceToSpend > available
+  )
+    throw new Error(
+      `Cannot spend ${hitDiceToSpend} Hit Dice; ${available} available`,
+    );
 
   let hp = char.hp.current;
   const rolls: RollBreakdown[] = [];
   for (let i = 0; i < hitDiceToSpend; i++) {
     const [breakdown, next] = roll(`1d${klass.hitDie}`, rng, {
-      modifiers: [{ label: 'Constitution', value: Math.floor((char.abilities.con - 10) / 2) }],
+      modifiers: [
+        {
+          label: 'Constitution',
+          value: Math.floor((char.abilities.con - 10) / 2),
+        },
+      ],
     });
     rng = next;
     rolls.push(breakdown);
@@ -41,16 +52,30 @@ export function shortRest(
   if (char.classId === 'class:warlock' && pact)
     slots[String(pact.slotLevel)] = { max: pact.slots, used: 0 };
   return {
-    character: { ...char, hitDiceSpent: (char.hitDiceSpent ?? 0) + hitDiceToSpend, hp: { ...char.hp, current: hp }, slots, ...(featureUses ? { featureUses } : {}) },
+    character: {
+      ...char,
+      hitDiceSpent: (char.hitDiceSpent ?? 0) + hitDiceToSpend,
+      hp: { ...char.hp, current: hp },
+      slots,
+      ...(featureUses ? { featureUses } : {}),
+    },
     rolls,
     rng,
   };
 }
 
 /** Restore HP, expended spell slots and the SRD number of spent Hit Dice. */
-export function longRest(char: CharacterInput, catalog: CharacterCatalog): CharacterInput {
+export function longRest(
+  char: CharacterInput,
+  catalog: CharacterCatalog,
+): CharacterInput {
   const sheet = deriveSheet(char, catalog);
-  const slots = Object.fromEntries(Object.entries(char.slots).map(([level, slot]) => [level, { ...slot, used: 0 }]));
+  const slots = Object.fromEntries(
+    Object.entries(char.slots).map(([level, slot]) => [
+      level,
+      { ...slot, used: 0 },
+    ]),
+  );
   for (const [level, max] of Object.entries(sheet.spellSlots))
     slots[level] = { max, used: 0 };
   const spent = char.hitDiceSpent ?? 0;
@@ -60,7 +85,9 @@ export function longRest(char: CharacterInput, catalog: CharacterCatalog): Chara
     hp: { ...char.hp, current: char.hp.max, temp: 0 },
     slots,
     hitDiceSpent: Math.max(0, spent - regained),
-    featureUses: char.featureUses ? Object.fromEntries(Object.keys(char.featureUses).map((id) => [id, 0])) : undefined,
+    featureUses: char.featureUses
+      ? Object.fromEntries(Object.keys(char.featureUses).map((id) => [id, 0]))
+      : undefined,
   };
 }
 
