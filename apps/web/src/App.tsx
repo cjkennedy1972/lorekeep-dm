@@ -10,6 +10,7 @@ import { Rooms } from './screens/Rooms';
 import { Signup } from './screens/Signup';
 import { CheckEmail, VerifyResult } from './screens/VerifyEmail';
 import { CreationWizard } from './features/character/CreationWizard';
+import { QuickBuild } from './features/character/QuickBuild';
 
 export function App() {
   return (
@@ -31,7 +32,8 @@ export function App() {
           }
         />
         <Route path="settings" element={<Settings />} />
-        <Route path="characters/new" element={<CreationWizard />} />
+        <Route path="characters/new" element={<QuickBuild />} />
+        <Route path="characters/edit" element={<CreationWizard />} />
         <Route path="signup" element={<Signup />} />
         <Route path="login" element={<Login />} />
         <Route path="check-email" element={<CheckEmail />} />
