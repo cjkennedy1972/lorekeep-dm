@@ -169,4 +169,27 @@ describe('Anthropic Messages adapter', () => {
     expect(String(new Secret('test-secret'))).toBe('[REDACTED]');
     expect(LlmEndpointError).toBeDefined();
   });
+  it('does not strip schema keywords for the Anthropic dialect', async () => {
+    server = await startFakeAnthropicServer({ chunks: anthropicStream });
+    const adapter = adapterFor();
+    for await (const chunk of adapter.complete({
+      ...request,
+      tools: [
+        {
+          name: 'fixture',
+          description: 'fixture',
+          parameters: { type: 'string', pattern: '^ok$', maxLength: 5 },
+        },
+      ],
+    }))
+      void chunk;
+    expect(
+      (server.requests[0]?.body as { tools: { input_schema: unknown }[] })
+        .tools[0]!.input_schema,
+    ).toEqual({
+      type: 'string',
+      pattern: '^ok$',
+      maxLength: 5,
+    });
+  });
 });
