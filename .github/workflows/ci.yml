@@ -48,7 +48,7 @@ jobs:
         run: |
           pnpm install --lockfile-only --ignore-scripts
           git diff --exit-code -- pnpm-lock.yaml
-      - run: pnpm --filter @game/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @game/web exec playwright install --with-deps chromium firefox webkit
       - run: pnpm --filter @game/web exec playwright test
       - uses: actions/upload-artifact@v4
         if: failure()
