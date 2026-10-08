@@ -329,13 +329,13 @@ export class RegistryMemory {
       const replacementId = insertedFacts.get(replacement);
       if (replacementId) {
         await client.query(
-          `UPDATE registry_facts SET superseded_by=$2
+          `UPDATE registry_facts SET superseded_by=$1
             WHERE id=(SELECT old.id FROM registry_facts old
               JOIN registry_entries e ON e.id=old.entry_id
-             WHERE e.session_id=$4 AND e.entity_type=$5 AND e.entity_id=$6
-               AND old.fact=$3 AND old.superseded_by IS NULL
+             WHERE e.session_id=$3 AND e.entity_type=$4 AND e.entity_id=$5
+               AND old.fact=$2 AND old.superseded_by IS NULL
              ORDER BY e.version DESC, old.created_at DESC LIMIT 1)`,
-          [nextId, replacementId, oldFact, sessionId, kind, entityId],
+          [replacementId, oldFact, sessionId, kind, entityId],
         );
       }
     }
