@@ -14,11 +14,18 @@ export function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 }
 
-export function zoomViewport(viewport: MapViewport, factor: number): MapViewport {
+export function zoomViewport(
+  viewport: MapViewport,
+  factor: number,
+): MapViewport {
   return { ...viewport, zoom: clampZoom(viewport.zoom * factor) };
 }
 
-export function panViewport(viewport: MapViewport, dx: number, dy: number): MapViewport {
+export function panViewport(
+  viewport: MapViewport,
+  dx: number,
+  dy: number,
+): MapViewport {
   return { ...viewport, x: viewport.x + dx, y: viewport.y + dy };
 }
 
@@ -28,15 +35,26 @@ export function wheelZoom(viewport: MapViewport, deltaY: number): MapViewport {
 }
 
 /** Pointer drag and keyboard arrows share this exact pan operation. */
-export function keyboardPan(viewport: MapViewport, key: string, step = 32): MapViewport {
+export function keyboardPan(
+  viewport: MapViewport,
+  key: string,
+  step = 32,
+): MapViewport {
   switch (key) {
-    case 'ArrowLeft': return panViewport(viewport, step, 0);
-    case 'ArrowRight': return panViewport(viewport, -step, 0);
-    case 'ArrowUp': return panViewport(viewport, 0, step);
-    case 'ArrowDown': return panViewport(viewport, 0, -step);
+    case 'ArrowLeft':
+      return panViewport(viewport, step, 0);
+    case 'ArrowRight':
+      return panViewport(viewport, -step, 0);
+    case 'ArrowUp':
+      return panViewport(viewport, 0, step);
+    case 'ArrowDown':
+      return panViewport(viewport, 0, -step);
     case '+':
-    case '=': return zoomViewport(viewport, 1.2);
-    case '-': return zoomViewport(viewport, 1 / 1.2);
-    default: return viewport;
+    case '=':
+      return zoomViewport(viewport, 1.2);
+    case '-':
+      return zoomViewport(viewport, 1 / 1.2);
+    default:
+      return viewport;
   }
 }
