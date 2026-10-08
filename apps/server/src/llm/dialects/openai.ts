@@ -6,13 +6,16 @@ import {
   type LlmRequest,
   normalizeEndpointError,
 } from '../adapter.js';
+import type { EgressGuard } from '../egress.js';
+import type { Secret } from '../secret.js';
 
 export interface OpenAICompatibleConfig {
   baseUrl: string;
   model: string;
-  apiKey?: string;
+  apiKey?: Secret;
   timeoutMs?: number;
-  fetch?: typeof fetch;
+  /** The only outbound HTTP path; enforces the SSRF policy (M2-19). */
+  egress: EgressGuard;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -23,11 +26,9 @@ const endpointUrl = (baseUrl: string) =>
 
 /** OpenAI-compatible chat-completions wire dialect; config owns URL and model. */
 export class OpenAICompatibleAdapter implements LlmAdapter {
-  private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
 
   constructor(private readonly config: OpenAICompatibleConfig) {
-    this.fetchImpl = config.fetch ?? fetch;
     this.timeoutMs = config.timeoutMs ?? 12_000;
   }
 
@@ -45,16 +46,19 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     try {
-      const response = await this.fetchImpl(endpointUrl(this.config.baseUrl), {
-        method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify({
-          model: this.config.model,
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-        }),
-        signal: controller.signal,
-      });
+      const response = await this.config.egress.fetch(
+        endpointUrl(this.config.baseUrl),
+        {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({
+            model: this.config.model,
+            messages: [{ role: 'user', content: 'ping' }],
+            max_tokens: 1,
+          }),
+          signal: controller.signal,
+        },
+      );
       return response.ok;
     } catch (error) {
       if (timedOut)
@@ -80,12 +84,15 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
     request.signal?.addEventListener('abort', abort, { once: true });
     try {
       const body = this.requestBody(request);
-      const response = await this.fetchImpl(endpointUrl(this.config.baseUrl), {
-        method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      const response = await this.config.egress.fetch(
+        endpointUrl(this.config.baseUrl),
+        {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        },
+      );
       if (!response.ok) {
         // Read but deliberately discard endpoint error bodies; they may echo prompts or secrets.
         await response.body?.cancel().catch(() => undefined);
@@ -159,7 +166,7 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
     return {
       'content-type': 'application/json',
       ...(this.config.apiKey
-        ? { authorization: `Bearer ${this.config.apiKey}` }
+        ? { authorization: `Bearer ${this.config.apiKey.reveal()}` }
         : {}),
     };
   }

@@ -34,6 +34,11 @@ const redact = [
   '*.birthdate',
   'dob',
   '*.dob',
+  'apiKey',
+  '*.apiKey',
+  'LLM_API_KEY',
+  '*.LLM_API_KEY',
+  'req.headers["x-api-key"]',
 ];
 export function createLogger(stream?: DestinationStream) {
   return pino(

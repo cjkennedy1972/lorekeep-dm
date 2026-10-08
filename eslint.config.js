@@ -57,4 +57,32 @@ export default [
       ],
     },
   },
+  {
+    // M2-19: outbound LLM traffic must go through the egress guard.
+    files: ['apps/server/src/llm/**/*.ts'],
+    ignores: ['apps/server/src/llm/egress.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'fetch', message: 'Use the egress guard (llm/egress.ts).' },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            'node:http',
+            'node:https',
+            'node:net',
+            'node:tls',
+            'http',
+            'https',
+            'undici',
+          ].map((name) => ({
+            name,
+            message: 'Use the egress guard (llm/egress.ts).',
+          })),
+        },
+      ],
+    },
+  },
 ];
