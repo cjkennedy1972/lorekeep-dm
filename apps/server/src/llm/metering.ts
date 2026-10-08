@@ -26,6 +26,7 @@ export interface UsageRecord {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  cacheWriteTokens: number;
   estimated: boolean;
   latencyMs: number;
   retries: number;
@@ -38,8 +39,8 @@ export class PostgresUsageSink implements UsageSink {
   constructor(private readonly db: Pick<Pool, 'query'>) {}
   async record(entry: UsageRecord): Promise<void> {
     await this.db.query(
-      `INSERT INTO endpoint_usage(session_id,turn_id,purpose,model_id,input_tokens,output_tokens,cached_tokens,estimated,latency_ms,retries,error_code)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      `INSERT INTO endpoint_usage(session_id,turn_id,purpose,model_id,input_tokens,output_tokens,cached_tokens,cache_write_tokens,estimated,latency_ms,retries,error_code)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         entry.sessionId,
         entry.turnId,
@@ -48,6 +49,7 @@ export class PostgresUsageSink implements UsageSink {
         entry.inputTokens,
         entry.outputTokens,
         entry.cachedTokens,
+        entry.cacheWriteTokens,
         entry.estimated,
         entry.latencyMs,
         entry.retries,
@@ -112,6 +114,7 @@ export class MeteredLlmAdapter implements LlmAdapter {
           inputTokens: tokens.input,
           outputTokens: tokens.output,
           cachedTokens: tokens.cacheRead ?? 0,
+          cacheWriteTokens: tokens.cacheWrite ?? 0,
           estimated: tokens.estimate,
           latencyMs: Math.max(0, this.now() - started),
           retries: this.context.retries ?? 0,
@@ -130,6 +133,7 @@ export async function readUsage(db: Pick<Pool, 'query'>, sessionId?: string) {
        coalesce(sum(input_tokens),0)::int AS "inputTokens",
        coalesce(sum(output_tokens),0)::int AS "outputTokens",
        coalesce(sum(cached_tokens),0)::int AS "cachedTokens",
+       coalesce(sum(cache_write_tokens),0)::int AS "cacheWriteTokens",
        coalesce(sum(latency_ms),0)::bigint AS "latencyMs",
        coalesce(sum(retries),0)::int AS retries,
        count(*) FILTER (WHERE estimated)::int AS "estimatedCalls",
