@@ -14,6 +14,12 @@ The operator supplies the LLM base URL, so the server fetches an operator-chosen
 - Limits: 60 s total timeout, 8 MiB response cap (enforced while streaming), both overridable in code.
 - Allowlist: `LLM_ALLOW_LOCAL_HOSTS` (comma-separated exact hosts, empty by default). Local model example: `LLM_ALLOW_LOCAL_HOSTS=localhost` with base URL `http://localhost:11434/v1`.
 
+## Operator endpoint schema compatibility
+
+Operator endpoint saves may include `unsupportedToolSchemaKeywords`, an optional list of JSON Schema keywords the endpoint rejects in tool definitions. It defaults to an empty list, is validated and stored per endpoint, and is returned in endpoint configuration. This M2-17 field is metadata only: request-time tool-schema stripping belongs to the later adapter work and is not performed here.
+
+Private plain-HTTP endpoints remain subject to the unchanged exact-host allowlist. For the operator-provided OpenAI-compatible endpoint at `http://172.31.25.75:8080/v1`, configure `LLM_ALLOW_LOCAL_HOSTS=172.31.25.75`; do not add a broad private-network exception. Its profile may store `unsupportedToolSchemaKeywords: ["pattern", "maxLength"]`.
+
 ## Not covered
 - Resolver-level attacks outside the process (poisoned recursive resolver for a *public* name pointing at a public attacker IP): allowlisting public hosts is not implemented.
 - A hostname allowlisted by the operator is trusted for every address it resolves to except blocked ones (e.g. an allowlisted name that later maps to another internal host).

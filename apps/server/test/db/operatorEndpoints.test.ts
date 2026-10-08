@@ -9,6 +9,7 @@ import {
   decryptEndpointKey,
   encryptEndpointKey,
   readEndpoints,
+  saveEndpoint,
 } from '../../src/llm/config.js';
 import {
   createEgressGuard,
@@ -37,7 +38,7 @@ describe('operator endpoint configuration', () => {
         'CREATE TABLE auth_sessions(token_hash text PRIMARY KEY,account_id uuid NOT NULL REFERENCES accounts(id),expires_at timestamptz NOT NULL,absolute_expires_at timestamptz NOT NULL,last_active_at timestamptz NOT NULL)',
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
+        `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
         `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
@@ -99,6 +100,7 @@ describe('operator endpoint configuration', () => {
           apiStyle: 'openai',
           apiKey: ['operator-', 'credential', '-sentinel'].join(''),
           contextWindow: 32768,
+          unsupportedToolSchemaKeywords: ['pattern', 'maxLength'],
         },
       });
       expect(allowed.statusCode).toBe(200);
@@ -120,6 +122,7 @@ describe('operator endpoint configuration', () => {
           apiStyle: 'openai',
           apiKey: ['operator-', 'credential', '-sentinel'].join(''),
           contextWindow: 32768,
+          unsupportedToolSchemaKeywords: ['pattern', 'maxLength'],
         },
       });
       const second = secondResponse.json().endpoint;
@@ -153,8 +156,61 @@ describe('operator endpoint configuration', () => {
         ['operator-', 'credential', '-sentinel'].join(''),
       );
       expect(first.keySet).toBe(true);
+      expect(first.unsupportedToolSchemaKeywords).toEqual([
+        'pattern',
+        'maxLength',
+      ]);
+      expect(second.unsupportedToolSchemaKeywords).toEqual(['pattern', 'maxLength']);
+      expect(
+        (await readEndpoints(db.pool))[0]?.unsupportedToolSchemaKeywords,
+      ).toEqual(['pattern', 'maxLength']);
     } finally {
       await app.close();
+      await db.close();
+    }
+  });
+  it('validates and defaults unsupported tool schema keyword lists', async () => {
+    const db = await createTestDatabase();
+    try {
+      await db.pool.query(
+        `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
+      );
+      await db.pool.query(
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+      );
+      const egress = createEgressGuard({
+        resolver: async () => [{ address: '93.184.216.34', family: 4 }],
+        transport: async () => ({ status: 200, headers: {}, body: null }),
+      });
+      const base = {
+        baseUrl: 'https://api.example.test/v1',
+        model: 'm',
+        apiStyle: 'openai',
+      };
+      await expect(
+        saveEndpoint(
+          db.pool,
+          'fast',
+          { ...base, unsupportedToolSchemaKeywords: ['pattern', 'pattern'] },
+          egress,
+        ),
+      ).rejects.toMatchObject({ name: 'ZodError' });
+      const saved = await saveEndpoint(db.pool, 'fast', base, egress);
+      expect(saved.unsupportedToolSchemaKeywords).toEqual([]);
+      const configured = await saveEndpoint(
+        db.pool,
+        'fast',
+        { ...base, unsupportedToolSchemaKeywords: ['pattern', 'maxLength'] },
+        egress,
+      );
+      expect(configured.unsupportedToolSchemaKeywords).toEqual([
+        'pattern',
+        'maxLength',
+      ]);
+      expect(
+        (await readEndpoints(db.pool))[0]?.unsupportedToolSchemaKeywords,
+      ).toEqual(['pattern', 'maxLength']);
+    } finally {
       await db.close();
     }
   });

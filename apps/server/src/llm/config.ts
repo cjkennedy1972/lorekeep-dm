@@ -22,6 +22,13 @@ const inputSchema = z
     apiStyle: z.enum(['openai', 'anthropic']),
     apiKey: z.string().max(4096).optional(),
     contextWindow: z.number().int().positive().optional(),
+    unsupportedToolSchemaKeywords: z
+      .array(z.string().trim().min(1).max(128))
+      .max(64)
+      .refine((keywords) => new Set(keywords).size === keywords.length, {
+        message: 'Keywords must be unique',
+      })
+      .default([]),
   })
   .strict();
 export type EndpointInput = z.infer<typeof inputSchema>;
@@ -31,6 +38,7 @@ export interface EndpointConfig {
   model: string;
   apiStyle: ApiStyle;
   contextWindow?: number;
+  unsupportedToolSchemaKeywords: string[];
   keySet: boolean;
   keyFingerprint: string | null;
   updatedAt: string;
@@ -222,8 +230,8 @@ export async function saveEndpoint(
     ? createHash('sha256').update(keyValue).digest('hex').slice(0, 12)
     : null;
   const result = await db.query(
-    `INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,context_window,probe,updated_at)
-     VALUES($1,$2,$3,$4,$5,$6,$7,NULL,now()) ON CONFLICT(slot) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,api_style=EXCLUDED.api_style,encrypted_key=EXCLUDED.encrypted_key,key_fingerprint=EXCLUDED.key_fingerprint,context_window=EXCLUDED.context_window,probe=NULL,updated_at=now() RETURNING slot,base_url,model,api_style,key_fingerprint,context_window,updated_at`,
+    `INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,context_window,unsupported_tool_schema_keywords,probe,updated_at)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,NULL,now()) ON CONFLICT(slot) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,api_style=EXCLUDED.api_style,encrypted_key=EXCLUDED.encrypted_key,key_fingerprint=EXCLUDED.key_fingerprint,context_window=EXCLUDED.context_window,unsupported_tool_schema_keywords=EXCLUDED.unsupported_tool_schema_keywords,probe=NULL,updated_at=now() RETURNING slot,base_url,model,api_style,key_fingerprint,context_window,unsupported_tool_schema_keywords,updated_at`,
     [
       slot,
       config.baseUrl,
@@ -232,6 +240,7 @@ export async function saveEndpoint(
       encrypted,
       fingerprint,
       config.contextWindow ?? null,
+      JSON.stringify(config.unsupportedToolSchemaKeywords),
     ],
   );
   await db.query(
@@ -296,6 +305,11 @@ function rowConfig(
     apiStyle: row.api_style as ApiStyle,
     contextWindow:
       row.context_window === null ? undefined : Number(row.context_window),
+    unsupportedToolSchemaKeywords: Array.isArray(
+      row.unsupported_tool_schema_keywords,
+    )
+      ? row.unsupported_tool_schema_keywords.map(String)
+      : [],
     keySet: Boolean(row.key_fingerprint),
     keyFingerprint: row.key_fingerprint ? String(row.key_fingerprint) : null,
     updatedAt: new Date(String(row.updated_at)).toISOString(),
@@ -304,7 +318,7 @@ function rowConfig(
 }
 export async function readEndpoints(db: Pool): Promise<EndpointConfig[]> {
   const result = await db.query(
-    'SELECT slot,base_url,model,api_style,key_fingerprint,context_window,probe,updated_at FROM operator_endpoints ORDER BY slot',
+    'SELECT slot,base_url,model,api_style,key_fingerprint,context_window,unsupported_tool_schema_keywords,probe,updated_at FROM operator_endpoints ORDER BY slot',
   );
   return result.rows.map((row) =>
     rowConfig(row, row.probe as EndpointProfile | null),
