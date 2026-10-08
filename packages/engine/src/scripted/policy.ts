@@ -1,6 +1,7 @@
 import type { GridPos } from '@game/schema';
 import { attack } from '../combat/attack.js';
 import { path } from '../map/path.js';
+import { movementCost } from '../map/reachable.js';
 import { distance, type Placed } from '../map/geometry.js';
 import type { MovementState } from '../map/reachable.js';
 
@@ -18,6 +19,36 @@ export type MonsterDecision =
   | { kind: 'approach'; path: GridPos[] }
   | { kind: 'flee'; path: GridPos[] }
   | { kind: 'hold' };
+
+// path() prunes by remaining movement; without a budget no route is ever "reachable".
+function budgeted(
+  map: MovementState['map'],
+  entities: readonly Combatant[],
+  monster: Combatant,
+  feet = monster.speed,
+): MovementState {
+  return {
+    map,
+    entities,
+    resources: { [monster.id]: { movementLeft: feet } },
+  };
+}
+/** Longest prefix of `route` that fits in the monster's speed, or null when not even one step does. */
+function withinMove(
+  state: MovementState,
+  monster: Combatant,
+  route: GridPos[],
+): GridPos[] | null {
+  let left = monster.speed;
+  const cut = [route[0]!];
+  for (const cell of route.slice(1)) {
+    const cost = movementCost(state, monster, cell);
+    if (cost > left) break;
+    left -= cost;
+    cut.push(cell);
+  }
+  return cut.length > 1 ? cut : null;
+}
 
 /** A deterministic, no-LLM monster policy: attack in reach, A* approach, otherwise flee at low HP. */
 export function monsterPolicy(input: {
@@ -40,7 +71,7 @@ export function monsterPolicy(input: {
   )[0]!;
   if (input.fleeing) {
     const candidates = opponents.flatMap((enemy) => {
-      const state: MovementState = { map: input.map, entities: input.entities };
+      const state = budgeted(input.map, input.entities, monster);
       const away = {
         x: monster.pos.x + Math.sign(monster.pos.x - enemy.pos.x),
         y: monster.pos.y + Math.sign(monster.pos.y - enemy.pos.y),
@@ -54,7 +85,8 @@ export function monsterPolicy(input: {
   }
   if (distance(monster, target, input.map.diagonalRule) <= 5)
     return { kind: 'attack', targetId: target.id };
-  const state: MovementState = { map: input.map, entities: input.entities };
+  // Route over unlimited movement (the target is often more than one move away), then cut to one move.
+  const state = budgeted(input.map, input.entities, monster, Infinity);
   const goals = Array.from({ length: 8 }, (_, index) => {
     const dx = [-1, 0, 1, -1, 1, -1, 0, 1][index]!;
     const dy = [-1, -1, -1, 0, 0, 1, 1, 1][index]!;
@@ -66,9 +98,8 @@ export function monsterPolicy(input: {
       return 'path' in result ? [{ path: result.path, cost: result.cost }] : [];
     })
     .sort((a, b) => a.cost - b.cost || a.path.length - b.path.length);
-  return routes[0]
-    ? { kind: 'approach', path: routes[0].path }
-    : { kind: 'hold' };
+  const route = routes[0] && withinMove(state, monster, routes[0].path);
+  return route ? { kind: 'approach', path: route } : { kind: 'hold' };
 }
 
 /** Resolves an attack decision using the shared rules engine attack resolver. */
