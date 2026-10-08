@@ -14,6 +14,7 @@ type Row = { name: string; [k: string]: unknown };
 type Diff = {
   summary: Record<string, { srd: number; catalog: number; missing: number }>;
   kinds: Record<string, { missing: string[]; extra: string[] }>;
+  reviewedExceptions: { extras: Record<string, string[]> };
   statMismatches: { kind: string; entry: string; field: string }[];
 };
 function run(catalogDir: string) {
@@ -45,9 +46,14 @@ describe('catalog reconciliation against SRD 5.2.1 (M2-03)', () => {
     expect(real.diff.summary.spell?.srd).toBe(183);
   });
 
-  // Flips to a failure (and must then be changed to a plain test) once M2-04 closes the gap.
-  test.fails('shipped catalog has no SRD entries missing (M2-04)', () => {
+  test('shipped catalog reconciles, with only documented class-text exception (M2-04)', () => {
     expect(real.status).toBe(0);
+    expect(real.diff.kinds['equipment:gear-and-tools']?.extra).toEqual([
+      'Spellbook',
+    ]);
+    expect(
+      real.diff.reviewedExceptions.extras['equipment:gear-and-tools'],
+    ).toContain('Spellbook');
   });
 
   test('detects a deleted spell, a changed monster hp and a renamed weapon', () => {
