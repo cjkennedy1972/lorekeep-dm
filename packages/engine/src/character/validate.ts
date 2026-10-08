@@ -1,4 +1,5 @@
 import type { Ability, CatalogEntry } from '@game/schema';
+import { deriveSheet } from './derive.js';
 import type {
   CharacterInput,
   CharacterCatalog,
@@ -243,6 +244,87 @@ export function validateCharacter(
       }
     }
   }
+  if (klass && char.level >= 1 && char.level <= 5) {
+    const derived = deriveSheet(char, catalog);
+    if (char.hp.max !== derived.maxHp || char.hp.current > char.hp.max)
+      out.push(
+        violation(
+          'HP_MISMATCH',
+          'hp',
+          `HP must use level ${char.level} hit points (${derived.maxHp} max)`,
+        ),
+      );
+    const expectedSlots: Record<string, number> = { ...derived.spellSlots };
+    if (klass.pactMagic)
+      for (const slotLevel of Object.keys(expectedSlots))
+        delete expectedSlots[slotLevel];
+    const pact = klass.pactMagic?.[char.level - 1];
+    if (pact) {
+      for (const level of Object.keys(expectedSlots))
+        delete expectedSlots[level];
+      expectedSlots[String(pact.slotLevel)] = pact.slots;
+    }
+    const actualSlots = Object.fromEntries(
+      Object.entries(char.slots)
+        .filter(([, slot]) => slot.max > 0)
+        .map(([level, slot]) => [level, slot.max]),
+    );
+    if (
+      JSON.stringify(Object.entries(actualSlots).sort()) !==
+        JSON.stringify(Object.entries(expectedSlots).sort()) ||
+      Object.values(char.slots).some(
+        (slot) => slot.used < 0 || slot.used > slot.max,
+      )
+    )
+      out.push(
+        violation(
+          'WRONG_SPELL_SLOTS',
+          'slots',
+          `Spell slots do not match level ${char.level} class progression`,
+        ),
+      );
+    const cantrips = klass.cantripsKnown?.[char.level - 1];
+    if (cantrips !== undefined && char.spellsKnown.length > cantrips)
+      out.push(
+        violation(
+          'TOO_MANY_SPELLS',
+          'spellsKnown',
+          `At most ${cantrips} known cantrips at level ${char.level}`,
+        ),
+      );
+    const prepared = klass.preparedSpells?.[char.level - 1];
+    if (prepared !== undefined && char.spellsPrepared.length > prepared)
+      out.push(
+        violation(
+          'TOO_MANY_SPELLS',
+          'spellsPrepared',
+          `At most ${prepared} prepared spells at level ${char.level}`,
+        ),
+      );
+    const subclassRequired = (klass.features ?? []).some(
+      (f) => f.level <= char.level && /subclass/i.test(f.name),
+    );
+    if (subclassRequired && !char.subclassId)
+      out.push(
+        violation(
+          'MISSING_SUBCLASS',
+          'subclassId',
+          `Choose a ${klass.name} subclass by level ${char.level}`,
+        ),
+      );
+    if (char.subclassId) {
+      const subclass = entryBy(catalog, 'subclass', char.subclassId);
+      if (!subclass || subclass.classId !== klass.id)
+        out.push(
+          violation(
+            'ILLEGAL_SUBCLASS',
+            'subclassId',
+            `${char.subclassId} is not a legal ${klass.name} subclass`,
+          ),
+        );
+    }
+  }
+
   for (const spellId of [...char.spellsKnown, ...char.spellsPrepared]) {
     const spell = entryBy(catalog, 'spell', spellId);
     if (!spell)

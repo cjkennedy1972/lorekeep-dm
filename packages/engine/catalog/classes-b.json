@@ -610,7 +610,7 @@
     ],
     "spellcastingAbility": "int",
     "spellSlots": [[2], [3], [4, 2], [4, 3], [4, 3, 2]],
-    "cantripsKnown": [3, 3, 3, 4, 4],
+    "cantripsKnown": [3, 3, 4, 4, 4],
     "preparedSpells": [4, 5, 6, 7, 9]
   },
   {

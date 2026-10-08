@@ -314,7 +314,7 @@
         "id": "feature:cleric:sear-undead",
         "level": 5,
         "name": "Sear Undead",
-        "summary": "When you use Turn Undead, roll a number of d8s equal to your Wisdom modifier (minimum 1). Each Undead that fails its saving throw takes Radiant damage equal to the roll’s total."
+        "summary": "When you use Turn Undead, roll a number of d8s equal to your Wisdom modifier (minimum 1). Each Undead that fails its saving throw takes Radiant damage equal to the roll\u2019s total."
       }
     ],
     "spellcastingAbility": "wis",

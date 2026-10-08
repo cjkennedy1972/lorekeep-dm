@@ -161,8 +161,15 @@ export function levelUp(
     max: derived.maxHp,
     current: Math.min(derived.maxHp, candidate.hp.current + hpIncrease),
   };
+  const classSlots = { ...derived.spellSlots };
+  const pactSlots = klass.pactMagic?.[nextLevel - 1];
+  if (pactSlots) {
+    for (const slotLevel of Object.keys(classSlots))
+      delete classSlots[slotLevel];
+    classSlots[String(pactSlots.slotLevel)] = pactSlots.slots;
+  }
   candidate.slots = Object.fromEntries(
-    Object.entries(derived.spellSlots).map(([level, max]) => [
+    Object.entries(classSlots).map(([level, max]) => [
       level,
       { max, used: char.slots[level]?.used ?? 0 },
     ]),
