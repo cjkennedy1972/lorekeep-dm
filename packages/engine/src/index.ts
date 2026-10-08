@@ -24,3 +24,4 @@ export * from './combat/spells.js';
 export * from './map/threat.js';
 export * from './map/movement.js';
 export * from './map/area.js';
+export * from './map/describe.js';
