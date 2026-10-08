@@ -2,6 +2,7 @@ import type { Ability, CatalogEntry } from '@game/schema';
 import { nextDie, seedRng, type RngState } from '../rng.js';
 import { deriveSheet } from './derive.js';
 import { validateCharacter } from './validate.js';
+import { levelUp } from './levelup.js';
 import type {
   CharacterCatalog,
   CharacterInput,
@@ -315,7 +316,14 @@ export function quickBuild(
   catalog: CharacterCatalog,
   classId: string | undefined,
   seed: number,
+  startingLevel = 1,
 ): { character: CharacterInput; choices: QuickBuildChoice[] } {
+  if (
+    !Number.isInteger(startingLevel) ||
+    startingLevel < 1 ||
+    startingLevel > 5
+  )
+    throw new RangeError('Quick-build level must be between 1 and 5');
   let rng: RngState = seedRng(seed);
   const roll = (n: number) => {
     const [d, next] = nextDie(rng, n);
@@ -358,5 +366,53 @@ export function quickBuild(
     explanation: 'A placeholder name; rename your hero any time.',
   });
   b.setName(name);
-  return { character: b.build(), choices };
+  let character = b.build();
+  const klass = catalog.get('class', character.classId)!;
+  for (let level = 2; level <= startingLevel; level += 1) {
+    const featureAtLevel = (name: RegExp) =>
+      (klass.features ?? []).some(
+        (f) => f.level === level && name.test(f.name),
+      );
+    const subclass = featureAtLevel(/subclass/i)
+      ? catalog.entries.find(
+          (entry) => entry.kind === 'subclass' && entry.classId === klass.id,
+        )
+      : undefined;
+    const asi = featureAtLevel(/ability score improvement/i)
+      ? [{ ability: klass.primaryAbility[0]!, amount: 2 as const }]
+      : [];
+    const spellCandidates = catalog.entries.filter(
+      (entry) =>
+        entry.kind === 'spell' &&
+        entry.classes.includes(klass.name.toLowerCase()),
+    );
+    const cantripCount =
+      klass.cantripsKnown?.[level - 1] ?? character.spellsKnown.length;
+    const preparedCount =
+      klass.preparedSpells?.[level - 1] ?? character.spellsPrepared.length;
+    const known = spellCandidates
+      .filter((spell) => spell.kind === 'spell' && spell.level === 0)
+      .slice(character.spellsKnown.length, cantripCount)
+      .map((spell) => spell.id);
+    const prepared = spellCandidates
+      .filter((spell) => spell.kind === 'spell' && spell.level > 0)
+      .slice(character.spellsPrepared.length, preparedCount)
+      .map((spell) => spell.id);
+    const result = levelUp(
+      character,
+      {
+        ...(subclass?.kind === 'subclass' ? { subclassId: subclass.id } : {}),
+        asi,
+        spellsKnown: known,
+        spellsPrepared: prepared,
+      },
+      catalog,
+    );
+    if (!result.ok)
+      throw new Error(
+        `Cannot quick-build ${klass.name} at level ${level}: ${result.violations.map((v) => `${v.code}: ${v.message}`).join('; ')}`,
+      );
+    character = result.character;
+  }
+  return { character, choices };
 }

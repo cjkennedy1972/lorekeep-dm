@@ -60,7 +60,7 @@ describe('catalog classes B (Paladin..Wizard)', () => {
     expect(get('sorcerer').preparedSpells).toEqual([2, 4, 6, 7, 9]);
     expect(get('warlock').cantripsKnown).toEqual([2, 2, 2, 3, 3]);
     expect(get('warlock').preparedSpells).toEqual([2, 3, 4, 5, 6]);
-    expect(get('wizard').cantripsKnown).toEqual([3, 3, 3, 4, 4]);
+    expect(get('wizard').cantripsKnown).toEqual([3, 3, 4, 4, 4]);
     expect(get('wizard').preparedSpells).toEqual([4, 5, 6, 7, 9]);
   });
   test('feature ids are unique across all classes and subclasses', () => {
