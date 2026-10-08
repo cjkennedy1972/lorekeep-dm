@@ -6,6 +6,7 @@ import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { retentionHealth } from './retention/sweeper.js';
+import { registerUsageRoutes } from './llm/usageRoutes.js';
 import type { RoomRegistry } from './room/registry.js';
 import type { ConnectionRegistry } from './gateway/connections.js';
 
@@ -34,6 +35,11 @@ const redact = [
   '*.birthdate',
   'dob',
   '*.dob',
+  'apiKey',
+  '*.apiKey',
+  'LLM_API_KEY',
+  '*.LLM_API_KEY',
+  'req.headers["x-api-key"]',
 ];
 export function createLogger(stream?: DestinationStream) {
   return pino(
@@ -60,6 +66,7 @@ export function createApp(
     roomLimits?: { maxRooms?: number; createPerHour?: number };
     rooms?: Pick<RoomRegistry, 'get'>;
     connections?: Pick<ConnectionRegistry, 'sweep'>;
+    isOperator?: (accountId: string) => Promise<boolean>;
   } = {},
 ) {
   const app = Fastify({
@@ -102,6 +109,7 @@ export function createApp(
       options.rateLimit,
       options.connections,
     );
+    registerUsageRoutes(app, db as Pool, options.isOperator);
     if (options.rooms)
       registerSessionRoutes(
         app,

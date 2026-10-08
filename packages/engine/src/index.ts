@@ -45,3 +45,4 @@ export { cryptScenario } from './scripted/crypt-data.js';
 
 export * from './tools/world.js';
 export * from './tools/rest.js';
+export * from './tools/index.js';
