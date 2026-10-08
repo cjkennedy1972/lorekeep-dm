@@ -169,7 +169,7 @@ Rules:
 LLM proposes intent and prose; engine owns every number, legality check, and state mutation (§7.1). Player text is **intent, never state** (R-S3).
 
 ### 3.2 Tool/function-call contract
-All tool args are JSON-schema-validated; entities are referenced by **catalog ID, session entity ID, feature/marker ID, or engine-issued `optionId`**, never by free-text name and **never by raw coordinates** (ADR-018). Tool delivery depends on the endpoint's detected capability (§16): native tools, JSON-schema output, JSON-in-text, or engine-assist option selection; the schemas and validation are identical in every mode. The engine returns either `{ok, events, summary}` or `{error: code, hint}`; on `error` the LLM gets up to 2 retries (R-R2), then the orchestrator forces a safe narrated fallback (e.g. "the attempt fizzles") with no state change.
+All tool args are JSON-schema-validated; entities are referenced by **catalog ID, session entity ID, feature/marker ID, or engine-issued `optionId`**, never by free-text name and **never by raw coordinates** (ADR-018). Tool delivery depends on the endpoint's detected capability (§16): native tools, JSON-schema output, JSON-in-text, or engine-assist option selection; the schemas and validation are identical in every mode. The engine returns either `{ok, events, summary}` or `{error: code, hint}`; on `error` the LLM gets up to 2 retries per call site, with a global cap of 5 retries per turn (R-R2), then receives a terminal tool result and the orchestrator uses fallback narration with no additional state change. M2 exposes 16 tools; `generate_encounter_map`, `call_for_rest`, `ask_players`, and `contested_check` are deferred. See ADR-022 §2 for the closed schemas, references, and errors.
 
 | Tool | Purpose | Notes |
 |---|---|---|
@@ -227,8 +227,10 @@ Per-turn context layout, ordered so the prefix is byte-stable (prompt caching is
 
 1. **Static prefix, cache-friendly (~5–6k tokens; ~4k target with per-mode tool schemas):** DM persona/style rules, safety policy, tool schemas, core rules cheat-sheet. Identical across all sessions of the same catalog/version.
 2. **Session-stable block (changes at scene boundaries):** safety settings, content tier, party roster summary, adventure premise, current scene summary.
-3. **Dynamic block (uncached, target ≤ 3k tokens):** state projection (active PCs, HP/conditions/slots, combat order, and in combat the engine `describe()` map text, ~300–400 tokens), **registry facts for entities named in the scene** (contradiction guard R-M3), last N turns of transcript (N≈6, verbatim), this round's player inputs.
+3. **Dynamic block (uncached, target ≤ 3,000 tokens):** state projection (active PCs, HP/conditions/slots, combat order, and in combat the engine `describe()` map text, ~300–400 tokens), **registry facts for entities named in the scene** (contradiction guard R-M3), last N turns of transcript (N≈6, verbatim), this round's player inputs.
 4. **Retrieved long-term memory (≤ 600 tokens):** top-k scene summaries and registry entries relevant to the current inputs.
+
+Prompt budgets follow ADR-022 §5: total target ≤ 8,400 tokens and hard cap 10,000. Above target, trim transcript 6→4→2 turns, retrieved memory 600→300→0, registry facts to the five most recently mentioned entities, then use terse `describe()`; never truncate the state projection. If still over cap, proceed and emit `PromptOverBudget`.
 
 Write path:
 - **Registry (source of truth for NPCs/places/quests):** updated through tools during play (`upsert_npc`, ...), not inferred from prose.
@@ -474,7 +476,7 @@ Keyboard cursor and move mode with live cost readout; `Tab` through entities; `d
 Authored maps per adventure (MVP, validated JSON); procedural generators with seed and enum-only LLM request (stretch); user upload with calibration/annotation editor and image moderation (later). See ADR-020.
 
 ### 15.6 Event types (v0.2 list)
-Session/turn: `SessionStarted`, `RoundOpened`, `ActionSubmitted`, `TurnStarted{seed}`, `RollEvent`, `NarrationChunk`, `TurnCommitted`, `TurnReverted`, `SafetyFlag`, `ModerationDecision`, `ContentTierChanged`. Combat: `CombatStarted`, `InitiativeRolled`, `ReactionAvailable`, `ReactionResolved`, `CombatEnded`. **Map:** `MapLoaded`, `EntityPlaced`, `EntityMoved{path, cost}`, `OpportunityTriggered`, `AreaResolved{cells, affected}`, `TerrainChanged`. Character/world: `HpChanged`, `ConditionApplied/Removed`, `SlotSpent`, `ItemGranted/Consumed`, `QuestUpdated`, `RegistryUpserted`, `SceneClosed`. Account-adjacent (outside session log): `AccountDeletionRequested`, `RedactionApplied`.
+Session/turn: `SessionStarted`, `RoundOpened`, `ActionSubmitted`, `TurnStarted{seed, promptPrefixHash, inputs[]}`, `RollEvent`, `NarrationChunk`, `NarrationCompleted`, `TurnCommitted{usage{in,out,cacheRead?}}`, `TurnReverted`, `ToolCallRejected`, `TurnFallback`, `NarrationTruncated`, `PromptOverBudget`, `EntityDowned`, `SafetyFlag`, `ModerationDecision`, `ContentTierChanged`. Combat: `CombatStarted`, `InitiativeRolled`, `ReactionAvailable`, `ReactionResolved`, `CombatEnded`. **Map:** `MapLoaded`, `EntityPlaced`, `EntityMoved{path, cost}`, `OpportunityTriggered`, `AreaResolved{cells, affected}`, `TerrainChanged`. Character/world: `HpChanged`, `ConditionApplied/Removed`, `SlotSpent`, `ItemGranted/Consumed`, `QuestUpdated`, `RegistryUpserted`, `SceneClosed`. Account-adjacent (outside session log): `AccountDeletionRequested`, `RedactionApplied`.
 
 ## 16. LLM adapter, tiers, tool-call fallback (ADR-013, ADR-009)
 
