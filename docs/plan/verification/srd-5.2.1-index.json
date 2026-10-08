@@ -1,16 +1,24 @@
 {
  "backgrounds": {
   "Acolyte": {
-   "page": 83
+   "abilities": "Intelligence, Wisdom, Charisma",
+   "page": 83,
+   "skills": "Insight and Religion"
   },
   "Criminal": {
-   "page": 83
+   "abilities": "Dexterity, Constitution, Intelligence",
+   "page": 83,
+   "skills": "Sleight of Hand and Stealth"
   },
   "Sage": {
-   "page": 83
+   "abilities": "Constitution, Intelligence, Wisdom",
+   "page": 83,
+   "skills": "Arcana and History"
   },
   "Soldier": {
-   "page": 83
+   "abilities": "Strength, Dexterity, Constitution",
+   "page": 83,
+   "skills": "Athletics and Intimidation"
   }
  },
  "classes": {
@@ -38,7 +46,9 @@
     ]
    },
    "hitDie": 12,
-   "page": 28
+   "page": 28,
+   "primaryAbility": "Strength",
+   "saves": "Strength and Constitution"
   },
   "Bard": {
    "featuresByLevel": {
@@ -61,7 +71,9 @@
     ]
    },
    "hitDie": 8,
-   "page": 31
+   "page": 31,
+   "primaryAbility": "Charisma",
+   "saves": "Dexterity and Charisma"
   },
   "Cleric": {
    "featuresByLevel": {
@@ -83,7 +95,9 @@
     ]
    },
    "hitDie": 8,
-   "page": 36
+   "page": 36,
+   "primaryAbility": "Wisdom",
+   "saves": "Wisdom and Charisma"
   },
   "Druid": {
    "featuresByLevel": {
@@ -107,7 +121,9 @@
     ]
    },
    "hitDie": 8,
-   "page": 41
+   "page": 41,
+   "primaryAbility": "Wisdom",
+   "saves": "Intelligence and Wisdom"
   },
   "Fighter": {
    "featuresByLevel": {
@@ -132,7 +148,9 @@
     ]
    },
    "hitDie": 10,
-   "page": 47
+   "page": 47,
+   "primaryAbility": "Strength or Dexterity",
+   "saves": "Strength and Constitution"
   },
   "Monk": {
    "featuresByLevel": {
@@ -159,7 +177,9 @@
     ]
    },
    "hitDie": 8,
-   "page": 49
+   "page": 49,
+   "primaryAbility": "Dexterity and Wisdom",
+   "saves": "Strength and Dexterity"
   },
   "Paladin": {
    "featuresByLevel": {
@@ -185,7 +205,9 @@
     ]
    },
    "hitDie": 10,
-   "page": 53
+   "page": 53,
+   "primaryAbility": "Strength and Charisma",
+   "saves": "Wisdom and Charisma"
   },
   "Ranger": {
    "featuresByLevel": {
@@ -209,7 +231,9 @@
     ]
    },
    "hitDie": 10,
-   "page": 57
+   "page": 57,
+   "primaryAbility": "Dexterity and Wisdom",
+   "saves": "Strength and Dexterity"
   },
   "Rogue": {
    "featuresByLevel": {
@@ -235,7 +259,9 @@
     ]
    },
    "hitDie": 8,
-   "page": 61
+   "page": 61,
+   "primaryAbility": "Dexterity",
+   "saves": "Dexterity and Intelligence"
   },
   "Sorcerer": {
    "featuresByLevel": {
@@ -258,7 +284,9 @@
     ]
    },
    "hitDie": 6,
-   "page": 64
+   "page": 64,
+   "primaryAbility": "Charisma",
+   "saves": "Constitution and Charisma"
   },
   "Warlock": {
    "featuresByLevel": {
@@ -278,7 +306,9 @@
     "5": []
    },
    "hitDie": 8,
-   "page": 70
+   "page": 70,
+   "primaryAbility": "Charisma",
+   "saves": "Wisdom and Charisma"
   },
   "Wizard": {
    "featuresByLevel": {
@@ -301,7 +331,9 @@
     ]
    },
    "hitDie": 6,
-   "page": 77
+   "page": 77,
+   "primaryAbility": "Intelligence",
+   "saves": "Intelligence and Wisdom"
   }
  },
  "conditions": {
@@ -355,7 +387,7 @@
   "backgrounds": 4,
   "classes": 12,
   "conditions": 15,
-  "equipment": 160,
+  "equipment": 166,
   "monstersAllCr": 330,
   "monstersCR0to5": 242,
   "species": 9,
@@ -397,6 +429,12 @@
    "group": "gear",
    "page": 95,
    "weight": "Varies"
+  },
+  "Arrows": {
+   "cost": "1 GP",
+   "group": "gear",
+   "page": 96,
+   "weight": "1 lb."
   },
   "Backpack": {
    "cost": "2 GP",
@@ -462,6 +500,12 @@
    "page": 91,
    "weight": "1 lb."
   },
+  "Bolts": {
+   "cost": "1 GP",
+   "group": "gear",
+   "page": 96,
+   "weight": "1½ lb."
+  },
   "Book": {
    "cost": "25 GP",
    "group": "gear",
@@ -491,6 +535,18 @@
    "group": "gear",
    "page": 95,
    "weight": "2 lb."
+  },
+  "Bullets, Firearm": {
+   "cost": "3 GP",
+   "group": "gear",
+   "page": 96,
+   "weight": "2 lb."
+  },
+  "Bullets, Sling": {
+   "cost": "4 CP",
+   "group": "gear",
+   "page": 96,
+   "weight": "1½ lb."
   },
   "Burglar’s Pack": {
    "cost": "16 GP",
@@ -661,6 +717,12 @@
    "group": "gear",
    "page": 95,
    "weight": "55 lb."
+  },
+  "Entertainer’s Pack": {
+   "cost": "40 GP",
+   "group": "gear",
+   "page": 95,
+   "weight": "58½ lb."
   },
   "Explorer’s Pack": {
    "cost": "10 GP",
@@ -984,6 +1046,12 @@
    "group": "tool",
    "page": 94
   },
+  "Needles": {
+   "cost": "1 GP",
+   "group": "gear",
+   "page": 96,
+   "weight": "1 lb."
+  },
   "Net": {
    "cost": "1 GP",
    "group": "gear",
@@ -1301,13 +1369,6 @@
    "page": 92,
    "weight": "13 lb."
   },
-  "System Reference Document 5.2.1": {
-   "ac": "93",
-   "cost": "includes the tool’s cost and weight, as well as the",
-   "group": "armor",
-   "page": 93,
-   "weight": "craft certain items, or both. A tool’s description"
-  },
   "Tent": {
    "cost": "2 GP",
    "group": "gear",
@@ -1372,6 +1433,12 @@
    "page": 91,
    "weight": "5 lb."
   },
+  "Waterskin": {
+   "cost": "2 SP",
+   "group": "gear",
+   "page": 95,
+   "weight": "5 lb. (full)"
+  },
   "Weaver’s Tools": {
    "cost": "1 GP",
    "group": "tool",
@@ -1402,6 +1469,13 @@
     "wis": 10
    },
    "ac": 15,
+   "attacks": {
+    "Thunderous Slam": {
+     "dice": "2d8+5",
+     "toHit": 8,
+     "type": "thunder"
+    }
+   },
    "cr": 5,
    "hp": 90,
    "hpDice": "12d10+24",
@@ -1422,6 +1496,18 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "2d10+4",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Claws": {
+     "dice": "1d8+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 51,
    "hpDice": "6d10+18",
@@ -1442,6 +1528,13 @@
     "wis": 3
    },
    "ac": 18,
+   "attacks": {
+    "Slam": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 1,
    "hp": 33,
    "hpDice": "6d8+6",
@@ -1462,6 +1555,13 @@
     "wis": 5
    },
    "ac": 17,
+   "attacks": {
+    "Slash": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 0.25,
    "hp": 14,
    "hpDice": "4d6",
@@ -1482,6 +1582,13 @@
     "wis": 3
    },
    "ac": 12,
+   "attacks": {
+    "Smother": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 27,
    "hpDice": "5d10",
@@ -1507,6 +1614,7 @@
    "hpDice": "6d10+12",
    "initiative": 0,
    "page": 259,
+   "passivePerception": 11,
    "size": "large",
    "speed": 30,
    "type": "monstrosity"
@@ -1521,6 +1629,13 @@
     "wis": 12
    },
    "ac": 15,
+   "attacks": {
+    "Tail": {
+     "dice": "1d10+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 3,
    "hp": 68,
    "hpDice": "8d12+16",
@@ -1541,6 +1656,13 @@
     "wis": 12
    },
    "ac": 12,
+   "attacks": {
+    "Fist": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 19,
    "hpDice": "3d8+6",
@@ -1561,6 +1683,13 @@
     "wis": 14
    },
    "ac": 17,
+   "attacks": {
+    "Bite": {
+     "dice": "3d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 4,
    "hp": 90,
    "hpDice": "12d12+12",
@@ -1601,6 +1730,13 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Slam": {
+     "dice": "3d6+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 59,
    "hpDice": "7d12+14",
@@ -1621,6 +1757,13 @@
     "wis": 10
    },
    "ac": 11,
+   "attacks": {
+    "Beak": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 0.25,
    "hp": 19,
    "hpDice": "3d10+3",
@@ -1641,6 +1784,13 @@
     "wis": 13
    },
    "ac": 17,
+   "attacks": {
+    "Burning Hammer": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 39,
    "hpDice": "6d8+12",
@@ -1661,6 +1811,13 @@
     "wis": 12
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4-1",
+     "toHit": 1,
+     "type": "piercing"
+    }
+   },
    "cr": 0,
    "hp": 3,
    "hpDice": "1d6",
@@ -1701,6 +1858,18 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Light Crossbow": {
+     "dice": "1d8+1",
+     "toHit": 3,
+     "type": "piercing"
+    },
+    "Scimitar": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 0.125,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -1721,6 +1890,18 @@
     "wis": 11
    },
    "ac": 15,
+   "attacks": {
+    "Pistol": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "piercing"
+    },
+    "Scimitar": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 52,
    "hpDice": "8d8+16",
@@ -1741,6 +1922,23 @@
     "wis": 14
    },
    "ac": 15,
+   "attacks": {
+    "Claws": {
+     "dice": "2d6+3",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Hurl Flame": {
+     "dice": "5d6",
+     "toHit": 5,
+     "type": "fire"
+    },
+    "Tail": {
+     "dice": "2d10+3",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 5,
    "hp": 110,
    "hpDice": "13d8+52",
@@ -1761,6 +1959,13 @@
     "wis": 8
    },
    "ac": 15,
+   "attacks": {
+    "Bite": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 52,
    "hpDice": "8d8+16",
@@ -1783,7 +1988,7 @@
    "ac": 12,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 2,
    "page": 345,
    "passivePerception": 11,
@@ -1801,6 +2006,18 @@
     "wis": 11
    },
    "ac": 13,
+   "attacks": {
+    "Beard": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    },
+    "Infernal Glaive": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 58,
    "hpDice": "9d8+18",
@@ -1821,6 +2038,13 @@
     "wis": 11
    },
    "ac": 13,
+   "attacks": {
+    "Greataxe": {
+     "dice": "1d12+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 67,
    "hpDice": "9d8+27",
@@ -1841,6 +2065,13 @@
     "wis": 12
    },
    "ac": 11,
+   "attacks": {
+    "Rend": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 0.5,
    "hp": 19,
    "hpDice": "3d8+6",
@@ -1861,11 +2092,19 @@
     "wis": 11
    },
    "ac": 17,
+   "attacks": {
+    "Rend": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 33,
    "hpDice": "6d8+6",
    "initiative": 4,
    "page": 263,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -1880,6 +2119,13 @@
     "wis": 6
    },
    "ac": 7,
+   "attacks": {
+    "Dissolving Pseudopod": {
+     "dice": "4d6+3",
+     "toHit": 5,
+     "type": "acid"
+    }
+   },
    "cr": 4,
    "hp": 68,
    "hpDice": "8d10+24",
@@ -1900,6 +2146,13 @@
     "wis": 13
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 22,
    "hpDice": "4d8+4",
@@ -1920,6 +2173,13 @@
     "wis": 14
    },
    "ac": 12,
+   "attacks": {
+    "Beak": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 7,
    "hpDice": "2d6",
@@ -1940,11 +2200,19 @@
     "wis": 11
    },
    "ac": 17,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 65,
    "hpDice": "10d8+20",
    "initiative": 2,
    "page": 266,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -1959,6 +2227,13 @@
     "wis": 9
    },
    "ac": 11,
+   "attacks": {
+    "Gore": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 13,
    "hpDice": "2d8+4",
@@ -1979,11 +2254,19 @@
     "wis": 11
    },
    "ac": 15,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "4d8+4",
    "initiative": 2,
    "page": 268,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -1998,11 +2281,19 @@
     "wis": 11
    },
    "ac": 15,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 39,
    "hpDice": "6d8+12",
    "initiative": 2,
    "page": 269,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -2017,6 +2308,18 @@
     "wis": 13
    },
    "ac": 11,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    },
+    "Claw": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "3d10+6",
@@ -2037,6 +2340,13 @@
     "wis": 12
    },
    "ac": 15,
+   "attacks": {
+    "Javelin": {
+     "dice": "3d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 65,
    "hpDice": "10d8+20",
@@ -2057,6 +2367,13 @@
     "wis": 11
    },
    "ac": 14,
+   "attacks": {
+    "Grab": {
+     "dice": "2d6+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 1,
    "hp": 33,
    "hpDice": "6d8+6",
@@ -2077,11 +2394,19 @@
     "wis": 10
    },
    "ac": 17,
+   "attacks": {
+    "Bite": {
+     "dice": "2d12+4",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 5,
    "hp": 94,
    "hpDice": "9d10+45",
    "initiative": 0,
    "page": 272,
+   "passivePerception": 16,
    "size": "large",
    "speed": 40,
    "type": "monstrosity"
@@ -2096,9 +2421,17 @@
     "wis": 11
    },
    "ac": 10,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.125,
    "hp": 17,
    "hpDice": "2d10+6",
+   "initiative": -1,
    "page": 346,
    "passivePerception": 10,
    "size": "large",
@@ -2135,6 +2468,18 @@
     "wis": 13
    },
    "ac": 16,
+   "attacks": {
+    "Longbow": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Pike": {
+     "dice": "1d10+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 45,
    "hpDice": "6d10+12",
@@ -2155,6 +2500,13 @@
     "wis": 11
    },
    "ac": 16,
+   "attacks": {
+    "Pincer": {
+     "dice": "1d10+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 4,
    "hp": 76,
    "hpDice": "9d10+27",
@@ -2175,6 +2527,13 @@
     "wis": 13
    },
    "ac": 11,
+   "attacks": {
+    "Petrifying Bite": {
+     "dice": "1d4+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 22,
    "hpDice": "5d6+5",
@@ -2195,6 +2554,13 @@
     "wis": 10
    },
    "ac": 10,
+   "attacks": {
+    "Club": {
+     "dice": "1d4",
+     "toHit": 2,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0,
    "hp": 4,
    "hpDice": "1d8",
@@ -2215,6 +2581,13 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 13,
    "hpDice": "2d10+2",
@@ -2235,11 +2608,19 @@
     "wis": 11
    },
    "ac": 16,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "4d8+4",
    "initiative": 3,
    "page": 275,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -2254,6 +2635,13 @@
     "wis": 20
    },
    "ac": 19,
+   "attacks": {
+    "Bite": {
+     "dice": "1d12+5",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 4,
    "hp": 60,
    "hpDice": "8d8+24",
@@ -2294,6 +2682,13 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 13,
    "hpDice": "2d10+2",
@@ -2314,6 +2709,13 @@
     "wis": 11
    },
    "ac": 12,
+   "attacks": {
+    "Ritual Sickle": {
+     "dice": "1d4+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 0.125,
    "hp": 9,
    "hpDice": "2d8",
@@ -2334,6 +2736,13 @@
     "wis": 14
    },
    "ac": 13,
+   "attacks": {
+    "Pact Blade": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 44,
    "hpDice": "8d8+8",
@@ -2354,6 +2763,13 @@
     "wis": 10
    },
    "ac": 11,
+   "attacks": {
+    "Crush": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 22,
    "hpDice": "5d6+5",
@@ -2374,6 +2790,13 @@
     "wis": 13
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 39,
    "hpDice": "6d8+12",
@@ -2394,6 +2817,13 @@
     "wis": 14
    },
    "ac": 13,
+   "attacks": {
+    "Ram": {
+     "dice": "1d4",
+     "toHit": 2,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0,
    "hp": 4,
    "hpDice": "1d8",
@@ -2414,6 +2844,13 @@
     "wis": 12
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "3d10+6",
@@ -2454,6 +2891,13 @@
     "wis": 11
    },
    "ac": 10,
+   "attacks": {
+    "Hooves": {
+     "dice": "1d4+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.25,
    "hp": 15,
    "hpDice": "2d10+4",
@@ -2474,6 +2918,13 @@
     "wis": 8
    },
    "ac": 11,
+   "attacks": {
+    "Rend": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 0.25,
    "hp": 18,
    "hpDice": "4d6+4",
@@ -2494,6 +2945,18 @@
     "wis": 16
    },
    "ac": 13,
+   "attacks": {
+    "Verdant Wisp": {
+     "dice": "3d6",
+     "toHit": 5,
+     "type": "radiant"
+    },
+    "Vine Staff": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 44,
    "hpDice": "8d8+8",
@@ -2514,6 +2977,18 @@
     "wis": 15
    },
    "ac": 16,
+   "attacks": {
+    "Thorn Burst": {
+     "dice": "1d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Vine Lash": {
+     "dice": "1d8+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "5d8",
@@ -2534,6 +3009,13 @@
     "wis": 11
    },
    "ac": 12,
+   "attacks": {
+    "Claw": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 0.5,
    "hp": 17,
    "hpDice": "5d6",
@@ -2554,6 +3036,13 @@
     "wis": 14
    },
    "ac": 12,
+   "attacks": {
+    "Talons": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 0,
    "hp": 4,
    "hpDice": "1d6+1",
@@ -2574,6 +3063,18 @@
     "wis": 10
    },
    "ac": 17,
+   "attacks": {
+    "Rock Launch": {
+     "dice": "1d6+5",
+     "toHit": 8,
+     "type": "bludgeoning"
+    },
+    "Slam": {
+     "dice": "2d8+5",
+     "toHit": 8,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 5,
    "hp": 147,
    "hpDice": "14d10+70",
@@ -2594,6 +3095,13 @@
     "wis": 11
    },
    "ac": 12,
+   "attacks": {
+    "Gore": {
+     "dice": "2d8+6",
+     "toHit": 8,
+     "type": "piercing"
+    }
+   },
    "cr": 4,
    "hp": 76,
    "hpDice": "8d12+24",
@@ -2614,6 +3122,13 @@
     "wis": 10
    },
    "ac": 10,
+   "attacks": {
+    "Ram": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d10",
@@ -2634,6 +3149,18 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Claw": {
+     "dice": "2d4+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 44,
    "hpDice": "8d8+8",
@@ -2654,6 +3181,18 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Battleaxe": {
+     "dice": "2d8+5",
+     "toHit": 7,
+     "type": "slashing"
+    },
+    "Morningstar": {
+     "dice": "2d8+5",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 4,
    "hp": 85,
    "hpDice": "10d10+30",
@@ -2674,6 +3213,13 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Burn": {
+     "dice": "2d6+3",
+     "toHit": 6,
+     "type": "fire"
+    }
+   },
    "cr": 5,
    "hp": 93,
    "hpDice": "11d10+33",
@@ -2694,6 +3240,13 @@
     "wis": 10
    },
    "ac": 9,
+   "attacks": {
+    "Slam": {
+     "dice": "2d8+4",
+     "toHit": 7,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 5,
    "hp": 127,
    "hpDice": "15d8+60",
@@ -2736,7 +3289,7 @@
    "ac": 11,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 1,
    "page": 348,
    "passivePerception": 11,
@@ -2754,6 +3307,13 @@
     "wis": 11
    },
    "ac": 15,
+   "attacks": {
+    "Claw": {
+     "dice": "2d4+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 67,
    "hpDice": "9d8+27",
@@ -2774,6 +3334,13 @@
     "wis": 6
    },
    "ac": 6,
+   "attacks": {
+    "Pseudopod": {
+     "dice": "3d6+2",
+     "toHit": 4,
+     "type": "acid"
+    }
+   },
    "cr": 2,
    "hp": 63,
    "hpDice": "6d10+30",
@@ -2794,6 +3361,18 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    },
+    "Claw": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 36,
    "hpDice": "8d8",
@@ -2814,6 +3393,13 @@
     "wis": 12
    },
    "ac": 11,
+   "attacks": {
+    "Withering Touch": {
+     "dice": "3d10+3",
+     "toHit": 5,
+     "type": "necrotic"
+    }
+   },
    "cr": 4,
    "hp": 45,
    "hpDice": "10d8",
@@ -2834,6 +3420,18 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Claw": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "5d8",
@@ -2854,6 +3452,13 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "2d4+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 15,
    "hpDice": "2d8+6",
@@ -2874,6 +3479,13 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 22,
    "hpDice": "4d10",
@@ -2894,6 +3506,13 @@
     "wis": 7
    },
    "ac": 13,
+   "attacks": {
+    "Gore": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 42,
    "hpDice": "5d10+15",
@@ -2905,7 +3524,22 @@
    "type": "beast"
   },
   "Giant Centipede": {
+   "abilities": {
+    "cha": 3,
+    "con": 12,
+    "dex": 14,
+    "int": 1,
+    "str": 5,
+    "wis": 7
+   },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 9,
    "hpDice": "2d6+2",
@@ -2926,6 +3560,13 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 60,
    "hpDice": "8d12+8",
@@ -2946,6 +3587,13 @@
     "wis": 9
    },
    "ac": 15,
+   "attacks": {
+    "Claw": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.125,
    "hp": 13,
    "hpDice": "3d8",
@@ -2966,6 +3614,18 @@
     "wis": 10
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "3d10+5",
+     "toHit": 8,
+     "type": "piercing"
+    },
+    "Tail": {
+     "dice": "3d8+5",
+     "toHit": 8,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 5,
    "hp": 85,
    "hpDice": "9d12+27",
@@ -2986,6 +3646,13 @@
     "wis": 14
    },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 26,
    "hpDice": "4d10+4",
@@ -3006,6 +3673,13 @@
     "wis": 14
    },
    "ac": 14,
+   "attacks": {
+    "Ram": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 42,
    "hpDice": "5d12+10",
@@ -3046,6 +3720,13 @@
     "wis": 10
    },
    "ac": 11,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6+2",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 18,
    "hpDice": "4d8",
@@ -3066,6 +3747,13 @@
     "wis": 12
    },
    "ac": 11,
+   "attacks": {
+    "Ram": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 19,
    "hpDice": "3d10+3",
@@ -3086,6 +3774,13 @@
     "wis": 12
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 45,
    "hpDice": "6d10+12",
@@ -3106,6 +3801,13 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 19,
    "hpDice": "3d10+3",
@@ -3126,6 +3828,13 @@
     "wis": 10
    },
    "ac": 11,
+   "attacks": {
+    "Tentacles": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 1,
    "hp": 45,
    "hpDice": "7d10+7",
@@ -3146,6 +3855,13 @@
     "wis": 14
    },
    "ac": 12,
+   "attacks": {
+    "Talons": {
+     "dice": "1d10+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 0.25,
    "hp": 19,
    "hpDice": "3d10+3",
@@ -3166,6 +3882,13 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 7,
    "hpDice": "2d6",
@@ -3186,6 +3909,18 @@
     "wis": 9
    },
    "ac": 15,
+   "attacks": {
+    "Claw": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    },
+    "Sting": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 52,
    "hpDice": "7d10+14",
@@ -3206,6 +3941,13 @@
     "wis": 12
    },
    "ac": 14,
+   "attacks": {
+    "Ram": {
+     "dice": "2d6+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 16,
    "hpDice": "3d10",
@@ -3246,11 +3988,19 @@
     "wis": 11
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 26,
    "hpDice": "4d10+4",
    "initiative": 3,
    "page": 353,
+   "passivePerception": 14,
    "size": "large",
    "speed": 30,
    "type": "beast"
@@ -3265,6 +4015,13 @@
     "wis": 10
    },
    "ac": 11,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 39,
    "hpDice": "6d10+6",
@@ -3285,6 +4042,13 @@
     "wis": 10
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -3305,6 +4069,13 @@
     "wis": 12
    },
    "ac": 10,
+   "attacks": {
+    "Gouge": {
+     "dice": "2d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 25,
    "hpDice": "3d10+9",
@@ -3325,6 +4096,13 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Sting": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 22,
    "hpDice": "5d8",
@@ -3345,6 +4123,13 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 9,
    "hpDice": "2d8",
@@ -3365,11 +4150,19 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d8+2",
    "initiative": 3,
    "page": 355,
+   "passivePerception": 13,
    "size": "medium",
    "speed": 40,
    "type": "beast"
@@ -3384,6 +4177,13 @@
     "wis": 10
    },
    "ac": 9,
+   "attacks": {
+    "Bite": {
+     "dice": "2d6",
+     "toHit": 2,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 52,
    "hpDice": "7d8+21",
@@ -3404,6 +4204,13 @@
     "wis": 12
    },
    "ac": 16,
+   "attacks": {
+    "Spear": {
+     "dice": "2d6+4",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 5,
    "hp": 112,
    "hpDice": "15d8+45",
@@ -3424,6 +4231,18 @@
     "wis": 10
    },
    "ac": 15,
+   "attacks": {
+    "Bone Bow": {
+     "dice": "1d10+1",
+     "toHit": 3,
+     "type": "piercing"
+    },
+    "Rend": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 27,
    "hpDice": "6d8",
@@ -3464,6 +4283,18 @@
     "wis": 8
    },
    "ac": 17,
+   "attacks": {
+    "Scimitar": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "slashing"
+    },
+    "Shortbow": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 21,
    "hpDice": "6d6",
@@ -3484,6 +4315,13 @@
     "wis": 8
    },
    "ac": 12,
+   "attacks": {
+    "Dagger": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 7,
    "hpDice": "2d6",
@@ -3504,6 +4342,18 @@
     "wis": 8
    },
    "ac": 15,
+   "attacks": {
+    "Scimitar": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "slashing"
+    },
+    "Shortbow": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 10,
    "hpDice": "3d6",
@@ -3524,11 +4374,19 @@
     "wis": 11
    },
    "ac": 17,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 60,
    "hpDice": "8d8+24",
    "initiative": 4,
    "page": 290,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -3543,6 +4401,13 @@
     "wis": 12
    },
    "ac": 19,
+   "attacks": {
+    "Gore": {
+     "dice": "2d12+5",
+     "toHit": 8,
+     "type": "piercing"
+    }
+   },
    "cr": 5,
    "hp": 114,
    "hpDice": "12d10+48",
@@ -3563,6 +4428,13 @@
     "wis": 6
    },
    "ac": 9,
+   "attacks": {
+    "Pseudopod": {
+     "dice": "2d8+1",
+     "toHit": 3,
+     "type": "acid"
+    }
+   },
    "cr": 0.5,
    "hp": 22,
    "hpDice": "3d8+9",
@@ -3583,11 +4455,19 @@
     "wis": 11
    },
    "ac": 17,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 38,
    "hpDice": "7d8+7",
    "initiative": 3,
    "page": 293,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -3602,6 +4482,13 @@
     "wis": 14
    },
    "ac": 17,
+   "attacks": {
+    "Claw": {
+     "dice": "1d8+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 82,
    "hpDice": "11d8+33",
@@ -3622,6 +4509,18 @@
     "wis": 14
    },
    "ac": 14,
+   "attacks": {
+    "Beak": {
+     "dice": "2d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Tentacles": {
+     "dice": "1d10+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 54,
    "hpDice": "12d8",
@@ -3642,6 +4541,13 @@
     "wis": 13
    },
    "ac": 12,
+   "attacks": {
+    "Rend": {
+     "dice": "1d8+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 59,
    "hpDice": "7d10+21",
@@ -3662,6 +4568,13 @@
     "wis": 8
    },
    "ac": 11,
+   "attacks": {
+    "Bone Cudgel": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -3682,6 +4595,13 @@
     "wis": 11
    },
    "ac": 16,
+   "attacks": {
+    "Spear": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -3702,6 +4622,18 @@
     "wis": 14
    },
    "ac": 18,
+   "attacks": {
+    "Javelin": {
+     "dice": "3d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Longsword": {
+     "dice": "2d10+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 4,
    "hp": 75,
    "hpDice": "10d8+30",
@@ -3722,11 +4654,19 @@
     "wis": 15
    },
    "ac": 18,
+   "attacks": {
+    "Claw": {
+     "dice": "1d4+4",
+     "toHit": 7,
+     "type": "slashing"
+    }
+   },
    "cr": 5,
    "hp": 105,
    "hpDice": "14d8+42",
    "initiative": 5,
    "page": 297,
+   "passivePerception": 15,
    "size": "medium",
    "speed": 40,
    "type": "dragon"
@@ -3741,6 +4681,13 @@
     "wis": 10
    },
    "ac": 11,
+   "attacks": {
+    "Claw": {
+     "dice": "2d4+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 38,
    "hpDice": "7d8+7",
@@ -3763,7 +4710,7 @@
    "ac": 13,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 3,
    "page": 355,
    "passivePerception": 16,
@@ -3781,6 +4728,13 @@
     "wis": 13
    },
    "ac": 15,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 58,
    "hpDice": "9d8+18",
@@ -3801,6 +4755,18 @@
     "wis": 9
    },
    "ac": 13,
+   "attacks": {
+    "Trash Lob": {
+     "dice": "2d10+5",
+     "toHit": 8,
+     "type": "bludgeoning"
+    },
+    "Tree Club": {
+     "dice": "3d8+5",
+     "toHit": 8,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 5,
    "hp": 105,
    "hpDice": "10d12+40",
@@ -3821,6 +4787,13 @@
     "wis": 12
    },
    "ac": 11,
+   "attacks": {
+    "Rend": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 26,
    "hpDice": "4d10+4",
@@ -3841,6 +4814,13 @@
     "wis": 12
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "2d10+5",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 4,
    "hp": 82,
    "hpDice": "11d10+22",
@@ -3861,6 +4841,18 @@
     "wis": 10
    },
    "ac": 17,
+   "attacks": {
+    "Greatsword": {
+     "dice": "2d6+2",
+     "toHit": 4,
+     "type": "slashing"
+    },
+    "Longbow": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 58,
    "hpDice": "9d8+18",
@@ -3881,6 +4873,18 @@
     "wis": 10
    },
    "ac": 18,
+   "attacks": {
+    "Longbow": {
+     "dice": "1d8+1",
+     "toHit": 3,
+     "type": "piercing"
+    },
+    "Longsword": {
+     "dice": "2d10+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 0.5,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -3941,6 +4945,13 @@
     "wis": 12
    },
    "ac": 11,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6",
+     "toHit": 2,
+     "type": "piercing"
+    }
+   },
    "cr": 0,
    "hp": 5,
    "hpDice": "1d8+1",
@@ -3961,6 +4972,13 @@
     "wis": 11
    },
    "ac": 11,
+   "attacks": {
+    "Claw": {
+     "dice": "1d4+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 0.5,
    "hp": 21,
    "hpDice": "6d6",
@@ -3981,6 +4999,13 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Sting": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 21,
    "hpDice": "6d4+6",
@@ -4001,6 +5026,13 @@
     "wis": 12
    },
    "ac": 15,
+   "attacks": {
+    "Restless Touch": {
+     "dice": "3d6+5",
+     "toHit": 7,
+     "type": "psychic"
+    }
+   },
    "cr": 4,
    "hp": 66,
    "hpDice": "12d8+12",
@@ -4021,6 +5053,13 @@
     "wis": 12
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4-1",
+     "toHit": 1,
+     "type": "piercing"
+    }
+   },
    "cr": 0,
    "hp": 3,
    "hpDice": "1d6",
@@ -4041,6 +5080,13 @@
     "wis": 12
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "5d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 90,
    "hpDice": "12d12+12",
@@ -4052,7 +5098,27 @@
    "type": "beast"
   },
   "Knight": {
+   "abilities": {
+    "cha": 15,
+    "con": 14,
+    "dex": 11,
+    "int": 11,
+    "str": 16,
+    "wis": 11
+   },
    "ac": 18,
+   "attacks": {
+    "Greatsword": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    },
+    "Heavy Crossbow": {
+     "dice": "2d10",
+     "toHit": 2,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 52,
    "hpDice": "8d8+16",
@@ -4064,10 +5130,25 @@
    "type": "humanoid"
   },
   "Kobold Warrior": {
+   "abilities": {
+    "cha": 8,
+    "con": 9,
+    "dex": 15,
+    "int": 8,
+    "str": 7,
+    "wis": 7
+   },
    "ac": 14,
+   "attacks": {
+    "Dagger": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 7,
-   "hpDice": "3d6−3",
+   "hpDice": "3d6-3",
    "initiative": 2,
    "page": 302,
    "passivePerception": 8,
@@ -4085,6 +5166,13 @@
     "wis": 15
    },
    "ac": 13,
+   "attacks": {
+    "Claw": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 4,
    "hp": 97,
    "hpDice": "13d10+26",
@@ -4105,6 +5193,13 @@
     "wis": 11
    },
    "ac": 9,
+   "attacks": {
+    "Vile Slime": {
+     "dice": "1d4",
+     "toHit": 2,
+     "type": "poison"
+    }
+   },
    "cr": 0,
    "hp": 9,
    "hpDice": "2d8",
@@ -4125,6 +5220,13 @@
     "wis": 12
    },
    "ac": 12,
+   "attacks": {
+    "Rend": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "4d10",
@@ -4165,6 +5267,13 @@
     "wis": 10
    },
    "ac": 11,
+   "attacks": {
+    "Claw": {
+     "dice": "1d4+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 0.5,
    "hp": 18,
    "hpDice": "4d6+4",
@@ -4185,6 +5294,13 @@
     "wis": 11
    },
    "ac": 14,
+   "attacks": {
+    "Touch": {
+     "dice": "2d4+2",
+     "toHit": 4,
+     "type": "fire"
+    }
+   },
    "cr": 0.5,
    "hp": 13,
    "hpDice": "3d6+3",
@@ -4205,6 +5321,18 @@
     "wis": 12
    },
    "ac": 14,
+   "attacks": {
+    "Rend": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "slashing"
+    },
+    "Tail Spike": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 68,
    "hpDice": "8d10+24",
@@ -4216,7 +5344,22 @@
    "type": "monstrosity"
   },
   "Mastiff": {
+   "abilities": {
+    "cha": 7,
+    "con": 12,
+    "dex": 14,
+    "int": 3,
+    "str": 13,
+    "wis": 12
+   },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 5,
    "hpDice": "1d8+1",
@@ -4237,6 +5380,13 @@
     "wis": 14
    },
    "ac": 11,
+   "attacks": {
+    "Ocean Spear": {
+     "dice": "1d6",
+     "toHit": 2,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -4257,6 +5407,23 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+4",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Claw": {
+     "dice": "2d4+4",
+     "toHit": 6,
+     "type": "slashing"
+    },
+    "Harpoon": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 45,
    "hpDice": "6d10+12",
@@ -4277,6 +5444,13 @@
     "wis": 13
    },
    "ac": 12,
+   "attacks": {
+    "Pseudopod": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 58,
    "hpDice": "9d8+18",
@@ -4297,6 +5471,18 @@
     "wis": 8
    },
    "ac": 12,
+   "attacks": {
+    "Gore": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Slam": {
+     "dice": "2d10+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 45,
    "hpDice": "6d10+12",
@@ -4317,6 +5503,13 @@
     "wis": 16
    },
    "ac": 14,
+   "attacks": {
+    "Abyssal Glaive": {
+     "dice": "1d12+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 85,
    "hpDice": "10d10+30",
@@ -4328,7 +5521,22 @@
    "type": "monstrosity"
   },
   "Mule": {
+   "abilities": {
+    "cha": 5,
+    "con": 13,
+    "dex": 10,
+    "int": 2,
+    "str": 14,
+    "wis": 10
+   },
    "ac": 10,
+   "attacks": {
+    "Hooves": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.125,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -4349,6 +5557,13 @@
     "wis": 12
    },
    "ac": 11,
+   "attacks": {
+    "Rotting Fist": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 3,
    "hp": 58,
    "hpDice": "9d8+18",
@@ -4369,11 +5584,19 @@
     "wis": 14
    },
    "ac": 17,
+   "attacks": {
+    "Claw": {
+     "dice": "2d8+4",
+     "toHit": 7,
+     "type": "slashing"
+    }
+   },
    "cr": 5,
    "hp": 112,
    "hpDice": "15d8+45",
    "initiative": 5,
    "page": 311,
+   "passivePerception": 15,
    "size": "medium",
    "speed": 30,
    "type": "fiend"
@@ -4388,11 +5611,19 @@
     "wis": 13
    },
    "ac": 13,
+   "attacks": {
+    "Hooves": {
+     "dice": "2d8+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 3,
    "hp": 68,
    "hpDice": "8d10+24",
    "initiative": 2,
    "page": 311,
+   "passivePerception": 11,
    "size": "large",
    "speed": 60,
    "type": "fiend"
@@ -4407,11 +5638,19 @@
     "wis": 14
    },
    "ac": 15,
+   "attacks": {
+    "Rapier": {
+     "dice": "1d8+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 9,
    "hpDice": "2d8",
    "initiative": 1,
    "page": 312,
+   "passivePerception": 12,
    "size": "medium",
    "speed": 30,
    "type": "humanoid"
@@ -4426,16 +5665,32 @@
     "wis": 6
    },
    "ac": 8,
+   "attacks": {
+    "Pseudopod": {
+     "dice": "3d6+2",
+     "toHit": 4,
+     "type": "acid"
+    }
+   },
    "cr": 2,
    "hp": 52,
    "hpDice": "7d10+14",
    "initiative": -2,
    "page": 312,
+   "passivePerception": 8,
    "size": "large",
    "speed": 20,
    "type": "ooze"
   },
   "Octopus": {
+   "abilities": {
+    "cha": 4,
+    "con": 11,
+    "dex": 15,
+    "int": 3,
+    "str": 4,
+    "wis": 10
+   },
    "ac": 12,
    "cr": 0,
    "hp": 3,
@@ -4457,11 +5712,24 @@
     "wis": 7
    },
    "ac": 11,
+   "attacks": {
+    "Greatclub": {
+     "dice": "2d8+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    },
+    "Javelin": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 68,
    "hpDice": "8d10+24",
    "initiative": -1,
    "page": 312,
+   "passivePerception": 8,
    "size": "large",
    "speed": 40,
    "type": "giant"
@@ -4476,6 +5744,13 @@
     "wis": 6
    },
    "ac": 8,
+   "attacks": {
+    "Slam": {
+     "dice": "2d8+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 85,
    "hpDice": "9d10+36",
@@ -4496,11 +5771,24 @@
     "wis": 13
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "2d8+3",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Tentacle": {
+     "dice": "2d8+3",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 5,
    "hp": 104,
    "hpDice": "11d10+44",
    "initiative": 0,
    "page": 313,
+   "passivePerception": 11,
    "size": "large",
    "speed": 30,
    "type": "aberration"
@@ -4517,7 +5805,7 @@
    "ac": 11,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 1,
    "page": 358,
    "passivePerception": 15,
@@ -4535,17 +5823,40 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "2d8+5",
+     "toHit": 7,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 59,
    "hpDice": "7d10+21",
    "initiative": 1,
    "page": 313,
+   "passivePerception": 15,
    "size": "large",
    "speed": 40,
    "type": "monstrosity"
   },
   "Panther": {
+   "abilities": {
+    "cha": 7,
+    "con": 10,
+    "dex": 16,
+    "int": 3,
+    "str": 14,
+    "wis": 14
+   },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 0.25,
    "hp": 13,
    "hpDice": "3d8",
@@ -4566,11 +5877,19 @@
     "wis": 15
    },
    "ac": 12,
+   "attacks": {
+    "Hooves": {
+     "dice": "1d6+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 2,
    "hp": 59,
    "hpDice": "7d10+21",
    "initiative": 2,
    "page": 313,
+   "passivePerception": 16,
    "size": "large",
    "speed": 60,
    "type": "celestial"
@@ -4585,11 +5904,19 @@
     "wis": 10
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "1d10+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 45,
    "hpDice": "7d10+7",
    "initiative": 3,
    "page": 313,
+   "passivePerception": 10,
    "size": "large",
    "speed": 30,
    "type": "monstrosity"
@@ -4606,7 +5933,7 @@
    "ac": 13,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 3,
    "page": 358,
    "passivePerception": 8,
@@ -4624,17 +5951,40 @@
     "wis": 12
    },
    "ac": 14,
+   "attacks": {
+    "Dagger": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 33,
    "hpDice": "6d8+6",
    "initiative": 5,
    "page": 314,
+   "passivePerception": 11,
    "size": "medium",
    "speed": 30,
    "type": "humanoid"
   },
   "Plesiosaurus": {
+   "abilities": {
+    "cha": 5,
+    "con": 16,
+    "dex": 15,
+    "int": 2,
+    "str": 18,
+    "wis": 12
+   },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 68,
    "hpDice": "8d10+24",
@@ -4646,7 +5996,22 @@
    "type": "beast"
   },
   "Polar Bear": {
+   "abilities": {
+    "cha": 7,
+    "con": 16,
+    "dex": 14,
+    "int": 2,
+    "str": 20,
+    "wis": 13
+   },
    "ac": 12,
+   "attacks": {
+    "Rend": {
+     "dice": "1d8+5",
+     "toHit": 7,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 42,
    "hpDice": "5d10+15",
@@ -4658,7 +6023,22 @@
    "type": "beast"
   },
   "Pony": {
+   "abilities": {
+    "cha": 7,
+    "con": 13,
+    "dex": 10,
+    "int": 2,
+    "str": 15,
+    "wis": 11
+   },
    "ac": 10,
+   "attacks": {
+    "Hooves": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.125,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -4679,11 +6059,24 @@
     "wis": 16
    },
    "ac": 13,
+   "attacks": {
+    "Mace": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    },
+    "Radiant Flame": {
+     "dice": "2d10",
+     "toHit": 5,
+     "type": "radiant"
+    }
+   },
    "cr": 2,
    "hp": 38,
    "hpDice": "7d8+7",
    "initiative": 0,
    "page": 316,
+   "passivePerception": 15,
    "size": "medium",
    "speed": 30,
    "type": "humanoid"
@@ -4698,11 +6091,24 @@
     "wis": 14
    },
    "ac": 13,
+   "attacks": {
+    "Mace": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    },
+    "Radiant Flame": {
+     "dice": "2d6",
+     "toHit": 4,
+     "type": "radiant"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d8+2",
    "initiative": 0,
    "page": 316,
+   "passivePerception": 12,
    "size": "medium",
    "speed": 30,
    "type": "humanoid"
@@ -4717,17 +6123,40 @@
     "wis": 12
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 10,
    "hpDice": "3d4+3",
    "initiative": 2,
    "page": 316,
+   "passivePerception": 15,
    "size": "tiny",
    "speed": 15,
    "type": "dragon"
   },
   "Pteranodon": {
+   "abilities": {
+    "cha": 5,
+    "con": 10,
+    "dex": 15,
+    "int": 2,
+    "str": 12,
+    "wis": 9
+   },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 13,
    "hpDice": "3d8",
@@ -4748,20 +6177,36 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 25,
    "hpDice": "10d4",
    "initiative": 3,
    "page": 317,
+   "passivePerception": 10,
    "size": "tiny",
    "speed": 40,
    "type": "fiend"
   },
   "Rat": {
+   "abilities": {
+    "cha": 4,
+    "con": 9,
+    "dex": 11,
+    "int": 2,
+    "str": 2,
+    "wis": 10
+   },
    "ac": 10,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 0,
    "page": 359,
    "passivePerception": 12,
@@ -4770,6 +6215,14 @@
    "type": "beast"
   },
   "Raven": {
+   "abilities": {
+    "cha": 6,
+    "con": 10,
+    "dex": 14,
+    "int": 5,
+    "str": 2,
+    "wis": 13
+   },
    "ac": 12,
    "cr": 0,
    "hp": 2,
@@ -4791,17 +6244,40 @@
     "wis": 11
    },
    "ac": 17,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 4,
    "hp": 75,
    "hpDice": "10d8+30",
    "initiative": 2,
    "page": 318,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
   },
   "Reef Shark": {
+   "abilities": {
+    "cha": 4,
+    "con": 13,
+    "dex": 15,
+    "int": 1,
+    "str": 14,
+    "wis": 10
+   },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "2d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 22,
    "hpDice": "4d8+4",
@@ -4813,7 +6289,22 @@
    "type": "beast"
   },
   "Rhinoceros": {
+   "abilities": {
+    "cha": 6,
+    "con": 15,
+    "dex": 8,
+    "int": 2,
+    "str": 21,
+    "wis": 12
+   },
    "ac": 13,
+   "attacks": {
+    "Gore": {
+     "dice": "2d8+5",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 45,
    "hpDice": "6d10+12",
@@ -4834,6 +6325,13 @@
     "wis": 11
    },
    "ac": 11,
+   "attacks": {
+    "Hooves": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.25,
    "hp": 13,
    "hpDice": "2d10+2",
@@ -4854,11 +6352,19 @@
     "wis": 16
    },
    "ac": 20,
+   "attacks": {
+    "Bite": {
+     "dice": "3d8+4",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 5,
    "hp": 93,
    "hpDice": "11d10+33",
    "initiative": 5,
    "page": 320,
+   "passivePerception": 16,
    "size": "large",
    "speed": 10,
    "type": "aberration"
@@ -4873,17 +6379,40 @@
     "wis": 13
    },
    "ac": 14,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 33,
    "hpDice": "6d8+6",
    "initiative": 1,
    "page": 320,
+   "passivePerception": 11,
    "size": "medium",
    "speed": 40,
    "type": "monstrosity"
   },
   "Saber-Toothed Tiger": {
+   "abilities": {
+    "cha": 8,
+    "con": 15,
+    "dex": 17,
+    "int": 3,
+    "str": 18,
+    "wis": 12
+   },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 52,
    "hpDice": "7d10+14",
@@ -4904,6 +6433,13 @@
     "wis": 13
    },
    "ac": 12,
+   "attacks": {
+    "Claw": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "slashing"
+    }
+   },
    "cr": 0.5,
    "hp": 22,
    "hpDice": "4d8+4",
@@ -4924,6 +6460,13 @@
     "wis": 10
    },
    "ac": 15,
+   "attacks": {
+    "Flame Spear": {
+     "dice": "2d8+4",
+     "toHit": 7,
+     "type": "piercing"
+    }
+   },
    "cr": 5,
    "hp": 90,
    "hpDice": "12d10+24",
@@ -4944,6 +6487,13 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Hooves": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 31,
    "hpDice": "7d8",
@@ -4966,7 +6516,7 @@
    "ac": 11,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 0,
    "page": 360,
    "passivePerception": 9,
@@ -4984,6 +6534,18 @@
     "wis": 13
    },
    "ac": 13,
+   "attacks": {
+    "Longbow": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Shortsword": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 16,
    "hpDice": "3d8+3",
@@ -5004,6 +6566,13 @@
     "wis": 12
    },
    "ac": 14,
+   "attacks": {
+    "Claw": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 52,
    "hpDice": "7d8+21",
@@ -5026,7 +6595,7 @@
    "ac": 12,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 1,
    "page": 361,
    "passivePerception": 12,
@@ -5044,6 +6613,13 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Draining Swipe": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "necrotic"
+    }
+   },
    "cr": 0.5,
    "hp": 27,
    "hpDice": "5d8+5",
@@ -5064,11 +6640,19 @@
     "wis": 10
    },
    "ac": 15,
+   "attacks": {
+    "Charged Tendril": {
+     "dice": "1d6+4",
+     "toHit": 7,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 5,
    "hp": 110,
    "hpDice": "13d10+39",
    "initiative": -1,
    "page": 323,
+   "passivePerception": 10,
    "size": "large",
    "speed": 30,
    "type": "plant"
@@ -5103,11 +6687,19 @@
     "wis": 11
    },
    "ac": 17,
+   "attacks": {
+    "Rend": {
+     "dice": "1d10+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 45,
    "hpDice": "6d8+18",
    "initiative": 2,
    "page": 324,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -5122,6 +6714,18 @@
     "wis": 8
    },
    "ac": 14,
+   "attacks": {
+    "Shortbow": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    },
+    "Shortsword": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 13,
    "hpDice": "2d8+4",
@@ -5142,6 +6746,13 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Life Drain": {
+     "dice": "2d6",
+     "toHit": 4,
+     "type": "necrotic"
+    }
+   },
    "cr": 1,
    "hp": 22,
    "hpDice": "5d8",
@@ -5162,6 +6773,13 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 24,
    "hpDice": "7d4+7",
@@ -5173,10 +6791,18 @@
    "type": "celestial"
   },
   "Spider": {
+   "abilities": {
+    "cha": 2,
+    "con": 8,
+    "dex": 14,
+    "int": 1,
+    "str": 2,
+    "wis": 10
+   },
    "ac": 12,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 2,
    "page": 361,
    "passivePerception": 10,
@@ -5194,6 +6820,13 @@
     "wis": 13
    },
    "ac": 15,
+   "attacks": {
+    "Needle Sword": {
+     "dice": "1d4+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 10,
    "hpDice": "4d4",
@@ -5214,6 +6847,18 @@
     "wis": 14
    },
    "ac": 12,
+   "attacks": {
+    "Hand Crossbow": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Shortsword": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 1,
    "hp": 27,
    "hpDice": "6d8",
@@ -5234,6 +6879,13 @@
     "wis": 10
    },
    "ac": 10,
+   "attacks": {
+    "Claw": {
+     "dice": "1d4",
+     "toHit": 2,
+     "type": "slashing"
+    }
+   },
    "cr": 0.25,
    "hp": 17,
    "hpDice": "5d6",
@@ -5254,6 +6906,13 @@
     "wis": 8
    },
    "ac": 13,
+   "attacks": {
+    "Proboscis": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 5,
    "hpDice": "2d4",
@@ -5274,6 +6933,13 @@
     "wis": 12
    },
    "ac": 15,
+   "attacks": {
+    "Fiendish Touch": {
+     "dice": "2d10+5",
+     "toHit": 7,
+     "type": "psychic"
+    }
+   },
    "cr": 4,
    "hp": 71,
    "hpDice": "13d8+13",
@@ -5285,7 +6951,22 @@
    "type": "fiend"
   },
   "Swarm of Bats": {
+   "abilities": {
+    "cha": 4,
+    "con": 10,
+    "dex": 15,
+    "int": 2,
+    "str": 5,
+    "wis": 12
+   },
    "ac": 12,
+   "attacks": {
+    "Bites": {
+     "dice": "2d4",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d10",
@@ -5306,6 +6987,13 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Swarm of Grasping Hands": {
+     "dice": "4d8+2",
+     "toHit": 4,
+     "type": "necrotic"
+    }
+   },
    "cr": 3,
    "hp": 49,
    "hpDice": "11d8",
@@ -5317,7 +7005,22 @@
    "type": "swarm of tiny undead"
   },
   "Swarm of Insects": {
+   "abilities": {
+    "cha": 1,
+    "con": 14,
+    "dex": 13,
+    "int": 1,
+    "str": 3,
+    "wis": 7
+   },
    "ac": 11,
+   "attacks": {
+    "Bites": {
+     "dice": "2d4+1",
+     "toHit": 3,
+     "type": "poison"
+    }
+   },
    "cr": 0.5,
    "hp": 19,
    "hpDice": "3d8+6",
@@ -5340,7 +7043,7 @@
    "ac": 13,
    "cr": 1,
    "hp": 28,
-   "hpDice": "8d8−8",
+   "hpDice": "8d8-8",
    "initiative": 3,
    "page": 362,
    "passivePerception": 8,
@@ -5358,9 +7061,16 @@
     "wis": 10
    },
    "ac": 10,
+   "attacks": {
+    "Bites": {
+     "dice": "2d4",
+     "toHit": 2,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 14,
-   "hpDice": "4d8−4",
+   "hpDice": "4d8-4",
    "initiative": 0,
    "page": 362,
    "passivePerception": 10,
@@ -5369,7 +7079,22 @@
    "type": "swarm of tiny beasts"
   },
   "Swarm of Ravens": {
+   "abilities": {
+    "cha": 6,
+    "con": 12,
+    "dex": 14,
+    "int": 5,
+    "str": 6,
+    "wis": 12
+   },
    "ac": 12,
+   "attacks": {
+    "Beaks": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -5390,6 +7115,13 @@
     "wis": 10
    },
    "ac": 14,
+   "attacks": {
+    "Bites": {
+     "dice": "1d8+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 2,
    "hp": 36,
    "hpDice": "8d8",
@@ -5401,7 +7133,22 @@
    "type": "swarm of tiny beasts"
   },
   "Tiger": {
+   "abilities": {
+    "cha": 8,
+    "con": 14,
+    "dex": 16,
+    "int": 3,
+    "str": 17,
+    "wis": 12
+   },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 1,
    "hp": 30,
    "hpDice": "4d10+8",
@@ -5422,6 +7169,18 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Heavy Crossbow": {
+     "dice": "1d10+1",
+     "toHit": 3,
+     "type": "piercing"
+    },
+    "Mace": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 32,
    "hpDice": "5d8+10",
@@ -5442,6 +7201,18 @@
     "wis": 10
    },
    "ac": 16,
+   "attacks": {
+    "Heavy Crossbow": {
+     "dice": "2d10+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Warhammer": {
+     "dice": "2d8+3",
+     "toHit": 5,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 4,
    "hp": 82,
    "hpDice": "11d8+33",
@@ -5453,7 +7224,22 @@
    "type": "humanoid"
   },
   "Triceratops": {
+   "abilities": {
+    "cha": 5,
+    "con": 17,
+    "dex": 9,
+    "int": 2,
+    "str": 22,
+    "wis": 11
+   },
    "ac": 14,
+   "attacks": {
+    "Gore": {
+     "dice": "2d12+6",
+     "toHit": 9,
+     "type": "piercing"
+    }
+   },
    "cr": 5,
    "hp": 114,
    "hpDice": "12d12+36",
@@ -5474,6 +7260,13 @@
     "wis": 9
    },
    "ac": 15,
+   "attacks": {
+    "Rend": {
+     "dice": "2d6+4",
+     "toHit": 7,
+     "type": "slashing"
+    }
+   },
    "cr": 5,
    "hp": 94,
    "hpDice": "9d10+45",
@@ -5494,6 +7287,13 @@
     "wis": 9
    },
    "ac": 13,
+   "attacks": {
+    "Rend": {
+     "dice": "2d4+4",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 0.5,
    "hp": 14,
    "hpDice": "4d6",
@@ -5514,6 +7314,18 @@
     "wis": 17
    },
    "ac": 12,
+   "attacks": {
+    "Hooves": {
+     "dice": "2d6+4",
+     "toHit": 7,
+     "type": "bludgeoning"
+    },
+    "Radiant Horn": {
+     "dice": "1d10+4",
+     "toHit": 7,
+     "type": "radiant"
+    }
+   },
    "cr": 5,
    "hp": 97,
    "hpDice": "13d10+26",
@@ -5534,6 +7346,13 @@
     "wis": 10
    },
    "ac": 15,
+   "attacks": {
+    "Umbral Dagger": {
+     "dice": "1d4+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 65,
    "hpDice": "10d8+20",
@@ -5554,6 +7373,13 @@
     "wis": 10
    },
    "ac": 16,
+   "attacks": {
+    "Claw": {
+     "dice": "2d4+3",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 5,
    "hp": 90,
    "hpDice": "12d8+36",
@@ -5574,6 +7400,13 @@
     "wis": 10
    },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d4+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 5,
    "hpDice": "2d4",
@@ -5594,6 +7427,13 @@
     "wis": 3
    },
    "ac": 5,
+   "attacks": {
+    "Rotting Touch": {
+     "dice": "1d8",
+     "toHit": 2,
+     "type": "necrotic"
+    }
+   },
    "cr": 0.25,
    "hp": 18,
    "hpDice": "4d8",
@@ -5605,7 +7445,22 @@
    "type": "plant"
   },
   "Vulture": {
+   "abilities": {
+    "cha": 4,
+    "con": 13,
+    "dex": 10,
+    "int": 2,
+    "str": 7,
+    "wis": 12
+   },
    "ac": 10,
+   "attacks": {
+    "Beak": {
+     "dice": "1d4",
+     "toHit": 2,
+     "type": "piercing"
+    }
+   },
    "cr": 0,
    "hp": 5,
    "hpDice": "1d8+1",
@@ -5626,6 +7481,13 @@
     "wis": 12
    },
    "ac": 11,
+   "attacks": {
+    "Hooves": {
+     "dice": "2d4+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 19,
    "hpDice": "3d10+3",
@@ -5646,6 +7508,13 @@
     "wis": 8
    },
    "ac": 13,
+   "attacks": {
+    "Hooves": {
+     "dice": "1d6+4",
+     "toHit": 6,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.5,
    "hp": 22,
    "hpDice": "3d10+6",
@@ -5666,6 +7535,13 @@
     "wis": 11
    },
    "ac": 13,
+   "attacks": {
+    "Spear": {
+     "dice": "1d6+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 0.125,
    "hp": 9,
    "hpDice": "2d8",
@@ -5686,6 +7562,18 @@
     "wis": 11
    },
    "ac": 17,
+   "attacks": {
+    "Greatsword": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    },
+    "Heavy Crossbow": {
+     "dice": "2d10+1",
+     "toHit": 3,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 65,
    "hpDice": "10d8+20",
@@ -5706,6 +7594,13 @@
     "wis": 10
    },
    "ac": 14,
+   "attacks": {
+    "Slam": {
+     "dice": "2d8+4",
+     "toHit": 7,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 5,
    "hp": 114,
    "hpDice": "12d10+48",
@@ -5728,7 +7623,7 @@
    "ac": 13,
    "cr": 0,
    "hp": 1,
-   "hpDice": "1d4−1",
+   "hpDice": "1d4-1",
    "initiative": 3,
    "page": 364,
    "passivePerception": 13,
@@ -5786,6 +7681,13 @@
     "wis": 10
    },
    "ac": 13,
+   "attacks": {
+    "Scratch": {
+     "dice": "1d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 60,
    "hpDice": "11d8+11",
@@ -5806,6 +7708,13 @@
     "wis": 13
    },
    "ac": 12,
+   "attacks": {
+    "Scratch": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 4,
    "hp": 120,
    "hpDice": "16d8+48",
@@ -5826,6 +7735,13 @@
     "wis": 11
    },
    "ac": 15,
+   "attacks": {
+    "Scratch": {
+     "dice": "2d6+3",
+     "toHit": 5,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 71,
    "hpDice": "11d8+22",
@@ -5846,11 +7762,19 @@
     "wis": 10
    },
    "ac": 16,
+   "attacks": {
+    "Rend": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 2,
    "hp": 32,
    "hpDice": "5d8+10",
    "initiative": 2,
    "page": 339,
+   "passivePerception": 14,
    "size": "medium",
    "speed": 30,
    "type": "dragon"
@@ -5865,6 +7789,18 @@
     "wis": 13
    },
    "ac": 14,
+   "attacks": {
+    "Necrotic Bow": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "piercing"
+    },
+    "Necrotic Sword": {
+     "dice": "1d8+2",
+     "toHit": 4,
+     "type": "slashing"
+    }
+   },
    "cr": 3,
    "hp": 82,
    "hpDice": "11d8+33",
@@ -5885,6 +7821,13 @@
     "wis": 14
    },
    "ac": 19,
+   "attacks": {
+    "Shock": {
+     "dice": "2d8+2",
+     "toHit": 4,
+     "type": "lightning"
+    }
+   },
    "cr": 2,
    "hp": 27,
    "hpDice": "11d4",
@@ -5905,6 +7848,13 @@
     "wis": 12
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "2d6+4",
+     "toHit": 6,
+     "type": "piercing"
+    }
+   },
    "cr": 3,
    "hp": 75,
    "hpDice": "10d10+20",
@@ -5916,7 +7866,22 @@
    "type": "monstrosity"
   },
   "Wolf": {
+   "abilities": {
+    "cha": 6,
+    "con": 12,
+    "dex": 15,
+    "int": 3,
+    "str": 14,
+    "wis": 12
+   },
    "ac": 12,
+   "attacks": {
+    "Bite": {
+     "dice": "1d6+2",
+     "toHit": 4,
+     "type": "piercing"
+    }
+   },
    "cr": 0.25,
    "hp": 11,
    "hpDice": "2d8+2",
@@ -5937,6 +7902,13 @@
     "wis": 11
    },
    "ac": 13,
+   "attacks": {
+    "Bite": {
+     "dice": "1d8+3",
+     "toHit": 5,
+     "type": "piercing"
+    }
+   },
    "cr": 0.5,
    "hp": 26,
    "hpDice": "4d10+4",
@@ -5957,6 +7929,13 @@
     "wis": 14
    },
    "ac": 13,
+   "attacks": {
+    "Life Drain": {
+     "dice": "4d8+3",
+     "toHit": 6,
+     "type": "necrotic"
+    }
+   },
    "cr": 5,
    "hp": 67,
    "hpDice": "9d8+27",
@@ -5977,11 +7956,24 @@
     "wis": 10
    },
    "ac": 19,
+   "attacks": {
+    "Bite": {
+     "dice": "4d6+3",
+     "toHit": 6,
+     "type": "piercing"
+    },
+    "Claw": {
+     "dice": "1d10+3",
+     "toHit": 6,
+     "type": "slashing"
+    }
+   },
    "cr": 5,
    "hp": 84,
    "hpDice": "8d8+48",
    "initiative": 0,
    "page": 343,
+   "passivePerception": 16,
    "size": "medium",
    "speed": 20,
    "type": "elemental"
@@ -5996,9 +7988,17 @@
     "wis": 6
    },
    "ac": 8,
+   "attacks": {
+    "Slam": {
+     "dice": "1d8+1",
+     "toHit": 3,
+     "type": "bludgeoning"
+    }
+   },
    "cr": 0.25,
    "hp": 15,
    "hpDice": "2d8+6",
+   "initiative": -2,
    "page": 343,
    "passivePerception": 8,
    "size": "medium",
@@ -6017,31 +8017,49 @@
  },
  "species": {
   "Dragonborn": {
-   "page": 84
+   "page": 84,
+   "size": "Medium (about 5–7 feet tall)",
+   "speed": "30 feet"
   },
   "Dwarf": {
-   "page": 84
+   "page": 84,
+   "size": "Medium (about 4–5 feet tall)",
+   "speed": "30 feet"
   },
   "Elf": {
-   "page": 84
+   "page": 84,
+   "size": "Medium (about 5–6 feet tall)",
+   "speed": "30 feet"
   },
   "Gnome": {
-   "page": 85
+   "page": 85,
+   "size": "Small (about 3–4 feet tall)",
+   "speed": "30 feet"
   },
   "Goliath": {
-   "page": 85
+   "page": 85,
+   "size": "Medium (about 7–8 feet tall)",
+   "speed": "35 feet"
   },
   "Halfling": {
-   "page": 86
+   "page": 86,
+   "size": "Small (about 2–3 feet tall)",
+   "speed": "30 feet"
   },
   "Human": {
-   "page": 86
+   "page": 86,
+   "size": "Medium (about 4–7 feet tall) or Small (about 2–4",
+   "speed": "30 feet"
   },
   "Orc": {
-   "page": 86
+   "page": 86,
+   "size": "Medium (about 6–7 feet tall)",
+   "speed": "30 feet"
   },
   "Tiefling": {
-   "page": 86
+   "page": 86,
+   "size": "Medium (about 4–7 feet tall) or Small (about 3–4",
+   "speed": "30 feet"
   }
  },
  "spells": {
@@ -6051,6 +8069,16 @@
     "wizard"
    ],
    "components": "V, S, M (powdered rhubarb leaf)",
+   "damage": [
+    [
+     "4d4",
+     "acid"
+    ],
+    [
+     "2d4",
+     "acid"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 2,
    "page": 107,
@@ -6064,6 +8092,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d6",
+     "acid"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 107,
@@ -6170,7 +8204,7 @@
    "classes": [
     "wizard"
    ],
-   "components": "erence Document 5.2.1 111 Components: V, S, M (a small square of silk)",
+   "components": "V, S, M (a small square of silk)",
    "duration": "24 hours",
    "level": 2,
    "page": 110,
@@ -6238,6 +8272,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d8",
+     "necrotic"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 3,
    "page": 112,
@@ -6305,6 +8345,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "3d6",
+     "fire"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 114,
@@ -6317,6 +8363,12 @@
     "druid"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "3d10",
+     "lightning"
+    ]
+   ],
    "duration": "Concentration, up to 10 minutes",
    "level": 3,
    "page": 114,
@@ -6360,6 +8412,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d10",
+     "necrotic"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 115,
@@ -6444,6 +8502,12 @@
     "ranger"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "3d10",
+     "slashing"
+    ]
+   ],
    "duration": "Concentration, up to 10 minutes",
    "level": 3,
    "page": 117,
@@ -6679,6 +8743,12 @@
     "bard"
    ],
    "components": "V",
+   "damage": [
+    [
+     "3d6",
+     "psychic"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 124,
@@ -6691,6 +8761,12 @@
     "paladin"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d4",
+     "radiant"
+    ]
+   ],
    "duration": "1 minute",
    "level": 1,
    "page": 125,
@@ -6703,6 +8779,12 @@
     "paladin"
    ],
    "components": "V",
+   "damage": [
+    [
+     "2d8",
+     "radiant"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 125,
@@ -6740,6 +8822,12 @@
     "warlock"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d10",
+     "force"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 127,
@@ -6798,6 +8886,12 @@
     "ranger"
    ],
    "components": "V",
+   "damage": [
+    [
+     "1d6",
+     "piercing"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 1,
    "page": 128,
@@ -6944,6 +9038,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d10",
+     "fire"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 132,
@@ -6957,6 +9057,12 @@
     "wizard"
    ],
    "components": "V, S, M (a ball of bat guano and sulfur)",
+   "damage": [
+    [
+     "8d6",
+     "fire"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 3,
    "page": 131,
@@ -6984,6 +9090,12 @@
     "wizard"
    ],
    "components": "V, S, M (a ball of wax)",
+   "damage": [
+    [
+     "2d6",
+     "fire"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 2,
    "page": 132,
@@ -7118,6 +9230,12 @@
     "cleric"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "4d6",
+     "radiant"
+    ]
+   ],
    "duration": "1 round",
    "level": 1,
    "page": 138,
@@ -7173,6 +9291,12 @@
     "druid"
    ],
    "components": "V, S, M (a piece of iron and a flame)",
+   "damage": [
+    [
+     "2d8",
+     "fire"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 2,
    "page": 139,
@@ -7185,6 +9309,12 @@
     "warlock"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "2d10",
+     "fire"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 140,
@@ -7210,6 +9340,12 @@
     "warlock"
    ],
    "components": "V, S, M (the petrified eye of a newt)",
+   "damage": [
+    [
+     "1d6",
+     "necrotic"
+    ]
+   ],
    "duration": "Concentration, up to 1 hour",
    "level": 1,
    "page": 140,
@@ -7253,6 +9389,12 @@
     "ranger"
    ],
    "components": "V",
+   "damage": [
+    [
+     "1d6",
+     "force"
+    ]
+   ],
    "duration": "Concentration, up to 1 hour",
    "level": 1,
    "page": 141,
@@ -7282,6 +9424,16 @@
     "wizard"
    ],
    "components": "S, M (a drop of water or a piece of ice)",
+   "damage": [
+    [
+     "1d10",
+     "piercing"
+    ],
+    [
+     "2d6",
+     "cold"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 141,
@@ -7321,6 +9473,12 @@
     "cleric"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "2d10",
+     "necrotic"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 143,
@@ -7422,6 +9580,12 @@
     "wizard"
    ],
    "components": "V, S, M (a bit of fur and a crystal rod)",
+   "damage": [
+    [
+     "8d6",
+     "lightning"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 3,
    "page": 144,
@@ -7524,6 +9688,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d4+1",
+     "force"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 146,
@@ -7551,7 +9721,7 @@
     "sorcerer",
     "wizard"
    ],
-   "components": "erence Document 5.2.1 147 Components: V, S",
+   "components": "V, S",
    "duration": "1 hour",
    "level": 2,
    "page": 146,
@@ -7594,6 +9764,16 @@
     "ranger"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "6d6",
+     "force"
+    ],
+    [
+     "50",
+     "force"
+    ]
+   ],
    "duration": "8 hours",
    "level": 3,
    "page": 148,
@@ -7639,6 +9819,12 @@
     "wizard"
    ],
    "components": "S",
+   "damage": [
+    [
+     "3d8",
+     "psychic"
+    ]
+   ],
    "duration": "Concentration, up to 1 hour",
    "level": 2,
    "page": 149,
@@ -7695,6 +9881,12 @@
     "druid"
    ],
    "components": "V, S, M (a moonseed leaf)",
+   "damage": [
+    [
+     "2d10",
+     "radiant"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 2,
    "page": 150,
@@ -7736,6 +9928,12 @@
     "wizard"
    ],
    "components": "V, S, M (a bit of fleece)",
+   "damage": [
+    [
+     "2d8",
+     "psychic"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 2,
    "page": 151,
@@ -7777,6 +9975,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d12",
+     "poison"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 153,
@@ -7817,6 +10021,12 @@
     "druid"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d8",
+     "fire"
+    ]
+   ],
    "duration": "10 minutes",
    "level": 0,
    "page": 156,
@@ -7904,6 +10114,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d8",
+     "cold"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 157,
@@ -7917,6 +10133,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "2d8",
+     "poison"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 158,
@@ -7984,6 +10206,12 @@
     "cleric"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d8",
+     "radiant"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 159,
@@ -8009,6 +10237,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "2d6",
+     "fire"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 2,
    "page": 159,
@@ -8021,6 +10255,12 @@
     "paladin"
    ],
    "components": "V",
+   "damage": [
+    [
+     "1d6",
+     "fire"
+    ]
+   ],
    "duration": "1 minute",
    "level": 1,
    "page": 160,
@@ -8063,6 +10303,12 @@
     "wizard"
    ],
    "components": "V, S, M (a chip of mica)",
+   "damage": [
+    [
+     "3d8",
+     "thunder"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 2,
    "page": 161,
@@ -8113,6 +10359,12 @@
     "paladin"
    ],
    "components": "V",
+   "damage": [
+    [
+     "2d6",
+     "radiant"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 2,
    "page": 162,
@@ -8126,6 +10378,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d8",
+     "lightning"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 162,
@@ -8291,6 +10549,12 @@
     "ranger"
    ],
    "components": "V, S, M (seven thorns)",
+   "damage": [
+    [
+     "2d4",
+     "piercing"
+    ]
+   ],
    "duration": "Concentration, up to 10 minutes",
    "level": 2,
    "page": 164,
@@ -8303,6 +10567,16 @@
     "cleric"
    ],
    "components": "V, S, M (a prayer scroll)",
+   "damage": [
+    [
+     "3d8",
+     "radiant"
+    ],
+    [
+     "3d8",
+     "necrotic"
+    ]
+   ],
    "duration": "Concentration, up to 10 minutes",
    "level": 3,
    "page": 164,
@@ -8328,6 +10602,12 @@
     "druid"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "1d8",
+     "radiant"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 165,
@@ -8384,6 +10664,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "2d8",
+     "thunder"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 1,
    "page": 169,
@@ -8456,6 +10742,12 @@
     "wizard"
    ],
    "components": "V, S",
+   "damage": [
+    [
+     "3d6",
+     "necrotic"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 3,
    "page": 171,
@@ -8467,7 +10759,13 @@
    "classes": [
     "bard"
    ],
-   "components": "erence Document 5.2.1 172 Components: V",
+   "components": "V",
+   "damage": [
+    [
+     "1d6",
+     "psychic"
+    ]
+   ],
    "duration": "Instantaneous",
    "level": 0,
    "page": 171,
@@ -8510,7 +10808,7 @@
     "ranger",
     "sorcerer"
    ],
-   "components": "erence Document 5.2.1 174 Components: V, S, M (a piece of cork)",
+   "components": "V, S, M (a piece of cork)",
    "duration": "1 hour",
    "level": 3,
    "page": 173,
@@ -8524,6 +10822,12 @@
     "wizard"
    ],
    "components": "V, S, M (a bit of spiderweb)",
+   "damage": [
+    [
+     "2d4",
+     "fire"
+    ]
+   ],
    "duration": "Concentration, up to 1 hour",
    "level": 2,
    "page": 174,
@@ -8537,6 +10841,12 @@
     "ranger"
    ],
    "components": "V, S, M (a fan and a feather)",
+   "damage": [
+    [
+     "4d8",
+     "bludgeoning"
+    ]
+   ],
    "duration": "Concentration, up to 1 minute",
    "level": 3,
    "page": 174,

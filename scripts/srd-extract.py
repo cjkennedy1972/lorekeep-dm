@@ -14,7 +14,10 @@ sha = hashlib.sha256(open(pdf_path, 'rb').read()).hexdigest()
 # page index for citations: line -> page
 lines, page_of = [], []
 for i, t in enumerate(pages):
-    for ln in t.split('\n'):
+    head = t.split('\n')
+    for j, ln in enumerate(head):
+        if j < 3 and (ln.strip() == 'System Reference Document 5.2.1' or ln.strip() == str(i + 1)):
+            continue  # running page header
         lines.append(ln.rstrip())
         page_of.append(i + 1)
 
@@ -34,6 +37,8 @@ sp_end = find('Rules Glossary', 150, sp_start)
 SCHOOLS = 'Abjuration|Conjuration|Divination|Enchantment|Evocation|Illusion|Necromancy|Transmutation'
 hdr1 = re.compile(rf'^(?:Level (\d) ({SCHOOLS})|({SCHOOLS}) Cantrip) \(([^)]*)\)?\s*$|^(?:Level (\d) ({SCHOOLS})|({SCHOOLS}) Cantrip) \((.*)$')
 spells = {}
+starts = {}
+bounds = []
 i = sp_start
 while i < sp_end:
     cand = lines[i]
@@ -53,20 +58,35 @@ while i < sp_end:
             while not lines[k].startswith('Range:'):
                 ct += ' ' + lines[k].strip(); k += 1
             rng = lines[k][len('Range:'):].strip(); k += 1
+            while not lines[k].startswith('Component'): k += 1
             comp = lines[k]
             while not lines[k + 1].startswith('Duration:'):
                 k += 1; comp += ' ' + lines[k]
-            comp = comp[len('Components:'):].strip(); k += 1
+            comp = re.sub(r'^Components?:', '', comp).strip(); k += 1
             dur = lines[k][len('Duration:'):].strip()
             k += 1
             while lines[k] and not re.match(r'^[A-Z\t ]', lines[k][:1] or 'x') and False:
                 k += 1
+            bounds.append(i)
             if level <= 3 and cand not in spells:
+                starts[cand] = (k, i)
                 spells[cand] = dict(level=level, school=school, classes=classes, castingTime=ct, range=rng,
                                     components=comp, duration=dur, page=page_of[i])
             i = k
             continue
     i += 1
+
+# damage dice per spell from its description (first three distinct dice/type pairs)
+order = sorted(starts.items(), key=lambda kv: kv[1][1])
+DTYPES = 'Acid|Bludgeoning|Cold|Fire|Force|Lightning|Necrotic|Piercing|Poison|Psychic|Radiant|Slashing|Thunder'
+for n, (k0, hi) in order:
+    nxt = min([h for h in bounds if h > hi] + [sp_end])
+    desc = re.sub(r'\s+', ' ', ' '.join(lines[k0:nxt]).replace('- ', ''))
+    dm = []
+    for m in re.finditer(rf'(\d+d\d+(?: \+ \d+)?|\d+) ({DTYPES}) damage', desc):
+        pair = [re.sub('[\u2212\u2013]', '-', m.group(1).replace(' ', '')), m.group(2).lower()]
+        if pair not in dm: dm.append(pair)
+    if dm: spells[n]['damage'] = dm[:3]
 
 # ---------- monsters ----------
 mon_start = find('Monsters A–Z', 250)
@@ -81,32 +101,35 @@ while i < mon_end - 3:
         typeline = lines[j]
         blk = []
         k = i + 2
-        while k < mon_end and not (re.match(rf'^({SIZES})( or ({SIZES}))? [A-Za-z ,()]+, ', lines[k + 1] if k + 1 < len(lines) else '') and lines[k + 2].startswith('AC ')) and not lines[k].startswith('CR ') :
+        while k < mon_end and not (re.match(rf'^({SIZES})( or ({SIZES}))? [A-Za-z ,()]+, ', lines[k + 1] if k + 1 < len(lines) else '') and lines[k + 2].startswith('AC ')):
             blk.append(lines[k]); k += 1
-        if k < len(lines) and lines[k].startswith('CR '):
-            blk.append(lines[k])
         text = '\n'.join(blk)
         m = re.match(rf'^({SIZES})(?: or [A-Za-z]+)? (.+), ([A-Za-z ]+)$', typeline)
-        cr_m = re.match(r'CR ([\d/]+)', blk[-1]) if blk else None
+        cr_m = next((re.match(r'CR ([\d/]+)', x) for x in blk if re.match(r'CR [\d/]+ \((XP )?[\d,]+', x)), None)
         if cr_m:
             cr_s = cr_m.group(1)
             cr = eval(cr_s) if '/' in cr_s else int(cr_s)
             d = dict(page=page_of[i], size=m.group(1).lower() if m else None, type=(m.group(2).split(' (')[0].lower() if m else None),
                      cr=cr)
-            for ln in blk:
-                if ln.startswith('AC '):
+            for ln in (x.strip() for x in blk[:14]):
+                if ln.startswith('AC ') and re.match(r'AC (\d+)', ln) and 'ac' not in d:
                     d['ac'] = int(re.match(r'AC (\d+)', ln).group(1))
                 mm = re.match(r'Initiative ([+−-]\d+)', ln)
                 if mm: d['initiative'] = num(mm.group(1))
                 mm = re.match(r'HP (\d+) \(([^)]*)\)', ln)
-                if mm: d['hp'] = int(mm.group(1)); d['hpDice'] = mm.group(2).replace(' ', '')
+                if mm: d['hp'] = int(mm.group(1)); d['hpDice'] = re.sub('[\u2212\u2013]', '-', mm.group(2).replace(' ', ''))
                 mm = re.match(r'Speed (\d+) ft\.', ln)
                 if mm: d['speed'] = int(mm.group(1))
-                mm = re.search(r'Passive Perception (\d+)', ln)
-                if mm: d['passivePerception'] = int(mm.group(1))
+            flat = re.sub(r'\s+', ' ', text.replace('-\n', '').replace('\n', ' '))
+            pp = re.search(r'Passive Perception (\d+)', flat)
+            if pp: d['passivePerception'] = int(pp.group(1))
+            atk = {}
+            for am in re.finditer(r'([A-Z][A-Za-z\u2019\' ]+?)\. (?:Melee|Ranged)(?: or (?:Melee|Ranged))? Attack Roll: \+(\d+), (?:reach|range)[^H]*?Hit: \d+ \(([^)]+)\) ([A-Za-z]+) damage', flat):
+                atk.setdefault(re.sub(r'^Actions ', '', am.group(1).strip()), dict(toHit=int(am.group(2)), dice=re.sub('[\u2212\u2013]', '-', am.group(3).replace(' ', '')), type=am.group(4).lower()))
+            if atk: d['attacks'] = atk
             ab = {}
             for a in ('Str', 'Dex', 'Con', 'Int', 'Wis', 'Cha'):
-                mm = re.search(rf'^{a}\t\s*(\d+)', text, re.M)
+                mm = re.search(rf'^{a}[\t ]+(\d+)', text, re.M)
                 if mm: ab[a.lower()] = int(mm.group(1))
             if len(ab) == 6: d['abilities'] = ab
             if name not in monsters: monsters[name] = d
@@ -137,7 +160,10 @@ for c in CLASSES:
     for n in range(1, 6):
         cells = [x for x in lines[starts[n] + 2:starts[n + 1]] if re.search(r'[A-Za-z]{3}', x) and not re.fullmatch(r'\d*d\d+.*', x) and not re.fullmatch(r'[+\d]+ ft\.', x)]
         feats[n] = [x.strip() for x in ' '.join(cells).split(',') if x.strip()]
-    classes[c] = dict(hitDie=int(hd.group(1)) if hd else None, page=page_of[s], featuresByLevel=feats)
+    core = re.sub(r'\s+', ' ', ' '.join(lines[s:s + 30]))
+    pa = re.search(r'Primary Ability (.+?) Hit Point Die', core)
+    sv = re.search(r'Saving Throw Proficiencies (.+?) Skill Proficiencies', core)
+    classes[c] = dict(primaryAbility=pa.group(1) if pa else None, saves=sv.group(1) if sv else None, hitDie=int(hd.group(1)) if hd else None, page=page_of[s], featuresByLevel=feats)
 
 # ---------- subclasses (SRD includes one per class) ----------
 subclasses = {}
@@ -157,14 +183,17 @@ bg_start = find('Background Descriptions', 80)
 backgrounds = {}
 for i in range(bg_start, bg_start + 60):
     if lines[i + 1].startswith('Ability Scores:'):
-        backgrounds[lines[i]] = dict(page=page_of[i])
+        blk = lines[i:i + 12]
+        sk = next(x for x in blk if x.startswith('Skill Proficiencies:'))
+        backgrounds[lines[i]] = dict(abilities=lines[i + 1][len('Ability Scores:'):].strip(), skills=sk[len('Skill Proficiencies:'):].strip(), page=page_of[i])
 sp_s = find('Character Species', 80)
 species = {}
 SPECIES = ['Dragonborn', 'Dwarf', 'Elf', 'Gnome', 'Goliath', 'Halfling', 'Human', 'Orc', 'Tiefling']
 for n in SPECIES:
     for i in range(sp_s, sp_s + 600):
         if lines[i] == n and lines[i + 1] in ('', ) or (lines[i] == n and re.match(r'^(Creature Type|Size|Speed)', lines[i + 1] or '')):
-            species[n] = dict(page=page_of[i]); break
+            sz = next(x for x in lines[i:i + 8] if x.startswith('Size:')); sd = next(x for x in lines[i:i + 8] if x.startswith('Speed:'))
+            species[n] = dict(size=sz[5:].strip(), speed=sd[6:].strip(), page=page_of[i]); break
 cond_names = ['Blinded', 'Charmed', 'Deafened', 'Exhaustion', 'Frightened', 'Grappled', 'Incapacitated', 'Invisible', 'Paralyzed', 'Petrified', 'Poisoned', 'Prone', 'Restrained', 'Stunned', 'Unconscious']
 ci = find('Condition', 170)
 conditions = {}
@@ -209,10 +238,16 @@ g = find('Adventuring Gear', 94, t)
 k = g + 4
 while lines[k] != 'Weight' or True:
     if k > g + 400 or lines[k].startswith('Mounts and Other Animals') or lines[k] == 'Equipment' and k > g + 10: break
-    if re.match(r'^(—|[\d/ ]+ lb\.|Varies)$', lines[k + 1] or '') and re.match(r'^[A-Z]', lines[k]) and not re.match(r'^(—|[\d/ ]+ lb\.|Varies|\d)', lines[k]):
+    if re.match(r'^(—|[\d/½ ]+ lb\.( \([a-z]+\))?|Varies)$', lines[k + 1] or '') and re.match(r'^[A-Z]', lines[k]) and not re.match(r'^(—|[\d/½ ]+ lb\.|Varies|\d)', lines[k]):
         equipment.setdefault(lines[k], dict(group='gear', weight=lines[k + 1], cost=lines[k + 2], page=page_of[k]))
     k += 1
 
+am = next(i for i in range(len(lines) - 6) if page_of[i] >= 94 and lines[i] == 'Ammunition' and lines[i + 1] == 'Type' and lines[i + 4] == 'Weight')
+k = am + 6
+while re.fullmatch(r'\d+', lines[k + 1] or ''):
+    equipment.setdefault(lines[k], dict(group='gear', weight=lines[k + 3], cost=lines[k + 4], page=page_of[k]))
+    k += 5
+equipment.pop('Case', None)  # 'Storage' cell of the Bolts row, not an item
 equipment = {n: d for n, d in equipment.items() if n not in ('Disadvantage', '\u2014')}
 out = dict(
     source=dict(name='System Reference Document 5.2.1', license='CC-BY-4.0', publisher='Wizards of the Coast LLC',
