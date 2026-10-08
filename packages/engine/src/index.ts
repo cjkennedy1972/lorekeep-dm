@@ -46,3 +46,6 @@ export { cryptScenario } from './scripted/crypt-data.js';
 export * from './tools/world.js';
 export * from './tools/rest.js';
 export * from './tools/index.js';
+
+export * from './tools/combat.js';
+export * from './tools/movement.js';
