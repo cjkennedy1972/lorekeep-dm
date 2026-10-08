@@ -5,6 +5,7 @@ export * from './map/validate.js';
 export * from './map/load.js';
 export * from './map/geometry.js';
 export * from './map/los.js';
+export * from './map/cover.js';
 export type { Catalog } from './catalog/types.js';
 export * from './character/types.js';
 export * from './character/validate.js';
@@ -22,3 +23,4 @@ export * from './combat/spells.js';
 
 export * from './map/threat.js';
 export * from './map/movement.js';
+export * from './map/area.js';
