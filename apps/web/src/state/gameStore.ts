@@ -5,12 +5,16 @@ import {
   type CombatState,
 } from '@game/rules-engine';
 import type { Battlemap, Character, EngineEvent } from '@game/schema';
+import type { MapCell } from '../features/map/hitTest.js';
+import type { MapViewport } from '../features/map/viewport.js';
 
 export interface GameState {
   character: Character | null;
   combat: CombatState;
   battlemap: Battlemap | null;
   announcement: string;
+  selectedCell: MapCell | null;
+  viewport: MapViewport;
 }
 
 export const initialGameState = (): GameState => ({
@@ -18,6 +22,8 @@ export const initialGameState = (): GameState => ({
   combat: emptyCombatState(),
   battlemap: null,
   announcement: '',
+  selectedCell: null,
+  viewport: { x: 0, y: 0, zoom: 1 },
 });
 
 /** Pure combat reducer retained for engine replay and previews. */
@@ -78,6 +84,8 @@ export interface GameStore {
   applyEvent(event: CombatEvent | EngineEvent): void;
   setCharacter(character: Character | null): void;
   setBattlemap(battlemap: Battlemap | null): void;
+  setSelectedCell(cell: MapCell | null): void;
+  setViewport(viewport: MapViewport): void;
 }
 
 export function createGameStore(initial = initialGameState()): GameStore {
@@ -121,6 +129,8 @@ export function createGameStore(initial = initialGameState()): GameStore {
     },
     setCharacter: (character) => set({ ...state, character }),
     setBattlemap: (battlemap) => set({ ...state, battlemap }),
+    setSelectedCell: (selectedCell) => set({ ...state, selectedCell }),
+    setViewport: (viewport) => set({ ...state, viewport }),
   };
 }
 
