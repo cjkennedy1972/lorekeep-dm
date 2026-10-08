@@ -21,8 +21,6 @@ export interface AffectedEntity {
 const cellOrder = (a: GridPos, b: GridPos) => a.y - b.y || a.x - b.x;
 const inside = (map: Battlemap, c: GridPos) =>
   c.x >= 0 && c.y >= 0 && c.x < map.w && c.y < map.h;
-const adjacent = (a: GridPos, b: GridPos) =>
-  Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) === 1;
 const key = (c: GridPos) => cellKey(c);
 function dirVector(direction: GridPos): GridPos {
   const d = { x: Math.sign(direction.x), y: Math.sign(direction.y) };
