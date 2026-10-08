@@ -40,3 +40,5 @@ export * from './map/area.js';
 export * from './map/describe.js';
 export * from './map/options.js';
 export * from './scripted/policy.js';
+
+export { cryptScenario } from './scripted/crypt-data.js';

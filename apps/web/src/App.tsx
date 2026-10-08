@@ -11,10 +11,14 @@ import { Signup } from './screens/Signup';
 import { CheckEmail, VerifyResult } from './screens/VerifyEmail';
 import { CreationWizard } from './features/character/CreationWizard';
 import { QuickBuild } from './features/character/QuickBuild';
+import { SandboxCombat } from './routes/sandboxCombat';
 
 export function App() {
   return (
     <Routes>
+      {import.meta.env.DEV && (
+        <Route path="sandbox/combat" element={<SandboxCombat />} />
+      )}
       <Route element={<Layout />}>
         <Route
           index
