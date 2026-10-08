@@ -1,0 +1,1481 @@
+[
+  {
+    "id": "M2-01",
+    "title": "SRD 5.2.1 conformance check: diagonal, cover, LOS, AoE shapes",
+    "owner": "proof",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [],
+    "spec": [
+      "US-B5",
+      "US-B7",
+      "R-R1"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Close the M1 gap \"geometry checked only against our own rule\". Read the SRD 5.2.1 text (official CC-BY PDF) and record, with page/section citations, what it says about diagonal movement, cover, line of effect and the sphere/cube/cone/line/cylinder templates. Compare each with packages/engine/src/map (geometry.ts default 5 ft per diagonal and the 5-10-5 alternate, cover.ts, los.ts, areas). Where the SRD is silent, state it and keep the documented convention. Produce a mismatch list; do not change engine code (M2-02 does).",
+    "acceptance": [
+      "Report cites SRD section/page for each of: diagonal rule, cover grades, line of effect, five area templates",
+      "Each engine convention is marked MATCH, MISMATCH or SRD-SILENT",
+      "Every MISMATCH has a failing test case added under tests/e2e that encodes the SRD behaviour (skipped with a reason until M2-02 lands)",
+      "docs/decisions.md open item \"Diagonal movement convention (M1-18)\" is resolved or re-raised with the exact question"
+    ],
+    "expectedArtifacts": [
+      "docs/plan/verification/m2-01-srd-geometry.md",
+      "tests/e2e/m2-srd-geometry.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter e2e exec vitest run m2-srd-geometry",
+      "pnpm format:check"
+    ]
+  },
+  {
+    "id": "M2-02",
+    "title": "Apply SRD geometry fixes and re-pass the 100-case gate",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-01"
+    ],
+    "spec": [
+      "US-B5",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-018"
+    ],
+    "description": "Implement every MISMATCH from M2-01 in packages/engine/src/map and update the 100-case geometry gate fixtures that encoded the old convention. If M2-01 found no mismatch, close this ticket with a one-paragraph note and no code change.",
+    "acceptance": [
+      "Skipped SRD-geometry tests from M2-01 are enabled and pass",
+      "pnpm --filter @game/rules-engine test:geometry still reports 100/100 (fixtures changed only where M2-01 proves the SRD differs, each change cites the SRD section in a comment)",
+      "Property suite still passes at 500 runs",
+      "Scripted crypt scenario (seed 2901) still ends in CombatEnded, or its golden replay is regenerated and the diff explained in the PR"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/map (changes as needed)",
+      "packages/engine/test/geometry (updated fixtures)",
+      "docs/plan/verification/m2-02-geometry-fixes.md"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test",
+      "pnpm --filter @game/rules-engine test:geometry",
+      "pnpm --filter e2e exec vitest run m2-srd-geometry"
+    ]
+  },
+  {
+    "id": "M2-03",
+    "title": "Catalog reconciliation against SRD 5.2.1 lists and stats",
+    "owner": "proof",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [],
+    "spec": [
+      "US-C1",
+      "R-R1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Close the M1 gap \"catalog counts not reconciled\". Write a script that extracts the SRD 5.2.1 index (species, backgrounds, 12 classes and subclasses, spells level 0-3, monsters CR 0-5, conditions, weapons/armor/gear) and diffs it by name against packages/engine/catalog. Spot-diff stats for a stratified sample (at least 10% of monsters, 25 spells, every class level 1-5 feature table) against SRD text. Output a gap list that feeds M2-04.",
+    "acceptance": [
+      "Script output lists missing, extra and name-mismatched entries per kind, with counts",
+      "Sample diff covers >= 10% of monsters (stratified by CR), >= 25 spells and all 12 classes level 1-5 tables, each discrepancy cited to SRD section",
+      "Report states exactly which kinds were reconciled fully and which only by sample",
+      "Script is re-runnable and exits non-zero while the missing-entry list is non-empty (wired as expected-fail until M2-04)"
+    ],
+    "expectedArtifacts": [
+      "scripts/catalog-reconcile.mjs",
+      "docs/plan/verification/m2-03-catalog-reconcile.md"
+    ],
+    "verify": [
+      "node scripts/catalog-reconcile.mjs --report",
+      "pnpm format:check"
+    ]
+  },
+  {
+    "id": "M2-04",
+    "title": "Fill catalog gaps and correct stat discrepancies",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-03"
+    ],
+    "spec": [
+      "US-C1",
+      "R-R1"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Add the entries M2-03 found missing (spells, monsters, equipment, subclass features as applicable) and fix wrong stats, in the existing JSON files under packages/engine/catalog, keeping scope gating (spells <= L3, monsters <= CR 5, classes L1-5). Magic items stay out (deferred to M3).",
+    "acceptance": [
+      "Reconcile script exits 0 for all kinds covered by the SRD index",
+      "Catalog loader still enforces scope gating (level 4 spell and CR 6 monster rejected)",
+      "catalogVersion changes and the M1 proof test that records it still passes",
+      "No entry without srd source reference"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/catalog/*.json (updated)",
+      "packages/engine/test/catalog-reconciled.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test",
+      "node scripts/catalog-reconcile.mjs"
+    ]
+  },
+  {
+    "id": "M2-05",
+    "title": "Quick build and legality for levels 1-5, all 12 classes",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-04"
+    ],
+    "spec": [
+      "US-C1",
+      "US-C2",
+      "A6"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "M1 proved quick build at level 1 only. Extend the builder in packages/engine/src/character so a host-chosen starting level 1-5 yields a legal PC for every class (HP, features, spell slots and spells known/prepared per level, ASIs). Reuse the level-up legality from M1-16; do not add a second validator.",
+    "acceptance": [
+      "36+ builds (12 classes x levels 1..5, >= 1 seed each) pass validateCharacter with zero violations",
+      "Level-up sequence 1->5 for each class produces the same sheet as quick build at level 5 for the same choices (test)",
+      "5 new illegal fixtures at level >= 2 (bad ASI, over-prepared spells, wrong slots, missing subclass, wrong HP) rejected with distinct violation codes"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/character/quickbuild.ts (extended)",
+      "packages/engine/test/quickbuild-levels.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M2-06",
+    "title": "Scenario variety: more scripted combats and golden replays",
+    "owner": "proof",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M2-02"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B3",
+      "US-B5",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-004",
+      "ADR-018"
+    ],
+    "description": "M1 proved one authored crypt fight. Add at least 6 scripted no-LLM scenarios through the existing harness (packages/engine/src/scripted): ranged kiting with cover, difficult terrain and a closed door, a caster party using concentration, death saves to stable and to dead, a grapple/prone movement case, and a 4-vs-6 fight on the forest map. Each is recorded as a golden event log keyed by seed.",
+    "acceptance": [
+      "Each scenario terminates in CombatEnded and replays byte-identical from its seed",
+      "Scenarios between them emit OpportunityTriggered, AreaResolved, a death-save sequence, ConditionApplied/Removed and a concentration break",
+      "Any divergence from the golden log fails with a readable diff",
+      "Report lists what is still not covered (e.g. flying, hidden creatures)"
+    ],
+    "expectedArtifacts": [
+      "tests/e2e/m2-scenarios.spec.ts",
+      "tests/e2e/golden/*.json",
+      "docs/plan/verification/m2-06-scenarios.md"
+    ],
+    "verify": [
+      "pnpm --filter e2e exec vitest run m2-scenarios"
+    ]
+  },
+  {
+    "id": "M2-07",
+    "title": "Cross-browser and axe coverage of the combat sandbox",
+    "owner": "proof",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [],
+    "spec": [
+      "§9.5",
+      "§9.3",
+      "US-B6"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "M1 e2e ran Chromium only. Add Firefox and WebKit Playwright projects (spec 9.5 lists Chrome, Firefox, Safari, Edge) for sandbox-combat and the keyboard-only combat flow, plus an axe-core pass on the sandbox, account and character-creation screens. Record any browser-specific defects as tickets or fix trivial ones.",
+    "acceptance": [
+      "Playwright config has chromium, firefox, webkit projects and all three run sandbox-combat.spec.ts and the keyboard-only combat to CombatEnded",
+      "axe-core reports 0 critical/serious violations on the 3 screens (list of waivers, if any, in the report)",
+      "Report states Edge and physical Safari/screen readers remain unverified"
+    ],
+    "expectedArtifacts": [
+      "apps/web/playwright.config.ts",
+      "apps/web/e2e/cross-browser.spec.ts",
+      "apps/web/e2e/axe.spec.ts",
+      "docs/plan/verification/m2-07-browsers.md"
+    ],
+    "verify": [
+      "pnpm --filter @game/web exec playwright install chromium firefox webkit",
+      "pnpm --filter @game/web exec playwright test"
+    ]
+  },
+  {
+    "id": "M2-08",
+    "title": "ADR-022: DM turn protocol, tool schemas, prompt layout, recorded-LLM format",
+    "owner": "sage",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [],
+    "spec": [
+      "§7.1",
+      "R-R2",
+      "R-M1",
+      "R-N1..N5"
+    ],
+    "adr": [
+      "ADR-004",
+      "ADR-006",
+      "ADR-013"
+    ],
+    "description": "Turn architecture.md sections 2-4 and 16 into an implementable ADR. Decide: the exact tool set for M2 (architecture 3.2 minus deferred tools, see overview), error codes and hints, entity-reference scheme (catalog id / session entity id / marker id / optionId), one-narration-per-turn rule, how roll events precede narration, prompt block order and token budgets, retry and fallback narration text policy, recorded-LLM file format, turn-seed derivation, and the event types added for DM turns. Name any change to architecture.md.",
+    "acceptance": [
+      "ADR lists each M2 tool with JSON args, result and error codes",
+      "Prompt layout table with byte-stable prefix rule and per-block token budget",
+      "Recorded-LLM file format and replay semantics specified with one worked example",
+      "Open points that need a human decision are listed at the end, not decided silently"
+    ],
+    "expectedArtifacts": [
+      "docs/adr/022-dm-turn-protocol.md"
+    ],
+    "verify": [
+      "pnpm format:check"
+    ]
+  },
+  {
+    "id": "M2-09",
+    "title": "Schema: DM tool contract, DM-turn events, registry, endpoint config, usage",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-08"
+    ],
+    "spec": [
+      "R-R2",
+      "R-M2",
+      "R-L1",
+      "US-O1",
+      "§9.2"
+    ],
+    "adr": [
+      "ADR-022",
+      "ADR-013"
+    ],
+    "description": "In packages/schema add zod schemas for every M2 tool call and result/error ({ok,events,summary} | {error,hint}), the DM-turn events (TurnStarted with seed, NarrationChunk, NarrationCompleted, TurnReverted-ready shape, ToolRejected, SceneClosed, RecapReady), registry entities (npc, location, quest, flag, ruling), scene summary, EndpointConfig/EndpointProfile (no key material in the client-facing type) and UsageEntry. Export from the package index. Tool arg schemas must be unable to express raw coordinates.",
+    "acceptance": [
+      "Each schema parses a valid fixture and rejects an invalid one (table test)",
+      "Tool arg schemas reject any x/y/coordinate field (test) and unknown entity ref formats",
+      "Event union stays discriminated and exhaustively switchable",
+      "Client-facing EndpointConfig type has no apiKey field (type test)"
+    ],
+    "expectedArtifacts": [
+      "packages/schema/src/dm-tools.ts",
+      "packages/schema/src/dm-events.ts",
+      "packages/schema/src/registry.ts",
+      "packages/schema/src/endpoint.ts",
+      "packages/schema/test/m2-schemas.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/schema test",
+      "pnpm --filter @game/schema typecheck"
+    ]
+  },
+  {
+    "id": "M2-10",
+    "title": "Tool executor: checks, saves, contested checks, attacks, spells, conditions",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-09",
+      "M2-05"
+    ],
+    "spec": [
+      "R-R1",
+      "R-R2",
+      "US-E2",
+      "US-B1",
+      "US-B7"
+    ],
+    "adr": [
+      "ADR-022",
+      "ADR-004"
+    ],
+    "description": "In packages/engine/src/tools implement execute(state, toolCall, rng) -> {ok,events,summary}|{error,hint} for request_check, request_save, contested_check, attack, cast_spell (entity/marker/optionId targets), apply_condition/remove_condition. Resolve refs to session entities, call existing engine commands, store dcReason for \"why DC 15?\", reject unknown ids and illegal targets with a specific error code.",
+    "acceptance": [
+      "Every tool has a happy-path and at least 3 rejection tests (unknown id, out of range, illegal state)",
+      "request_check events carry dcReason and a RollBreakdown",
+      "Same seed + same tool sequence gives identical events",
+      "No tool accepts dice formulas, HP edits or coordinates (test over schema and executor)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/tools/check.ts",
+      "packages/engine/src/tools/attack.ts",
+      "packages/engine/src/tools/spell.ts",
+      "packages/engine/src/tools/conditions.ts",
+      "packages/engine/test/tools-core.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M2-11",
+    "title": "Tool executor: combat start/end, move_to, area aiming, XP and encounter budget",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-09",
+      "M2-10",
+      "M2-02"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B5",
+      "US-S2",
+      "R-R1"
+    ],
+    "adr": [
+      "ADR-022",
+      "ADR-018"
+    ],
+    "description": "Implement start_combat (monster ids + counts, ambush side, engine rolls initiative, places entities on the loaded map from authored markers, warns when over budget), end_combat (XP from CR), move_to (adjacent|within|retreat|cover by entity/feature/marker id; engine paths, charges movement, raises opportunity attacks) and suggest_area_target using the M1 engine.",
+    "acceptance": [
+      "move_to never takes coordinates; unreachable target returns a specific error with hint",
+      "move_to through a threatened square emits OpportunityTriggered, as in the M1 scripted case",
+      "suggest_area_target returns optionIds whose affected sets match the engine area query (test)",
+      "end_combat awards XP equal to the SRD CR table sum (test)",
+      "Over-budget encounter returns ok with a warning field, not an error"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/tools/combat.ts",
+      "packages/engine/src/tools/movement.ts",
+      "packages/engine/test/tools-combat.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M2-12",
+    "title": "Tool executor: loot, quests, registry upserts, rests, rulings",
+    "owner": "forge",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M2-09"
+    ],
+    "spec": [
+      "R-R1",
+      "R-R4",
+      "R-M2",
+      "US-R1"
+    ],
+    "adr": [
+      "ADR-022",
+      "ADR-006"
+    ],
+    "description": "Implement grant_item/consume_item (catalog items only, gold bounded per CR loot table), update_quest, upsert_npc, upsert_location, set_flag, call_for_rest (solo: applies M1-16 rests immediately; party voting is deferred) and log_ruling. Registry tools return diffs; the Room, not the executor, persists them (M2-26).",
+    "acceptance": [
+      "grant_item rejects non-catalog ids and gold above the CR bound (test)",
+      "Registry upserts are append/supersede only: deleting a fact is rejected",
+      "call_for_rest short/long applies hit-dice and slot recovery exactly like M1-16 tests",
+      "log_ruling output is retrievable by topic (in-memory interface test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/tools/world.ts",
+      "packages/engine/src/tools/rest.ts",
+      "packages/engine/test/tools-world.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M2-13",
+    "title": "rules_lookup: SRD text index and retrieval",
+    "owner": "forge",
+    "priority": "normal",
+    "est": "L",
+    "dependsOn": [
+      "M2-03"
+    ],
+    "spec": [
+      "R-R3",
+      "R-R4"
+    ],
+    "adr": [
+      "ADR-008",
+      "ADR-006"
+    ],
+    "description": "Chunk the SRD 5.2.1 rules text into a migration-loaded Postgres FTS table (chunk id, section path, text, srd page), with the CC-BY attribution carried in table metadata, and implement rules_lookup(topic) returning the top chunks with section citations. Used for \"Rules check?\" answers.",
+    "acceptance": [
+      "Migration creates the table and a loader script fills it from a checked-in chunk file",
+      "rules_lookup(\"opportunity attack\") and 9 other fixed topics each return the correct section as top-3 (test)",
+      "Result always includes a section path the UI can show as the citation",
+      "Attribution statement stored with the corpus"
+    ],
+    "expectedArtifacts": [
+      "apps/server/migrations/*-srd-text.js",
+      "apps/server/src/dm/rulesLookup.ts",
+      "packages/engine/srd-text/chunks.json",
+      "apps/server/test/rulesLookup.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db"
+    ]
+  },
+  {
+    "id": "M2-14",
+    "title": "llm-adapter core and openai-compatible dialect (streaming + tools)",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-09"
+    ],
+    "spec": [
+      "R-L1",
+      "R-L2",
+      "R-L3"
+    ],
+    "adr": [
+      "ADR-013"
+    ],
+    "description": "Create apps/server/src/llm with the adapter interface capabilities()/complete(req)->stream/probe(), the openai-compatible dialect (chat completions with streaming, native tool calls, json-schema response format), error normalization, timeouts and cancel. No vendor name appears in code paths outside the dialect file.",
+    "acceptance": [
+      "Tests against a local fake OpenAI-compatible server cover streaming text, streaming tool calls, malformed chunks, timeout and cancel",
+      "No import or string literal of a vendor/model name outside config fixtures (grep test)",
+      "Adapter surfaces token usage when the endpoint reports it and \"estimated\" otherwise"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/llm/adapter.ts",
+      "apps/server/src/llm/dialects/openai.ts",
+      "apps/server/test/llm/openai-dialect.test.ts",
+      "apps/server/test/llm/fakeOpenAIServer.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test"
+    ]
+  },
+  {
+    "id": "M2-15",
+    "title": "llm-adapter anthropic-messages dialect",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-14"
+    ],
+    "spec": [
+      "R-L1",
+      "R-L2"
+    ],
+    "adr": [
+      "ADR-013"
+    ],
+    "description": "Add the anthropic-messages dialect behind the same adapter interface: streaming events, tool_use blocks, system prompt mapping, usage mapping, and stable-prefix cache markers used only when the profile says caching is supported.",
+    "acceptance": [
+      "Same shared adapter conformance test file (parameterised over dialects) passes for both dialects",
+      "Cache markers are emitted only when profile.cache is enabled (test)",
+      "Tool-call arguments round-trip identically to the openai dialect for the same fixture"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/llm/dialects/anthropic.ts",
+      "apps/server/test/llm/conformance.test.ts",
+      "apps/server/test/llm/fakeAnthropicServer.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test"
+    ]
+  },
+  {
+    "id": "M2-16",
+    "title": "Endpoint probe and tool-mode selection (native, json-schema)",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-14",
+      "M2-15"
+    ],
+    "spec": [
+      "R-L2",
+      "R-L4",
+      "US-O1",
+      "A22"
+    ],
+    "adr": [
+      "ADR-013"
+    ],
+    "description": "Implement probe(): reachability, streaming, tool/function calling, valid-call rate over a fixed scenario set, schema violations, context-window size (>= 32k) and time to first token. Pick mode native or json-schema and store the EndpointProfile with a \"qualified\" flag that stays false until an eval record exists (M2-39). Runtime circuit breaker steps native -> json-schema on a rolling error rate. prompt-json and engine-assist are not built in M2.",
+    "acceptance": [
+      "Probe against fake endpoints picks native when tools are valid, json-schema when only structured output works, and reports \"unsupported\" (never silent fallback) when neither does",
+      "Profile records per-capability pass/fail and measured TTFT",
+      "Circuit-breaker downgrade is tested with an injected failure rate",
+      "qualified stays false with no eval record"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/llm/probe.ts",
+      "apps/server/src/llm/modes.ts",
+      "apps/server/test/llm/probe.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test"
+    ]
+  },
+  {
+    "id": "M2-17",
+    "title": "Operator endpoint config: storage, encrypted key, API, connection test",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-16",
+      "M2-09"
+    ],
+    "spec": [
+      "US-O1",
+      "R-L1",
+      "R-L5"
+    ],
+    "adr": [
+      "ADR-013",
+      "ADR-009"
+    ],
+    "description": "Add migration + routes for fast/frontier/moderate endpoint slots (base URL, model, API style, key). Key is encrypted at rest with a server secret, write-only over the API, never logged. Only the operator role may read/write; the role mechanism is the answer to overview question 3. Saving runs the probe and returns per-capability results; save with warnings is allowed. Hot reload: next DM turn uses new config, in-flight turn finishes on the old one.",
+    "acceptance": [
+      "Non-operator gets 403 on every endpoint route (test); host/player cannot set URLs",
+      "GET never returns the key; log capture test shows the key string never appears",
+      "Stored key bytes in the DB are not the plaintext (test)",
+      "Changing config mid-turn does not alter the in-flight turn (test)",
+      "Save returns probe result and \"not qualified\" marker"
+    ],
+    "expectedArtifacts": [
+      "apps/server/migrations/*-endpoints.js",
+      "apps/server/src/routes/operator.ts",
+      "apps/server/src/llm/config.ts",
+      "apps/server/test/operatorEndpoints.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db"
+    ]
+  },
+  {
+    "id": "M2-18",
+    "title": "Usage metering v0",
+    "owner": "forge",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M2-14",
+      "M2-09"
+    ],
+    "spec": [
+      "§9.2",
+      "US-O1"
+    ],
+    "adr": [
+      "ADR-009"
+    ],
+    "description": "Record one UsageEntry per endpoint call (purpose, model id, input/output/cached tokens or estimate flag, latency, retries, error) in Postgres, linked to table and turn, and expose per-table and aggregate read endpoints to the operator. Prices, budgets and wrap-up mode are M5.",
+    "acceptance": [
+      "Every adapter call in the orchestrator test run produces exactly one entry (test)",
+      "Estimated tokens are flagged as estimated",
+      "Operator read endpoint returns per-table totals; non-operators get 403",
+      "Metering failure never fails a DM turn (test)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/migrations/*-usage.js",
+      "apps/server/src/llm/metering.ts",
+      "apps/server/test/metering.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db"
+    ]
+  },
+  {
+    "id": "M2-19",
+    "title": "Outbound endpoint guard: SSRF policy and secret handling",
+    "owner": "bastion",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-14"
+    ],
+    "spec": [
+      "R-L1",
+      "US-O1 AC3",
+      "§9.5"
+    ],
+    "adr": [
+      "ADR-013"
+    ],
+    "description": "The operator supplies base URLs, so the server will fetch arbitrary hosts. Add an outbound policy: https required unless an explicit operator \"allow local/private hosts\" flag is set (needed for local models), block link-local and cloud metadata addresses always, re-resolve DNS at connect time (rebinding), disable redirects, response size and time limits. Document secret sources (env/secret store) and the encryption key rotation procedure.",
+    "acceptance": [
+      "Test matrix: private IP, loopback, 169.254.169.254, IPv6 forms, DNS rebinding stub and redirect to a blocked host are rejected with the flag off",
+      "With the local-hosts flag on, loopback is allowed but metadata addresses are still blocked",
+      "Guard is the only HTTP client the adapter uses (lint rule or test)",
+      "Runbook note lists where keys live and how to rotate"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/llm/egress.ts",
+      "apps/server/test/llm/egress.test.ts",
+      "docs/security/m2-endpoint-egress.md"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "pnpm lint"
+    ]
+  },
+  {
+    "id": "M2-20",
+    "title": "dm-orchestrator: prompt builder and state projection",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-08",
+      "M2-09",
+      "M2-11"
+    ],
+    "spec": [
+      "R-M1",
+      "R-N1",
+      "R-N2",
+      "R-N3",
+      "R-R4",
+      "R-S3"
+    ],
+    "adr": [
+      "ADR-022",
+      "ADR-006"
+    ],
+    "description": "Build the per-turn prompt in the ADR-022 order: byte-stable static prefix (persona, rules cheat-sheet, tool schemas for the active mode), session-stable block (party, premise, scene summary), dynamic block (compact state projection, engine describe() text in combat, registry facts for named entities, last N turns, this round inputs), retrieved memory slot (filled by M2-26). Player text is wrapped as quoted data in delimited blocks.",
+    "acceptance": [
+      "Prefix is byte-identical across two sessions with the same catalogVersion and mode (test)",
+      "Token budget per block enforced by truncation with a recorded reason; unit tests at the limits",
+      "Player text containing \"ignore previous instructions\" stays inside the quoted block and system text is unchanged (snapshot test)",
+      "In combat the projection contains describe() output and no raw coordinates beyond what describe() prints"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/dm/prompt.ts",
+      "apps/server/src/dm/projection.ts",
+      "apps/server/test/dm/prompt.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test"
+    ]
+  },
+  {
+    "id": "M2-21",
+    "title": "dm-orchestrator: tool loop, validation, retries, fallback, streaming",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-20",
+      "M2-10",
+      "M2-11",
+      "M2-12",
+      "M2-16"
+    ],
+    "spec": [
+      "R-R2",
+      "R-D1",
+      "R-D2",
+      "R-N2",
+      "R-N5",
+      "§6.2"
+    ],
+    "adr": [
+      "ADR-022",
+      "ADR-004"
+    ],
+    "description": "Implement runTurn(roomView, resolvedInputs) -> stream of roll events then narration chunks. Validate every tool call with the schema and executor; on rejection re-prompt with the error and hint (max 2 retries) then fall back to a safe narrated outcome with no state change. One narration per turn (combat: per action), one in-flight turn per table, queue the rest. Rolls are emitted before narration completes. Narration containing positions is checked against engine describe() output (contradiction counter for R-N5).",
+    "acceptance": [
+      "Scripted recorded-LLM runs: valid call, one invalid then valid, three invalid -> fallback with unchanged state hash",
+      "Roll events are emitted before the final narration chunk (ordering test)",
+      "Second submit during generation is queued, not interleaved (test)",
+      "Cancelled turn leaves no partial state (test)",
+      "Contradiction counter increments on a fixture narration that moves a token"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/dm/orchestrator.ts",
+      "apps/server/test/dm/orchestrator.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test"
+    ]
+  },
+  {
+    "id": "M2-22",
+    "title": "Recorded-LLM and fixed-seed mode",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-08",
+      "M2-14"
+    ],
+    "spec": [
+      "R-L4",
+      "A10"
+    ],
+    "adr": [
+      "ADR-022",
+      "ADR-012"
+    ],
+    "description": "Add a record/replay LLM provider selected by config: record mode wraps a real endpoint and writes request-hash -> response fixtures; replay mode serves them with streaming timing off. Draw the 64-bit turn seed from the OS CSPRNG normally, from a fixed value in test mode, and write it in TurnStarted. Replay must be a first-class path used by CI and e2e.",
+    "acceptance": [
+      "Replay of a recorded 20-turn session reproduces identical events and narration (hash equal)",
+      "A request whose hash is not in the fixture fails loudly with the diff against the nearest fixture",
+      "Seed is never present in any prompt or client message (test)",
+      "Real seeds differ between turns (statistical smoke test, not a fairness claim)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/llm/recorded.ts",
+      "apps/server/src/dm/seed.ts",
+      "apps/server/test/dm/recorded.test.ts",
+      "tests/fixtures/recorded/*.json"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test"
+    ]
+  },
+  {
+    "id": "M2-23",
+    "title": "Room: solo exploration turn, persistence, streaming messages",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-21",
+      "M2-22",
+      "M2-17"
+    ],
+    "spec": [
+      "US-E1",
+      "US-E2",
+      "R-D1",
+      "US-R2",
+      "R-N2"
+    ],
+    "adr": [
+      "ADR-002",
+      "ADR-003",
+      "ADR-022"
+    ],
+    "description": "Wire the orchestrator into the Room actor for a solo table: submit(input) -> round -> DM turn -> events appended and snapshot written in the same transaction as the last event of the turn (autosave). Add WS messages for roll events, narration chunks, NarrationCompleted, queued/thinking acknowledgement (<= 300 ms), ToolRejected (neutral). Clarifying question allowed at most once per action (state flag).",
+    "acceptance": [
+      "E2E with recorded LLM: login, create solo table, submit an action, observe check roll then narration chunks over WS",
+      "Kill -9 mid-turn: after restart state equals the last committed snapshot and the in-flight turn is discarded (test)",
+      "Input acknowledged <= 300 ms with the LLM stubbed to 5 s (timing test, loose bound in CI)",
+      "Second clarifying question for the same action is suppressed (test)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/room/dmTurn.ts",
+      "apps/server/test/room/dmTurn.test.ts",
+      "tests/e2e/m2-solo-turn.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db",
+      "pnpm --filter e2e exec vitest run m2-solo-turn"
+    ]
+  },
+  {
+    "id": "M2-24",
+    "title": "Room: combat on the map (commands, reactions, tracker, monster turns)",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-23",
+      "M2-11"
+    ],
+    "spec": [
+      "US-B1",
+      "US-B2",
+      "US-B3",
+      "US-B4",
+      "US-B5",
+      "R-N5"
+    ],
+    "adr": [
+      "ADR-018",
+      "ADR-005"
+    ],
+    "description": "Route combat through the Room: initiative state broadcast, only the active combatant may submit move/attack/cast/end-turn (else \"not your turn\"), move preview and confirm with path and cost, opportunity-attack reaction prompt with 15 s auto-decline, monster turns by the existing scripted policy (packages/engine/src/scripted/policy.ts) with one narration per action, MapLoaded/EntityMoved patches within 1 s of the event. Map state is in the snapshot so resume mid-combat works.",
+    "acceptance": [
+      "Non-active actor command returns NOT_YOUR_TURN and changes nothing (test)",
+      "Reaction prompt auto-declines at 15 s with a fake clock (test)",
+      "Solo combat from start_combat to CombatEnded over WS with recorded LLM, including an opportunity attack",
+      "Kill and restart mid-combat: map, initiative and remaining movement restored (test)",
+      "Highlighted token id always equals first initiative entry in broadcast state (property test)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/room/combat.ts",
+      "apps/server/test/room/combat.test.ts",
+      "tests/e2e/m2-solo-combat.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db",
+      "pnpm --filter e2e exec vitest run m2-solo-combat"
+    ]
+  },
+  {
+    "id": "M2-25",
+    "title": "Room: solo rests, death saves flow and TPK handling",
+    "owner": "forge",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M2-24",
+      "M2-12"
+    ],
+    "spec": [
+      "US-R1",
+      "US-B3"
+    ],
+    "adr": [
+      "ADR-003"
+    ],
+    "description": "Wire call_for_rest and the rest interruption chance (configurable, default off in tests) for solo, death-save prompts, PC death event, and the TPK choice: retry from the last checkpoint snapshot (new seed) or narrative fail-forward chosen by the player. Resurrection or new-character path is an offered option, not automated.",
+    "acceptance": [
+      "Short and long rest through the Room restore what M1-16 specifies (test)",
+      "Death saves are rolled server-side and produce the SRD stable/dead outcomes (seeded test)",
+      "Retry-from-checkpoint restores the earlier state and uses a different seed (test)",
+      "Fail-forward emits an event and state without altering any roll"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/room/rest.ts",
+      "apps/server/src/room/death.ts",
+      "apps/server/test/room/rest-death.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db"
+    ]
+  },
+  {
+    "id": "M2-26",
+    "title": "Memory v1: registry persistence, entity injection, FTS retrieval",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-12",
+      "M2-20"
+    ],
+    "spec": [
+      "R-M1",
+      "R-M3",
+      "US-E3"
+    ],
+    "adr": [
+      "ADR-006"
+    ],
+    "description": "Add migration for registry tables (npc, location, quest, flag, ruling) with supersede-only history; persist tool diffs from M2-12 via the Room; before each call scan player input and the last DM turn for registry names/aliases and inject their facts; retrieval of top-k summaries/registry entries with Postgres FTS + trigram. No vector store.",
+    "acceptance": [
+      "Naming an existing NPC injects its facts into the prompt (test with alias)",
+      "Retrieval returns the expected entry for 10 fixed queries (test)",
+      "Registry rows are not deleted by the retention sweeper (test: they are game state, spec 9.4)",
+      "A fact-consistency fixture of 20 NPC/place facts survives a replayed 3-session script (the US-E3 regression, recorded-LLM version)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/migrations/*-registry.js",
+      "apps/server/src/dm/memory.ts",
+      "apps/server/test/dm/memory.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db"
+    ]
+  },
+  {
+    "id": "M2-27",
+    "title": "Memory v1: scene close summaries and recap",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-26",
+      "M2-22"
+    ],
+    "spec": [
+      "R-M2",
+      "US-S3"
+    ],
+    "adr": [
+      "ADR-006"
+    ],
+    "description": "Close a scene on location change, combat end, rest or ~20 turns: fast-tier call writes a <= 120-word summary and proposed registry diffs, validated append/supersede only. Generate the <= 150-word recap on resume from stored summaries, cache it in the snapshot, skip the LLM call if nothing changed. Summaries are append-only and rebuildable from the event log.",
+    "acceptance": [
+      "Summary word count and diff validation enforced (test with oversize fixture)",
+      "Recap built without raw transcripts present (test deletes transcript rows first)",
+      "Unchanged state on second resume makes zero LLM calls (test via metering)",
+      "Summaries rebuilt from the event log equal stored ones in replay mode"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/dm/summarize.ts",
+      "apps/server/src/dm/recap.ts",
+      "apps/server/test/dm/summarize.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db"
+    ]
+  },
+  {
+    "id": "M2-28",
+    "title": "Solo table lifecycle: create, My games, resume, catalogVersion pin",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-23",
+      "M2-27"
+    ],
+    "spec": [
+      "US-S1",
+      "US-S3",
+      "§4.6",
+      "US-R2"
+    ],
+    "adr": [
+      "ADR-003",
+      "ADR-008"
+    ],
+    "description": "Add routes to create a solo table (adventure, difficulty, starting level 1-5, character) , list My games (any device), open/resume with latest snapshot + recap, and archive after 14 idle days. Pin catalogVersion on the table so old tables keep their rules.",
+    "acceptance": [
+      "Create -> first narration event in <= 3 minutes of scripted-user time, measured step-by-step in the proof (budget table in report)",
+      "Resume after server restart and from a second login device returns the same state and a recap",
+      "Table created under catalogVersion A still loads after the catalog changes (test)",
+      "Another account cannot open the table (403 test)"
+    ],
+    "expectedArtifacts": [
+      "apps/server/src/routes/tables.ts",
+      "apps/server/test/tables.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/server test",
+      "DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:5432/lorekeep pnpm --filter @game/server test:db"
+    ]
+  },
+  {
+    "id": "M2-29",
+    "title": "Adventure schema, loader and validator",
+    "owner": "forge",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-11"
+    ],
+    "spec": [
+      "US-M1",
+      "§8",
+      "R-R1"
+    ],
+    "adr": [
+      "ADR-008",
+      "ADR-018"
+    ],
+    "description": "Define the adventure data format (scenes, NPC seeds with original names, encounters by catalog id, structured map references, markers, rewards, quest hooks) in packages/schema and a loader/validator in packages/engine: every id exists in the catalog, every encounter map validates and the party can reach enemies, spawn squares are legal, and a non-SRD proper-noun denylist scan passes.",
+    "acceptance": [
+      "Invalid adventure fixtures (unknown monster id, unreachable spawn, denylisted name) each rejected with a specific code",
+      "Validator reuses the M1 map validator, not a copy",
+      "Denylist file is data, covered by a test that a seeded forbidden name fails"
+    ],
+    "expectedArtifacts": [
+      "packages/schema/src/adventure.ts",
+      "packages/engine/src/adventure/validate.ts",
+      "packages/engine/test/adventure.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test",
+      "pnpm --filter @game/schema test"
+    ]
+  },
+  {
+    "id": "M2-30",
+    "title": "Adventure #1 content (original setting, 2-3 hour solo/party-ready)",
+    "owner": "quill",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-08"
+    ],
+    "spec": [
+      "§8",
+      "Q11",
+      "US-S2"
+    ],
+    "adr": [
+      "ADR-008"
+    ],
+    "description": "Write adventure #1: premise, tone line, 6-8 scenes, NPC seeds with original names, 3-4 encounters with intended difficulty for a level-1..3 solo PC, loot/quest hooks, and DM guidance notes. Theme and setting name come from the human (overview question 6). No Forgotten Realms or other non-SRD names.",
+    "acceptance": [
+      "Content passes the M2-29 denylist scan",
+      "Every encounter lists monsters by SRD catalog name so M2-31 can map to ids",
+      "Word count and scene list match the agreed pitch; human has approved the pitch before writing starts",
+      "Content includes a one-page DM-facing \"do not contradict\" fact sheet for the registry seed"
+    ],
+    "expectedArtifacts": [
+      "docs/adventures/01-draft.md",
+      "docs/adventures/01-fact-sheet.md"
+    ],
+    "verify": [
+      "pnpm format:check"
+    ]
+  },
+  {
+    "id": "M2-31",
+    "title": "Adventure #1 data: scenes, encounters and 3-4 structured maps",
+    "owner": "forge",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-29",
+      "M2-30",
+      "M2-04"
+    ],
+    "spec": [
+      "US-M1",
+      "US-B4",
+      "A21"
+    ],
+    "adr": [
+      "ADR-018",
+      "ADR-020"
+    ],
+    "description": "Encode adventure #1 as data under packages/engine/adventures and author its encounter maps (<= 50x50, terrain/set pieces from the catalog) with starting positions and markers for move_to. Seed the registry from the fact sheet.",
+    "acceptance": [
+      "Adventure passes the validator (ids, reachability, spawns)",
+      "Every map renders in the web MapRenderer without console errors (Playwright smoke)",
+      "A scripted no-LLM run through each encounter ends in CombatEnded",
+      "Registry seed loads into a new table (test)"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/adventures/01/*.json",
+      "packages/engine/maps/adv01-*.json",
+      "packages/engine/test/adventure01.test.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test",
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M2-32",
+    "title": "Encounter builder for solo difficulty",
+    "owner": "forge",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M2-04",
+      "M2-11"
+    ],
+    "spec": [
+      "US-S2",
+      "A9"
+    ],
+    "adr": [
+      "ADR-004"
+    ],
+    "description": "Implement budget calculation from party size and level per the SRD 5.2.1 encounter guidance (read the text first; where it gives nothing, document original tuning and label it as such). Expose it to start_combat warnings and to adventure validation. Solo default difficulty is \"moderate\".",
+    "acceptance": [
+      "Budget for 1..6 PCs at levels 1..5 matches the SRD table values where the SRD gives them (test cites section)",
+      "Original tuning, if any, is flagged in code and in the verification note",
+      "Adventure #1 encounters validate within budget or carry an explicit authored override reason"
+    ],
+    "expectedArtifacts": [
+      "packages/engine/src/encounter/budget.ts",
+      "packages/engine/test/encounter.test.ts",
+      "docs/plan/verification/m2-32-encounter.md"
+    ],
+    "verify": [
+      "pnpm --filter @game/rules-engine test"
+    ]
+  },
+  {
+    "id": "M2-33",
+    "title": "Asset manifest, license release check and CI jobs for M2",
+    "owner": "keel",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M2-07"
+    ],
+    "spec": [
+      "US-M1 AC3",
+      "§8"
+    ],
+    "adr": [
+      "ADR-020"
+    ],
+    "description": "Add assets/manifest.json (every token art, terrain asset and font with source and license) and a release check that fails when an asset lacks an entry or the SRD CC-BY attribution statement is missing from the shipped legal text. Extend ci.yml with: the Firefox/WebKit projects (from M2-07), a recorded-LLM e2e job, and a catalog-reconcile job.",
+    "acceptance": [
+      "Check fails when an asset file is added without a manifest entry (negative test)",
+      "Check fails if the exact SRD 5.2.1 attribution text is absent from the About/Legal source",
+      "CI runs the three new jobs on a PR and they are required checks",
+      "CI wall time increase is reported in the PR"
+    ],
+    "expectedArtifacts": [
+      "assets/manifest.json",
+      "scripts/check-assets.mjs",
+      ".github/workflows/ci.yml"
+    ],
+    "verify": [
+      "node scripts/check-assets.mjs",
+      "pnpm format:check"
+    ]
+  },
+  {
+    "id": "M2-34",
+    "title": "Narration log with streaming, live regions and roll lines",
+    "owner": "prism",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-23"
+    ],
+    "spec": [
+      "US-E1",
+      "US-E2",
+      "§9.3",
+      "R-N1"
+    ],
+    "adr": [
+      "ADR-019",
+      "ADR-010"
+    ],
+    "description": "Build the narration log: streamed chunks appended per sentence, polite live-region announcements (not per token), roll lines using the existing RollBreakdown component with a \"why DC 15?\" disclosure fed by dcReason, reduced-motion respected, scroll anchoring that does not steal focus, and a text-size/dyslexia-font hook.",
+    "acceptance": [
+      "Component tests: streaming chunks render in order, roll line shown before narration finishes",
+      "Live region announces a completed sentence once and never per token (test with a spy)",
+      "\"Why this DC\" disclosure shows dcReason and is keyboard operable",
+      "axe: 0 critical on the log in default and reduced-motion modes"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/narration/*",
+      "apps/web/test/narration.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test",
+      "pnpm --filter @game/web exec playwright test"
+    ]
+  },
+  {
+    "id": "M2-35",
+    "title": "Action input, quick actions and pending states",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-34"
+    ],
+    "spec": [
+      "US-E1",
+      "R-S3",
+      "§9.1"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Free-text action box and quick-action buttons (Look, Talk, Search, Move, Use item, Cast) with the queued/thinking indicator within 300 ms, withdraw/edit before resolution, clarifying-question reply UI, and neutral display of ToolRejected/fallback turns. Fully keyboard operable at 360 px width.",
+    "acceptance": [
+      "Submit shows \"thinking\" in <= 300 ms against a stalled mock (test)",
+      "Quick actions are reachable by keyboard and have accessible names",
+      "Clarifying question reply is bound to the original action (test)",
+      "360 px layout has no horizontal scroll (Playwright viewport test)"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/features/input/*",
+      "apps/web/test/input.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M2-36",
+    "title": "Game screen: combat on the live Room map",
+    "owner": "prism",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-24",
+      "M2-34"
+    ],
+    "spec": [
+      "US-B4",
+      "US-B5",
+      "US-B6",
+      "US-C2",
+      "§9.3"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Replace the sandbox page driver with the WS-driven Room state: tracker, tokens, overlays, move preview with path cost and confirm, attack/cast targeting, end turn, reaction prompt countdown, live character sheet updating within 1 s of events. Reuse the M1 MapRenderer, overlays and keyboard cursor; keep the sandbox page as a test fixture.",
+    "acceptance": [
+      "Keyboard-only combat from start_combat to CombatEnded against the recorded-LLM server (Playwright)",
+      "Describe-battlefield text is read in the live region at turn start (test)",
+      "Highlighted token equals first tracker entry (component test)",
+      "Sheet HP/slots change within 1 s of the event in a timed test",
+      "No pointer-only action exists (drag has a keyboard equivalent, test)"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/screens/Game.tsx",
+      "apps/web/e2e/solo-combat-live.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test",
+      "pnpm --filter @game/web exec playwright test"
+    ]
+  },
+  {
+    "id": "M2-37",
+    "title": "Solo start flow, My games, resume and recap screens",
+    "owner": "prism",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-28",
+      "M2-36"
+    ],
+    "spec": [
+      "US-S1",
+      "US-S3",
+      "US-C1"
+    ],
+    "adr": [
+      "ADR-019"
+    ],
+    "description": "Landing -> create solo table (adventure, difficulty, level 1-5, quick build or wizard) -> game; My games list with resume; recap shown before first new narration; error states for LLM unavailable and resume failure.",
+    "acceptance": [
+      "Playwright from signed-in landing to first narration with recorded LLM, step timings logged",
+      "Resume from a fresh browser context shows the same state and a recap before new narration",
+      "LLM-unavailable state is announced to assistive tech and offers retry"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/screens/Start.tsx",
+      "apps/web/src/screens/MyGames.tsx",
+      "apps/web/e2e/solo-start-resume.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test",
+      "pnpm --filter @game/web exec playwright test"
+    ]
+  },
+  {
+    "id": "M2-38",
+    "title": "Operator endpoint settings screen and usage view",
+    "owner": "prism",
+    "priority": "normal",
+    "est": "M",
+    "dependsOn": [
+      "M2-17",
+      "M2-18"
+    ],
+    "spec": [
+      "US-O1",
+      "§9.2",
+      "§9.3"
+    ],
+    "adr": [
+      "ADR-013"
+    ],
+    "description": "Operator-only pages: endpoint slots form (key write-only), connection test with per-capability results and \"not qualified\" badge, and a read-only usage table per table and aggregate. Hidden from non-operators and server-enforced.",
+    "acceptance": [
+      "Key field is cleared after save and never populated from the server (test)",
+      "Probe result renders pass/fail text per capability, not color alone",
+      "Non-operator route returns the not-authorized screen (test)",
+      "axe: 0 critical"
+    ],
+    "expectedArtifacts": [
+      "apps/web/src/screens/OperatorEndpoints.tsx",
+      "apps/web/src/screens/OperatorUsage.tsx",
+      "apps/web/test/operator.test.tsx"
+    ],
+    "verify": [
+      "pnpm --filter @game/web test"
+    ]
+  },
+  {
+    "id": "M2-39",
+    "title": "Eval harness v0 with first datasets and qualification record",
+    "owner": "proof",
+    "priority": "high",
+    "est": "L",
+    "dependsOn": [
+      "M2-22",
+      "M2-21",
+      "M2-13",
+      "M2-24"
+    ],
+    "spec": [
+      "R-R3",
+      "R-N3",
+      "R-N5",
+      "R-L4",
+      "Q10",
+      "A10"
+    ],
+    "adr": [
+      "ADR-012"
+    ],
+    "description": "Build the eval runner (recorded and live modes, fixed seeds) and v0 datasets: 50 rules questions with SRD citations (R-R3), 50 exploration turns scored for puppeting (R-N3), 30 combat turns scored for map contradictions (R-N5), and a tool-validity score. Runs write an EvalRecord that flips the endpoint \"qualified\" flag only when thresholds in the overview are met. Thresholds are initial, per spec A10.",
+    "acceptance": [
+      "pnpm eval:v0 runs offline in recorded mode in CI and prints per-suite scores",
+      "Live mode runs against a configured endpoint and stores the record with the endpoint profile id",
+      "Qualified flag stays false for an endpoint with no record or a failing record (test)",
+      "Report states dataset sizes are too small for statistical claims"
+    ],
+    "expectedArtifacts": [
+      "packages/evals/*",
+      "apps/server/src/llm/qualification.ts",
+      "docs/plan/verification/m2-39-eval-v0.md"
+    ],
+    "verify": [
+      "pnpm eval:v0",
+      "pnpm -r test"
+    ]
+  },
+  {
+    "id": "M2-40",
+    "title": "Security review of M2: operator surface, key handling, prompt boundary",
+    "owner": "sentinel",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-17",
+      "M2-19",
+      "M2-21",
+      "M2-24"
+    ],
+    "spec": [
+      "R-S3",
+      "US-O1 AC3",
+      "§9.5"
+    ],
+    "adr": [
+      "ADR-013",
+      "ADR-022"
+    ],
+    "description": "Independent review (different model family from the author) of the operator routes, key encryption and logging, the egress guard, tool-argument validation and the structural claim that player text cannot reach state. Include a scripted injection set of 30 prompts against the recorded server and the room command surface (WS) for authz gaps. This is not the M3 moderation review.",
+    "acceptance": [
+      "Report lists each finding with severity, evidence and a fix ticket or a waiver reason",
+      "All high findings fixed or explicitly accepted by the human before M2 closes",
+      "30-prompt injection set shows zero state changes outside tool paths (result table)"
+    ],
+    "expectedArtifacts": [
+      "docs/security/m2-review.md",
+      "tests/e2e/m2-injection.spec.ts"
+    ],
+    "verify": [
+      "pnpm --filter e2e exec vitest run m2-injection"
+    ]
+  },
+  {
+    "id": "M2-41",
+    "title": "Docs: operator endpoint guide, recorded-LLM workflow, dev setup update",
+    "owner": "quill",
+    "priority": "low",
+    "est": "S",
+    "dependsOn": [
+      "M2-17",
+      "M2-22",
+      "M2-23"
+    ],
+    "spec": [
+      "US-O1"
+    ],
+    "adr": [],
+    "description": "Update docs/dev-setup.md and add an operator guide: configuring a hosted and a local OpenAI-compatible endpoint, reading probe results, recorded-LLM record/replay, running evals, and the SRD attribution requirement. Every command in the docs is run once and pasted as verified.",
+    "acceptance": [
+      "Each documented command was executed and exits as stated",
+      "Guide covers local (loopback) endpoints and the allow-local-hosts flag from M2-19",
+      "No secret value appears in any example"
+    ],
+    "expectedArtifacts": [
+      "docs/operator-guide.md",
+      "docs/dev-setup.md"
+    ],
+    "verify": [
+      "pnpm format:check"
+    ]
+  },
+  {
+    "id": "M2-42",
+    "title": "M2 exit-criteria proof tests and report",
+    "owner": "proof",
+    "priority": "high",
+    "est": "M",
+    "dependsOn": [
+      "M2-02",
+      "M2-05",
+      "M2-06",
+      "M2-07",
+      "M2-28",
+      "M2-31",
+      "M2-36",
+      "M2-37",
+      "M2-39",
+      "M2-40"
+    ],
+    "spec": [
+      "US-S1",
+      "US-S3",
+      "US-E1",
+      "US-E2",
+      "US-B1",
+      "US-B4",
+      "US-O1",
+      "R-L2"
+    ],
+    "adr": [
+      "ADR-013",
+      "ADR-022"
+    ],
+    "description": "Prove on a fresh clone of origin/main: (1) quick start to first narration in <= 3 minutes (recorded LLM, timings table); (2) adventure #1 playable start to end via scripted keyboard-only run, with a resume in the middle (browser close, server restart); (3) probe selects a mode for a fake native-tool endpoint and a fake json-schema-only endpoint; (4) live run of adventure #1 on the reference endpoint and on one local OpenAI-compatible model if the human supplies them, otherwise marked NOT RUN with the reason; (5) eval v0 scores; (6) M1 carry-over closure table. Report lists each criterion with command, result and gap, and what remains unverified.",
+    "acceptance": [
+      "Full gate from docs/process.md exits 0 on a fresh clone, including Firefox and WebKit projects",
+      "Each exit criterion in docs/plan/m2-overview.md has command, result and gap in the report",
+      "Live-endpoint criteria are either evidenced (transcript + probe record) or explicitly NOT RUN",
+      "Report states what is unverified (moderation absent, party play absent, level coverage of live runs)"
+    ],
+    "expectedArtifacts": [
+      "tests/e2e/m2-quickstart.spec.ts",
+      "tests/e2e/m2-adventure1.spec.ts",
+      "tests/e2e/m2-probe-modes.spec.ts",
+      "docs/plan/m2-proof-report.md"
+    ],
+    "verify": [
+      "pnpm --filter e2e test",
+      "pnpm -r test",
+      "pnpm --filter @game/web exec playwright test"
+    ]
+  }
+]
