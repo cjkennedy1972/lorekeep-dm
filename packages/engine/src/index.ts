@@ -38,3 +38,4 @@ export * from './map/movement.js';
 export * from './map/path.js';
 export * from './map/area.js';
 export * from './map/describe.js';
+export * from './map/options.js';
