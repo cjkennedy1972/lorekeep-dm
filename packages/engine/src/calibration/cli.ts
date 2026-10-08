@@ -1,4 +1,7 @@
+import { fileURLToPath } from 'node:url';
 import { runPool } from './pool.js';
+import { DEFAULT_GRID } from './select.js';
+import { buildTable } from './table.js';
 import { CLASS_SLUGS, POLICY_VERSIONS, type PolicyVersion } from './pc.js';
 import { CALIBRATION_SEED, type CellSpec } from './sweep.js';
 
@@ -45,8 +48,44 @@ if (cmd === 'sweep') {
     if (d % 100 === 0 || d === t)
       console.log(`${d}/${t} cells, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   });
+} else if (cmd === 'regenerate' || cmd === 'build-table') {
+  const here = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
+  const paths = {
+    sweep: here('calibration-data/solo-sweep.v1.jsonl'),
+    verify: here('calibration-data/solo-verify.v1.jsonl'),
+    table: here('src/encounter/solo-difficulty.v1.json'),
+    results: fileURLToPath(
+      new URL(
+        '../../../../docs/plan/verification/solo-calibration-results.json',
+        import.meta.url,
+      ),
+    ),
+  };
+  const workers = Number(arg('workers', '1'));
+  if (cmd === 'regenerate') {
+    const g = DEFAULT_GRID;
+    const specs: CellSpec[] = [];
+    for (const level of g.levels)
+      for (const maxEnemies of g.caps)
+        for (const k of g.ks)
+          for (const classSlug of CLASS_SLUGS)
+            specs.push({
+              policy: g.policy,
+              level,
+              classSlug,
+              k,
+              maxEnemies,
+              seeds: g.seeds,
+              seedBase: CALIBRATION_SEED,
+              mode: 'single',
+            });
+    await runPool(specs, paths.sweep, workers, (d, t) => {
+      if (d % 200 === 0 || d === t) console.log(`sweep ${d}/${t}`);
+    });
+  }
+  await buildTable(paths, workers);
 } else {
   console.log(
-    'usage: cli.js sweep --out f.jsonl [--policies v1] [--levels 1,2] [--caps 1,2,3,none] [--ks ...] [--seeds 60] [--workers 2]',
+    'usage: cli.js regenerate|build-table [--workers 1] | sweep --out f.jsonl [--policies v1] [--levels 1,2] [--caps 1,2,3,none] [--ks ...] [--seeds 60] [--workers 2]',
   );
 }

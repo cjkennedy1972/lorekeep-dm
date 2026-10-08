@@ -120,7 +120,8 @@ export function buildEncounter(
         : { model: 'explicit', ...wanted };
   if (!(scaling.multiplier > 0))
     throw new EncounterBuildError('Solo multiplier must be positive.');
-  const budget = Math.floor(srdBudget * scaling.multiplier);
+  // epsilon: a decimal multiplier times an integer row can land a hair under the intended whole number
+  const budget = Math.floor(srdBudget * scaling.multiplier + 1e-9);
   const maxEnemies = scaling.maxEnemies;
   let state = seedRng(request.seed);
   const eligible = catalog.entries

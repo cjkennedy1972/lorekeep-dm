@@ -1,6 +1,10 @@
 import { rleEncode, type Battlemap, type GridPos } from '@game/schema';
 import type { Catalog } from '../catalog/types.js';
-import { buildEncounter, type BuiltEncounter } from '../encounter/budget.js';
+import {
+  buildEncounter,
+  type BuiltEncounter,
+  type EncounterDifficulty,
+} from '../encounter/budget.js';
 import { distance } from '../map/geometry.js';
 import { Sim, type SimEntity, type SimSpec } from '../scripted/sim.js';
 import type { DayState, Pc } from './pc.js';
@@ -233,19 +237,23 @@ export function mixSeed(...parts: number[]): number {
   return h >>> 0;
 }
 
-export type EncounterShape = { multiplier: number; maxEnemies?: number };
+export type EncounterShape = {
+  multiplier: number;
+  maxEnemies?: number;
+  /** SRD row the multiplier applies to; the sweep uses moderate, verification the shipped label. */
+  label?: EncounterDifficulty;
+};
 
 export function encounterFor(
   catalog: Catalog,
   level: number,
   shape: EncounterShape,
   seed: number,
-  difficulty: 'low' | 'moderate' | 'high' = 'moderate',
 ): BuiltEncounter {
   return buildEncounter(catalog, {
     level,
     seed,
-    difficulty,
+    difficulty: shape.label ?? 'moderate',
     soloBudget: {
       multiplier: shape.multiplier,
       ...(shape.maxEnemies !== undefined

@@ -10,6 +10,7 @@ const keyOf = (s: CellSpec) =>
     s.classSlug,
     s.k,
     s.maxEnemies,
+    s.label ?? 'moderate',
     s.seeds,
     s.seedBase,
     s.mode,

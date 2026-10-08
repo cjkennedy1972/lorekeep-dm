@@ -1,4 +1,5 @@
 import type { Catalog } from '../catalog/types.js';
+import type { EncounterDifficulty } from '../encounter/budget.js';
 import { encounterFor, mixSeed, runFight, runSequence } from './fight.js';
 import { buildPc, CLASS_SLUGS, type PolicyVersion } from './pc.js';
 
@@ -13,6 +14,8 @@ export type CellSpec = {
   /** Multiplier of the SRD *moderate* per-character budget (k). */
   k: number;
   maxEnemies: number | null;
+  /** Absent = moderate (the sweep); the verification stage sets the shipped label. */
+  label?: EncounterDifficulty;
   seeds: number;
   seedBase: number;
   mode: 'single' | 'seq-none' | 'seq-short';
@@ -45,6 +48,7 @@ export function runCell(catalog: Catalog, spec: CellSpec): CellRow {
   );
   const shape = {
     multiplier: spec.k,
+    ...(spec.label ? { label: spec.label } : {}),
     ...(spec.maxEnemies !== null ? { maxEnemies: spec.maxEnemies } : {}),
   };
   const classIndex = CLASS_SLUGS.indexOf(pc.slug);
