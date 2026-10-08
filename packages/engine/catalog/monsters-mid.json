@@ -479,9 +479,9 @@
     ],
     "traits": [
       {
-        "name": "Acid Breath (Recharge 5\u20136)",
+        "name": "Acid Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Acid Breath (Recharge 5\u20136). Dexterity Saving Throw: DC 11, each creature in a 15-foot-long, 5-footwide Line. Failure: 22 (5d8) Acid damage. Success: Half damage.",
+        "text": "Acid Breath (Recharge 5–6). Dexterity Saving Throw: DC 11, each creature in a 15-foot-long, 5-footwide Line. Failure: 22 (5d8) Acid damage. Success: Half damage.",
         "save": {
           "ability": "dex",
           "dc": 11
@@ -556,9 +556,9 @@
     ],
     "traits": [
       {
-        "name": "Lightning Breath (Recharge 5\u20136)",
+        "name": "Lightning Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Lightning Breath (Recharge 5\u20136). Dexterity Saving Throw: DC 12, each creature in a 40-foot-long, 5-footwide Line. Failure: 16 (3d10) Lightning damage. Success: Half damage.",
+        "text": "Lightning Breath (Recharge 5–6). Dexterity Saving Throw: DC 12, each creature in a 40-foot-long, 5-footwide Line. Failure: 16 (3d10) Lightning damage. Success: Half damage.",
         "save": {
           "ability": "dex",
           "dc": 12
@@ -648,9 +648,9 @@
     ],
     "traits": [
       {
-        "name": "Trampling Charge (Recharge 5\u20136)",
+        "name": "Trampling Charge (Recharge 5–6)",
         "kind": "bonus-action",
-        "text": "Trampling Charge (Recharge 5\u20136). The centaur moves up to its Speed without provoking Opportunity Attacks and can move through the spaces of Medium or smaller creatures. Each creature whose space the centaur enters is targeted once by the following effect. Strength Saving Throw: DC 14. Failure: 7 (1d6 + 4) Bludgeoning damage, and the target has the Prone condition. Chain Devil",
+        "text": "Trampling Charge (Recharge 5–6). The centaur moves up to its Speed without provoking Opportunity Attacks and can move through the spaces of Medium or smaller creatures. Each creature whose space the centaur enters is targeted once by the following effect. Strength Saving Throw: DC 14. Failure: 7 (1d6 + 4) Bludgeoning damage, and the target has the Prone condition. Chain Devil",
         "save": {
           "ability": "str",
           "dc": 14
@@ -885,9 +885,9 @@
     ],
     "traits": [
       {
-        "name": "Web Strand (Recharge 5\u20136)",
+        "name": "Web Strand (Recharge 5–6)",
         "kind": "action",
-        "text": "Web Strand (Recharge 5\u20136). Dexterity Saving Throw: DC 12, one Large or smaller creature the ettercap can see within 30 feet. Failure: The target has the Restrained condition until the web is destroyed (AC 10; HP 5; Vulnerability to Fire damage; Immunity to Bludgeoning, Poison, and Psychic damage).",
+        "text": "Web Strand (Recharge 5–6). Dexterity Saving Throw: DC 12, one Large or smaller creature the ettercap can see within 30 feet. Failure: The target has the Restrained condition until the web is destroyed (AC 10; HP 5; Vulnerability to Fire damage; Immunity to Bludgeoning, Poison, and Psychic damage).",
         "save": {
           "ability": "dex",
           "dc": 12
@@ -1359,8 +1359,8 @@
         "reachFt": 5,
         "damage": [
           {
-            "dice": "1",
-            "type": "bludgeoning"
+            "dice": "2d6",
+            "type": "piercing"
           }
         ],
         "effect": "7 (2d6)"
@@ -1373,9 +1373,9 @@
         "text": "Piercing damage. If the target is a Medium or smaller creature, it has the Prone condition. The target dies if it is reduced to 0 Hit Points by this attack. Its body is then absorbed into the mouther, leaving only equipment behind."
       },
       {
-        "name": "Blinding Spittle (Recharge 5\u20136)",
+        "name": "Blinding Spittle (Recharge 5–6)",
         "kind": "action",
-        "text": "Blinding Spittle (Recharge 5\u20136). Dexterity Saving Throw: DC 10, each creature in a 10-foot-radius Sphere centered on a point within 30 feet. Failure: 7 (2d6) Radiant damage, and the target has the Blinded condition until the end of the mouther's next turn. Glabrezu",
+        "text": "Blinding Spittle (Recharge 5–6). Dexterity Saving Throw: DC 10, each creature in a 10-foot-radius Sphere centered on a point within 30 feet. Failure: 7 (2d6) Radiant damage, and the target has the Blinded condition until the end of the mouther's next turn. Glabrezu",
         "save": {
           "ability": "dex",
           "dc": 10
@@ -1389,7 +1389,7 @@
       {
         "name": "Gibbering",
         "kind": "trait",
-        "text": "Gibbering. The mouther babbles incoherently while it doesn't have the Incapacitated condition. Wisdom Saving Throw: DC 10, any creature that starts its turn within 20 feet of the mouther while it is babbling. Failure: The target rolls 1d8 to determine what it does during the current turn: 1\u20134. The target does nothing. 5\u20136. The target takes no action or Bonus Action and uses all its movement to move in a random direction. 7\u20138. The target makes a melee attack against a randomly determined creature within its reach or does nothing if it can't make such an attack.",
+        "text": "Gibbering. The mouther babbles incoherently while it doesn't have the Incapacitated condition. Wisdom Saving Throw: DC 10, any creature that starts its turn within 20 feet of the mouther while it is babbling. Failure: The target rolls 1d8 to determine what it does during the current turn: 1–4. The target does nothing. 5–6. The target takes no action or Bonus Action and uses all its movement to move in a random direction. 7–8. The target makes a melee attack against a randomly determined creature within its reach or does nothing if it can't make such an attack.",
         "save": {
           "ability": "wis",
           "dc": 10
@@ -1459,9 +1459,9 @@
     ],
     "traits": [
       {
-        "name": "Poison Breath (Recharge 5\u20136)",
+        "name": "Poison Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Poison Breath (Recharge 5\u20136). Constitution Saving Throw: DC 11, each creature in a 15-foot Cone. Failure: 21 (6d6) Poison damage. Success: Half damage.",
+        "text": "Poison Breath (Recharge 5–6). Constitution Saving Throw: DC 11, each creature in a 15-foot Cone. Failure: 21 (6d6) Poison damage. Success: Half damage.",
         "save": {
           "ability": "con",
           "dc": 11
@@ -1588,8 +1588,8 @@
         "reachFt": 5,
         "damage": [
           {
-            "dice": "1",
-            "type": "bludgeoning"
+            "dice": "1d8+4",
+            "type": "piercing"
           }
         ],
         "effect": "8 (1d8 + 4)"
@@ -2513,9 +2513,9 @@
     ],
     "traits": [
       {
-        "name": "Death Glare (Recharge 5\u20136)",
+        "name": "Death Glare (Recharge 5–6)",
         "kind": "action",
-        "text": "Death Glare (Recharge 5\u20136). Wisdom Saving Throw: DC 11, one Frightened creature the hag can see within 30 feet. Failure: If the target has 20 Hit Points or fewer, it drops to 0 Hit Points. Otherwise, the target takes 13 (3d8) Psychic damage.",
+        "text": "Death Glare (Recharge 5–6). Wisdom Saving Throw: DC 11, one Frightened creature the hag can see within 30 feet. Failure: If the target has 20 Hit Points or fewer, it drops to 0 Hit Points. Otherwise, the target takes 13 (3d8) Psychic damage.",
         "save": {
           "ability": "wis",
           "dc": 11
@@ -2604,9 +2604,9 @@
     ],
     "traits": [
       {
-        "name": "Cold Breath (Recharge 5\u20136)",
+        "name": "Cold Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Cold Breath (Recharge 5\u20136). Constitution Saving Throw: DC 13, each creature in a 15-foot Cone. Failure: 18 (4d8) Cold damage. Success: Half damage.",
+        "text": "Cold Breath (Recharge 5–6). Constitution Saving Throw: DC 13, each creature in a 15-foot Cone. Failure: 18 (4d8) Cold damage. Success: Half damage.",
         "save": {
           "ability": "con",
           "dc": 13
@@ -2638,7 +2638,7 @@
   {
     "id": "monster:swarm-of-venomous-snakes",
     "name": "Swarm of Venomous Snakes",
-    "creatureType": "swarm",
+    "creatureType": "swarm of tiny beasts",
     "size": "medium",
     "footprint": 1,
     "ac": 14,
@@ -2844,9 +2844,9 @@
     ],
     "traits": [
       {
-        "name": "Cold Breath (Recharge 5\u20136)",
+        "name": "Cold Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Cold Breath (Recharge 5\u20136). Constitution Saving Throw: DC 12, each creature in a 15-foot Cone. Failure: 22 (5d8) Cold damage. Success: Half damage.",
+        "text": "Cold Breath (Recharge 5–6). Constitution Saving Throw: DC 12, each creature in a 15-foot Cone. Failure: 22 (5d8) Cold damage. Success: Half damage.",
         "save": {
           "ability": "con",
           "dc": 12
@@ -2873,7 +2873,7 @@
   },
   {
     "id": "monster:will-o-wisp",
-    "name": "Will-o\u2019-Wisp",
+    "name": "Will-o’-Wisp",
     "creatureType": "undead",
     "size": "tiny",
     "footprint": 1,
@@ -2970,7 +2970,7 @@
     "catalogVersion": "srd-5.2.1-v0",
     "srd": {
       "source": "SRD 5.2.1",
-      "ref": "Monsters A-Z > Will-o\u2019-Wisp (p. 341)"
+      "ref": "Monsters A-Z > Will-o’-Wisp (p. 341)"
     }
   },
   {
@@ -3069,9 +3069,9 @@
     ],
     "traits": [
       {
-        "name": "Petrifying Gaze (Recharge 4\u20136)",
+        "name": "Petrifying Gaze (Recharge 4–6)",
         "kind": "bonus-action",
-        "text": "Petrifying Gaze (Recharge 4\u20136). Constitution Saving Throw: DC 12, each creature in a 30-foot Cone. If the basilisk sees its reflection in the Cone, the basilisk must make this save. First Failure: The target has the Restrained condition and repeats the save at the end of its next turn if it is still Restrained, ending the effect on itself on a success. Second Failure: The target has the Petrified condition instead of the Restrained condition.",
+        "text": "Petrifying Gaze (Recharge 4–6). Constitution Saving Throw: DC 12, each creature in a 30-foot Cone. If the basilisk sees its reflection in the Cone, the basilisk must make this save. First Failure: The target has the Restrained condition and repeats the save at the end of its next turn if it is still Restrained, ending the effect on itself on a success. Second Failure: The target has the Petrified condition instead of the Restrained condition.",
         "save": {
           "ability": "con",
           "dc": 12
@@ -3172,7 +3172,8 @@
     "srd": {
       "source": "SRD 5.2.1",
       "ref": "Monsters A-Z > Bearded Devil (p. 262)"
-    }
+    },
+    "passivePerception": 10
   },
   {
     "id": "monster:blue-dragon-wyrmling",
@@ -3228,9 +3229,9 @@
     ],
     "traits": [
       {
-        "name": "Lightning Breath (Recharge 5\u20136)",
+        "name": "Lightning Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Lightning Breath (Recharge 5\u20136). Dexterity Saving Throw: DC 12, each creature in a 30-foot-long, 5-footwide Line. Failure: 21 (6d6) Lightning damage. Success: Half damage.",
+        "text": "Lightning Breath (Recharge 5–6). Dexterity Saving Throw: DC 12, each creature in a 30-foot-long, 5-footwide Line. Failure: 21 (6d6) Lightning damage. Success: Half damage.",
         "save": {
           "ability": "dex",
           "dc": 12
@@ -3452,7 +3453,7 @@
         "reachFt": 5,
         "damage": [
           {
-            "dice": "1",
+            "dice": "1d6+3",
             "type": "bludgeoning"
           }
         ],
@@ -3545,9 +3546,9 @@
     ],
     "traits": [
       {
-        "name": "Fire Breath (Recharge 5\u20136)",
+        "name": "Fire Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Fire Breath (Recharge 5\u20136). Dexterity Saving Throw: DC 13, each creature in a 15-foot Cone. Failure: 22 (4d10) Fire damage. Success: Half damage.",
+        "text": "Fire Breath (Recharge 5–6). Dexterity Saving Throw: DC 13, each creature in a 15-foot Cone. Failure: 22 (4d10) Fire damage. Success: Half damage.",
         "save": {
           "ability": "dex",
           "dc": 13
@@ -3712,9 +3713,9 @@
     ],
     "traits": [
       {
-        "name": "Fire Breath (Recharge 5\u20136)",
+        "name": "Fire Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Fire Breath (Recharge 5\u20136). Dexterity Saving Throw: DC 12, each creature in a 15-foot Cone. Failure: 17 (5d6) Fire damage. Success: Half damage. Hezrou",
+        "text": "Fire Breath (Recharge 5–6). Dexterity Saving Throw: DC 12, each creature in a 15-foot Cone. Failure: 17 (5d6) Fire damage. Success: Half damage. Hezrou",
         "save": {
           "ability": "dex",
           "dc": 12
@@ -4078,7 +4079,7 @@
         ]
       },
       {
-        "name": "Gore (Recharge 5\u20136)",
+        "name": "Gore (Recharge 5–6)",
         "id": "gore",
         "toHit": 6,
         "reachFt": 5,
@@ -4385,7 +4386,7 @@
   {
     "id": "monster:swarm-of-crawling-claws",
     "name": "Swarm of Crawling Claws",
-    "creatureType": "undead",
+    "creatureType": "swarm of tiny undead",
     "size": "medium",
     "footprint": 1,
     "ac": 12,
@@ -4848,8 +4849,8 @@
         "reachFt": 5,
         "damage": [
           {
-            "dice": "1",
-            "type": "bludgeoning"
+            "dice": "2d6+4",
+            "type": "piercing"
           }
         ],
         "effect": "11 (2d6 + 4)"
@@ -4862,9 +4863,9 @@
         "text": "Piercing damage. If the target is a Large or smaller creature, it has the Prone condition."
       },
       {
-        "name": "Cold Breath (Recharge 5\u20136)",
+        "name": "Cold Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Cold Breath (Recharge 5\u20136). Constitution Saving Throw: DC 12, each creature in a 15-foot Cone. Failure: 18 (4d8) Cold damage. Success: Half damage",
+        "text": "Cold Breath (Recharge 5–6). Constitution Saving Throw: DC 12, each creature in a 15-foot Cone. Failure: 18 (4d8) Cold damage. Success: Half damage",
         "save": {
           "ability": "con",
           "dc": 12
@@ -5779,9 +5780,9 @@
     ],
     "traits": [
       {
-        "name": "Fire Breath (Recharge 5\u20136)",
+        "name": "Fire Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Fire Breath (Recharge 5\u20136). Dexterity Saving Throw: DC 13, each creature in a 15-foot Cone. Failure: 24 (7d6) Fire damage. Success: Half damage.",
+        "text": "Fire Breath (Recharge 5–6). Dexterity Saving Throw: DC 13, each creature in a 15-foot Cone. Failure: 24 (7d6) Fire damage. Success: Half damage.",
         "save": {
           "ability": "dex",
           "dc": 13
@@ -6240,9 +6241,9 @@
     ],
     "traits": [
       {
-        "name": "Whirlwind (Recharge 4\u20136)",
+        "name": "Whirlwind (Recharge 4–6)",
         "kind": "action",
-        "text": "Whirlwind (Recharge 4\u20136). Strength Saving Throw: DC 13, one Medium or smaller creature in the elemental's space. Failure: 24 (4d10 + 2) Thunder damage, and the target is pushed up to 20 feet straight away from the elemental and has the Prone condition. Success: Half damage only",
+        "text": "Whirlwind (Recharge 4–6). Strength Saving Throw: DC 13, one Medium or smaller creature in the elemental's space. Failure: 24 (4d10 + 2) Thunder damage, and the target is pushed up to 20 feet straight away from the elemental and has the Prone condition. Success: Half damage only",
         "save": {
           "ability": "str",
           "dc": 13
@@ -6378,7 +6379,8 @@
     "srd": {
       "source": "SRD 5.2.1",
       "ref": "Monsters A-Z > Barbed Devil (p. 262)"
-    }
+    },
+    "passivePerception": 18
   },
   {
     "id": "monster:bulette",
@@ -6973,9 +6975,9 @@
     ],
     "traits": [
       {
-        "name": "Petrifying Breath (Recharge 5\u20136)",
+        "name": "Petrifying Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Petrifying Breath (Recharge 5\u20136). Constitution Saving Throw: DC 15, each creature in a 30-foot Cone. First Failure: The target has the Restrained condition and repeats the save at the end of its next turn if it is still Restrained, ending the effect on itself on a success. Second Failure: The target has the Petrified condition instead of the Restrained condition.",
+        "text": "Petrifying Breath (Recharge 5–6). Constitution Saving Throw: DC 15, each creature in a 30-foot Cone. First Failure: The target has the Restrained condition and repeats the save at the end of its next turn if it is still Restrained, ending the effect on itself on a success. Second Failure: The target has the Petrified condition instead of the Restrained condition.",
         "save": {
           "ability": "con",
           "dc": 15
@@ -7053,9 +7055,9 @@
     ],
     "traits": [
       {
-        "name": "Dragon's Breath (Recharge 5\u20136)",
+        "name": "Dragon's Breath (Recharge 5–6)",
         "kind": "action",
-        "text": "Dragon's Breath (Recharge 5\u20136). Dexterity Saving Throw: DC 14, each creature in a 30-foot Cone. Failure: 28 (8d6) damage of the type chosen for the Draconic Origin trait. Success: Half damage.",
+        "text": "Dragon's Breath (Recharge 5–6). Dexterity Saving Throw: DC 14, each creature in a 30-foot Cone. Failure: 28 (8d6) damage of the type chosen for the Draconic Origin trait. Success: Half damage.",
         "save": {
           "ability": "dex",
           "dc": 14
@@ -7845,8 +7847,8 @@
         "reachFt": 5,
         "damage": [
           {
-            "dice": "1",
-            "type": "bludgeoning"
+            "dice": "2d4+3",
+            "type": "slashing"
           }
         ],
         "effect": "8 (2d4 + 3)"
@@ -7969,9 +7971,9 @@
     ],
     "traits": [
       {
-        "name": "Whelm (Recharge 4\u20136)",
+        "name": "Whelm (Recharge 4–6)",
         "kind": "action",
-        "text": "Whelm (Recharge 4\u20136). Strength Saving Throw: DC 15, each creature in the elemental's space. Failure: 22 (4d8 + 4) Bludgeoning damage. If the target is a Large or smaller creature, it has the Grappled condition (escape DC 14). Until the grapple ends, the target has the Restrained condition, is suffocating unless it can breathe water, and takes 9 (2d8) Bludgeoning damage at the start of each of the elemental's turns. The elemental can grapple one Large creature or up to two Medium or smaller creatures at a time with Whelm. As an action, a creature within 5 feet of the elemental can pull a creature out of it by succeeding on a DC 14 Strength (Athletics) check. Success: Half damage only.",
+        "text": "Whelm (Recharge 4–6). Strength Saving Throw: DC 15, each creature in the elemental's space. Failure: 22 (4d8 + 4) Bludgeoning damage. If the target is a Large or smaller creature, it has the Grappled condition (escape DC 14). Until the grapple ends, the target has the Restrained condition, is suffocating unless it can breathe water, and takes 9 (2d8) Bludgeoning damage at the start of each of the elemental's turns. The elemental can grapple one Large creature or up to two Medium or smaller creatures at a time with Whelm. As an action, a creature within 5 feet of the elemental can pull a creature out of it by succeeding on a DC 14 Strength (Athletics) check. Success: Half damage only.",
         "save": {
           "ability": "str",
           "dc": 15
