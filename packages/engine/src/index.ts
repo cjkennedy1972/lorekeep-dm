@@ -19,3 +19,4 @@ export * from './combat/attack.js';
 export * from './combat/checks.js';
 export * from './combat/conditions.js';
 export * from './combat/spells.js';
+export * from './map/area.js';
