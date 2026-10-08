@@ -455,35 +455,17 @@
     },
     {
       "type": "RollEvent",
-      "entityId": "skeleton-3",
-      "spellId": "spell:fireball",
-      "kind": "save",
-      "breakdown": {
-        "expression": "1d20",
-        "dice": [
-          {
-            "sides": 20,
-            "value": 1,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "dex",
-            "value": 3
-          }
-        ],
-        "total": 4
-      }
-    },
-    {
-      "type": "RollEvent",
       "entityId": "pc-merel",
       "spellId": "spell:fireball",
       "kind": "damage",
       "breakdown": {
         "expression": "8d6",
         "dice": [
+          {
+            "sides": 6,
+            "value": 1,
+            "kept": true
+          },
           {
             "sides": 6,
             "value": 1,
@@ -518,30 +500,43 @@
             "sides": 6,
             "value": 1,
             "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 5,
-            "kept": true
           }
         ],
         "modifiers": [],
-        "total": 20
+        "total": 16
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "skeleton-3",
+      "spellId": "spell:fireball",
+      "kind": "save",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 14,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "dex",
+            "value": 3
+          }
+        ],
+        "total": 17
       }
     },
     {
       "type": "HpChanged",
       "entityId": "skeleton-3",
       "from": 13,
-      "to": 0,
-      "amount": 13,
+      "to": 5,
+      "amount": 8,
       "kind": "damage",
       "damageType": "fire"
-    },
-    {
-      "type": "EntityDown",
-      "entityId": "skeleton-3",
-      "outcome": "dead"
     },
     {
       "type": "RollEvent",
@@ -564,59 +559,6 @@
           }
         ],
         "total": 13
-      }
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "pc-merel",
-      "spellId": "spell:fireball",
-      "kind": "damage",
-      "breakdown": {
-        "expression": "8d6",
-        "dice": [
-          {
-            "sides": 6,
-            "value": 1,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 5,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 1,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 1,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 4,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 4,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 2,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 3,
-            "kept": true
-          }
-        ],
-        "modifiers": [],
-        "total": 21
       }
     },
     {
@@ -643,7 +585,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 19,
+            "value": 1,
             "kept": true
           }
         ],
@@ -653,60 +595,7 @@
             "value": -2
           }
         ],
-        "total": 17
-      }
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "pc-merel",
-      "spellId": "spell:fireball",
-      "kind": "damage",
-      "breakdown": {
-        "expression": "8d6",
-        "dice": [
-          {
-            "sides": 6,
-            "value": 1,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 4,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 6,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 3,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 3,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 5,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 4,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 5,
-            "kept": true
-          }
-        ],
-        "modifiers": [],
-        "total": 31
+        "total": -1
       }
     },
     {
@@ -1046,6 +935,83 @@
     },
     {
       "type": "TurnStarted",
+      "entityId": "skeleton-3",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-3",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-3",
+      "path": [
+        {
+          "x": 15,
+          "y": 2
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-3",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-3",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-3",
+      "path": [
+        {
+          "x": 16,
+          "y": 1
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-3",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-3",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "skeleton-3",
+      "path": [
+        {
+          "x": 17,
+          "y": 0
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "skeleton-3",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-3",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "skeleton-3"
+    },
+    {
+      "type": "TurnStarted",
       "entityId": "zombie-4",
       "round": 1
     },
@@ -1248,7 +1214,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 9,
+            "value": 16,
             "kept": true
           }
         ],
@@ -1258,12 +1224,43 @@
             "value": 5
           }
         ],
-        "total": 14
+        "total": 21
       },
       "mapFacts": {
         "distanceFt": 5,
         "cover": "none"
       }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "skeleton-5",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 4
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-garrick",
+      "from": 13,
+      "to": 9,
+      "damage": 4,
+      "damageType": "piercing"
     },
     {
       "type": "TurnEnded",
@@ -1290,7 +1287,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 1,
+            "value": 3,
             "kept": true
           }
         ],
@@ -1300,7 +1297,7 @@
             "value": 6
           }
         ],
-        "total": 7
+        "total": 9
       }
     },
     {
@@ -1327,7 +1324,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 7,
+            "value": 13,
             "kept": true
           }
         ],
@@ -1337,7 +1334,7 @@
             "value": 5
           }
         ],
-        "total": 12
+        "total": 18
       },
       "mapFacts": {
         "distanceFt": 5,
@@ -1345,8 +1342,53 @@
       }
     },
     {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 5,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 8
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "skeleton-5",
+      "from": 13,
+      "to": 5,
+      "damage": 8,
+      "damageType": "slashing"
+    },
+    {
       "type": "TurnEnded",
       "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "skeleton-3",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-3",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "skeleton-3"
     },
     {
       "type": "TurnStarted",
@@ -1439,276 +1481,6 @@
     {
       "type": "PolicyDecision",
       "entityId": "skeleton-5",
-      "kind": "attack"
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "skeleton-5",
-      "attackId": "melee",
-      "kind": "attack",
-      "breakdown": {
-        "expression": "1d20",
-        "dice": [
-          {
-            "sides": 20,
-            "value": 19,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "attack bonus",
-            "value": 5
-          }
-        ],
-        "total": 24
-      },
-      "mapFacts": {
-        "distanceFt": 5,
-        "cover": "none"
-      }
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "skeleton-5",
-      "attackId": "melee",
-      "kind": "damage",
-      "breakdown": {
-        "expression": "1d6+3",
-        "dice": [
-          {
-            "sides": 6,
-            "value": 6,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "expression",
-            "value": 3
-          }
-        ],
-        "total": 9
-      }
-    },
-    {
-      "type": "HpChanged",
-      "entityId": "pc-garrick",
-      "from": 13,
-      "to": 4,
-      "damage": 9,
-      "damageType": "piercing"
-    },
-    {
-      "type": "TurnEnded",
-      "entityId": "skeleton-5"
-    },
-    {
-      "type": "TurnStarted",
-      "entityId": "pc-merel",
-      "round": 3
-    },
-    {
-      "type": "SpellCast",
-      "entityId": "pc-merel",
-      "spellId": "spell:fire-bolt",
-      "slotLevel": 0
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "pc-merel",
-      "spellId": "spell:fire-bolt",
-      "kind": "attack",
-      "breakdown": {
-        "expression": "1d20",
-        "dice": [
-          {
-            "sides": 20,
-            "value": 2,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "spell attack",
-            "value": 6
-          }
-        ],
-        "total": 8
-      }
-    },
-    {
-      "type": "TurnEnded",
-      "entityId": "pc-merel"
-    },
-    {
-      "type": "TurnStarted",
-      "entityId": "pc-garrick",
-      "round": 3
-    },
-    {
-      "type": "PolicyDecision",
-      "entityId": "pc-garrick",
-      "kind": "attack"
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "pc-garrick",
-      "attackId": "melee",
-      "kind": "attack",
-      "breakdown": {
-        "expression": "1d20",
-        "dice": [
-          {
-            "sides": 20,
-            "value": 20,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "attack bonus",
-            "value": 5
-          }
-        ],
-        "total": 25
-      },
-      "mapFacts": {
-        "distanceFt": 5,
-        "cover": "none"
-      }
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "pc-garrick",
-      "attackId": "melee",
-      "kind": "damage",
-      "breakdown": {
-        "expression": "2d8+3",
-        "dice": [
-          {
-            "sides": 8,
-            "value": 1,
-            "kept": true
-          },
-          {
-            "sides": 8,
-            "value": 6,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "expression",
-            "value": 3
-          }
-        ],
-        "total": 10
-      }
-    },
-    {
-      "type": "HpChanged",
-      "entityId": "skeleton-5",
-      "from": 13,
-      "to": 3,
-      "damage": 10,
-      "damageType": "slashing"
-    },
-    {
-      "type": "TurnEnded",
-      "entityId": "pc-garrick"
-    },
-    {
-      "type": "TurnStarted",
-      "entityId": "zombie-4",
-      "round": 3
-    },
-    {
-      "type": "PolicyDecision",
-      "entityId": "zombie-4",
-      "kind": "approach"
-    },
-    {
-      "type": "EntityMoved",
-      "entityId": "zombie-4",
-      "path": [
-        {
-          "x": 18,
-          "y": 12
-        }
-      ],
-      "cost": 5
-    },
-    {
-      "type": "MovementSpent",
-      "entityId": "zombie-4",
-      "feet": 5
-    },
-    {
-      "type": "EntityMoved",
-      "entityId": "zombie-4",
-      "path": [
-        {
-          "x": 18,
-          "y": 13
-        }
-      ],
-      "cost": 5
-    },
-    {
-      "type": "MovementSpent",
-      "entityId": "zombie-4",
-      "feet": 5
-    },
-    {
-      "type": "EntityMoved",
-      "entityId": "zombie-4",
-      "path": [
-        {
-          "x": 18,
-          "y": 14
-        }
-      ],
-      "cost": 5
-    },
-    {
-      "type": "MovementSpent",
-      "entityId": "zombie-4",
-      "feet": 5
-    },
-    {
-      "type": "EntityMoved",
-      "entityId": "zombie-4",
-      "path": [
-        {
-          "x": 18,
-          "y": 15
-        }
-      ],
-      "cost": 5
-    },
-    {
-      "type": "MovementSpent",
-      "entityId": "zombie-4",
-      "feet": 5
-    },
-    {
-      "type": "PolicyDecision",
-      "entityId": "zombie-4",
-      "kind": "approach"
-    },
-    {
-      "type": "TurnEnded",
-      "entityId": "zombie-4"
-    },
-    {
-      "type": "TurnStarted",
-      "entityId": "skeleton-5",
-      "round": 4
-    },
-    {
-      "type": "PolicyDecision",
-      "entityId": "skeleton-5",
       "kind": "flee"
     },
     {
@@ -1757,7 +1529,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 19,
+            "value": 4,
             "kept": true
           }
         ],
@@ -1767,44 +1539,13 @@
             "value": 5
           }
         ],
-        "total": 24
+        "total": 9
       }
     },
     {
-      "type": "RollEvent",
-      "entityId": "pc-garrick",
-      "attackId": "opportunity",
-      "kind": "damage",
-      "breakdown": {
-        "expression": "1d8+3",
-        "dice": [
-          {
-            "sides": 8,
-            "value": 2,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "expression",
-            "value": 3
-          }
-        ],
-        "total": 5
-      }
-    },
-    {
-      "type": "HpChanged",
+      "type": "PolicyDecision",
       "entityId": "skeleton-5",
-      "from": 3,
-      "to": 0,
-      "damage": 5,
-      "damageType": "slashing"
-    },
-    {
-      "type": "EntityDown",
-      "entityId": "skeleton-5",
-      "outcome": "dead"
+      "kind": "hold"
     },
     {
       "type": "TurnEnded",
@@ -1813,7 +1554,7 @@
     {
       "type": "TurnStarted",
       "entityId": "pc-merel",
-      "round": 4
+      "round": 3
     },
     {
       "type": "SpellCast",
@@ -1831,7 +1572,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 18,
+            "value": 10,
             "kept": true
           }
         ],
@@ -1841,7 +1582,7 @@
             "value": 6
           }
         ],
-        "total": 24
+        "total": 16
       }
     },
     {
@@ -1854,7 +1595,7 @@
         "dice": [
           {
             "sides": 10,
-            "value": 1,
+            "value": 10,
             "kept": true
           },
           {
@@ -1864,17 +1605,22 @@
           }
         ],
         "modifiers": [],
-        "total": 2
+        "total": 11
       }
     },
     {
       "type": "HpChanged",
-      "entityId": "zombie-4",
-      "from": 15,
-      "to": 13,
-      "amount": 2,
+      "entityId": "skeleton-5",
+      "from": 5,
+      "to": 0,
+      "amount": 11,
       "kind": "damage",
       "damageType": "fire"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "skeleton-5",
+      "outcome": "dead"
     },
     {
       "type": "TurnEnded",
@@ -1883,7 +1629,7 @@
     {
       "type": "TurnStarted",
       "entityId": "pc-garrick",
-      "round": 4
+      "round": 3
     },
     {
       "type": "PolicyDecision",
@@ -1897,6 +1643,70 @@
         {
           "x": 18,
           "y": 16
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 18,
+          "y": 15
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 18,
+          "y": 14
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 18,
+          "y": 13
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 18,
+          "y": 12
         }
       ],
       "cost": 5
@@ -1921,7 +1731,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 7,
+            "value": 13,
             "kept": true
           }
         ],
@@ -1931,7 +1741,7 @@
             "value": 5
           }
         ],
-        "total": 12
+        "total": 18
       },
       "mapFacts": {
         "distanceFt": 5,
@@ -1948,7 +1758,7 @@
         "dice": [
           {
             "sides": 8,
-            "value": 7,
+            "value": 8,
             "kept": true
           }
         ],
@@ -1958,15 +1768,15 @@
             "value": 3
           }
         ],
-        "total": 10
+        "total": 11
       }
     },
     {
       "type": "HpChanged",
       "entityId": "zombie-4",
-      "from": 13,
-      "to": 3,
-      "damage": 10,
+      "from": 15,
+      "to": 4,
+      "damage": 11,
       "damageType": "slashing"
     },
     {
@@ -1975,8 +1785,22 @@
     },
     {
       "type": "TurnStarted",
+      "entityId": "skeleton-3",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "skeleton-3",
+      "kind": "hold"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "skeleton-3"
+    },
+    {
+      "type": "TurnStarted",
       "entityId": "zombie-4",
-      "round": 4
+      "round": 3
     },
     {
       "type": "PolicyDecision",
@@ -1988,8 +1812,8 @@
       "entityId": "zombie-4",
       "path": [
         {
-          "x": 19,
-          "y": 14
+          "x": 18,
+          "y": 10
         }
       ],
       "cost": 5
@@ -2013,7 +1837,7 @@
       "type": "ReactionResolved",
       "entityId": "pc-garrick",
       "used": true,
-      "reactionId": "pc-garrick->zombie-4@19,14"
+      "reactionId": "pc-garrick->zombie-4@18,10"
     },
     {
       "type": "ReactionSpent",
@@ -2029,7 +1853,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 2,
+            "value": 10,
             "kept": true
           }
         ],
@@ -2039,71 +1863,44 @@
             "value": 5
           }
         ],
+        "total": 15
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "opportunity",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
         "total": 7
       }
     },
     {
-      "type": "PolicyDecision",
+      "type": "HpChanged",
       "entityId": "zombie-4",
-      "kind": "flee"
+      "from": 4,
+      "to": 0,
+      "damage": 7,
+      "damageType": "slashing"
     },
     {
-      "type": "EntityMoved",
+      "type": "EntityDown",
       "entityId": "zombie-4",
-      "path": [
-        {
-          "x": 19,
-          "y": 13
-        }
-      ],
-      "cost": 5
-    },
-    {
-      "type": "MovementSpent",
-      "entityId": "zombie-4",
-      "feet": 5
-    },
-    {
-      "type": "EntityMoved",
-      "entityId": "zombie-4",
-      "path": [
-        {
-          "x": 20,
-          "y": 13
-        }
-      ],
-      "cost": 5
-    },
-    {
-      "type": "MovementSpent",
-      "entityId": "zombie-4",
-      "feet": 5
-    },
-    {
-      "type": "PolicyDecision",
-      "entityId": "zombie-4",
-      "kind": "flee"
-    },
-    {
-      "type": "EntityMoved",
-      "entityId": "zombie-4",
-      "path": [
-        {
-          "x": 21,
-          "y": 12
-        }
-      ],
-      "cost": 5
-    },
-    {
-      "type": "MovementSpent",
-      "entityId": "zombie-4",
-      "feet": 5
-    },
-    {
-      "type": "PolicyDecision",
-      "entityId": "zombie-4",
-      "kind": "flee"
+      "outcome": "dead"
     },
     {
       "type": "TurnEnded",
@@ -2112,7 +1909,7 @@
     {
       "type": "TurnStarted",
       "entityId": "pc-merel",
-      "round": 5
+      "round": 4
     },
     {
       "type": "SpellCast",
@@ -2130,7 +1927,7 @@
         "dice": [
           {
             "sides": 20,
-            "value": 5,
+            "value": 17,
             "kept": true
           }
         ],
@@ -2140,7 +1937,7 @@
             "value": 6
           }
         ],
-        "total": 11
+        "total": 23
       }
     },
     {
@@ -2153,31 +1950,31 @@
         "dice": [
           {
             "sides": 10,
-            "value": 1,
+            "value": 6,
             "kept": true
           },
           {
             "sides": 10,
-            "value": 7,
+            "value": 8,
             "kept": true
           }
         ],
         "modifiers": [],
-        "total": 8
+        "total": 14
       }
     },
     {
       "type": "HpChanged",
-      "entityId": "zombie-4",
-      "from": 3,
+      "entityId": "skeleton-3",
+      "from": 5,
       "to": 0,
-      "amount": 8,
+      "amount": 14,
       "kind": "damage",
       "damageType": "fire"
     },
     {
       "type": "EntityDown",
-      "entityId": "zombie-4",
+      "entityId": "skeleton-3",
       "outcome": "dead"
     },
     {
@@ -2244,10 +2041,10 @@
         "team": "pc",
         "pos": {
           "x": 18,
-          "y": 16
+          "y": 12
         },
         "size": 1,
-        "hp": 4,
+        "hp": 9,
         "maxHp": 13,
         "ac": 16,
         "speed": 30,
@@ -2345,8 +2142,8 @@
         "id": "skeleton-3",
         "team": "foe",
         "pos": {
-          "x": 14,
-          "y": 3
+          "x": 17,
+          "y": 0
         },
         "size": 1,
         "hp": 0,
@@ -2378,8 +2175,8 @@
         "id": "zombie-4",
         "team": "foe",
         "pos": {
-          "x": 21,
-          "y": 12
+          "x": 18,
+          "y": 10
         },
         "size": 1,
         "hp": 0,
@@ -2444,7 +2241,7 @@
     "doors": {
       "25,4|25,5": "open"
     },
-    "round": 5,
+    "round": 4,
     "outcome": "CombatEnded",
     "reason": "foes-defeated"
   }

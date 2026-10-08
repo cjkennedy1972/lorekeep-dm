@@ -150,35 +150,17 @@
     },
     {
       "type": "RollEvent",
-      "entityId": "goblin-1",
-      "spellId": "spell:burning-hands",
-      "kind": "save",
-      "breakdown": {
-        "expression": "1d20",
-        "dice": [
-          {
-            "sides": 20,
-            "value": 9,
-            "kept": true
-          }
-        ],
-        "modifiers": [
-          {
-            "label": "dex",
-            "value": 2
-          }
-        ],
-        "total": 11
-      }
-    },
-    {
-      "type": "RollEvent",
       "entityId": "pc-aria",
       "spellId": "spell:burning-hands",
       "kind": "damage",
       "breakdown": {
         "expression": "3d6",
         "dice": [
+          {
+            "sides": 6,
+            "value": 3,
+            "kept": true
+          },
           {
             "sides": 6,
             "value": 2,
@@ -188,15 +170,33 @@
             "sides": 6,
             "value": 5,
             "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 6,
-            "kept": true
           }
         ],
         "modifiers": [],
-        "total": 13
+        "total": 10
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "spellId": "spell:burning-hands",
+      "kind": "save",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 19,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "dex",
+            "value": 2
+          }
+        ],
+        "total": 21
       }
     },
     {
@@ -229,34 +229,6 @@
           }
         ],
         "total": 15
-      }
-    },
-    {
-      "type": "RollEvent",
-      "entityId": "pc-aria",
-      "spellId": "spell:burning-hands",
-      "kind": "damage",
-      "breakdown": {
-        "expression": "3d6",
-        "dice": [
-          {
-            "sides": 6,
-            "value": 3,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 5,
-            "kept": true
-          },
-          {
-            "sides": 6,
-            "value": 1,
-            "kept": true
-          }
-        ],
-        "modifiers": [],
-        "total": 9
       }
     },
     {
