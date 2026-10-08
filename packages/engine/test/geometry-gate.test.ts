@@ -107,7 +107,9 @@ for (let i = 0; i < 20; i++)
       const shape = shapes[i % shapes.length]!;
       const cells = areaCells(map(31, 31), { shape, size: 10 }, cell(15, 15));
       expect(cells.length).toBeGreaterThan(0);
-      expect(cells).toContainEqual(cell(15, 15));
+      if (shape === 'cone' || shape === 'line')
+        expect(cells).not.toContainEqual(cell(15, 15));
+      else expect(cells).toContainEqual(cell(15, 15));
       expect(cells).toEqual([...cells].sort((a, b) => a.y - b.y || a.x - b.x));
     },
   );

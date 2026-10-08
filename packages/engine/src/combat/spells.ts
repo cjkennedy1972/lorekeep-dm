@@ -290,7 +290,7 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
           abilityModifier(caster.abilities[ability]);
         const bonus =
           abilityModifier(victim.abilities[save.ability]) +
-          affected.saveBonus +
+          (save.ability === 'dex' ? affected.saveBonus : 0) +
           (victim.proficiencies?.saves?.includes(save.ability)
             ? (input.targetSaveProficiency ?? proficiencyBonus(caster.level))
             : 0);

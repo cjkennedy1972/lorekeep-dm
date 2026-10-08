@@ -109,13 +109,17 @@ export function movementNeighbors(
             break;
           }
           if (dx !== 0 && dy !== 0) {
+            const terrainAt = (cell: GridPos) =>
+              state.map.palette[grid[cell.y * state.map.w + cell.x] ?? 0];
             const horizontalSide = { x: previous.x + dx, y: previous.y };
             const verticalSide = { x: previous.x, y: previous.y + dy };
             if (
               blockedEdge(previous, horizontalSide) ||
               blockedEdge(previous, verticalSide) ||
               blockedEdge(horizontalSide, next) ||
-              blockedEdge(verticalSide, next)
+              blockedEdge(verticalSide, next) ||
+              terrainAt(horizontalSide)?.blocksMove ||
+              terrainAt(verticalSide)?.blocksMove
             )
               blocked = true;
           } else if (blockedEdge(previous, next)) {

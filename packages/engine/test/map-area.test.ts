@@ -114,14 +114,17 @@ describe('AoE template rasterization', () => {
     expect(count('cube', size)).toBe(expected);
   });
   test.each([
-    [5, 4],
-    [10, 9],
-    [15, 16],
-    [20, 25],
-    [25, 36],
-  ])('cone %i ft has documented cell count %i', (size, expected) => {
-    expect(count('cone', size)).toBe(expected);
-  });
+    [5, 1],
+    [10, 4],
+    [15, 7],
+    [20, 12],
+    [25, 17],
+  ])(
+    'cone %i ft has SRD p.179 width-derived cell count %i',
+    (size, expected) => {
+      expect(count('cone', size)).toBe(expected);
+    },
+  );
   test('sphere spreads diagonally around a single blocked corner lane', () => {
     const map = makeMap(5, 5, { blocked: [c(2, 1)] });
     expect(
@@ -154,8 +157,8 @@ describe('AoE template rasterization', () => {
       c(0, -1),
       c(1, -1),
     ].map((d) => count('cone', 25, d));
-    expect(counts).toEqual([36, 36, 36, 36, 36, 36, 36, 36]);
-    expect(new Set(counts).size).toBe(1);
+    expect(counts).toEqual([17, 21, 17, 21, 17, 21, 17, 21]);
+    expect(new Set(counts).size).toBe(2);
   });
   test('affectedEntities intersects large footprints once and reports cover bonus', () => {
     const map = makeMap(8, 4, { cover: [{ cell: c(5, 1), value: 'half' }] });
