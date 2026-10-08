@@ -338,6 +338,12 @@ importers:
 
   tests/e2e:
     dependencies:
+      '@game/rules-engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@game/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       '@game/server':
         specifier: workspace:*
         version: link:../../apps/server

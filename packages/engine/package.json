@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
-    "./catalog-node": "./dist/catalog-node.js"
+    "./catalog-node": "./dist/catalog-node.js",
+    "./scripted-node": "./dist/scripted-node.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

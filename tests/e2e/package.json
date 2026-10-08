@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "build": "node -e \"\"",
-    "pretest": "pnpm --filter @game/server build",
+    "pretest": "pnpm --filter @game/server build && pnpm --filter @game/rules-engine build",
     "test": "vitest run --no-file-parallelism",
+    "pretypecheck": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@game/rules-engine": "workspace:*",
+    "@game/schema": "workspace:*",
     "@game/server": "workspace:*",
     "pg": "8.16.3",
     "ws": "8.18.3"
