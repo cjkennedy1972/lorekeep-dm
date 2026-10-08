@@ -229,7 +229,7 @@ export function runCryptScenario(seed = 2901): ScriptedCombatLog {
       if (target) target.hp = e.to;
     }
   // The deterministic monster policy is exercised even when opponents are too distant for an action.
-  const monsters = entities.filter((e) => e.team !== 'pc');
+  const monsters = entities.filter((e) => e.team !== 'pc' && e.hp > 0);
   for (const monster of monsters) {
     const decision = monsterPolicy({ map, entities, monsterId: monster.id });
     if (decision.kind === 'attack') {

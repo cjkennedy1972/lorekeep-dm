@@ -88,6 +88,7 @@ function conditionsOf(state: MovementCommandState, entity: MovementCombatant) {
 }
 function canReact(state: MovementCommandState, entity: MovementCombatant) {
   return (
+    hpOf(state, entity) > 0 &&
     (state.reactions?.[entity.id] ??
       state.resources?.[entity.id]?.reaction ??
       entity.reaction ??
@@ -275,6 +276,24 @@ export function resolveReaction(
   const mover = state.entities.find((e) => e.id === pending.moverId)!;
   const pendingReactions = { ...state.pendingReactions };
   delete pendingReactions[reactionId];
+  // The mover already fell to an earlier opportunity attack: nothing left to react to, reaction unspent.
+  if (hpOf(state, mover) <= 0) {
+    for (const [id, p] of Object.entries(pendingReactions))
+      if (p.moverId === mover.id) delete pendingReactions[id];
+    return {
+      ok: true,
+      state: { ...state, pendingReactions },
+      events: [
+        {
+          type: 'ReactionResolved',
+          entityId: hostile.id,
+          used: false,
+          reactionId,
+        },
+      ],
+      pending: [],
+    };
+  }
   let current: MovementCommandState = {
     ...state,
     pendingReactions,

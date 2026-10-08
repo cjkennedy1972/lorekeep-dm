@@ -1,0 +1,1416 @@
+{
+  "scenario": "grapple-prone-v1",
+  "seed": 3124,
+  "events": [
+    {
+      "type": "CombatStarted",
+      "mapId": "crypt-room",
+      "combatants": [
+        {
+          "id": "pc-garrick",
+          "speed": 30
+        },
+        {
+          "id": "pc-wren",
+          "speed": 30
+        },
+        {
+          "id": "bandit-1",
+          "speed": 30
+        },
+        {
+          "id": "wolf-1",
+          "speed": 40
+        }
+      ],
+      "entities": [
+        {
+          "id": "pc-garrick",
+          "team": "pc",
+          "pos": {
+            "x": 9,
+            "y": 8
+          },
+          "size": 1,
+          "hp": 13,
+          "maxHp": 13,
+          "ac": 16,
+          "speed": 30,
+          "abilities": {
+            "str": 16,
+            "dex": 12,
+            "con": 14,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 5,
+          "damage": "1d8+3",
+          "damageType": "slashing",
+          "saveProficiencies": [
+            "str",
+            "con"
+          ],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "pc-wren",
+          "team": "pc",
+          "pos": {
+            "x": 6,
+            "y": 9
+          },
+          "size": 1,
+          "hp": 15,
+          "maxHp": 15,
+          "ac": 14,
+          "speed": 30,
+          "abilities": {
+            "str": 10,
+            "dex": 16,
+            "con": 12,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 5,
+          "damage": "1d6+3",
+          "damageType": "piercing",
+          "range": {
+            "normalFt": 80,
+            "longFt": 320
+          },
+          "saveProficiencies": [
+            "str",
+            "dex"
+          ],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "bandit-1",
+          "team": "foe",
+          "pos": {
+            "x": 9,
+            "y": 11
+          },
+          "size": 1,
+          "hp": 11,
+          "maxHp": 11,
+          "ac": 12,
+          "speed": 30,
+          "abilities": {
+            "str": 11,
+            "dex": 12,
+            "con": 12,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 3,
+          "damage": "1d6+1",
+          "damageType": "slashing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "wolf-1",
+          "team": "foe",
+          "pos": {
+            "x": 6,
+            "y": 12
+          },
+          "size": 1,
+          "hp": 11,
+          "maxHp": 11,
+          "ac": 12,
+          "speed": 40,
+          "abilities": {
+            "str": 14,
+            "dex": 15,
+            "con": 12,
+            "int": 3,
+            "wis": 12,
+            "cha": 6
+          },
+          "attackBonus": 4,
+          "damage": "1d6+2",
+          "damageType": "piercing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        }
+      ],
+      "doors": {
+        "9,0|9,1": "closed"
+      }
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-garrick",
+      "total": 17
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-wren",
+      "total": 9
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "bandit-1",
+      "total": 7
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "wolf-1",
+      "total": 20
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "wolf-1",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "wolf-1",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "wolf-1",
+      "path": [
+        {
+          "x": 5,
+          "y": 11
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "wolf-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "wolf-1",
+      "path": [
+        {
+          "x": 5,
+          "y": 10
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "wolf-1",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "wolf-1",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 2,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 6
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 8,
+          "y": 9
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 10
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 8,
+          "y": 10
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 10,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 15
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "bandit-1",
+      "from": 11,
+      "to": 4,
+      "damage": 7,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 9,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 14
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 4
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "wolf-1",
+      "from": 11,
+      "to": 7,
+      "damage": 4,
+      "damageType": "piercing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "bandit-1",
+      "round": 1
+    },
+    {
+      "type": "ContestResolved",
+      "attackerId": "bandit-1",
+      "targetId": "pc-garrick",
+      "condition": "grappled",
+      "attackerTotal": 9,
+      "targetTotal": 18,
+      "winner": "b"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "bandit-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "wolf-1",
+      "round": 2
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 15,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 19
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 3
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-wren",
+      "from": 15,
+      "to": 12,
+      "damage": 3,
+      "damageType": "piercing"
+    },
+    {
+      "type": "ConditionApplied",
+      "entityId": "pc-wren",
+      "condition": {
+        "id": "prone",
+        "source": "wolf-1"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 8
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 2
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 6,
+          "y": 8
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 10
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "pc-wren",
+      "attackerId": "wolf-1"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "wolf-1",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "wolf-1",
+      "used": true,
+      "reactionId": "wolf-1->pc-wren@6,8"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 10
+      }
+    },
+    {
+      "type": "ConditionRemoved",
+      "entityId": "pc-wren",
+      "id": "prone"
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 15
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 5,
+          "y": 9
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 8
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "bandit-1",
+      "round": 2
+    },
+    {
+      "type": "ContestResolved",
+      "attackerId": "bandit-1",
+      "targetId": "pc-garrick",
+      "condition": "grappled",
+      "attackerTotal": 18,
+      "targetTotal": 13,
+      "winner": "a"
+    },
+    {
+      "type": "ConditionApplied",
+      "entityId": "pc-garrick",
+      "condition": {
+        "id": "grappled",
+        "source": "bandit-1"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "bandit-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "wolf-1",
+      "round": 3
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 16,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 20
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 8
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-wren",
+      "from": 12,
+      "to": 4,
+      "damage": 8,
+      "damageType": "piercing"
+    },
+    {
+      "type": "ConditionApplied",
+      "entityId": "pc-wren",
+      "condition": {
+        "id": "prone",
+        "source": "wolf-1"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 3
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 30
+    },
+    {
+      "type": "MoveRefused",
+      "entityId": "pc-garrick",
+      "to": {
+        "x": 8,
+        "y": 9
+      },
+      "reason": "insufficient_movement"
+    },
+    {
+      "type": "ContestResolved",
+      "attackerId": "pc-garrick",
+      "targetId": "bandit-1",
+      "condition": "escape-grapple",
+      "attackerTotal": 14,
+      "targetTotal": 10,
+      "winner": "a"
+    },
+    {
+      "type": "ConditionRemoved",
+      "entityId": "pc-garrick",
+      "id": "grappled"
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 6
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 3
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 5,
+          "y": 8
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 10
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "pc-wren",
+      "attackerId": "wolf-1"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "wolf-1",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "wolf-1",
+      "used": true,
+      "reactionId": "wolf-1->pc-wren@5,8"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 9,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 13
+      }
+    },
+    {
+      "type": "ConditionRemoved",
+      "entityId": "pc-wren",
+      "id": "prone"
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 15
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-wren",
+      "path": [
+        {
+          "x": 4,
+          "y": 9
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-wren",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 11,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 16
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 1,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 4
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "wolf-1",
+      "from": 7,
+      "to": 3,
+      "damage": 4,
+      "damageType": "piercing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "bandit-1",
+      "round": 3
+    },
+    {
+      "type": "ContestResolved",
+      "attackerId": "bandit-1",
+      "targetId": "pc-garrick",
+      "condition": "grappled",
+      "attackerTotal": 9,
+      "targetTotal": 21,
+      "winner": "b"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "bandit-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "wolf-1",
+      "round": 4
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 7,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 11
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 10,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 15
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "bandit-1",
+      "from": 4,
+      "to": 0,
+      "damage": 7,
+      "damageType": "slashing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "bandit-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-wren",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-wren",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 19,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 24
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-wren",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+3",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 6,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 9
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "wolf-1",
+      "from": 3,
+      "to": 0,
+      "damage": 9,
+      "damageType": "piercing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "wolf-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-wren"
+    },
+    {
+      "type": "CombatEnded",
+      "reason": "foes-defeated"
+    }
+  ],
+  "finalState": {
+    "mapId": "crypt-room",
+    "entities": [
+      {
+        "id": "pc-garrick",
+        "team": "pc",
+        "pos": {
+          "x": 8,
+          "y": 10
+        },
+        "size": 1,
+        "hp": 13,
+        "maxHp": 13,
+        "ac": 16,
+        "speed": 30,
+        "abilities": {
+          "str": 16,
+          "dex": 12,
+          "con": 14,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 5,
+        "damage": "1d8+3",
+        "damageType": "slashing",
+        "saveProficiencies": [
+          "str",
+          "con"
+        ],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "pc-wren",
+        "team": "pc",
+        "pos": {
+          "x": 4,
+          "y": 9
+        },
+        "size": 1,
+        "hp": 4,
+        "maxHp": 15,
+        "ac": 14,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 16,
+          "con": 12,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 5,
+        "damage": "1d6+3",
+        "damageType": "piercing",
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "saveProficiencies": [
+          "str",
+          "dex"
+        ],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "bandit-1",
+        "team": "foe",
+        "pos": {
+          "x": 9,
+          "y": 11
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 11,
+        "ac": 12,
+        "speed": 30,
+        "abilities": {
+          "str": 11,
+          "dex": 12,
+          "con": 12,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 3,
+        "damage": "1d6+1",
+        "damageType": "slashing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "wolf-1",
+        "team": "foe",
+        "pos": {
+          "x": 5,
+          "y": 10
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 11,
+        "ac": 12,
+        "speed": 40,
+        "abilities": {
+          "str": 14,
+          "dex": 15,
+          "con": 12,
+          "int": 3,
+          "wis": 12,
+          "cha": 6
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "damageType": "piercing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      }
+    ],
+    "doors": {
+      "9,0|9,1": "closed"
+    },
+    "round": 4,
+    "outcome": "CombatEnded",
+    "reason": "foes-defeated"
+  }
+}

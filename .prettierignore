@@ -5,3 +5,4 @@ node_modules/
 dist/
 coverage/
 packages/engine/test/golden/scripted-combat.json
+tests/e2e/golden/

@@ -1,0 +1,1957 @@
+{
+  "scenario": "concentration-v1",
+  "seed": 3106,
+  "events": [
+    {
+      "type": "CombatStarted",
+      "mapId": "crypt-room",
+      "combatants": [
+        {
+          "id": "pc-merel",
+          "speed": 30
+        },
+        {
+          "id": "pc-garrick",
+          "speed": 30
+        },
+        {
+          "id": "goblin-1",
+          "speed": 30
+        },
+        {
+          "id": "goblin-2",
+          "speed": 30
+        },
+        {
+          "id": "wolf-1",
+          "speed": 40
+        }
+      ],
+      "entities": [
+        {
+          "id": "pc-merel",
+          "team": "pc",
+          "pos": {
+            "x": 9,
+            "y": 4
+          },
+          "size": 1,
+          "hp": 16,
+          "maxHp": 16,
+          "ac": 12,
+          "speed": 30,
+          "abilities": {
+            "str": 10,
+            "dex": 14,
+            "con": 14,
+            "int": 16,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 2,
+          "damage": "1d4",
+          "damageType": "bludgeoning",
+          "saveProficiencies": [
+            "int",
+            "wis"
+          ],
+          "caster": {
+            "classId": "class:wizard",
+            "level": 3,
+            "slots": {
+              "1": 4,
+              "2": 2
+            }
+          },
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "pc-garrick",
+          "team": "pc",
+          "pos": {
+            "x": 7,
+            "y": 5
+          },
+          "size": 1,
+          "hp": 13,
+          "maxHp": 13,
+          "ac": 16,
+          "speed": 30,
+          "abilities": {
+            "str": 16,
+            "dex": 12,
+            "con": 14,
+            "int": 10,
+            "wis": 10,
+            "cha": 10
+          },
+          "attackBonus": 5,
+          "damage": "1d8+3",
+          "damageType": "slashing",
+          "saveProficiencies": [
+            "str",
+            "con"
+          ],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "goblin-1",
+          "team": "foe",
+          "pos": {
+            "x": 9,
+            "y": 10
+          },
+          "size": 1,
+          "hp": 10,
+          "maxHp": 10,
+          "ac": 15,
+          "speed": 30,
+          "abilities": {
+            "str": 8,
+            "dex": 15,
+            "con": 10,
+            "int": 10,
+            "wis": 8,
+            "cha": 8
+          },
+          "attackBonus": 4,
+          "damage": "1d6+2",
+          "damageType": "slashing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "goblin-2",
+          "team": "foe",
+          "pos": {
+            "x": 11,
+            "y": 6
+          },
+          "size": 1,
+          "hp": 10,
+          "maxHp": 10,
+          "ac": 15,
+          "speed": 30,
+          "abilities": {
+            "str": 8,
+            "dex": 15,
+            "con": 10,
+            "int": 10,
+            "wis": 8,
+            "cha": 8
+          },
+          "attackBonus": 4,
+          "damage": "1d6+2",
+          "damageType": "slashing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        },
+        {
+          "id": "wolf-1",
+          "team": "foe",
+          "pos": {
+            "x": 14,
+            "y": 9
+          },
+          "size": 1,
+          "hp": 11,
+          "maxHp": 11,
+          "ac": 12,
+          "speed": 40,
+          "abilities": {
+            "str": 14,
+            "dex": 15,
+            "con": 12,
+            "int": 3,
+            "wis": 12,
+            "cha": 6
+          },
+          "attackBonus": 4,
+          "damage": "1d6+2",
+          "damageType": "piercing",
+          "saveProficiencies": [],
+          "slotsUsed": {},
+          "conditions": [],
+          "status": "up",
+          "death": {
+            "successes": 0,
+            "failures": 0
+          },
+          "concentration": null
+        }
+      ],
+      "doors": {
+        "9,0|9,1": "closed"
+      }
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-merel",
+      "total": 11
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "pc-garrick",
+      "total": 10
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "goblin-1",
+      "total": 9
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "goblin-2",
+      "total": 9
+    },
+    {
+      "type": "InitiativeRolled",
+      "entityId": "wolf-1",
+      "total": 11
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-merel",
+      "round": 1
+    },
+    {
+      "type": "SlotSpent",
+      "entityId": "pc-merel",
+      "slotLevel": 1
+    },
+    {
+      "type": "SpellCast",
+      "entityId": "pc-merel",
+      "spellId": "spell:hideous-laughter",
+      "slotLevel": 1
+    },
+    {
+      "type": "ConcentrationStarted",
+      "entityId": "pc-merel",
+      "spellId": "spell:hideous-laughter"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "spellId": "spell:hideous-laughter",
+      "kind": "save",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 20,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "wis",
+            "value": -1
+          }
+        ],
+        "total": 19
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "wolf-1",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "wolf-1",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "wolf-1",
+      "path": [
+        {
+          "x": 13,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "wolf-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "wolf-1",
+      "path": [
+        {
+          "x": 12,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "wolf-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "wolf-1",
+      "path": [
+        {
+          "x": 12,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "wolf-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "wolf-1",
+      "path": [
+        {
+          "x": 11,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "wolf-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "wolf-1",
+      "path": [
+        {
+          "x": 10,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "wolf-1",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "wolf-1",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 10,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 14
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-merel",
+      "from": 16,
+      "to": 10,
+      "damage": 6,
+      "damageType": "piercing"
+    },
+    {
+      "type": "ConcentrationChecked",
+      "entityId": "pc-merel",
+      "damage": 6,
+      "success": false
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-merel",
+      "spellId": "spell:hideous-laughter",
+      "kind": "save",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "constitution",
+            "value": 2
+          }
+        ],
+        "total": 5
+      }
+    },
+    {
+      "type": "ConcentrationDropped",
+      "entityId": "pc-merel",
+      "spellId": "spell:hideous-laughter"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 8,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 9,
+          "y": 3
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 5,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 10
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-1",
+      "path": [
+        {
+          "x": 8,
+          "y": 9
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-1",
+      "feet": 10
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-1",
+      "path": [
+        {
+          "x": 7,
+          "y": 8
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-1",
+      "path": [
+        {
+          "x": 6,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-1",
+      "path": [
+        {
+          "x": 7,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-1",
+      "feet": 5
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-1",
+      "path": [
+        {
+          "x": 8,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-1",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 8
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 1
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 10,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 10,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 14
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-merel",
+      "from": 10,
+      "to": 4,
+      "damage": 6,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-merel",
+      "round": 2
+    },
+    {
+      "type": "SlotSpent",
+      "entityId": "pc-merel",
+      "slotLevel": 1
+    },
+    {
+      "type": "SpellCast",
+      "entityId": "pc-merel",
+      "spellId": "spell:hideous-laughter",
+      "slotLevel": 1
+    },
+    {
+      "type": "ConcentrationStarted",
+      "entityId": "pc-merel",
+      "spellId": "spell:hideous-laughter"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-1",
+      "spellId": "spell:hideous-laughter",
+      "kind": "save",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "wis",
+            "value": -1
+          }
+        ],
+        "total": 2
+      }
+    },
+    {
+      "type": "ConditionApplied",
+      "entityId": "goblin-1",
+      "condition": {
+        "id": "incapacitated",
+        "source": "spell:hideous-laughter@pc-merel"
+      }
+    },
+    {
+      "type": "ConditionApplied",
+      "entityId": "goblin-1",
+      "condition": {
+        "id": "prone",
+        "source": "spell:hideous-laughter@pc-merel"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "wolf-1",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "wolf-1",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "wolf-1",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 8,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 12
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "wolf-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 20,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 25
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "2d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 8,
+            "kept": true
+          },
+          {
+            "sides": 8,
+            "value": 8,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 19
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "wolf-1",
+      "from": 11,
+      "to": 0,
+      "damage": 19,
+      "damageType": "slashing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "wolf-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 2
+    },
+    {
+      "type": "ActionSpent",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "BonusActionSpent",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "ActionsSkipped",
+      "entityId": "goblin-1",
+      "reason": "incapacitated creatures cannot take actions or reactions"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 2
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 17,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 21
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 6
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-merel",
+      "from": 4,
+      "to": 0,
+      "damage": 6,
+      "damageType": "slashing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "pc-merel",
+      "outcome": "unconscious"
+    },
+    {
+      "type": "ConditionApplied",
+      "entityId": "pc-merel",
+      "condition": {
+        "id": "unconscious"
+      }
+    },
+    {
+      "type": "ConcentrationDropped",
+      "entityId": "pc-merel",
+      "spellId": "spell:hideous-laughter"
+    },
+    {
+      "type": "ConditionRemoved",
+      "entityId": "goblin-1",
+      "id": "incapacitated"
+    },
+    {
+      "type": "ConditionRemoved",
+      "entityId": "goblin-1",
+      "id": "prone"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-merel",
+      "round": 3
+    },
+    {
+      "type": "ActionSpent",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "BonusActionSpent",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "ActionsSkipped",
+      "entityId": "pc-merel",
+      "reason": "unconscious creatures cannot take actions or reactions"
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-merel",
+      "feet": 30
+    },
+    {
+      "type": "DeathSave",
+      "entityId": "pc-merel",
+      "die": 17,
+      "successes": 1,
+      "failures": 0,
+      "stable": false,
+      "dead": false,
+      "revived": false
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "pc-garrick",
+      "path": [
+        {
+          "x": 8,
+          "y": 4
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-garrick",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 13,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 18
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 2,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 5
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-1",
+      "from": 10,
+      "to": 5,
+      "damage": 5,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-1",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-1",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-1",
+      "path": [
+        {
+          "x": 8,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-1",
+      "feet": 5
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "goblin-1",
+      "attackerId": "pc-garrick"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "pc-garrick",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "pc-garrick",
+      "used": true,
+      "reactionId": "pc-garrick->goblin-1@8,6"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 12,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 17
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "opportunity",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 5,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 8
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-1",
+      "from": 5,
+      "to": 0,
+      "damage": 8,
+      "damageType": "slashing"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "goblin-1",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-1"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 3
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "approach"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 9,
+          "y": 5
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 12,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 4
+          }
+        ],
+        "total": 16
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "goblin-2",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d6+2",
+        "dice": [
+          {
+            "sides": 6,
+            "value": 5,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 2
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-garrick",
+      "from": 13,
+      "to": 6,
+      "damage": 7,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-merel",
+      "round": 4
+    },
+    {
+      "type": "ActionSpent",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "BonusActionSpent",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "ActionsSkipped",
+      "entityId": "pc-merel",
+      "reason": "unconscious creatures cannot take actions or reactions"
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "pc-merel",
+      "feet": 30
+    },
+    {
+      "type": "DeathSave",
+      "entityId": "pc-merel",
+      "die": 20,
+      "successes": 0,
+      "failures": 0,
+      "stable": false,
+      "dead": false,
+      "revived": true
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "pc-merel",
+      "from": 0,
+      "to": 1,
+      "amount": 1
+    },
+    {
+      "type": "ConditionRemoved",
+      "entityId": "pc-merel",
+      "id": "unconscious"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-garrick",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "pc-garrick",
+      "kind": "attack"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 18,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 23
+      },
+      "mapFacts": {
+        "distanceFt": 5,
+        "cover": "none"
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "melee",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d8+3",
+        "dice": [
+          {
+            "sides": 8,
+            "value": 4,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "expression",
+            "value": 3
+          }
+        ],
+        "total": 7
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-2",
+      "from": 10,
+      "to": 3,
+      "damage": 7,
+      "damageType": "slashing"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "goblin-2",
+      "round": 4
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 9,
+          "y": 6
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "OpportunityTriggered",
+      "moverId": "goblin-2",
+      "attackerId": "pc-garrick"
+    },
+    {
+      "type": "ReactionAvailable",
+      "entityId": "pc-garrick",
+      "trigger": "opportunityAttack"
+    },
+    {
+      "type": "ReactionResolved",
+      "entityId": "pc-garrick",
+      "used": true,
+      "reactionId": "pc-garrick->goblin-2@9,6"
+    },
+    {
+      "type": "ReactionSpent",
+      "entityId": "pc-garrick"
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-garrick",
+      "attackId": "opportunity",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 8,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "attack bonus",
+            "value": 5
+          }
+        ],
+        "total": 13
+      }
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 9,
+          "y": 7
+        }
+      ],
+      "cost": 5
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 5
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 9,
+          "y": 8
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "flee"
+    },
+    {
+      "type": "EntityMoved",
+      "entityId": "goblin-2",
+      "path": [
+        {
+          "x": 9,
+          "y": 9
+        }
+      ],
+      "cost": 10
+    },
+    {
+      "type": "MovementSpent",
+      "entityId": "goblin-2",
+      "feet": 10
+    },
+    {
+      "type": "PolicyDecision",
+      "entityId": "goblin-2",
+      "kind": "flee"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "goblin-2"
+    },
+    {
+      "type": "TurnStarted",
+      "entityId": "pc-merel",
+      "round": 5
+    },
+    {
+      "type": "SpellCast",
+      "entityId": "pc-merel",
+      "spellId": "spell:fire-bolt",
+      "slotLevel": 0
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-merel",
+      "spellId": "spell:fire-bolt",
+      "kind": "attack",
+      "breakdown": {
+        "expression": "1d20",
+        "dice": [
+          {
+            "sides": 20,
+            "value": 11,
+            "kept": true
+          }
+        ],
+        "modifiers": [
+          {
+            "label": "spell attack",
+            "value": 5
+          }
+        ],
+        "total": 16
+      }
+    },
+    {
+      "type": "RollEvent",
+      "entityId": "pc-merel",
+      "spellId": "spell:fire-bolt",
+      "kind": "damage",
+      "breakdown": {
+        "expression": "1d10",
+        "dice": [
+          {
+            "sides": 10,
+            "value": 3,
+            "kept": true
+          }
+        ],
+        "modifiers": [],
+        "total": 3
+      }
+    },
+    {
+      "type": "HpChanged",
+      "entityId": "goblin-2",
+      "from": 3,
+      "to": 0,
+      "amount": 3,
+      "kind": "damage",
+      "damageType": "fire"
+    },
+    {
+      "type": "EntityDown",
+      "entityId": "goblin-2",
+      "outcome": "dead"
+    },
+    {
+      "type": "TurnEnded",
+      "entityId": "pc-merel"
+    },
+    {
+      "type": "CombatEnded",
+      "reason": "foes-defeated"
+    }
+  ],
+  "finalState": {
+    "mapId": "crypt-room",
+    "entities": [
+      {
+        "id": "pc-merel",
+        "team": "pc",
+        "pos": {
+          "x": 9,
+          "y": 4
+        },
+        "size": 1,
+        "hp": 1,
+        "maxHp": 16,
+        "ac": 12,
+        "speed": 30,
+        "abilities": {
+          "str": 10,
+          "dex": 14,
+          "con": 14,
+          "int": 16,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 2,
+        "damage": "1d4",
+        "damageType": "bludgeoning",
+        "saveProficiencies": [
+          "int",
+          "wis"
+        ],
+        "caster": {
+          "classId": "class:wizard",
+          "level": 3,
+          "slots": {
+            "1": 4,
+            "2": 2
+          }
+        },
+        "slotsUsed": {
+          "1": 2
+        },
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "pc-garrick",
+        "team": "pc",
+        "pos": {
+          "x": 8,
+          "y": 4
+        },
+        "size": 1,
+        "hp": 6,
+        "maxHp": 13,
+        "ac": 16,
+        "speed": 30,
+        "abilities": {
+          "str": 16,
+          "dex": 12,
+          "con": 14,
+          "int": 10,
+          "wis": 10,
+          "cha": 10
+        },
+        "attackBonus": 5,
+        "damage": "1d8+3",
+        "damageType": "slashing",
+        "saveProficiencies": [
+          "str",
+          "con"
+        ],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "up",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "goblin-1",
+        "team": "foe",
+        "pos": {
+          "x": 8,
+          "y": 6
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 10,
+        "ac": 15,
+        "speed": 30,
+        "abilities": {
+          "str": 8,
+          "dex": 15,
+          "con": 10,
+          "int": 10,
+          "wis": 8,
+          "cha": 8
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "damageType": "slashing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "goblin-2",
+        "team": "foe",
+        "pos": {
+          "x": 9,
+          "y": 9
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 10,
+        "ac": 15,
+        "speed": 30,
+        "abilities": {
+          "str": 8,
+          "dex": 15,
+          "con": 10,
+          "int": 10,
+          "wis": 8,
+          "cha": 8
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "damageType": "slashing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      },
+      {
+        "id": "wolf-1",
+        "team": "foe",
+        "pos": {
+          "x": 10,
+          "y": 4
+        },
+        "size": 1,
+        "hp": 0,
+        "maxHp": 11,
+        "ac": 12,
+        "speed": 40,
+        "abilities": {
+          "str": 14,
+          "dex": 15,
+          "con": 12,
+          "int": 3,
+          "wis": 12,
+          "cha": 6
+        },
+        "attackBonus": 4,
+        "damage": "1d6+2",
+        "damageType": "piercing",
+        "saveProficiencies": [],
+        "slotsUsed": {},
+        "conditions": [],
+        "status": "dead",
+        "death": {
+          "successes": 0,
+          "failures": 0
+        },
+        "concentration": null
+      }
+    ],
+    "doors": {
+      "9,0|9,1": "closed"
+    },
+    "round": 5,
+    "outcome": "CombatEnded",
+    "reason": "foes-defeated"
+  }
+}
