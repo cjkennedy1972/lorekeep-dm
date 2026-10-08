@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OpenAICompatibleAdapter } from '../../src/llm/dialects/openai.js';
+import { createEgressGuard } from '../../src/llm/egress.js';
+import { Secret } from '../../src/llm/secret.js';
 import {
   RecordedLlmAdapter,
   fixtureModeFromEnvironment,
@@ -44,7 +46,9 @@ const fakeAdapter = () => {
   return new OpenAICompatibleAdapter({
     baseUrl: server.baseUrl,
     model: 'fixture-model',
-    apiKey: 'secret-key',
+    apiKey: new Secret('secret-key'),
+    // the fake server listens on loopback: allowed only via the operator allowlist (M2-19)
+    egress: createEgressGuard({ allowLocalHosts: ['127.0.0.1', 'localhost'] }),
   });
 };
 
