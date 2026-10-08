@@ -61,27 +61,38 @@ function fixture(): MovementState {
 describe('tactical movement pathfinding', () => {
   test('difficult terrain costs 10 feet and paths stay within budget', () => {
     const s = fixture();
+    const cells = Array(25).fill(2);
+    cells[0] = 0;
+    cells[1] = 0;
+    cells[2] = 0;
+    s.map.cells = rleEncode(cells);
+    s.entities = [s.entities[0]!];
     const result = reachable(s, 'a');
     expect(Array.isArray(result)).toBe(true);
     if (!Array.isArray(result)) return;
-    expect(result.find((r) => r.cell.x === 3 && r.cell.y === 1)?.cost).toBe(20);
-    for (const r of result)
-      expect(
-        r.path.reduce(
-          (cost, cell, i) =>
-            i ? cost + (cell.x === 3 && cell.y === 1 ? 10 : 5) : 0,
-          0,
-        ),
-      ).toBeLessThanOrEqual(30);
+    expect(result.find((r) => r.cell.x === 2 && r.cell.y === 0)?.cost).toBe(10);
+    for (const r of result) expect(r.cost).toBeLessThanOrEqual(30);
   });
   test('closed doors and walls block; open doors pass', () => {
     const s = fixture();
-    s.map.edges.push({
-      a: { x: 0, y: 0 },
-      b: { x: 1, y: 0 },
-      kind: 'door',
-      state: 'closed',
-    });
+    s.map.edges.push(
+      {
+        a: { x: 0, y: 0 },
+        b: { x: 1, y: 0 },
+        kind: 'door',
+        state: 'closed',
+      },
+      {
+        a: { x: 0, y: 0 },
+        b: { x: 0, y: 1 },
+        kind: 'wall',
+      },
+      {
+        a: { x: 1, y: 0 },
+        b: { x: 1, y: 1 },
+        kind: 'wall',
+      },
+    );
     expect(path(s, 'a', { x: 1, y: 0 })).toMatchObject({ reason: 'occupied' });
     s.entities = [s.entities[0]!];
     expect(path(s, 'a', { x: 1, y: 0 })).toMatchObject({

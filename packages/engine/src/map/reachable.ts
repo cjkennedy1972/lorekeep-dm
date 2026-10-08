@@ -57,6 +57,20 @@ export function movementNeighbors(
 ): GridPos[] {
   const grid = terrainGrid(state.map),
     result: GridPos[] = [];
+  const blockedEdge = (a: GridPos, b: GridPos) =>
+    state.map.edges.some(
+      (edge) =>
+        ((edge.a.x === a.x &&
+          edge.a.y === a.y &&
+          edge.b.x === b.x &&
+          edge.b.y === b.y) ||
+          (edge.b.x === a.x &&
+            edge.b.y === a.y &&
+            edge.a.x === b.x &&
+            edge.a.y === b.y)) &&
+        (edge.kind === 'wall' ||
+          (edge.kind === 'door' && edge.state !== 'open')),
+    );
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dy) continue;
@@ -71,45 +85,48 @@ export function movementNeighbors(
         continue;
       let blocked = false;
       for (let fy = 0; fy < entity.size && !blocked; fy++)
-        for (let fx = 0; fx < entity.size; fx++) {
-          const p = { x: x + fx, y: y + fy };
+        for (let fx = 0; fx < entity.size && !blocked; fx++) {
+          const previous = { x: from.x + fx, y: from.y + fy };
+          const next = { x: x + fx, y: y + fy };
           if (
-            state.map.palette[grid[p.y * state.map.w + p.x] ?? 0]?.blocksMove
+            state.map.palette[grid[next.y * state.map.w + next.x] ?? 0]
+              ?.blocksMove
           ) {
             blocked = true;
             break;
           }
           const hostile = state.entities.find(
-            (o) =>
-              o.id !== entity.id &&
-              o.team !== entity.team &&
-              p.x >= o.pos.x &&
-              p.x < o.pos.x + o.size &&
-              p.y >= o.pos.y &&
-              p.y < o.pos.y + o.size,
+            (other) =>
+              other.id !== entity.id &&
+              other.team !== entity.team &&
+              next.x >= other.pos.x &&
+              next.x < other.pos.x + other.size &&
+              next.y >= other.pos.y &&
+              next.y < other.pos.y + other.size,
           );
           if (hostile) {
             blocked = true;
             break;
           }
+          if (dx !== 0 && dy !== 0) {
+            const horizontalSide = { x: previous.x + dx, y: previous.y };
+            const verticalSide = { x: previous.x, y: previous.y + dy };
+            if (
+              blockedEdge(previous, horizontalSide) ||
+              blockedEdge(previous, verticalSide) ||
+              blockedEdge(horizontalSide, next) ||
+              blockedEdge(verticalSide, next)
+            )
+              blocked = true;
+          } else if (blockedEdge(previous, next)) {
+            blocked = true;
+          }
         }
-      if (blocked) continue;
-      const crossed = state.map.edges.some(
-        (e) =>
-          ((e.a.x === from.x &&
-            e.a.y === from.y &&
-            e.b.x === x &&
-            e.b.y === y) ||
-            (e.b.x === from.x &&
-              e.b.y === from.y &&
-              e.a.x === x &&
-              e.a.y === y)) &&
-          (e.kind === 'wall' || (e.kind === 'door' && e.state !== 'open')),
-      );
-      if (!crossed) result.push({ x, y });
+      if (!blocked) result.push({ x, y });
     }
   return result;
 }
+
 export function reachable(
   state: MovementState,
   entityId: string,
