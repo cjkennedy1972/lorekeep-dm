@@ -11,6 +11,11 @@ import { startSweepScheduler } from './retention/sweeper.js';
 import { LocalObjectStore } from './storage/objectStore.js';
 import { ConnectionRegistry } from './gateway/connections.js';
 const config = loadConfig();
+if (
+  config.NODE_ENV === 'production' &&
+  (!config.OPERATOR_EMAILS.trim() || !config.OPERATOR_ENDPOINT_MASTER_KEY)
+)
+  throw new Error('Operator configuration is required');
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
 export const rooms = new RoomRegistry(

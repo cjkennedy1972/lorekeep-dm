@@ -65,6 +65,7 @@ export interface EgressOptions {
 }
 export interface EgressGuard {
   fetch(url: string, init?: RequestInit): Promise<Response>;
+  validate(url: string): Promise<void>;
 }
 
 type AddrClass = 'public' | 'local' | 'blocked';
@@ -283,6 +284,9 @@ export function createEgressGuard(options: EgressOptions = {}): EgressGuard {
   }
 
   return {
+    async validate(raw) {
+      await validate(raw);
+    },
     async fetch(raw, init = {}) {
       const { url, address } = await validate(raw);
       const ctl = new AbortController();
