@@ -14,6 +14,12 @@ The operator supplies the LLM base URL, so the server fetches an operator-chosen
 - Limits: 60 s total timeout, 8 MiB response cap (enforced while streaming), both overridable in code.
 - Allowlist: `LLM_ALLOW_LOCAL_HOSTS` (comma-separated exact hosts, empty by default). Local model example: `LLM_ALLOW_LOCAL_HOSTS=localhost` with base URL `http://localhost:11434/v1`.
 
+## Operator endpoint schema compatibility
+
+Operator endpoint saves may include `unsupportedToolSchemaKeywords`, an optional list of JSON Schema keywords the endpoint rejects in tool definitions. It defaults to an empty list, is validated and stored per endpoint, and is returned in endpoint configuration. This M2-17 field is metadata only: request-time tool-schema stripping belongs to the later adapter work and is not performed here.
+
+Private plain-HTTP endpoints remain subject to the unchanged exact-host allowlist. For the operator-provided OpenAI-compatible endpoint at `http://172.31.25.75:8080/v1`, configure `LLM_ALLOW_LOCAL_HOSTS=172.31.25.75`; do not add a broad private-network exception. Its profile may store `unsupportedToolSchemaKeywords: ["pattern", "maxLength"]`.
+
 ## Not covered
 - Resolver-level attacks outside the process (poisoned recursive resolver for a *public* name pointing at a public attacker IP): allowlisting public hosts is not implemented.
 - A hostname allowlisted by the operator is trusted for every address it resolves to except blocked ones (e.g. an allowlisted name that later maps to another internal host).
@@ -23,7 +29,8 @@ The operator supplies the LLM base URL, so the server fetches an operator-chosen
 - Wiring `createEgressGuard` into the production composition root: no code constructs the adapter yet (M2-14 is library-only); the next integrator must pass `createEgressGuard({ allowLocalHosts: config.LLM_ALLOW_LOCAL_HOSTS })` — the adapter's `egress` field is required, so it cannot be omitted.
 
 ## Secrets
-- Source: `LLM_API_KEY` environment variable (or the deployment's secret store injecting it as env). Never in the DB, repo, or client payloads; no API returns it.
+- Source for legacy environment-backed deployments: `LLM_API_KEY`. Operator-configured endpoint keys are encrypted in `operator_endpoints.encrypted_key`; the AES-256-GCM master key is supplied as `OPERATOR_ENDPOINT_MASTER_KEY` (32 bytes encoded as 64 hex chars or base64) by the deployment secret manager. It is required in production and must never be stored in the DB, repo, or client payloads. No API returns a key; the API exposes only `keySet` and a 12-hex-character SHA-256 fingerprint.
 - In memory: wrapped in `Secret` at config load; `toString`, `toJSON` and `util.inspect` yield `[REDACTED]`; only `OpenAICompatibleAdapter.headers()` calls `reveal()` to build the `Authorization` header.
 - Logs: pino redact paths include `apiKey`, `*.apiKey`, `LLM_API_KEY`, `*.LLM_API_KEY`, `req.headers.authorization`, `req.headers["x-api-key"]`. Endpoint error bodies are discarded (adapter) and `EgressError` messages are fixed strings (no URL, headers, or body).
-- Rotation: set the new `LLM_API_KEY` in the secret store, restart/redeploy servers (rolling), confirm via the adapter probe, then revoke the old key at the provider. There is no at-rest encryption key for LLM keys yet since they are not stored; if a future per-operator key store is added, it needs its own key-rotation runbook (re-encrypt with versioned key ids).
+- Legacy `LLM_API_KEY` rotation: set the new value in the secret store, restart/redeploy servers (rolling), confirm via the adapter probe, then revoke the old provider key.
+- Operator-key master rotation: the envelope is `v1.<key-id>.<nonce-base64url>.<tag-base64url>.<ciphertext-base64url>` (12-byte random nonce; AES-256-GCM authentication tag). Configure `OPERATOR_ENDPOINT_MASTER_KEY` as a comma-separated keyring of `id:base64-or-hex` entries; set `OPERATOR_ENDPOINT_ACTIVE_KEY_ID` to the key id used for new writes. To rotate, add the new key while retaining the old key, set it active, then run a controlled re-encryption migration that decrypts each envelope using its embedded key id and writes it with a fresh nonce under the new id. Verify envelopes and fingerprints, then remove the old key. A wrong key or tampered ciphertext fails closed and keys are never returned. Audit rows store only slot/action and expire after 30 days.
