@@ -239,13 +239,15 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
             cells,
             { map: input.map!.map, entities: input.map!.entities },
             anchor,
-          ).filter((e) =>
-            hasLineOfSight(
-              input.map!.map,
-              { pos: anchor, size: 1 },
-              input.map!.entities.find((p) => p.id === e.id)!,
-            ),
-          );
+          )
+            .filter((e) => !(area.shape === 'cone' && e.id === caster.id))
+            .filter((e) =>
+              hasLineOfSight(
+                input.map!.map,
+                { pos: anchor, size: 1 },
+                input.map!.entities.find((p) => p.id === e.id)!,
+              ),
+            );
           return {
             anchor,
             cells,
