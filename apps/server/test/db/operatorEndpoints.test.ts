@@ -205,6 +205,7 @@ describe('operator endpoint configuration', () => {
   });
   it('validates and defaults unsupported tool schema keyword lists', async () => {
     const db = await createTestDatabase();
+    const actorId = randomUUID();
     try {
       await db.pool.query(
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
