@@ -8,7 +8,8 @@
     "format:check": "prettier --check .",
     "test": "pnpm --filter @game/schema build && pnpm -r test",
     "typecheck": "pnpm --filter @game/schema build && pnpm -r typecheck",
-    "test:geometry": "pnpm --filter @game/rules-engine test:geometry"
+    "test:geometry": "pnpm --filter @game/rules-engine test:geometry",
+    "check:assets": "node scripts/check-assets.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.37.0",

@@ -48,11 +48,80 @@ jobs:
         run: |
           pnpm install --lockfile-only --ignore-scripts
           git diff --exit-code -- pnpm-lock.yaml
-      - run: pnpm --filter @game/web exec playwright install --with-deps chromium firefox webkit
-      - run: pnpm --filter @game/web exec playwright test
+      # Firefox/WebKit run in the parallel `browsers` job (same specs, no coverage dropped).
+      - run: pnpm --filter @game/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @game/web exec playwright test --project=chromium
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-traces
           path: '**/test-results/**/trace.zip'
           if-no-files-found: ignore
+
+  browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @game/schema build
+      - run: pnpm --filter @game/rules-engine build
+      - run: pnpm --filter @game/web exec playwright install --with-deps firefox webkit
+      - run: pnpm --filter @game/web exec playwright test --project=firefox --project=webkit
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces-browsers
+          path: '**/test-results/**/trace.zip'
+          if-no-files-found: ignore
+
+  llm-recorded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LLM_FIXTURE_MODE: strict # replay committed fixtures only; no endpoint, no secrets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @game/schema build
+      - run: pnpm --filter @game/server exec vitest run test/dm test/llm
+
+  catalog-reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/catalog-reconcile.mjs
+
+  assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: node --test scripts/check-assets.test.mjs
+      - run: node scripts/check-assets.mjs

@@ -23,3 +23,9 @@ Rules:
 
 ## Mandatory full gate before reporting a ticket done
 Every agent works in its own clone (never the reference checkout), rebases on origin/main, then on a fresh `pnpm install --frozen-lockfile` runs: `pnpm -r typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm -r test`, `pnpm -r build`, and all Playwright e2e (`pnpm --filter @game/web exec playwright install chromium` once, then `pnpm --filter @game/web exec playwright test`) (plus the ticket's own verify commands, with Postgres via docker compose and an exported `DATABASE_URL` when DB-backed). All must exit 0 or the failure must be reported as a blocker, never described as "unrelated". Atlas re-runs the gate on a fresh clone of origin/main after every wave; a red main blocks starting dependent tickets.
+
+## CI jobs and required checks (M2-33)
+
+Jobs in `.github/workflows/ci.yml`: `test` (unchanged name; Postgres, lint/typecheck/unit/db/e2e, Chromium Playwright), `browsers` (Firefox + WebKit Playwright), `llm-recorded` (server DM/LLM tests in `LLM_FIXTURE_MODE=strict`, no endpoint or secrets), `catalog-reconcile` (`scripts/catalog-reconcile.mjs`), `assets` (`scripts/check-assets.mjs` license/attribution check plus its negative tests). No job needs secrets. **Repo setting (human, not done by the agent):** add `browsers`, `llm-recorded`, `catalog-reconcile` and `assets` to the required status checks on `main`, next to `test`.
+
+Asset rule: any image/font/audio/3D file (or anything under `assets/`) needs an entry in `assets/manifest.json` with origin, author, SPDX license and sha256; CC-BY entries need an `attribution` text that appears in a `legalSources` file. The exact SRD 5.2.1 statement must be in a `legalSources` file (today `README.md`; add the About/Legal page source when it exists).
