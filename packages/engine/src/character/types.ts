@@ -51,7 +51,11 @@ export type RuleViolationCode =
   | 'SPELL_NOT_ON_CLASS_LIST'
   | 'LEVEL_OUT_OF_RANGE'
   | 'SUBCLASS_REQUIRED'
-  | 'ILLEGAL_SUBCLASS';
+  | 'ILLEGAL_SUBCLASS'
+  | 'HP_MISMATCH'
+  | 'WRONG_SPELL_SLOTS'
+  | 'TOO_MANY_SPELLS'
+  | 'MISSING_SUBCLASS';
 export interface RuleViolation {
   code: RuleViolationCode;
   path: string;

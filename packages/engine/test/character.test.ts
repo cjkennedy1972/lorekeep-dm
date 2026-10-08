@@ -41,8 +41,50 @@ function character(seed = 0): CharacterInput {
     equipment: [],
     spellsKnown: [],
     spellsPrepared: [],
-    slots: {},
-    hp: { current: 8, max: 8, temp: 0 },
+    slots: Object.fromEntries(
+      Object.entries(
+        deriveSheet(
+          {
+            level: 1,
+            classId: klass.id,
+            abilities,
+            proficiencies: {
+              saves: [...klass.saveProficiencies],
+              skills: [],
+              tools: [],
+            },
+            equipment: [],
+            spellsKnown: [],
+            spellsPrepared: [],
+            slots: {},
+            hp: { current: 0, max: 0, temp: 0 },
+          } as CharacterInput,
+          catalog,
+        ).spellSlots,
+      ).map(([level, max]) => [level, { max, used: 0 }]),
+    ),
+    hp: {
+      current: 0,
+      max: deriveSheet(
+        {
+          level: 1,
+          classId: klass.id,
+          abilities,
+          proficiencies: {
+            saves: [...klass.saveProficiencies],
+            skills: [],
+            tools: [],
+          },
+          equipment: [],
+          spellsKnown: [],
+          spellsPrepared: [],
+          slots: {},
+          hp: { current: 0, max: 0, temp: 0 },
+        } as CharacterInput,
+        catalog,
+      ).maxHp,
+      temp: 0,
+    },
     conditions: [],
   };
 }
@@ -77,11 +119,21 @@ describe('character validator', () => {
       c.abilityGeneration!.baseAbilities = { ...c.abilities };
       return c;
     };
-    for (let seed = 0; seed < 200; seed++)
-      expect(
-        validateCharacter(legalBuilder(seed), catalog),
-        `seed ${seed}`,
-      ).toEqual([]);
+    for (let seed = 0; seed < 200; seed++) {
+      const c = legalBuilder(seed);
+      const klass = catalog.get('class', c.classId)!;
+      const derivedSlots = deriveSheet(c, catalog).spellSlots;
+      const pact = klass.pactMagic?.[0];
+      c.slots = pact
+        ? { [String(pact.slotLevel)]: { max: pact.slots, used: 0 } }
+        : Object.fromEntries(
+            Object.entries(derivedSlots).map(([level, max]) => [
+              level,
+              { max, used: 0 },
+            ]),
+          );
+      expect(validateCharacter(c, catalog), `seed ${seed}`).toEqual([]);
+    }
   });
 
   test('pure deterministic output for same input', () => {
