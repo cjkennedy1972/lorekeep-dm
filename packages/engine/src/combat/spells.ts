@@ -9,6 +9,11 @@ import {
   type RollMode,
 } from '../dice.js';
 import type { RngState } from '../rng.js';
+import type { Battlemap, GridPos } from '@game/schema';
+import { distance, type Placed } from '../map/geometry.js';
+import { areaCells, affectedEntities, type AreaShape } from '../map/area.js';
+import { coverBetween } from '../map/cover.js';
+import { hasLineOfSight } from '../map/los.js';
 
 export type SpellTarget = {
   id: string;
@@ -20,6 +25,7 @@ export type SpellTarget = {
   conditions?: readonly { conditionId: string }[];
 };
 export type SpellEvent =
+  | { type: 'AreaResolved'; cells: GridPos[]; affected: string[] }
   | { type: 'SlotSpent'; entityId: string; slotLevel: number }
   | { type: 'SpellCast'; entityId: string; spellId: string; slotLevel: number }
   | { type: 'ConcentrationStarted'; entityId: string; spellId: string }
@@ -39,15 +45,27 @@ export type SpellEvent =
       amount: number;
       kind: 'damage' | 'healing';
       damageType?: string;
-    };
+    }
+  | { type: 'AreaResolved'; cells: GridPos[]; affected: string[] };
 export type SpellState = {
   concentration: Record<string, string | null>;
   hp: Record<string, number>;
   slots: Record<string, Record<string, { max: number; used: number }>>;
 };
+export type SpellMapContext = {
+  map: Battlemap;
+  caster: Placed;
+  /** Complete combat placements. A missing id in targets is treated as a blocked target. */
+  entities: readonly (Placed & { id: string })[];
+  targets: readonly SpellTarget[];
+  /** Anchor is the point target for an area spell; defaults to caster position. */
+  anchor?: GridPos;
+  direction?: GridPos;
+};
 export type CastSpellInput = {
   caster: CharacterInput;
-  target: SpellTarget;
+  target: SpellTarget | { kind: 'anchor' | 'option'; pos: GridPos };
+  map?: SpellMapContext;
   spellId: string;
   slotLevel: number;
   seed: RngState;
@@ -105,7 +123,17 @@ const scaledDamage = (
 };
 
 export function castSpell(input: CastSpellInput): CastSpellResult {
-  const { caster, target, spellId, slotLevel, catalog } = input;
+  const { caster, spellId, slotLevel, catalog } = input;
+  const isAreaTarget =
+    typeof input.target === 'object' && 'kind' in input.target;
+  const target: SpellTarget = isAreaTarget
+    ? (input.map?.targets[0] ?? {
+        id: '__area__',
+        hp: 0,
+        maxHp: 0,
+        abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      })
+    : (input.target as SpellTarget);
   const spell = catalog.get('spell', spellId);
   if (!spell)
     return fail(
@@ -133,6 +161,32 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
       'Choose an available slot of sufficient level.',
     );
   const resolution = spell.resolution;
+  const area = isAreaTarget && spell.template ? spell.template : undefined;
+  if (isAreaTarget && (!input.map || !area))
+    return fail(
+      'Area targeting requires a mapped spell template.',
+      'Supply a map and use a spell with an area template.',
+    );
+  if (input.map && !isAreaTarget && input.target && !('kind' in input.target)) {
+    const placement = input.map.entities.find((e) => e.id === target.id);
+    if (!placement)
+      return fail('Target has no map position.', 'Choose a placed target.');
+    const dist = distance(
+      input.map.caster,
+      placement,
+      input.map.map.diagonalRule,
+    );
+    if (
+      !hasLineOfSight(input.map.map, input.map.caster, placement) ||
+      !coverBetween(input.map.map, input.map.caster, placement).targetable
+    )
+      return fail(
+        'Target is blocked by full cover.',
+        'Choose a target with line of sight.',
+      );
+    if (spell.range?.kind === 'feet' && dist > spell.range.feet)
+      return fail('Target is beyond spell range.', 'Choose a closer target.');
+  }
   if (!resolution || resolution.kind === 'utility')
     return fail(
       'This spell has no supported single-target resolution.',
@@ -163,6 +217,45 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
     },
   };
   const events: SpellEvent[] = [];
+  const areaTargets =
+    area && input.map
+      ? (() => {
+          const anchor =
+            isAreaTarget && 'pos' in input.target
+              ? input.target.pos
+              : (input.map!.anchor ?? input.map!.caster.pos);
+          const cells = areaCells(
+            input.map!.map,
+            {
+              shape: area.shape as AreaShape,
+              size: area.size,
+              width: area.width,
+              height: area.height,
+            },
+            anchor,
+            input.map!.direction,
+          );
+          const affected = affectedEntities(
+            cells,
+            { map: input.map!.map, entities: input.map!.entities },
+            anchor,
+          ).filter((e) =>
+            hasLineOfSight(
+              input.map!.map,
+              { pos: anchor, size: 1 },
+              input.map!.entities.find((p) => p.id === e.id)!,
+            ),
+          );
+          return {
+            anchor,
+            cells,
+            affected,
+            targets: affected
+              .map((e) => input.map!.targets.find((t) => t.id === e.id))
+              .filter((t): t is SpellTarget => !!t),
+          };
+        })()
+      : undefined;
   if (spell.level > 0)
     events.push({ type: 'SlotSpent', entityId: caster.id, slotLevel });
   events.push({ type: 'SpellCast', entityId: caster.id, spellId, slotLevel });
@@ -182,7 +275,76 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
   const ability = klass.spellcastingAbility;
   const spellAttackBonus =
     abilityModifier(caster.abilities[ability]) + proficiencyBonus(caster.level);
-  if (resolution.kind === 'attack') {
+  if (areaTargets) {
+    for (const affected of areaTargets.affected) {
+      const victim = input.map!.targets.find((t) => t.id === affected.id);
+      if (!victim) continue;
+      const save = resolution.kind === 'save' ? resolution : undefined;
+      let saveSucceeded = false;
+      if (save) {
+        const dc =
+          8 +
+          proficiencyBonus(caster.level) +
+          abilityModifier(caster.abilities[ability]);
+        const bonus =
+          abilityModifier(victim.abilities[save.ability]) +
+          affected.saveBonus +
+          (victim.proficiencies?.saves?.includes(save.ability)
+            ? (input.targetSaveProficiency ?? proficiencyBonus(caster.level))
+            : 0);
+        const [saveRoll, next] = roll('1d20', rng, {
+          modifiers: [{ label: save.ability, value: bonus }],
+        });
+        rng = next;
+        events.push({
+          type: 'RollEvent',
+          entityId: victim.id,
+          spellId,
+          kind: 'save',
+          breakdown: saveRoll,
+        });
+        saveSucceeded = saveRoll.total >= dc;
+      }
+      if (resolution.kind === 'save')
+        for (const d of spell.damage ?? []) {
+          const scaled = scaledDamage(d, spell.level, slotLevel, caster.level);
+          for (let n = 0; n < scaled.count; n++) {
+            const [breakdown, next] = roll(scaled.dice, rng);
+            rng = next;
+            events.push({
+              type: 'RollEvent',
+              entityId: caster.id,
+              spellId,
+              kind: 'damage',
+              breakdown,
+            });
+            const half = saveSucceeded && resolution.onSuccess === 'half';
+            const amount = Math.floor(
+              Math.max(0, breakdown.total) *
+                (half ? 0.5 : saveSucceeded ? 0 : 1),
+            );
+            const from = stateStart.hp[victim.id] ?? victim.hp;
+            const to = Math.max(0, from - amount);
+            events.push({
+              type: 'HpChanged',
+              entityId: victim.id,
+              from,
+              to,
+              amount: from - to,
+              kind: 'damage',
+              damageType: d.types[0],
+            });
+          }
+        }
+    }
+    events.push({
+      type: 'AreaResolved',
+      cells: areaTargets.cells,
+      affected: areaTargets.affected
+        .filter((e) => input.map!.targets.some((t) => t.id === e.id))
+        .map((e) => e.id),
+    });
+  } else if (resolution.kind === 'attack') {
     const [attackRoll, next] = roll('1d20', rng, {
       mode: input.mode,
       modifiers: [{ label: 'spell attack', value: spellAttackBonus }],
@@ -247,7 +409,7 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
     });
     saveSucceeded = saveRoll.total >= dc;
   }
-  const hasEffect = resolution.kind !== 'attack' || attackHit;
+  const hasEffect = !areaTargets && (resolution.kind !== 'attack' || attackHit);
   if (hasEffect)
     for (const d of spell.damage ?? []) {
       const scaled = scaledDamage(d, spell.level, slotLevel, caster.level);
@@ -388,6 +550,7 @@ export function applySpellEvent(
       };
     case 'HpChanged':
       return { ...state, hp: { ...state.hp, [event.entityId]: event.to } };
+    case 'AreaResolved':
     case 'SpellCast':
     case 'RollEvent':
       return state;
