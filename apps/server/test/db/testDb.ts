@@ -14,7 +14,14 @@ export interface TestDatabase {
 }
 
 /** Create an isolated schema for a test file, and drop it when close is called. */
-export async function createTestDatabase(): Promise<TestDatabase> {
+export interface TestDatabaseOptions {
+  /** Extra schemas searched after the test schema, e.g. ['public'] for database-wide extensions such as pg_trgm. */
+  extraSearchPath?: readonly string[];
+}
+
+export async function createTestDatabase(
+  options: TestDatabaseOptions = {},
+): Promise<TestDatabase> {
   const schema = `test_${randomBytes(12).toString('hex')}`;
   const admin = new Pool({ connectionString: databaseUrl });
 
@@ -27,7 +34,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 
   const pool = new Pool({
     connectionString: databaseUrl,
-    options: `-c search_path=${schema}`,
+    options: `-c search_path=${[schema, ...(options.extraSearchPath ?? [])].join(',')}`,
   });
 
   return {

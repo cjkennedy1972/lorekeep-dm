@@ -11,7 +11,8 @@ const gameB = '00000000-0000-4000-8000-000000000002';
 
 describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
   beforeAll(async () => {
-    database = await createTestDatabase();
+    // pg_trgm lives in public (database-wide extension); keep the test schema first so tables stay isolated.
+    database = await createTestDatabase({ extraSearchPath: ['public'] });
     await database.pool.query('CREATE TABLE sessions (id uuid PRIMARY KEY)');
     await database.pool.query('INSERT INTO sessions(id) VALUES ($1)', [gameA]);
     await database.pool.query('INSERT INTO sessions(id) VALUES ($1)', [gameB]);
