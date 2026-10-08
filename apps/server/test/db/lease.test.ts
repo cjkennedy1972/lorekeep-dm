@@ -59,7 +59,12 @@ describe('session lease', () => {
       if (!first) return;
       await persistence.append(id, [event()], first);
       await new Promise((resolve) => setTimeout(resolve, 110));
-      const second = await leases.acquire(id, 'b');
+      // The new holder gets a long TTL: append also checks the lease is live, and
+      // with the 80ms TTL a slow CI runner could expire it before the racing write.
+      const second = await new SessionLease(pool, {
+        ttlMs: 30_000,
+        heartbeatIntervalMs: 10_000,
+      }).acquire(id, 'b');
       expect(second?.epoch).toBe(first.epoch + 1);
       if (!second) return;
       await expect(persistence.append(id, [event()], first)).rejects.toThrow(

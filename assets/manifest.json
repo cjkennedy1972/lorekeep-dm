@@ -1,0 +1,5 @@
+{
+  "$comment": "Every shipped token, terrain, font or UI asset needs an entry (spec US-M1 AC3). Checked by scripts/check-assets.mjs.",
+  "legalSources": ["README.md"],
+  "assets": []
+}

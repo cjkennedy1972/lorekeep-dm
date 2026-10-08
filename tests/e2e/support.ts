@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -66,7 +68,17 @@ afterAll(async () => {
   await admin.end();
 });
 
-let portCounter = 34000 + Math.floor(Math.random() * 20000);
+// Ask the OS for a free port; the child binds it moments later, so startServer also
+// retries when another process wins the race (EADDRINUSE).
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  probe.listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address() as AddressInfo;
+  probe.close();
+  await once(probe, 'close');
+  return port;
+}
 export interface RunningServer {
   child: ChildProcess;
   url: string;
@@ -74,7 +86,16 @@ export interface RunningServer {
 }
 
 export async function startServer(): Promise<RunningServer> {
-  const port = portCounter++;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await startServerOnce(await freePort());
+    } catch (error) {
+      if (attempt >= 5 || !String(error).includes('EADDRINUSE')) throw error;
+    }
+  }
+}
+
+async function startServerOnce(port: number): Promise<RunningServer> {
   const child = spawn(process.execPath, ['apps/server/dist/main.js'], {
     cwd: repoRoot,
     env: {
