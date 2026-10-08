@@ -21,6 +21,18 @@ export * from './combat/checks.js';
 export * from './combat/conditions.js';
 export * from './combat/spells.js';
 
+export {
+  reachable,
+  canEndAt,
+  movementBudget,
+  movementCost,
+  movementNeighbors,
+} from './map/reachable.js';
+export type {
+  MovementEntity,
+  MovementState,
+  ReachableCell,
+} from './map/reachable.js';
 export * from './map/threat.js';
 export * from './map/movement.js';
 export {
