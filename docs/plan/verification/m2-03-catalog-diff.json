@@ -1,0 +1,413 @@
+{
+  "generatedFrom": {
+    "srd": {
+      "license": "CC-BY-4.0",
+      "name": "System Reference Document 5.2.1",
+      "note": "This work includes material from the System Reference Document 5.2.1 by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd, licensed under CC-BY-4.0.",
+      "pages": 364,
+      "publisher": "Wizards of the Coast LLC",
+      "sha256": "8974902d109d6e63672d7c490bde9ccf052410503d9cfa768237154fbc5e3d87",
+      "url": "https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf"
+    },
+    "catalogDir": "packages/engine/catalog",
+    "catalogEntries": 542
+  },
+  "summary": {
+    "monster": {
+      "srd": 242,
+      "catalog": 242,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 14
+    },
+    "spell": {
+      "srd": 183,
+      "catalog": 183,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 1
+    },
+    "class": {
+      "srd": 12,
+      "catalog": 12,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 0,
+      "featureGapsLevel1to5": 0
+    },
+    "subclass": {
+      "srd": 12,
+      "catalog": 12,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 0
+    },
+    "species": {
+      "srd": 9,
+      "catalog": 9,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 0
+    },
+    "background": {
+      "srd": 4,
+      "catalog": 4,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 0
+    },
+    "condition": {
+      "srd": 15,
+      "catalog": 15,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 0
+    },
+    "equipment:weapon": {
+      "srd": 38,
+      "catalog": 36,
+      "missing": 2,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 0
+    },
+    "equipment:armor": {
+      "srd": 13,
+      "catalog": 13,
+      "missing": 0,
+      "extra": 0,
+      "nameMismatch": 0,
+      "statMismatches": 0
+    },
+    "equipment:gear-and-tools": {
+      "srd": 115,
+      "catalog": 16,
+      "missing": 102,
+      "extra": 3,
+      "nameMismatch": 2,
+      "statMismatches": 0
+    }
+  },
+  "kinds": {
+    "monster": {
+      "srdCount": 242,
+      "catalogCount": 242,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "spell": {
+      "srdCount": 183,
+      "catalogCount": 183,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "class": {
+      "srdCount": 12,
+      "catalogCount": 12,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": [],
+      "featureGapsLevel1to5": []
+    },
+    "subclass": {
+      "srdCount": 12,
+      "catalogCount": 12,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "species": {
+      "srdCount": 9,
+      "catalogCount": 9,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "background": {
+      "srdCount": 4,
+      "catalogCount": 4,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "condition": {
+      "srdCount": 15,
+      "catalogCount": 15,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "equipment:weapon": {
+      "srdCount": 38,
+      "catalogCount": 36,
+      "missing": [
+        "Musket",
+        "Pistol"
+      ],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "equipment:armor": {
+      "srdCount": 13,
+      "catalogCount": 13,
+      "missing": [],
+      "extra": [],
+      "nameMismatch": []
+    },
+    "equipment:gear-and-tools": {
+      "srdCount": 115,
+      "catalogCount": 16,
+      "missing": [
+        "Acid",
+        "Alchemist’s Fire",
+        "Alchemist’s Supplies",
+        "Ammunition",
+        "Antitoxin",
+        "Ball Bearings",
+        "Barrel",
+        "Basket",
+        "Bell",
+        "Blanket",
+        "Block and Tackle",
+        "Bolts",
+        "Book",
+        "Bottle, Glass",
+        "Brewer’s Supplies",
+        "Bucket",
+        "Bullets, Firearm",
+        "Bullets, Sling",
+        "Burglar’s Pack",
+        "Calligrapher’s Supplies",
+        "Caltrops",
+        "Candle",
+        "Carpenter’s Tools",
+        "Cartographer’s Tools",
+        "Case, Crossbow Bolt",
+        "Case, Map or Scroll",
+        "Chain",
+        "Chest",
+        "Climber’s Kit",
+        "Clothes, Fine",
+        "Clothes, Traveler’s",
+        "Cobbler’s Tools",
+        "Cook’s Utensils",
+        "Costume",
+        "Crowbar",
+        "Crystal",
+        "Diplomat’s Pack",
+        "Disguise Kit",
+        "Dungeoneer’s Pack",
+        "Entertainer’s Pack",
+        "Explorer’s Pack",
+        "Flask",
+        "Forgery Kit",
+        "Glassblower’s Tools",
+        "Grappling Hook",
+        "Herbalism Kit",
+        "Holy Water",
+        "Hunting Trap",
+        "Ink",
+        "Ink Pen",
+        "Jeweler’s Tools",
+        "Jug",
+        "Ladder",
+        "Lamp",
+        "Lantern, Bullseye",
+        "Lantern, Hooded",
+        "Leatherworker’s Tools",
+        "Lock",
+        "Magnifying Glass",
+        "Manacles",
+        "Map",
+        "Mason’s Tools",
+        "Mirror",
+        "Navigator’s Tools",
+        "Needles",
+        "Net",
+        "Oil",
+        "Orb",
+        "Painter’s Supplies",
+        "Paper",
+        "Parchment",
+        "Perfume",
+        "Poison, Basic",
+        "Poisoner’s Kit",
+        "Pole",
+        "Pot, Iron",
+        "Potion of Healing",
+        "Potter’s Tools",
+        "Pouch",
+        "Priest’s Pack",
+        "Quiver",
+        "Ram, Portable",
+        "Robe",
+        "Rod",
+        "Sack",
+        "Scholar’s Pack",
+        "Shovel",
+        "Signal Whistle",
+        "Smith’s Tools",
+        "Spell Scroll (Cantrip)",
+        "Spell Scroll (Level 1)",
+        "Spikes, Iron",
+        "Spyglass",
+        "Staff (also a Quarterstaff)",
+        "String",
+        "Tent",
+        "Tinderbox",
+        "Tinker’s Tools",
+        "Vial",
+        "Wand",
+        "Weaver’s Tools",
+        "Woodcarver’s Tools"
+      ],
+      "extra": [
+        "Crossbow Bolts",
+        "Lute",
+        "Spellbook"
+      ],
+      "nameMismatch": [
+        {
+          "srd": "Healer’s Kit",
+          "catalog": "Healers Kit"
+        },
+        {
+          "srd": "Thieves’ Tools",
+          "catalog": "Thieves Tools"
+        }
+      ]
+    }
+  },
+  "statMismatches": [
+    {
+      "kind": "monster",
+      "entry": "Barbed Devil",
+      "field": "passivePerception",
+      "srd": 18,
+      "cite": "SRD 5.2.1 p.262, Monsters A-Z > Barbed Devil"
+    },
+    {
+      "kind": "monster",
+      "entry": "Bearded Devil",
+      "field": "passivePerception",
+      "srd": 10,
+      "cite": "SRD 5.2.1 p.262, Monsters A-Z > Bearded Devil"
+    },
+    {
+      "kind": "monster",
+      "entry": "Giant Scorpion",
+      "field": "attack:Claw.damage",
+      "srd": "1d6+3 bludgeoning",
+      "catalog": "1 bludgeoning",
+      "cite": "SRD 5.2.1 p.353, Animals > Giant Scorpion"
+    },
+    {
+      "kind": "monster",
+      "entry": "Gibbering Mouther",
+      "field": "attack:Bite.damage",
+      "srd": "2d6 piercing",
+      "catalog": "1 bludgeoning",
+      "cite": "SRD 5.2.1 p.288, Monsters A-Z > Gibbering Mouther"
+    },
+    {
+      "kind": "monster",
+      "entry": "Griffon",
+      "field": "attack:Rend.damage",
+      "srd": "1d8+4 piercing",
+      "catalog": "1 bludgeoning",
+      "cite": "SRD 5.2.1 p.295, Monsters A-Z > Griffon"
+    },
+    {
+      "kind": "monster",
+      "entry": "Swarm of Bats",
+      "field": "creatureType",
+      "srd": "swarm of tiny beasts",
+      "catalog": "swarm",
+      "cite": "SRD 5.2.1 p.361, Animals > Swarm of Bats"
+    },
+    {
+      "kind": "monster",
+      "entry": "Swarm of Crawling Claws",
+      "field": "creatureType",
+      "srd": "swarm of tiny undead",
+      "catalog": "undead",
+      "cite": "SRD 5.2.1 p.278, Monsters A-Z > Swarm of Crawling Claws"
+    },
+    {
+      "kind": "monster",
+      "entry": "Swarm of Insects",
+      "field": "creatureType",
+      "srd": "swarm of tiny beasts",
+      "catalog": "swarm",
+      "cite": "SRD 5.2.1 p.361, Animals > Swarm of Insects"
+    },
+    {
+      "kind": "monster",
+      "entry": "Swarm of Piranhas",
+      "field": "creatureType",
+      "srd": "swarm of tiny beasts",
+      "catalog": "swarm",
+      "cite": "SRD 5.2.1 p.362, Animals > Swarm of Piranhas"
+    },
+    {
+      "kind": "monster",
+      "entry": "Swarm of Rats",
+      "field": "creatureType",
+      "srd": "swarm of tiny beasts",
+      "catalog": "swarm",
+      "cite": "SRD 5.2.1 p.362, Animals > Swarm of Rats"
+    },
+    {
+      "kind": "monster",
+      "entry": "Swarm of Ravens",
+      "field": "creatureType",
+      "srd": "swarm of tiny beasts",
+      "catalog": "swarm",
+      "cite": "SRD 5.2.1 p.362, Animals > Swarm of Ravens"
+    },
+    {
+      "kind": "monster",
+      "entry": "Swarm of Venomous Snakes",
+      "field": "creatureType",
+      "srd": "swarm of tiny beasts",
+      "catalog": "swarm",
+      "cite": "SRD 5.2.1 p.362, Animals > Swarm of Venomous Snakes"
+    },
+    {
+      "kind": "monster",
+      "entry": "Vampire Spawn",
+      "field": "attack:Claw.damage",
+      "srd": "2d4+3 slashing",
+      "catalog": "1 bludgeoning",
+      "cite": "SRD 5.2.1 p.334, Monsters A-Z > Vampire Spawn"
+    },
+    {
+      "kind": "monster",
+      "entry": "Winter Wolf",
+      "field": "attack:Bite.damage",
+      "srd": "2d6+4 piercing",
+      "catalog": "1 bludgeoning",
+      "cite": "SRD 5.2.1 p.342, Monsters A-Z > Winter Wolf"
+    },
+    {
+      "kind": "spell",
+      "entry": "Meld into Stone",
+      "field": "damage",
+      "srd": [
+        "6d6",
+        "force"
+      ],
+      "catalog": "absent",
+      "cite": "SRD 5.2.1 p.148, Spells > Spell Descriptions > Meld into Stone"
+    }
+  ]
+}
