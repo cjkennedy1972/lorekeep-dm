@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BattlemapSchema,
   CharacterSchema,
+  type CombatState as DisplayCombatState,
   type Battlemap,
   type GridPos,
 } from '@game/schema';
@@ -9,6 +10,10 @@ import {
   areaCells,
   affectedEntities,
   castSpell,
+  apply,
+  emptyCombatState,
+  rollInitiative,
+  startCombat,
   loadAuthoredMap,
   moveAlong,
   path,
@@ -23,6 +28,7 @@ import {
 } from '@game/rules-engine';
 import { Canvas2DRenderer } from '../features/map/Canvas2DRenderer.js';
 import { Sheet } from '../features/character/Sheet.js';
+import { createTokenDrawCommands } from '../features/map/tokens.js';
 import { loadCharacterCatalog } from '../features/character/catalog.js';
 import cryptData from '../../../../packages/engine/maps/crypt-room.json';
 import './sandboxCombat.css';
@@ -52,6 +58,19 @@ const INITIAL: Fighter[] = [
   structuredClone(pcTemplate),
   ...structuredClone(scenario.goblins),
 ];
+const initiativeState = (() => {
+  const combatants = INITIAL.map((fighter) => ({
+    id: fighter.id,
+    initiativeModifier: Math.floor((fighter.abilities.dex! - 10) / 2),
+    speed: fighter.speed,
+  }));
+  const started = startCombat(emptyCombatState(), combatants);
+  if ('error' in started) throw new Error(started.hint);
+  const state = started.events.reduce(apply, emptyCombatState());
+  const rolled = rollInitiative(state, scenario.seed);
+  if ('error' in rolled) throw new Error(rolled.hint);
+  return rolled.events.reduce(apply, state);
+})();
 const characterFor = (pc: Fighter) =>
   CharacterSchema.parse({
     id: '00000000-0000-4000-8000-000000000041',
@@ -184,18 +203,50 @@ export function SandboxCombat() {
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     new Canvas2DRenderer().draw(ctx, map, { cellSize: 28 });
-    for (const f of fighters) {
-      ctx.fillStyle = f.kind === 'pc' ? '#155eef' : '#a52a2a';
+    const snapshot: DisplayCombatState = {
+      round: 1,
+      turnIndex: 0,
+      initiative: initiativeState.initiative.map(({ entityId, total }) => ({
+        entityId,
+        total,
+      })),
+      resources: {},
+      entities: fighters.map((f) => ({
+        id: f.id,
+        kind: f.kind === 'pc' ? 'character' : 'monster',
+        pos: f.pos,
+        size: f.size,
+        hp: f.hp,
+      })),
+    };
+    const presentation = Object.fromEntries(
+      fighters.map((f) => [
+        f.id,
+        {
+          name: f.kind === 'pc' ? 'Aria' : f.id,
+          team: f.team,
+          maxHp: f.maxHp,
+        },
+      ]),
+    );
+    for (const token of createTokenDrawCommands(snapshot, presentation)) {
+      ctx.fillStyle = token.team === 'pc' ? '#155eef' : '#a52a2a';
       ctx.beginPath();
-      ctx.arc((f.pos.x + 0.5) * 28, (f.pos.y + 0.5) * 28, 9, 0, Math.PI * 2);
+      ctx.arc((token.x + 0.5) * 28, (token.y + 0.5) * 28, 9, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = 'white';
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(
-        f.kind === 'pc' ? 'A' : 'G',
-        (f.pos.x + 0.5) * 28,
-        (f.pos.y + 0.5) * 28 + 4,
+        token.teamMarker.letter,
+        (token.x + 0.5) * 28,
+        (token.y + 0.5) * 28 + 4,
+      );
+      ctx.font = '10px sans-serif';
+      ctx.fillText(
+        token.hpLabel,
+        (token.x + 0.5) * 28,
+        (token.y + 0.5) * 28 + 20,
       );
     }
     ctx.strokeStyle = '#f0b429';
@@ -415,7 +466,7 @@ export function SandboxCombat() {
       else setMessage(`Illegal path: ${result.reason} — ${result.hint}`);
     } else if (event.key === 'Enter' && goal) move();
   };
-  const initiative = [...fighters].sort((a, b) => a.id.localeCompare(b.id));
+
   return (
     // This focusable application surface provides a keyboard map controller.
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
@@ -469,11 +520,20 @@ export function SandboxCombat() {
           <section aria-label="Initiative tracker">
             <h2>Initiative</h2>
             <ol>
-              {initiative.map((f) => (
-                <li key={f.id}>
-                  {f.id}: {f.hp} HP
-                </li>
-              ))}
+              {initiativeState.initiative.map((entry, index) => {
+                const fighter = fighters.find((f) => f.id === entry.entityId)!;
+                return (
+                  <li
+                    key={fighter.id}
+                    aria-current={index === 0 ? 'true' : undefined}
+                  >
+                    {fighter.kind === 'pc' ? 'Aria' : fighter.id}: {entry.total}
+                    {fighter.kind === 'pc'
+                      ? ` · ${fighter.hp}/${fighter.maxHp} HP`
+                      : ` · ${fighter.hp > fighter.maxHp / 2 ? 'healthy' : 'bloodied'}`}
+                  </li>
+                );
+              })}
             </ol>
           </section>
           <section aria-label="Dice breakdown">
