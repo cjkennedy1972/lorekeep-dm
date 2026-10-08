@@ -97,6 +97,73 @@ describe('map-aware combat', () => {
     ).toEqual(['goblin-a', 'goblin-b']);
     expect(r.state.hp['goblin-a']).toBeDefined();
     expect(r.state.hp['goblin-b']).toBeDefined();
+    const damageRolls = r.events.filter(
+      (e) => e.type === 'RollEvent' && e.kind === 'damage',
+    );
+    expect(damageRolls).toHaveLength(1);
+    const damage = damageRolls[0]!;
+    const hpChanges = r.events.filter(
+      (e) => e.type === 'HpChanged' && e.kind === 'damage',
+    );
+    expect(hpChanges).toHaveLength(2);
+    expect(hpChanges.map((e) => e.amount)).toEqual(
+      hpChanges.map((e) =>
+        e.entityId === 'goblin-a' && damage.type === 'RollEvent'
+          ? Math.floor(damage.breakdown.total / 2)
+          : damage.type === 'RollEvent'
+            ? damage.breakdown.total
+            : 0,
+      ),
+    );
+  });
+
+  test('area spell shares one damage roll while successful saves halve it individually', () => {
+    const map = mapWithWall();
+    const placements = [
+      { id: 'mage', pos: c(1, 1), size: 1 },
+      { id: 'failed-a', pos: c(4, 1), size: 1 },
+      { id: 'saved', pos: c(4, 2), size: 1 },
+      { id: 'failed-b', pos: c(4, 3), size: 1 },
+    ];
+    map.cells = [0, 17, 1, 1, 0, 126];
+    const r = castSpell({
+      caster,
+      target: { kind: 'anchor', pos: c(4, 1) },
+      spellId: 'spell:fireball',
+      slotLevel: 3,
+      seed: 8,
+      catalog,
+      map: {
+        map,
+        caster: placements[0]!,
+        entities: placements,
+        targets: [
+          target('failed-a'),
+          {
+            ...target('saved'),
+            abilities: { str: 10, dex: 30, con: 10, int: 10, wis: 10, cha: 10 },
+          },
+          target('failed-b'),
+        ],
+      },
+    });
+    expect(r).toHaveProperty('ok', true);
+    if (!('ok' in r)) return;
+    const rolls = r.events.filter((e) => e.type === 'RollEvent');
+    const damageRolls = rolls.filter((e) => e.kind === 'damage');
+    expect(damageRolls).toHaveLength(1);
+    const total =
+      damageRolls[0]!.type === 'RollEvent'
+        ? damageRolls[0]!.breakdown.total
+        : 0;
+    const hpChanges = r.events.filter(
+      (e) => e.type === 'HpChanged' && e.kind === 'damage',
+    );
+    expect(hpChanges.map((e) => [e.entityId, e.amount])).toEqual([
+      ['failed-a', total],
+      ['failed-b', total],
+      ['saved', Math.floor(total / 2)],
+    ]);
   });
 
   test('mapped attack uses long-range disadvantage and records range and cover facts', () => {

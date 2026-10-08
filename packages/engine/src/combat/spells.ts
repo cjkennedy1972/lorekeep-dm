@@ -14,6 +14,7 @@ import { distance, type Placed } from '../map/geometry.js';
 import { areaCells, affectedEntities, type AreaShape } from '../map/area.js';
 import { coverBetween } from '../map/cover.js';
 import { hasLineOfSight } from '../map/los.js';
+import { applyDamageRelation, type DamageRelation } from './attack.js';
 
 export type SpellTarget = {
   id: string;
@@ -23,6 +24,7 @@ export type SpellTarget = {
   abilities: Record<Ability, number>;
   proficiencies?: { saves?: Ability[] };
   conditions?: readonly { conditionId: string }[];
+  relations?: Record<string, DamageRelation>;
 };
 export type SpellEvent =
   | { type: 'AreaResolved'; cells: GridPos[]; affected: string[] }
@@ -278,6 +280,25 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
   const spellAttackBonus =
     abilityModifier(caster.abilities[ability]) + proficiencyBonus(caster.level);
   if (areaTargets) {
+    const damageRolls: Array<{ breakdown: RollBreakdown; damageType: string }> =
+      [];
+    if (resolution.kind === 'save') {
+      for (const d of spell.damage ?? []) {
+        const scaled = scaledDamage(d, spell.level, slotLevel, caster.level);
+        for (let n = 0; n < scaled.count; n++) {
+          const [breakdown, next] = roll(scaled.dice, rng);
+          rng = next;
+          damageRolls.push({ breakdown, damageType: d.types[0]! });
+          events.push({
+            type: 'RollEvent',
+            entityId: caster.id,
+            spellId,
+            kind: 'damage',
+            breakdown,
+          });
+        }
+      }
+    }
     for (const affected of areaTargets.affected) {
       const victim = input.map!.targets.find((t) => t.id === affected.id);
       if (!victim) continue;
@@ -308,35 +329,26 @@ export function castSpell(input: CastSpellInput): CastSpellResult {
         saveSucceeded = saveRoll.total >= dc;
       }
       if (resolution.kind === 'save')
-        for (const d of spell.damage ?? []) {
-          const scaled = scaledDamage(d, spell.level, slotLevel, caster.level);
-          for (let n = 0; n < scaled.count; n++) {
-            const [breakdown, next] = roll(scaled.dice, rng);
-            rng = next;
-            events.push({
-              type: 'RollEvent',
-              entityId: caster.id,
-              spellId,
-              kind: 'damage',
-              breakdown,
-            });
-            const half = saveSucceeded && resolution.onSuccess === 'half';
-            const amount = Math.floor(
-              Math.max(0, breakdown.total) *
-                (half ? 0.5 : saveSucceeded ? 0 : 1),
-            );
-            const from = stateStart.hp[victim.id] ?? victim.hp;
-            const to = Math.max(0, from - amount);
-            events.push({
-              type: 'HpChanged',
-              entityId: victim.id,
-              from,
-              to,
-              amount: from - to,
-              kind: 'damage',
-              damageType: d.types[0],
-            });
-          }
+        for (const { breakdown, damageType } of damageRolls) {
+          const half = saveSucceeded && resolution.onSuccess === 'half';
+          const raw = Math.floor(
+            Math.max(0, breakdown.total) * (half ? 0.5 : saveSucceeded ? 0 : 1),
+          );
+          const amount = applyDamageRelation(
+            raw,
+            victim.relations?.[damageType],
+          );
+          const from = stateStart.hp[victim.id] ?? victim.hp;
+          const to = Math.max(0, from - amount);
+          events.push({
+            type: 'HpChanged',
+            entityId: victim.id,
+            from,
+            to,
+            amount: from - to,
+            kind: 'damage',
+            damageType,
+          });
         }
     }
     events.push({
