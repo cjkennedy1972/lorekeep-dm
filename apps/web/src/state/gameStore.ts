@@ -4,7 +4,7 @@ import {
   type CombatEvent,
   type CombatState,
 } from '@game/rules-engine';
-import type { Battlemap, Character, EngineEvent } from '@game/schema';
+import type { Battlemap, Character, EngineEvent, GridPos } from '@game/schema';
 import type { MapCell } from '../features/map/hitTest.js';
 import type { MapViewport } from '../features/map/viewport.js';
 
@@ -15,6 +15,15 @@ export interface GameState {
   announcement: string;
   selectedCell: MapCell | null;
   viewport: MapViewport;
+  mapEntities: {
+    id: string;
+    kind: 'character' | 'monster' | 'npc';
+    pos: GridPos;
+    size: number;
+    hp: number;
+    team?: string;
+    speed?: number;
+  }[];
 }
 
 export const initialGameState = (): GameState => ({
@@ -24,6 +33,7 @@ export const initialGameState = (): GameState => ({
   announcement: '',
   selectedCell: null,
   viewport: { x: 0, y: 0, zoom: 1 },
+  mapEntities: [],
 });
 
 /** Pure combat reducer retained for engine replay and previews. */
@@ -86,6 +96,8 @@ export interface GameStore {
   setBattlemap(battlemap: Battlemap | null): void;
   setSelectedCell(cell: MapCell | null): void;
   setViewport(viewport: MapViewport): void;
+  setMapEntities(entities: GameState['mapEntities']): void;
+  setAnnouncement(message: string): void;
 }
 
 export function createGameStore(initial = initialGameState()): GameStore {
@@ -131,6 +143,15 @@ export function createGameStore(initial = initialGameState()): GameStore {
     setBattlemap: (battlemap) => set({ ...state, battlemap }),
     setSelectedCell: (selectedCell) => set({ ...state, selectedCell }),
     setViewport: (viewport) => set({ ...state, viewport }),
+    setMapEntities: (mapEntities) =>
+      set({
+        ...state,
+        mapEntities: mapEntities.map((entity) => ({
+          ...entity,
+          pos: { ...entity.pos },
+        })),
+      }),
+    setAnnouncement: (announcement) => set({ ...state, announcement }),
   };
 }
 
