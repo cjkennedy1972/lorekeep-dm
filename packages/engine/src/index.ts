@@ -4,6 +4,7 @@ export * from './dice.js';
 export * from './map/validate.js';
 export * from './map/load.js';
 export * from './map/geometry.js';
+export * from './map/los.js';
 export type { Catalog } from './catalog/types.js';
 export * from './character/types.js';
 export * from './character/validate.js';
