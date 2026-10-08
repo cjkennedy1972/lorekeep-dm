@@ -6,6 +6,7 @@
     "build": "node -e \"\"",
     "pretest": "pnpm --filter @game/server build && pnpm --filter @game/rules-engine build",
     "test": "vitest run --no-file-parallelism",
+    "pretypecheck": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

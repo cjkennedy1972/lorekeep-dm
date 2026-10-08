@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { replayCryptCombat, runCryptScenario } from '@game/rules-engine';
+import {
+  replayCryptCombat,
+  runCryptScenario,
+} from '@game/rules-engine/scripted-node';
 
 // Exercises the real engine scenario (no LLM, no network); the web keyboard run is
 // apps/web/e2e/sandbox-combat.spec.ts (Playwright).
