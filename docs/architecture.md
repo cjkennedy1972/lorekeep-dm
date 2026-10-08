@@ -238,6 +238,9 @@ Write path:
 - **Retrieval:** MVP uses Postgres full-text + trigram on registry names/aliases and summaries (entity-name match is the dominant case). Add `pgvector` only if recall evals (US-E3) fail. Default: no vector store at launch (ADR-006).
 - **Recap ("Previously on…", ≤ 150 words, US-S3):** generated at resume from last summaries; cached in the snapshot so resume doesn't need an LLM call if nothing changed.
 - **Entity-name injection:** before each call, the orchestrator scans player inputs and the last DM turn for registry names/aliases and injects their facts. Cheap, deterministic, no LLM.
+- **Registry persistence:** NPC, location, quest, flag, and ruling rows are scoped by `session_id`; each entity update appends a version linked by `supersedes_id`, and facts are retained with explicit supersession history. Writes from validated tool events pass through the Room and its lease-fenced transaction. Strict registry schemas allow only game fields; API credentials and other secrets are never persisted here.
+- **Retrieval:** return at most 20 ranked entries and 4,000 characters, ordered by Postgres FTS rank with trigram name/alias fallback and deterministic tie-breakers. The prompt builder receives ranked memories in order; its M2-20 trim sequence keeps the leading (highest-ranked) entries when reducing memory from 600 to 300.
+- **Retention:** registry and scene summaries are not logs and are excluded from the 30-day log sweeper; normal game/account deletion still follows the game-state deletion policy.
 
 ## 5. Persistence, resume, rewind
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { RoomState, ServerMessage } from '@game/schema';
+import type { RegistryEvent } from '../dm/memory.js';
 import type {
   EventInput,
   LatestState,
@@ -11,6 +12,11 @@ import { reduceRoom } from './reducer.js';
 
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
+  persistRegistryEvents?(
+    sessionId: string,
+    events: readonly RegistryEvent[],
+    lease: Lease,
+  ): Promise<void>;
   writeTurn(
     sessionId: string,
     events: readonly EventInput[],
@@ -189,6 +195,19 @@ export class Room {
       }
     });
   }
+  /** Persist validated registry tool events through the room actor and lease-fenced store. */
+  persistRegistry(events: readonly RegistryEvent[]): Promise<void> {
+    return this.enqueue(async () => {
+      if (!this.store.persistRegistryEvents)
+        throw new Error('Room store does not support registry persistence');
+      await this.store.persistRegistryEvents(
+        this.sessionId,
+        events,
+        this.lease,
+      );
+    });
+  }
+
   submit(actionId: string): Promise<boolean> {
     return this.enqueue(async () => {
       if (this.actionIds.has(actionId)) return false;
