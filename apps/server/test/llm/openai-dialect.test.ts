@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { LlmEndpointError } from '../../src/llm/adapter.js';
+import { createEgressGuard } from '../../src/llm/egress.js';
+import { Secret } from '../../src/llm/secret.js';
 import { OpenAICompatibleAdapter } from '../../src/llm/dialects/openai.js';
 import {
   startFakeOpenAIServer,
@@ -19,7 +21,10 @@ describe('OpenAI-compatible LLM adapter', () => {
     return new OpenAICompatibleAdapter({
       baseUrl: server.baseUrl,
       model: 'fixture-model',
-      apiKey: 'test-secret',
+      apiKey: new Secret('test-secret'),
+      egress: createEgressGuard({
+        allowLocalHosts: ['127.0.0.1', 'localhost'],
+      }),
       timeoutMs,
     });
   };
