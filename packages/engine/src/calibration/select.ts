@@ -26,16 +26,24 @@ export const LABELS: readonly EncounterDifficulty[] = [
   'deadly',
 ];
 
-/** How far `agg` is outside `band`, as the largest shortfall in absolute rate (0 = inside the band). */
-export function violation(agg: Agg, band: Band): number {
-  const gaps = [
-    band.winMin - agg.win,
-    band.winMax === undefined ? 0 : agg.win - band.winMax,
-    band.hpLostMin === undefined ? 0 : band.hpLostMin - agg.hpLostWin,
-    band.hpLostMax === undefined ? 0 : agg.hpLostWin - band.hpLostMax,
-  ];
-  return Math.max(0, ...gaps.map((g) => (Number.isNaN(g) ? 1 : g)));
+/** Shortfall of each side of the band in absolute rate; 0 = inside. `win` is the hard side. */
+export function gaps(agg: Agg, band: Band): { win: number; hp: number } {
+  const nz = (g: number) => (Number.isNaN(g) ? 1 : Math.max(0, g));
+  return {
+    win: Math.max(
+      nz(band.winMin - agg.win),
+      band.winMax === undefined ? 0 : nz(agg.win - band.winMax),
+    ),
+    hp: Math.max(
+      band.hpLostMin === undefined ? 0 : nz(band.hpLostMin - agg.hpLostWin),
+      band.hpLostMax === undefined ? 0 : nz(agg.hpLostWin - band.hpLostMax),
+    ),
+  };
 }
+export const violation = (agg: Agg, band: Band) => {
+  const g = gaps(agg, band);
+  return Math.max(g.win, g.hp);
+};
 
 export type Choice = {
   /** Multiplier of the SRD *moderate* per-character budget in the sweep. */
@@ -64,9 +72,10 @@ export function groupCells(rows: readonly CellRow[]) {
 }
 
 /**
- * Pick the cell for a (level, label): among cells inside the band take the one spending the most
- * XP (the hardest encounter that still meets the targets), ties to the smaller k and cap. If none
- * is inside, take the least-violating cell, which the caller reports as unmet.
+ * Pick the cell for a (level, label). Inside the whole band: the cell spending the most XP (the
+ * hardest encounter that still meets the targets). If none is inside, the win-rate band is the hard
+ * constraint (it is what players feel as "difficulty") and the HP-lost band is soft: least win gap,
+ * then least HP gap, then most XP. Ties go to the smaller k and cap. The caller reports unmet cells.
  */
 export function choose(
   cells: ReturnType<typeof groupCells>,
@@ -80,16 +89,19 @@ export function choose(
       maxEnemies: c.maxEnemies,
       agg: c.agg,
       violation: violation(c.agg, band),
+      ...gaps(c.agg, band),
     }));
   if (!scored.length) throw new Error(`no sweep cells for level ${level}`);
-  const inside = scored.filter((c) => c.violation === 0);
   const tie = (a: Choice, b: Choice) =>
     a.k - b.k || (a.maxEnemies ?? 99) - (b.maxEnemies ?? 99);
-  if (inside.length)
-    return inside.sort((a, b) => b.agg.spent - a.agg.spent || tie(a, b))[0]!;
-  return scored.sort(
-    (a, b) => a.violation - b.violation || b.agg.spent - a.agg.spent || tie(a, b),
+  const best = [...scored].sort(
+    (a, b) =>
+      a.win - b.win ||
+      a.hp - b.hp ||
+      b.agg.spent - a.agg.spent ||
+      tie(a, b),
   )[0]!;
+  return best;
 }
 
 /** Table multiplier for `label` reproducing the sweep's absolute budget k x (SRD moderate). */
@@ -112,7 +124,7 @@ export const DEFAULT_GRID = {
     0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2,
     2.5, 3, 4,
   ],
-  seeds: 30,
+  seeds: 60,
 };
 
 export type TableCell = {

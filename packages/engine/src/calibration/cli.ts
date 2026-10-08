@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { runPool } from './pool.js';
 import { DEFAULT_GRID } from './select.js';
+import { writeReport } from './report.js';
 import { buildTable } from './table.js';
 import { CLASS_SLUGS, POLICY_VERSIONS, type PolicyVersion } from './pc.js';
 import { CALIBRATION_SEED, type CellSpec } from './sweep.js';
@@ -84,6 +85,16 @@ if (cmd === 'sweep') {
     });
   }
   await buildTable(paths, workers);
+  writeReport(
+    fileURLToPath(
+      new URL(
+        '../../../../docs/plan/verification/solo-calibration.md',
+        import.meta.url,
+      ),
+    ),
+    paths.table,
+    paths.verify,
+  );
 } else {
   console.log(
     'usage: cli.js regenerate|build-table [--workers 1] | sweep --out f.jsonl [--policies v1] [--levels 1,2] [--caps 1,2,3,none] [--ks ...] [--seeds 60] [--workers 2]',
