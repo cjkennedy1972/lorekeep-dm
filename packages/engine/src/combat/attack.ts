@@ -5,10 +5,24 @@ import {
   type RollMode,
 } from '../dice.js';
 import type { RngState } from '../rng.js';
+import type { Battlemap } from '@game/schema';
+import { distance, rangeBand, type Placed } from '../map/geometry.js';
+import { coverBetween, type CoverGrade } from '../map/cover.js';
+import { hasLineOfSight } from '../map/los.js';
 
 export type DamageRelation = 'resistant' | 'vulnerable' | 'immune';
 
 /** Distance, cover and reach are resolved by the caller (M1-24); only their effect is passed in. */
+export type AttackMapContext = {
+  map: Battlemap;
+  attacker: Placed;
+  target: Placed;
+  /** Ranged weapon normal/long range, in feet. */
+  range?: { normalFt: number; longFt?: number };
+  /** Melee weapon reach, in feet (defaults to 5). */
+  reachFt?: number;
+};
+
 export type AttackInput = {
   attackerId: string;
   targetId: string;
@@ -22,6 +36,8 @@ export type AttackInput = {
   targetAc: number;
   /** Cover bonus to AC, already computed by the caller. */
   coverAcBonus?: number;
+  /** Optional authoritative tactical facts; absent preserves the unmapped API. */
+  map?: AttackMapContext;
   target: {
     hp: number;
     kind: 'pc' | 'monster';
@@ -36,6 +52,7 @@ export type AttackEvent =
       attackId: string;
       kind: 'attack' | 'damage';
       breakdown: RollBreakdown;
+      mapFacts?: { distanceFt: number; cover: CoverGrade };
     }
   | {
       type: 'HpChanged';
@@ -89,14 +106,45 @@ export function attack(input: AttackInput): AttackResult {
       'Target HP must be a non-negative integer.',
     );
 
+  let mode = input.mode ?? 'normal';
+  let mapFacts: { distanceFt: number; cover: CoverGrade } | undefined;
+  if (input.map) {
+    const { map, attacker, target } = input.map;
+    const distanceFt = distance(attacker, target, map.diagonalRule);
+    const sight = hasLineOfSight(map, attacker, target);
+    const cover = coverBetween(map, attacker, target);
+    if (!sight || !cover.targetable)
+      return bad(
+        'Target is blocked by full cover.',
+        'Choose a target with line of sight.',
+      );
+    if (input.map.range) {
+      const band = rangeBand(
+        distanceFt,
+        input.map.range.normalFt,
+        input.map.range.longFt ?? input.map.range.normalFt,
+      );
+      if (band === 'out')
+        return bad('Target is beyond long range.', 'Choose a closer target.');
+      if (band === 'long')
+        mode = mode === 'disadvantage' ? 'disadvantage' : 'disadvantage';
+    } else if (distanceFt > (input.map.reachFt ?? 5)) {
+      return bad(
+        'Target is beyond melee reach.',
+        'Choose a target within reach.',
+      );
+    }
+    mapFacts = { distanceFt, cover: cover.grade };
+  }
   const mods: Modifier[] = [
     { label: 'attack bonus', value: input.attackBonus },
+    ...(mode !== 'normal' ? [{ label: mode, value: 0 }] : []),
   ];
   let rng = input.seed;
   let attackRoll: RollBreakdown;
   try {
     [attackRoll, rng] = roll('1d20', rng, {
-      mode: input.mode,
+      mode,
       modifiers: mods,
     });
   } catch (e) {
@@ -109,10 +157,17 @@ export function attack(input: AttackInput): AttackResult {
       attackId: input.attackId,
       kind: 'attack',
       breakdown: attackRoll,
+      ...(mapFacts ? { mapFacts } : {}),
     },
   ];
   const natural = attackRoll.dice.find((d) => d.kept)!.value;
-  const ac = input.targetAc + (input.coverAcBonus ?? 0);
+  const ac =
+    input.targetAc +
+    (input.coverAcBonus ??
+      (input.map
+        ? coverBetween(input.map.map, input.map.attacker, input.map.target)
+            .acBonus
+        : 0));
   const crit = natural === 20;
   const hit = natural !== 1 && (crit || attackRoll.total >= ac);
   if (!hit) return { ok: true, hit, crit: false, events, rng };
