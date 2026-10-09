@@ -376,6 +376,24 @@ export function createMock(
             recap: '',
           })),
       });
+    const gameRoute = /^\/api\/tables\/([^/]+)$/.exec(url.pathname);
+    if (req.method === 'GET' && gameRoute) {
+      const game = rooms.get(gameRoute[1]!);
+      if (!game || !game.members.has(account.id))
+        return err(res, 404, 'NOT_FOUND', 'Not found.');
+      return json(res, 200, {
+        game: {
+          id: game.id,
+          name: game.name,
+          status: 'active',
+          adventureId: 'adventure:01-hollow-under-marrowfell',
+          difficulty: 'moderate',
+          startingLevel: 1,
+          recap: '',
+          state: {},
+        },
+      });
+    }
     if (route === 'POST /api/tables') {
       const body = await readBody(req);
       const name = typeof body?.name === 'string' ? body.name.trim() : '';

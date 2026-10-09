@@ -7,6 +7,7 @@ import type { Battlemap, ServerMessage } from '@game/schema';
 import { Game } from '../src/screens/Game.js';
 import { gameStore } from '../src/state/store.js';
 import { initialGameState } from '../src/state/gameStore.js';
+import { http } from '../src/api.js';
 
 const hoisted = vi.hoisted(() => ({
   send: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('../src/room/useRoom.js', () => ({
     return { room: hoisted.room, status: 'connected', send: hoisted.send };
   },
 }));
+
 vi.mock('../src/auth.js', () => ({
   useAuth: () => ({ account: hoisted.account }),
 }));
@@ -116,9 +118,9 @@ function mount() {
     },
   };
   return render(
-    <MemoryRouter initialEntries={['/rooms/t1/game']}>
+    <MemoryRouter initialEntries={['/']}>
       <Routes>
-        <Route path="/rooms/:id/game" element={<Game />} />
+        <Route path="/" element={<Game />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -126,6 +128,11 @@ function mount() {
 
 describe('Game screen (live Room)', () => {
   beforeEach(() => {
+    http.fetch = async () =>
+      new Response(
+        JSON.stringify({ game: { recap: 'A short recap.', name: 'Fixture' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     HTMLCanvasElement.prototype.getContext = (() =>
       new Proxy({}, { get: () => () => undefined })) as never;
     hoisted.send.mockClear();

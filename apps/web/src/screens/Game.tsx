@@ -17,7 +17,7 @@ import { NarrationLog } from '../features/narration/NarrationLog.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { ConnectionStatus } from '../room/ConnectionStatus.js';
 import { useRoom } from '../room/useRoom.js';
-import { http } from '../api.js';
+import { api, http } from '../api.js';
 import { gameStore } from '../state/store.js';
 
 const renderer = new Canvas2DRenderer();
@@ -61,6 +61,25 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 export function Game() {
   const { id = '' } = useParams();
   const { account } = useAuth();
+  const [resume, setResume] = useState<{ recap: string; name: string } | null>(
+    null,
+  );
+  const [resumeError, setResumeError] = useState('');
+  const [resumeLoading, setResumeLoading] = useState(false);
+  const loadGame = () => {
+    setResumeLoading(true);
+    setResumeError('');
+    void api<{ game: { recap: string; name: string } }>(
+      `/api/tables/${id}`,
+    ).then((result) => {
+      if (result.ok) setResume(result.data.game);
+      else setResumeError(result.message);
+      setResumeLoading(false);
+    });
+  };
+  useEffect(() => {
+    if (id) loadGame();
+  }, [id]);
   const live = useRoom({
     baseUrl: http.base,
     fetchImpl: (...args) => http.fetch(...args),
@@ -330,6 +349,24 @@ export function Game() {
     ? { width: map.w * 32, height: map.h * 32 }
     : { width: 0, height: 0 };
 
+  if (id && resumeLoading)
+    return (
+      <section>
+        <h1>Game</h1>
+        <p role="status">Loading your game and recap…</p>
+      </section>
+    );
+  if (id && resumeError)
+    return (
+      <section>
+        <h1>Game unavailable</h1>
+        <p role="alert">{resumeError}</p>
+        <button type="button" onClick={loadGame}>
+          Retry
+        </button>
+        <Link to="/rooms">My games</Link>
+      </section>
+    );
   if (!room)
     return (
       <section>
@@ -349,6 +386,18 @@ export function Game() {
         <ConnectionStatus status={live.status} />
         <Link to={`/rooms/${id}`}>Back to lobby</Link>
       </header>
+      {resume?.recap && (
+        <section aria-label="Previously on">
+          <h2>Previously on…</h2>
+          <p>{resume.recap}</p>
+        </section>
+      )}
+      {live.status === 'connected' && live.error && (
+        <p role="alert">
+          The game server is unavailable. Your game is safe; retry your action
+          when reconnected.
+        </p>
+      )}
       <p role="status" aria-live="polite">
         {error}
       </p>
@@ -503,7 +552,14 @@ export function Game() {
         <p role="status">CombatEnded: {tracker.ended.outcome}</p>
       )}
       {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
-      <NarrationLog messages={messages} />
+      <NarrationLog
+        messages={messages}
+        onRetry={(actionId) => live.send('RetryAction', { actionId })}
+        onResubmit={() => {
+          if (actionText.trim())
+            live.send('PlayerAction', { text: actionText.trim() });
+        }}
+      />
       <Sheet store={gameStore} />
     </main>
   );
