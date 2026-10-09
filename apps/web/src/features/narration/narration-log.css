@@ -1,0 +1,66 @@
+.narration-log {
+  position: relative;
+  border: 1px solid #81786d;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: #fffdf8;
+  color: #201d19;
+}
+
+.narration-log__entries {
+  max-height: 28rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  margin: 0;
+  padding-inline-start: 0;
+  scroll-behavior: smooth;
+}
+
+.narration-log__entries:focus-visible {
+  outline: 3px solid #243b78;
+  outline-offset: 3px;
+}
+
+.narration-log__turn,
+.narration-log__error,
+.narration-log__pending {
+  margin-block: 1rem;
+  padding: 0.75rem;
+  border-inline-start: 0.25rem solid #66543b;
+}
+
+.narration-log__error {
+  border-inline-start-color: #8b1d14;
+}
+
+.narration-log__pending {
+  border-inline-start-style: dashed;
+}
+
+.narration-log__label {
+  font-weight: 700;
+}
+
+.narration-log__latest {
+  min-height: 2.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .narration-log__entries {
+    scroll-behavior: auto;
+  }
+}
+
+@media (min-width: 42rem) {
+  [data-text-size='large'] .narration-log,
+  [data-text-size='xlarge'] .narration-log {
+    font-size: 1.25em;
+  }
+
+  [data-dyslexia-font='on'] .narration-log {
+    font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif;
+    letter-spacing: 0.04em;
+    line-height: 1.7;
+  }
+}
