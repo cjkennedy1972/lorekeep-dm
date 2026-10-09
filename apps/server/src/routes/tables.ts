@@ -5,6 +5,7 @@ import { CharacterSchema, AdventureSchema } from '@game/schema';
 import { z } from 'zod';
 import { quickBuild, validateCharacter } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { catalogFromSnapshot } from '../room/catalogSnapshot.js';
 import { loadAdventure } from '@game/rules-engine/adventure-node';
 import { authenticateRequest } from '../middleware/auth.js';
 import { buildResumeRecap } from '../dm/recap.js';
@@ -131,6 +132,11 @@ export function registerTableRoutes(
           'You have too many active games. Archive one before creating another.',
       });
     await db.query(
+      `INSERT INTO catalog_snapshots(catalog_version,entries)
+       VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
+      [catalog.catalogVersion, JSON.stringify(catalog.entries)],
+    );
+    await db.query(
       `INSERT INTO sessions(id,owner_account_id,name,status,mode,adventure_id,difficulty,catalog_version,premise,character_id,character)
         VALUES($1,$2,$3,'active','solo',$4,$5,$6,$7,$8,$9::jsonb)`,
       [
@@ -194,8 +200,9 @@ export function registerTableRoutes(
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });
       const result = await db.query(
-        `SELECT s.id,s.name,s.status,s.adventure_id,s.difficulty,s.catalog_version,s.last_active_at,s.character,s.premise,s.owner_account_id,snap.state,snap.seq
-      FROM sessions s LEFT JOIN LATERAL (SELECT state,seq FROM snapshots WHERE session_id=s.id ORDER BY seq DESC LIMIT 1) snap ON true
+        `SELECT s.id,s.name,s.status,s.adventure_id,s.difficulty,s.catalog_version,pinned_catalog.entries AS catalog_snapshot,s.last_active_at,s.character,s.premise,s.owner_account_id,snap.state,snap.seq
+      FROM sessions s LEFT JOIN catalog_snapshots pinned_catalog ON pinned_catalog.catalog_version=s.catalog_version
+      LEFT JOIN LATERAL (SELECT state,seq FROM snapshots WHERE session_id=s.id ORDER BY seq DESC LIMIT 1) snap ON true
       WHERE s.id=$1 AND s.owner_account_id=$2 AND s.mode='solo'`,
         [request.params.id, accountId],
       );
@@ -220,7 +227,14 @@ export function registerTableRoutes(
           code: 'TABLE_CLOSED',
           message: 'This game is archived or ended.',
         });
-      if (row.catalog_version !== catalog.catalogVersion)
+      const pinnedCatalog =
+        row.catalog_version === catalog.catalogVersion
+          ? catalog
+          : catalogFromSnapshot(
+              row.catalog_version as string | null,
+              row.catalog_snapshot,
+            );
+      if (!pinnedCatalog)
         return reply.code(409).send({
           code: 'CATALOG_VERSION_UNAVAILABLE',
           message:

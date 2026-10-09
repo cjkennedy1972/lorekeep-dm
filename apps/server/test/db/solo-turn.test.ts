@@ -14,7 +14,7 @@ import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
-import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { loadCatalog, catalogVersionOf } from '@game/rules-engine/catalog-node';
 import type { TurnResult } from '../../src/dm/orchestrator.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -414,6 +414,131 @@ describe('solo turn persisted lifecycle', () => {
       body: JSON.stringify({ sessionId: table }),
     });
     expect(anonymous.status).toBe(401);
+  });
+
+  it('creates through first narration within three minutes and resumes after restart on another device with owner isolation', async () => {
+    const owner = await createUser();
+    const startedAt = performance.now();
+    const created = await fetch(`${base}/api/tables`, {
+      method: 'POST',
+      headers: {
+        origin: base,
+        cookie: `sid=${owner.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Lifecycle proof' }),
+    });
+    expect(created.status).toBe(201);
+    const createdAt = performance.now();
+    const gameId = (await created.json()).game.id as string;
+    sessionIds.push(gameId);
+    const pinned = await db.query<{
+      catalog_snapshot: unknown;
+      catalog_version: string;
+    }>(
+      'SELECT cs.entries AS catalog_snapshot,s.catalog_version FROM sessions s JOIN catalog_snapshots cs ON cs.catalog_version=s.catalog_version WHERE s.id=$1',
+      [gameId],
+    );
+    const currentCatalog = loadCatalog();
+    expect(pinned.rows[0]?.catalog_snapshot).toEqual(currentCatalog.entries);
+    expect(pinned.rows[0]?.catalog_version).toBe(currentCatalog.catalogVersion);
+    const historicalEntries = currentCatalog.entries.map((entry, index) =>
+      index === 0 && 'name' in entry
+        ? { ...entry, name: `${entry.name} (pinned before catalog update)` }
+        : entry,
+    );
+    const historicalVersion = catalogVersionOf(historicalEntries);
+    await db.query(
+      'INSERT INTO catalog_snapshots(catalog_version,entries) VALUES($1,$2::jsonb) ON CONFLICT DO NOTHING',
+      [historicalVersion, JSON.stringify(historicalEntries)],
+    );
+    await db.query('UPDATE sessions SET catalog_version=$2 WHERE id=$1', [
+      gameId,
+      historicalVersion,
+    ]);
+    const roomAtCreation = await rooms.get(gameId);
+    const initialGameState = roomAtCreation.state.gameState as Record<
+      string,
+      unknown
+    >;
+    await roomAtCreation.persistGameState({
+      ...initialGameState,
+      catalogVersion: historicalVersion,
+    });
+
+    const socket = await openSocket(owner.id, owner.token, gameId);
+    const connectedAt = performance.now();
+    const firstNarration = receive(
+      socket,
+      (message) => message.type === 'NarrationCompleted',
+    );
+    sendAction(socket, randomUUID(), 'I look toward the village lantern.');
+    const narration = await firstNarration;
+    const narratedAt = performance.now();
+    socket.close();
+    expect(narration.payload?.text).toBe('The door opens.');
+    expect(narratedAt - startedAt).toBeLessThanOrEqual(180_000);
+    process.stdout.write(
+      `M2-28 scripted timing ms: create=${Math.round(createdAt - startedAt)}; websocket=${Math.round(connectedAt - createdAt)}; first-narration=${Math.round(narratedAt - connectedAt)}; total=${Math.round(narratedAt - startedAt)} (limit=180000)\n`,
+    );
+
+    await new RegistryMemory(db).closeScene(
+      gameId,
+      'scene:opening',
+      'The adventurer followed the lantern light into Greyfen and found the road abandoned.',
+    );
+    const beforeRestart = await fetch(`${base}/api/tables/${gameId}`, {
+      headers: { cookie: `sid=${owner.token}` },
+    });
+    expect(beforeRestart.status).toBe(200);
+    const priorGame = (await beforeRestart.json()).game;
+    expect(priorGame.recap).toContain('followed the lantern light');
+    const priorCharacter = priorGame.character;
+    const priorGameState = priorGame.state.gameState;
+
+    await rooms.drain();
+    await app.close();
+    rooms = new RoomRegistry(
+      new Persistence(db),
+      new SessionLease(db),
+      'solo-turn-restarted',
+      600_000,
+      60_000,
+      runner,
+    );
+    const connections = new ConnectionRegistry(db);
+    app = createApp(db, { rooms, connections });
+    installGateway(app, db, rooms, connections, 300);
+    base = await app.listen({ host: '127.0.0.1', port: 0 });
+
+    const secondDeviceToken = await createSession(
+      db,
+      owner.id,
+      'second-device',
+    );
+    const resumed = await fetch(`${base}/api/tables/${gameId}`, {
+      headers: { cookie: `sid=${secondDeviceToken}` },
+    });
+    expect(resumed.status).toBe(200);
+    const resumedGame = (await resumed.json()).game;
+    expect(resumedGame.character).toEqual(priorCharacter);
+    const priorStateWithoutRecap = {
+      ...(priorGameState as Record<string, unknown>),
+    };
+    const resumedStateWithoutRecap = {
+      ...(resumedGame.state.gameState as Record<string, unknown>),
+    };
+    delete priorStateWithoutRecap.recap;
+    delete resumedStateWithoutRecap.recap;
+    expect(resumedStateWithoutRecap).toEqual(priorStateWithoutRecap);
+    expect(resumedGame.recap).toContain('followed the lantern light');
+
+    const outsider = await createUser();
+    const forbidden = await fetch(`${base}/api/tables/${gameId}`, {
+      headers: { cookie: `sid=${outsider.token}` },
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ code: 'FORBIDDEN' });
   });
 
   it('second unchanged resume makes zero metered LLM calls', async () => {
