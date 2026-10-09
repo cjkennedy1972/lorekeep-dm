@@ -3,6 +3,20 @@ import { expect, test, type BrowserContext } from '@playwright/test';
 const API = 'http://localhost:8787';
 let n = 0;
 
+/** The lobby suites test the lobby, so seed the table through the API: the solo start flow (M2-37) opens on the Game screen. */
+async function createTable(context: BrowserContext, name: string) {
+  const res = await context.request.post(`${API}/api/tables`, {
+    data: {
+      name,
+      adventureId: 'adventure:fixture-1',
+      difficulty: 'moderate',
+      startingLevel: 1,
+    },
+  });
+  expect(res.ok()).toBe(true);
+  return ((await res.json()) as { game: { id: string } }).game.id;
+}
+
 async function signedIn(context: BrowserContext, name: string) {
   const res = await context.request.post(`${API}/api/signup`, {
     data: {
@@ -23,12 +37,9 @@ test('keyboard-only: create a table, copy the invite, two players see each other
   });
   await signedIn(host, 'Harper');
   const page = await host.newPage();
-  await page.goto('/rooms');
-  await page.getByRole('heading', { name: 'My games' }).waitFor();
-
-  await page.getByLabel('Game name').focus();
-  await page.keyboard.type('Keyboard Keep');
-  await page.keyboard.press('Enter');
+  const id = await createTable(host, 'Keyboard Keep');
+  await page.goto(`/rooms/${id}`);
+  // A solo game opens on the Game screen; this suite exercises the lobby, one URL up.
   await page.getByRole('heading', { name: 'Keyboard Keep' }).waitFor();
 
   await page.getByRole('button', { name: 'Copy invite link' }).focus();
@@ -62,16 +73,18 @@ test('navigation to a new lobby clears the plaintext invite from history.state',
   const host = await browser.newContext();
   await signedIn(host, 'History');
   const page = await host.newPage();
-  await page.goto('/rooms');
-  await page.getByLabel('Game name').fill('History Hall');
-  await page.getByRole('button', { name: 'Create solo game' }).click();
+  const id = await createTable(host, 'History Hall');
+  await page.goto(`/rooms/${id}`);
   await page.getByRole('heading', { name: 'History Hall' }).waitFor();
 
   const invite = (await page.getByLabel('Invite link').inputValue()).split(
     '/join/',
   )[1];
   expect(invite).toMatch(/^[A-Za-z0-9_-]{22}$/);
-  await expect.poll(() => page.evaluate(() => history.state?.usr)).toBeNull();
+  // No navigation state carries the invite any more (solo creation opens the Game screen).
+  await expect
+    .poll(() => page.evaluate(() => history.state?.usr ?? null))
+    .toBeNull();
   expect(
     JSON.stringify(await page.evaluate(() => history.state)),
   ).not.toContain(invite);
@@ -86,9 +99,8 @@ test('lobby fits a 360px viewport without horizontal scroll', async ({
   });
   await signedIn(ctx, 'Narrow');
   const page = await ctx.newPage();
-  await page.goto('/rooms');
-  await page.getByLabel('Game name').fill('Tiny Table');
-  await page.getByRole('button', { name: 'Create solo game' }).click();
+  const id = await createTable(ctx, 'Tiny Table');
+  await page.goto(`/rooms/${id}`);
   await page.getByRole('heading', { name: 'Tiny Table' }).waitFor();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > innerWidth,
