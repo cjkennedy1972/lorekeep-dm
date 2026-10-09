@@ -1,0 +1,6 @@
+{
+  "rulesCorrect": { "min": 0.9 },
+  "puppetingRate": { "max": 0.02, "exclusive": true },
+  "mapContradictionRate": { "max": 0.02, "exclusive": true },
+  "toolValidity": { "min": 0.95 }
+}

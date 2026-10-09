@@ -4,3 +4,4 @@ export type {
   AdventureError,
   AdventureErrorCode,
 } from './adventure/validate.js';
+export { adventure01RegistrySeed } from './adventure/registry-seed.js';

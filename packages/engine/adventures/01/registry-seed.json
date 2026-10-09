@@ -1,0 +1,87 @@
+{
+  "npcs": [
+    {
+      "id": "npc_nessa_kell",
+      "name": "Nessa Kell",
+      "role": "Well-warden of Marrowfell",
+      "disposition": "friendly",
+      "facts": [
+        "The well turned bitter nine days ago; the well-head lamps will not relight.",
+        "Gallows Knoll opened beneath a ram nine days ago.",
+        "Tallow Hold was built by lamp-keepers; the Ember Lamp keeps something quiet below.",
+        "Nessa pays 20 gp now and 60 gp on return."
+      ]
+    },
+    {
+      "id": "npc_tobren_vask",
+      "name": "Tobren Vask",
+      "role": "Surveyor trapped in the Chapel of Wicks",
+      "disposition": "friendly",
+      "facts": [
+        "The six Chapel wicks must be lit from low to high.",
+        "Tobren knows the Level 2 layout.",
+        "The winch chain is greased despite being unused for a century.",
+        "The goblin boss wears a stolen breastplate."
+      ]
+    },
+    {
+      "id": "npc_pip_ashgrub",
+      "name": "Pip Ashgrub",
+      "role": "Cinderwick goblin deserter",
+      "disposition": "neutral",
+      "facts": [
+        "Skarrik keeps the Cinderwick key on a cord around his neck.",
+        "The old ward keeps goblins out of the Tallow Larder.",
+        "The boss hall has a back door.",
+        "The smoke people grease the shaft chain each dusk."
+      ]
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc_marrowfell",
+      "name": "Marrowfell",
+      "role": "Hill village",
+      "facts": [
+        "Marrowfell has one stone well and about 120 residents.",
+        "The well water turned bitter nine days ago."
+      ]
+    },
+    {
+      "id": "loc_gallows_knoll",
+      "name": "Gallows Knoll",
+      "role": "Hill above Marrowfell",
+      "facts": ["A sinkhole opened here nine days before the story starts."]
+    },
+    {
+      "id": "loc_tallow_hold",
+      "name": "Tallow Hold",
+      "role": "Buried keep",
+      "facts": [
+        "The extinct lamp-keepers built this three-level keep: Upper Ruins, Cinderwick Warrens, and Lamp Vault.",
+        "The one-way winch shaft descends; the rear stair opens after the lamp choice."
+      ]
+    },
+    {
+      "id": "loc_ember_lamp",
+      "name": "The Ember Lamp",
+      "role": "Binding lamp in the vault",
+      "facts": [
+        "The lamp binds the dead and keeps the spring sweet.",
+        "Relighting it cleans the well in three days and settles the wardens.",
+        "Smothering it frees the dead and the well never recovers."
+      ]
+    }
+  ],
+  "quests": [
+    {
+      "id": "quest_bitter_well",
+      "status": "available",
+      "note": "Restore the well by resolving the Ember Lamp choice."
+    }
+  ],
+  "flags": [
+    { "id": "flag_well_bitter", "value": true },
+    { "id": "flag_chapel_order", "value": "low-to-high" }
+  ]
+}

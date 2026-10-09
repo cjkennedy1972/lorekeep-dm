@@ -153,7 +153,7 @@ Weakest three: warlock 65%, wizard 82%, sorcerer 87%. Strongest three: barbarian
 
 ## Provenance and regeneration
 
-* Table: `packages/engine/src/encounter/solo-difficulty.v1.json` (versioned, carries git sha of the commit the run started from, date, policy, both seed sets, grid, targets, `targetsApproved: false`).
+* Table: `packages/engine/src/encounter/solo-difficulty.v1.json` (versioned, carries git sha of the commit the run started from, date, policy, both seed sets, grid, targets, `targetsApproved: true` (approved by the owner 2026-10-09)).
 * Raw sweep (resumable JSONL, one line per finished class-cell): `packages/engine/calibration-data/solo-sweep.v1.jsonl`; verification: `solo-verify.v1.jsonl`; machine-readable results: `docs/plan/verification/solo-calibration-results.json`.
 * Regenerate: `pnpm --filter @game/rules-engine calibrate:solo` (one niced worker, resumable: delete the two JSONL files for a clean rerun; about 25 minutes on a laptop). The tables above are rewritten from the data files by that script.
 * Builder: `buildEncounter` defaults to `soloBudget: 'calibrated'` for a solo PC and reads the table by level and label; `soloBudget: 'srd'` gives the old 1× behaviour; `{ multiplier, maxEnemies }` is an explicit override. `deadly` is a new solo-only label.
@@ -166,3 +166,7 @@ Weakest three: warlock 65%, wizard 82%, sorcerer 87%. Strongest three: barbarian
 4. **Class imbalance:** accept a single population-average table, or add a per-class adjustment (the warlock case) or tell players which classes run hard solo.
 5. **Warlock modelling** (Agonizing Blast, Hex) and subclass features if the warlock gap matters.
 6. **Whether L1–L3 need an authored encounter list** instead of generated ones, since catalog monsters cannot separate moderate from high there.
+
+## Approval (2026-10-09)
+
+Approved by the owner as recommended: moderate and high are defined on win rate per fight plus an HP band measured over a 3-fight day with a short rest (the per-fight HP band in the table `targets` is informational only); win targets low ≥97%, moderate ≥90%, high ≥75%, deadly 35–60%; policy v2 stays the baseline; one population-average table for M2 with a "plays harder solo" note for warlock, wizard and sorcerer at character creation; per-class tuning in M3; warlock modelling is a backlog item; L1–L3 encounters in adventure #1 are hand-authored using the table for budget checks.

@@ -94,7 +94,7 @@ export async function buildTable(paths: Paths, workers: number, date: string) {
     seedsPerCell: DEFAULT_GRID.seeds,
     grid: { ks: DEFAULT_GRID.ks, caps: DEFAULT_GRID.caps },
     targets: TARGETS,
-    targetsApproved: false,
+    targetsApproved: true,
   };
   const table = { ...provenance, levels: fitted };
   writeFileSync(paths.table, `${JSON.stringify(table, null, 2)}\n`);

@@ -1,0 +1,302 @@
+[
+  {
+    "id": "explore-01",
+    "pc": "Mira",
+    "scene": "a flooded cellar",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-02",
+    "pc": "Tobin",
+    "scene": "a moonlit ridge",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-03",
+    "pc": "Sable",
+    "scene": "a market square at dusk",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-04",
+    "pc": "Quill",
+    "scene": "a collapsed mine shaft",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-05",
+    "pc": "Brann",
+    "scene": "a quiet chapel",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-06",
+    "pc": "Mira",
+    "scene": "a reed-choked marsh",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-07",
+    "pc": "Tobin",
+    "scene": "a torchlit corridor",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-08",
+    "pc": "Sable",
+    "scene": "an abandoned watchtower",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-09",
+    "pc": "Quill",
+    "scene": "a frozen lake shore",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-10",
+    "pc": "Brann",
+    "scene": "a smoky tavern",
+    "playerAction": "I look around."
+  },
+  {
+    "id": "explore-11",
+    "pc": "Mira",
+    "scene": "a flooded cellar",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-12",
+    "pc": "Tobin",
+    "scene": "a moonlit ridge",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-13",
+    "pc": "Sable",
+    "scene": "a market square at dusk",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-14",
+    "pc": "Quill",
+    "scene": "a collapsed mine shaft",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-15",
+    "pc": "Brann",
+    "scene": "a quiet chapel",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-16",
+    "pc": "Mira",
+    "scene": "a reed-choked marsh",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-17",
+    "pc": "Tobin",
+    "scene": "a torchlit corridor",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-18",
+    "pc": "Sable",
+    "scene": "an abandoned watchtower",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-19",
+    "pc": "Quill",
+    "scene": "a frozen lake shore",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-20",
+    "pc": "Brann",
+    "scene": "a smoky tavern",
+    "playerAction": "I examine the nearest door."
+  },
+  {
+    "id": "explore-21",
+    "pc": "Mira",
+    "scene": "a flooded cellar",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-22",
+    "pc": "Tobin",
+    "scene": "a moonlit ridge",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-23",
+    "pc": "Sable",
+    "scene": "a market square at dusk",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-24",
+    "pc": "Quill",
+    "scene": "a collapsed mine shaft",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-25",
+    "pc": "Brann",
+    "scene": "a quiet chapel",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-26",
+    "pc": "Mira",
+    "scene": "a reed-choked marsh",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-27",
+    "pc": "Tobin",
+    "scene": "a torchlit corridor",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-28",
+    "pc": "Sable",
+    "scene": "an abandoned watchtower",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-29",
+    "pc": "Quill",
+    "scene": "a frozen lake shore",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-30",
+    "pc": "Brann",
+    "scene": "a smoky tavern",
+    "playerAction": "I ask the stranger what he knows."
+  },
+  {
+    "id": "explore-31",
+    "pc": "Mira",
+    "scene": "a flooded cellar",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-32",
+    "pc": "Tobin",
+    "scene": "a moonlit ridge",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-33",
+    "pc": "Sable",
+    "scene": "a market square at dusk",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-34",
+    "pc": "Quill",
+    "scene": "a collapsed mine shaft",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-35",
+    "pc": "Brann",
+    "scene": "a quiet chapel",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-36",
+    "pc": "Mira",
+    "scene": "a reed-choked marsh",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-37",
+    "pc": "Tobin",
+    "scene": "a torchlit corridor",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-38",
+    "pc": "Sable",
+    "scene": "an abandoned watchtower",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-39",
+    "pc": "Quill",
+    "scene": "a frozen lake shore",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-40",
+    "pc": "Brann",
+    "scene": "a smoky tavern",
+    "playerAction": "I listen at the wall."
+  },
+  {
+    "id": "explore-41",
+    "pc": "Mira",
+    "scene": "a flooded cellar",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-42",
+    "pc": "Tobin",
+    "scene": "a moonlit ridge",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-43",
+    "pc": "Sable",
+    "scene": "a market square at dusk",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-44",
+    "pc": "Quill",
+    "scene": "a collapsed mine shaft",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-45",
+    "pc": "Brann",
+    "scene": "a quiet chapel",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-46",
+    "pc": "Mira",
+    "scene": "a reed-choked marsh",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-47",
+    "pc": "Tobin",
+    "scene": "a torchlit corridor",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-48",
+    "pc": "Sable",
+    "scene": "an abandoned watchtower",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-49",
+    "pc": "Quill",
+    "scene": "a frozen lake shore",
+    "playerAction": "I search the floor for tracks."
+  },
+  {
+    "id": "explore-50",
+    "pc": "Brann",
+    "scene": "a smoky tavern",
+    "playerAction": "I search the floor for tracks."
+  }
+]

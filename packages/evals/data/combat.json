@@ -1,0 +1,1142 @@
+[
+  {
+    "id": "combat-01",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 6,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-02",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 8,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-03",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 10,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 6,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-04",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 6,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 7,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-05",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 7,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-06",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-07",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 8,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 6,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-08",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 6,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 10,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 7,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-09",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 8,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-10",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 7,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-11",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 6,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-12",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 6,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 11,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 7,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-13",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 6,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-14",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 8,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-15",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 10,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 6,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-16",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 6,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 7,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-17",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 7,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-18",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-19",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 8,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 6,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-20",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 6,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 10,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 7,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-21",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 8,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-22",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 7,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-23",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 6,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-24",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 6,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 11,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 7,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-25",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 6,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-26",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 8,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-27",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 10,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 6,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  },
+  {
+    "id": "combat-28",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 5,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 6,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 7,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Goblin."
+  },
+  {
+    "id": "combat-29",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 2,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Wolf",
+        "kind": "foe",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 7,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Bandit",
+        "kind": "foe",
+        "x": 4,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Wolf."
+  },
+  {
+    "id": "combat-30",
+    "grid": {
+      "width": 16,
+      "height": 12
+    },
+    "entities": [
+      {
+        "name": "Mira",
+        "kind": "pc",
+        "x": 3,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Skeleton",
+        "kind": "foe",
+        "x": 4,
+        "y": 3,
+        "alive": true
+      },
+      {
+        "name": "Goblin",
+        "kind": "foe",
+        "x": 9,
+        "y": 8,
+        "alive": true
+      },
+      {
+        "name": "Cultist",
+        "kind": "foe",
+        "x": 5,
+        "y": 5,
+        "alive": false
+      }
+    ],
+    "action": "Mira attacks the Skeleton."
+  }
+]

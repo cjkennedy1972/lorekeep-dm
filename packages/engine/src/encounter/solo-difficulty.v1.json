@@ -33,7 +33,7 @@
       "winMax": 0.6
     }
   },
-  "targetsApproved": false,
+  "targetsApproved": true,
   "levels": {
     "1": {
       "low": {

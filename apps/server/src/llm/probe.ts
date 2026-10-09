@@ -21,7 +21,7 @@ export interface EndpointProfile {
   schemaViolations: number;
   ttftMs: number | null;
   contextWindow: number | null;
-  qualified: false;
+  qualified: boolean;
   probedAt: string;
 }
 
