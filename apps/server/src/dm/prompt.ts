@@ -171,11 +171,16 @@ function makeDynamic(
     .filter(Boolean)
     .join('\n\n');
 }
-function makeMemory(items: readonly string[], count: number): string {
-  return items
-    .slice(0, count)
-    .map((item) => quoteData('MEMORY', item))
-    .join('\n\n');
+function makeMemory(items: readonly string[], tokenBudget: number): string {
+  if (tokenBudget <= 0) return '';
+  const selected: string[] = [];
+  for (const item of items) {
+    const quoted = quoteData('MEMORY', item);
+    const candidate = [...selected, quoted].join('\n\n');
+    if (selected.length > 0 && estimateTokens(candidate) > tokenBudget) break;
+    selected.push(quoted);
+  }
+  return selected.join('\n\n');
 }
 function flatten(blocks: readonly string[]): string {
   return blocks.filter(Boolean).join('\n\n');
@@ -189,7 +194,7 @@ export function buildPrompt(input: BuildPromptInput): PromptResult {
   const memories = input.turn.retrievedMemory ?? [];
   const trimsApplied: string[] = [];
   let selectedTurns = 6;
-  let memoryCount = memories.length;
+  let memoryBudget = 600;
   let registryLimit = Number.MAX_SAFE_INTEGER;
   let brief = false;
   const render = () =>
@@ -197,7 +202,7 @@ export function buildPrompt(input: BuildPromptInput): PromptResult {
       staticBlock,
       sessionBlock,
       makeDynamic(input, selectedTurns, registryLimit, brief),
-      makeMemory(memories, memoryCount),
+      makeMemory(memories, memoryBudget),
     ] as [string, string, string, string];
   let blocks = render();
   const trim = (name: string, apply: () => void) => {
@@ -214,13 +219,13 @@ export function buildPrompt(input: BuildPromptInput): PromptResult {
     trim('transcript:4→2', () => {
       selectedTurns = 2;
     });
-  if (over() && memoryCount > 0)
+  if (over() && memoryBudget > 300)
     trim('memory:600→300', () => {
-      memoryCount = Math.min(memoryCount, 300);
+      memoryBudget = 300;
     });
-  if (over() && memoryCount > 0)
+  if (over() && memoryBudget > 0)
     trim('memory:300→0', () => {
-      memoryCount = 0;
+      memoryBudget = 0;
     });
   if (over() && (input.turn.registryFacts?.length ?? 0) > 5)
     trim('registry:5-most-recent', () => {

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { Room, type RoomStore } from '../src/room/Room.js';
 import type { LatestState, StoredEvent } from '../src/persistence/index.js';
+import type { RegistryEvent } from '../src/dm/memory.js';
 
 const id = randomUUID();
 const lease = {
@@ -12,8 +13,12 @@ const lease = {
 };
 function fixture() {
   const events: StoredEvent[] = [];
+  const registryWrites: RegistryEvent[][] = [];
   let snapshot: LatestState['snapshot'] = null;
   const store: RoomStore = {
+    async persistRegistryEvents(_sessionId, registryEvents) {
+      registryWrites.push([...registryEvents]);
+    },
     async loadLatest() {
       return {
         snapshot,
@@ -38,7 +43,7 @@ function fixture() {
       return { events: stored };
     },
   };
-  return { store, events, latest: () => store.loadLatest(id) };
+  return { store, events, registryWrites, latest: () => store.loadLatest(id) };
 }
 
 describe('room actor', () => {
@@ -63,6 +68,16 @@ describe('room actor', () => {
       ),
     ).toHaveLength(1);
     expect(room.state.seats).toHaveLength(2);
+  });
+  it('persists validated registry events through the room mailbox', async () => {
+    const { store, registryWrites } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const registryEvent: RegistryEvent = {
+      type: 'FlagSet',
+      flag: { id: 'flag_gate_open', value: true },
+    };
+    await room.persistRegistry([registryEvent]);
+    expect(registryWrites).toEqual([[registryEvent]]);
   });
   it('deduplicates actions and syncs only stale subscribers', async () => {
     const { store, events } = fixture();

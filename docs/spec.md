@@ -343,6 +343,7 @@ Pause/resume · kick/ban from table · mute · transfer host · edit safety sett
 - R-M1 (P0): Per-turn context = system prompt + safety settings + structured state + rolling recent transcript + retrieved long-term memory (summaries, NPC/place facts).
 - R-M2 (P0): After each scene, the system writes a compact summary and updates the NPC/location/quest registry. Summaries and the registry are game state, not logs, so they outlive the 30-day log window [A24].
 - R-M3 (P0): Contradiction guard: when the DM names an existing entity, its registry facts are injected; eval per US-E3.
+- Registry memory is per game/session and stores only validated game facts for NPCs, locations, quests, flags, and rulings. Updates retain superseded versions; facts are append/supersede-only. Postgres full-text and trigram retrieval is bounded and never crosses game boundaries. Registry and summaries are game state, not 30-day logs (§9.4).
 - R-M4 (P1): "Lore Q&A" lets a player ask "what do we know about X?" answered only from registry and retained transcript (no invention).
 
 ### 7.6 Safety and content controls
