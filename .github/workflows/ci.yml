@@ -99,6 +99,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @game/schema build
       - run: pnpm --filter @game/server exec vitest run test/dm test/llm
+      - run: pnpm eval:v0
 
   catalog-reconcile:
     runs-on: ubuntu-latest
