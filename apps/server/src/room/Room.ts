@@ -18,6 +18,7 @@ import type { CombatCommand } from '@game/schema';
 import {
   createCombatRuntime,
   roomGameState,
+  toWireEvent,
   trackerMessage,
   reactionMessage,
   type CombatRuntime,
@@ -820,7 +821,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'CombatEvents',
-        payload: { events: [...events] },
+        payload: { events: events.map(toWireEvent) },
       } as ServerMessage);
     const ended = events.find((event) => event.type === 'CombatEnded');
     if (ended)

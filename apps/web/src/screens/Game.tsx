@@ -39,6 +39,22 @@ type Reaction = {
   trigger: string;
   timeoutMs: number;
 };
+/** The server's tracker lists the active combatant first; persisted state keeps a fixed order. */
+const startAtActive = <T extends { entityId: string }>(
+  initiative: T[],
+  activeEntityId: unknown,
+): T[] => {
+  const at = initiative.findIndex((item) => item.entityId === activeEntityId);
+  return at > 0
+    ? [...initiative.slice(at), ...initiative.slice(0, at)]
+    : initiative;
+};
+/** Tracker entities are sparse (no size; enemy HP is qualitative): keep what the persisted state already told us. */
+const mergeEntities = (previous: Entity[], next: Entity[]): Entity[] =>
+  next.map((entity) => {
+    const old = previous.find((item) => item.id === entity.id);
+    return { ...old, ...entity, size: entity.size ?? old?.size ?? 1 };
+  });
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 
@@ -61,10 +77,17 @@ export function Game() {
         setMessages(messagesRef.current);
       }
       if (message.type === 'CombatTracker') {
+        // Combat can start after we joined, so the join-time state has no map yet.
+        if (!mapRef.current && !resyncAsked.current) {
+          resyncAsked.current = true;
+          live.send('Resync');
+        }
         const payload = asRecord(message.payload);
         setTracker(payload as unknown as Tracker);
         if (Array.isArray(payload.entities))
-          setEntities(payload.entities as Entity[]);
+          setEntities((current) =>
+            mergeEntities(current, payload.entities as Entity[]),
+          );
       }
       if (message.type === 'CombatEvents') {
         const events = asRecord(message.payload).events;
@@ -126,6 +149,9 @@ export function Game() {
   const [tracker, setTracker] = useState<Tracker | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [map, setMap] = useState<Battlemap | null>(null);
+  const mapRef = useRef<Battlemap | null>(null);
+  mapRef.current = map;
+  const resyncAsked = useRef(false);
   const [reaction, setReaction] = useState<Reaction | null>(null);
   const [reactionRemainingMs, setReactionRemainingMs] = useState(0);
   useEffect(() => {
@@ -168,7 +194,10 @@ export function Game() {
         activeEntityId:
           typeof c.activeEntityId === 'string' ? c.activeEntityId : null,
         initiative: Array.isArray(c.initiative)
-          ? (c.initiative as Tracker['initiative'])
+          ? startAtActive(
+              c.initiative as Tracker['initiative'],
+              c.activeEntityId,
+            )
           : [],
         resources: asRecord(c.resources) as Tracker['resources'],
       };
