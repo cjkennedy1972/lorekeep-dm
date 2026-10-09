@@ -1,4 +1,8 @@
-import { DMToolArgsSchema, DMToolCallSchema, type DMToolErrorCode } from '@game/schema';
+import {
+  DMToolArgsSchema,
+  DMToolCallSchema,
+  type DMToolErrorCode,
+} from '@game/schema';
 import type { RngState } from '../rng.js';
 import { executeCheck } from './check.js';
 import { executeAttack } from './attack.js';
@@ -91,12 +95,32 @@ export function execute(
   if (call.name === 'end_combat') return executeEndCombat(state, call.args);
   if (call.name === 'call_for_rest') {
     const parsed = DMToolArgsSchema.call_for_rest.safeParse(call.args);
-    if (!parsed.success) return fail('schema-violation', 'Choose a short or long rest.');
+    if (!parsed.success)
+      return fail('schema-violation', 'Choose a short or long rest.');
     const actor = Object.values(state.actors)[0];
-    if (!actor) return fail('unknown-entity', 'No solo character is available to rest.');
-    const rested = callForRest(actor, parsed.data.kind, state.catalog, rng, parsed.data.hitDiceToSpend ?? 1);
+    if (!actor)
+      return fail('unknown-entity', 'No solo character is available to rest.');
+    const rested = callForRest(
+      actor,
+      parsed.data.kind,
+      state.catalog,
+      rng,
+      parsed.data.hitDiceToSpend ?? 1,
+    );
     if (!rested.ok) return fail(rested.error, rested.hint);
-    return { ok: true, value: { state: { ...state, actors: { ...state.actors, [actor.id]: rested.value.character } }, rng: rested.value.rng, events: rested.events }, events: rested.events.map((event) => event.type), summary: rested.summary };
+    return {
+      ok: true,
+      value: {
+        state: {
+          ...state,
+          actors: { ...state.actors, [actor.id]: rested.value.character },
+        },
+        rng: rested.value.rng,
+        events: rested.events,
+      },
+      events: rested.events.map((event) => event.type),
+      summary: rested.summary,
+    };
   }
   if (call.name === 'move_to') return executeMoveTo(state, call.args);
   if (call.name === 'suggest_area_target')

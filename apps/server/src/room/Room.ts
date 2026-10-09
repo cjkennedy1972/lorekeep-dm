@@ -308,60 +308,158 @@ export class Room {
   /** Save the explicit recovery point used if the solo character dies. */
   saveCheckpoint(): Promise<void> {
     return this.enqueue(async () => {
-      const gameState = this.state.gameState as Record<string, unknown> | undefined;
+      const gameState = this.state.gameState as
+        | Record<string, unknown>
+        | undefined;
       if (!gameState) throw new Error('Game state is unavailable');
-      await this.commitGameState({ ...gameState, checkpoint: structuredClone(gameState) }, [{ type: 'CheckpointSaved' }]);
+      await this.commitGameState(
+        { ...gameState, checkpoint: structuredClone(gameState) },
+        [{ type: 'CheckpointSaved' }],
+      );
     });
   }
 
-  takeRest(accountId: string, kind: 'short' | 'long', hitDiceToSpend = 1, interruptionChance = 0, catalog: Catalog = loadCatalog()): Promise<void> {
+  takeRest(
+    accountId: string,
+    kind: 'short' | 'long',
+    hitDiceToSpend = 1,
+    interruptionChance = 0,
+    catalog: Catalog = loadCatalog(),
+  ): Promise<void> {
     return this.enqueue(async () => {
-      if (!this.state.seats.some((seat) => seat.accountId === accountId)) throw new Error('Account is not seated');
-      const gameState = this.state.gameState as Record<string, unknown> | undefined;
+      if (!this.state.seats.some((seat) => seat.accountId === accountId))
+        throw new Error('Account is not seated');
+      const gameState = this.state.gameState as
+        | Record<string, unknown>
+        | undefined;
       if (!gameState) throw new Error('Game state is unavailable');
-      const resolved = resolveSoloRest(gameState, accountId, kind, catalog, hitDiceToSpend, interruptionChance);
+      const resolved = resolveSoloRest(
+        gameState,
+        accountId,
+        kind,
+        catalog,
+        hitDiceToSpend,
+        interruptionChance,
+      );
       await this.commitGameState(resolved.gameState, resolved.events);
     });
   }
 
   rollDeathSave(accountId: string): Promise<void> {
     return this.enqueue(async () => {
-      if (!this.state.seats.some((seat) => seat.accountId === accountId)) throw new Error('Account is not seated');
-      const gameState = this.state.gameState as Record<string, unknown> | undefined;
+      if (!this.state.seats.some((seat) => seat.accountId === accountId))
+        throw new Error('Account is not seated');
+      const gameState = this.state.gameState as
+        | Record<string, unknown>
+        | undefined;
       if (!gameState) throw new Error('Game state is unavailable');
       const resolved = resolveDeathSave(gameState, accountId);
       await this.commitGameState(resolved.gameState, resolved.events);
-      if (resolved.prompt === 'tpk-choice') this.broadcast({ seq: this.seq, type: 'TpkChoiceRequired', payload: { accountId, options: ['retry-checkpoint', 'fail-forward', 'resurrection-or-new-character'] } } as ServerMessage);
-      else if (resolved.prompt === 'death-save') this.broadcast({ seq: this.seq, type: 'DeathSaveRequired', payload: { accountId } } as ServerMessage);
+      if (resolved.prompt === 'tpk-choice')
+        this.broadcast({
+          seq: this.seq,
+          type: 'TpkChoiceRequired',
+          payload: {
+            accountId,
+            options: [
+              'retry-checkpoint',
+              'fail-forward',
+              'resurrection-or-new-character',
+            ],
+          },
+        } as ServerMessage);
+      else if (resolved.prompt === 'death-save')
+        this.broadcast({
+          seq: this.seq,
+          type: 'DeathSaveRequired',
+          payload: { accountId },
+        } as ServerMessage);
     });
   }
 
-  chooseTpkResolution(accountId: string, choice: 'retry-checkpoint' | 'fail-forward' | 'resurrection-or-new-character', narrative?: string): Promise<void> {
+  chooseTpkResolution(
+    accountId: string,
+    choice:
+      | 'retry-checkpoint'
+      | 'fail-forward'
+      | 'resurrection-or-new-character',
+    narrative?: string,
+  ): Promise<void> {
     return this.enqueue(async () => {
-      if (!this.state.seats.some((seat) => seat.accountId === accountId)) throw new Error('Account is not seated');
-      const gameState = this.state.gameState as Record<string, unknown> | undefined;
+      if (!this.state.seats.some((seat) => seat.accountId === accountId))
+        throw new Error('Account is not seated');
+      const gameState = this.state.gameState as
+        | Record<string, unknown>
+        | undefined;
       if (!gameState) throw new Error('Game state is unavailable');
       if (choice === 'retry-checkpoint') {
         const checkpoint = gameState.checkpoint;
-        if (!checkpoint || typeof checkpoint !== 'object') throw new Error('No checkpoint is available');
-        const oldSeed = Number(gameState.retrySeed ?? (gameState.gameEngine as { seed?: number } | undefined)?.seed ?? 0);
-        const restored = retryFromCheckpoint(checkpoint as Record<string, unknown>, oldSeed);
-        await this.commitGameState({ ...restored, checkpoint, retrySeed: restored.seed, characterChoice: undefined }, [{ type: 'CheckpointRetried', previousSeed: oldSeed, seed: restored.seed }]);
+        if (!checkpoint || typeof checkpoint !== 'object')
+          throw new Error('No checkpoint is available');
+        const oldSeed = Number(
+          gameState.retrySeed ??
+            (gameState.gameEngine as { seed?: number } | undefined)?.seed ??
+            0,
+        );
+        const restored = retryFromCheckpoint(
+          checkpoint as Record<string, unknown>,
+          oldSeed,
+        );
+        await this.commitGameState(
+          {
+            ...restored,
+            checkpoint,
+            retrySeed: restored.seed,
+            characterChoice: undefined,
+          },
+          [
+            {
+              type: 'CheckpointRetried',
+              previousSeed: oldSeed,
+              seed: restored.seed,
+            },
+          ],
+        );
       } else if (choice === 'fail-forward') {
-        if (!narrative) throw new Error('Fail-forward requires a narrative choice');
+        if (!narrative)
+          throw new Error('Fail-forward requires a narrative choice');
         const result = failForward(gameState, accountId, narrative);
         await this.commitGameState(result.gameState, result.events);
       } else {
-        await this.commitGameState({ ...gameState, characterChoice: { accountId, choice } }, [{ type: 'ResurrectionOrNewCharacterOffered', accountId }]);
+        await this.commitGameState(
+          { ...gameState, characterChoice: { accountId, choice } },
+          [{ type: 'ResurrectionOrNewCharacterOffered', accountId }],
+        );
       }
     });
   }
 
-  private async commitGameState(gameState: unknown, events: readonly Record<string, unknown>[]): Promise<void> {
+  private async commitGameState(
+    gameState: unknown,
+    events: readonly Record<string, unknown>[],
+  ): Promise<void> {
     const parsed = RoomStateSchema.parse({ ...this.state, gameState });
     const turnId = randomUUID();
-    const writes = [...events.map((event) => ({ seq: undefined, turnId, type: String(event.type), payload: event })), { seq: undefined, turnId, type: 'GameStateCommitted', payload: { gameState } }];
-    const stored = await this.store.writeTurn(this.sessionId, writes, parsed, this.lease);
+    const writes = [
+      ...events.map((event) => ({
+        seq: undefined,
+        turnId,
+        type: String(event.type),
+        payload: event,
+      })),
+      {
+        seq: undefined,
+        turnId,
+        type: 'GameStateCommitted',
+        payload: { gameState },
+      },
+    ];
+    const stored = await this.store.writeTurn(
+      this.sessionId,
+      writes,
+      parsed,
+      this.lease,
+    );
     this.seq = stored.events.at(-1)?.seq ?? this.seq;
     this.state = parsed;
   }
