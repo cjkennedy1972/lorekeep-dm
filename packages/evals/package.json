@@ -1,0 +1,22 @@
+{
+  "name": "@game/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "eval": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "eval:v0": "tsc -p tsconfig.json && node dist/cli.js"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "26.0.0"
+  }
+}

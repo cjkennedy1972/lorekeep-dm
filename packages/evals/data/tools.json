@@ -1,0 +1,1328 @@
+[
+  {
+    "id": "tool-01",
+    "instruction": "Call move_token for scenario 1.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "move_token",
+    "args": {
+      "tokenId": "tok-0",
+      "areaId": "area-door"
+    }
+  },
+  {
+    "id": "tool-02",
+    "instruction": "Call roll_check for scenario 2.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "roll_check",
+    "args": {
+      "ability": "DEX",
+      "dc": 11
+    }
+  },
+  {
+    "id": "tool-03",
+    "instruction": "Call apply_damage for scenario 3.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "apply_damage",
+    "args": {
+      "targetId": "mon-2",
+      "amount": 5,
+      "type": "slashing"
+    }
+  },
+  {
+    "id": "tool-04",
+    "instruction": "Call move_token for scenario 4.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "move_token",
+    "args": {
+      "tokenId": "tok-3",
+      "areaId": "area-door"
+    }
+  },
+  {
+    "id": "tool-05",
+    "instruction": "Call roll_check for scenario 5.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "roll_check",
+    "args": {
+      "ability": "STR",
+      "dc": 14
+    }
+  },
+  {
+    "id": "tool-06",
+    "instruction": "Call apply_damage for scenario 6.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "apply_damage",
+    "args": {
+      "targetId": "mon-5",
+      "amount": 3,
+      "type": "slashing"
+    }
+  },
+  {
+    "id": "tool-07",
+    "instruction": "Call move_token for scenario 7.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "move_token",
+    "args": {
+      "tokenId": "tok-6",
+      "areaId": "area-door"
+    }
+  },
+  {
+    "id": "tool-08",
+    "instruction": "Call roll_check for scenario 8.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "roll_check",
+    "args": {
+      "ability": "CHA",
+      "dc": 11
+    }
+  },
+  {
+    "id": "tool-09",
+    "instruction": "Call apply_damage for scenario 9.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "apply_damage",
+    "args": {
+      "targetId": "mon-8",
+      "amount": 6,
+      "type": "slashing"
+    }
+  },
+  {
+    "id": "tool-10",
+    "instruction": "Call move_token for scenario 10.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "move_token",
+    "args": {
+      "tokenId": "tok-9",
+      "areaId": "area-door"
+    }
+  },
+  {
+    "id": "tool-11",
+    "instruction": "Call roll_check for scenario 11.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "roll_check",
+    "args": {
+      "ability": "WIS",
+      "dc": 14
+    }
+  },
+  {
+    "id": "tool-12",
+    "instruction": "Call apply_damage for scenario 12.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "apply_damage",
+    "args": {
+      "targetId": "mon-11",
+      "amount": 4,
+      "type": "slashing"
+    }
+  },
+  {
+    "id": "tool-13",
+    "instruction": "Call move_token for scenario 13.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "move_token",
+    "args": {
+      "tokenId": "tok-12",
+      "areaId": "area-door"
+    }
+  },
+  {
+    "id": "tool-14",
+    "instruction": "Call roll_check for scenario 14.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "roll_check",
+    "args": {
+      "ability": "DEX",
+      "dc": 11
+    }
+  },
+  {
+    "id": "tool-15",
+    "instruction": "Call apply_damage for scenario 15.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "apply_damage",
+    "args": {
+      "targetId": "mon-14",
+      "amount": 7,
+      "type": "slashing"
+    }
+  },
+  {
+    "id": "tool-16",
+    "instruction": "Call move_token for scenario 16.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "move_token",
+    "args": {
+      "tokenId": "tok-15",
+      "areaId": "area-door"
+    }
+  },
+  {
+    "id": "tool-17",
+    "instruction": "Call roll_check for scenario 17.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "roll_check",
+    "args": {
+      "ability": "STR",
+      "dc": 14
+    }
+  },
+  {
+    "id": "tool-18",
+    "instruction": "Call apply_damage for scenario 18.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "apply_damage",
+    "args": {
+      "targetId": "mon-17",
+      "amount": 5,
+      "type": "slashing"
+    }
+  },
+  {
+    "id": "tool-19",
+    "instruction": "Call move_token for scenario 19.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "move_token",
+    "args": {
+      "tokenId": "tok-18",
+      "areaId": "area-door"
+    }
+  },
+  {
+    "id": "tool-20",
+    "instruction": "Call roll_check for scenario 20.",
+    "tools": [
+      {
+        "name": "move_token",
+        "description": "Move a token to a named map area.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tokenId", "areaId"],
+          "properties": {
+            "tokenId": {
+              "type": "string"
+            },
+            "areaId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "roll_check",
+        "description": "Request an ability check.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ability", "dc"],
+          "properties": {
+            "ability": {
+              "type": "string",
+              "enum": ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
+            },
+            "dc": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      {
+        "name": "apply_damage",
+        "description": "Apply damage to a target.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetId", "amount", "type"],
+          "properties": {
+            "targetId": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "expectTool": "roll_check",
+    "args": {
+      "ability": "CHA",
+      "dc": 11
+    }
+  }
+]
