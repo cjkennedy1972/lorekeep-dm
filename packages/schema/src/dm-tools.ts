@@ -75,6 +75,7 @@ export const DMToolArgsSchema = {
       .max(12),
     ambushSide: z.enum(['party', 'enemies', 'none']).optional(),
   }),
+  call_for_rest: strict({ kind: z.enum(['short', 'long']), hitDiceToSpend: z.int().min(0).max(20).optional() }),
   end_combat: strict({
     outcome: z.enum([
       'party-victory',
@@ -174,6 +175,7 @@ export const DMToolCallSchema = z.discriminatedUnion('name', [
     args: DMToolArgsSchema.start_combat,
   }),
   strict({ name: z.literal('end_combat'), args: DMToolArgsSchema.end_combat }),
+  strict({ name: z.literal('call_for_rest'), args: DMToolArgsSchema.call_for_rest }),
   strict({ name: z.literal('move_to'), args: DMToolArgsSchema.move_to }),
   strict({
     name: z.literal('suggest_area_target'),

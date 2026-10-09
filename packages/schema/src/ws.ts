@@ -93,6 +93,8 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'NarrationChunk',
       'NarrationCompleted',
       'ToolRejected',
+      'DeathSaveRequired',
+      'TpkChoiceRequired',
     ]),
     payload: z.record(z.string(), z.unknown()),
   }),

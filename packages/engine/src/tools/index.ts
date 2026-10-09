@@ -1,4 +1,4 @@
-import { DMToolCallSchema, type DMToolErrorCode } from '@game/schema';
+import { DMToolArgsSchema, DMToolCallSchema, type DMToolErrorCode } from '@game/schema';
 import type { RngState } from '../rng.js';
 import { executeCheck } from './check.js';
 import { executeAttack } from './attack.js';
@@ -11,6 +11,7 @@ import type { SpellToolState } from './spell.js';
 import type { ConditionToolState } from './conditions.js';
 import { executeStartCombat, executeEndCombat } from './combat.js';
 import { executeMoveTo, executeSuggestAreaTarget } from './movement.js';
+import { callForRest } from './rest.js';
 import type { CombatToolState } from './combat.js';
 import type { MovementToolState, AreaToolState } from './movement.js';
 
@@ -46,6 +47,7 @@ export function execute(
     'remove_condition',
     'start_combat',
     'end_combat',
+    'call_for_rest',
     'move_to',
     'suggest_area_target',
   ];
@@ -87,6 +89,15 @@ export function execute(
   if (call.name === 'start_combat')
     return executeStartCombat(state, call.args, rng);
   if (call.name === 'end_combat') return executeEndCombat(state, call.args);
+  if (call.name === 'call_for_rest') {
+    const parsed = DMToolArgsSchema.call_for_rest.safeParse(call.args);
+    if (!parsed.success) return fail('schema-violation', 'Choose a short or long rest.');
+    const actor = Object.values(state.actors)[0];
+    if (!actor) return fail('unknown-entity', 'No solo character is available to rest.');
+    const rested = callForRest(actor, parsed.data.kind, state.catalog, rng, parsed.data.hitDiceToSpend ?? 1);
+    if (!rested.ok) return fail(rested.error, rested.hint);
+    return { ok: true, value: { state: { ...state, actors: { ...state.actors, [actor.id]: rested.value.character } }, rng: rested.value.rng, events: rested.events }, events: rested.events.map((event) => event.type), summary: rested.summary };
+  }
   if (call.name === 'move_to') return executeMoveTo(state, call.args);
   if (call.name === 'suggest_area_target')
     return executeSuggestAreaTarget(state, call.args);
