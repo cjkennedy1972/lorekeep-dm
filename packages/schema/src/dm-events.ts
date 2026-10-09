@@ -59,6 +59,7 @@ export const SceneClosedSchema = z
     type: z.literal('SceneClosed'),
     sceneId: z.string().min(1),
     summary: z.string().max(1200),
+    nextSceneId: z.string().min(1).optional(),
   })
   .strict();
 export const RecapReadySchema = z

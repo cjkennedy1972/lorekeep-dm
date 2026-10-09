@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import type { Battlemap } from '@game/schema';
+import { AdventureSchema, type Battlemap } from '@game/schema';
 import { loadCatalog } from '../src/catalog-node.js';
+import { nextSceneAfterClose } from '../src/adventure/transition.js';
 import {
   ADVENTURE_MAX_MONSTER_CR,
   validateAdventure,
@@ -93,6 +94,47 @@ const codes = (input: unknown) => {
   const result = validateAdventure(input, catalog);
   return result.ok ? [] : result.errors.map((issue) => issue.code);
 };
+
+describe('scene transitions', () => {
+  const adventure = AdventureSchema.parse(valid());
+  test('uses the first authored successor when no target is supplied', () => {
+    expect(nextSceneAfterClose(adventure, 'opening')).toEqual({
+      sceneId: 'finale',
+      completed: false,
+    });
+  });
+  test('defaults one target from authored data and completes a terminal scene', () => {
+    const branched = {
+      ...adventure,
+      scenes: [
+        { ...adventure.scenes[0]!, nextSceneIds: ['finale', 'opening'] },
+        adventure.scenes[1]!,
+      ],
+    };
+    expect(nextSceneAfterClose(branched, 'opening')).toEqual({
+      sceneId: 'finale',
+      completed: false,
+    });
+    expect(nextSceneAfterClose(adventure, 'finale')).toEqual({
+      completed: true,
+    });
+  });
+  test('accepts only an authored branch target', () => {
+    expect(nextSceneAfterClose(adventure, 'opening', 'finale')).toEqual({
+      sceneId: 'finale',
+      completed: false,
+    });
+    expect(
+      nextSceneAfterClose(adventure, 'opening', 'elsewhere'),
+    ).toBeUndefined();
+  });
+  test('marks a terminal scene complete and ignores an unknown closed scene', () => {
+    expect(nextSceneAfterClose(adventure, 'finale')).toEqual({
+      completed: true,
+    });
+    expect(nextSceneAfterClose(adventure, 'missing')).toBeUndefined();
+  });
+});
 
 describe('adventure validation', () => {
   test('accepts a complete adventure using the real catalog', () => {
