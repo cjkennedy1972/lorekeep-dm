@@ -48,16 +48,25 @@ describe('NarrationLog', () => {
     await screen.findByText('The door opens.');
     const turn = screen.getByText('The door opens.').closest('li');
     expect(turn).toHaveTextContent('Roll result');
+    expect(
+      turn
+        ?.querySelector('.narration-log__rolls')
+        ?.compareDocumentPosition(screen.getByText('The door opens.')),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(turn).toHaveTextContent('The door opens.');
     expect(screen.queryByText('The DM is thinking…')).not.toBeInTheDocument();
+    const disclosure = screen.getByText('Why DC 15?');
     expect(screen.getByText('slick stone wall')).not.toBeVisible();
-    fireEvent.click(screen.getByText('Why DC 15?'));
+    disclosure.focus();
+    fireEvent.click(disclosure);
+    expect(disclosure.closest('details')).toHaveAttribute('open');
     expect(screen.getByText('slick stone wall')).toBeVisible();
   });
 
   it('announces a completed narration once, not each streamed chunk', async () => {
     const view = render(<NarrationLog messages={messages.slice(0, 5)} />);
     expect(screen.getByText(/The door/)).toBeInTheDocument();
+    expect(screen.getAllByRole('status').at(-1)).toBeEmptyDOMElement();
     expect(screen.getAllByRole('status')[0]).toHaveTextContent(
       'The DM is thinking.',
     );
@@ -66,6 +75,9 @@ describe('NarrationLog', () => {
       expect(screen.getAllByRole('status').at(-1)).toHaveTextContent(
         'Narration: The door opens.',
       ),
+    );
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent(
+      'Narration: The door opens.',
     );
     expect(screen.getAllByRole('status').at(-1)).toHaveTextContent(
       'The door opens.',
@@ -138,5 +150,8 @@ describe('NarrationLog', () => {
     render(<NarrationLog messages={messages} />);
     const list = screen.getByRole('list', { name: /Story entries/ });
     expect(list).toHaveAttribute('tabindex', '0');
+    list.focus();
+    expect(list).toHaveFocus();
+    expect(list.tagName).toBe('OL');
   });
 });

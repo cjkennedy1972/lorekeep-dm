@@ -36,7 +36,7 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
   );
   const [latest, setLatest] = useState(false);
   const [announcement, setAnnouncement] = useState('');
-  const listRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLOListElement>(null);
   const seen = useRef(new Set<string>());
   const announcedTurns = useRef(new Set<string>());
   const announcedRolls = useRef(new Set<string>());
@@ -55,6 +55,7 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
       if (entry.kind !== 'turn') continue;
       if (
         entry.turn.complete &&
+        Boolean(entry.turn.narration?.match(/[.!?](?:["')\]]*)$/)) &&
         !announcedTurns.current.has(entry.turn.turnId)
       ) {
         announcedTurns.current.add(entry.turn.turnId);
@@ -64,7 +65,8 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
         const key = `${entry.turn.turnId}:${index}`;
         if (roll.breakdown && !announcedRolls.current.has(key)) {
           announcedRolls.current.add(key);
-          setAnnouncement(`Roll result: ${roll.breakdown.total}`);
+          if (entry.turn.complete)
+            setAnnouncement(`Roll result: ${roll.breakdown.total}`);
         }
       });
     }
@@ -130,19 +132,20 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
               className="narration-log__turn"
             >
               <div className="narration-log__rolls">
-                {entry.turn.rollEvents.map((roll, rollIndex) => {
-                  const rendered = rollEvent(roll);
-                  return rendered ? (
-                    <div key={`${entry.turn.turnId}-roll-${rollIndex}`}>
-                      <p className="narration-log__label">Roll result</p>
-                      <RollBreakdown event={rendered} />
-                    </div>
-                  ) : (
-                    <p key={`${entry.turn.turnId}-roll-${rollIndex}`}>
-                      Roll result: {JSON.stringify(roll)}
-                    </p>
-                  );
-                })}
+                {!entry.turn.complete &&
+                  entry.turn.rollEvents.map((roll, rollIndex) => {
+                    const rendered = rollEvent(roll);
+                    return rendered ? (
+                      <div key={`${entry.turn.turnId}-roll-${rollIndex}`}>
+                        <p className="narration-log__label">Roll result</p>
+                        <RollBreakdown event={rendered} />
+                      </div>
+                    ) : (
+                      <p key={`${entry.turn.turnId}-roll-${rollIndex}`}>
+                        Roll result: {JSON.stringify(roll)}
+                      </p>
+                    );
+                  })}
               </div>
               <p>
                 {body ||
@@ -150,6 +153,23 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
                     ? 'Narration unavailable.'
                     : 'Waiting for narration…')}
               </p>
+              {entry.turn.complete && entry.turn.rollEvents.length > 0 && (
+                <div className="narration-log__rolls">
+                  {entry.turn.rollEvents.map((roll, rollIndex) => {
+                    const rendered = rollEvent(roll);
+                    return rendered ? (
+                      <div key={`${entry.turn.turnId}-roll-${rollIndex}`}>
+                        <p className="narration-log__label">Roll result</p>
+                        <RollBreakdown event={rendered} />
+                      </div>
+                    ) : (
+                      <p key={`${entry.turn.turnId}-roll-${rollIndex}`}>
+                        Roll result: {JSON.stringify(roll)}
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
             </li>
           );
         })}

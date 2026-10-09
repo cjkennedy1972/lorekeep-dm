@@ -169,5 +169,5 @@ export function visibleChunks(turn: NarrationTurn): string {
     text += turn.chunks[index];
     expected += 1;
   }
-  return turn.complete ? (turn.narration ?? '') : text;
+  return text || (turn.complete ? (turn.narration ?? '') : '');
 }
