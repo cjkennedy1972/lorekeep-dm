@@ -16,7 +16,7 @@ DM-facing, one page. Seeds the registry in M2-31. Anything here is canon; nothin
 2. The goblin clan is the Cinderwick clan. Its boss is Skarrik Cinderwick, who wears a stolen breastplate and keeps the Cinderwick key on a cord around his neck.
 3. The Tallow Larder is protected by an old ward; goblins will not enter it.
 4. The winch shaft is a one-way trip down. The chain is greased and the lift is broken after use. After the lamp choice a rear stair opens to the knoll.
-5. The wardens of the vault are bound dead (one Specter, two Shadows). They are not evil; they guard the lamp.
+5. The warden of the vault is a bound dead Specter. They are not evil; they guard the lamp.
 6. The lamp can be relit (well runs clean in three days, wardens settle) or smothered (wardens fight, the dead are freed, the well never recovers).
 7. No healing is available at Marrowfell beyond what the PC carries.
 8. No magic items exist in this adventure other than the Spell Scroll (Level 1) and Potion of Healing in the loot table.
@@ -44,4 +44,4 @@ Marrowfell, Gallows Knoll, Tallow Hold, Chapel of Wicks, Tallow Larder, Cinderwi
 
 ## Monsters and numbers
 
-Catalog monsters only: Giant Rat, Goblin Warrior, Goblin Minion, Goblin Boss, Specter, Shadow; NPC stat blocks: Commoner, Goblin Minion. Encounters: E1 (2 Giant Rat), E2 (2 Goblin Warrior, 2 Goblin Minion), E3 (1 Goblin Boss, 2 Goblin Minion), E4 (1 Specter, 2 Shadow). Never add or swap monsters without a ruling logged by `log_ruling`.
+Catalog monsters only: Giant Fire Beetle, Goblin Warrior, Goblin Minion, Goblin Boss, Specter; NPC stat blocks: Commoner, Goblin Minion. Encounters: E1 (1 Giant Fire Beetle), E2 (1 Goblin Warrior), E3 (1 Goblin Boss, party at level 3), E4 (1 Specter). Never add or swap monsters without a ruling logged by `log_ruling`.
