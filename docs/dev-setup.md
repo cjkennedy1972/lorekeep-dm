@@ -33,3 +33,14 @@ All Postgres-backed server tests belong in `apps/server/test/db/`. They are inte
 ## Database credentials and exposure
 
 `infra/docker-compose.yml` publishes Postgres on `127.0.0.1` only and uses the public default `lorekeep` credentials; it is for local development. Any real deployment must use non-default, secret credentials and a least-privilege application role (DML on application tables only; migrations run under a separate owner role). Never publish the database port on a reachable interface. CI uses a service container and is unaffected.
+
+## LLM endpoints and recorded replay
+
+Tests and local development need no LLM key: the server test suite and the golden-scenario tests run without network access.
+
+```sh
+pnpm --filter @game/server test
+pnpm --filter @game/e2e exec vitest run m2-scenarios
+```
+
+To point a local server at a model, see [the operator guide](operator-guide.md): endpoint slots are saved through `/api/operator/endpoints/:slot`, plain-HTTP or loopback model hosts need `LLM_ALLOW_LOCAL_HOSTS`, and `LLM_FIXTURE_MODE` (`strict`, `lenient`, `record`) selects recorded-LLM replay. Set `OPERATOR_EMAILS` to your account email to use the operator routes. Never commit a real API key or a recorded fixture you have not reviewed.
