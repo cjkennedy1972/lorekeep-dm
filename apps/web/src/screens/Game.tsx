@@ -304,7 +304,9 @@ export function Game() {
 
   const send = (command: Record<string, unknown>) =>
     live.send('CombatCommand', command);
+  const lastActionText = useRef('');
   const submitAction = (text: string) => {
+    lastActionText.current = text;
     const id = `local-${crypto.randomUUID()}`;
     setError('');
     updatePendingAction(() => ({ id, text, acknowledged: false }));
@@ -606,10 +608,9 @@ export function Game() {
       {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
       <NarrationLog
         messages={messages}
-        onRetry={(actionId) => live.send('RetryAction', { actionId })}
-        onResubmit={() => {
-          if (actionText.trim())
-            live.send('PlayerAction', { text: actionText.trim() });
+        // The server has no retry message: retrying resubmits the last action as a new one.
+        onRetry={() => {
+          if (lastActionText.current) submitAction(lastActionText.current);
         }}
       />
       <Sheet store={gameStore} />
