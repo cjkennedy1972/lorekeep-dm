@@ -5,11 +5,11 @@ import type { BuiltEncounter } from '../encounter/budget.js';
 import { mixSeed, runFight } from './fight.js';
 import { buildPc, CLASS_SLUGS } from './pc.js';
 
-/** Level the adventure expects at each encounter (docs/adventures/01-draft.md, Advancement) and the label it claims. */
+/** Level the adventure expects (E3 is level 3: the milestone is awarded before the boss hall) at each encounter (docs/adventures/01-draft.md, Advancement) and the label it claims. */
 export const CLAIMS = [
   { id: 'encounter-e1-rats', level: 1, label: 'low' },
   { id: 'encounter-e2-lookouts', level: 2, label: 'moderate' },
-  { id: 'encounter-e3-skarrik', level: 2, label: 'high' },
+  { id: 'encounter-e3-skarrik', level: 3, label: 'high' },
   { id: 'encounter-e4-wardens', level: 3, label: 'high' },
 ] as const;
 const SEED_BASE = 20261010;
