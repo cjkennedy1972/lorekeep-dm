@@ -152,6 +152,11 @@ export function narrationLogReducer(
       };
     }
     case 'ToolRejected':
+    case 'CombatTracker':
+    case 'ReactionPrompt':
+    case 'CombatOptions':
+    case 'CombatEvents':
+    case 'CombatEnded':
     case 'StateSync':
     case 'PresenceChanged':
       return state;

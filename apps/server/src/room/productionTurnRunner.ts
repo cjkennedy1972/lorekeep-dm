@@ -34,6 +34,7 @@ import {
   fixtureModeFromEnvironment,
   RecordedLlmAdapter,
 } from '../llm/recorded.js';
+import type { LlmAdapter } from '../llm/adapter.js';
 import type { SoloTurnRequest, SoloTurnRunner } from './dmTurn.js';
 
 type GameState = {
@@ -49,6 +50,41 @@ type GameState = {
   lastPlayerText?: string;
   world?: WorldRegistry;
 };
+type CombatOutput = {
+  entities?: { id: string; hp: number }[];
+  combat?: unknown;
+  xp?: Record<string, number>;
+  rng?: number;
+};
+/** Fold start/end combat facts into the persistent engine state. */
+export function mergeCombatOutput<T extends object>(
+  current: T,
+  name: string | undefined,
+  value: unknown,
+): T {
+  if (name !== 'start_combat' && name !== 'end_combat') return current;
+  const out = value as CombatOutput;
+  if (!out.entities || !out.combat) return current;
+  return {
+    ...current,
+    entities: out.entities,
+    combat: out.combat,
+    xp: out.xp,
+    hp: {
+      ...(current as { hp?: Record<string, number> }).hp,
+      ...Object.fromEntries(
+        out.entities.map((entity) => [entity.id, entity.hp]),
+      ),
+    },
+    ...(name === 'start_combat' ? { combatSeed: out.rng } : {}),
+  };
+}
+const withoutCatalog = (engine: unknown) =>
+  Object.fromEntries(
+    Object.entries(engine as Record<string, unknown>).filter(
+      ([key]) => key !== 'catalog',
+    ),
+  );
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -64,6 +100,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly fixtureMode = fixtureModeFromEnvironment(),
     private readonly fixturePath = process.env.LLM_FIXTURE_PATH ??
       'fixtures/solo-turn.ndjson',
+    /** A fixed adapter for deterministic tests; skips endpoint configuration. */
+    private readonly adapterOverride?: LlmAdapter,
   ) {}
 
   async run(
@@ -73,12 +111,14 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
     if (!['fast', 'frontier', 'moderate'].includes(endpointSlot))
       throw new Error('Solo turn endpoint slot is invalid');
-    const endpoint = await createConfiguredAdapter(
-      this.db,
-      endpointSlot as 'fast' | 'frontier' | 'moderate',
-      this.egress,
-      this.endpointMasterKey,
-    );
+    const endpoint =
+      this.adapterOverride ??
+      (await createConfiguredAdapter(
+        this.db,
+        endpointSlot as 'fast' | 'frontier' | 'moderate',
+        this.egress,
+        this.endpointMasterKey,
+      ));
     const table = await this.db.query<{
       name: string;
       catalog_version: string | null;
@@ -132,16 +172,14 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       environment: process.env.NODE_ENV,
       prefix: 'Lorekeep solo turn',
     });
-    const adapter = new MeteredLlmAdapter(
-      recorded,
-      new PostgresUsageSink(this.db),
-      {
+    const adapter =
+      this.adapterOverride ??
+      new MeteredLlmAdapter(recorded, new PostgresUsageSink(this.db), {
         sessionId: request.sessionId,
         turnId: request.actionId,
         purpose: 'narration',
         modelId: endpointSlot,
-      },
-    );
+      });
     const memory = new RegistryMemory(this.db as Pool);
     const registryEvents: RegistryEvent[] = [];
     const memoryContext = await memory.contextFor(
@@ -177,8 +215,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       commitState(previous, output) {
         return {
           ...(previous as GameState),
-          gameEngine: output.nextState,
-          characters: (output.nextState as ToolExecutorState).actors,
+          gameEngine: withoutCatalog(output.nextState),
+          characters: Object.fromEntries(
+            Object.entries((previous as GameState).characters ?? actors).map(
+              ([accountId, character]) => [
+                accountId,
+                (output.nextState as ToolExecutorState).actors[character.id] ??
+                  character,
+              ],
+            ),
+          ),
           world:
             (output.nextState as { world?: WorldRegistry }).world ??
             (previous as GameState).world,
@@ -279,7 +325,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               : [],
           value: {
             events: value?.events ?? [],
-            state: { ...current, world: nextWorld },
+            state: {
+              ...mergeCombatOutput(current, request.name, result.value),
+              world: nextWorld,
+            },
           },
         };
       },

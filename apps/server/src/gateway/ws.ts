@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   ClientEnvelopeSchema,
+  CombatCommandSchema,
   PlayerActionSchema,
   type ServerMessage,
 } from '@game/schema';
@@ -209,6 +210,50 @@ export function installGateway(
               .subscribe(identity.accountId, connection, -1)
               .catch(() => ws.close(1011));
             return;
+          }
+          if (msg.type === 'CombatCommand') {
+            const action = CombatCommandSchema.safeParse(msg);
+            if (!action.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Combat command is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .submitCombatCommand(
+                identity.accountId,
+                action.data.actionId,
+                action.data.payload,
+              )
+              .then((accepted) => {
+                if (!accepted)
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'DUPLICATE_ACTION',
+                      message: 'This combat command was already received.',
+                      actionId: msg.actionId,
+                    },
+                  });
+              })
+              .catch(() =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'COMMAND_REJECTED',
+                    message: 'Combat command could not be accepted.',
+                    actionId: msg.actionId,
+                  },
+                }),
+              );
           }
           if (msg.type === 'PlayerAction') {
             const action = PlayerActionSchema.safeParse(msg);
