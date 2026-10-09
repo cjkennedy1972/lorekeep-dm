@@ -127,6 +127,19 @@ export function Game() {
   const [entities, setEntities] = useState<Entity[]>([]);
   const [map, setMap] = useState<Battlemap | null>(null);
   const [reaction, setReaction] = useState<Reaction | null>(null);
+  const [reactionRemainingMs, setReactionRemainingMs] = useState(0);
+  useEffect(() => {
+    if (!reaction) {
+      setReactionRemainingMs(0);
+      return;
+    }
+    const deadline = Date.now() + reaction.timeoutMs;
+    const update = () =>
+      setReactionRemainingMs(Math.max(0, deadline - Date.now()));
+    update();
+    const timer = window.setInterval(update, 100);
+    return () => window.clearInterval(timer);
+  }, [reaction?.reactionId, reaction?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
   const [actionText, setActionText] = useState('');
@@ -452,7 +465,7 @@ export function Game() {
           {reaction && (
             <p role="status">
               {reaction.entityId} reaction: {reaction.trigger}. Resolve within{' '}
-              {Math.ceil(reaction.timeoutMs / 1000)} seconds.
+              {Math.ceil(reactionRemainingMs / 1000)} seconds.
             </p>
           )}
         </section>

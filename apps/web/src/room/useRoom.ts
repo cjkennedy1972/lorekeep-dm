@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { createRoomClient, type RoomClientOptions } from './client.js';
 
 export function useRoom(opts: RoomClientOptions) {
   const { baseUrl } = opts;
-  const onMessage = opts.onMessage;
+  const onMessageRef = useRef(opts.onMessage);
+  onMessageRef.current = opts.onMessage;
+  const onMessage = useMemo(
+    () => (message: Parameters<NonNullable<typeof opts.onMessage>>[0]) =>
+      onMessageRef.current?.(message),
+    [],
+  );
   const client = useMemo(
     () => createRoomClient({ ...opts, baseUrl, onMessage }),
     [baseUrl, onMessage],

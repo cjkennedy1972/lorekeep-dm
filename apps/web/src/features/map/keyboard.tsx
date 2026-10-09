@@ -200,14 +200,6 @@ export function MapKeyboard({
         team: item.team,
       })),
     );
-    store.setMapEntities(
-      result.state.entities.map((item) => ({
-        ...item,
-        kind: placed.find((entry) => entry.id === item.id)?.kind ?? 'monster',
-        hp: item.hp,
-        team: item.team,
-      })),
-    );
     for (const event of result.events)
       if (event.type === 'MovementSpent') store.applyEvent(event);
     const first = result.pending[0];
