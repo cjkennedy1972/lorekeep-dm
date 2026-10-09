@@ -25,6 +25,7 @@ import {
   type TurnResult,
 } from '../dm/orchestrator.js';
 import { rulesLookup } from '../dm/rulesLookup.js';
+import { catalogFromSnapshot } from './catalogSnapshot.js';
 import {
   createConfiguredAdapter,
   createEndpointEgress,
@@ -84,16 +85,22 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       premise: string | null;
       adventure_id: string | null;
       character: Record<string, unknown> | null;
+      catalog_snapshot: unknown;
     }>(
-      "SELECT name,catalog_version,premise,adventure_id,character FROM sessions WHERE id=$1 AND status='active'",
+      `SELECT s.name,s.catalog_version,pinned_catalog.entries AS catalog_snapshot,s.premise,s.adventure_id,s.character
+       FROM sessions s LEFT JOIN catalog_snapshots pinned_catalog ON pinned_catalog.catalog_version=s.catalog_version
+       WHERE s.id=$1 AND s.status='active'`,
       [request.sessionId],
     );
     if (!table.rows[0]) throw new Error('Table state unavailable');
-    if (
-      table.rows[0].catalog_version &&
-      table.rows[0].catalog_version !== this.catalog.catalogVersion
-    )
-      throw new Error('Pinned catalog version unavailable');
+    const catalog =
+      table.rows[0].catalog_version === this.catalog.catalogVersion
+        ? this.catalog
+        : catalogFromSnapshot(
+            table.rows[0].catalog_version,
+            table.rows[0].catalog_snapshot,
+          );
+    if (!catalog) throw new Error('Pinned catalog version unavailable');
     const state = asRecord(request.state) as GameState;
     const savedCharacter = table.rows[0].character as unknown as
       | ToolExecutorState['actors'][string]
@@ -113,7 +120,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         turn: request.actionId,
         toolMode: 'native',
         model: 'operator-configured',
-        catalogVersion: state.catalogVersion ?? this.catalog.catalogVersion,
+        catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
         turnSeed: process.env.LLM_FIXTURE_MODE
           ? '0x0000000000000000'
           : 'random',
@@ -141,23 +148,25 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       request.text,
       state.lastNarration ?? '',
     );
-    const engineState = (state.gameEngine ?? {
-      actors,
-      attacks: {},
-      hp: Object.fromEntries(
-        Object.values(actors).map((actor) => [actor.id, actor.hp.current]),
-      ),
-      ac: {},
-      conditions: {},
-      catalog: this.catalog,
-      world: state.world ?? {
-        npcs: {},
-        locations: {},
-        quests: {},
-        flags: {},
-        rulings: [],
-      },
-    }) as unknown as ToolExecutorState & { world: WorldRegistry };
+    const engineState = (state.gameEngine
+      ? { ...state.gameEngine, catalog }
+      : {
+          actors,
+          attacks: {},
+          hp: Object.fromEntries(
+            Object.values(actors).map((actor) => [actor.id, actor.hp.current]),
+          ),
+          ac: {},
+          conditions: {},
+          catalog,
+          world: state.world ?? {
+            npcs: {},
+            locations: {},
+            quests: {},
+            flags: {},
+            rulings: [],
+          },
+        }) as unknown as ToolExecutorState & { world: WorldRegistry };
     const context: DmToolContext = {
       seed: 0,
       rollIndex: 0,
@@ -281,7 +290,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       testMode: process.env.NODE_ENV === 'test',
       ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
       prompt: {
-        catalogVersion: state.catalogVersion ?? this.catalog.catalogVersion,
+        catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
         toolMode: 'native',
         sceneId: state.sceneId ?? request.sessionId,
         settingsHash: 'default',

@@ -11,6 +11,7 @@ import { startSweepScheduler } from './retention/sweeper.js';
 import { LocalObjectStore } from './storage/objectStore.js';
 import { ConnectionRegistry } from './gateway/connections.js';
 import { ProductionSoloTurnRunner } from './room/productionTurnRunner.js';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
 const config = loadConfig();
 if (
   config.NODE_ENV === 'production' &&
@@ -19,6 +20,12 @@ if (
   throw new Error('Operator configuration is required');
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
+const catalog = loadCatalog();
+await db.query(
+  `INSERT INTO catalog_snapshots(catalog_version,entries)
+   VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
+  [catalog.catalogVersion, JSON.stringify(catalog.entries)],
+);
 const persistence = new Persistence(db);
 const leases = new SessionLease(db);
 const soloTurnRunner = new ProductionSoloTurnRunner(
