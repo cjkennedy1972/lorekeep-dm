@@ -4,8 +4,8 @@ import { defineConfig, devices } from '@playwright/test';
 // Browser e2e against the real server (Room + Postgres + scripted/recorded DM, no network).
 // Needs DATABASE_URL (migrated). Run: pnpm --filter @game/web exec playwright test -c playwright.live.config.ts
 const stateFile = resolve('test-results/live-state.json');
-const apiPort = 8799;
-const webPort = 5174;
+const apiPort = Number(process.env.LIVE_API_PORT ?? 8799);
+const webPort = Number(process.env.LIVE_WEB_PORT ?? 5174);
 process.env.LIVE_STATE_FILE = stateFile;
 
 export default defineConfig({
