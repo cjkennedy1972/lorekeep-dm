@@ -301,6 +301,92 @@ describe('solo turn persisted lifecycle', () => {
     delete process.env.LLM_FIXTURE_PATH;
   });
 
+  it('persists scene transitions in events and snapshot across room restart', async () => {
+    const owner = await createUser();
+    const table = await createTable(owner.id, false);
+    const sceneRunner = (targetScene: string): SoloTurnRunner => ({
+      async run(request) {
+        const initial = request.state as Record<string, unknown>;
+        const first = initial.sceneId === 'scene-marowfell-well';
+        const target = first ? 'scene-broken-gatehouse' : undefined;
+        return {
+          narration: 'The scene closes.',
+          events: [
+            { type: 'TurnStarted', turnId: request.actionId },
+            {
+              type: 'SceneClosed',
+              sceneId: first ? 'scene-marowfell-well' : targetScene,
+              summary: 'The scene closed.',
+              ...(target ? { nextSceneId: target } : { nextSceneId: null }),
+            },
+          ],
+          state: {
+            ...initial,
+            ...(target ? { sceneId: target } : { adventureCompleted: true }),
+          },
+          turnSeed: '0x0000000000000000',
+          usage: { in: 0, out: 0 },
+        } satisfies TurnResult;
+      },
+    });
+    const registry = new RoomRegistry(
+      new Persistence(db),
+      new SessionLease(db),
+      'scene-transition-test',
+      600_000,
+      60_000,
+      sceneRunner('scene-lamp-vault'),
+    );
+    const room = await registry.get(table);
+    await room.seat(owner.id, 'Solo');
+    await room.persistGameState({
+      sceneId: 'scene-marowfell-well',
+      adventureId: 'adventure:01-hollow-under-marrowfell',
+    });
+    const actionId = randomUUID();
+    expect(
+      await room.submitAction(owner.id, actionId, 'Continue onward.'),
+    ).toBe(true);
+    const firstState = await committedState(table, (value) =>
+      ((value.actionIds as string[] | undefined) ?? []).includes(actionId),
+    );
+    expect(firstState.gameState).toMatchObject({
+      sceneId: 'scene-broken-gatehouse',
+    });
+    const event = await db.query(
+      "SELECT payload FROM events WHERE session_id=$1 AND type='SceneClosed' ORDER BY seq DESC LIMIT 1",
+      [table],
+    );
+    expect(event.rows[0]?.payload).toMatchObject({
+      nextSceneId: 'scene-broken-gatehouse',
+    });
+    await registry.drain();
+
+    const restarted = new RoomRegistry(
+      new Persistence(db),
+      new SessionLease(db),
+      'scene-transition-restarted',
+      600_000,
+      60_000,
+      sceneRunner('scene-lamp-vault'),
+    );
+    const resumed = await restarted.get(table);
+    expect(resumed.state.gameState).toMatchObject({
+      sceneId: 'scene-broken-gatehouse',
+    });
+    expect(await resumed.submitAction(owner.id, randomUUID(), 'Finish.')).toBe(
+      true,
+    );
+    const finalState = await committedState(
+      table,
+      (value) =>
+        (value.gameState as Record<string, unknown> | undefined)
+          ?.adventureCompleted === true,
+    );
+    expect(finalState.gameState).toMatchObject({ adventureCompleted: true });
+    await restarted.drain();
+  });
+
   it('discards an interrupted turn on room restart and permits resubmission', async () => {
     const owner = await createUser();
     const table = await createTable(owner.id, false);

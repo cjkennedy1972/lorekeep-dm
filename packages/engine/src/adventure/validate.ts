@@ -2,6 +2,7 @@ import { AdventureSchema, type Adventure } from '@game/schema';
 import type { Catalog } from '../catalog/types.js';
 export const ADVENTURE_MAX_MONSTER_CR = 5;
 import { loadAuthoredMap } from '../map/load.js';
+export { nextSceneAfterClose } from './transition.js';
 import { rleDecode, type Battlemap } from '@game/schema';
 import denylistData from './denylist.js';
 

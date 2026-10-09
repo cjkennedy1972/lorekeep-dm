@@ -1,4 +1,4 @@
-import type { DMTurnEvent } from '@game/schema';
+import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { closeScene } from '../dm/summarize.js';
@@ -27,6 +27,11 @@ import {
 import { rulesLookup } from '../dm/rulesLookup.js';
 import { catalogFromSnapshot } from './catalogSnapshot.js';
 import {
+  loadAdventure,
+  nextSceneAfterClose,
+} from '@game/rules-engine/adventure-node';
+import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
+import {
   createConfiguredAdapter,
   createEndpointEgress,
 } from '../llm/config.js';
@@ -42,6 +47,7 @@ type GameState = {
   gameEngine?: Record<string, unknown>;
   premise?: string;
   sceneId?: string;
+  adventureCompleted?: boolean;
   sceneSummary?: string;
   adventureId?: string;
   catalogVersion?: string;
@@ -143,6 +149,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           );
     if (!catalog) throw new Error('Pinned catalog version unavailable');
     const state = asRecord(request.state) as GameState;
+    const initialSceneId = state.sceneId;
+    let transitionedSceneId: string | undefined;
+    let adventureCompleted: boolean | undefined;
+    const adventure =
+      table.rows[0].adventure_id === 'adventure:01-hollow-under-marrowfell'
+        ? loadAdventure(AdventureSchema.parse(adventure01), catalog)
+        : undefined;
     const savedCharacter = table.rows[0].character as unknown as
       | ToolExecutorState['actors'][string]
       | null;
@@ -335,6 +348,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       rulesLookup: (topic) => rulesLookup(this.db as Pool, topic),
     };
 
+    const emittedSceneEvents: unknown[] = [];
     const result = await runTurn({
       turnId: request.actionId,
       testMode: process.env.NODE_ENV === 'test',
@@ -381,16 +395,26 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       context,
       adapter,
       toolMode: 'native',
-      emit: (event) => onEvent(event as DMTurnEvent),
+      emit: (event) => {
+        const value = event as Record<string, unknown>;
+        if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
+        onEvent(event as DMTurnEvent);
+      },
     });
 
+    if (emittedSceneEvents.length)
+      result.events = [...result.events, ...emittedSceneEvents];
     for (const event of result.events) {
       if (
         event &&
         typeof event === 'object' &&
         (event as { type?: string }).type === 'SceneClosed'
       ) {
-        const closed = event as { sceneId: string; summary: string };
+        const closed = event as {
+          sceneId: string;
+          summary: string;
+          nextSceneId?: string;
+        };
         const summaryAdapter = new MeteredLlmAdapter(
           new RecordedLlmAdapter({
             mode: this.fixtureMode,
@@ -408,6 +432,27 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             modelId: endpointSlot,
           },
         );
+        const transition =
+          adventure?.ok && closed.sceneId === initialSceneId
+            ? nextSceneAfterClose(
+                adventure.adventure,
+                closed.sceneId,
+                closed.nextSceneId,
+              )
+            : undefined;
+        let transitionEvent: Record<string, unknown> | undefined;
+        if (transition?.completed) {
+          adventureCompleted = true;
+          transitionEvent = { ...closed, nextSceneId: null };
+        } else if (transition) {
+          transitionedSceneId = transition.sceneId;
+          adventureCompleted = false;
+          transitionEvent = { ...closed, nextSceneId: transition.sceneId };
+        }
+        if (transitionEvent)
+          result.events = result.events.map((entry) =>
+            entry === event ? transitionEvent : entry,
+          );
         await closeScene({
           sessionId: request.sessionId,
           sceneId: closed.sceneId,
@@ -425,6 +470,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       events: [...result.events, ...registryEvents],
       state: {
         ...(result.state as GameState),
+        ...(transitionedSceneId ? { sceneId: transitionedSceneId } : {}),
+        ...(adventureCompleted !== undefined ? { adventureCompleted } : {}),
         lastNarration: result.narration,
         lastPlayerText: request.text,
       },
