@@ -30,6 +30,9 @@ import type { Catalog } from '@game/rules-engine';
 import { resolveSoloRest } from './rest.js';
 import { failForward, resolveDeathSave, retryFromCheckpoint } from './death.js';
 
+const MAX_QUEUED_ACTIONS_PER_SEAT = 3;
+const MAX_QUEUED_ACTIONS_PER_ROOM = 12;
+
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
   persistRegistryEvents?(
@@ -488,6 +491,25 @@ export class Room {
       if (!this.turnRunner) throw new Error('Solo turn runner unavailable');
       if (this.actionIds.has(actionId) || this.pendingActions.has(actionId))
         return false;
+      const queuedForSeat =
+        this.queuedActions.filter((action) => action.accountId === accountId)
+          .length + (this.turnInFlight ? 1 : 0);
+      if (
+        queuedForSeat >= MAX_QUEUED_ACTIONS_PER_SEAT ||
+        this.queuedActions.length + (this.turnInFlight ? 1 : 0) >=
+          MAX_QUEUED_ACTIONS_PER_ROOM
+      ) {
+        this.broadcast({
+          seq: this.seq,
+          type: 'Error',
+          payload: {
+            code: 'ACTION_REJECTED',
+            message: 'Too many actions are queued.',
+            actionId,
+          },
+        } as ServerMessage);
+        return false;
+      }
       this.pendingActions.add(actionId);
       this.broadcast({
         seq: this.seq,
