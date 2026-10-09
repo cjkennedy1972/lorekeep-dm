@@ -91,7 +91,7 @@ const fail = (error: string, hint: string): CastSpellResult => ({
   error,
   hint,
 });
-const scaledDamage = (
+export const scaledDamage = (
   d: NonNullable<Extract<CatalogEntry, { kind: 'spell' }>['damage']>[number],
   spellLevel: number,
   slotLevel: number,

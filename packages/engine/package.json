@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "calibrate:solo": "tsc -p tsconfig.json && nice -n 10 node dist/calibration/cli.js regenerate --workers 1 --date $(date +%F)",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "pretypecheck": "pnpm --filter @game/schema build",
