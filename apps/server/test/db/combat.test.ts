@@ -534,6 +534,16 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       mark2,
     );
     await client.until((m) => m.type === 'NarrationCompleted', mark2);
+    const persistDeadline = Date.now() + 5000;
+    while (
+      !(await storedTypes(table)).some(
+        (event) => event.type === 'NarrationCompleted',
+      )
+    ) {
+      if (Date.now() > persistDeadline)
+        throw new Error('Combat narration was not persisted.');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     const count = (await storedTypes(table)).length;
     const mark3 = client.log.length;
     client.ws.send(answer);
