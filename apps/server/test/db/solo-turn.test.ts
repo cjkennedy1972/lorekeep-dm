@@ -478,8 +478,8 @@ describe('solo turn persisted lifecycle', () => {
     socket.close();
     expect(narration.payload?.text).toBe('The door opens.');
     expect(narratedAt - startedAt).toBeLessThanOrEqual(180_000);
-    console.info(
-      `M2-28 scripted timing ms: create=${Math.round(createdAt - startedAt)}; websocket=${Math.round(connectedAt - createdAt)}; first-narration=${Math.round(narratedAt - connectedAt)}; total=${Math.round(narratedAt - startedAt)} (limit=180000)`,
+    process.stdout.write(
+      `M2-28 scripted timing ms: create=${Math.round(createdAt - startedAt)}; websocket=${Math.round(connectedAt - createdAt)}; first-narration=${Math.round(narratedAt - connectedAt)}; total=${Math.round(narratedAt - startedAt)} (limit=180000)\n`,
     );
 
     await new RegistryMemory(db).closeScene(
