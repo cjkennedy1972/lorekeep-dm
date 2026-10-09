@@ -51,7 +51,7 @@ type CombatOutput = {
   rng?: number;
 };
 /** start_combat / end_combat return the new combat facts rather than a full state; fold them into the engine state. */
-function mergeCombatOutput<T extends object>(
+export function mergeCombatOutput<T extends object>(
   current: T,
   name: string | undefined,
   value: unknown,

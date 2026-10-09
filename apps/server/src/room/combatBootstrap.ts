@@ -62,12 +62,20 @@ function attacksFor(
   if (character) {
     const owned = Object.entries(registry)
       .filter(([, attack]) => attack.ownerId === entity.id)
-      .map(([id, attack]) => ({ id, name: id, ...attack }));
+      .map(
+        ([id, attack]): CombatAttack => ({
+          id,
+          name: id,
+          attackBonus: attack.attackBonus,
+          damage: attack.damage,
+          damageType: attack.damageType,
+          ...(attack.reachFt ? { reachFt: attack.reachFt } : {}),
+          ...(attack.range ? { range: attack.range } : {}),
+        }),
+      );
     return {
       abilities: character.abilities,
-      attacks: owned.length
-        ? owned.map(({ ownerId: _owner, ...attack }) => attack)
-        : [unarmed(character)],
+      attacks: owned.length ? owned : [unarmed(character)],
     };
   }
   const catalogId = `monster:${entity.id.replace(/^ent_/, '').replace(/_\d+$/, '')}`;
