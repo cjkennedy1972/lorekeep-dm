@@ -197,23 +197,23 @@ export function installGateway(
           updatedAt: Date.now(),
         };
         const dispatch = (data: import('ws').RawData) => {
+          // Rate-limit before queueing: a flood must not grow the promise chain.
+          if (!consumeMessageToken(messageBucket)) {
+            if (ws.readyState === WebSocket.OPEN)
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'RATE_LIMITED',
+                  message: 'Too many messages.',
+                },
+              });
+            return;
+          }
           chain = chain
             .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
-              if (ws.readyState === WebSocket.OPEN) {
-                if (!consumeMessageToken(messageBucket)) {
-                  send({
-                    seq: room.seq,
-                    type: 'Error',
-                    payload: {
-                      code: 'RATE_LIMITED',
-                      message: 'Too many messages.',
-                    },
-                  });
-                  return;
-                }
-                return handle(data);
-              }
+              if (ws.readyState === WebSocket.OPEN) return handle(data);
             })
             .catch(() => {});
         };
