@@ -12,11 +12,8 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
-import type {
-  LlmAdapter,
-  LlmChunk,
-  LlmRequest,
-} from '../../src/llm/adapter.js';
+import type { LlmRequest } from '../../src/llm/adapter.js';
+import { scriptedDm } from '../room/scriptedDm.js';
 import type { RoomCombatState } from '../../src/room/combat.js';
 import {
   bootstrapped,
@@ -37,50 +34,6 @@ const saved = {
 };
 let db: Pool;
 let stack: Stack | undefined;
-
-/** A recorded-style adapter: no network. START-COMBAT makes the "DM" call start_combat; unknownthing else narrates. */
-function scriptedDm(requests: LlmRequest[] = []): LlmAdapter {
-  return {
-    capabilities: () => ({
-      streaming: true,
-      nativeTools: true,
-      jsonSchema: true,
-    }),
-    probe: async () => true,
-    async *complete(request: LlmRequest) {
-      requests.push(request);
-      const sawTool = request.messages.some((m) => m.role === 'tool');
-      const asked = request.messages.some((message) => {
-        if (message.content.includes('START-COMBAT')) return true;
-        const encoded = message.content.match(
-          /<<<PLAYER_DATA encoding=base64>>>\s*([A-Za-z0-9+/=]+)\s*<<<END_PLAYER_DATA>>>/,
-        )?.[1];
-        return encoded
-          ? Buffer.from(encoded, 'base64')
-              .toString('utf8')
-              .includes('START-COMBAT')
-          : false;
-      });
-      const chunks: LlmChunk[] =
-        asked && !sawTool
-          ? [
-              {
-                type: 'tool-call',
-                id: 'call_start',
-                name: 'start_combat',
-                arguments: {
-                  enemies: [
-                    { monsterId: 'srd:monster/goblin-minion', count: 2 },
-                  ],
-                  ambushSide: 'party',
-                },
-              },
-            ]
-          : [{ type: 'text', delta: 'Steel rings out across the crypt.' }];
-      for (const chunk of chunks) yield chunk;
-    },
-  };
-}
 
 /** One server "process": registry + gateway. `restart` drops it (killing in-memory Rooms) and boots another. */
 class Stack {

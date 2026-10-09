@@ -20,6 +20,7 @@ export interface RoomClientOptions {
   WebSocketImpl?: typeof WebSocket;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  onMessage?: (message: import('@game/schema').ServerMessage) => void;
 }
 
 const initial: RoomSnapshot = {
@@ -66,6 +67,7 @@ export function createRoomClient(opts: RoomClientOptions) {
     if (!parsed.success)
       return set({ error: 'Received unrecognised message from server.' });
     const msg = parsed.data;
+    opts.onMessage?.(msg);
     const wasResync = snap.needsResync;
     const next = roomReducer(snap, msg);
     set({

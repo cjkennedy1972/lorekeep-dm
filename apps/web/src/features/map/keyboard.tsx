@@ -14,6 +14,14 @@ type Props = {
   entityTeams?: Record<string, string>;
   onMovementEvents?: (events: readonly MovementEvent[]) => void;
   onReactionResolved?: (result: ReturnType<typeof resolveReaction>) => void;
+  onMove?: (destination: GridPos) => void;
+  reactionPrompt?: {
+    reactionId: string;
+    entityId: string;
+    moverId: string;
+    trigger: string;
+  } | null;
+  onReactionChoice?: (reactionId: string, choice: 'take' | 'decline') => void;
 };
 
 const same = (a: GridPos, b: GridPos) => a.x === b.x && a.y === b.y;
@@ -24,19 +32,31 @@ export function MapKeyboard({
   entityTeams = {},
   onMovementEvents,
   onReactionResolved,
+  onMove,
+  reactionPrompt,
+  onReactionChoice,
 }: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
   const [cursor, setCursor] = useState<GridPos | null>(null);
   const [moving, setMoving] = useState(false);
   const [message, setMessage] = useState('');
   const [dialogRef, setDialogRef] = useState<HTMLDivElement | null>(null);
-  const [reaction, setReaction] = useState<{
+  const [localReaction, setReaction] = useState<{
     reactionId: string;
     moverId: string;
     hostileId: string;
     remainingPath: GridPos[];
     mode: 'normal' | 'disengage' | 'forced';
   } | null>(null);
+  const reaction = reactionPrompt
+    ? {
+        reactionId: reactionPrompt.reactionId,
+        moverId: reactionPrompt.moverId,
+        hostileId: reactionPrompt.entityId,
+        remainingPath: [],
+        mode: 'normal' as const,
+      }
+    : localReaction;
 
   useEffect(() => store.subscribe(() => setState(store.getState())), [store]);
   const entities = state.combat.initiative
@@ -44,7 +64,11 @@ export function MapKeyboard({
       state.combat.combatants.find((item) => item.id === entry.entityId),
     )
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
-  const selectedId = state.combat.activeEntityId ?? entities[0]?.id ?? null;
+  const selectedId =
+    state.tracker?.initiative[0]?.entityId ??
+    state.combat.activeEntityId ??
+    entities[0]?.id ??
+    null;
   const selected = state.combat.combatants.find(
     (item) => item.id === selectedId,
   );
@@ -153,6 +177,11 @@ export function MapKeyboard({
       announce('Movement cancelled.');
       return;
     }
+    if (onMove) {
+      onMove(preview.path.at(-1)!);
+      setMoving(false);
+      return;
+    }
     const result = moveAlong(movementState, selectedId, preview.path);
     if ('error' in result) {
       announce(
@@ -163,14 +192,6 @@ export function MapKeyboard({
       return;
     }
     onMovementEvents?.(result.events);
-    store.setMapEntities(
-      result.state.entities.map((item) => ({
-        ...item,
-        kind: placed.find((entry) => entry.id === item.id)?.kind ?? 'monster',
-        hp: item.hp,
-        team: item.team,
-      })),
-    );
     store.setMapEntities(
       result.state.entities.map((item) => ({
         ...item,
@@ -198,7 +219,12 @@ export function MapKeyboard({
       dialogRef?.querySelector<HTMLButtonElement>('button')?.focus();
   }, [reaction, dialogRef]);
   const resolve = (choice: 'take' | 'decline') => {
-    if (!reaction || !movementState) return;
+    if (!reaction) return;
+    if (reactionPrompt) {
+      onReactionChoice?.(reaction.reactionId, choice);
+      return;
+    }
+    if (!movementState) return;
     const withPending = {
       ...movementState,
       pendingReactions: { [reaction.reactionId]: reaction },

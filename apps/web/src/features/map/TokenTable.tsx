@@ -37,7 +37,11 @@ export function TokenTable({ store = gameStore, viewerId }: Props) {
             state.battlemap!.diagonalRule,
           )
         : 0,
-      state: `HP ${entity.hp}`,
+      // Enemy HP is qualitative on the live path (hpState); sandbox entities carry exact HP.
+      state:
+        typeof entity.hp === 'number'
+          ? `HP ${entity.hp}`
+          : String((entity as { hpState?: string }).hpState ?? 'unknown'),
     }));
     const features: Row[] = state.battlemap.features.map((feature) => {
       const cell = feature.cells[0]!;
