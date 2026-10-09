@@ -328,8 +328,8 @@ describe('solo turn persisted lifecycle', () => {
     expect(afterRestart.snapshot?.state).toMatchObject({
       actionIds: expect.arrayContaining([actionId]),
     });
-    const registry = new RegistryMemory(db);
-    expect(await registry.entities(table)).toEqual([]);
+    const memory = new RegistryMemory(db);
+    expect(await memory.entities(table)).toEqual([]);
     await restarted.drain();
   });
 
