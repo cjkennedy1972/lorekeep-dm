@@ -80,6 +80,7 @@ export function createMock(
     hostId: string;
     code: string;
     members: Set<string>;
+    solo?: boolean;
   };
   const rooms = new Map<string, MockRoom>();
   const newCode = () => randomBytes(16).toString('base64url');
@@ -359,6 +360,36 @@ export function createMock(
       room.remove(account.id);
       return json(res, 200, {}, { 'set-cookie': 'sid=; Path=/; Max-Age=0' });
     }
+    if (route === 'GET /api/tables')
+      return json(res, 200, {
+        games: [...rooms.values()]
+          .filter((r) => r.members.has(account.id))
+          .map((r) => ({
+            id: r.id,
+            name: r.name,
+            status: 'active',
+            adventureId: 'adventure:fixture-1',
+            difficulty: 'moderate',
+            lastActiveAt: new Date().toISOString(),
+            recap: '',
+          })),
+      });
+    if (route === 'POST /api/tables') {
+      const body = await readBody(req);
+      const name = typeof body?.name === 'string' ? body.name.trim() : '';
+      if (!name || name.length > 80)
+        return err(res, 400, 'INVALID_INPUT', 'Enter a game name.');
+      const r: MockRoom = {
+        id: crypto.randomUUID(),
+        name,
+        hostId: account.id,
+        code: newCode(),
+        members: new Set([account.id]),
+        solo: true,
+      };
+      rooms.set(r.id, r);
+      return json(res, 201, { game: { id: r.id, name: r.name } });
+    }
     if (route === 'GET /api/rooms')
       return json(res, 200, {
         rooms: [...rooms.values()]
@@ -386,7 +417,9 @@ export function createMock(
       if (!r?.members.has(account.id))
         return err(res, 404, 'NOT_FOUND', 'Not found.');
       if (req.method === 'GET' && !roomRoute[2])
-        return json(res, 200, { room: roomView(r, account.id) });
+        return json(res, 200, {
+          room: roomView(r, account.id, r.solo && r.hostId === account.id),
+        });
       if (req.method === 'POST' && roomRoute[2]) {
         if (r.hostId !== account.id)
           return err(res, 403, 'FORBIDDEN', 'Only the host can do that.');
