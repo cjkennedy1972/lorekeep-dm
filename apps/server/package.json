@@ -12,9 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "migrate:up": "node-pg-migrate up -m migrations --ignore-pattern \"(.*[.]sql|[.].*)\"",
     "migrate:down": "node-pg-migrate down -m migrations --ignore-pattern \"(.*[.]sql|[.].*)\"",
-    "pretypecheck": "pnpm --filter @game/schema build",
-    "pretest": "pnpm --filter @game/schema build",
-    "prebuild": "pnpm --filter @game/schema build"
+    "pretypecheck": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build",
+    "pretest": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build",
+    "prebuild": "pnpm --filter @game/schema build && pnpm --filter @game/rules-engine build"
   },
   "dependencies": {
     "@game/schema": "workspace:*",
