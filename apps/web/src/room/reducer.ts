@@ -35,6 +35,13 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
         },
       };
     }
+    case 'ActionQueued':
+    case 'TurnThinking':
+    case 'RollEvent':
+    case 'NarrationChunk':
+    case 'NarrationCompleted':
+    case 'ToolRejected':
+      return view; // surfaced by the client, not part of room state
     case 'Error':
       return view; // surfaced by the client, not part of room state
   }

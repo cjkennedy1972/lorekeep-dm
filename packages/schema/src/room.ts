@@ -12,6 +12,7 @@ export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
+  gameState: z.unknown().optional(),
 });
 export type Presence = z.infer<typeof PresenceSchema>;
 export type Seat = z.infer<typeof SeatSchema>;

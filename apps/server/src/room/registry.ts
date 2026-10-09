@@ -1,5 +1,6 @@
 import type { Persistence } from '../persistence/index.js';
 import { Room } from './Room.js';
+import type { SoloTurnRunner } from './dmTurn.js';
 import type { Lease, SessionLease } from './lease.js';
 
 export class RoomRegistry {
@@ -16,6 +17,7 @@ export class RoomRegistry {
     private readonly nodeId: string,
     private readonly idleMs = 10 * 60_000,
     sweepMs = 60_000,
+    private readonly turnRunner?: SoloTurnRunner,
   ) {
     this.idleTimer = setInterval(() => void this.evictIdle(), sweepMs);
     this.idleTimer.unref();
@@ -71,6 +73,7 @@ export class RoomRegistry {
         this.store,
         lease,
         await this.store.loadLatest(sessionId),
+        this.turnRunner,
       );
       this.rooms.set(sessionId, room);
       this.lastUsed.set(sessionId, Date.now());

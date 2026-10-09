@@ -92,9 +92,16 @@ export class Persistence {
     events: readonly EventInput[],
     state: unknown,
     lease?: LeaseFence,
+    registryEvents: readonly RegistryEvent[] = [],
   ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
+      if (registryEvents.length)
+        await new RegistryMemory(this.pool).persistEventsInTransaction(
+          client,
+          sessionId,
+          registryEvents,
+        );
       const inserted = await appendEvents(client, sessionId, events);
       const last = inserted.at(-1);
       if (!last) throw new Error('A turn needs at least one event');
