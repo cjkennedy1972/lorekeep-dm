@@ -24,9 +24,9 @@ test('keyboard-only: create a table, copy the invite, two players see each other
   await signedIn(host, 'Harper');
   const page = await host.newPage();
   await page.goto('/rooms');
-  await page.getByRole('heading', { name: 'My tables' }).waitFor();
+  await page.getByRole('heading', { name: 'My games' }).waitFor();
 
-  await page.getByLabel('Table name').focus();
+  await page.getByLabel('Game name').focus();
   await page.keyboard.type('Keyboard Keep');
   await page.keyboard.press('Enter');
   await page.getByRole('heading', { name: 'Keyboard Keep' }).waitFor();
@@ -63,8 +63,8 @@ test('navigation to a new lobby clears the plaintext invite from history.state',
   await signedIn(host, 'History');
   const page = await host.newPage();
   await page.goto('/rooms');
-  await page.getByLabel('Table name').fill('History Hall');
-  await page.getByRole('button', { name: 'Create table' }).click();
+  await page.getByLabel('Game name').fill('History Hall');
+  await page.getByRole('button', { name: 'Create solo game' }).click();
   await page.getByRole('heading', { name: 'History Hall' }).waitFor();
 
   const invite = (await page.getByLabel('Invite link').inputValue()).split(
@@ -87,8 +87,8 @@ test('lobby fits a 360px viewport without horizontal scroll', async ({
   await signedIn(ctx, 'Narrow');
   const page = await ctx.newPage();
   await page.goto('/rooms');
-  await page.getByLabel('Table name').fill('Tiny Table');
-  await page.getByRole('button', { name: 'Create table' }).click();
+  await page.getByLabel('Game name').fill('Tiny Table');
+  await page.getByRole('button', { name: 'Create solo game' }).click();
   await page.getByRole('heading', { name: 'Tiny Table' }).waitFor();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > innerWidth,
