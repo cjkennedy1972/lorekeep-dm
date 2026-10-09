@@ -10,6 +10,7 @@ import type { Pool, PoolClient } from 'pg';
 export const MAX_MEMORY_RESULTS = 20;
 export const MAX_MEMORY_CHARS = 4_000;
 export const MAX_ENTITY_FACTS = 40;
+export const MAX_SCENE_SUMMARY_CHARS = 1_200;
 
 export type RegistryEntity = {
   entityId: string;
@@ -142,6 +143,65 @@ export function extractMentionedRegistryFacts(
 /** Postgres-backed, session-scoped registry writes and lexical retrieval. */
 export class RegistryMemory {
   constructor(private readonly pool: Pg) {}
+
+  /** Persist a scene summary and its validated diffs atomically; duplicate closes are no-ops. */
+  async closeScene(
+    sessionId: string,
+    sceneId: string,
+    summary: string,
+    diffs: readonly RegistryDiff[] = [],
+  ): Promise<boolean> {
+    const normalized = summary.trim();
+    if (!sceneId.trim()) throw new Error('Scene id is required');
+    if (!normalized || normalized.length > MAX_SCENE_SUMMARY_CHARS)
+      throw new Error(
+        `Scene summary must contain 1 to ${MAX_SCENE_SUMMARY_CHARS} characters`,
+      );
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query(
+        `INSERT INTO scene_summaries(session_id, scene_id, summary)
+         VALUES ($1, $2, $3) ON CONFLICT (session_id, scene_id) DO NOTHING`,
+        [sessionId, sceneId, normalized],
+      );
+      if (inserted.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      await this.upsertManyInTransaction(client, sessionId, diffs);
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Durable recap inputs; never reads raw events or transcript rows. */
+  async loadRecapMemory(sessionId: string, limit = 8): Promise<string[]> {
+    const boundedLimit = Math.max(0, Math.min(20, Math.floor(limit)));
+    if (!boundedLimit) return [];
+    const { rows } = await this.pool.query<{ text: string }>(
+      `SELECT concat('Scene ', scene_id, ': ', summary) AS text
+         FROM scene_summaries WHERE session_id=$1
+        ORDER BY created_at DESC, id DESC LIMIT $2`,
+      [sessionId, boundedLimit],
+    );
+    const registry = await this.pool.query<{ text: string }>(
+      `SELECT concat(e.entity_type, ' ', e.name, ': ', f.fact) AS text
+         FROM registry_entries e JOIN registry_facts f ON f.entry_id=e.id
+        WHERE e.session_id=$1 AND e.superseded_by IS NULL AND f.superseded_by IS NULL
+        ORDER BY e.mentioned_at DESC, e.id, f.id LIMIT $2`,
+      [sessionId, boundedLimit * 4],
+    );
+    return [
+      ...rows.map((row) => row.text),
+      ...registry.rows.map((row) => row.text),
+    ];
+  }
 
   async upsert(
     sessionId: string,
