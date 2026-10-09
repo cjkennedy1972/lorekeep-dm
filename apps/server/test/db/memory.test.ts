@@ -65,14 +65,14 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
       },
     });
     const history = await database!.pool.query(
-      'SELECT version, supersedes_id, superseded_by FROM registry_entries WHERE session_id=$1 ORDER BY version',
+      'SELECT id, version, supersedes_id, superseded_by FROM registry_entries WHERE session_id=$1 ORDER BY version',
       [gameA],
     );
     expect(history.rows).toHaveLength(2);
     expect(history.rows[1].supersedes_id).toBe(history.rows[0].id);
     expect(history.rows[0].superseded_by).toBe(history.rows[1].id);
     const facts = await database!.pool.query(
-      'SELECT fact, supersedes_id, superseded_by FROM registry_facts ORDER BY id',
+      'SELECT id, fact, supersedes_id, superseded_by FROM registry_facts ORDER BY id',
     );
     expect(facts.rows).toHaveLength(3);
     expect(facts.rows[0].superseded_by).toBe(facts.rows[1].id);
