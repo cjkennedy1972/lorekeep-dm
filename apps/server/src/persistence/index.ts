@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
 
@@ -59,6 +60,21 @@ export class Persistence {
     } finally {
       client.release();
     }
+  }
+
+  persistRegistryEvents(
+    sessionId: string,
+    events: readonly RegistryEvent[],
+    lease?: LeaseFence,
+  ): Promise<void> {
+    if (!events.length) return Promise.resolve();
+    return this.transaction(sessionId, lease, async (client) => {
+      await new RegistryMemory(this.pool).persistEventsInTransaction(
+        client,
+        sessionId,
+        events,
+      );
+    });
   }
 
   append(
