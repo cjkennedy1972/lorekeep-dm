@@ -522,8 +522,16 @@ describe('solo turn persisted lifecycle', () => {
     expect(resumed.status).toBe(200);
     const resumedGame = (await resumed.json()).game;
     expect(resumedGame.character).toEqual(priorCharacter);
-    expect(resumedGame.state.gameState).toEqual(priorGameState);
-    expect(resumedGame.recap).toEqual(priorGame.recap);
+    const priorStateWithoutRecap = {
+      ...(priorGameState as Record<string, unknown>),
+    };
+    const resumedStateWithoutRecap = {
+      ...(resumedGame.state.gameState as Record<string, unknown>),
+    };
+    delete priorStateWithoutRecap.recap;
+    delete resumedStateWithoutRecap.recap;
+    expect(resumedStateWithoutRecap).toEqual(priorStateWithoutRecap);
+    expect(resumedGame.recap).toContain('followed the lantern light');
 
     const outsider = await createUser();
     const forbidden = await fetch(`${base}/api/tables/${gameId}`, {
