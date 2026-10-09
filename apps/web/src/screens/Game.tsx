@@ -207,7 +207,7 @@ export function Game() {
   }, [room, account]);
 
   const send = (command: Record<string, unknown>) =>
-    live.send('CombatCommand', { command });
+    live.send('CombatCommand', command);
   const submitAction = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = actionText.trim();
