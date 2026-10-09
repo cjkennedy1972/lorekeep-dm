@@ -11,7 +11,9 @@
   max-height: 28rem;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-inline-start: 1.5rem;
+  list-style: none;
+  margin: 0;
+  padding-inline-start: 0;
   scroll-behavior: smooth;
 }
 

@@ -82,11 +82,13 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
   return (
     <section className="narration-log" aria-label="Narration log">
       <h2>Story</h2>
-      <div
+      {/* A scrollable region must be keyboard focusable (WCAG 2.1.1; axe scrollable-region-focusable),
+          and this must stay a plain list: giving it an interactive role would orphan the <li> items. */}
+      <ol
         className="narration-log__entries"
         ref={listRef}
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
         tabIndex={0}
-        role="listbox"
         aria-label="Story entries; use arrow keys or page keys to scroll"
       >
         {state.entries.map((entry, index) => {
@@ -151,7 +153,7 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
             </li>
           );
         })}
-      </div>
+      </ol>
       {state.entries.some((entry) => entry.kind === 'pending') && (
         <p className="sr-only" role="status" aria-live="polite">
           The DM is thinking.
