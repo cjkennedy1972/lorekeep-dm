@@ -1,5 +1,15 @@
 import type { DMTurnEvent } from '@game/schema';
+import type { RegistryEvent } from '../dm/memory.js';
+import { RegistryMemory } from '../dm/memory.js';
 import type { ToolExecutorState } from '@game/rules-engine/room-tools';
+import {
+  setFlag,
+  logRuling,
+  updateQuest,
+  upsertLocation,
+  upsertNpc,
+} from '@game/rules-engine/room-tools';
+import type { WorldRegistry } from '@game/rules-engine/room-tools';
 import { execute, loadCatalog } from '@game/rules-engine/room-tools';
 import type { Pool } from 'pg';
 import {
@@ -24,6 +34,9 @@ type GameState = {
   premise?: string;
   sceneId?: string;
   sceneSummary?: string;
+  lastNarration?: string;
+  lastPlayerText?: string;
+  world?: WorldRegistry;
 };
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -46,9 +59,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     request: SoloTurnRequest,
     onEvent: Parameters<SoloTurnRunner['run']>[1],
   ): Promise<TurnResult> {
+    const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
+    if (!['fast', 'frontier', 'moderate'].includes(endpointSlot))
+      throw new Error('Solo turn endpoint slot is invalid');
     const endpoint = await createConfiguredAdapter(
       this.db,
-      'moderate',
+      endpointSlot as 'fast' | 'frontier' | 'moderate',
       this.egress,
       this.endpointMasterKey,
     );
@@ -74,13 +90,20 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         turnSeed: process.env.LLM_FIXTURE_MODE
           ? '0x0000000000000000'
           : 'random',
-        endpointProfile: 'moderate',
+        endpointProfile: endpointSlot,
       },
       upstream: this.fixtureMode === 'record' ? endpoint : undefined,
       allowRecord: process.env.NODE_ENV === 'test',
       environment: process.env.NODE_ENV,
       prefix: 'Lorekeep solo turn',
     });
+    const memory = new RegistryMemory(this.db as Pool);
+    const registryEvents: RegistryEvent[] = [];
+    const memoryContext = await memory.contextFor(
+      request.sessionId,
+      request.text,
+      state.lastNarration ?? '',
+    );
     const engineState = (state.gameEngine ?? {
       actors,
       attacks: {},
@@ -90,7 +113,14 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       ac: {},
       conditions: {},
       catalog: this.catalog,
-    }) as unknown as ToolExecutorState;
+      world: state.world ?? {
+        npcs: {},
+        locations: {},
+        quests: {},
+        flags: {},
+        rulings: [],
+      },
+    }) as unknown as ToolExecutorState & { world: WorldRegistry };
     const context: DmToolContext = {
       seed: 0,
       rollIndex: 0,
@@ -102,29 +132,114 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ...(previous as GameState),
           gameEngine: output.nextState,
           characters: (output.nextState as ToolExecutorState).actors,
+          world:
+            (output.nextState as { world?: WorldRegistry }).world ??
+            (previous as GameState).world,
         };
       },
       engineExecute(prior, call, seed) {
-        const current = prior as ToolExecutorState;
-        const result = execute(current, call, seed);
+        const current = prior as ToolExecutorState & { world: WorldRegistry };
+        const request = call as { name?: string; args?: unknown };
+        const worldExecutors = {
+          upsert_npc: upsertNpc,
+          upsert_location: upsertLocation,
+          update_quest: updateQuest,
+          set_flag: setFlag,
+          log_ruling: logRuling,
+        } as const;
+        const worldExecute = request.name
+          ? worldExecutors[request.name as keyof typeof worldExecutors]
+          : undefined;
+        const result = worldExecute
+          ? worldExecute(current.world, request.args)
+          : execute(current, call, seed);
         if (!result.ok) return { ...result, events: [] };
         const value = result.value as
           | { events?: readonly unknown[] }
           | undefined;
+        for (const event of value?.events ?? []) {
+          if (
+            event &&
+            typeof event === 'object' &&
+            [
+              'NpcUpserted',
+              'LocationUpserted',
+              'QuestUpdated',
+              'FlagSet',
+              'RulingLogged',
+            ].includes(String((event as { type?: unknown }).type))
+          )
+            registryEvents.push(event as RegistryEvent);
+        }
+        let nextWorld = current.world;
+        for (const event of value?.events ?? []) {
+          if (!event || typeof event !== 'object') continue;
+          const item = event as Record<string, unknown>;
+          if (item.type === 'NpcUpserted')
+            nextWorld = {
+              ...nextWorld,
+              npcs: {
+                ...nextWorld.npcs,
+                [(item.npc as { id: string }).id]:
+                  item.npc as WorldRegistry['npcs'][string],
+              },
+            };
+          if (item.type === 'LocationUpserted')
+            nextWorld = {
+              ...nextWorld,
+              locations: {
+                ...nextWorld.locations,
+                [(item.location as { id: string }).id]:
+                  item.location as WorldRegistry['locations'][string],
+              },
+            };
+          if (item.type === 'QuestUpdated')
+            nextWorld = {
+              ...nextWorld,
+              quests: {
+                ...nextWorld.quests,
+                [(item.quest as { id: string }).id]:
+                  item.quest as WorldRegistry['quests'][string],
+              },
+            };
+          if (item.type === 'FlagSet')
+            nextWorld = {
+              ...nextWorld,
+              flags: {
+                ...nextWorld.flags,
+                [(item.flag as { id: string }).id]:
+                  item.flag as WorldRegistry['flags'][string],
+              },
+            };
+          if (item.type === 'RulingLogged') {
+            const ruling = item.ruling as { id: string };
+            nextWorld = {
+              ...nextWorld,
+              rulings: [
+                ...nextWorld.rulings.filter((entry) => entry.id !== ruling.id),
+                ruling as WorldRegistry['rulings'][number],
+              ],
+            };
+          }
+        }
         return {
           ok: true,
           summary: result.summary,
-          events: result.events,
+          events:
+            Array.isArray(result.events) &&
+            result.events.every((entry) => typeof entry === 'string')
+              ? (result.events as string[])
+              : [],
           value: {
             events: value?.events ?? [],
-            state: { ...current, ...(value ?? {}) },
+            state: { ...current, world: nextWorld },
           },
         };
       },
       rulesLookup: (topic) => rulesLookup(this.db as Pool, topic),
     };
 
-    return runTurn({
+    const result = await runTurn({
       turnId: request.actionId,
       testMode: process.env.NODE_ENV === 'test',
       ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
@@ -149,8 +264,17 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         activeMode: 'exploration',
         turn: {
           state: { characters: Object.values(actors) },
+          registryFacts: memoryContext.registryFacts,
+          retrievedMemory: memoryContext.retrievedMemory,
           playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
-          turns: [],
+          turns: state.lastNarration
+            ? [
+                {
+                  playerText: state.lastPlayerText ?? '',
+                  narration: state.lastNarration,
+                },
+              ]
+            : [],
         },
       },
       context,
@@ -158,5 +282,15 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       toolMode: 'native',
       emit: (event) => onEvent(event as DMTurnEvent),
     });
+
+    return {
+      ...result,
+      events: [...result.events, ...registryEvents],
+      state: {
+        ...(result.state as GameState),
+        lastNarration: result.narration,
+        lastPlayerText: request.text,
+      },
+    };
   }
 }

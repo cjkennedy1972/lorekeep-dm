@@ -23,6 +23,7 @@ export interface RoomStore {
     events: readonly EventInput[],
     state: unknown,
     lease: Lease,
+    registryEvents?: readonly RegistryEvent[],
   ): Promise<{ events: StoredEvent[] }>;
 }
 export interface Connection {
@@ -333,6 +334,18 @@ export class Room {
         (event) => (event as { type?: string }).type === 'TurnStarted',
       ) as { turnId?: string } | undefined;
       const id = turnId?.turnId ?? actionId;
+      const registryEvents = result.events.filter(
+        (event): event is RegistryEvent =>
+          !!event &&
+          typeof event === 'object' &&
+          [
+            'NpcUpserted',
+            'LocationUpserted',
+            'QuestUpdated',
+            'FlagSet',
+            'RulingLogged',
+          ].includes(String((event as { type?: unknown }).type)),
+      );
       const writes = result.events
         .filter((event) => {
           const type = String((event as { type?: string }).type);
@@ -388,6 +401,7 @@ export class Room {
         writes,
         snapshotState,
         this.lease,
+        registryEvents,
       );
       this.seq = stored.events.at(-1)?.seq ?? nextSeq;
       this.state = nextState;

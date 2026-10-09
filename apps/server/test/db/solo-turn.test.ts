@@ -8,16 +8,16 @@ import { installGateway } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { issueTicket } from '../../src/gateway/tickets.js';
 import { hashToken } from '../../src/accounts/signup.js';
-import { hashToken } from '../../src/accounts/signup.js';
+import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
+import { RegistryMemory } from '../../src/dm/memory.js';
 import type { TurnResult } from '../../src/dm/orchestrator.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createTestDatabase, type TestDatabase } from './testDb.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import {
   startFakeOpenAIServer,
@@ -27,7 +27,6 @@ import {
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
-let testDatabase: TestDatabase;
 let db: Pool;
 let rooms: RoomRegistry;
 let app: ReturnType<typeof createApp>;
@@ -35,6 +34,7 @@ let base = '';
 const savedFixtureMode = process.env.LLM_FIXTURE_MODE;
 const savedFixturePath = process.env.LLM_FIXTURE_PATH;
 const savedNodeEnv = process.env.NODE_ENV;
+const savedAllowLocalHosts = process.env.LLM_ALLOW_LOCAL_HOSTS;
 let fakeEndpoint: FakeOpenAIServer | undefined;
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
@@ -68,14 +68,14 @@ async function createUser() {
   accountIds.push(id);
   return { id, token: await createSession(db, id, 'solo-turn-test') };
 }
-async function createTable(ownerId: string) {
+async function createTable(ownerId: string, seat = true) {
   const id = randomUUID();
   await db.query(
     'INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)',
     [id, ownerId, 'Solo table'],
   );
   sessionIds.push(id);
-  await (await rooms.get(id)).seat(ownerId, 'Solo');
+  if (seat) await (await rooms.get(id)).seat(ownerId, 'Solo');
   return id;
 }
 async function openSocket(accountId: string, token: string, sessionId: string) {
@@ -90,14 +90,21 @@ async function openSocket(accountId: string, token: string, sessionId: string) {
   });
   return ws;
 }
-function receive(ws: WebSocket, predicate: (message: any) => boolean) {
-  return new Promise<any>((resolve, reject) => {
+type WireMessage = {
+  type: string;
+  payload?: Record<string, unknown>;
+};
+function receive(
+  ws: WebSocket,
+  predicate: (message: WireMessage) => boolean,
+): Promise<WireMessage> {
+  return new Promise<WireMessage>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error('socket message timeout')),
       5000,
     );
     const handler = (data: WebSocket.RawData) => {
-      const message = JSON.parse(data.toString());
+      const message = JSON.parse(data.toString()) as WireMessage;
       if (!predicate(message)) return;
       clearTimeout(timer);
       ws.off('message', handler);
@@ -108,12 +115,16 @@ function receive(ws: WebSocket, predicate: (message: any) => boolean) {
 }
 function sendAction(ws: WebSocket, actionId: string, text: string) {
   ws.send(
-    JSON.stringify({ type: 'PlayerAction', actionId, payload: { text } }),
+    JSON.stringify({
+      type: 'PlayerAction',
+      actionId,
+      lastSeq: 0,
+      payload: { text },
+    }),
   );
 }
 beforeAll(async () => {
-  testDatabase = await createTestDatabase();
-  db = testDatabase.pool;
+  db = new Pool({ connectionString: databaseUrl });
   rooms = new RoomRegistry(
     new Persistence(db),
     new SessionLease(db),
@@ -128,6 +139,7 @@ beforeAll(async () => {
   base = await app.listen({ host: '127.0.0.1', port: 0 });
   process.env.NODE_ENV = 'test';
   process.env.LLM_FIXTURE_MODE = 'strict';
+  process.env.LLM_ALLOW_LOCAL_HOSTS = '127.0.0.1';
 });
 afterAll(async () => {
   await rooms.drain();
@@ -136,14 +148,18 @@ afterAll(async () => {
     await db.query('DELETE FROM sessions WHERE id=$1', [id]);
   for (const id of accountIds)
     await db.query('DELETE FROM accounts WHERE id=$1', [id]);
+  await db.query("DELETE FROM operator_endpoints WHERE slot='moderate'");
   await fakeEndpoint?.close();
-  await testDatabase.close();
+  await db.end();
   if (savedFixtureMode === undefined) delete process.env.LLM_FIXTURE_MODE;
   else process.env.LLM_FIXTURE_MODE = savedFixtureMode;
   if (savedFixturePath === undefined) delete process.env.LLM_FIXTURE_PATH;
   else process.env.LLM_FIXTURE_PATH = savedFixturePath;
   if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = savedNodeEnv;
+  if (savedAllowLocalHosts === undefined)
+    delete process.env.LLM_ALLOW_LOCAL_HOSTS;
+  else process.env.LLM_ALLOW_LOCAL_HOSTS = savedAllowLocalHosts;
 });
 
 describe('solo turn persisted lifecycle', () => {
@@ -168,7 +184,7 @@ describe('solo turn persisted lifecycle', () => {
     sendAction(reconnected, two, 'Second action.');
     const starts: string[] = [];
     reconnected.on('message', (data) => {
-      const message = JSON.parse(data.toString());
+      const message = JSON.parse(data.toString()) as WireMessage;
       if (message.type === 'TurnThinking')
         starts.push(message.payload.actionId);
     });
@@ -196,9 +212,18 @@ describe('solo turn persisted lifecycle', () => {
     const owner = await createUser();
     const table = await createTable(owner.id);
     fakeEndpoint = await startFakeOpenAIServer({ chunks: textStream });
-    await db.query(
-      `INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,updated_at) VALUES('moderate',$1,'fixture-model','openai',NULL,NULL,now())`,
-      [fakeEndpoint.baseUrl],
+    await saveEndpoint(
+      db,
+      'moderate',
+      {
+        baseUrl: fakeEndpoint.baseUrl,
+        model: 'fixture-model',
+        apiStyle: 'openai',
+        apiKey: 'fixture-secret',
+        unsupportedToolSchemaKeywords: [],
+      },
+      createEndpointEgress(),
+      owner.id,
     );
     process.env.LLM_FIXTURE_MODE = 'record';
     const fixtureDir = await mkdtemp(join(tmpdir(), 'solo-turn-fixture-'));
@@ -252,7 +277,7 @@ describe('solo turn persisted lifecycle', () => {
 
   it('discards an interrupted turn on room restart and permits resubmission', async () => {
     const owner = await createUser();
-    const table = await createTable(owner.id);
+    const table = await createTable(owner.id, false);
     let entered!: () => void;
     let abandon!: () => void;
     const started = new Promise<void>((resolve) => {
@@ -283,8 +308,8 @@ describe('solo turn persisted lifecycle', () => {
     await started;
     const persistedBeforeRestart = await new Persistence(db).loadLatest(table);
     expect(JSON.stringify(persistedBeforeRestart)).not.toContain(actionId);
-    await registry.drain();
     abandon();
+    await registry.drain();
     await new Promise((resolve) => setTimeout(resolve, 0));
     const restarted = new RoomRegistry(
       new Persistence(db),
@@ -303,6 +328,8 @@ describe('solo turn persisted lifecycle', () => {
     expect(afterRestart.snapshot?.state).toMatchObject({
       actionIds: expect.arrayContaining([actionId]),
     });
+    const registry = new RegistryMemory(db);
+    expect(await registry.entities(table)).toEqual([]);
     await restarted.drain();
   });
 
@@ -312,9 +339,12 @@ describe('solo turn persisted lifecycle', () => {
     const firstTable = await createTable(firstOwner.id);
     const secondTable = await createTable(secondOwner.id);
     const firstToken = await createSession(db, firstOwner.id, 'wrong-table');
-    await expect(
-      issueTicket(db, firstOwner.id, secondTable, hashToken(firstToken)),
-    ).rejects.toThrow();
+    const rejected = await fetch(`${base}/api/ws-ticket`, {
+      method: 'POST',
+      headers: { origin: base, cookie: `sid=${firstToken}` },
+      body: JSON.stringify({ sessionId: secondTable }),
+    });
+    expect(rejected.status).toBe(403);
     expect(firstTable).not.toBe(secondTable);
   });
 

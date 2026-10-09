@@ -203,6 +203,11 @@ async function executeTool(
       'end_combat',
       'move_to',
       'suggest_area_target',
+      'upsert_npc',
+      'upsert_location',
+      'update_quest',
+      'set_flag',
+      'log_ruling',
     ].includes(name)
   ) {
     return {
