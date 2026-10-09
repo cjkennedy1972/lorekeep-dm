@@ -35,6 +35,10 @@ export async function runSweep(db: Pool, options: SweepOptions) {
         log: options.log ?? consoleLog,
       };
       const logs = await purgeLogs(ctx);
+      await db.query(
+        "UPDATE sessions SET status='archived', archived_at=$1 WHERE status='active' AND last_active_at < $2",
+        [ctx.now, new Date(ctx.now.getTime() - 14 * 86_400_000)],
+      );
       await db.query('DELETE FROM endpoint_usage WHERE created_at < $1', [
         new Date(ctx.now.getTime() - 30 * 86_400_000),
       ]);

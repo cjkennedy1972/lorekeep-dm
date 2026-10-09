@@ -6,6 +6,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./catalog-node": "./dist/catalog-node.js",
+    "./adventure-node": "./dist/adventure-node.js",
     "./scripted-node": "./dist/scripted-node.js",
     "./room-tools": "./dist/room-tools.js"
   },
