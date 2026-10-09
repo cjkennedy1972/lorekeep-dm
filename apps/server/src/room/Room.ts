@@ -284,7 +284,19 @@ export class Room {
           action.playerName,
         );
       } catch {
+        // A turn that throws (e.g. no endpoint configured, table state unavailable) must not
+        // leave the player waiting forever. Nothing was committed, so the same action can be
+        // resubmitted. The message is deliberately generic: no error text, prompt or secret.
         this.pendingActions.delete(action.actionId);
+        this.broadcast({
+          seq: this.seq,
+          type: 'Error',
+          payload: {
+            code: 'TURN_FAILED',
+            message: 'The DM could not complete that turn. You can try again.',
+            actionId: action.actionId,
+          },
+        } as ServerMessage);
       }
     }
     this.turnInFlight = false;

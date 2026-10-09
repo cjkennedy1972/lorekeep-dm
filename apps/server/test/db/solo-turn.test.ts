@@ -47,6 +47,13 @@ const runner: SoloTurnRunner = {
       text: 'The door opens.',
       index: 0,
     });
+    // The real orchestrator emits this before returning; the Room forwards it to clients.
+    emit({
+      type: 'NarrationCompleted',
+      turnId: request.actionId,
+      text: 'The door opens.',
+      words: 3,
+    });
     return {
       narration: 'The door opens.',
       events: [{ type: 'TurnStarted', turnId: request.actionId }],
@@ -113,6 +120,19 @@ function receive(
     ws.on('message', handler);
   });
 }
+/** The orchestrator emits NarrationCompleted before the Room commits the turn, so wait for the commit. */
+async function committedState(
+  table: string,
+  ready: (state: Record<string, unknown>) => boolean,
+) {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    const latest = await new Persistence(db).loadLatest(table);
+    const state = (latest.snapshot?.state ?? {}) as Record<string, unknown>;
+    if (ready(state) || Date.now() > deadline) return state;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 function sendAction(ws: WebSocket, actionId: string, text: string) {
   ws.send(
     JSON.stringify({
@@ -144,8 +164,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await rooms.drain();
   await app.close();
-  for (const id of sessionIds)
-    await db.query('DELETE FROM sessions WHERE id=$1', [id]);
+  for (const id of sessionIds) await db.query('SELECT purge_session($1)', [id]); // events are append-only; this is the sanctioned removal
   for (const id of accountIds)
     await db.query('DELETE FROM accounts WHERE id=$1', [id]);
   await db.query("DELETE FROM operator_endpoints WHERE slot='moderate'");
@@ -180,29 +199,34 @@ describe('solo turn persisted lifecycle', () => {
     );
     const one = randomUUID();
     const two = randomUUID();
-    sendAction(reconnected, one, 'First action.');
-    sendAction(reconnected, two, 'Second action.');
     const starts: string[] = [];
     reconnected.on('message', (data) => {
       const message = JSON.parse(data.toString()) as WireMessage;
       if (message.type === 'TurnThinking')
-        starts.push(message.payload.actionId);
+        starts.push(String(message.payload?.actionId));
     });
-    await receive(
+    // Register every wait before sending: both completions can arrive in one network chunk,
+    // so a wait registered after the first resolves would miss the second.
+    const completedOne = receive(
       reconnected,
       (message) =>
         message.type === 'NarrationCompleted' &&
         message.payload?.turnId === one,
     );
-    await receive(
+    const completedTwo = receive(
       reconnected,
       (message) =>
         message.type === 'NarrationCompleted' &&
         message.payload?.turnId === two,
     );
+    sendAction(reconnected, one, 'First action.');
+    sendAction(reconnected, two, 'Second action.');
+    await Promise.all([completedOne, completedTwo]);
     expect(starts.indexOf(two)).toBeGreaterThan(starts.indexOf(one));
-    const latest = await new Persistence(db).loadLatest(table);
-    expect(latest.snapshot?.state).toMatchObject({
+    const state = await committedState(table, (value) =>
+      ((value.actionIds as string[] | undefined) ?? []).includes(two),
+    );
+    expect(state).toMatchObject({
       actionIds: expect.arrayContaining([actionId, one, two]),
     });
     reconnected.close();
@@ -210,7 +234,6 @@ describe('solo turn persisted lifecycle', () => {
 
   it('replays the recorded-LLM fixture through the production runner over websocket', async () => {
     const owner = await createUser();
-    const table = await createTable(owner.id);
     fakeEndpoint = await startFakeOpenAIServer({ chunks: textStream });
     await saveEndpoint(
       db,
@@ -238,7 +261,9 @@ describe('solo turn persisted lifecycle', () => {
       production,
     );
     const priorRooms = rooms;
+    // The table must be created through the registry the websocket uses: it holds the session lease.
     rooms = tableRoomRegistry;
+    const table = await createTable(owner.id);
     const connections = new ConnectionRegistry(db);
     const recordedApp = createApp(db, { rooms, connections });
     installGateway(recordedApp, db, rooms, connections, 300);
@@ -301,6 +326,7 @@ describe('solo turn persisted lifecycle', () => {
       blocked,
     );
     const room = await registry.get(table);
+    await room.seat(owner.id, 'Solo');
     const actionId = randomUUID();
     expect(await room.submitAction(owner.id, actionId, 'Try the latch.')).toBe(
       true,
@@ -323,9 +349,10 @@ describe('solo turn persisted lifecycle', () => {
     expect(
       await recovered.submitAction(owner.id, actionId, 'Try the latch again.'),
     ).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    const afterRestart = await new Persistence(db).loadLatest(table);
-    expect(afterRestart.snapshot?.state).toMatchObject({
+    const afterRestart = await committedState(table, (value) =>
+      ((value.actionIds as string[] | undefined) ?? []).includes(actionId),
+    );
+    expect(afterRestart).toMatchObject({
       actionIds: expect.arrayContaining([actionId]),
     });
     const memory = new RegistryMemory(db);
@@ -341,11 +368,28 @@ describe('solo turn persisted lifecycle', () => {
     const firstToken = await createSession(db, firstOwner.id, 'wrong-table');
     const rejected = await fetch(`${base}/api/ws-ticket`, {
       method: 'POST',
-      headers: { origin: base, cookie: `sid=${firstToken}` },
+      headers: {
+        origin: base,
+        cookie: `sid=${firstToken}`,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ sessionId: secondTable }),
     });
     expect(rejected.status).toBe(403);
+    expect(await rejected.json()).toEqual({ error: 'not seated' });
     expect(firstTable).not.toBe(secondTable);
+    // Positive control: the same request for the member's own table succeeds, so the 403
+    // above is the authorization decision and not a parsing or setup artifact.
+    const allowed = await fetch(`${base}/api/ws-ticket`, {
+      method: 'POST',
+      headers: {
+        origin: base,
+        cookie: `sid=${firstToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId: firstTable }),
+    });
+    expect(allowed.status).toBe(200);
   });
 
   it('denies an unseated user and a client without a valid auth ticket', async () => {
@@ -354,13 +398,18 @@ describe('solo turn persisted lifecycle', () => {
     const table = await createTable(owner.id);
     const rejected = await fetch(`${base}/api/ws-ticket`, {
       method: 'POST',
-      headers: { origin: base, cookie: `sid=${outsider.token}` },
+      headers: {
+        origin: base,
+        cookie: `sid=${outsider.token}`,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ sessionId: table }),
     });
     expect(rejected.status).toBe(403);
+    expect(await rejected.json()).toEqual({ error: 'not seated' });
     const anonymous = await fetch(`${base}/api/ws-ticket`, {
       method: 'POST',
-      headers: { origin: base },
+      headers: { origin: base, 'content-type': 'application/json' },
       body: JSON.stringify({ sessionId: table }),
     });
     expect(anonymous.status).toBe(401);

@@ -137,6 +137,22 @@ export function installGateway(
           }
         });
         ws.on('error', () => {});
+        // A client may act the moment it receives its first message, which room.join() sends
+        // before this handler would otherwise exist; ws drops messages with no listener.
+        // Buffer (bounded) until the join has finished, then dispatch in order.
+        const early: import('ws').RawData[] = [];
+        let dispatch: ((data: import('ws').RawData) => void) | undefined;
+        ws.on('message', (data) => {
+          if (dispatch) {
+            dispatch(data);
+            return;
+          }
+          if (early.length >= 32) {
+            ws.close(1008, 'Too many messages before join');
+            return;
+          }
+          early.push(data);
+        });
         try {
           const name = await db.query<{ display_name: string }>(
             'SELECT display_name FROM accounts WHERE id=$1',
@@ -156,14 +172,17 @@ export function installGateway(
           ws.close(1011, 'Join failed');
           return;
         }
-        ws.on('message', (data) => {
-          void connections
-            .sweepIfStale()
-            .catch(() => {})
+        // One chain per socket: messages are handled strictly in arrival order, including the
+        // async part of PlayerAction, so two quick actions cannot reach the Room swapped.
+        let chain: Promise<unknown> = Promise.resolve();
+        dispatch = (data) => {
+          chain = chain
+            .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
-              if (ws.readyState === WebSocket.OPEN) handle(data);
-            });
-        });
+              if (ws.readyState === WebSocket.OPEN) return handle(data);
+            })
+            .catch(() => {});
+        };
         const handle = (data: import('ws').RawData) => {
           let parsed;
           try {
@@ -205,7 +224,7 @@ export function installGateway(
               });
               return;
             }
-            void db
+            return db
               .query<{ display_name: string }>(
                 'SELECT display_name FROM accounts WHERE id=$1',
                 [identity.accountId],
@@ -253,6 +272,7 @@ export function installGateway(
             },
           });
         };
+        for (const data of early.splice(0)) dispatch(data);
       })().catch(() => reject());
     });
   });

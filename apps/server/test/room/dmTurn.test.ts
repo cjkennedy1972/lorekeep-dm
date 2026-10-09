@@ -135,4 +135,36 @@ describe('Room solo DM turn lifecycle', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(calls).toBe(2);
   });
+
+  it('tells the player when a turn throws and allows the same action to be retried', async () => {
+    let calls = 0;
+    const runner: SoloTurnRunner = {
+      async run() {
+        calls++;
+        if (calls === 1) throw new Error('internal detail that must not leak');
+        return result as never;
+      },
+    };
+    const { room, events } = setup(runner);
+    const accountId = randomUUID();
+    const messages: { type: string; payload?: Record<string, unknown> }[] = [];
+    await room.join(accountId, {
+      send: (message) => messages.push(message as (typeof messages)[number]),
+    });
+    const actionId = randomUUID();
+    expect(
+      await room.submitAction(accountId, actionId, 'I try the latch.'),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const failure = messages.find((message) => message.type === 'Error');
+    expect(failure?.payload).toMatchObject({ code: 'TURN_FAILED', actionId });
+    expect(JSON.stringify(failure)).not.toContain('internal detail');
+    expect(events.some((event) => event.type === 'ActionAccepted')).toBe(false);
+    expect(
+      await room.submitAction(accountId, actionId, 'I try the latch.'),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events.some((event) => event.type === 'ActionAccepted')).toBe(true);
+    expect(calls).toBe(2);
+  });
 });
