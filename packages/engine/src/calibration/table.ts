@@ -77,7 +77,7 @@ export type Paths = {
 };
 
 /** Fit from the sweep file, verify on held-out seeds, write the table and the results file. */
-export async function buildTable(paths: Paths, workers: number) {
+export async function buildTable(paths: Paths, workers: number, date: string) {
   const fitted = fitTable(readRows(paths.sweep));
   const specs = verificationSpecs(fitted, { single: 100, seq: 40, sens: 40 });
   await runPool(specs, paths.verify, workers, (d, t) => {
@@ -87,7 +87,7 @@ export async function buildTable(paths: Paths, workers: number) {
   const provenance = {
     version: 1,
     gitSha: git('rev-parse', 'HEAD'),
-    date: new Date().toISOString().slice(0, 10),
+    date,
     policy: POLICY_VERSION,
     calibrationSeed: CALIBRATION_SEED,
     heldoutSeed: HELDOUT_SEED,

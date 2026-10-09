@@ -1,4 +1,7 @@
-import { encounterBudget, type EncounterDifficulty } from '../encounter/budget.js';
+import {
+  encounterBudget,
+  type EncounterDifficulty,
+} from '../encounter/budget.js';
 import { aggregate, type Agg, type CellRow } from './sweep.js';
 
 export type Band = {
@@ -96,10 +99,7 @@ export function choose(
     a.k - b.k || (a.maxEnemies ?? 99) - (b.maxEnemies ?? 99);
   const best = [...scored].sort(
     (a, b) =>
-      a.win - b.win ||
-      a.hp - b.hp ||
-      b.agg.spent - a.agg.spent ||
-      tie(a, b),
+      a.win - b.win || a.hp - b.hp || b.agg.spent - a.agg.spent || tie(a, b),
   )[0]!;
   return best;
 }

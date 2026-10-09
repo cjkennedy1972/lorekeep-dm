@@ -1,22 +1,23 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { loadCatalog } from '../catalog/load.js';
-import { encounterBudget, type EncounterDifficulty } from '../encounter/budget.js';
+import {
+  encounterBudget,
+  type EncounterDifficulty,
+} from '../encounter/budget.js';
 import { buildPc, CLASS_SLUGS } from './pc.js';
 import { readRows } from './pool.js';
 import { LABELS, TARGETS } from './select.js';
 import { aggregate, type CellRow } from './sweep.js';
 
-const pct = (x: number) => (Number.isNaN(x) ? 'n/a' : `${Math.round(x * 100)}%`);
+const pct = (x: number) =>
+  Number.isNaN(x) ? 'n/a' : `${Math.round(x * 100)}%`;
 const row = (...c: (string | number)[]) => `| ${c.join(' | ')} |`;
 const head = (...c: string[]) => [row(...c), row(...c.map(() => '---'))];
 
 type Table = {
   levels: Record<
     string,
-    Record<
-      string,
-      { multiplier: number; maxEnemies?: number; met: boolean }
-    >
+    Record<string, { multiplier: number; maxEnemies?: number; met: boolean }>
   >;
 };
 
@@ -76,7 +77,9 @@ export function renderTables(table: Table, verifyRows: readonly CellRow[]) {
   out.push(...head('Label', 'Win rate', 'HP lost in won fights'));
   for (const label of LABELS) {
     const t = TARGETS[label];
-    const win = t.winMax ? `${pct(t.winMin)}–${pct(t.winMax)}` : `≥ ${pct(t.winMin)}`;
+    const win = t.winMax
+      ? `${pct(t.winMin)}–${pct(t.winMax)}`
+      : `≥ ${pct(t.winMin)}`;
     const hp =
       t.hpLostMin !== undefined && t.hpLostMax !== undefined
         ? `${pct(t.hpLostMin)}–${pct(t.hpLostMax)}`
@@ -85,7 +88,11 @@ export function renderTables(table: Table, verifyRows: readonly CellRow[]) {
           : 'unconstrained';
     out.push(row(label, win, hp));
   }
-  out.push('', '### Three encounters in a row (held-out seeds, same cells)', '');
+  out.push(
+    '',
+    '### Three encounters in a row (held-out seeds, same cells)',
+    '',
+  );
   out.push(
     ...head(
       'Level',
@@ -99,13 +106,27 @@ export function renderTables(table: Table, verifyRows: readonly CellRow[]) {
     for (const label of LABELS) {
       const s = aggregate(sel('v2', 'seq-short', level, label));
       const sr = sel('v2', 'seq-short', level, label);
-      const wonAll = sr.reduce((x, r) => x + (r.wonAll ?? 0) / r.n, 0) / sr.length;
+      const wonAll =
+        sr.reduce((x, r) => x + (r.wonAll ?? 0) / r.n, 0) / sr.length;
       const nr = sel('v2', 'seq-none', level, label);
-      const wonAllN = nr.reduce((x, r) => x + (r.wonAll ?? 0) / r.n, 0) / nr.length;
+      const wonAllN =
+        nr.reduce((x, r) => x + (r.wonAll ?? 0) / r.n, 0) / nr.length;
       out.push(row(level, label, pct(wonAll), pct(wonAllN), pct(s.hpLostAll)));
     }
-  out.push('', '### Policy-quality sensitivity (single fight win rate, same encounters)', '');
-  out.push(...head('Level', 'Label', 'v0 (weapon only)', 'v1 (default quick build + features)', 'v2 (optimised spells, focus fire)'));
+  out.push(
+    '',
+    '### Policy-quality sensitivity (single fight win rate, same encounters)',
+    '',
+  );
+  out.push(
+    ...head(
+      'Level',
+      'Label',
+      'v0 (weapon only)',
+      'v1 (default quick build + features)',
+      'v2 (optimised spells, focus fire)',
+    ),
+  );
   for (let level = 1; level <= 5; level++)
     for (const label of LABELS)
       out.push(
@@ -119,12 +140,26 @@ export function renderTables(table: Table, verifyRows: readonly CellRow[]) {
       );
 
   const catalog = loadCatalog();
-  out.push('', '### Per-class spread: win rate at the shipped moderate encounter (v2, held-out)', '');
-  out.push(...head('Class', ...[1, 2, 3, 4, 5].map((l) => `L${l} win`), 'L1 HP/AC', 'L5 HP/AC', 'mean'));
+  out.push(
+    '',
+    '### Per-class spread: win rate at the shipped moderate encounter (v2, held-out)',
+    '',
+  );
+  out.push(
+    ...head(
+      'Class',
+      ...[1, 2, 3, 4, 5].map((l) => `L${l} win`),
+      'L1 HP/AC',
+      'L5 HP/AC',
+      'mean',
+    ),
+  );
   const perClass: { slug: string; mean: number }[] = [];
   for (const slug of CLASS_SLUGS) {
     const cells = [1, 2, 3, 4, 5].map((level) => {
-      const r = sel('v2', 'single', level, 'moderate').find((x) => x.classSlug === slug)!;
+      const r = sel('v2', 'single', level, 'moderate').find(
+        (x) => x.classSlug === slug,
+      )!;
       return r.wins / r.n;
     });
     const mean = cells.reduce((a, b) => a + b, 0) / cells.length;
@@ -132,14 +167,27 @@ export function renderTables(table: Table, verifyRows: readonly CellRow[]) {
     const p1 = buildPc(catalog, `class:${slug}`, 1, 'v2');
     const p5 = buildPc(catalog, `class:${slug}`, 5, 'v2');
     out.push(
-      row(slug, ...cells.map(pct), `${p1.maxHp}/${p1.spec.ac}`, `${p5.maxHp}/${p5.spec.ac}`, pct(mean)),
+      row(
+        slug,
+        ...cells.map(pct),
+        `${p1.maxHp}/${p1.spec.ac}`,
+        `${p5.maxHp}/${p5.spec.ac}`,
+        pct(mean),
+      ),
     );
   }
   perClass.sort((a, b) => a.mean - b.mean);
   out.push(
     '',
-    `Weakest three: ${perClass.slice(0, 3).map((c) => `${c.slug} ${pct(c.mean)}`).join(', ')}. ` +
-      `Strongest three: ${perClass.slice(-3).reverse().map((c) => `${c.slug} ${pct(c.mean)}`).join(', ')}.`,
+    `Weakest three: ${perClass
+      .slice(0, 3)
+      .map((c) => `${c.slug} ${pct(c.mean)}`)
+      .join(', ')}. ` +
+      `Strongest three: ${perClass
+        .slice(-3)
+        .reverse()
+        .map((c) => `${c.slug} ${pct(c.mean)}`)
+        .join(', ')}.`,
   );
   return out.join('\n');
 }

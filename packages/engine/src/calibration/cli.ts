@@ -44,13 +44,16 @@ if (cmd === 'sweep') {
               seedBase,
               mode,
             });
-  const t0 = Date.now();
+  const t0 = process.hrtime.bigint();
   await runPool(specs, out, Number(arg('workers', '2')), (d, t) => {
     if (d % 100 === 0 || d === t)
-      console.log(`${d}/${t} cells, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+      console.log(
+        `${d}/${t} cells, ${(Number(process.hrtime.bigint() - t0) / 1e9).toFixed(0)}s`,
+      );
   });
 } else if (cmd === 'regenerate' || cmd === 'build-table') {
-  const here = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
+  const here = (p: string) =>
+    fileURLToPath(new URL(`../../${p}`, import.meta.url));
   const paths = {
     sweep: here('calibration-data/solo-sweep.v1.jsonl'),
     verify: here('calibration-data/solo-verify.v1.jsonl'),
@@ -84,7 +87,7 @@ if (cmd === 'sweep') {
       if (d % 200 === 0 || d === t) console.log(`sweep ${d}/${t}`);
     });
   }
-  await buildTable(paths, workers);
+  await buildTable(paths, workers, arg('date', 'undated'));
   writeReport(
     fileURLToPath(
       new URL(

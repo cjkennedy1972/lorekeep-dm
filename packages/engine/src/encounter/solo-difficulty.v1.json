@@ -1,38 +1,17 @@
 {
   "version": 1,
-  "gitSha": "cd8a9a03a4dc62bd7e4c7183a30fa35f1a54f36c",
+  "gitSha": "69f891c9c96a386d1f973783d9e80cfa459fa241",
   "date": "2026-10-08",
   "policy": "solo-cal-pc v2 (see pc.ts)",
   "calibrationSeed": 20261008,
   "heldoutSeed": 20261009,
-  "seedsPerCell": 30,
+  "seedsPerCell": 60,
   "grid": {
     "ks": [
-      0.2,
-      0.25,
-      0.3,
-      0.4,
-      0.5,
-      0.6,
-      0.7,
-      0.8,
-      0.9,
-      1,
-      1.15,
-      1.3,
-      1.5,
-      1.75,
-      2,
-      2.5,
-      3,
-      4
+      0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2,
+      2.5, 3, 4
     ],
-    "caps": [
-      1,
-      2,
-      3,
-      null
-    ]
+    "caps": [1, 2, 3, null]
   },
   "targets": {
     "low": {
@@ -62,8 +41,8 @@
         "maxEnemies": 1,
         "met": true,
         "fit": {
-          "win": 1,
-          "hpLostWin": 0.059,
+          "win": 0.997,
+          "hpLostWin": 0.06,
           "enemies": 1,
           "spent": 10
         }
@@ -73,9 +52,9 @@
         "maxEnemies": 2,
         "met": false,
         "fit": {
-          "win": 0.919,
-          "hpLostWin": 0.192,
-          "enemies": 1.6,
+          "win": 0.921,
+          "hpLostWin": 0.189,
+          "enemies": 1.594,
           "spent": 22
         }
       },
@@ -85,8 +64,8 @@
         "met": false,
         "fit": {
           "win": 0.875,
-          "hpLostWin": 0.3,
-          "enemies": 2.2,
+          "hpLostWin": 0.299,
+          "enemies": 2.189,
           "spent": 28
         }
       },
@@ -95,8 +74,8 @@
         "maxEnemies": 1,
         "met": true,
         "fit": {
-          "win": 0.469,
-          "hpLostWin": 0.346,
+          "win": 0.444,
+          "hpLostWin": 0.378,
           "enemies": 1,
           "spent": 100
         }
@@ -108,21 +87,21 @@
         "maxEnemies": 2,
         "met": true,
         "fit": {
-          "win": 0.978,
-          "hpLostWin": 0.141,
-          "enemies": 1.628,
+          "win": 0.981,
+          "hpLostWin": 0.148,
+          "enemies": 1.619,
           "spent": 22
         }
       },
       "moderate": {
         "multiplier": 0.2467,
-        "maxEnemies": 2,
+        "maxEnemies": 3,
         "met": false,
         "fit": {
-          "win": 0.906,
-          "hpLostWin": 0.324,
-          "enemies": 2,
-          "spent": 35
+          "win": 0.917,
+          "hpLostWin": 0.278,
+          "enemies": 2.406,
+          "spent": 33
         }
       },
       "high": {
@@ -131,7 +110,7 @@
         "met": false,
         "fit": {
           "win": 0.761,
-          "hpLostWin": 0.41,
+          "hpLostWin": 0.419,
           "enemies": 3,
           "spent": 45
         }
@@ -141,8 +120,8 @@
         "maxEnemies": 1,
         "met": true,
         "fit": {
-          "win": 0.544,
-          "hpLostWin": 0.416,
+          "win": 0.528,
+          "hpLostWin": 0.442,
           "enemies": 1,
           "spent": 200
         }
@@ -150,36 +129,36 @@
     },
     "3": {
       "low": {
-        "multiplier": 0.3,
-        "maxEnemies": 2,
+        "multiplier": 0.3734,
+        "maxEnemies": 1,
         "met": true,
         "fit": {
-          "win": 0.983,
-          "hpLostWin": 0.249,
-          "enemies": 2,
-          "spent": 35
+          "win": 0.972,
+          "hpLostWin": 0.181,
+          "enemies": 1,
+          "spent": 50
         }
       },
       "moderate": {
-        "multiplier": 0.2978,
-        "maxEnemies": 2,
+        "multiplier": 0.2,
+        "maxEnemies": 3,
         "met": false,
         "fit": {
-          "win": 0.925,
-          "hpLostWin": 0.321,
-          "enemies": 2,
-          "spent": 58
+          "win": 0.917,
+          "hpLostWin": 0.32,
+          "enemies": 3,
+          "spent": 45
         }
       },
       "high": {
-        "multiplier": 0.3375,
-        "maxEnemies": 2,
+        "multiplier": 0.225,
+        "maxEnemies": 3,
         "met": false,
         "fit": {
-          "win": 0.769,
-          "hpLostWin": 0.427,
-          "enemies": 2,
-          "spent": 113
+          "win": 0.753,
+          "hpLostWin": 0.468,
+          "enemies": 3,
+          "spent": 82
         }
       },
       "deadly": {
@@ -187,54 +166,55 @@
         "maxEnemies": 2,
         "met": true,
         "fit": {
-          "win": 0.453,
-          "hpLostWin": 0.523,
-          "enemies": 1.781,
-          "spent": 317
+          "win": 0.447,
+          "hpLostWin": 0.534,
+          "enemies": 1.771,
+          "spent": 316
         }
       }
     },
     "4": {
       "low": {
-        "multiplier": 0.448,
+        "multiplier": 0.3,
         "maxEnemies": 1,
         "met": true,
         "fit": {
-          "win": 0.978,
-          "hpLostWin": 0.236,
+          "win": 0.99,
+          "hpLostWin": 0.156,
           "enemies": 1,
-          "spent": 100
+          "spent": 50
         }
       },
       "moderate": {
         "multiplier": 0.2,
         "met": false,
         "fit": {
-          "win": 0.914,
+          "win": 0.915,
           "hpLostWin": 0.362,
-          "enemies": 3.297,
+          "enemies": 3.311,
           "spent": 72
         }
       },
       "high": {
-        "multiplier": 0.186,
+        "multiplier": 0.524,
+        "maxEnemies": 2,
         "met": false,
         "fit": {
-          "win": 0.819,
-          "hpLostWin": 0.481,
-          "enemies": 4.142,
-          "spent": 87
+          "win": 0.781,
+          "hpLostWin": 0.47,
+          "enemies": 2,
+          "spent": 228
         }
       },
       "deadly": {
-        "multiplier": 1.1241,
-        "maxEnemies": 2,
+        "multiplier": 0.974,
+        "maxEnemies": 1,
         "met": true,
         "fit": {
-          "win": 0.35,
-          "hpLostWin": 0.567,
-          "enemies": 2,
-          "spent": 496
+          "win": 0.515,
+          "hpLostWin": 0.521,
+          "enemies": 1,
+          "spent": 450
         }
       }
     },
@@ -244,21 +224,21 @@
         "maxEnemies": 1,
         "met": true,
         "fit": {
-          "win": 0.989,
+          "win": 0.985,
           "hpLostWin": 0.192,
           "enemies": 1,
           "spent": 200
         }
       },
       "moderate": {
-        "multiplier": 0.4,
-        "maxEnemies": 3,
-        "met": true,
+        "multiplier": 0.6,
+        "maxEnemies": 2,
+        "met": false,
         "fit": {
-          "win": 0.906,
-          "hpLostWin": 0.403,
-          "enemies": 2.911,
-          "spent": 267
+          "win": 0.924,
+          "hpLostWin": 0.367,
+          "enemies": 1.758,
+          "spent": 320
         }
       },
       "high": {
@@ -266,10 +246,10 @@
         "maxEnemies": 3,
         "met": false,
         "fit": {
-          "win": 0.833,
-          "hpLostWin": 0.453,
-          "enemies": 2.511,
-          "spent": 366
+          "win": 0.828,
+          "hpLostWin": 0.455,
+          "enemies": 2.517,
+          "spent": 365
         }
       },
       "deadly": {
@@ -277,10 +257,10 @@
         "maxEnemies": 2,
         "met": true,
         "fit": {
-          "win": 0.456,
-          "hpLostWin": 0.583,
+          "win": 0.44,
+          "hpLostWin": 0.571,
           "enemies": 2,
-          "spent": 718
+          "spent": 721
         }
       }
     }

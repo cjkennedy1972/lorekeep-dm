@@ -2,9 +2,8 @@ import type { Ability } from '@game/schema';
 import { quickBuild } from '../character/builder.js';
 import type { CharacterCatalog } from '../character/types.js';
 import { scaledDamage } from '../combat/spells.js';
-import { abilityModifier, roll } from '../dice.js';
+import { abilityModifier } from '../dice.js';
 import { distance } from '../map/geometry.js';
-import { seedRng } from '../rng.js';
 import type { Sim, SimEntity, SimSpec } from '../scripted/sim.js';
 
 /**
@@ -212,8 +211,7 @@ export function buildPc(
     cantripIds = rank(
       // a solo caster wants distance: cantrips reaching at least 60 ft
       onList.filter(
-        (s) =>
-          s.level === 0 && s.range?.kind === 'feet' && s.range.feet >= 60,
+        (s) => s.level === 0 && s.range?.kind === 'feet' && s.range.feet >= 60,
       ),
       Math.max(1, character.spellsKnown.length),
     );
@@ -317,7 +315,10 @@ export function buildPc(
   const spellOptions = (sim: Sim, day: DayState, healing: boolean): Opt[] => {
     const opts: Opt[] = [];
     for (const s of spellPool([...cantrips, ...spells])) {
-      if (healing !== !!s.healing || (s.castingTime?.unit ?? 'action') !== 'action')
+      if (
+        healing !== !!s.healing ||
+        (s.castingTime?.unit ?? 'action') !== 'action'
+      )
         continue;
       for (let slot = s.level; slot <= (s.level === 0 ? 0 : maxSlot); slot++) {
         if (s.level > 0 && slotLeft(sim, day, slot) <= 0) continue;

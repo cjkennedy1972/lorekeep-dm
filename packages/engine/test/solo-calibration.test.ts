@@ -1,11 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { loadCatalog } from '../src/catalog/load.js';
 import {
   buildEncounter,
   encounterBudget,
   soloCalibration,
-  type EncounterDifficulty,
 } from '../src/encounter/budget.js';
 import table from '../src/encounter/solo-difficulty.v1.json' with { type: 'json' };
 import { readRows } from '../src/calibration/pool.js';
@@ -64,16 +62,17 @@ describe('solo calibration table', () => {
         }
   });
 
-  test('absolute budgets rise with the label at each level', () => {
+  // Not the XP budget: caps differ per label (one 50 XP foe vs three 10-25 XP foes), so budgets
+  // need not rise. What must hold is that the fitted outcome gets harder with the label.
+  test('fitted win rate falls with the label at each level', () => {
+    const lv = table.levels as Record<
+      string,
+      Record<string, { fit: { win: number } }>
+    >;
     for (const level of levels) {
-      const budget = (l: EncounterDifficulty) =>
-        Math.floor(
-          encounterBudget(level, 1, l) * soloCalibration(level, l).multiplier +
-            1e-9,
-        );
-      expect(budget('low')).toBeLessThanOrEqual(budget('moderate'));
-      expect(budget('moderate')).toBeLessThanOrEqual(budget('high'));
-      expect(budget('high')).toBeLessThanOrEqual(budget('deadly'));
+      const w = LABELS.map((l) => lv[String(level)]![l]!.fit.win);
+      for (let i = 1; i < w.length; i++)
+        expect(w[i]!, `level ${level}`).toBeLessThanOrEqual(w[i - 1]!);
     }
   });
 
@@ -97,7 +96,7 @@ describe('solo calibration table', () => {
   });
 
   // A small, fresh-seed re-simulation of the shipped path (label + table multiplier) lands each
-  // label near its fitted win rate. 12 classes x 8 seeds per cell, so the tolerance is wide on purpose.
+  // label near its fitted win rate. 12 classes x 20 seeds per cell, so the tolerance is wide on purpose.
   test('quick re-simulation reproduces each label within tolerance', () => {
     for (const level of levels)
       for (const label of LABELS) {
@@ -110,7 +109,7 @@ describe('solo calibration table', () => {
             k: cell.multiplier,
             maxEnemies: cell.maxEnemies ?? null,
             label,
-            seeds: 8,
+            seeds: 20,
             seedBase: 424242,
             mode: 'single',
           }),
@@ -122,22 +121,12 @@ describe('solo calibration table', () => {
             Record<string, { fit: { win: number } }>
           >
         )[String(level)]![label]!.fit.win;
-        expect(Math.abs(agg.win - fit), `${level}/${label}`).toBeLessThan(0.2);
+        expect(Math.abs(agg.win - fit), `${level}/${label}`).toBeLessThan(0.12);
         const band = TARGETS[label];
         // the label keeps its character: deadly stays a coin-flip, low stays near-safe
         if (label === 'deadly') expect(agg.win).toBeLessThan(0.75);
-        if (label === 'low') expect(agg.win).toBeGreaterThan(band.winMin - 0.15);
+        if (label === 'low')
+          expect(agg.win).toBeGreaterThan(band.winMin - 0.15);
       }
   }, 60_000);
-
-  test('table file is valid JSON on disk', () => {
-    expect(() =>
-      JSON.parse(
-        readFileSync(
-          new URL('../src/encounter/solo-difficulty.v1.json', import.meta.url),
-          'utf8',
-        ),
-      ),
-    ).not.toThrow();
-  });
 });
