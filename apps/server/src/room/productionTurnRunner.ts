@@ -1,16 +1,19 @@
 import type { DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
-import type { ToolExecutorState } from '@game/rules-engine/room-tools';
+import type { ToolExecutorState } from '@game/rules-engine';
 import {
   setFlag,
   logRuling,
   updateQuest,
   upsertLocation,
   upsertNpc,
-} from '@game/rules-engine/room-tools';
-import type { WorldRegistry } from '@game/rules-engine/room-tools';
-import { execute, loadCatalog } from '@game/rules-engine/room-tools';
+} from '@game/rules-engine';
+import type { WorldRegistry } from '@game/rules-engine';
+import {
+  executeRoomTool as execute,
+  loadRoomCatalog as loadCatalog,
+} from '@game/rules-engine';
 import type { Pool } from 'pg';
 import {
   runTurn,
