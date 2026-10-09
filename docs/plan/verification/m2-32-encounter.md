@@ -1,5 +1,7 @@
 # M2-32 encounter builder verification
 
+> Update (SOLO-CAL): the builder's solo default is now the calibrated table, see `solo-calibration.md`; `soloBudget: 'srd'` keeps the plain 1× behaviour described below.
+
 The builder's solo default is **moderate**. It applies the SRD per-character moderate XP budget once: levels 1–5 yield 75, 150, 225, 375, and 750 XP. This is derived directly from the SRD instruction to multiply the per-character table value by the number of characters; a solo PC means a multiplier of one. SRD 5.2.1 does not define a special solo adjustment beyond party size, so none is invented. The category’s actual risk for one character remains a human/design decision, since the SRD warns that circumstances and party size change threat.
 
 Citations: SRD 5.2.1, *Playing the Game* → *Gameplay Toolbox* → *Combat Encounters*, “Combat Encounter Difficulty,” XP Budget per Character, and “Spend Your Budget,” p. 202. CR summarizes threat against a group of four and circumstances/party size affect threat: *Rules Glossary*, “Challenge Rating,” p. 178. Monster CR-to-XP values: *Monsters*, “Experience Points by Challenge Rating,” p. 224. The builder only selects monsters from the loaded catalog and respects its CR ≤ 5 scope gate.

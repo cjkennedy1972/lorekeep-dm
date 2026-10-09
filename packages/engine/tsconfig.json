@@ -11,6 +11,6 @@
     "resolveJsonModule": true,
     "declaration": true
   },
-  "include": ["src"],
+  "include": ["src", "src/**/*.json"],
   "extends": "../../tsconfig.base.json"
 }

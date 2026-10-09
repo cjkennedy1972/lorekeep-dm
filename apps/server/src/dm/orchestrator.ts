@@ -203,6 +203,11 @@ async function executeTool(
       'end_combat',
       'move_to',
       'suggest_area_target',
+      'upsert_npc',
+      'upsert_location',
+      'update_quest',
+      'set_flag',
+      'log_ruling',
     ].includes(name)
   ) {
     return {
@@ -226,6 +231,7 @@ async function executeTool(
   const value = raw.value as
     | { events?: unknown[]; rng?: number; state?: unknown }
     | undefined;
+
   return {
     ok: true,
     summary: raw.summary,
@@ -496,6 +502,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           summary: (outcome.summary ?? 'The action resolved.').slice(0, 200),
           ...(outcome.options ? { options: outcome.options } : {}),
         };
+        if (outcome.output?.nextState !== undefined)
+          input.context.engineState = outcome.output.nextState;
         if (outcome.output && input.context.commitState)
           input.context.state = input.context.commitState(
             input.context.state,

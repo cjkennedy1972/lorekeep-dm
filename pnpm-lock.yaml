@@ -193,6 +193,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@game/rules-engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@game/schema':
         specifier: workspace:*
         version: link:../../packages/schema

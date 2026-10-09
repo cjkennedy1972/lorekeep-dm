@@ -8,6 +8,14 @@ export const ClientEnvelopeSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
   lastSeq: z.int().nonnegative(),
 });
+export const PlayerActionSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('PlayerAction'),
+    payload: z.object({ text: z.string().trim().min(1).max(4000) }),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const StateSyncSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('StateSync'),
@@ -28,6 +36,18 @@ export const ErrorMessageSchema = z.object({
   }),
 });
 export const ServerMessageSchema = z.discriminatedUnion('type', [
+  z.object({
+    seq: z.int().nonnegative(),
+    type: z.enum([
+      'ActionQueued',
+      'TurnThinking',
+      'RollEvent',
+      'NarrationChunk',
+      'NarrationCompleted',
+      'ToolRejected',
+    ]),
+    payload: z.record(z.string(), z.unknown()),
+  }),
   StateSyncSchema,
   PresenceChangedSchema,
   ErrorMessageSchema,
