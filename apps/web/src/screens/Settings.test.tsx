@@ -229,3 +229,11 @@ test('delete needs password and exact phrase, then signs out', async () => {
   });
   expect(me.status).toBe(401);
 });
+
+test('operator screen denies regular accounts', async () => {
+  useJar();
+  await signup('operator-denied@example.com');
+  renderApp('/operator');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Not authorized.');
+  expect((await axe(document.body)).violations).toEqual([]);
+});

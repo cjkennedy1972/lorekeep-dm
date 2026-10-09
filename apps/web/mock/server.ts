@@ -267,6 +267,8 @@ export function createMock(
       return err(res, 401, 'UNAUTHENTICATED', 'Sign in required.');
     if (!account) return err(res, 404, 'NOT_FOUND', 'Not found.');
 
+    if (url.pathname.startsWith('/api/operator/'))
+      return err(res, 404, 'NOT_FOUND', 'Not found.');
     if (route === 'GET /api/me') return json(res, 200, { account });
     if (route === 'PATCH /api/me') {
       const name = (await readBody(req))?.displayName;
