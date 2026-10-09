@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type {
   LlmAdapter,
   LlmChunk,
-  LlmRequest,
 } from '../../src/llm/adapter.js';
 import {
   buildRecap,
@@ -21,7 +20,7 @@ class FixtureAdapter implements LlmAdapter {
   capabilities() {
     return { streaming: true, nativeTools: false, jsonSchema: true };
   }
-  async *complete(_request: LlmRequest): AsyncIterable<LlmChunk> {
+  async *complete(): AsyncIterable<LlmChunk> {
     this.calls++;
     if (this.response instanceof Error) throw this.response;
     yield { type: 'text', delta: this.response };
