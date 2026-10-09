@@ -1,7 +1,11 @@
 import type { createApp } from '../app.js';
 import type { Pool } from 'pg';
 import { WebSocketServer, WebSocket } from 'ws';
-import { ClientEnvelopeSchema, type ServerMessage } from '@game/schema';
+import {
+  ClientEnvelopeSchema,
+  PlayerActionSchema,
+  type ServerMessage,
+} from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
@@ -133,6 +137,22 @@ export function installGateway(
           }
         });
         ws.on('error', () => {});
+        // A client may act the moment it receives its first message, which room.join() sends
+        // before this handler would otherwise exist; ws drops messages with no listener.
+        // Buffer (bounded) until the join has finished, then dispatch in order.
+        const early: import('ws').RawData[] = [];
+        const gate: { dispatch?: (data: import('ws').RawData) => void } = {};
+        ws.on('message', (data) => {
+          if (gate.dispatch) {
+            gate.dispatch(data);
+            return;
+          }
+          if (early.length >= 32) {
+            ws.close(1008, 'Too many messages before join');
+            return;
+          }
+          early.push(data);
+        });
         try {
           const name = await db.query<{ display_name: string }>(
             'SELECT display_name FROM accounts WHERE id=$1',
@@ -152,14 +172,17 @@ export function installGateway(
           ws.close(1011, 'Join failed');
           return;
         }
-        ws.on('message', (data) => {
-          void connections
-            .sweepIfStale()
-            .catch(() => {})
+        // One chain per socket: messages are handled strictly in arrival order, including the
+        // async part of PlayerAction, so two quick actions cannot reach the Room swapped.
+        let chain: Promise<unknown> = Promise.resolve();
+        const dispatch = (data: import('ws').RawData) => {
+          chain = chain
+            .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
-              if (ws.readyState === WebSocket.OPEN) handle(data);
-            });
-        });
+              if (ws.readyState === WebSocket.OPEN) return handle(data);
+            })
+            .catch(() => {});
+        };
         const handle = (data: import('ws').RawData) => {
           let parsed;
           try {
@@ -187,6 +210,58 @@ export function installGateway(
               .catch(() => ws.close(1011));
             return;
           }
+          if (msg.type === 'PlayerAction') {
+            const action = PlayerActionSchema.safeParse(msg);
+            if (!action.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Action is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return db
+              .query<{ display_name: string }>(
+                'SELECT display_name FROM accounts WHERE id=$1',
+                [identity.accountId],
+              )
+              .then((name) =>
+                room.submitAction(
+                  identity.accountId,
+                  action.data.actionId,
+                  action.data.payload.text,
+                  name.rows[0]?.display_name ?? identity.accountId,
+                ),
+              )
+              .then((accepted) => {
+                if (!accepted)
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'DUPLICATE_ACTION',
+                      message: 'This action was already received.',
+                      actionId: msg.actionId,
+                    },
+                  });
+              })
+              .catch(() =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ACTION_REJECTED',
+                    message: 'Action could not be accepted.',
+                    actionId: msg.actionId,
+                  },
+                }),
+              );
+            return;
+          }
           send({
             seq: room.seq,
             type: 'Error',
@@ -197,6 +272,8 @@ export function installGateway(
             },
           });
         };
+        gate.dispatch = dispatch;
+        for (const data of early.splice(0)) dispatch(data);
       })().catch(() => reject());
     });
   });

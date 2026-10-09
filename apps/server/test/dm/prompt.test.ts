@@ -143,6 +143,27 @@ describe('DM prompt builder', () => {
     expect(result.trimsApplied).toContain('dynamic:block-budget-exceeded');
     expect(result.overBudget).toBe(true);
   });
+  it('preserves highest-ranked memory before lower-ranked items within its budget', () => {
+    const value = input();
+    const highest = 'The highest relevance memory fact.';
+    const result = buildPrompt({
+      ...value,
+      turn: {
+        ...value.turn,
+        retrievedMemory: [
+          highest,
+          ...Array.from({ length: 300 }, (_, i) => `fact-${i}`),
+        ],
+      },
+    });
+    expect(result.blocks[3]).toContain(
+      Buffer.from(highest, 'utf8').toString('base64'),
+    );
+    expect(result.blocks[3]).not.toContain(
+      Buffer.from('fact-299', 'utf8').toString('base64'),
+    );
+    expect(estimateTokens(result.blocks[3])).toBeLessThanOrEqual(600);
+  });
   it('projects combat description without raw grid coordinates', () => {
     const value = input();
     const state = {

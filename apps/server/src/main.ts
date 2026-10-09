@@ -10,6 +10,7 @@ import { installGateway } from './gateway/ws.js';
 import { startSweepScheduler } from './retention/sweeper.js';
 import { LocalObjectStore } from './storage/objectStore.js';
 import { ConnectionRegistry } from './gateway/connections.js';
+import { ProductionSoloTurnRunner } from './room/productionTurnRunner.js';
 const config = loadConfig();
 if (
   config.NODE_ENV === 'production' &&
@@ -18,10 +19,19 @@ if (
   throw new Error('Operator configuration is required');
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
+const persistence = new Persistence(db);
+const leases = new SessionLease(db);
+const soloTurnRunner = new ProductionSoloTurnRunner(
+  db,
+  config.OPERATOR_ENDPOINT_MASTER_KEY,
+);
 export const rooms = new RoomRegistry(
-  new Persistence(db),
-  new SessionLease(db),
+  persistence,
+  leases,
   crypto.randomUUID(),
+  undefined,
+  undefined,
+  soloTurnRunner,
 );
 const connections = new ConnectionRegistry(db);
 const app = createApp(db, { rooms, connections });

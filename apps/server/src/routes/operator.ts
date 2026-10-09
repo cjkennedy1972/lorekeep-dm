@@ -6,6 +6,7 @@ import type { EgressGuard } from '../llm/egress.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import {
   createEndpointEgress,
+  deleteEndpoint,
   ENDPOINT_SLOTS,
   isOperatorAccount,
   readEndpoints,
@@ -29,20 +30,22 @@ export function registerOperatorRoutes(
   const authorize = async (
     request: Parameters<typeof authenticateRequest>[1],
     reply: { code: (status: number) => { send: (body: unknown) => unknown } },
-  ) => {
+  ): Promise<Awaited<ReturnType<typeof authenticateRequest>>> => {
     const session = await authenticateRequest(db, request);
-    if (!session || !(await isOperator(session.account_id)))
-      return reply.code(404).send({ code: 'NOT_FOUND' });
-    return undefined;
+    if (!session || !(await isOperator(session.account_id))) {
+      reply.code(404).send({ code: 'NOT_FOUND' });
+      return undefined;
+    }
+    return session;
   };
   app.get('/api/operator/endpoints', async (request, reply) => {
-    const denied = await authorize(request, reply);
-    if (denied) return denied;
+    const session = await authorize(request, reply);
+    if (!session) return;
     return { endpoints: await readEndpoints(db) };
   });
   app.put('/api/operator/endpoints/:slot', async (request, reply) => {
-    const denied = await authorize(request, reply);
-    if (denied) return denied;
+    const session = await authorize(request, reply);
+    if (!session) return;
     const { slot } = request.params as { slot: string };
     if (!ENDPOINT_SLOTS.includes(slot as EndpointSlot))
       return reply.code(400).send({ code: 'INVALID_SLOT' });
@@ -53,6 +56,7 @@ export function registerOperatorRoutes(
           slot as EndpointSlot,
           request.body,
           egress,
+          session.account_id,
         ),
       };
     } catch (error) {
@@ -72,15 +76,37 @@ export function registerOperatorRoutes(
     }
   });
   app.post('/api/operator/endpoints/:slot/test', async (request, reply) => {
-    const denied = await authorize(request, reply);
-    if (denied) return denied;
+    const session = await authorize(request, reply);
+    if (!session) return;
     const { slot } = request.params as { slot: string };
     if (!ENDPOINT_SLOTS.includes(slot as EndpointSlot))
       return reply.code(400).send({ code: 'INVALID_SLOT' });
     try {
-      return { probe: await testEndpoint(db, slot as EndpointSlot, egress) };
+      return {
+        probe: await testEndpoint(
+          db,
+          slot as EndpointSlot,
+          egress,
+          session.account_id,
+        ),
+      };
     } catch {
       return reply.code(503).send({ code: 'PROBE_FAILED' });
     }
+  });
+  app.delete('/api/operator/endpoints/:slot', async (request, reply) => {
+    const session = await authorize(request, reply);
+    if (!session) return;
+    const { slot } = request.params as { slot: string };
+    if (!ENDPOINT_SLOTS.includes(slot as EndpointSlot))
+      return reply.code(400).send({ code: 'INVALID_SLOT' });
+    const deleted = await deleteEndpoint(
+      db,
+      slot as EndpointSlot,
+      session.account_id,
+    );
+    return deleted
+      ? { deleted: true }
+      : reply.code(404).send({ code: 'NOT_FOUND' });
   });
 }

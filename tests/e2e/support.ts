@@ -23,22 +23,16 @@ export const proofDb = new Pool({ connectionString: dbUrl.toString() });
 export const proofSchema = 'public';
 export const apiOrigin = 'http://127.0.0.1';
 
-// Apply the checked-in migrations within this test's isolated schema.
-for (const file of [
-  '0001_game_core.sql',
-  '0002_accounts.sql',
-  '0003_lease_epoch.sql',
-  '0004_room_invites.sql',
-  '0005_ws_ticket_auth_session.sql',
-  '0006_retention.sql',
-  '0008_usage.sql',
-]) {
-  const { readFile } = await import('node:fs/promises');
-  const sql = await readFile(
-    new URL(`../../apps/server/migrations/${file}`, import.meta.url),
-    'utf8',
-  );
-  await proofDb.query(sql);
+// Apply every checked-in migration, in order, within this test's isolated schema.
+// (A hardcoded list silently missed new tables, e.g. those the retention sweeper reads.)
+{
+  const { readFile, readdir } = await import('node:fs/promises');
+  const dir = new URL('../../apps/server/migrations/', import.meta.url);
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
+  for (const file of files) {
+    const sql = await readFile(new URL(file, dir), 'utf8');
+    await proofDb.query(sql);
+  }
 }
 
 const processes = new Set<ChildProcess>();
