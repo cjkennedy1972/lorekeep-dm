@@ -1,0 +1,444 @@
+{
+  "mapId": "adv01-upper-ruins",
+  "w": 32,
+  "h": 28,
+  "palette": [
+    {
+      "terrainId": "floor",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "rubble",
+      "moveCost": 2,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "pillar",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    },
+    {
+      "terrainId": "stone-wall",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    },
+    {
+      "terrainId": "grass",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "mud",
+      "moveCost": 2,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "water",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "tree",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    }
+  ],
+  "cells": [
+    4, 32, 3, 2, 0, 28, 3, 4, 7, 4, 0, 24, 3, 4, 7, 4, 0, 24, 3, 4, 7, 4, 0, 2,
+    2, 1, 0, 11, 1, 4, 0, 6, 3, 4, 7, 4, 0, 14, 1, 4, 0, 3, 2, 1, 0, 2, 3, 4, 0,
+    18, 1, 4, 0, 6, 3, 4, 0, 11, 2, 1, 0, 6, 1, 4, 0, 6, 3, 4, 0, 28, 3, 4, 0,
+    21, 2, 1, 0, 6, 3, 4, 0, 28, 3, 4, 0, 28, 3, 4, 0, 28, 3, 4, 0, 28, 3, 4, 0,
+    28, 3, 4, 0, 28, 3, 4, 0, 28, 3, 4, 0, 28, 3, 4, 0, 28, 3, 4, 0, 28, 3, 4,
+    1, 4, 0, 24, 3, 4, 1, 4, 0, 24, 3, 4, 1, 4, 0, 24, 3, 4, 1, 4, 0, 24, 3, 4,
+    1, 4, 0, 24, 3, 4, 0, 28, 3, 4, 0, 28, 3, 34
+  ],
+  "edges": [
+    {
+      "a": {
+        "x": 15,
+        "y": 13
+      },
+      "b": {
+        "x": 15,
+        "y": 14
+      },
+      "kind": "door",
+      "state": "open"
+    },
+    {
+      "a": {
+        "x": 28,
+        "y": 21
+      },
+      "b": {
+        "x": 29,
+        "y": 21
+      },
+      "kind": "door",
+      "state": "locked"
+    }
+  ],
+  "features": [
+    {
+      "featureId": "feat-yard-rubble",
+      "kind": "rubble",
+      "cells": [
+        {
+          "x": 20,
+          "y": 4
+        },
+        {
+          "x": 21,
+          "y": 4
+        },
+        {
+          "x": 22,
+          "y": 4
+        },
+        {
+          "x": 23,
+          "y": 4
+        },
+        {
+          "x": 20,
+          "y": 5
+        },
+        {
+          "x": 21,
+          "y": 5
+        },
+        {
+          "x": 22,
+          "y": 5
+        },
+        {
+          "x": 23,
+          "y": 5
+        },
+        {
+          "x": 20,
+          "y": 6
+        },
+        {
+          "x": 21,
+          "y": 6
+        },
+        {
+          "x": 22,
+          "y": 6
+        },
+        {
+          "x": 23,
+          "y": 6
+        },
+        {
+          "x": 20,
+          "y": 7
+        },
+        {
+          "x": 21,
+          "y": 7
+        },
+        {
+          "x": 22,
+          "y": 7
+        },
+        {
+          "x": 23,
+          "y": 7
+        }
+      ],
+      "tags": ["difficult"]
+    },
+    {
+      "featureId": "feat-courtyard-pillars",
+      "kind": "pillar",
+      "cells": [
+        {
+          "x": 8,
+          "y": 4
+        },
+        {
+          "x": 13,
+          "y": 7
+        },
+        {
+          "x": 23,
+          "y": 9
+        },
+        {
+          "x": 27,
+          "y": 5
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat-tobren-alcove",
+      "kind": "rockfall",
+      "cells": [
+        {
+          "x": 2,
+          "y": 20
+        },
+        {
+          "x": 3,
+          "y": 20
+        },
+        {
+          "x": 4,
+          "y": 20
+        },
+        {
+          "x": 5,
+          "y": 20
+        },
+        {
+          "x": 2,
+          "y": 21
+        },
+        {
+          "x": 3,
+          "y": 21
+        },
+        {
+          "x": 4,
+          "y": 21
+        },
+        {
+          "x": 5,
+          "y": 21
+        },
+        {
+          "x": 2,
+          "y": 22
+        },
+        {
+          "x": 3,
+          "y": 22
+        },
+        {
+          "x": 4,
+          "y": 22
+        },
+        {
+          "x": 5,
+          "y": 22
+        },
+        {
+          "x": 2,
+          "y": 23
+        },
+        {
+          "x": 3,
+          "y": 23
+        },
+        {
+          "x": 4,
+          "y": 23
+        },
+        {
+          "x": 5,
+          "y": 23
+        },
+        {
+          "x": 2,
+          "y": 24
+        },
+        {
+          "x": 3,
+          "y": 24
+        },
+        {
+          "x": 4,
+          "y": 24
+        },
+        {
+          "x": 5,
+          "y": 24
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat-six-sconces",
+      "kind": "sconce",
+      "cells": [
+        {
+          "x": 10,
+          "y": 16
+        },
+        {
+          "x": 11,
+          "y": 16
+        },
+        {
+          "x": 12,
+          "y": 16
+        },
+        {
+          "x": 13,
+          "y": 16
+        },
+        {
+          "x": 14,
+          "y": 16
+        },
+        {
+          "x": 15,
+          "y": 16
+        }
+      ],
+      "tags": ["light"]
+    },
+    {
+      "featureId": "feat-tripwire",
+      "kind": "tripwire",
+      "cells": [
+        {
+          "x": 15,
+          "y": 13
+        }
+      ],
+      "tags": ["hazard"]
+    }
+  ],
+  "markers": [
+    {
+      "markerId": "mk_e1_party",
+      "cell": {
+        "x": 15,
+        "y": 11
+      },
+      "label": "Gatehouse yard"
+    },
+    {
+      "markerId": "mk_e1_enemy",
+      "cell": {
+        "x": 15,
+        "y": 5
+      },
+      "label": "Kennel"
+    },
+    {
+      "markerId": "mk_stair_down",
+      "cell": {
+        "x": 29,
+        "y": 21
+      },
+      "label": "Chapel stair"
+    }
+  ],
+  "zones": [
+    {
+      "zoneId": "zone-e1-party",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 14,
+          "y": 10
+        },
+        {
+          "x": 15,
+          "y": 10
+        },
+        {
+          "x": 16,
+          "y": 10
+        },
+        {
+          "x": 14,
+          "y": 11
+        },
+        {
+          "x": 15,
+          "y": 11
+        },
+        {
+          "x": 16,
+          "y": 11
+        },
+        {
+          "x": 14,
+          "y": 12
+        },
+        {
+          "x": 15,
+          "y": 12
+        },
+        {
+          "x": 16,
+          "y": 12
+        }
+      ]
+    },
+    {
+      "zoneId": "zone-e1-enemy",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 14,
+          "y": 4
+        },
+        {
+          "x": 15,
+          "y": 4
+        },
+        {
+          "x": 16,
+          "y": 4
+        },
+        {
+          "x": 14,
+          "y": 5
+        },
+        {
+          "x": 15,
+          "y": 5
+        },
+        {
+          "x": 16,
+          "y": 5
+        },
+        {
+          "x": 14,
+          "y": 6
+        },
+        {
+          "x": 15,
+          "y": 6
+        },
+        {
+          "x": 16,
+          "y": 6
+        }
+      ]
+    }
+  ],
+  "diagonalRule": "5ft"
+}

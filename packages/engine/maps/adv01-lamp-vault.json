@@ -1,0 +1,470 @@
+{
+  "mapId": "adv01-lamp-vault",
+  "w": 30,
+  "h": 30,
+  "palette": [
+    {
+      "terrainId": "floor",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "rubble",
+      "moveCost": 2,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "pillar",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    },
+    {
+      "terrainId": "stone-wall",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    },
+    {
+      "terrainId": "grass",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "mud",
+      "moveCost": 2,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "water",
+      "moveCost": 1,
+      "blocksMove": false,
+      "blocksSight": false,
+      "cover": "none",
+      "elevation": 0
+    },
+    {
+      "terrainId": "tree",
+      "moveCost": 1,
+      "blocksMove": true,
+      "blocksSight": true,
+      "cover": "full",
+      "elevation": 0
+    }
+  ],
+  "cells": [
+    3, 41, 0, 8, 3, 22, 0, 8, 3, 22, 0, 8, 3, 22, 0, 8, 3, 22, 0, 8, 3, 22, 0,
+    8, 3, 25, 0, 3, 3, 27, 0, 3, 3, 27, 0, 3, 3, 27, 0, 3, 3, 24, 0, 9, 3, 19,
+    0, 13, 3, 16, 0, 15, 3, 14, 0, 17, 3, 13, 0, 2, 2, 1, 0, 11, 2, 1, 0, 2, 3,
+    12, 0, 19, 3, 11, 0, 19, 3, 11, 0, 19, 3, 11, 0, 9, 2, 1, 0, 9, 3, 10, 0,
+    21, 3, 10, 0, 19, 3, 11, 0, 19, 3, 11, 0, 3, 2, 1, 0, 11, 2, 1, 0, 3, 3, 11,
+    0, 19, 3, 12, 0, 17, 3, 13, 0, 17, 3, 14, 0, 15, 3, 16, 0, 13, 3, 38
+  ],
+  "edges": [
+    {
+      "a": {
+        "x": 15,
+        "y": 12
+      },
+      "b": {
+        "x": 15,
+        "y": 13
+      },
+      "kind": "door",
+      "state": "open"
+    },
+    {
+      "a": {
+        "x": 15,
+        "y": 27
+      },
+      "b": {
+        "x": 15,
+        "y": 28
+      },
+      "kind": "door",
+      "state": "locked"
+    }
+  ],
+  "features": [
+    {
+      "featureId": "feat-lift-column",
+      "kind": "chain-lift",
+      "cells": [
+        {
+          "x": 13,
+          "y": 1
+        },
+        {
+          "x": 14,
+          "y": 1
+        },
+        {
+          "x": 15,
+          "y": 1
+        },
+        {
+          "x": 16,
+          "y": 1
+        },
+        {
+          "x": 13,
+          "y": 2
+        },
+        {
+          "x": 14,
+          "y": 2
+        },
+        {
+          "x": 15,
+          "y": 2
+        },
+        {
+          "x": 16,
+          "y": 2
+        }
+      ],
+      "tags": ["transition"]
+    },
+    {
+      "featureId": "feat-vault-pillars",
+      "kind": "pillar",
+      "cells": [
+        {
+          "x": 9,
+          "y": 15
+        },
+        {
+          "x": 21,
+          "y": 15
+        },
+        {
+          "x": 9,
+          "y": 23
+        },
+        {
+          "x": 21,
+          "y": 23
+        }
+      ],
+      "tags": ["cover"]
+    },
+    {
+      "featureId": "feat-ember-pedestal",
+      "kind": "pedestal",
+      "cells": [
+        {
+          "x": 15,
+          "y": 19
+        }
+      ],
+      "tags": ["interactable"]
+    },
+    {
+      "featureId": "feat-shadow-alcoves",
+      "kind": "alcove",
+      "cells": [
+        {
+          "x": 6,
+          "y": 19
+        },
+        {
+          "x": 7,
+          "y": 19
+        },
+        {
+          "x": 8,
+          "y": 19
+        },
+        {
+          "x": 6,
+          "y": 20
+        },
+        {
+          "x": 7,
+          "y": 20
+        },
+        {
+          "x": 8,
+          "y": 20
+        },
+        {
+          "x": 6,
+          "y": 21
+        },
+        {
+          "x": 7,
+          "y": 21
+        },
+        {
+          "x": 8,
+          "y": 21
+        },
+        {
+          "x": 22,
+          "y": 19
+        },
+        {
+          "x": 23,
+          "y": 19
+        },
+        {
+          "x": 24,
+          "y": 19
+        },
+        {
+          "x": 22,
+          "y": 20
+        },
+        {
+          "x": 23,
+          "y": 20
+        },
+        {
+          "x": 24,
+          "y": 20
+        },
+        {
+          "x": 22,
+          "y": 21
+        },
+        {
+          "x": 23,
+          "y": 21
+        },
+        {
+          "x": 24,
+          "y": 21
+        }
+      ],
+      "tags": ["dark"]
+    },
+    {
+      "featureId": "feat-rear-stair",
+      "kind": "stair",
+      "cells": [
+        {
+          "x": 15,
+          "y": 28
+        }
+      ],
+      "tags": ["transition"]
+    }
+  ],
+  "markers": [
+    {
+      "markerId": "mk_landing",
+      "cell": {
+        "x": 15,
+        "y": 3
+      },
+      "label": "Chain lift landing"
+    },
+    {
+      "markerId": "mk_e4_party",
+      "cell": {
+        "x": 15,
+        "y": 14
+      },
+      "label": "Vault entry"
+    },
+    {
+      "markerId": "mk_e4_enemy_ring",
+      "cell": {
+        "x": 15,
+        "y": 22
+      },
+      "label": "Shadowed alcoves"
+    },
+    {
+      "markerId": "mk_stair_up",
+      "cell": {
+        "x": 15,
+        "y": 27
+      },
+      "label": "Rear stair to knoll"
+    }
+  ],
+  "zones": [
+    {
+      "zoneId": "zone-e4-party",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 14,
+          "y": 13
+        },
+        {
+          "x": 15,
+          "y": 13
+        },
+        {
+          "x": 16,
+          "y": 13
+        },
+        {
+          "x": 14,
+          "y": 14
+        },
+        {
+          "x": 15,
+          "y": 14
+        },
+        {
+          "x": 16,
+          "y": 14
+        },
+        {
+          "x": 14,
+          "y": 15
+        },
+        {
+          "x": 15,
+          "y": 15
+        },
+        {
+          "x": 16,
+          "y": 15
+        }
+      ]
+    },
+    {
+      "zoneId": "zone-e4-enemy",
+      "kind": "spawn",
+      "cells": [
+        {
+          "x": 14,
+          "y": 21
+        },
+        {
+          "x": 15,
+          "y": 21
+        },
+        {
+          "x": 16,
+          "y": 21
+        },
+        {
+          "x": 14,
+          "y": 22
+        },
+        {
+          "x": 15,
+          "y": 22
+        },
+        {
+          "x": 16,
+          "y": 22
+        },
+        {
+          "x": 14,
+          "y": 23
+        },
+        {
+          "x": 15,
+          "y": 23
+        },
+        {
+          "x": 16,
+          "y": 23
+        }
+      ]
+    },
+    {
+      "zoneId": "zone-vault-dim",
+      "kind": "light",
+      "light": "dim",
+      "cells": [
+        {
+          "x": 6,
+          "y": 19
+        },
+        {
+          "x": 7,
+          "y": 19
+        },
+        {
+          "x": 8,
+          "y": 19
+        },
+        {
+          "x": 6,
+          "y": 20
+        },
+        {
+          "x": 7,
+          "y": 20
+        },
+        {
+          "x": 8,
+          "y": 20
+        },
+        {
+          "x": 6,
+          "y": 21
+        },
+        {
+          "x": 7,
+          "y": 21
+        },
+        {
+          "x": 8,
+          "y": 21
+        },
+        {
+          "x": 22,
+          "y": 19
+        },
+        {
+          "x": 23,
+          "y": 19
+        },
+        {
+          "x": 24,
+          "y": 19
+        },
+        {
+          "x": 22,
+          "y": 20
+        },
+        {
+          "x": 23,
+          "y": 20
+        },
+        {
+          "x": 24,
+          "y": 20
+        },
+        {
+          "x": 22,
+          "y": 21
+        },
+        {
+          "x": 23,
+          "y": 21
+        },
+        {
+          "x": 24,
+          "y": 21
+        }
+      ]
+    }
+  ],
+  "diagonalRule": "5ft"
+}
