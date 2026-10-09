@@ -388,6 +388,21 @@ export function expireReaction(
 ): CombatTransition | null {
   const prompt = state.pendingReaction;
   if (!prompt || now < prompt.deadlineAt) return null;
+  if (!state.engineReactions?.[prompt.reactionId]) {
+    const next = { ...state };
+    delete next.pendingReaction;
+    return {
+      state: next,
+      events: [
+        {
+          type: 'ReactionResolved',
+          entityId: prompt.entityId,
+          used: false,
+          reactionId: prompt.reactionId,
+        },
+      ],
+    };
+  }
   const result = answerReaction(
     state,
     prompt.moverId,

@@ -50,9 +50,17 @@ function scriptedDm(requests: LlmRequest[] = []): LlmAdapter {
     async *complete(request: LlmRequest) {
       requests.push(request);
       const sawTool = request.messages.some((m) => m.role === 'tool');
-      const asked = request.messages.some((m) =>
-        m.content.includes('START-COMBAT'),
-      );
+      const asked = request.messages.some((message) => {
+        if (message.content.includes('START-COMBAT')) return true;
+        const encoded = message.content.match(
+          /<<<PLAYER_DATA encoding=base64>>>\s*([A-Za-z0-9+/=]+)\s*<<<END_PLAYER_DATA>>>/,
+        )?.[1];
+        return encoded
+          ? Buffer.from(encoded, 'base64')
+              .toString('utf8')
+              .includes('START-COMBAT')
+          : false;
+      });
       const chunks: LlmChunk[] =
         asked && !sawTool
           ? [
@@ -182,10 +190,11 @@ class Client {
           payload,
         }),
       );
+      const expectedType =
+        payload.command === 'options' ? 'CombatOptions' : 'CombatTracker';
       const reply = await this.until(
         (m) =>
-          m.type === 'CombatTracker' ||
-          m.type === 'CombatOptions' ||
+          m.type === expectedType ||
           (m.type === 'Error' && m.payload?.actionId === actionId),
         mark,
       );
@@ -229,18 +238,7 @@ async function seedTable(
   const room = await s.rooms.get(table);
   await room.seat(owner.id, 'Aria');
   const gameState = game(owner.id);
-  await new Persistence(db).writeTurn(
-    table,
-    [
-      {
-        turnId: randomUUID(),
-        type: 'GameStateCommitted',
-        payload: { gameState },
-      },
-    ],
-    { ...room.state, gameState, actionIds: [] },
-    room.lease,
-  );
+  await room.persistGameState(gameState);
   return table;
 }
 const preCombat = (account: string) => {
@@ -327,9 +325,29 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       );
       const reach = (a: unknown, b: unknown) =>
         Math.max(Math.abs(a.pos.x - b.pos.x), Math.abs(a.pos.y - b.pos.y));
+      const reachFrom = (pos: unknown, entity: unknown) =>
+        Math.max(
+          Math.abs(pos.x - entity.pos.x),
+          Math.abs(pos.y - entity.pos.y),
+        );
       const nearest = [...foes].sort((a, b) => reach(me, a) - reach(me, b))[0];
-      const opts = (await client.command({ command: 'options' }))
-        .payload as Record<string, unknown>;
+      const optionsReply = await client.command({ command: 'options' });
+      if (
+        optionsReply.type === 'Error' &&
+        optionsReply.payload?.message === 'Resolve the pending reaction first.'
+      ) {
+        const prompt = client.last<Record<string, unknown>>('ReactionPrompt');
+        if (!prompt?.reactionId)
+          throw new Error('Pending reaction has no websocket prompt.');
+        await client.command({
+          command: 'reaction',
+          reactionId: prompt.reactionId,
+          choice: 'take',
+        });
+        continue;
+      }
+      expect(optionsReply.type).toBe('CombatOptions');
+      const opts = optionsReply.payload as Record<string, unknown>;
       const resources = tracker.resources.ent_aria;
       const area = (opts.areas as Record<string, unknown>[])
         .filter((a) => a.affected.some((x: unknown) => x.relation === 'enemy'))
@@ -365,7 +383,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       if (nearest && reach(me, nearest) <= 1 && !kited) {
         const flee = (opts.actions as Record<string, unknown>[])
           .filter(
-            (a) => a.kind === 'move' && reach(a.destination, nearest) === 2,
+            (a) => a.kind === 'move' && reachFrom(a.destination, nearest) === 2,
           )
           .sort((a, b) => a.cost - b.cost)[0];
         if (flee) {
@@ -399,8 +417,8 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
           .filter((a) => a.kind === 'move')
           .sort(
             (a, b) =>
-              reach(a.destination, nearest) - reach(b.destination, nearest) ||
-              a.cost - b.cost,
+              reachFrom(a.destination, nearest) -
+                reachFrom(b.destination, nearest) || a.cost - b.cost,
           )[0];
         if (step)
           await client.command({
@@ -515,6 +533,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         m.payload!.events.some((e: unknown) => e.type === 'ReactionResolved'),
       mark2,
     );
+    await client.until((m) => m.type === 'NarrationCompleted', mark2);
     const count = (await storedTypes(table)).length;
     const mark3 = client.log.length;
     client.ws.send(answer);

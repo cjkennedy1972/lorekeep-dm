@@ -2,6 +2,7 @@ import { Link, Route, Routes } from 'react-router-dom';
 import { Layout } from './a11y/Layout';
 import { RequireAuth } from './auth';
 import { Settings } from './screens/Settings';
+import { OperatorSettings } from './screens/OperatorSettings';
 import { Login } from './screens/Login';
 import { Join } from './screens/Join';
 import { Lobby } from './screens/Lobby';
@@ -36,6 +37,7 @@ export function App() {
           }
         />
         <Route path="settings" element={<Settings />} />
+        <Route path="operator" element={<OperatorSettings />} />
         <Route path="characters/new" element={<QuickBuild />} />
         <Route path="characters/edit" element={<CreationWizard />} />
         <Route path="signup" element={<Signup />} />

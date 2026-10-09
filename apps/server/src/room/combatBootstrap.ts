@@ -210,11 +210,13 @@ export function reconcileCombat(
   catalog: Catalog,
   now: number,
 ): Reconciled | null {
-  const engineActive = !!(
-    game.gameEngine?.combat as { initiative?: unknown[] } | undefined
-  )?.initiative?.length;
+  const engineCombat = game.gameEngine?.combat as
+    | { initiative?: unknown[] }
+    | undefined;
+  const hasEngineCombat = Array.isArray(engineCombat?.initiative);
+  const engineActive = !!engineCombat?.initiative?.length;
   const room = game.combatRoom;
-  if (!engineActive && room && !room.ended) {
+  if (hasEngineCombat && !engineActive && room && !room.ended) {
     const rest = { ...game };
     delete rest.combatRoom;
     delete rest.combatActors;
