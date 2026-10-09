@@ -98,37 +98,28 @@
   "encounters": [
     {
       "id": "encounter-e1-rats",
-      "monsterIds": ["monster:giant-rat", "monster:giant-rat"],
+      "monsterIds": ["monster:giant-rat"],
       "mapId": "adv01-upper-ruins",
       "partySpawnMarkerId": "mk_e1_party",
       "enemySpawnMarkerId": "mk_e1_enemy"
     },
     {
       "id": "encounter-e2-lookouts",
-      "monsterIds": [
-        "monster:goblin-warrior",
-        "monster:goblin-warrior",
-        "monster:goblin-minion",
-        "monster:goblin-minion"
-      ],
+      "monsterIds": ["monster:goblin-warrior"],
       "mapId": "adv01-warrens",
       "partySpawnMarkerId": "mk_e2_party",
       "enemySpawnMarkerId": "mk_e2_enemy"
     },
     {
       "id": "encounter-e3-skarrik",
-      "monsterIds": [
-        "monster:goblin-boss",
-        "monster:goblin-minion",
-        "monster:goblin-minion"
-      ],
+      "monsterIds": ["monster:goblin-boss"],
       "mapId": "adv01-warrens",
       "partySpawnMarkerId": "mk_e3_party",
       "enemySpawnMarkerId": "mk_e3_enemy"
     },
     {
       "id": "encounter-e4-wardens",
-      "monsterIds": ["monster:specter", "monster:shadow", "monster:shadow"],
+      "monsterIds": ["monster:specter"],
       "mapId": "adv01-lamp-vault",
       "partySpawnMarkerId": "mk_e4_party",
       "enemySpawnMarkerId": "mk_e4_enemy_ring"
