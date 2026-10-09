@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: public.ecr.aws/docker/library/postgres:16 # Docker Official Image mirror; Docker Hub rate-limits unauthenticated runner pulls
         env:
           POSTGRES_DB: lorekeep
           POSTGRES_USER: lorekeep
