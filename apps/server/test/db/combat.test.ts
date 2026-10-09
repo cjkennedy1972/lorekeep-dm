@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { installGateway } from '../../src/gateway/ws.js';
@@ -278,7 +278,7 @@ afterAll(async () => {
   else process.env.LLM_FIXTURE_MODE = saved.mode;
   if (saved.env === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = saved.env;
-});
+}, 60_000);
 
 describe('Room combat over the websocket (real Room, Postgres, scripted DM)', () => {
   it('start_combat populates the Room, monsters act, and the fight ends in CombatEnded with an accepted opportunity attack', async () => {
@@ -616,6 +616,15 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       };
     });
     const client = await Client.open(stack, user, table);
+    // PresenceChanged is persisted after StateSync; wait for it so the
+    // baseline is settled and any later event really came from a command.
+    await vi.waitFor(
+      async () =>
+        expect((await storedTypes(table)).map((e) => e.type)).toContain(
+          'PresenceChanged',
+        ),
+      { timeout: 5000 },
+    );
     const baseline = await storedTypes(table);
     const snapshot = JSON.stringify(await savedGame(table));
     for (const payload of [
