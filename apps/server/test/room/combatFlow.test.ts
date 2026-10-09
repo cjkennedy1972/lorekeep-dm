@@ -68,10 +68,8 @@ describe('combat bootstrap from the DM start_combat result', () => {
         game.gameEngine.combat.initiative = [
           ...game.gameEngine.combat.initiative,
         ].sort((a) => (a.entityId === 'ent_aria' ? 1 : -1));
-        const { combatRoom: _drop, ...rest } = first.game as Record<
-          string,
-          unknown
-        >;
+        const rest = { ...(first.game as Record<string, unknown>) };
+        delete rest.combatRoom;
         return rest;
       })(),
       NOW,

@@ -21,7 +21,6 @@ import {
 import { reconcileCombat, type Reconciled } from './combatBootstrap.js';
 import { areaOptions, castCommand } from './combatSpell.js';
 import {
-  REACTION_TIMEOUT_MS,
   type CombatCommandError,
   type CombatContext,
   type CombatTransition,
@@ -71,19 +70,22 @@ export function combatTracker(state: RoomCombatState) {
     round: state.combat.round,
     initiative: ordered.map(({ entityId, total }) => ({ entityId, total })),
     activeEntityId: active,
-    entities: state.entities.map(({ id, kind, team, hp, maxHp, pos }) => ({
-      id,
-      kind,
-      team,
-      ...(team === 'party' ? { hp } : {}),
-      hpState:
-        hp <= 0
-          ? 'down'
-          : hp / Math.max(1, maxHp) > 0.5
-            ? 'healthy'
-            : 'wounded',
-      pos,
-    })),
+    entities: state.entities.map(
+      ({ id, kind, team, hp, maxHp, pos, fled }) => ({
+        id,
+        kind,
+        team,
+        ...(team === 'party' ? { hp } : {}),
+        hpState:
+          hp <= 0
+            ? 'down'
+            : hp / Math.max(1, maxHp) > 0.5
+              ? 'healthy'
+              : 'wounded',
+        pos,
+        ...(fled ? { fled } : {}),
+      }),
+    ),
     resources: state.combat.resources,
     ...(state.ended ? { ended: state.ended } : {}),
   };

@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { RoomState, ServerMessage } from '@game/schema';
+import {
+  RoomStateSchema,
+  type RoomState,
+  type ServerMessage,
+} from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import type {
   EventInput,
@@ -130,7 +134,17 @@ export class Room {
           type: 'StateSync',
           payload: { state: this.state },
         });
+      this.sendCombatSnapshot(connection);
     });
+  }
+
+  /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */
+  private sendCombatSnapshot(connection: Connection): void {
+    const combat = roomGameState(this.state);
+    if (!combat) return;
+    connection.send(trackerMessage(this.seq, combat));
+    if (combat.pendingReaction)
+      connection.send(reactionMessage(this.seq, combat.pendingReaction));
   }
 
   join(
@@ -163,6 +177,7 @@ export class Room {
           type: 'StateSync',
           payload: { state: this.state },
         });
+      this.sendCombatSnapshot(connection);
       if (seat.presence !== 'online') {
         const event = await this.persist('PresenceChanged', {
           seatId: seat.seatId,
@@ -226,6 +241,53 @@ export class Room {
       }
     });
   }
+  /** Persist initial or lifecycle game metadata in a lease-fenced room snapshot. */
+  persistGameState(gameState: unknown): Promise<void> {
+    return this.enqueue(async () => {
+      const nextState = RoomStateSchema.parse({ ...this.state, gameState });
+      const stored = await this.store.writeTurn(
+        this.sessionId,
+        [
+          {
+            seq: this.seq + 1,
+            turnId: randomUUID(),
+            type: 'GameStateCommitted',
+            payload: { gameState },
+          },
+        ],
+        nextState,
+        this.lease,
+      );
+      this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
+      this.state = nextState;
+    });
+  }
+
+  persistRecap(recap: { recap: string; memoryHash: string }): Promise<void> {
+    return this.enqueue(async () => {
+      const gameState = {
+        ...((this.state.gameState as Record<string, unknown>) ?? {}),
+        recap,
+      };
+      const nextState = RoomStateSchema.parse({ ...this.state, gameState });
+      const stored = await this.store.writeTurn(
+        this.sessionId,
+        [
+          {
+            seq: this.seq + 1,
+            turnId: randomUUID(),
+            type: 'GameStateCommitted',
+            payload: { gameState },
+          },
+        ],
+        nextState,
+        this.lease,
+      );
+      this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
+      this.state = nextState;
+    });
+  }
+
   /** Persist validated registry tool events through the room actor and lease-fenced store. */
   persistRegistry(events: readonly RegistryEvent[]): Promise<void> {
     return this.enqueue(async () => {

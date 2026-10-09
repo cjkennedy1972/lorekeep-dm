@@ -90,7 +90,9 @@ export function applyMovement(
   const first = [...pending].sort((a, b) =>
     a.reactionId.localeCompare(b.reactionId),
   )[0];
-  const { pendingReaction: _prompt, engineReactions: _kept, ...rest } = state;
+  const rest = { ...state };
+  delete rest.pendingReaction;
+  delete rest.engineReactions;
   return {
     ...rest,
     entities: state.entities.map((e) => {
@@ -128,7 +130,9 @@ export function combatOutcome(state: RoomCombatState): string | null {
 export function settle(state: RoomCombatState): CombatTransition {
   const outcome = combatOutcome(state);
   if (!outcome || state.ended) return { state, events: [] };
-  const { pendingReaction: _p, engineReactions: _e, ...rest } = state;
+  const rest = { ...state };
+  delete rest.pendingReaction;
+  delete rest.engineReactions;
   return {
     state: {
       ...rest,

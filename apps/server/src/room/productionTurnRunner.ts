@@ -71,6 +71,12 @@ export function mergeCombatOutput<T extends object>(
     ...(name === 'start_combat' ? { combatSeed: out.rng } : {}),
   };
 }
+const withoutCatalog = (engine: unknown) =>
+  Object.fromEntries(
+    Object.entries(engine as Record<string, unknown>).filter(
+      ([key]) => key !== 'catalog',
+    ),
+  );
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -143,23 +149,26 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       request.text,
       state.lastNarration ?? '',
     );
-    const engineState = (state.gameEngine ?? {
-      actors,
-      attacks: {},
-      hp: Object.fromEntries(
-        Object.values(actors).map((actor) => [actor.id, actor.hp.current]),
-      ),
-      ac: {},
-      conditions: {},
+    // The catalog holds functions and is rebuilt on every turn; it is never persisted with the game state.
+    const engineState = {
+      ...(state.gameEngine ?? {
+        actors,
+        attacks: {},
+        hp: Object.fromEntries(
+          Object.values(actors).map((actor) => [actor.id, actor.hp.current]),
+        ),
+        ac: {},
+        conditions: {},
+        world: state.world ?? {
+          npcs: {},
+          locations: {},
+          quests: {},
+          flags: {},
+          rulings: [],
+        },
+      }),
       catalog: this.catalog,
-      world: state.world ?? {
-        npcs: {},
-        locations: {},
-        quests: {},
-        flags: {},
-        rulings: [],
-      },
-    }) as unknown as ToolExecutorState & { world: WorldRegistry };
+    } as unknown as ToolExecutorState & { world: WorldRegistry };
     const context: DmToolContext = {
       seed: 0,
       rollIndex: 0,
@@ -169,7 +178,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       commitState(previous, output) {
         return {
           ...(previous as GameState),
-          gameEngine: output.nextState,
+          gameEngine: withoutCatalog(output.nextState),
           characters: (output.nextState as ToolExecutorState).actors,
           world:
             (output.nextState as { world?: WorldRegistry }).world ??

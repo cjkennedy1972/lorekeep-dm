@@ -215,7 +215,9 @@ export function reconcileCombat(
   )?.initiative?.length;
   const room = game.combatRoom;
   if (!engineActive && room && !room.ended) {
-    const { combatRoom: _room, combatActors: _actors, ...rest } = game;
+    const rest = { ...game };
+    delete rest.combatRoom;
+    delete rest.combatActors;
     return {
       gameState: rest,
       events: [{ type: 'CombatEnded', outcome: 'dm-ended', xp: 0 }],

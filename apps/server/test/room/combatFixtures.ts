@@ -67,7 +67,6 @@ export function preCombatGame(character: CharacterInput = hero) {
       hp: { [character.id]: character.hp.current },
       ac: { [character.id]: 12 },
       conditions: {},
-      catalog,
       map: cryptMap,
       world,
     },
@@ -84,7 +83,7 @@ export function startCombat(
 ) {
   const game = preCombatGame();
   const result = execute(
-    game.gameEngine as never,
+    { ...game.gameEngine, catalog } as never,
     { name: 'start_combat', args },
     seed,
   );
