@@ -1,72 +1,58 @@
 import type { ServerMessage } from '@game/schema';
 import type { CombatCommand } from '@game/schema';
 import type { RoomState } from '@game/schema';
-import { path, legalOptions, attack } from '@game/rules-engine';
-import type { Battlemap, GridPos } from '@game/schema';
+import {
+  path,
+  legalOptions,
+  attack,
+  moveAlong,
+  type Catalog,
+} from '@game/rules-engine';
+import { loadCatalog } from '@game/rules-engine/room-tools';
+import {
+  advanceTurn,
+  answerReaction,
+  applyMovement,
+  expireReaction,
+  movementState,
+  runMonsters,
+  settle,
+} from './combatEngine.js';
+import { reconcileCombat, type Reconciled } from './combatBootstrap.js';
+import { areaOptions, castCommand } from './combatSpell.js';
+import {
+  REACTION_TIMEOUT_MS,
+  type CombatCommandError,
+  type CombatContext,
+  type CombatTransition,
+  type RoomCombatState,
+} from './combatTypes.js';
 
-type CombatEntity = {
-  id: string;
-  kind: 'character' | 'monster' | 'npc';
-  team: string;
-  pos: GridPos;
-  size: number;
-  hp: number;
-  maxHp: number;
-  ac?: number;
-  speed?: number;
-  attacks?: {
-    id: string;
-    name: string;
-    reachFt?: number;
-    attackBonus: number;
-    damage: string;
-    damageType: string;
-    range?: { normalFt: number; longFt?: number };
-  }[];
-};
-export type RoomCombatState = {
-  map: Battlemap;
-  entities: CombatEntity[];
-  combat: {
-    round: number;
-    activeEntityId: string | null;
-    initiative: { entityId: string; total: number }[];
-    resources: Record<
-      string,
-      {
-        action: boolean;
-        bonusAction: boolean;
-        reaction: boolean;
-        movementRemaining: number;
-      }
-    >;
-  };
-  pendingReaction?: {
-    reactionId: string;
-    entityId: string;
-    trigger: string;
-    moverId: string;
-  };
-  pendingActionIds?: string[];
-  seed?: number;
-};
-export type CombatTransition = {
-  state: RoomCombatState;
-  events: Record<string, unknown>[];
-  messages?: { type: string; payload: Record<string, unknown> }[];
-};
-export type CombatCommandError = {
-  code: 'NOT_YOUR_TURN' | 'COMMAND_REJECTED';
-  message: string;
-};
+export type {
+  CombatCommandError,
+  CombatContext,
+  CombatEntity,
+  CombatTransition,
+  RoomCombatState,
+} from './combatTypes.js';
+export { REACTION_TIMEOUT_MS } from './combatTypes.js';
+
 export type CombatRuntime = {
-  preview(state: RoomCombatState, actorId: string): unknown;
+  preview(
+    state: RoomCombatState,
+    actorId: string,
+    ctx?: CombatContext,
+  ): unknown;
   execute(
     state: RoomCombatState,
     actorId: string,
     command: CombatCommand['payload'],
+    ctx?: CombatContext,
   ): CombatTransition | CombatCommandError;
-  decideMonsters?(state: RoomCombatState): CombatTransition;
+  /** Derive/clear the Room's combat from the engine state a DM turn produced. */
+  reconcile(game: Record<string, unknown>, now?: number): Reconciled | null;
+  /** Auto-decline a reaction prompt whose deadline passed. */
+  expire(state: RoomCombatState, now: number): CombatTransition | null;
 };
 
 /** Stable client projection; exact enemy HP is private while the active token always matches initiative. */
@@ -99,57 +85,118 @@ export function combatTracker(state: RoomCombatState) {
       pos,
     })),
     resources: state.combat.resources,
+    ...(state.ended ? { ended: state.ended } : {}),
   };
 }
 
-export function createCombatRuntime(): CombatRuntime {
-  return {
-    preview(state, actorId) {
-      const entity = state.entities.find((item) => item.id === actorId);
-      if (!entity) return { actions: [] };
-      const resources = state.combat.resources[actorId];
-      return legalOptions(
+const reject = (message: string): CombatCommandError => ({
+  code: 'COMMAND_REJECTED',
+  message,
+});
+
+export function createCombatRuntime(
+  catalog: Catalog = defaultCatalog(),
+): CombatRuntime {
+  const optionsState = (
+    state: RoomCombatState,
+    actorId: string,
+    ctx?: CombatContext,
+  ) => ({
+    map: state.map,
+    entities: state.entities.filter((item) => !item.fled),
+    resources: Object.fromEntries(
+      Object.entries(state.combat.resources).map(([id, r]) => [
+        id,
         {
-          map: state.map,
-          entities: state.entities.map((item) => ({
-            ...item,
-            team: item.team,
-          })),
-          resources: Object.fromEntries(
-            Object.entries(state.combat.resources).map(([id, r]) => [
-              id,
-              {
-                action: r.action,
-                bonusAction: r.bonusAction,
-                movementLeft: r.movementRemaining,
-              },
-            ]),
-          ),
+          action: r.action,
+          bonusAction: r.bonusAction,
+          movementLeft: r.movementRemaining,
         },
+      ]),
+    ),
+    ...(ctx?.character
+      ? {
+          casters: { [actorId]: ctx.character },
+          catalog,
+          spells: ctx.character.spellsPrepared.flatMap((id) => {
+            const template = catalog.get('spell', id)?.template;
+            return [
+              {
+                id,
+                ...(template
+                  ? {
+                      template: {
+                        shape: template.shape,
+                        size: template.size,
+                        width: template.width,
+                      },
+                    }
+                  : {}),
+              },
+            ];
+          }),
+        }
+      : {}),
+  });
+  const runtime: CombatRuntime = {
+    preview(state, actorId, ctx) {
+      if (!state.entities.some((item) => item.id === actorId))
+        return { actions: [] };
+      return legalOptions(
+        optionsState(state, actorId, ctx) as Parameters<typeof legalOptions>[0],
         actorId,
       );
     },
-    execute(state, actorId, command) {
-      if (state.pendingReaction && command.command !== 'reaction')
-        return {
-          code: 'COMMAND_REJECTED',
-          message: 'Resolve the pending reaction first.',
-        };
+    reconcile(game, now = Date.now()) {
+      return reconcileCombat(game, catalog, now);
+    },
+    expire: expireReaction,
+    execute(state, actorId, command, ctx) {
+      const now = ctx?.now ?? Date.now();
+      if (state.ended) return reject('Combat is over.');
+      if (command.command === 'reaction')
+        return answerReaction(
+          state,
+          actorId,
+          command.reactionId,
+          command.choice,
+          now,
+        );
+      if (state.pendingReaction)
+        return reject('Resolve the pending reaction first.');
       const active =
         state.combat.activeEntityId ?? state.combat.initiative[0]?.entityId;
-      if (command.command !== 'reaction' && actorId !== active)
+      if (actorId !== active)
         return { code: 'NOT_YOUR_TURN', message: 'It is not your turn.' };
-      if (command.command === 'options')
+      if (command.command === 'options') {
+        const preview = runtime.preview(state, actorId, ctx) as Record<
+          string,
+          unknown
+        >;
+        const areas = (ctx?.character?.spellsPrepared ?? []).flatMap((id) =>
+          areaOptions(state, actorId, id, catalog).map((option) => ({
+            spellId: id,
+            ...option,
+          })),
+        );
         return {
           state,
           events: [],
-          messages: [
-            {
-              type: 'CombatOptions',
-              payload: this.preview(state, actorId) as Record<string, unknown>,
-            },
-          ],
+          messages: [{ type: 'CombatOptions', payload: { ...preview, areas } }],
         };
+      }
+      if (command.command === 'cast') {
+        const cast = castCommand(
+          state,
+          actorId,
+          command,
+          ctx?.character,
+          catalog,
+        );
+        if ('code' in cast) return cast;
+        return cast;
+      }
+      const resource = state.combat.resources[actorId];
       if (command.command === 'attack') {
         const attacker = state.entities.find((item) => item.id === actorId);
         const target = state.entities.find(
@@ -158,18 +205,15 @@ export function createCombatRuntime(): CombatRuntime {
         const weapon = attacker?.attacks?.find(
           (item) => item.id === command.attackId,
         );
-        const resource = state.combat.resources[actorId];
         if (
           !attacker ||
           !target ||
           !weapon ||
           !resource?.action ||
-          target.hp <= 0
+          target.hp <= 0 ||
+          target.fled
         )
-          return {
-            code: 'COMMAND_REJECTED',
-            message: 'That attack is not currently available.',
-          };
+          return reject('That attack is not currently available.');
         const result = attack({
           attackerId: actorId,
           targetId: target.id,
@@ -193,138 +237,82 @@ export function createCombatRuntime(): CombatRuntime {
           },
         });
         if ('error' in result)
-          return {
-            code: 'COMMAND_REJECTED',
-            message: 'That target is not a legal attack.',
-          };
+          return reject('That target is not a legal attack.');
         const hp = result.events.find((event) => event.type === 'HpChanged');
-        const entities =
-          hp?.type === 'HpChanged'
-            ? state.entities.map((item) =>
-                item.id === hp.entityId ? { ...item, hp: hp.to } : item,
-              )
-            : state.entities;
-        return {
-          state: {
-            ...state,
-            entities,
-            seed: result.rng,
-            combat: {
-              ...state.combat,
-              resources: {
-                ...state.combat.resources,
-                [actorId]: { ...resource, action: false },
-              },
+        const hit: RoomCombatState = {
+          ...state,
+          entities:
+            hp?.type === 'HpChanged'
+              ? state.entities.map((item) =>
+                  item.id === hp.entityId ? { ...item, hp: hp.to } : item,
+                )
+              : state.entities,
+          seed: result.rng,
+          combat: {
+            ...state.combat,
+            resources: {
+              ...state.combat.resources,
+              [actorId]: { ...resource, action: false },
             },
           },
+        };
+        const closing = settle(hit);
+        return {
+          state: closing.state,
           events: [
             ...result.events,
             { type: 'ActionSpent', entityId: actorId },
+            ...closing.events,
           ],
         };
       }
       if (command.command === 'end-turn') {
-        const index = state.combat.initiative.findIndex(
-          (entry) => entry.entityId === actorId,
-        );
-        if (index < 0 || !state.combat.initiative.length)
-          return {
-            code: 'COMMAND_REJECTED',
-            message: 'Combat initiative is unavailable.',
-          };
-        const nextIndex = (index + 1) % state.combat.initiative.length;
-        const nextId = state.combat.initiative[nextIndex]!.entityId;
-        const round = state.combat.round + (nextIndex === 0 ? 1 : 0);
-        const nextEntity = state.entities.find(
-          (entity) => entity.id === nextId,
-        );
-        const combat = {
-          ...state.combat,
-          round,
-          activeEntityId: nextId,
-          resources: {
-            ...state.combat.resources,
-            [nextId]: {
-              action: true,
-              bonusAction: true,
-              reaction: true,
-              movementRemaining: nextEntity?.speed ?? 30,
-            },
-          },
-        };
-        return {
-          state: { ...state, combat },
-          events: [
-            { type: 'TurnEnded', entityId: actorId },
-            { type: 'TurnStarted', entityId: nextId, round },
-          ],
-        };
+        if (!state.combat.initiative.length)
+          return reject('Combat initiative is unavailable.');
+        const next = advanceTurn(state);
+        const run = runMonsters(next.state, now);
+        return { state: run.state, events: [...next.events, ...run.events] };
       }
       if (command.command === 'move') {
         const entity = state.entities.find((item) => item.id === actorId);
-        if (!entity)
-          return {
-            code: 'COMMAND_REJECTED',
-            message: 'That actor is not on the map.',
-          };
-        const result = path(
-          {
-            map: state.map,
-            entities: state.entities,
-            resources: Object.fromEntries(
-              Object.entries(state.combat.resources).map(([id, r]) => [
-                id,
-                { movementLeft: r.movementRemaining },
-              ]),
-            ),
-          },
+        if (!entity) return reject('That actor is not on the map.');
+        const mv = movementState(state, actorId);
+        const route = path(mv, actorId, command.destination);
+        if ('error' in route)
+          return reject('That destination is not reachable.');
+        const moved = moveAlong(mv, actorId, route.path, 'normal');
+        if ('error' in moved) return reject(moved.hint);
+        const next = applyMovement(
+          state,
           actorId,
-          command.destination,
+          moved.state,
+          moved.pending,
+          now,
         );
-        if ('error' in result)
-          return {
-            code: 'COMMAND_REJECTED',
-            message: 'That destination is not reachable.',
-          };
-        return {
-          state: {
-            ...state,
-            entities: state.entities.map((item) =>
-              item.id === actorId
-                ? { ...item, pos: command.destination }
-                : item,
-            ),
-            combat: {
-              ...state.combat,
-              resources: {
-                ...state.combat.resources,
-                [actorId]: {
-                  ...state.combat.resources[actorId]!,
-                  movementRemaining: Math.max(
-                    0,
-                    state.combat.resources[actorId]!.movementRemaining -
-                      result.cost,
-                  ),
-                },
+        // One EntityMoved for the whole path unless a reaction interrupted it.
+        const events: Record<string, unknown>[] = moved.pending.length
+          ? (moved.events as unknown as Record<string, unknown>[])
+          : [
+              {
+                type: 'EntityMoved',
+                entityId: actorId,
+                path: route.path,
+                cost: route.cost,
               },
-            },
-          },
-          events: [
-            {
-              type: 'EntityMoved',
-              entityId: actorId,
-              path: result.path,
-              cost: result.cost,
-            },
-          ],
-        };
+            ];
+        return { state: next, events };
       }
-      return {
-        code: 'COMMAND_REJECTED',
-        message: 'That combat command is not configured for this encounter.',
-      };
+      return reject(
+        'That combat command is not configured for this encounter.',
+      );
     },
   };
+  return runtime;
+}
+
+let cached: Catalog | undefined;
+function defaultCatalog(): Catalog {
+  return (cached ??= loadCatalog());
 }
 
 export function trackerMessage(
@@ -340,11 +328,16 @@ export function trackerMessage(
 export function reactionMessage(
   seq: number,
   reaction: NonNullable<RoomCombatState['pendingReaction']>,
+  now = Date.now(),
 ): ServerMessage {
   return {
     seq,
     type: 'ReactionPrompt',
-    payload: { ...reaction, timeoutMs: 15_000, defaultChoice: 'decline' },
+    payload: {
+      ...reaction,
+      timeoutMs: Math.max(0, reaction.deadlineAt - now),
+      defaultChoice: 'decline',
+    },
   } as ServerMessage;
 }
 export type CombatCommandInput = {

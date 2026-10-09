@@ -1,8 +1,6 @@
 import type { DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
-import { closeScene } from '../dm/summarize.js';
-import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
 // Node-only subpath: it pulls in the catalog loader (node:fs), so it must never be reachable
 // from the browser-safe engine index (see test/purity.test.ts).
 import type {
@@ -29,6 +27,7 @@ import {
   createConfiguredAdapter,
   createEndpointEgress,
 } from '../llm/config.js';
+import type { LlmAdapter } from '../llm/adapter.js';
 import {
   fixtureModeFromEnvironment,
   RecordedLlmAdapter,
@@ -41,13 +40,37 @@ type GameState = {
   premise?: string;
   sceneId?: string;
   sceneSummary?: string;
-  adventureId?: string;
-  catalogVersion?: string;
-  difficulty?: string;
   lastNarration?: string;
   lastPlayerText?: string;
   world?: WorldRegistry;
 };
+type CombatOutput = {
+  entities?: { id: string; hp: number }[];
+  combat?: unknown;
+  xp?: Record<string, number>;
+  rng?: number;
+};
+/** start_combat / end_combat return the new combat facts rather than a full state; fold them into the engine state. */
+function mergeCombatOutput<T extends object>(
+  current: T,
+  name: string | undefined,
+  value: unknown,
+): T {
+  if (name !== 'start_combat' && name !== 'end_combat') return current;
+  const out = value as CombatOutput;
+  if (!out.entities || !out.combat) return current;
+  return {
+    ...current,
+    entities: out.entities,
+    combat: out.combat,
+    xp: out.xp,
+    hp: {
+      ...(current as { hp?: Record<string, number> }).hp,
+      ...Object.fromEntries(out.entities.map((e) => [e.id, e.hp])),
+    },
+    ...(name === 'start_combat' ? { combatSeed: out.rng } : {}),
+  };
+}
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -63,6 +86,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly fixtureMode = fixtureModeFromEnvironment(),
     private readonly fixturePath = process.env.LLM_FIXTURE_PATH ??
       'fixtures/solo-turn.ndjson',
+    /** A fixed adapter (recorded or scripted); skips the operator endpoint lookup entirely. */
+    private readonly adapterOverride?: LlmAdapter,
   ) {}
 
   async run(
@@ -72,68 +97,45 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
     if (!['fast', 'frontier', 'moderate'].includes(endpointSlot))
       throw new Error('Solo turn endpoint slot is invalid');
-    const endpoint = await createConfiguredAdapter(
-      this.db,
-      endpointSlot as 'fast' | 'frontier' | 'moderate',
-      this.egress,
-      this.endpointMasterKey,
-    );
-    const table = await this.db.query<{
-      name: string;
-      catalog_version: string | null;
-      premise: string | null;
-      adventure_id: string | null;
-      character: Record<string, unknown> | null;
-    }>(
-      "SELECT name,catalog_version,premise,adventure_id,character FROM sessions WHERE id=$1 AND status='active'",
+    const endpoint =
+      this.adapterOverride ??
+      (await createConfiguredAdapter(
+        this.db,
+        endpointSlot as 'fast' | 'frontier' | 'moderate',
+        this.egress,
+        this.endpointMasterKey,
+      ));
+    const table = await this.db.query<{ name: string }>(
+      "SELECT name FROM sessions WHERE id=$1 AND status='active'",
       [request.sessionId],
     );
     if (!table.rows[0]) throw new Error('Table state unavailable');
-    if (
-      table.rows[0].catalog_version &&
-      table.rows[0].catalog_version !== this.catalog.catalogVersion
-    )
-      throw new Error('Pinned catalog version unavailable');
     const state = asRecord(request.state) as GameState;
-    const savedCharacter = table.rows[0].character as unknown as
-      | ToolExecutorState['actors'][string]
-      | null;
-    if (savedCharacter && !state.characters)
-      state.characters = { [request.accountId]: savedCharacter };
-    if (!state.premise) state.premise = table.rows[0].premise ?? undefined;
     const actors = state.characters ?? {};
     if (Object.keys(actors).length && !actors[request.accountId])
       throw new Error('Player character is not configured for this table');
 
-    const recorded = new RecordedLlmAdapter({
-      mode: this.fixtureMode,
-      fixturePath: this.fixturePath,
-      header: {
-        suite: 'solo-turn',
-        turn: request.actionId,
-        toolMode: 'native',
-        model: 'operator-configured',
-        catalogVersion: state.catalogVersion ?? this.catalog.catalogVersion,
-        turnSeed: process.env.LLM_FIXTURE_MODE
-          ? '0x0000000000000000'
-          : 'random',
-        endpointProfile: endpointSlot,
-      },
-      upstream: this.fixtureMode === 'record' ? endpoint : undefined,
-      allowRecord: process.env.NODE_ENV === 'test',
-      environment: process.env.NODE_ENV,
-      prefix: 'Lorekeep solo turn',
-    });
-    const adapter = new MeteredLlmAdapter(
-      recorded,
-      new PostgresUsageSink(this.db),
-      {
-        sessionId: request.sessionId,
-        turnId: request.actionId,
-        purpose: 'narration',
-        modelId: endpointSlot,
-      },
-    );
+    const adapter =
+      this.adapterOverride ??
+      new RecordedLlmAdapter({
+        mode: this.fixtureMode,
+        fixturePath: this.fixturePath,
+        header: {
+          suite: 'solo-turn',
+          turn: request.actionId,
+          toolMode: 'native',
+          model: 'operator-configured',
+          catalogVersion: this.catalog.catalogVersion,
+          turnSeed: process.env.LLM_FIXTURE_MODE
+            ? '0x0000000000000000'
+            : 'random',
+          endpointProfile: endpointSlot,
+        },
+        upstream: this.fixtureMode === 'record' ? endpoint : undefined,
+        allowRecord: process.env.NODE_ENV === 'test',
+        environment: process.env.NODE_ENV,
+        prefix: 'Lorekeep solo turn',
+      });
     const memory = new RegistryMemory(this.db as Pool);
     const registryEvents: RegistryEvent[] = [];
     const memoryContext = await memory.contextFor(
@@ -269,7 +271,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               : [],
           value: {
             events: value?.events ?? [],
-            state: { ...current, world: nextWorld },
+            state: {
+              ...mergeCombatOutput(current, request.name, result.value),
+              world: nextWorld,
+            },
           },
         };
       },
@@ -281,7 +286,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       testMode: process.env.NODE_ENV === 'test',
       ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
       prompt: {
-        catalogVersion: state.catalogVersion ?? this.catalog.catalogVersion,
+        catalogVersion: this.catalog.catalogVersion,
         toolMode: 'native',
         sceneId: state.sceneId ?? request.sessionId,
         settingsHash: 'default',
@@ -320,42 +325,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       emit: (event) => onEvent(event as DMTurnEvent),
     });
 
-    for (const event of result.events) {
-      if (
-        event &&
-        typeof event === 'object' &&
-        (event as { type?: string }).type === 'SceneClosed'
-      ) {
-        const closed = event as { sceneId: string; summary: string };
-        const summaryAdapter = new MeteredLlmAdapter(
-          new RecordedLlmAdapter({
-            mode: this.fixtureMode,
-            fixturePath: this.fixturePath,
-            upstream: endpoint,
-            allowRecord: process.env.NODE_ENV === 'test',
-            environment: process.env.NODE_ENV,
-            prefix: 'Lorekeep scene summary',
-          }),
-          new PostgresUsageSink(this.db),
-          {
-            sessionId: request.sessionId,
-            turnId: request.actionId,
-            purpose: 'summary',
-            modelId: endpointSlot,
-          },
-        );
-        await closeScene({
-          sessionId: request.sessionId,
-          sceneId: closed.sceneId,
-          events: result.events.map((entry) => ({
-            type: String((entry as { type?: unknown }).type ?? 'Unknown'),
-            payload: entry,
-          })),
-          adapter: summaryAdapter,
-          db: this.db as Pool,
-        });
-      }
-    }
     return {
       ...result,
       events: [...result.events, ...registryEvents],

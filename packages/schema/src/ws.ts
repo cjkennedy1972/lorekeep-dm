@@ -107,6 +107,21 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('ReactionPrompt'),
     payload: z.record(z.string(), z.unknown()),
   }),
+  z.object({
+    seq: z.int().nonnegative(),
+    type: z.literal('CombatOptions'),
+    payload: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    seq: z.int().nonnegative(),
+    type: z.literal('CombatEvents'),
+    payload: z.object({ events: z.array(z.record(z.string(), z.unknown())) }),
+  }),
+  z.object({
+    seq: z.int().nonnegative(),
+    type: z.literal('CombatEnded'),
+    payload: z.record(z.string(), z.unknown()),
+  }),
   PresenceChangedSchema,
   ErrorMessageSchema,
 ]);

@@ -1,11 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import {
-  RoomStateSchema,
-  type RoomState,
-  type ServerMessage,
-} from '@game/schema';
+import type { RoomState, ServerMessage } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
-import type { Pool } from 'pg';
 import type {
   EventInput,
   LatestState,
@@ -22,12 +17,13 @@ import {
   trackerMessage,
   reactionMessage,
   type CombatRuntime,
+  type CombatTransition,
 } from './combat.js';
+import { settleEngine } from './combatBootstrap.js';
 import type { ActionId } from '@game/schema';
 
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
-  db?: Pick<Pool, 'query' | 'connect'>;
   persistRegistryEvents?(
     sessionId: string,
     events: readonly RegistryEvent[],
@@ -52,6 +48,7 @@ export class Room {
   private accepting = true;
   private readonly turnRunner?: SoloTurnRunner;
   private readonly combatRuntime: CombatRuntime;
+  private reactionTimer?: NodeJS.Timeout;
   private turnInFlight = false;
   private readonly pendingActions = new Set<string>();
   private activeTurn: Promise<void> = Promise.resolve();
@@ -81,6 +78,8 @@ export class Room {
     this.state = recovered.state;
     this.seq = recovered.seq;
     this.actionIds = recovered.actionIds;
+    // A restart mid-prompt resumes the countdown from the persisted deadline.
+    this.scheduleReaction();
   }
 
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -227,53 +226,6 @@ export class Room {
       }
     });
   }
-  /** Persist initial or lifecycle game metadata in a lease-fenced room snapshot. */
-  persistGameState(gameState: unknown): Promise<void> {
-    return this.enqueue(async () => {
-      const nextState = RoomStateSchema.parse({ ...this.state, gameState });
-      const stored = await this.store.writeTurn(
-        this.sessionId,
-        [
-          {
-            seq: this.seq + 1,
-            turnId: randomUUID(),
-            type: 'GameStateCommitted',
-            payload: { gameState },
-          },
-        ],
-        nextState,
-        this.lease,
-      );
-      this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
-      this.state = nextState;
-    });
-  }
-
-  persistRecap(recap: { recap: string; memoryHash: string }): Promise<void> {
-    return this.enqueue(async () => {
-      const gameState = {
-        ...((this.state.gameState as Record<string, unknown>) ?? {}),
-        recap,
-      };
-      const nextState = RoomStateSchema.parse({ ...this.state, gameState });
-      const stored = await this.store.writeTurn(
-        this.sessionId,
-        [
-          {
-            seq: this.seq + 1,
-            turnId: randomUUID(),
-            type: 'GameStateCommitted',
-            payload: { gameState },
-          },
-        ],
-        nextState,
-        this.lease,
-      );
-      this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
-      this.state = nextState;
-    });
-  }
-
   /** Persist validated registry tool events through the room actor and lease-fenced store. */
   persistRegistry(events: readonly RegistryEvent[]): Promise<void> {
     return this.enqueue(async () => {
@@ -373,6 +325,7 @@ export class Room {
     text: string,
     playerName: string,
   ): Promise<void> {
+    const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
     const result = await this.turnRunner!.run(
       {
         sessionId: this.sessionId,
@@ -405,92 +358,110 @@ export class Room {
         }
       },
     );
-    // Endpoint fallback invalidates all partial engine effects; only successful results are saved.
-    if (result.fallback !== 'endpoint-error') {
-      const turnId = result.events.find(
-        (event) => (event as { type?: string }).type === 'TurnStarted',
-      ) as { turnId?: string } | undefined;
-      const id = turnId?.turnId ?? actionId;
-      const registryEvents = result.events.filter(
-        (event): event is RegistryEvent =>
-          !!event &&
-          typeof event === 'object' &&
-          [
-            'NpcUpserted',
-            'LocationUpserted',
-            'QuestUpdated',
-            'FlagSet',
-            'RulingLogged',
-          ].includes(String((event as { type?: unknown }).type)),
-      );
-      const writes = result.events
-        .filter((event) => {
-          const type = String((event as { type?: string }).type);
-          return (
-            type !== 'TurnStarted' &&
-            !type.startsWith('Narration') &&
-            !type.startsWith('Prompt') &&
-            !type.startsWith('ToolCall')
-          );
-        })
-        .map((event) => ({
+    // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
+    await this.enqueue(async () => {
+      // Endpoint fallback invalidates all partial engine effects; only successful results are saved.
+      if (result.fallback !== 'endpoint-error') {
+        const turnId = result.events.find(
+          (event) => (event as { type?: string }).type === 'TurnStarted',
+        ) as { turnId?: string } | undefined;
+        const id = turnId?.turnId ?? actionId;
+        const registryEvents = result.events.filter(
+          (event): event is RegistryEvent =>
+            !!event &&
+            typeof event === 'object' &&
+            [
+              'NpcUpserted',
+              'LocationUpserted',
+              'QuestUpdated',
+              'FlagSet',
+              'RulingLogged',
+            ].includes(String((event as { type?: unknown }).type)),
+        );
+        const writes = result.events
+          .filter((event) => {
+            const type = String((event as { type?: string }).type);
+            return (
+              type !== 'TurnStarted' &&
+              !type.startsWith('Narration') &&
+              !type.startsWith('Prompt') &&
+              !type.startsWith('ToolCall')
+            );
+          })
+          .map((event) => ({
+            seq: undefined,
+            turnId: id,
+            type: String((event as { type: string }).type),
+            payload: event,
+          }));
+        writes.push({
           seq: undefined,
           turnId: id,
-          type: String((event as { type: string }).type),
-          payload: event,
-        }));
-      writes.push({
-        seq: undefined,
-        turnId: id,
-        type: 'NarrationCompleted',
-        payload: { actionId, narration: result.narration },
-      });
-      writes.push({
-        seq: undefined,
-        turnId: id,
-        type: 'ActionAccepted',
-        payload: { actionId },
-      });
-      const nextSeq = this.seq + writes.length;
-      const committedGameState = result.state as {
-        gameEngine?: unknown;
-        characters?: unknown;
-      };
-      const nextState = {
-        ...this.state,
-        gameState:
-          committedGameState && typeof committedGameState === 'object'
-            ? {
-                ...(this.state.gameState &&
-                typeof this.state.gameState === 'object'
-                  ? this.state.gameState
-                  : {}),
-                ...committedGameState,
-              }
-            : result.state,
-      } as RoomState;
-      writes.push({
-        seq: undefined,
-        turnId: id,
-        type: 'GameStateCommitted',
-        payload: { gameState: nextState.gameState },
-      });
-      const snapshotState = {
-        ...nextState,
-        actionIds: [...this.actionIds, actionId],
-      };
-      const stored = await this.store.writeTurn(
-        this.sessionId,
-        writes,
-        snapshotState,
-        this.lease,
-        registryEvents,
-      );
-      this.seq = stored.events.at(-1)?.seq ?? nextSeq;
-      this.state = nextState;
-      this.actionIds.add(actionId);
-    }
-    this.pendingActions.delete(actionId);
+          type: 'NarrationCompleted',
+          payload: { actionId, narration: result.narration },
+        });
+        writes.push({
+          seq: undefined,
+          turnId: id,
+          type: 'ActionAccepted',
+          payload: { actionId },
+        });
+        const nextSeq = this.seq + writes.length;
+        let incoming = (
+          result.state && typeof result.state === 'object' ? result.state : {}
+        ) as Record<string, unknown>;
+        const live = this.state.gameState as
+          | Record<string, unknown>
+          | undefined;
+        // Combat that moved on while the DM was narrating is owned by the Room, not by the turn.
+        if (live && JSON.stringify(live.combatRoom ?? null) !== startCombat)
+          incoming = {
+            ...incoming,
+            combatRoom: live.combatRoom,
+            combatActors: live.combatActors,
+            characters: live.characters,
+            gameEngine: live.gameEngine,
+          };
+        const reconciled = this.combatRuntime.reconcile(incoming, Date.now());
+        const combatEvents = reconciled?.events ?? [];
+        const turnGameState = reconciled?.gameState ?? incoming;
+        for (const event of combatEvents)
+          writes.push({
+            seq: undefined,
+            turnId: id,
+            type: String(event.type),
+            payload: event,
+          });
+        const nextState = {
+          ...this.state,
+          gameState: settleEngine(turnGameState),
+        } as RoomState;
+        writes.push({
+          seq: undefined,
+          turnId: id,
+          type: 'GameStateCommitted',
+          payload: { gameState: nextState.gameState },
+        });
+        const snapshotState = {
+          ...nextState,
+          actionIds: [...this.actionIds, actionId],
+        };
+        const stored = await this.store.writeTurn(
+          this.sessionId,
+          writes,
+          snapshotState,
+          this.lease,
+          registryEvents,
+        );
+        this.seq = stored.events.at(-1)?.seq ?? nextSeq;
+        this.state = nextState;
+        this.actionIds.add(actionId);
+        const room = roomGameState(nextState);
+        if (room && combatEvents.length)
+          this.announceCombat(room, combatEvents, accountId);
+      }
+      this.pendingActions.delete(actionId);
+    });
   }
   submitCombatCommand(
     accountId: string,
@@ -505,7 +476,10 @@ export class Room {
       if (this.actionIds.has(actionId)) return false;
       const current = roomGameState(this.state);
       const gameState = this.state.gameState as
-        | { combatActors?: Record<string, string>; [key: string]: unknown }
+        | {
+            combatActors?: Record<string, string>;
+            characters?: Record<string, never>;
+          }
         | undefined;
       const actorId = gameState?.combatActors?.[accountId];
       if (!current || !actorId) {
@@ -517,57 +491,170 @@ export class Room {
         );
         return true;
       }
-      const result = this.combatRuntime.execute(current, actorId, command);
+      if (this.turnInFlight) {
+        this.sendError(
+          accountId,
+          'COMMAND_REJECTED',
+          'The DM is still narrating; try again in a moment.',
+          actionId,
+        );
+        return true;
+      }
+      const result = this.combatRuntime.execute(current, actorId, command, {
+        character: gameState?.characters?.[accountId],
+        now: Date.now(),
+      });
       if ('code' in result) {
         this.sendError(accountId, result.code, result.message, actionId);
         return true;
       }
       if (!result.events.length && !result.state.pendingReaction) {
         for (const message of result.messages ?? [])
-          this.sendCombatMessage(message.type, message.payload);
+          this.connections.get(accountId)?.send({
+            seq: this.seq,
+            type: message.type,
+            payload: message.payload,
+          } as ServerMessage);
         return true;
       }
-      const nextGameState = { ...gameState, combatRoom: result.state };
-      const writes = result.events.map((event) => ({
-        seq: undefined,
-        turnId: actionId,
-        type: String(event.type),
-        payload: event,
-      }));
-      writes.push({
-        seq: undefined,
-        turnId: actionId,
-        type: 'GameStateCommitted',
-        payload: { gameState: nextGameState },
-      });
-      const stored = await this.store.writeTurn(
-        this.sessionId,
-        writes,
-        {
-          ...this.state,
-          gameState: nextGameState,
-          actionIds: [...this.actionIds, actionId],
-        },
-        this.lease,
-      );
-      this.seq = stored.events.at(-1)?.seq ?? this.seq;
-      this.state = { ...this.state, gameState: nextGameState };
-      this.actionIds.add(actionId);
-      for (const message of result.messages ?? [])
-        this.sendCombatMessage(message.type, message.payload);
-      this.broadcast(trackerMessage(this.seq, result.state));
-      if (result.state.pendingReaction)
-        this.broadcast(reactionMessage(this.seq, result.state.pendingReaction));
+      await this.commitCombat(actionId, result, accountId, actionId);
       return true;
     });
   }
 
-  private sendCombatMessage(
-    type: string,
-    payload: Record<string, unknown>,
-  ): void {
-    this.broadcast({ seq: this.seq, type, payload } as ServerMessage);
+  /** Persist a combat transition atomically with its snapshot, then tell the table. */
+  private async commitCombat(
+    turnId: string,
+    result: CombatTransition,
+    accountId: string | undefined,
+    actionId?: string,
+  ): Promise<void> {
+    const gameState = settleEngine(
+      {
+        ...(this.state.gameState as Record<string, unknown> | undefined),
+        combatRoom: result.state,
+      },
+      result.slots,
+    );
+    const writes = result.events.map((event) => ({
+      seq: undefined,
+      turnId,
+      type: String(event.type),
+      payload: event,
+    }));
+    writes.push({
+      seq: undefined,
+      turnId,
+      type: 'GameStateCommitted',
+      payload: { gameState },
+    });
+    const actionIds = actionId
+      ? [...this.actionIds, actionId]
+      : [...this.actionIds];
+    const stored = await this.store.writeTurn(
+      this.sessionId,
+      writes,
+      { ...this.state, gameState, actionIds },
+      this.lease,
+    );
+    this.seq = stored.events.at(-1)?.seq ?? this.seq;
+    this.state = { ...this.state, gameState } as RoomState;
+    if (actionId) this.actionIds.add(actionId);
+    this.announceCombat(result.state, result.events, accountId);
   }
+
+  /** Broadcast what changed, arm the reaction deadline and queue the DM's narration. */
+  private announceCombat(
+    state: NonNullable<ReturnType<typeof roomGameState>>,
+    events: readonly Record<string, unknown>[],
+    accountId: string | undefined,
+  ): void {
+    if (events.length)
+      this.broadcast({
+        seq: this.seq,
+        type: 'CombatEvents',
+        payload: { events: [...events] },
+      } as ServerMessage);
+    const ended = events.find((event) => event.type === 'CombatEnded');
+    if (ended)
+      this.broadcast({
+        seq: this.seq,
+        type: 'CombatEnded',
+        payload: { outcome: ended.outcome },
+      } as ServerMessage);
+    this.broadcast(trackerMessage(this.seq, state));
+    if (state.pendingReaction)
+      this.broadcast(reactionMessage(this.seq, state.pendingReaction));
+    this.scheduleReaction();
+    const narrate = events.some((event) =>
+      ['MonsterPolicy', 'CombatEnded', 'ReactionResolved'].includes(
+        String(event.type),
+      ),
+    );
+    if (narrate && this.turnRunner) this.queueNarration(events, accountId);
+  }
+
+  /** The DM narrates what the engine already decided; it never decides outcomes. */
+  private queueNarration(
+    events: readonly Record<string, unknown>[],
+    accountId: string | undefined,
+  ): void {
+    const owner =
+      accountId ??
+      this.state.seats.find((seat) => seat.accountId)?.accountId ??
+      undefined;
+    if (!owner) return;
+    const facts = events
+      .filter((event) =>
+        [
+          'HpChanged',
+          'EntityMoved',
+          'CombatEnded',
+          'ReactionResolved',
+        ].includes(String(event.type)),
+      )
+      .slice(0, 12)
+      .map((event) => JSON.stringify(event));
+    const actionId = randomUUID();
+    this.pendingActions.add(actionId);
+    this.queuedActions.push({
+      accountId: owner,
+      actionId,
+      text: `[Combat resolved by the engine; narrate it, do not change it] ${facts.join(' ')}`,
+      playerName: 'Combat',
+    });
+    if (!this.turnInFlight) {
+      this.turnInFlight = true;
+      this.activeTurn = this.resolveQueuedTurns();
+      void this.activeTurn.catch(() => undefined);
+    }
+  }
+
+  private scheduleReaction(): void {
+    clearTimeout(this.reactionTimer);
+    this.reactionTimer = undefined;
+    const prompt = roomGameState(this.state)?.pendingReaction;
+    if (!prompt || !this.accepting) return;
+    this.reactionTimer = setTimeout(
+      () => {
+        this.reactionTimer = undefined;
+        void this.enqueue(() => this.declineExpiredReaction()).catch(
+          () => undefined,
+        );
+      },
+      Math.max(0, prompt.deadlineAt - Date.now()),
+    );
+    this.reactionTimer.unref?.();
+  }
+
+  private async declineExpiredReaction(): Promise<void> {
+    const current = roomGameState(this.state);
+    if (!current?.pendingReaction) return;
+    const result = this.combatRuntime.expire(current, Date.now());
+    if (!result) return this.scheduleReaction();
+    await this.commitCombat(randomUUID(), result, undefined);
+  }
+
   private sendError(
     accountId: string,
     code: string,
@@ -587,6 +674,7 @@ export class Room {
   }
   async drain(): Promise<void> {
     this.accepting = false;
+    clearTimeout(this.reactionTimer);
     await this.mailbox;
     await this.activeTurn;
     this.connections.clear();
