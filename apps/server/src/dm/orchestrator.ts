@@ -201,6 +201,7 @@ async function executeTool(
       'remove_condition',
       'start_combat',
       'end_combat',
+      'call_for_rest',
       'move_to',
       'suggest_area_target',
       'upsert_npc',
