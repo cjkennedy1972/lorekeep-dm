@@ -332,6 +332,8 @@ Four blocks, in this order. The first two form the **byte-stable prefix**: given
 | 3 | **Dynamic** — state projection (active PCs with HP/conditions/slots; in combat the order and engine `describe()` map text ≈ 350), registry facts for entities named in scope, last 6 turns verbatim, this round's inputs | every turn | 3,000 | no |
 | 4 | **Retrieved memory** — top-k scene summaries and registry entries matching the inputs | every turn | 600 | no |
 
+On resume, M2-27 assembles a “Previously on” recap from durable scene summaries and current registry facts; raw event/transcript rows are not required. The recap is bounded to 150 words and may be cached in the latest snapshot keyed by a stable hash of those inputs. Its text is quoted into the M2-20 retrieved-memory block, where it remains data rather than instructions. If the summary/recap endpoint is unavailable, the engine builds a deterministic recap from stored summaries, registry facts, and the latest available events without changing game state. Scene-summary calls are metered with purpose `summary` and use the configured guarded adapter.
+
 Total prompt target ≤ 8,400 tokens, hard cap 10,000. Over-cap is resolved by trimming in a fixed order, so the result is deterministic: (a) transcript 6 → 4 → 2 turns; (b) retrieved memory 600 → 300 → 0; (c) registry facts to the 5 most recently mentioned entities; (d) `describe()` to the terse verbosity level. If still over cap, the turn proceeds and logs `PromptOverBudget{turnId, tokens}` — truncating the state projection is never acceptable, since a model reasoning from a partial map is worse than a slow turn.
 
 **Byte-stability rules** (M2-20 must satisfy all four, asserted by `prompt.test.ts`):
