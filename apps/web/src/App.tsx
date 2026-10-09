@@ -6,6 +6,7 @@ import { OperatorSettings } from './screens/OperatorSettings';
 import { Login } from './screens/Login';
 import { Join } from './screens/Join';
 import { Lobby } from './screens/Lobby';
+import { Game } from './screens/Game';
 import { ForgotPassword, ResetPassword } from './screens/ResetPassword';
 import { Rooms } from './screens/Rooms';
 import { Signup } from './screens/Signup';
@@ -53,6 +54,7 @@ export function App() {
         <Route element={<RequireAuth />}>
           <Route path="rooms" element={<Rooms />} />
           <Route path="rooms/:id" element={<Lobby />} />
+          <Route path="rooms/:id/game" element={<Game />} />
           <Route path="join" element={<Join />} />
           <Route path="join/:code" element={<Join />} />
         </Route>

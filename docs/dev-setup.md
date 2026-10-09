@@ -36,6 +36,17 @@ All Postgres-backed server tests belong in `apps/server/test/db/`. They are inte
 
 `infra/docker-compose.yml` publishes Postgres on `127.0.0.1` only and uses the public default `lorekeep` credentials; it is for local development. Any real deployment must use non-default, secret credentials and a least-privilege application role (DML on application tables only; migrations run under a separate owner role). Never publish the database port on a reachable interface. CI uses a service container and is unaffected.
 
+## Browser e2e against the real server
+
+`apps/web/playwright.live.config.ts` runs a keyboard-only game-screen test against the real server (Room, Postgres, a scripted recorded-style DM, no network). It starts the server through `apps/server/vitest.live.config.ts` (seeds an adult account and a pre-combat table, writes the session token to `apps/web/test-results/live-state.json`) and Vite on port 5174 with a same-origin proxy to the server on 8799 (the server compares `Origin` with `Host`, so the proxy must not change the host).
+
+```
+docker exec infra-postgres-1 psql -U lorekeep -d postgres -c 'CREATE DATABASE lorekeep_e2e'   # private DB; the compose database is shared
+export DATABASE_URL=postgres://lorekeep:lorekeep@localhost:5432/lorekeep_e2e
+pnpm build && pnpm --filter @game/server migrate:up
+pnpm --filter @game/web exec playwright test -c playwright.live.config.ts
+```
+
 ## LLM endpoints and recorded replay
 
 Tests and local development need no LLM key: the server test suite and the golden-scenario tests run without network access.

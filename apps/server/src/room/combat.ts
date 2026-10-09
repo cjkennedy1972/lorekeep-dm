@@ -317,6 +317,15 @@ function defaultCatalog(): Catalog {
   return (cached ??= loadCatalog());
 }
 
+/** Engine events as the wire schema (EngineEventSchema) spells them. */
+export function toWireEvent(
+  event: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  if (event.type === 'SlotSpent' && event.level === undefined)
+    return { ...event, level: event.slotLevel };
+  return { ...event };
+}
+
 export function trackerMessage(
   seq: number,
   state: RoomCombatState,

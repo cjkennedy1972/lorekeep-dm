@@ -3,9 +3,23 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [react()],
+  // Browser e2e against the real server (playwright.live.config.ts): same-origin proxy.
+  server: process.env.LIVE_API_TARGET
+    ? {
+        proxy: {
+          // changeOrigin must stay false: the server compares Origin with Host.
+          '/api': { target: process.env.LIVE_API_TARGET, changeOrigin: false },
+          '/ws': {
+            target: process.env.LIVE_API_TARGET,
+            changeOrigin: false,
+            ws: true,
+          },
+        },
+      }
+    : undefined,
   test: {
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
-    exclude: ['e2e/**', 'dist/**', 'node_modules/**'],
+    exclude: ['e2e/**', 'e2e-live/**', 'dist/**', 'node_modules/**'],
   },
 });

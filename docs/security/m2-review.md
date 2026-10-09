@@ -8,7 +8,7 @@ printed or stored; no real endpoint was contacted.
 
 Severity: High = exploitable by an unprivileged user or breaks a stated guarantee; Medium = needs a
 privileged/seated actor or a missing control the spec expects; Low = hardening.
-Status: `open` = listed for follow-up (no fix in this PR). Fix tickets are proposed, not yet filed.
+Status: `fixed in this PR` = remediated by this change set; Low findings are deferred to M3 in the Disposition section.
 
 ## Summary
 
@@ -20,10 +20,10 @@ text never appeared unquoted in the model request (table below).
 
 | ID | Sev | Area | Location | Status |
 | --- | --- | --- | --- | --- |
-| F1 | Medium | Key handling | `apps/server/src/llm/config.ts:226-231,303-352` | open |
-| F2 | Medium | Prompt boundary | `apps/server/src/dm/orchestrator.ts:131-141,196-215`, `room/productionTurnRunner.ts:360` | open |
-| F3 | Medium | WS / cost | `apps/server/src/room/Room.ts:334,682`, `gateway/ws.ts:146-157,179-186` | open |
-| F4 | Medium | Key handling | `apps/server/src/llm/config.ts:47-60,100-148` | open |
+| F1 | Medium | Key handling | `apps/server/src/llm/config.ts:226-231,303-352` | fixed in this PR |
+| F2 | Medium | Prompt boundary | `apps/server/src/dm/orchestrator.ts:131-141,196-215`, `room/productionTurnRunner.ts:360` | fixed in this PR |
+| F3 | Medium | WS / cost | `apps/server/src/room/Room.ts:334,682`, `gateway/ws.ts:146-157,179-186` | fixed in this PR |
+| F4 | Medium | Key handling | `apps/server/src/llm/config.ts:47-60,100-148` | fixed in this PR |
 | F5 | Low | Operator surface | `apps/server/src/routes/operator.ts:46,78,97` | open |
 | F6 | Low | Key handling | `apps/server/src/llm/config.ts:233-235` | open |
 | F7 | Low | Audit | `apps/server/src/llm/config.ts:250-253,316-319`, `routes/operator.ts:63-76` | open |
@@ -138,3 +138,14 @@ emits the tool call the injection asks for. Run:
 
 Acceptance mapping: report lists findings with severity, evidence and a proposed fix (waiver reasons
 pending the human); no High findings; injection set shows zero state changes outside tool paths.
+
+
+## Disposition
+
+The five Low findings are deferred to M3; they are hardening work outside the four Medium remediations in this PR:
+
+- F5 — Defer operator-route Origin checks to the M3 CSRF hardening pass; existing cookie and content-type controls remain in place.
+- F6 — Defer key-fingerprint salting to M3 because it requires a separately reviewed fingerprint migration/compatibility decision; follow-up card **35a83577** is among these deferred lows.
+- F7 — Defer expanded audit details and denied-attempt auditing to M3's auditability work.
+- F8 — Defer host:port allow-list semantics and duplicate HTTP-check cleanup to M3's egress hardening work.
+- F9 — Defer quoting of session free-text fields to M3's prompt-boundary hardening pass.

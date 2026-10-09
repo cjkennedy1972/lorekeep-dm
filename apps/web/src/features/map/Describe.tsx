@@ -35,7 +35,8 @@ export function Describe({ store = gameStore, viewerId }: Props) {
     [state, activeId],
   );
   useEffect(() => store.subscribe(() => setState(store.getState())), [store]);
-  const turnKey = `${state.combat.round}:${activeId ?? ''}`;
+  // The map can arrive after the turn starts (combat begins mid-session): announce once it is known.
+  const turnKey = `${state.combat.round}:${activeId ?? ''}:${state.battlemap ? 'map' : 'nomap'}`;
   const [turnAnnouncement, setTurnAnnouncement] = useState('');
   useEffect(() => {
     if (!activeId || !state.battlemap) {

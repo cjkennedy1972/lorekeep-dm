@@ -12,11 +12,8 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
-import type {
-  LlmAdapter,
-  LlmChunk,
-  LlmRequest,
-} from '../../src/llm/adapter.js';
+import type { LlmRequest } from '../../src/llm/adapter.js';
+import { scriptedDm } from '../room/scriptedDm.js';
 import type { RoomCombatState } from '../../src/room/combat.js';
 import {
   bootstrapped,
@@ -37,50 +34,6 @@ const saved = {
 };
 let db: Pool;
 let stack: Stack | undefined;
-
-/** A recorded-style adapter: no network. START-COMBAT makes the "DM" call start_combat; unknownthing else narrates. */
-function scriptedDm(requests: LlmRequest[] = []): LlmAdapter {
-  return {
-    capabilities: () => ({
-      streaming: true,
-      nativeTools: true,
-      jsonSchema: true,
-    }),
-    probe: async () => true,
-    async *complete(request: LlmRequest) {
-      requests.push(request);
-      const sawTool = request.messages.some((m) => m.role === 'tool');
-      const asked = request.messages.some((message) => {
-        if (message.content.includes('START-COMBAT')) return true;
-        const encoded = message.content.match(
-          /<<<PLAYER_DATA encoding=base64>>>\s*([A-Za-z0-9+/=]+)\s*<<<END_PLAYER_DATA>>>/,
-        )?.[1];
-        return encoded
-          ? Buffer.from(encoded, 'base64')
-              .toString('utf8')
-              .includes('START-COMBAT')
-          : false;
-      });
-      const chunks: LlmChunk[] =
-        asked && !sawTool
-          ? [
-              {
-                type: 'tool-call',
-                id: 'call_start',
-                name: 'start_combat',
-                arguments: {
-                  enemies: [
-                    { monsterId: 'srd:monster/goblin-minion', count: 2 },
-                  ],
-                  ambushSide: 'party',
-                },
-              },
-            ]
-          : [{ type: 'text', delta: 'Steel rings out across the crypt.' }];
-      for (const chunk of chunks) yield chunk;
-    },
-  };
-}
 
 /** One server "process": registry + gateway. `restart` drops it (killing in-memory Rooms) and boots another. */
 class Stack {
@@ -177,9 +130,14 @@ class Client {
       }),
     );
   }
+  private lastSent = 0;
   /** Sends a combat command and resolves with its outcome: the next tracker, or the Error for that action. */
   async command(payload: Record<string, unknown>, retries = 40): Promise<Wire> {
     for (let attempt = 0; attempt < retries; attempt++) {
+      // Stay under the gateway's per-socket message rate limit (10/s sustained).
+      const wait = this.lastSent + 100 - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      this.lastSent = Date.now();
       const actionId = randomUUID();
       const mark = this.log.length;
       this.ws.send(
@@ -600,6 +558,43 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         (r) => r.type === 'ReactionResolved' && r.payload.used === false,
       ),
     ).toBe(true);
+  }, 20_000);
+
+  it('rejects a message flood immediately with RATE_LIMITED instead of queueing it', async () => {
+    stack = await Stack.boot('combat-flood');
+    const user = await newUser();
+    const table = await seedTable(stack, user, (account) => {
+      const b = bootstrapped();
+      return {
+        ...preCombatGame(),
+        characters: { [account]: hero },
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: b.state,
+      };
+    });
+    const client = await Client.open(stack, user, table);
+    const mark = client.log.length;
+    for (let i = 0; i < 200; i++)
+      client.ws.send(
+        JSON.stringify({
+          type: 'CombatCommand',
+          actionId: randomUUID(),
+          lastSeq: 0,
+          payload: { command: 'options' },
+        }),
+      );
+    await vi.waitFor(
+      () =>
+        expect(
+          client.log
+            .slice(mark)
+            .filter(
+              (m) => m.type === 'Error' && m.payload?.code === 'RATE_LIMITED',
+            ).length,
+        ).toBeGreaterThanOrEqual(150),
+      { timeout: 2000 },
+    );
+    client.close();
   }, 20_000);
 
   it('rejects illegal commands with no state change and keeps other accounts out', async () => {

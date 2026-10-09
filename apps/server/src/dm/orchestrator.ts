@@ -466,6 +466,26 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           continue;
         }
         attempts.set(callSite, attempt);
+        const combatOnlyTools: readonly string[] = [
+          'attack',
+          'cast_spell',
+          'apply_condition',
+          'remove_condition',
+          'end_combat',
+        ];
+        if (
+          input.prompt.activeMode !== 'combat' &&
+          combatOnlyTools.includes(call.name)
+        ) {
+          reject('unknown-tool', 'This tool is unavailable outside combat.');
+          retries++;
+          if (retries >= MAX_RETRIES_PER_TURN) {
+            makeFallback('budget-exhausted');
+            done = true;
+            break;
+          }
+          continue;
+        }
         if (call.name !== 'suggest_area_target' && call.name !== 'rules_lookup')
           toolCalls++;
         else if (call.name === 'rules_lookup') rulesLookups++;

@@ -251,6 +251,55 @@ describe('operator endpoint configuration', () => {
       await db.close();
     }
   });
+  it('rejects changing endpoint host or API style without replacing the saved key', async () => {
+    const db = await createTestDatabase();
+    const actorId = randomUUID();
+    try {
+      await db.pool.query(
+        `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
+      );
+      await db.pool.query(
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+      );
+      const egress = createEgressGuard({
+        resolver: async () => [{ address: '93.184.216.34', family: 4 }],
+        transport: async () => ({ status: 200, headers: {}, body: null }),
+      });
+      const base = {
+        model: 'm',
+        apiStyle: 'openai' as const,
+        apiKey: ['test-', 'credential-', 'value'].join(''),
+      };
+      await saveEndpoint(
+        db.pool,
+        'fast',
+        { ...base, baseUrl: 'https://one.example.test/v1' },
+        egress,
+        actorId,
+      );
+      await expect(
+        saveEndpoint(
+          db.pool,
+          'fast',
+          {
+            ...base,
+            apiKey: undefined,
+            baseUrl: 'https://two.example.test/v1',
+          },
+          egress,
+          actorId,
+        ),
+      ).rejects.toThrow('KEY_REQUIRED');
+      const saved = await db.pool.query(
+        'SELECT base_url FROM operator_endpoints WHERE slot=$1',
+        ['fast'],
+      );
+      expect(saved.rows[0]?.base_url).toBe('https://one.example.test/v1');
+    } finally {
+      await db.close();
+    }
+  });
+
   it('rejects unsafe save URLs before network access', async () => {
     const guard = createEgressGuard({
       resolver: async () => [{ address: '127.0.0.1', family: 4 }],
