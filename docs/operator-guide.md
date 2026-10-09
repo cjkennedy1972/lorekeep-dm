@@ -10,9 +10,10 @@ For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-p
 | `OPERATOR_EMAILS` | Comma-separated emails of accounts allowed to use `/api/operator/*`. Empty means nobody. Everyone else gets `404 NOT_FOUND`. |
 | `OPERATOR_ENDPOINT_MASTER_KEY` | AES-256-GCM key for stored endpoint API keys: 32 bytes as 64 hex chars or base64, or a keyring `id:key,id:key`. Required when `NODE_ENV=production`; outside production a fixed development key is used, so never reuse a development database in production. |
 | `OPERATOR_ENDPOINT_ACTIVE_KEY_ID` | Keyring entry used for new writes (default: last entry). |
-| `LLM_ALLOW_LOCAL_HOSTS` | Comma-separated exact hosts allowed to be loopback/private and to use plain `http` (section 3). Default empty. |
+| `LLM_ALLOW_LOCAL_HOSTS` | Comma-separated exact hosts allowed to be loopback/private and to use plain `http` (section 2). Default empty. |
 | `SOLO_TURN_ENDPOINT_SLOT` | Slot used for solo turns: `fast`, `frontier`, or `moderate` (default `moderate`). |
-| `LLM_FIXTURE_MODE`, `LLM_FIXTURE_PATH` | Recorded-LLM mode and file (section 5). |
+| `AGE_RETRY_SECRET` | Required when `NODE_ENV=production` (the server refuses to start without it), together with `OPERATOR_EMAILS` and `OPERATOR_ENDPOINT_MASTER_KEY`. |
+| `LLM_FIXTURE_MODE`, `LLM_FIXTURE_PATH` | Recorded-LLM mode and file (section 4). |
 
 Generate a master key locally (output is a secret; put it in your secret manager, not in the repo):
 
@@ -22,14 +23,14 @@ openssl rand -hex 32
 
 ## 2. Configure an endpoint
 
-Endpoints live in three slots: `fast`, `frontier`, `moderate`. All calls need a session cookie for an operator account (log in through the app or `POST /api/login`). Routes:
+Endpoints live in three slots: `fast`, `frontier`, `moderate`. All calls need a session cookie for an operator account (log in through the app or save one with `curl -c cookies.txt -X POST http://localhost:3000/api/login -H 'content-type: application/json' -d '{"email":"<operator-email>","password":"<password>"}'`). On a fresh local database, `POST /api/signup` creates a `pending_email` account and the development mail sender never prints the verification token, so activate it directly: `docker exec infra-postgres-1 psql -U lorekeep -c "update accounts set status='active' where email='<operator-email>'"`. Routes:
 
 | Method and path | Effect |
 | --- | --- |
 | `GET /api/operator/endpoints` | List slots. Never returns the key: only `keySet` and a 12-hex `keyFingerprint`. |
-| `PUT /api/operator/endpoints/:slot` | Save, then run the probe; returns the saved config with `probe`. |
-| `POST /api/operator/endpoints/:slot/test` | Re-run the probe on the saved config. |
-| `DELETE /api/operator/endpoints/:slot` | Remove the slot. |
+| `PUT /api/operator/endpoints/:slot` | Save the config; returns it with `"probe": null`. Saving does not call the endpoint: run the test route next. |
+| `POST /api/operator/endpoints/:slot/test` | Run the probe on the saved config and store the result (shown as `probe` by `GET`). |
+| `DELETE /api/operator/endpoints/:slot` | Remove the slot: `200 {"deleted":true}`, or `404 NOT_FOUND` if the slot is empty. A slot other than `fast`, `frontier`, `moderate` returns `400 INVALID_SLOT`. |
 
 Body for `PUT` (unknown fields are rejected): `baseUrl`, `model`, `apiStyle` (`openai` or `anthropic`), optional `apiKey` (write-only), `contextWindow`, `unsupportedToolSchemaKeywords` (default `[]`; metadata only today, see the egress runbook).
 
@@ -37,7 +38,7 @@ Config changes apply from the next DM turn; a turn already running finishes on t
 
 ### Hosted OpenAI-compatible endpoint
 
-`https` on port 443 only; no `LLM_ALLOW_LOCAL_HOSTS` entry needed.
+`https` on port 443 only; no `LLM_ALLOW_LOCAL_HOSTS` entry needed. The host must resolve in DNS when you save: the placeholder `api.example.com` below does not resolve and returns `400 INVALID_ENDPOINT_URL`, so substitute your provider's real host.
 
 ```sh
 curl -sS -b cookies.txt -X PUT http://localhost:3000/api/operator/endpoints/moderate \
@@ -54,7 +55,7 @@ pnpm --filter @game/server build
 LLM_ALLOW_LOCAL_HOSTS=localhost node apps/server/dist/main.js
 ```
 
-then save the slot with `"baseUrl":"http://localhost:11434/v1"`, `"apiStyle":"openai"`, and no `apiKey` if the server needs none. For a LAN host use its exact address (`LLM_ALLOW_LOCAL_HOSTS=172.31.25.75`); there is no subnet wildcard. Cloud metadata addresses (`169.254.169.254` and similar) are blocked even when listed. A disallowed URL returns `400 INVALID_ENDPOINT_URL`.
+then save the slot with `"baseUrl":"http://localhost:11434/v1"`, `"apiStyle":"openai"`, `"contextWindow":32768` (without it the probe reports the 32k check as unsupported: `context window not configured`), and no `apiKey` if the server needs none, then `POST .../moderate/test`. A host that is not listed, such as `127.0.0.2` here, returns `400 INVALID_ENDPOINT_URL`. For a LAN host use its exact address (`LLM_ALLOW_LOCAL_HOSTS=172.31.25.75`); there is no subnet wildcard. Cloud metadata addresses (`169.254.169.254` and similar) are blocked even when listed. A disallowed URL returns `400 INVALID_ENDPOINT_URL`.
 
 ## 3. Read the probe result
 
@@ -77,8 +78,8 @@ A recording is an NDJSON file of prompt hashes and responses (`apps/server/src/l
 
 | `LLM_FIXTURE_MODE` | Behavior |
 | --- | --- |
-| `strict` (default) | Replay. Any prompt-hash drift throws with expected and actual hashes and tool names. |
-| `lenient` | Replay; drift is logged as a warning instead of failing. |
+| `strict` (default) | Replay. Any prompt-hash drift throws with expected and actual hashes and tool names; in a live turn the DM falls back to a generic "the storyteller has lost the thread" narration. |
+| `lenient` | Replay; drift does not fail the turn (the adapter's `warn` hook reports it, but the server's turn runner does not wire it, so nothing is logged today). |
 | `record` | Calls the configured endpoint and appends request hash and response to `LLM_FIXTURE_PATH` (default `fixtures/solo-turn.ndjson`). Requires `NODE_ENV` of `development` or `test`. |
 
 `lenient` and `record` are refused when `NODE_ENV=production`. Recordings redact `Bearer` tokens in text, but review a fixture before committing it. Fixture turn seeds are fixed in fixture modes; real turns draw a 64-bit seed from the OS CSPRNG, and the seed is never put in a prompt.
@@ -92,7 +93,9 @@ NODE_ENV=development LLM_FIXTURE_MODE=record LLM_FIXTURE_PATH=fixtures/solo-turn
 LLM_FIXTURE_MODE=strict LLM_FIXTURE_PATH=fixtures/solo-turn.ndjson node apps/server/dist/main.js
 ```
 
-Re-record when prompts change intentionally. CI never records.
+A fixture replays only when the prompt is byte-identical. The prompt contains table and character ids, so a fixture recorded on one table drifts on a different one: `strict` then falls back to the generic narration and `lenient` replays the recorded text. Re-record when prompts change intentionally. CI never records.
+
+To trigger the recorded turn on a live server, create a table (`POST /api/tables`), request a ticket (`POST /api/ws-ticket` with `{"sessionId":"<table id>"}`), open `/ws?ticket=<ticket>` and send `{"type":"PlayerAction","actionId":"<uuid>","lastSeq":0,"payload":{"text":"Look at the old door."}}`; the fixture file appears after the first turn. The fixture path is relative to the server's working directory.
 
 ## 5. Tests and evals
 
