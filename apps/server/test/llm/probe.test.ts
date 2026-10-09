@@ -20,6 +20,8 @@ type Behavior =
   | 'server-error';
 
 class FakeEndpoint implements LlmAdapter {
+  readonly maxTokens: number[] = [];
+
   constructor(private readonly behavior: Behavior) {}
 
   capabilities(): LlmCapabilities {
@@ -31,6 +33,7 @@ class FakeEndpoint implements LlmAdapter {
   }
 
   async *complete(request: LlmRequest): AsyncIterable<LlmChunk> {
+    this.maxTokens.push(request.maxTokens);
     if (this.behavior === 'timeout') {
       throw new LlmEndpointError('endpoint-timeout', 'private timeout details');
     }
@@ -96,7 +99,8 @@ const options = {
 describe('endpoint capability probe', () => {
   it('selects native tools and persists capability facts, unqualified', async () => {
     let persisted: unknown;
-    const profile = await probeEndpoint(new FakeEndpoint('native'), {
+    const adapter = new FakeEndpoint('native');
+    const profile = await probeEndpoint(adapter, {
       ...options,
       persist: (value) => {
         persisted = value;
@@ -106,6 +110,8 @@ describe('endpoint capability probe', () => {
     expect(profile.capabilities.nativeTools.supported).toBe(true);
     expect(profile.capabilities.contextWindow32k.supported).toBe(true);
     expect(profile.capabilities.streaming.supported).toBe(true);
+    expect(profile.capabilities.streaming.detail).toBeUndefined();
+    expect(adapter.maxTokens).toEqual([2_048, 2_048, 2_048, 2_048]);
     expect(profile.ttftMs).not.toBeNull();
     expect(profile.qualified).toBe(false);
     expect(persisted).toEqual(profile);

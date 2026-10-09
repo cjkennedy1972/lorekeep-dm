@@ -352,6 +352,8 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
               );
             }
             const delta = choice.delta;
+            // Only the provider's content channel is player-facing narration.
+            // Ignore reasoning fields (and null content) entirely.
             if (typeof delta.content === 'string' && delta.content.length) {
               yield { type: 'text', delta: delta.content };
             }

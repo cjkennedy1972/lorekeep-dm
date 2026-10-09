@@ -1,0 +1,8 @@
+data: {"choices":[{"index":0,"delta":{"content":null,"reasoning":"I will format the requested object."}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":"{\"scenarioId\":\"scenario-00\",\"accepted\":true}"},"finish_reason":"stop"}]}
+
+data: {"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":19}}
+
+data: [DONE]
+

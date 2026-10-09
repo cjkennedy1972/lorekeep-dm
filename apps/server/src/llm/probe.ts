@@ -162,7 +162,10 @@ async function testMode(
               content: `Return scenarioId ${id} and accepted=true using the requested response mechanism.`,
             },
           ],
-          maxTokens: 32,
+          // Reasoning-capable models may spend substantial output budget before
+          // emitting the requested call. Reasoning deltas are intentionally not
+          // surfaced as text; leave enough room for the structured result.
+          maxTokens: 2_048,
           toolMode: mode,
           signal,
           ...(mode === 'native'
@@ -226,7 +229,9 @@ export async function probeEndpoint(
     reachability: fact(native.reachable || structured.reachable),
     streaming: fact(
       native.streaming || structured.streaming,
-      'no response chunks received',
+      native.streaming || structured.streaming
+        ? undefined
+        : 'no response chunks received',
     ),
     nativeTools: fact(
       nativeOk,
