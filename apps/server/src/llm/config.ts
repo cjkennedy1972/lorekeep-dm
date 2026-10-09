@@ -49,7 +49,7 @@ function masterKey(raw = process.env.OPERATOR_ENDPOINT_MASTER_KEY): {
   id: string;
   key: Buffer;
 } {
-  if (!raw && process.env.NODE_ENV === 'production')
+  if (!raw && !['development', 'test'].includes(process.env.NODE_ENV ?? ''))
     throw new Error('Endpoint encryption key unavailable');
   if (!raw)
     return {
@@ -146,6 +146,13 @@ export function decryptEndpointKey(
             : Buffer.from(encoded ?? '', 'base64'),
         };
       });
+    if (
+      id === 'dev' &&
+      (rawMasterKey ||
+        process.env.OPERATOR_ENDPOINT_MASTER_KEY ||
+        !['development', 'test'].includes(process.env.NODE_ENV ?? ''))
+    )
+      throw new Error();
     const selected = keys.find((item) => item.id === id);
     if (!selected || selected.key.length !== 32) throw new Error();
     const decipher = createDecipheriv(
@@ -220,13 +227,25 @@ export async function saveEndpoint(
   try {
     await client.query('BEGIN');
     const prior = await client.query(
-      'SELECT encrypted_key FROM operator_endpoints WHERE slot=$1 FOR UPDATE',
+      'SELECT encrypted_key,base_url,api_style FROM operator_endpoints WHERE slot=$1 FOR UPDATE',
       [slot],
     );
+    const priorRow = prior.rows[0];
+    const endpointChanged = Boolean(
+      priorRow &&
+        (String(priorRow.base_url) !== config.baseUrl ||
+          String(priorRow.api_style) !== config.apiStyle),
+    );
+    if (
+      endpointChanged &&
+      config.apiKey === undefined &&
+      priorRow?.encrypted_key
+    )
+      throw new Error('KEY_REQUIRED');
     const keyValue =
       config.apiKey === undefined
-        ? prior.rows[0]?.encrypted_key
-          ? decryptEndpointKey(String(prior.rows[0].encrypted_key), master)
+        ? priorRow?.encrypted_key
+          ? decryptEndpointKey(String(priorRow.encrypted_key), master)
           : ''
         : config.apiKey;
     const encrypted = keyValue ? encryptEndpointKey(keyValue, master) : null;

@@ -108,6 +108,41 @@ describe('Room solo DM turn lifecycle', () => {
     expect(latestSnapshot()?.state).toMatchObject({ actionIds: [actionId] });
   });
 
+  it('rejects actions beyond the per-seat in-flight queue cap', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runner: SoloTurnRunner = {
+      async run() {
+        await gate;
+        return result as never;
+      },
+    };
+    const { room } = setup(runner);
+    const accountId = randomUUID();
+    const messages: { type: string; payload?: { code?: string } }[] = [];
+    await room.join(accountId, {
+      send: (message) => messages.push(message as (typeof messages)[number]),
+    });
+    expect(await room.submitAction(accountId, randomUUID(), 'one')).toBe(true);
+    expect(await room.submitAction(accountId, randomUUID(), 'two')).toBe(true);
+    expect(await room.submitAction(accountId, randomUUID(), 'three')).toBe(
+      true,
+    );
+    expect(await room.submitAction(accountId, randomUUID(), 'four')).toBe(
+      false,
+    );
+    expect(
+      messages.some(
+        (message) =>
+          message.type === 'Error' &&
+          message.payload?.code === 'ACTION_REJECTED',
+      ),
+    ).toBe(true);
+    release();
+  });
+
   it('allows a later retry after an endpoint failure without persisting action state', async () => {
     let calls = 0;
     const runner: SoloTurnRunner = {

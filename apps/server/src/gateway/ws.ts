@@ -18,6 +18,22 @@ import {
 import { ConnectionRegistry } from './connections.js';
 
 const MAX_BYTES = 64 * 1024;
+const MESSAGE_BUCKET_CAPACITY = 20;
+const MESSAGE_REFILL_PER_SECOND = 10;
+export function consumeMessageToken(
+  bucket: { tokens: number; updatedAt: number },
+  now = Date.now(),
+): boolean {
+  bucket.tokens = Math.min(
+    MESSAGE_BUCKET_CAPACITY,
+    bucket.tokens +
+      (Math.max(0, now - bucket.updatedAt) * MESSAGE_REFILL_PER_SECOND) / 1000,
+  );
+  bucket.updatedAt = now;
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  return true;
+}
 export function installGateway(
   app: ReturnType<typeof createApp>,
   db: Pool,
@@ -176,11 +192,28 @@ export function installGateway(
         // One chain per socket: messages are handled strictly in arrival order, including the
         // async part of PlayerAction, so two quick actions cannot reach the Room swapped.
         let chain: Promise<unknown> = Promise.resolve();
+        const messageBucket = {
+          tokens: MESSAGE_BUCKET_CAPACITY,
+          updatedAt: Date.now(),
+        };
         const dispatch = (data: import('ws').RawData) => {
           chain = chain
             .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
-              if (ws.readyState === WebSocket.OPEN) return handle(data);
+              if (ws.readyState === WebSocket.OPEN) {
+                if (!consumeMessageToken(messageBucket)) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many messages.',
+                    },
+                  });
+                  return;
+                }
+                return handle(data);
+              }
             })
             .catch(() => {});
         };
