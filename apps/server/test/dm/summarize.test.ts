@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  LlmAdapter,
-  LlmChunk,
-} from '../../src/llm/adapter.js';
+import type { LlmAdapter, LlmChunk } from '../../src/llm/adapter.js';
 import {
   buildRecap,
   assembleDeterministicRecap,
