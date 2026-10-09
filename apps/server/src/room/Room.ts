@@ -31,10 +31,12 @@ export class Room {
   private readonly turnRunner?: SoloTurnRunner;
   private turnInFlight = false;
   private readonly pendingActions = new Set<string>();
+  private activeTurn: Promise<void> = Promise.resolve();
   private readonly queuedActions: {
     accountId: string;
     actionId: string;
     text: string;
+    playerName: string;
   }[] = [];
   readonly sessionId: string;
   state: RoomState;
@@ -214,6 +216,7 @@ export class Room {
     accountId: string,
     actionId: string,
     text: string,
+    playerName?: string,
   ): Promise<boolean> {
     return this.enqueue(async () => {
       const seat = this.state.seats.find(
@@ -229,10 +232,16 @@ export class Room {
         type: 'ActionQueued',
         payload: { actionId },
       } as ServerMessage);
-      this.queuedActions.push({ accountId, actionId, text });
+      this.queuedActions.push({
+        accountId,
+        actionId,
+        text,
+        playerName: playerName ?? seat.displayName,
+      });
       if (!this.turnInFlight) {
         this.turnInFlight = true;
-        void this.resolveQueuedTurns();
+        this.activeTurn = this.resolveQueuedTurns();
+        void this.activeTurn.catch(() => undefined);
       }
       return true;
     });
@@ -248,7 +257,12 @@ export class Room {
         payload: { actionId: action.actionId },
       } as ServerMessage);
       try {
-        await this.resolveTurn(action.accountId, action.actionId, action.text);
+        await this.resolveTurn(
+          action.accountId,
+          action.actionId,
+          action.text,
+          action.playerName,
+        );
       } catch {
         this.pendingActions.delete(action.actionId);
       }
@@ -260,6 +274,7 @@ export class Room {
     accountId: string,
     actionId: string,
     text: string,
+    playerName: string,
   ): Promise<void> {
     const result = await this.turnRunner!.run(
       {
@@ -268,6 +283,7 @@ export class Room {
         actionId,
         text,
         state: this.state.gameState ?? this.state,
+        playerName,
       },
       (event) => {
         const type = event.type;
@@ -327,7 +343,23 @@ export class Room {
         payload: { actionId },
       });
       const nextSeq = this.seq + writes.length;
-      const nextState = { ...this.state, gameState: result.state };
+      const committedGameState = result.state as {
+        gameEngine?: unknown;
+        characters?: unknown;
+      };
+      const nextState = {
+        ...this.state,
+        gameState:
+          committedGameState && typeof committedGameState === 'object'
+            ? committedGameState
+            : result.state,
+      } as RoomState;
+      writes.push({
+        seq: undefined,
+        turnId: id,
+        type: 'GameStateCommitted',
+        payload: { gameState: nextState.gameState },
+      });
       const snapshotState = {
         ...nextState,
         actionIds: [...this.actionIds, actionId],
@@ -351,6 +383,7 @@ export class Room {
   async drain(): Promise<void> {
     this.accepting = false;
     await this.mailbox;
+    await this.activeTurn;
     this.connections.clear();
   }
 }

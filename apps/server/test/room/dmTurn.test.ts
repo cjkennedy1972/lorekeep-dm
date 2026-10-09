@@ -103,6 +103,7 @@ describe('Room solo DM turn lifecycle', () => {
       'RollEvent',
       'NarrationCompleted',
       'ActionAccepted',
+      'GameStateCommitted',
     ]);
     expect(latestSnapshot()?.state).toMatchObject({ actionIds: [actionId] });
   });

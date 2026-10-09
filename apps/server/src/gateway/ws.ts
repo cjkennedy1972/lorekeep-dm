@@ -205,11 +205,18 @@ export function installGateway(
               });
               return;
             }
-            void room
-              .submitAction(
-                identity.accountId,
-                action.data.actionId,
-                action.data.payload.text,
+            void db
+              .query<{ display_name: string }>(
+                'SELECT display_name FROM accounts WHERE id=$1',
+                [identity.accountId],
+              )
+              .then((name) =>
+                room.submitAction(
+                  identity.accountId,
+                  action.data.actionId,
+                  action.data.payload.text,
+                  name.rows[0]?.display_name ?? identity.accountId,
+                ),
               )
               .then((accepted) => {
                 if (!accepted)

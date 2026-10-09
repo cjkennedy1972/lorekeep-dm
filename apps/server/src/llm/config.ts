@@ -264,6 +264,42 @@ export async function saveEndpoint(
     client.release();
   }
 }
+export async function createConfiguredAdapter(
+  db: Pick<Pool, 'query'>,
+  slot: EndpointSlot,
+  egress: EgressGuard,
+  master?: string,
+) {
+  const result = await db.query(
+    'SELECT base_url,model,api_style,encrypted_key,unsupported_tool_schema_keywords FROM operator_endpoints WHERE slot=$1',
+    [slot],
+  );
+  const row = result.rows[0];
+  if (!row)
+    throw new Error('Solo turns require a configured operator endpoint');
+  const apiKey = row.encrypted_key
+    ? new Secret(decryptEndpointKey(String(row.encrypted_key), master))
+    : undefined;
+  return row.api_style === 'anthropic'
+    ? new AnthropicMessagesAdapter({
+        baseUrl: String(row.base_url),
+        model: String(row.model),
+        apiKey,
+        egress,
+      })
+    : new OpenAICompatibleAdapter({
+        baseUrl: String(row.base_url),
+        model: String(row.model),
+        apiKey,
+        egress,
+        unsupportedToolSchemaKeywords: Array.isArray(
+          row.unsupported_tool_schema_keywords,
+        )
+          ? row.unsupported_tool_schema_keywords.map(String)
+          : [],
+      });
+}
+
 export async function testEndpoint(
   db: Pool,
   slot: EndpointSlot,

@@ -27,7 +27,8 @@
     "pg": "8.16.3",
     "pino": "9.14.0",
     "ws": "8.18.3",
-    "zod": "4.1.12"
+    "zod": "4.1.12",
+    "@game/rules-engine": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.0.0",

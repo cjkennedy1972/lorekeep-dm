@@ -7,6 +7,7 @@ export interface SoloTurnRequest {
   actionId: string;
   text: string;
   state: unknown;
+  playerName?: string;
 }
 
 /** Runtime-specific prompt, endpoint, and engine bindings stay outside the Room actor. */

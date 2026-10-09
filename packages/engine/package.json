@@ -6,7 +6,8 @@
   "exports": {
     ".": "./dist/index.js",
     "./catalog-node": "./dist/catalog-node.js",
-    "./scripted-node": "./dist/scripted-node.js"
+    "./scripted-node": "./dist/scripted-node.js",
+    "./room-tools": "./dist/room-tools.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

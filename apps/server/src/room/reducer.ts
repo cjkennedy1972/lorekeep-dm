@@ -12,6 +12,10 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       return state;
     return RoomStateSchema.parse({ ...state, seats: [...state.seats, seat] });
   }
+  if (event.type === 'GameStateCommitted') {
+    const payload = event.payload as { gameState: unknown };
+    return RoomStateSchema.parse({ ...state, gameState: payload.gameState });
+  }
   if (event.type === 'PresenceChanged') {
     const payload = event.payload as {
       seatId: string;
