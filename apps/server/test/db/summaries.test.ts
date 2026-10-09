@@ -12,6 +12,16 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
   beforeAll(async () => {
     database = await createTestDatabase({ extraSearchPath: ['public'] });
     await database.pool.query('CREATE TABLE sessions (id uuid PRIMARY KEY)');
+    await database.pool.query(`CREATE TABLE events (
+      session_id uuid NOT NULL REFERENCES sessions(id),
+      seq bigint NOT NULL,
+      turn_id uuid NOT NULL,
+      type text NOT NULL,
+      payload jsonb NOT NULL,
+      ts timestamptz NOT NULL DEFAULT now(),
+      expires_at timestamptz,
+      PRIMARY KEY (session_id, seq)
+    )`);
     await database.pool.query('INSERT INTO sessions(id) VALUES ($1)', [
       sessionId,
     ]);
