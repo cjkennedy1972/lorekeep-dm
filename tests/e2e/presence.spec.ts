@@ -19,20 +19,24 @@ test('two verified accounts join one room and observe synced presence', async ()
   const a = await connectRoom(server.url, room.id, first);
   const b = await connectRoom(server.url, room.id, second);
   try {
+    const baselineA = Math.max(0, ...a.messages.map((m) => Number(m.seq) || 0));
+    const baselineB = Math.max(0, ...b.messages.map((m) => Number(m.seq) || 0));
     const [forA, forB] = await Promise.all([
       a.waitFor(
         (m) =>
           m.type === 'PresenceChanged' &&
-          (m.payload as { presence?: string }).presence === 'online',
+          (m.payload as { presence?: string }).presence === 'online' &&
+          Number(m.seq) > baselineA,
       ),
       b.waitFor(
         (m) =>
           m.type === 'PresenceChanged' &&
-          (m.payload as { presence?: string }).presence === 'online',
+          (m.payload as { presence?: string }).presence === 'online' &&
+          Number(m.seq) > baselineB,
       ),
     ]);
-    expect(forA.seq).toBeGreaterThan(0);
-    expect(forB.seq).toBeGreaterThan(0);
+    expect(forA.seq).toBeGreaterThan(baselineA);
+    expect(forB.seq).toBeGreaterThan(baselineB);
     const stateA = await a.waitFor((m) => m.type === 'StateSync');
     const stateB = await b.waitFor((m) => m.type === 'StateSync');
     expect(
