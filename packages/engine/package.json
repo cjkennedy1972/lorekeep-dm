@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "calibrate:adventure01": "tsc -p tsconfig.json && nice -n 10 node dist/calibration/adventure01.js 300",
     "calibrate:solo": "tsc -p tsconfig.json && nice -n 10 node dist/calibration/cli.js regenerate --workers 1 --date $(date +%F)",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",

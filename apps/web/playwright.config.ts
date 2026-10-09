@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const crossBrowser = /(sandbox-combat|cross-browser|axe)\.spec\.ts$/;
+const crossBrowser =
+  /(sandbox-combat|cross-browser|axe|adventure-maps)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: './e2e',
