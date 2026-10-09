@@ -74,11 +74,29 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
     const facts = await database!.pool.query(
       'SELECT id, fact, supersedes_id, superseded_by FROM registry_facts ORDER BY id',
     );
-    expect(facts.rows).toHaveLength(3);
-    expect(facts.rows[0].superseded_by).toBe(facts.rows[1].id);
+    // v1 holds the original fact; v2 carries it forward and adds the replacement;
+    // game B has its own unrelated fact.
+    expect(facts.rows.map((row) => row.fact)).toEqual([
+      'Guards the silver archive.',
+      'Guards the silver archive.',
+      'Now trusts the party.',
+      'Has a different secret history.',
+    ]);
+    // The replacement supersedes the live (v2) copy, which continues the v1 original:
+    // the whole history can be walked back to the first version.
     expect(facts.rows[1].supersedes_id).toBe(facts.rows[0].id);
     expect(facts.rows[1].superseded_by).toBe(facts.rows[2].id);
-    expect(facts.rows[2].supersedes_id).toBe(facts.rows[0].id);
+    expect(facts.rows[2].supersedes_id).toBe(facts.rows[1].id);
+    expect(facts.rows[2].superseded_by).toBeNull();
+    // The only current fact for game A is the replacement.
+    const currentFacts = await database!.pool.query(
+      `SELECT f.fact FROM registry_facts f JOIN registry_entries e ON e.id = f.entry_id
+        WHERE e.session_id = $1 AND e.superseded_by IS NULL AND f.superseded_by IS NULL`,
+      [gameA],
+    );
+    expect(currentFacts.rows.map((row) => row.fact)).toEqual([
+      'Now trusts the party.',
+    ]);
     expect(
       await memory.mentionedFacts(
         gameA,
