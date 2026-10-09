@@ -17,7 +17,10 @@ export interface LatestState {
 }
 
 export class Persistence {
-  constructor(private readonly pool: Pool) {}
+  readonly db: Pool;
+  constructor(private readonly pool: Pool) {
+    this.db = pool;
+  }
 
   private async transaction<T>(
     sessionId: string,

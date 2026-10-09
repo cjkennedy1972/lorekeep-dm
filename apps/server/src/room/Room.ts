@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { RoomState, ServerMessage } from '@game/schema';
+import {
+  RoomStateSchema,
+  type RoomState,
+  type ServerMessage,
+} from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
+import type { Pool } from 'pg';
 import type {
   EventInput,
   LatestState,
@@ -13,6 +18,7 @@ import type { SoloTurnRunner } from './dmTurn.js';
 
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
+  db?: Pick<Pool, 'query' | 'connect'>;
   persistRegistryEvents?(
     sessionId: string,
     events: readonly RegistryEvent[],
@@ -209,6 +215,53 @@ export class Room {
       }
     });
   }
+  /** Persist initial or lifecycle game metadata in a lease-fenced room snapshot. */
+  persistGameState(gameState: unknown): Promise<void> {
+    return this.enqueue(async () => {
+      const nextState = RoomStateSchema.parse({ ...this.state, gameState });
+      const stored = await this.store.writeTurn(
+        this.sessionId,
+        [
+          {
+            seq: this.seq + 1,
+            turnId: randomUUID(),
+            type: 'GameStateCommitted',
+            payload: { gameState },
+          },
+        ],
+        nextState,
+        this.lease,
+      );
+      this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
+      this.state = nextState;
+    });
+  }
+
+  persistRecap(recap: { recap: string; memoryHash: string }): Promise<void> {
+    return this.enqueue(async () => {
+      const gameState = {
+        ...((this.state.gameState as Record<string, unknown>) ?? {}),
+        recap,
+      };
+      const nextState = RoomStateSchema.parse({ ...this.state, gameState });
+      const stored = await this.store.writeTurn(
+        this.sessionId,
+        [
+          {
+            seq: this.seq + 1,
+            turnId: randomUUID(),
+            type: 'GameStateCommitted',
+            payload: { gameState },
+          },
+        ],
+        nextState,
+        this.lease,
+      );
+      this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
+      this.state = nextState;
+    });
+  }
+
   /** Persist validated registry tool events through the room actor and lease-fenced store. */
   persistRegistry(events: readonly RegistryEvent[]): Promise<void> {
     return this.enqueue(async () => {
@@ -395,7 +448,13 @@ export class Room {
         ...this.state,
         gameState:
           committedGameState && typeof committedGameState === 'object'
-            ? committedGameState
+            ? {
+                ...(this.state.gameState &&
+                typeof this.state.gameState === 'object'
+                  ? this.state.gameState
+                  : {}),
+                ...committedGameState,
+              }
             : result.state,
       } as RoomState;
       writes.push({

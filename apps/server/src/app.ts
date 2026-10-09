@@ -1,10 +1,11 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import pino, { type DestinationStream } from 'pino';
 import { startSpan } from './telemetry.js';
 import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerSessionRoutes } from './routes/sessions.js';
+import { registerTableRoutes } from './routes/tables.js';
 import { retentionHealth } from './retention/sweeper.js';
 import { registerUsageRoutes } from './llm/usageRoutes.js';
 import { registerOperatorRoutes } from './routes/operator.js';
@@ -112,7 +113,7 @@ export function createApp(
     );
     registerUsageRoutes(app, db as Pool, options.isOperator);
     registerOperatorRoutes(app, db as Pool, options.isOperator);
-    if (options.rooms)
+    if (options.rooms) {
       registerSessionRoutes(
         app,
         db as Pool,
@@ -120,6 +121,12 @@ export function createApp(
         options.joinRateLimit,
         options.roomLimits,
       );
+      registerTableRoutes(
+        app as unknown as FastifyInstance,
+        db as Pool,
+        options.rooms as Pick<RoomRegistry, 'get'>,
+      );
+    }
   }
   app.get('/healthz', async () => ({ status: 'ok' }));
   app.get('/readyz', async (_request, reply) => {

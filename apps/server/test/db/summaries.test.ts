@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RegistryMemory } from '../../src/dm/memory.js';
+import { summarizeScene } from '../../src/dm/summarize.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -78,5 +79,51 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
       scene_id: 'scene-1',
       summary: 'The party secured the silver archive.',
     });
+  });
+
+  it('summaries rebuilt from the event log equal stored ones in replay mode', async () => {
+    const events = [
+      { type: 'LocationUpserted', payload: { name: 'The silver archive' } },
+      { type: 'QuestUpdated', payload: { summary: 'The archive is secured.' } },
+    ];
+    await database!.pool.query(
+      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,$3,$4::jsonb),($1,2,$5,$6,$7::jsonb)',
+      [
+        sessionId,
+        '00000000-0000-4000-8000-000000000028',
+        events[0]!.type,
+        JSON.stringify(events[0]!.payload),
+        '00000000-0000-4000-8000-000000000029',
+        events[1]!.type,
+        JSON.stringify(events[1]!.payload),
+      ],
+    );
+    const log = await database!.pool.query<{
+      type: string;
+      payload: Record<string, unknown>;
+    }>('SELECT type,payload FROM events WHERE session_id=$1 ORDER BY seq', [
+      sessionId,
+    ]);
+    const replay = async () =>
+      (
+        await summarizeScene({
+          sceneId: 'replay-scene',
+          events: log.rows.map((event) => ({
+            type: event.type,
+            payload: event.payload,
+          })),
+          adapter: {
+            async *complete() {
+              yield { type: 'text' as const, delta: 'not JSON' };
+            },
+          },
+        })
+      ).summary;
+    await memory.closeScene(sessionId, 'replay-scene', await replay());
+    const stored = await database!.pool.query<{ id: string; summary: string }>(
+      'SELECT id,summary FROM scene_summaries WHERE session_id=$1 AND scene_id=$2',
+      [sessionId, 'replay-scene'],
+    );
+    expect(await replay()).toBe(stored.rows[0]?.summary);
   });
 });

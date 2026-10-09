@@ -42,10 +42,12 @@ test('rooms list, create, lobby shows live seats and announces presence politely
   useJar();
   await seedAccount('h2@example.com', 'Harper');
   renderApp('/rooms');
-  expect(await screen.findByText(/no tables yet/i)).toBeInTheDocument();
+  expect(await screen.findByText(/no games yet/i)).toBeInTheDocument();
   expect((await axe(document.body)).violations).toEqual([]);
-  await userEvent.type(screen.getByLabelText('Table name'), 'Dragon Keep');
-  await userEvent.click(screen.getByRole('button', { name: 'Create table' }));
+  await userEvent.type(screen.getByLabelText('Game name'), 'Dragon Keep');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
   expect(
     await screen.findByRole('heading', { name: 'Dragon Keep' }),
   ).toBeInTheDocument();
@@ -91,7 +93,16 @@ test('host reloading the lobby gets no stale/blank link and can create a new one
       body: JSON.stringify({ name: 'Reload Hall' }),
     })
   ).json();
-  renderApp(`/rooms/${created.room.id}`);
+  // A reload no longer receives the one-time invite code from the mock API.
+  const roomId = created.room.id as string;
+  const rooms = await host(`${http.base}/api/rooms`);
+  const roomList = (await rooms.json()) as {
+    rooms: { id: string; code?: string }[];
+  };
+  expect(
+    roomList.rooms.find((item) => item.id === roomId)?.code,
+  ).toBeUndefined();
+  renderApp(`/rooms/${roomId}`);
   expect(await screen.findByText(/cannot be shown again/i)).toBeInTheDocument();
   expect(screen.queryByLabelText('Invite link')).toBeNull();
   await userEvent.click(

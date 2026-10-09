@@ -14,6 +14,7 @@ import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
 import type { TurnResult } from '../../src/dm/orchestrator.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -413,5 +414,32 @@ describe('solo turn persisted lifecycle', () => {
       body: JSON.stringify({ sessionId: table }),
     });
     expect(anonymous.status).toBe(401);
+  });
+
+  it('second unchanged resume makes zero metered LLM calls', async () => {
+    const owner = await createUser();
+    const table = await createTable(owner.id);
+    await db.query(
+      'UPDATE sessions SET mode=$2,catalog_version=$3,premise=$4 WHERE id=$1',
+      [table, 'solo', loadCatalog().catalogVersion, 'A quiet road.'],
+    );
+    const token = await createSession(db, owner.id, 'resume-test');
+    const before = await db.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM endpoint_usage WHERE session_id=$1',
+      [table],
+    );
+    const first = await fetch(`${base}/api/tables/${table}`, {
+      headers: { cookie: `sid=${token}` },
+    });
+    expect(first.status).toBe(200);
+    const second = await fetch(`${base}/api/tables/${table}`, {
+      headers: { cookie: `sid=${token}` },
+    });
+    expect(second.status).toBe(200);
+    const after = await db.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM endpoint_usage WHERE session_id=$1',
+      [table],
+    );
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
   });
 });

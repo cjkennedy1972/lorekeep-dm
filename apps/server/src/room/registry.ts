@@ -70,7 +70,9 @@ export class RoomRegistry {
     if (!lease) throw new Error('Room lease unavailable');
     try {
       const room = new Room(
-        this.store,
+        Object.assign(Object.create(this.store), {
+          db: this.store.db,
+        }) as Persistence,
         lease,
         await this.store.loadLatest(sessionId),
         this.turnRunner,
