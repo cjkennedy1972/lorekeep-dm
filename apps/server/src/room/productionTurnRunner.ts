@@ -357,7 +357,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             state.sceneSummary ??
             'The party is at the beginning of its adventure.',
         },
-        activeMode: 'exploration',
+        activeMode:
+          state &&
+          typeof state === 'object' &&
+          (state as { combatRoom?: unknown }).combatRoom
+            ? 'combat'
+            : 'exploration',
         turn: {
           state: { characters: Object.values(actors) },
           registryFacts: memoryContext.registryFacts,

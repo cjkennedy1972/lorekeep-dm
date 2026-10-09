@@ -154,6 +154,27 @@ describe('DM orchestrator', () => {
       ),
     ).toBe(false);
   });
+  it('rejects combat-only tools in exploration before executor invocation', async () => {
+    let executions = 0;
+    const h = setup(
+      [
+        [
+          call('c1', 'attack', {
+            attackerId: 'ent_ayla',
+            targetId: 'ent_goblin',
+            attackId: 'srd:weapon/longsword',
+          }),
+        ],
+        [{ type: 'text', delta: narration }],
+      ],
+      () => {
+        executions++;
+        return { ok: true, events: [] };
+      },
+    );
+    await runTurn(h.input);
+    expect(executions).toBe(0);
+  });
   it('discards tool-response prose and appends combat-start tool results before narration', async () => {
     const h = setup(
       [

@@ -14,7 +14,7 @@ import { ProductionSoloTurnRunner } from './room/productionTurnRunner.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 const config = loadConfig();
 if (
-  config.NODE_ENV === 'production' &&
+  !['development', 'test'].includes(config.NODE_ENV) &&
   (!config.OPERATOR_EMAILS.trim() || !config.OPERATOR_ENDPOINT_MASTER_KEY)
 )
   throw new Error('Operator configuration is required');
