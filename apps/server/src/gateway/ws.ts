@@ -141,10 +141,10 @@ export function installGateway(
         // before this handler would otherwise exist; ws drops messages with no listener.
         // Buffer (bounded) until the join has finished, then dispatch in order.
         const early: import('ws').RawData[] = [];
-        let dispatch: ((data: import('ws').RawData) => void) | undefined;
+        const gate: { dispatch?: (data: import('ws').RawData) => void } = {};
         ws.on('message', (data) => {
-          if (dispatch) {
-            dispatch(data);
+          if (gate.dispatch) {
+            gate.dispatch(data);
             return;
           }
           if (early.length >= 32) {
@@ -175,7 +175,7 @@ export function installGateway(
         // One chain per socket: messages are handled strictly in arrival order, including the
         // async part of PlayerAction, so two quick actions cannot reach the Room swapped.
         let chain: Promise<unknown> = Promise.resolve();
-        dispatch = (data) => {
+        const dispatch = (data: import('ws').RawData) => {
           chain = chain
             .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
@@ -272,6 +272,7 @@ export function installGateway(
             },
           });
         };
+        gate.dispatch = dispatch;
         for (const data of early.splice(0)) dispatch(data);
       })().catch(() => reject());
     });
