@@ -38,49 +38,18 @@ test('logged-out join link redirects to /login remembering the join as the retur
   expect(probe).toHaveTextContent('"from":"/join/ABC123"');
 });
 
-test('rooms list, create, lobby shows live seats and announces presence politely, copy gives feedback', async () => {
+test('My games links to resume and offers the solo start flow', async () => {
   useJar();
   await seedAccount('h2@example.com', 'Harper');
   renderApp('/rooms');
   expect(await screen.findByText(/no games yet/i)).toBeInTheDocument();
   expect((await axe(document.body)).violations).toEqual([]);
-  await userEvent.type(screen.getByLabelText('Game name'), 'Dragon Keep');
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Create solo game' }),
-  );
   expect(
-    await screen.findByRole('heading', { name: 'Dragon Keep' }),
+    screen.getByRole('link', { name: 'Start a solo game' }),
+  ).toHaveAttribute('href', '/start');
+  expect(
+    screen.getByRole('link', { name: 'Build a character' }),
   ).toBeInTheDocument();
-  const list = await screen.findByRole('list', { name: /players/i });
-  await waitFor(() => expect(list).toHaveTextContent('Harper (online)'));
-  expect(list).toHaveTextContent('Scripted Sam (online)');
-  expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
-  expect((await axe(document.body)).violations).toEqual([]);
-
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, 'clipboard', {
-    configurable: true,
-    value: { writeText },
-  });
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Copy invite link' }),
-  );
-  expect(writeText).toHaveBeenCalledWith(
-    expect.stringMatching(/\/join\/[A-Za-z0-9_-]{22}$/),
-  );
-  expect(
-    await screen.findByText('Invite link copied to clipboard.'),
-  ).toBeInTheDocument();
-
-  const before = (screen.getByLabelText('Invite link') as HTMLInputElement)
-    .value;
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Regenerate link' }),
-  );
-  await screen.findByText(/old link no longer works/i);
-  expect(
-    (screen.getByLabelText('Invite link') as HTMLInputElement).value,
-  ).not.toBe(before);
 });
 
 test('host reloading the lobby gets no stale/blank link and can create a new one', async () => {

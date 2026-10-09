@@ -52,15 +52,27 @@ it('serves the recorded combat stack for browser e2e', async () => {
     [accountId, `${accountId}@example.test`],
   );
   const token = await createSession(db, accountId, 'live-e2e');
-  const table = randomUUID();
-  await db.query(
-    'INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)',
-    [table, accountId, 'Crypt'],
-  );
+  // Create the table the way a real client does (solo mode, pinned catalog, adventure seed)...
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/tables',
+    headers: { cookie: `sid=${token}`, 'content-type': 'application/json' },
+    payload: {
+      name: 'Crypt',
+      adventureId: 'adventure:01-hollow-under-marrowfell',
+      difficulty: 'moderate',
+      startingLevel: 1,
+    },
+  });
+  if (created.statusCode !== 201)
+    throw new Error(
+      `table create failed: ${created.statusCode} ${created.body}`,
+    );
+  const table = (created.json() as { game: { id: string } }).game.id;
   // Production party entities use the character's uuid as their id.
   const party = { ...hero, id: randomUUID() };
+  // ...then replace its game state with the pre-combat fixture.
   const room = await rooms.get(table);
-  await room.seat(accountId, 'Aria');
   await room.persistGameState({
     ...preCombatGame(party),
     characters: { [accountId]: party },

@@ -20,7 +20,9 @@ function asCharacter(input: CharacterInput): Character {
   return character as Character;
 }
 
-export function QuickBuild() {
+export function QuickBuild({
+  onBuild,
+}: { onBuild?: (character: Character) => void } = {}) {
   const [classId, setClassId] = useState('');
   const [saved, setSaved] = useState(false);
   const build = () => {
@@ -28,8 +30,10 @@ export function QuickBuild() {
     const violations = validateCharacter(result.character, catalog);
     if (violations.length)
       throw new Error(violations.map((v) => v.message).join('; '));
-    gameStore.setCharacter(asCharacter(result.character));
-    setSaved(true);
+    const character = asCharacter(result.character);
+    gameStore.setCharacter(character);
+    if (onBuild) onBuild(character);
+    else setSaved(true);
   };
 
   if (saved) {

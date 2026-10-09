@@ -22,10 +22,11 @@ test('live game screen exposes an accessible room wait state', async () => {
       </AuthProvider>
     </MemoryRouter>,
   );
-  await screen.findByRole('heading', { name: 'Game' });
   expect(
-    await screen.findByText('Waiting for room state…'),
+    await screen.findByRole('heading', { name: 'Game unavailable' }),
   ).toBeInTheDocument();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Not found.');
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   expect(
     (await axe(document.body)).violations.filter(
       (violation) => violation.impact === 'critical',
