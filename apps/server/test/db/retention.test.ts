@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
+import { RegistryMemory } from '../../src/dm/memory.js';
 import { retentionHealth, runSweep } from '../../src/retention/sweeper.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -119,6 +120,82 @@ describe('retention sweeper (Postgres)', () => {
     expect([logsRow.events, logsRow.emailTokens]).toEqual([0, 0]);
     expect(logs.find((l) => l.job === 'exports')!.deleted).toBe(0);
     expect((await retentionHealth(pool)).stale).toBe(false);
+  });
+
+  it('purges expired log rows but preserves old registry entries, facts, and scene summaries', async () => {
+    const acc = await account('active');
+    const sess = randomUUID();
+    await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      sess,
+      acc,
+    ]);
+    const old = new Date('2020-01-01T00:00:00Z');
+    await q(
+      `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,aliases,payload,search_document,created_at)
+      VALUES($1,'npc','npc_old_lore',1,'Mara Vale',ARRAY['the ferryman'],'{"id":"npc_old_lore","name":"Mara Vale","role":"keeper","disposition":"friendly","facts":["Keeps the east key."]}','Mara Vale Keeps the east key.', $2)`,
+      [sess, old],
+    );
+    const entryId = (
+      await q(
+        "SELECT id FROM registry_entries WHERE session_id=$1 AND entity_id='npc_old_lore'",
+        [sess],
+      )
+    )[0].id;
+    await q(
+      'INSERT INTO registry_facts(entry_id,fact,created_at) VALUES($1,$2,$3)',
+      [entryId, 'Keeps the east key.', old],
+    );
+    await q(
+      'INSERT INTO scene_summaries(session_id,scene_id,summary,created_at) VALUES($1,$2,$3,$4)',
+      [sess, 'old-scene', 'Mara keeps the east key.', old],
+    );
+    await q(
+      "INSERT INTO events(session_id,seq,turn_id,type,payload,expires_at) VALUES($1,1,$1,'Log','{}',$2)",
+      [sess, old],
+    );
+
+    const retentionSource = await (
+      await import('node:fs/promises')
+    ).readFile(
+      new URL('../../src/retention/sweeper.ts', import.meta.url),
+      'utf8',
+    );
+    expect(retentionSource).not.toMatch(
+      /registry_(entries|facts)|scene_summaries/,
+    );
+    await runSweep(pool, {
+      store: new LocalObjectStore(
+        await mkdtemp(join(tmpdir(), 'sweep-registry-')),
+      ),
+      now: () => new Date('2026-10-08T00:00:00Z'),
+      log,
+    });
+    expect(
+      await count('SELECT count(*)::int n FROM events WHERE session_id=$1', [
+        sess,
+      ]),
+    ).toBe(0);
+    expect(
+      await count(
+        'SELECT count(*)::int n FROM registry_entries WHERE session_id=$1',
+        [sess],
+      ),
+    ).toBe(1);
+    expect(
+      await count(
+        'SELECT count(*)::int n FROM registry_facts WHERE entry_id=$1',
+        [entryId],
+      ),
+    ).toBe(1);
+    expect(
+      await count(
+        'SELECT count(*)::int n FROM scene_summaries WHERE session_id=$1',
+        [sess],
+      ),
+    ).toBe(1);
+    expect(await new RegistryMemory(pool).entities(sess)).toMatchObject([
+      { entityId: 'npc_old_lore', facts: ['Keeps the east key.'] },
+    ]);
   });
 
   it('fully removes a deleting account, hands off/deletes rooms, anonymizes seats, and is a no-op twice', async () => {
