@@ -7,6 +7,9 @@ import { quickBuild, validateCharacter } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { catalogFromSnapshot } from '../room/catalogSnapshot.js';
 import { loadAdventure } from '@game/rules-engine/adventure-node';
+import { adventure01RegistrySeed } from '@game/rules-engine/adventure-node';
+import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
+import { RegistryMemory } from '../dm/memory.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { buildResumeRecap } from '../dm/recap.js';
 import {
@@ -20,37 +23,21 @@ import {
 } from '../llm/recorded.js';
 
 const catalog = loadCatalog();
-const fallbackAdventure = {
-  id: 'adventure:fixture-1',
-  title: 'The Lantern at Greyfen (temporary fixture)',
-  premise: 'A lantern burns beneath Greyfen, and someone has gone missing.',
-  toneLine: 'Mysterious, hopeful fantasy.',
-  startingSceneId: 'scene:opening',
-  scenes: [
-    {
-      id: 'scene:opening',
-      title: 'The road to Greyfen',
-      text: 'Rain beads on the road as the village lantern flickers below.',
-      nextSceneIds: [],
-      encounterIds: [],
-      npcIds: [],
-    },
-  ],
-  npcs: [],
-  encounters: [],
-  maps: [],
-  monsterIds: [],
-  spellIds: [],
-  itemIds: [],
-};
-const adventureParsed = AdventureSchema.parse(fallbackAdventure);
+const adventureParsed = AdventureSchema.parse(adventure01);
 const fixtureAdventure = loadAdventure(adventureParsed, catalog);
 if (fixtureAdventure.ok === false)
-  throw new Error('Temporary adventure fixture is invalid');
+  throw new Error(
+    `Adventure #1 is invalid: ${fixtureAdventure.errors.map((e) => e.message).join('; ')}`,
+  );
 const adventureData = fixtureAdventure.adventure;
 const createSchema = z.object({
   name: z.string().trim().min(1).max(80),
-  adventureId: z.string().trim().min(1).max(100).default('adventure:fixture-1'),
+  adventureId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .default('adventure:01-hollow-under-marrowfell'),
   difficulty: z.enum(['easy', 'moderate', 'hard']).default('moderate'),
   startingLevel: z.number().int().min(1).max(5).default(1),
   character: CharacterSchema.optional(),
@@ -161,7 +148,9 @@ export function registerTableRoutes(
         adventureId: adventureData.id,
         catalogVersion: catalog.catalogVersion,
         difficulty: body.difficulty,
+        worldSeeded: true,
       });
+      await new RegistryMemory(db).upsertMany(id, adventure01RegistrySeed());
     } catch (error) {
       await db.query(
         'DELETE FROM sessions WHERE id=$1 AND owner_account_id=$2',
@@ -177,7 +166,7 @@ export function registerTableRoutes(
     ).rows[0]!;
     return reply
       .code(201)
-      .send({ game: gameView(created), fixtureAdventure: true });
+      .send({ game: gameView(created), adventureId: adventureData.id });
   });
   app.get('/api/tables', async (request, reply) => {
     const accountId = await account(request, reply);
