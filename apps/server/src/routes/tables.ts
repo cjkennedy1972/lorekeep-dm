@@ -7,7 +7,6 @@ import { quickBuild, validateCharacter } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { loadAdventure } from '@game/rules-engine/adventure-node';
 import { authenticateRequest } from '../middleware/auth.js';
-import type { RoomRegistry } from '../room/registry.js';
 import { buildResumeRecap } from '../dm/recap.js';
 import {
   createConfiguredAdapter,
@@ -279,11 +278,6 @@ export function registerTableRoutes(
         previousSnapshotRecap: prior,
         adapter,
       });
-      const state = row.state ?? {
-        sessionId: row.id,
-        phase: 'lobby',
-        seats: [],
-      };
       await db.query(
         "UPDATE sessions SET last_active_at=now(),status='active' WHERE id=$1 AND owner_account_id=$2",
         [request.params.id, accountId],

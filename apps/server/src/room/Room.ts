@@ -4,7 +4,7 @@ import {
   type RoomState,
   type ServerMessage,
 } from '@game/schema';
-import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
+import type { RegistryEvent } from '../dm/memory.js';
 import type { Pool } from 'pg';
 import type {
   EventInput,

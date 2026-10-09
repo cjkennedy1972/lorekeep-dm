@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RegistryMemory } from '../../src/dm/memory.js';
-import { boundSummary, summarizeScene } from '../../src/dm/summarize.js';
+import { summarizeScene } from '../../src/dm/summarize.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
 
 const databaseUrl = process.env.DATABASE_URL;
