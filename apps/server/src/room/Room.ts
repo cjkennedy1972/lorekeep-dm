@@ -15,6 +15,15 @@ import type { Lease } from './lease.js';
 import { recoverRoom } from './recovery.js';
 import { reduceRoom } from './reducer.js';
 import type { SoloTurnRunner } from './dmTurn.js';
+import type { CombatCommand } from '@game/schema';
+import {
+  createCombatRuntime,
+  roomGameState,
+  trackerMessage,
+  reactionMessage,
+  type CombatRuntime,
+} from './combat.js';
+import type { ActionId } from '@game/schema';
 
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
@@ -42,6 +51,7 @@ export class Room {
   private readonly actionIds: Set<string>;
   private accepting = true;
   private readonly turnRunner?: SoloTurnRunner;
+  private readonly combatRuntime: CombatRuntime;
   private turnInFlight = false;
   private readonly pendingActions = new Set<string>();
   private activeTurn: Promise<void> = Promise.resolve();
@@ -60,11 +70,13 @@ export class Room {
     readonly lease: Lease,
     latest: LatestState,
     turnRunner?: SoloTurnRunner,
+    combatRuntime: CombatRuntime = createCombatRuntime(),
   ) {
     if (!lease || lease.expiresAt <= new Date())
       throw new Error('Room requires a live lease');
     this.sessionId = lease.sessionId;
     this.turnRunner = turnRunner;
+    this.combatRuntime = combatRuntime;
     const recovered = recoverRoom(this.sessionId, latest);
     this.state = recovered.state;
     this.seq = recovered.seq;
@@ -480,6 +492,95 @@ export class Room {
     }
     this.pendingActions.delete(actionId);
   }
+  submitCombatCommand(
+    accountId: string,
+    actionId: string,
+    command: CombatCommand['payload'],
+  ): Promise<boolean> {
+    return this.enqueue(async () => {
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat) throw new Error('Account is not seated');
+      if (this.actionIds.has(actionId)) return false;
+      const current = roomGameState(this.state);
+      const gameState = this.state.gameState as
+        | { combatActors?: Record<string, string>; [key: string]: unknown }
+        | undefined;
+      const actorId = gameState?.combatActors?.[accountId];
+      if (!current || !actorId) {
+        this.sendError(
+          accountId,
+          'COMMAND_REJECTED',
+          'Combat is not active for this player.',
+          actionId,
+        );
+        return true;
+      }
+      const result = this.combatRuntime.execute(current, actorId, command);
+      if ('code' in result) {
+        this.sendError(accountId, result.code, result.message, actionId);
+        return true;
+      }
+      if (!result.events.length && !result.state.pendingReaction) {
+        for (const message of result.messages ?? [])
+          this.sendCombatMessage(message.type, message.payload);
+        return true;
+      }
+      const nextGameState = { ...gameState, combatRoom: result.state };
+      const writes = result.events.map((event) => ({
+        seq: undefined,
+        turnId: actionId,
+        type: String(event.type),
+        payload: event,
+      }));
+      writes.push({
+        seq: undefined,
+        turnId: actionId,
+        type: 'GameStateCommitted',
+        payload: { gameState: nextGameState },
+      });
+      const stored = await this.store.writeTurn(
+        this.sessionId,
+        writes,
+        {
+          ...this.state,
+          gameState: nextGameState,
+          actionIds: [...this.actionIds, actionId],
+        },
+        this.lease,
+      );
+      this.seq = stored.events.at(-1)?.seq ?? this.seq;
+      this.state = { ...this.state, gameState: nextGameState };
+      this.actionIds.add(actionId);
+      for (const message of result.messages ?? [])
+        this.sendCombatMessage(message.type, message.payload);
+      this.broadcast(trackerMessage(this.seq, result.state));
+      if (result.state.pendingReaction)
+        this.broadcast(reactionMessage(this.seq, result.state.pendingReaction));
+      return true;
+    });
+  }
+
+  private sendCombatMessage(
+    type: string,
+    payload: Record<string, unknown>,
+  ): void {
+    this.broadcast({ seq: this.seq, type, payload } as ServerMessage);
+  }
+  private sendError(
+    accountId: string,
+    code: string,
+    message: string,
+    actionId: string,
+  ): void {
+    this.connections.get(accountId)?.send({
+      seq: this.seq,
+      type: 'Error',
+      payload: { code, message, actionId: actionId as ActionId },
+    });
+  }
+
   private broadcast(message: ServerMessage): void {
     for (const connection of this.connections.values())
       connection.send(message);
