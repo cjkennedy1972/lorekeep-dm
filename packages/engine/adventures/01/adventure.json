@@ -15,7 +15,7 @@
     {
       "id": "scene-broken-gatehouse",
       "title": "Broken Gatehouse",
-      "text": "A leaning gate tower spills rubble across the flagged yard. Cold air smells of tallow and wet rat.",
+      "text": "A leaning gate tower spills rubble across the flagged yard. Cold air smells of tallow and wet stone, and a faint ember-glow pulses in the kennel.",
       "nextSceneIds": ["scene-chapel-of-wicks"],
       "encounterIds": ["encounter-e1-rats"]
     },
@@ -29,21 +29,21 @@
     {
       "id": "scene-warren-gallery",
       "title": "Cinderwick Warren Gallery",
-      "text": "The stair opens into a long gallery hung with rags and drying bones. Somewhere ahead a goblin hums off-key.",
+      "text": "The stair opens into a long gallery hung with rags and drying bones. Somewhere ahead a lone goblin lookout hums off-key.",
       "nextSceneIds": ["scene-tallow-larder"],
       "encounterIds": ["encounter-e2-lookouts"]
     },
     {
       "id": "scene-tallow-larder",
       "title": "Tallow Larder",
-      "text": "A dry cellar of shelves and barrels has been swept clean. A frightened goblin called Pip Ashgrub watches from behind a barrel.",
+      "text": "A dry cellar of shelves and barrels has been swept clean. A frightened goblin called Pip Ashgrub watches from behind a barrel. Rested and resupplied here, the party reaches level 3 before the boss hall.",
       "nextSceneIds": ["scene-boss-hall"],
       "npcIds": ["npc_pip_ashgrub"]
     },
     {
       "id": "scene-boss-hall",
       "title": "Boss Hall",
-      "text": "Pillars and a dragged table divide the feasting hall. Skarrik Cinderwick wears a stolen breastplate and watches the doorway.",
+      "text": "Pillars and a dragged table divide the feasting hall. Skarrik Cinderwick wears a stolen breastplate and watches the doorway alone; his minions have fled or fallen. (Boss fight tuned for a level 3 party.)",
       "nextSceneIds": ["scene-winch-shaft"],
       "encounterIds": ["encounter-e3-skarrik"]
     },
@@ -56,7 +56,7 @@
     {
       "id": "scene-lamp-vault",
       "title": "Lamp Vault",
-      "text": "In the round grey vault, the Ember Lamp gutters on a stone pedestal. Shapes of smoke drift and watch.",
+      "text": "In the round grey vault, the Ember Lamp gutters on a stone pedestal. A single bound warden, a specter, drifts out of the smoke and watches.",
       "encounterIds": ["encounter-e4-wardens"]
     }
   ],
@@ -98,37 +98,28 @@
   "encounters": [
     {
       "id": "encounter-e1-rats",
-      "monsterIds": ["monster:giant-rat", "monster:giant-rat"],
+      "monsterIds": ["monster:giant-fire-beetle"],
       "mapId": "adv01-upper-ruins",
       "partySpawnMarkerId": "mk_e1_party",
       "enemySpawnMarkerId": "mk_e1_enemy"
     },
     {
       "id": "encounter-e2-lookouts",
-      "monsterIds": [
-        "monster:goblin-warrior",
-        "monster:goblin-warrior",
-        "monster:goblin-minion",
-        "monster:goblin-minion"
-      ],
+      "monsterIds": ["monster:goblin-warrior"],
       "mapId": "adv01-warrens",
       "partySpawnMarkerId": "mk_e2_party",
       "enemySpawnMarkerId": "mk_e2_enemy"
     },
     {
       "id": "encounter-e3-skarrik",
-      "monsterIds": [
-        "monster:goblin-boss",
-        "monster:goblin-minion",
-        "monster:goblin-minion"
-      ],
+      "monsterIds": ["monster:goblin-boss"],
       "mapId": "adv01-warrens",
       "partySpawnMarkerId": "mk_e3_party",
       "enemySpawnMarkerId": "mk_e3_enemy"
     },
     {
       "id": "encounter-e4-wardens",
-      "monsterIds": ["monster:specter", "monster:shadow", "monster:shadow"],
+      "monsterIds": ["monster:specter"],
       "mapId": "adv01-lamp-vault",
       "partySpawnMarkerId": "mk_e4_party",
       "enemySpawnMarkerId": "mk_e4_enemy_ring"
