@@ -560,6 +560,43 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     ).toBe(true);
   }, 20_000);
 
+  it('rejects a message flood immediately with RATE_LIMITED instead of queueing it', async () => {
+    stack = await Stack.boot('combat-flood');
+    const user = await newUser();
+    const table = await seedTable(stack, user, (account) => {
+      const b = bootstrapped();
+      return {
+        ...preCombatGame(),
+        characters: { [account]: hero },
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: b.state,
+      };
+    });
+    const client = await Client.open(stack, user, table);
+    const mark = client.log.length;
+    for (let i = 0; i < 200; i++)
+      client.ws.send(
+        JSON.stringify({
+          type: 'CombatCommand',
+          actionId: randomUUID(),
+          lastSeq: 0,
+          payload: { command: 'options' },
+        }),
+      );
+    await vi.waitFor(
+      () =>
+        expect(
+          client.log
+            .slice(mark)
+            .filter(
+              (m) => m.type === 'Error' && m.payload?.code === 'RATE_LIMITED',
+            ).length,
+        ).toBeGreaterThanOrEqual(150),
+      { timeout: 2000 },
+    );
+    client.close();
+  }, 20_000);
+
   it('rejects illegal commands with no state change and keeps other accounts out', async () => {
     stack = await Stack.boot('combat-illegal');
     const user = await newUser();
