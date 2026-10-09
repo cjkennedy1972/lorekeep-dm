@@ -157,6 +157,8 @@ export function narrationLogReducer(
     case 'CombatOptions':
     case 'CombatEvents':
     case 'CombatEnded':
+    case 'DeathSaveRequired':
+    case 'TpkChoiceRequired':
     case 'StateSync':
     case 'PresenceChanged':
       return state;
