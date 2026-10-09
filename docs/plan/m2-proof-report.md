@@ -1,0 +1,31 @@
+# M2 exit-criteria proof report
+
+Base: `origin/main` at `869db8b3f40bd01b5a50dc2e8fd5918567921078` (2026-10-09).
+
+Verification was performed in a detached worktree freshly added from `origin/main` at `/tmp/lorekeep-m2-proof`; `pnpm install --frozen-lockfile` completed. The reference checkout's pre-existing `packages/engine/src/index.ts` edit was not included or changed.
+
+## Exit criteria
+
+The milestone's canonical exit line is in `docs/architecture.md` §11. M2-42's Workboard card adds the specific proof requirements below. The planned `docs/plan/m2-overview.md` and `docs/plan/m2-tasks.json` are absent from this `origin/main`; those absent paths are not silently treated as criteria fulfilled.
+
+| Exit criterion | Command / evidence | Result | Remaining gap |
+| --- | --- | --- | --- |
+| Fresh-clone mandatory full gate | `pnpm -r typecheck`; `pnpm lint`; `pnpm format:check`; `pnpm -r test`; `pnpm -r build`; DB and browser commands below | **PARTIAL locally** — typecheck, lint, format, build passed; unit/workspace tests passed (schema 121, engine 408, server 237, web 159, evals 10); initial `pnpm -r test` stopped at real-server e2e because `DATABASE_URL` was unset. With disposable Postgres migrated, `pnpm --filter @game/server test:db` passed 68/68 and `pnpm --filter e2e test` passed 183/183. | Full `pnpm -r test` was not rerun as one command with `DATABASE_URL`; its constituent workspace and DB/e2e suites were run. The required command `pnpm install --lockfile-only --ignore-scripts` + lockfile diff was not rerun locally. |
+| Chromium, Firefox, WebKit browser coverage | `pnpm --filter @game/web exec playwright test --project=chromium --project=firefox --project=webkit` | **PARTIAL locally** — 35/36 passed. The two-player lobby presence spec failed in Chromium with an empty seats list; the other 35 passed, including keyboard combat, responsive layout and accessibility. | This has been observed on this Mac on clean main previously; not counted as a pass. GitHub CI at this base passed all jobs, including the dedicated Firefox/WebKit job. |
+| Quick start to first narration ≤3 min | `DATABASE_URL=... pnpm --filter @game/server test:db` (`apps/server/test/db/solo-turn.test.ts`, M2-28) | **PASS for scripted DM** — logs create 46 ms, WebSocket 37 ms, first narration 82 ms; total 165 ms vs 180,000 ms. | Deterministic scripted narration, not measured against the reference live model or local OpenAI-compatible model. |
+| Solo start, My games and resume | `DATABASE_URL=... pnpm --filter @game/web exec playwright test -c playwright.live.config.ts` | **PASS for recorded/scripted server** — real server + Postgres, fresh browser context; first narration-ready 358 ms, resumed state-ready 278 ms with recap. | Does not prove live provider behavior. |
+| Adventure #1 keyboard-only from start to end; resume mid-adventure after browser close and server restart | `pnpm --filter @game/web exec playwright test -c playwright.live.config.ts` | **PARTIAL** — the live-browser combat spec starts combat and reaches `CombatEnded: party-victory` using keyboard-only controls against the scripted DM. Separately, `apps/server/test/db/combat.test.ts` proves a mid-combat process restart preserves active turn/movement/reaction; `tests/e2e/restart.spec.ts` proves server SIGTERM/restart and client reconnect preserve room state/sequence. | No single browser-driven Adventure #1 run plays the adventure from start to end, closes the browser mid-adventure, restarts the server, and resumes through completion. No live provider qualification. |
+| Probe selects mode for a fake native-tool endpoint | `pnpm -r test` (includes `apps/server/test/llm/probe.test.ts`) | **PASS** — fake native endpoint selects `native`, persists capability facts; fake JSON-schema endpoint selects `json-schema`; neither selects `unsupported`. | No live endpoint probe record included. |
+| Recorded-LLM eval harness v0 | `pnpm eval:v0`; CI job `llm-recorded` | **PASS** — rules 1.000/50, puppeting 0.000/50, map contradiction 0.000/30, tool validity 1.000/20; overall pass. | Dataset sizes are explicitly too small for statistical claims; these results are not model qualification. |
+| Reference endpoint and local OpenAI-compatible model; probe-selected mode | No live command run; see OPS card `392a4571-654e-4800-b433-5cc15183bff3` | **NOT RUN** — CI is strict fixture-only and has no endpoint credentials. | Requires configured live endpoint credentials/allow-list, probe records and end-to-end qualification evidence for both configurations. |
+| State unverified: moderation, party play, level coverage of live runs | Repository/architecture review | **NOT VERIFIED / OUT OF M2 proof here** — moderation remains later M3 work; party play is not demonstrated by these solo tests; no live-model level-coverage run was conducted. | Do not infer these from scripted single-character tests. |
+
+## CI and verification records
+
+GitHub Actions run [37995220497](https://github.com/cjkennedy1972/lorekeep-dm/actions/runs/37995220497) at the exact base SHA completed successfully. Its `test`, `browsers`, `llm-recorded`, `catalog-reconcile`, and `assets` jobs all passed. This is CI evidence, not a substitute for the local full-playthrough/live-provider gaps above. The `browsers` job runs Firefox/WebKit; `test` runs Chromium and the real-server live-browser suite. The local Chromium lobby failure is retained as a failure, not waived by CI.
+
+The disposable Postgres service used for local DB/e2e verification was started from `infra/docker-compose.yml`; the test harness creates isolated proof schemas and drops them. The shared service may be stopped after verification; no project data was used.
+
+## Scope and status
+
+The current Workboard milestone card (`884bbdfd-d8c7-418d-863d-5b18290845aa`) remains `running`, and its notes include M2 areas beyond this proof wave (including M2-28, M2-34, M2-39 and M2-41). This report does not claim the entire milestone is complete. The M2-42 proof card should remain open until its live-provider and full Adventure #1 browser/restart requirements are either completed or explicitly accepted as gaps; milestone completion additionally requires reconciling the milestone card's remaining child/scope status.
