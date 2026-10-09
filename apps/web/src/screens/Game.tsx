@@ -14,6 +14,7 @@ import { MapKeyboard } from '../features/map/keyboard.js';
 import { TokenTable } from '../features/map/TokenTable.js';
 import { Describe } from '../features/map/Describe.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
+import { ActionInput } from '../features/input/ActionInput.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { ConnectionStatus } from '../room/ConnectionStatus.js';
 import { useRoom } from '../room/useRoom.js';
@@ -157,10 +158,34 @@ export function Game() {
             : current,
         );
       }
-      if (message.type === 'Error')
-        setError(
-          String(asRecord(message.payload).message ?? 'The command failed.'),
+      if (message.type === 'ActionQueued' || message.type === 'TurnThinking') {
+        const actionId = String(asRecord(message.payload).actionId ?? '');
+        if (actionId)
+          updatePendingAction((current) =>
+            current && !current.acknowledged
+              ? { ...current, id: actionId, acknowledged: true }
+              : current,
+          );
+      }
+      if (message.type === 'NarrationCompleted') {
+        const actionId = String(asRecord(message.payload).actionId ?? '');
+        updatePendingAction((current) =>
+          current && (!actionId || current.id === actionId) ? null : current,
         );
+      }
+      if (message.type === 'ToolRejected') {
+        setError(
+          'The DM could not apply part of that action. The rest of the turn may still have succeeded.',
+        );
+      }
+      if (message.type === 'Error') {
+        const payload = asRecord(message.payload);
+        setError(String(payload.message ?? 'The command failed.'));
+        const actionId = String(payload.actionId ?? '');
+        updatePendingAction((current) =>
+          current && (!actionId || current.id === actionId) ? null : current,
+        );
+      }
     },
   });
   const [messages, setMessages] = useState<ServerMessage[]>([]);
@@ -187,7 +212,30 @@ export function Game() {
   }, [reaction?.reactionId, reaction?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
-  const [actionText, setActionText] = useState('');
+  const pendingActionRef = useRef<{
+    id: string;
+    text: string;
+    acknowledged: boolean;
+  } | null>(null);
+  const updatePendingAction = (
+    update: (
+      current: { id: string; text: string; acknowledged: boolean } | null,
+    ) => { id: string; text: string; acknowledged: boolean } | null,
+  ) => {
+    const next = update(pendingActionRef.current);
+    pendingActionRef.current = next;
+    setPendingAction(next);
+  };
+  const [pendingAction, setPendingAction] = useState<{
+    id: string;
+    text: string;
+    acknowledged: boolean;
+  } | null>(null);
+  const [actionDraft, setActionDraft] = useState('');
+  const [clarification, setClarification] = useState<{
+    actionId: string;
+    question: string;
+  } | null>(null);
   const room = live.room;
   useEffect(() => {
     if (!room?.gameState) return;
@@ -256,20 +304,19 @@ export function Game() {
 
   const send = (command: Record<string, unknown>) =>
     live.send('CombatCommand', command);
-  const submitAction = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const text = actionText.trim();
-    if (!text) return;
+  const submitAction = (text: string) => {
+    const id = `local-${crypto.randomUUID()}`;
+    setError('');
+    updatePendingAction(() => ({ id, text, acknowledged: false }));
     live.send('PlayerAction', { text });
     setMessages((current) => [
       ...current,
       {
         seq: Date.now(),
         type: 'ActionQueued',
-        payload: { actionId: `local-${Date.now()}` },
+        payload: { actionId: id },
       } as ServerMessage,
     ]);
-    setActionText('');
   };
   const tokenCommands = useMemo(
     () =>
@@ -401,17 +448,22 @@ export function Game() {
       <p role="status" aria-live="polite">
         {error}
       </p>
-      <form onSubmit={submitAction} aria-label="Player action">
-        <label htmlFor="player-action">Your action</label>
-        <textarea
-          id="player-action"
-          value={actionText}
-          onChange={(event) => setActionText(event.target.value)}
-          maxLength={4000}
-          required
-        />
-        <button type="submit">Send action</button>
-      </form>
+      <ActionInput
+        onSubmit={submitAction}
+        pending={Boolean(pendingAction)}
+        pendingText={pendingAction?.text}
+        onEditPending={() => {
+          if (!pendingAction) return;
+          setActionDraft(pendingAction.text);
+        }}
+        initialText={actionDraft}
+        onDraftChange={setActionDraft}
+        clarification={clarification}
+        onReply={(actionId, reply) => {
+          setClarification(null);
+          submitAction(`Reply to action ${actionId}: ${reply}`);
+        }}
+      />
       {!tracker && (
         <p>
           Combat has not started. Describe the encounter above to begin combat.

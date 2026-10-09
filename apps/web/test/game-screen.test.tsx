@@ -179,6 +179,34 @@ describe('Game screen (live Room)', () => {
     });
   });
 
+  it('shows pending immediately on submit and clears it on the matching narration', async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    expect(screen.getByText('Queued: I search the room.')).toBeInTheDocument();
+    expect(hoisted.send).toHaveBeenLastCalledWith('PlayerAction', {
+      text: 'I search the room.',
+    });
+    push('ActionQueued', { actionId: 'server-action-1' });
+    push('NarrationCompleted', {
+      actionId: 'server-action-1',
+      turnId: 'turn-1',
+      text: 'You find a key.',
+    });
+    expect(
+      screen.queryByText('Queued: I search the room.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('displays tool rejection neutrally without exposing internal details', () => {
+    mount();
+    push('ToolRejected', { turnId: 'turn-1' });
+    expect(
+      screen.getByText(/The DM could not apply part of that action\./),
+    ).toBeInTheDocument();
+  });
+
   it('highlights exactly the first tracker entry in the list and on the token', () => {
     mount();
     push('CombatTracker', tracker(['ent_goblin', HERO_ID]));

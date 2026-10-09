@@ -15,6 +15,7 @@ import { CheckEmail, VerifyResult } from './screens/VerifyEmail';
 import { CreationWizard } from './features/character/CreationWizard';
 import { QuickBuild } from './features/character/QuickBuild';
 import { SandboxCombat } from './routes/sandboxCombat';
+import { InputFixture } from './features/input/InputFixture';
 import { SandboxMap } from './routes/sandboxMap';
 
 function Landing() {
@@ -46,7 +47,10 @@ export function App() {
   return (
     <Routes>
       {import.meta.env.DEV && (
-        <Route path="sandbox/combat" element={<SandboxCombat />} />
+        <>
+          <Route path="sandbox/combat" element={<SandboxCombat />} />
+          <Route path="sandbox/action-input" element={<InputFixture />} />
+        </>
       )}
       {import.meta.env.DEV && (
         <Route path="sandbox/map/:mapId" element={<SandboxMap />} />
