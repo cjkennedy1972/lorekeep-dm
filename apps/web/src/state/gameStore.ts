@@ -9,6 +9,21 @@ import type { MapCell } from '../features/map/hitTest.js';
 import type { MapViewport } from '../features/map/viewport.js';
 
 export interface GameState {
+  tracker: {
+    round: number;
+    initiative: { entityId: string; total: number }[];
+    activeEntityId: string | null;
+    resources: Record<
+      string,
+      {
+        action: boolean;
+        bonusAction: boolean;
+        reaction: boolean;
+        movementRemaining: number;
+      }
+    >;
+    ended?: { outcome: string };
+  } | null;
   character: Character | null;
   combat: CombatState;
   battlemap: Battlemap | null;
@@ -31,6 +46,7 @@ export const initialGameState = (): GameState => ({
   combat: emptyCombatState(),
   battlemap: null,
   announcement: '',
+  tracker: null,
   selectedCell: null,
   viewport: { x: 0, y: 0, zoom: 1 },
   mapEntities: [],
@@ -93,6 +109,8 @@ export interface GameStore {
   subscribe(listener: () => void): () => void;
   applyEvent(event: CombatEvent | EngineEvent): void;
   setCharacter(character: Character | null): void;
+  setTracker(tracker: GameState['tracker']): void;
+  setCombatState(combat: CombatState): void;
   setBattlemap(battlemap: Battlemap | null): void;
   setSelectedCell(cell: MapCell | null): void;
   setViewport(viewport: MapViewport): void;
@@ -140,6 +158,8 @@ export function createGameStore(initial = initialGameState()): GameStore {
       }
     },
     setCharacter: (character) => set({ ...state, character }),
+    setTracker: (tracker) => set({ ...state, tracker }),
+    setCombatState: (combat) => set({ ...state, combat }),
     setBattlemap: (battlemap) => set({ ...state, battlemap }),
     setSelectedCell: (selectedCell) => set({ ...state, selectedCell }),
     setViewport: (viewport) => set({ ...state, viewport }),

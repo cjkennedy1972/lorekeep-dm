@@ -3,9 +3,10 @@ import { createRoomClient, type RoomClientOptions } from './client.js';
 
 export function useRoom(opts: RoomClientOptions) {
   const { baseUrl } = opts;
+  const onMessage = opts.onMessage;
   const client = useMemo(
-    () => createRoomClient({ ...opts, baseUrl }),
-    [baseUrl],
+    () => createRoomClient({ ...opts, baseUrl, onMessage }),
+    [baseUrl, onMessage],
   ); // ponytail: other opts fixed per mount
   useEffect(() => {
     client.start();

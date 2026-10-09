@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Seat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
 import { ConnectionStatus } from '../room/ConnectionStatus';
@@ -80,6 +80,9 @@ export function Lobby() {
     <>
       <h1>{room.name}</h1>
       <ConnectionStatus status={live.status} />
+      <p>
+        <Link to={`/rooms/${id}/game`}>Enter game</Link>
+      </p>
       <h2 id="seats-heading">Players ({seats.length} of 6)</h2>
       <ul aria-labelledby="seats-heading" className="seats">
         {seats.map((s) => (
