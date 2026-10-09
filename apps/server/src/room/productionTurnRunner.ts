@@ -94,6 +94,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     );
     if (!table.rows[0]) throw new Error('Table state unavailable');
     const catalog =
+      !table.rows[0].catalog_version ||
       table.rows[0].catalog_version === this.catalog.catalogVersion
         ? this.catalog
         : catalogFromSnapshot(
