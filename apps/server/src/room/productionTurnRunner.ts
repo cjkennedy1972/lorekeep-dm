@@ -1,19 +1,21 @@
 import type { DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
-import type { ToolExecutorState } from '@game/rules-engine';
+// Node-only subpath: it pulls in the catalog loader (node:fs), so it must never be reachable
+// from the browser-safe engine index (see test/purity.test.ts).
+import type {
+  ToolExecutorState,
+  WorldRegistry,
+} from '@game/rules-engine/room-tools';
 import {
+  execute,
+  loadCatalog,
   setFlag,
   logRuling,
   updateQuest,
   upsertLocation,
   upsertNpc,
-} from '@game/rules-engine';
-import type { WorldRegistry } from '@game/rules-engine';
-import {
-  executeRoomTool as execute,
-  loadRoomCatalog as loadCatalog,
-} from '@game/rules-engine';
+} from '@game/rules-engine/room-tools';
 import type { Pool } from 'pg';
 import {
   runTurn,

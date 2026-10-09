@@ -51,6 +51,3 @@ export * from './tools/combat.js';
 export * from './tools/movement.js';
 
 export * from './encounter/budget.js';
-
-export { execute as executeRoomTool } from './tools/index.js';
-export { loadCatalog as loadRoomCatalog } from './catalog/load.js';
