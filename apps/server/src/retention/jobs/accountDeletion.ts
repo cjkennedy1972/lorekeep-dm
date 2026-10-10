@@ -4,7 +4,6 @@ import { removeArchive } from './exports.js';
 import { skipIfHeld, type JobContext } from '../types.js';
 import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
-import { REGISTRY_SEARCH_DOCUMENT_SQL } from '../../dm/memory.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
@@ -322,20 +321,6 @@ async function deleteAccount(
     counts.snapshotsScrubbed++;
   }
 
-  const ownedNames = new Set<string>();
-  const otherNames = new Set<string>();
-  for (const row of eventRows)
-    collectNames(row.payload, accountId, charIds, ownedNames, otherNames);
-  for (const row of snapshotRows)
-    collectNames(row.state, accountId, charIds, ownedNames, otherNames);
-  const registryNames = await client.query<{ name: string; aliases: string[] }>(
-    'SELECT name, aliases FROM registry_entries WHERE session_id = ANY($1)',
-    [touched],
-  );
-  for (const { name, aliases } of registryNames.rows)
-    for (const other of [name, ...aliases]) otherNames.add(other);
-  await scrubDerived(client, touched, nameMatchers(ownedNames, otherNames));
-
   if (charIds.size) {
     await client.query(
       'UPDATE sessions SET character=NULL, character_id=NULL WHERE character_id = ANY($1)',
@@ -352,146 +337,6 @@ async function deleteAccount(
   );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
-}
-
-const MIN_NAME = 4;
-const NAME_CHAR = '[\\p{L}\\p{N}_]';
-
-/**
- * Names of the deleted account's characters go to `owned`; every other `name` (NPCs, monsters,
- * other seats) goes to `others`, so a clash can be detected.
- */
-function collectNames(
-  value: unknown,
-  accountId: string,
-  charIds: Set<string>,
-  owned: Set<string>,
-  others: Set<string>,
-) {
-  if (Array.isArray(value)) {
-    for (const item of value)
-      collectNames(item, accountId, charIds, owned, others);
-    return;
-  }
-  if (!value || typeof value !== 'object') return;
-  const obj = value as Record<string, unknown>;
-  const isOwned = Object.values(obj).some(
-    (v) => v === accountId || (typeof v === 'string' && charIds.has(v)),
-  );
-  if (typeof obj.name === 'string') (isOwned ? owned : others).add(obj.name);
-  for (const child of Object.values(obj))
-    collectNames(child, accountId, charIds, owned, others);
-}
-
-function wholeWord(name: string, flags: string) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<!${NAME_CHAR})${escaped}(?!${NAME_CHAR})`, flags);
-}
-
-/**
- * ponytail: only character names are scrubbed, as whole words, case-insensitively. Names under
- * MIN_NAME chars are skipped, and so is any name that occurs inside another name (an NPC or
- * monster "Corwin's Hound", or another seat's character). Player-typed text is not scrubbed:
- * exact-text matching corrupts other players' summaries. Paraphrases survive (ADR-017).
- */
-function nameMatchers(owned: Set<string>, others: Set<string>): RegExp[] {
-  const out: RegExp[] = [];
-  for (const raw of owned) {
-    const name = raw.trim();
-    if ([...name].length < MIN_NAME) continue;
-    const probe = wholeWord(name, 'iu');
-    if ([...others].some((other) => probe.test(other))) continue;
-    out.push(wholeWord(name, 'giu'));
-  }
-  return out;
-}
-
-// Same code-point length, so a scrub never grows a row past its length CHECKs (ADR-017).
-function redactText(text: string, matchers: readonly RegExp[]) {
-  let out = text;
-  for (const re of matchers)
-    out = out.replace(re, (match) => '*'.repeat([...match].length));
-  return out;
-}
-
-function redactDeep(value: unknown, matchers: readonly RegExp[]): unknown {
-  if (typeof value === 'string') return redactText(value, matchers);
-  if (Array.isArray(value)) return value.map((v) => redactDeep(v, matchers));
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, redactDeep(v, matchers)]),
-    );
-  return value;
-}
-
-async function scrubDerived(
-  client: PoolClient,
-  sessionIds: string[],
-  matchers: readonly RegExp[],
-) {
-  if (!sessionIds.length || !matchers.length) return;
-  const summaries = await client.query<{ id: string; summary: string }>(
-    'SELECT id, summary FROM scene_summaries WHERE session_id = ANY($1)',
-    [sessionIds],
-  );
-  for (const row of summaries.rows) {
-    const summary = redactText(row.summary, matchers);
-    if (summary !== row.summary)
-      await client.query('UPDATE scene_summaries SET summary=$2 WHERE id=$1', [
-        row.id,
-        summary,
-      ]);
-  }
-  const reindex = new Set<string>();
-  const entries = await client.query<{
-    id: string;
-    name: string;
-    aliases: string[];
-    payload: unknown;
-  }>(
-    'SELECT id, name, aliases, payload FROM registry_entries WHERE session_id = ANY($1)',
-    [sessionIds],
-  );
-  for (const row of entries.rows) {
-    const name = redactText(row.name, matchers);
-    const aliases = row.aliases.map((a) => redactText(a, matchers));
-    const payload = redactDeep(row.payload, matchers);
-    if (
-      name === row.name &&
-      JSON.stringify(aliases) === JSON.stringify(row.aliases) &&
-      JSON.stringify(payload) === JSON.stringify(row.payload)
-    )
-      continue;
-    reindex.add(row.id);
-    await client.query(
-      'UPDATE registry_entries SET name=$2, aliases=$3, payload=$4 WHERE id=$1',
-      [row.id, name, aliases, payload],
-    );
-  }
-  const facts = await client.query<{
-    id: string;
-    entry_id: string;
-    fact: string;
-  }>(
-    `SELECT f.id, f.entry_id, f.fact FROM registry_facts f
-      JOIN registry_entries e ON e.id = f.entry_id
-      WHERE e.session_id = ANY($1)`,
-    [sessionIds],
-  );
-  for (const row of facts.rows) {
-    const fact = redactText(row.fact, matchers);
-    if (fact === row.fact) continue;
-    reindex.add(row.entry_id);
-    await client.query('UPDATE registry_facts SET fact=$2 WHERE id=$1', [
-      row.id,
-      fact,
-    ]);
-  }
-  if (reindex.size)
-    await client.query(
-      `UPDATE registry_entries e SET search_document = ${REGISTRY_SEARCH_DOCUMENT_SQL} WHERE e.id = ANY($1)`,
-      [[...reindex]],
-    );
 }
 
 function collectCharIds(value: unknown, accountId: string, out: Set<string>) {

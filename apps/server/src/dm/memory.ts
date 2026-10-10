@@ -11,7 +11,7 @@ export const MAX_MEMORY_RESULTS = 20;
 export const MAX_MEMORY_CHARS = 4_000;
 export const MAX_ENTITY_FACTS = 40;
 export const MAX_SCENE_SUMMARY_CHARS = 1_200;
-export const REGISTRY_SEARCH_DOCUMENT_SQL = `concat_ws(' ', e.name, array_to_string(e.aliases, ' '), (e.payload - 'facts')::text, (SELECT string_agg(f.fact, ' ') FROM registry_facts f WHERE f.entry_id=e.id AND f.superseded_by IS NULL))`;
+const REGISTRY_SEARCH_DOCUMENT_SQL = `concat_ws(' ', e.name, array_to_string(e.aliases, ' '), (e.payload - 'facts')::text, (SELECT string_agg(f.fact, ' ') FROM registry_facts f WHERE f.entry_id=e.id AND f.superseded_by IS NULL))`;
 
 export type RegistryEntity = {
   entityId: string;

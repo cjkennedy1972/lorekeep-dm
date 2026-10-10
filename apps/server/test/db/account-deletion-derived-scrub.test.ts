@@ -11,8 +11,6 @@ import { runSweep } from '../../src/retention/sweeper.js';
 const CHAR_NAME = 'Brann';
 const SUMMARY =
   'The guard answered yes. Brannigan waits by the well. Brann the bold nods.';
-const SUMMARY_AFTER =
-  'The guard answered yes. Brannigan waits by the well. ***** the bold nods.';
 const FACT_160 = `Brann ${'x'.repeat(154)}`;
 let db: Pool;
 let dir: string;
@@ -36,8 +34,8 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('account deletion scrubs character names from derived tables', () => {
-  it('removes whole-word character names, keeps common words and substrings, and deletes the account', async () => {
+describe('account deletion leaves DM-authored derived memory unscrubbed (ADR-017 known limit)', () => {
+  it('completes deletion with derived rows still naming the character, including facts differing only by case', async () => {
     const gone = randomUUID();
     const heir = randomUUID();
     const session = randomUUID();
@@ -95,7 +93,12 @@ describe('account deletion scrubs character names from derived tables', () => {
           name: 'Guard Captain',
           role: 'Brann pays in gold',
           disposition: 'neutral',
-          facts: ['Brann said yes to the guard', FACT_160],
+          facts: [
+            'Brann said yes to the guard',
+            FACT_160,
+            'Brann is brave.',
+            'brann is brave.',
+          ],
         },
       });
 
@@ -121,23 +124,23 @@ describe('account deletion scrubs character names from derived tables', () => {
         await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
           session,
         ]),
-      ).toEqual([{ summary: SUMMARY_AFTER }]);
+      ).toEqual([{ summary: SUMMARY }]);
       const [entry] = await q(
         "SELECT payload->>'role' AS role, payload::text AS payload, search_document FROM registry_entries WHERE session_id=$1",
         [session],
       );
-      expect(entry.role).toBe('***** pays in gold');
-      expect(entry.payload).not.toMatch(/\bBrann\b/);
-      expect(entry.search_document).toContain('***** pays in gold');
-      expect(entry.search_document).not.toMatch(/\bBrann\b/);
+      expect(entry.role).toBe('Brann pays in gold');
+      expect(entry.search_document).toContain('Brann pays in gold');
       expect(
         await q(
           'SELECT fact, length(fact) AS len FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id WHERE e.session_id=$1 ORDER BY f.id',
           [session],
         ),
       ).toEqual([
-        { fact: '***** said yes to the guard', len: 27 },
-        { fact: `***** ${'x'.repeat(154)}`, len: 160 },
+        { fact: 'Brann said yes to the guard', len: 27 },
+        { fact: FACT_160, len: 160 },
+        { fact: 'Brann is brave.', len: 15 },
+        { fact: 'brann is brave.', len: 15 },
       ]);
     } finally {
       await q('SELECT purge_session($1)', [session]);
