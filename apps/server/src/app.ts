@@ -70,12 +70,17 @@ export function createApp(
     rooms?: Pick<RoomRegistry, 'get'>;
     connections?: Pick<ConnectionRegistry, 'sweep'>;
     isOperator?: (accountId: string) => Promise<boolean>;
-    trustProxy?: boolean;
+    trustProxy?: boolean | number | string[];
   } = {},
 ) {
+  const { trustProxy = false } = options;
+  // ponytail: Fastify 5 ignores numeric trustProxy (fails closed), so count hops here; hop 0 is the socket peer.
   const app = Fastify({
     loggerInstance: createLogger(),
-    trustProxy: options.trustProxy ?? false,
+    trustProxy:
+      typeof trustProxy === 'number'
+        ? (_address: string, hop: number) => hop < trustProxy
+        : trustProxy,
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
   });

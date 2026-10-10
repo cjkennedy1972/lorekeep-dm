@@ -83,7 +83,7 @@ export class RecordedLlmAdapter implements LlmAdapter {
   private readonly dynamic: (request: LlmRequest) => string;
   constructor(private readonly options: RecordedAdapterOptions) {
     this.mode = options.mode ?? 'strict';
-    const env = options.environment ?? process.env.NODE_ENV ?? 'development';
+    const env = options.environment ?? process.env.NODE_ENV ?? 'production';
     if (env === 'production' && this.mode !== 'strict')
       throw new Error(
         `LLM fixture mode '${this.mode}' is forbidden in production`,
@@ -263,7 +263,8 @@ export const fixtureModeFromEnvironment = (
   if (value === undefined) return undefined;
   if (value !== 'strict' && value !== 'lenient' && value !== 'record')
     throw new Error(`invalid LLM_FIXTURE_MODE: ${value}`);
-  if (env.NODE_ENV === 'production' && value !== 'strict')
+  // ponytail: unset NODE_ENV means production, matching loadConfig's default.
+  if ((env.NODE_ENV ?? 'production') === 'production' && value !== 'strict')
     throw new Error(`LLM_FIXTURE_MODE=${value} is forbidden in production`);
   return value;
 };

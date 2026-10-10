@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { hashPassword } from '../../src/accounts/password.js';
 import { createSession } from '../../src/accounts/sessions.js';
@@ -113,5 +113,59 @@ describe('export abuse limits', () => {
     ).rows[0];
     expect(put).toEqual([]);
     expect(row).toEqual({ status: 'failed', error_code: 'EXPORT_TOO_LARGE' });
+  });
+
+  it('never serializes more than the cap in one piece while building an oversized archive', async () => {
+    const owner = await account();
+    const jobId = randomUUID();
+    for (let i = 0; i < 3; i++) {
+      const room = randomUUID();
+      await db.query(
+        "INSERT INTO sessions(id,owner_account_id,name,status,mode) VALUES($1,$2,'Huge','active','solo')",
+        [room, owner],
+      );
+      await db.query(
+        'INSERT INTO snapshots(session_id,seq,state) VALUES($1,1,$2::jsonb)',
+        [
+          room,
+          JSON.stringify({
+            sessionId: randomUUID(),
+            phase: 'lobby',
+            seats: [],
+            gameState: { premise: 'x'.repeat(10 * 1024 * 1024) },
+          }),
+        ],
+      );
+    }
+    await db.query(
+      "INSERT INTO export_jobs(id,account_id,status) VALUES($1,$2,'pending')",
+      [jobId, owner],
+    );
+    const realStringify = JSON.stringify;
+    let largest = 0;
+    const spy = vi
+      .spyOn(JSON, 'stringify')
+      .mockImplementation((...args: Parameters<typeof JSON.stringify>) => {
+        const text = realStringify(...args);
+        if (typeof text === 'string')
+          largest = Math.max(largest, Buffer.byteLength(text));
+        return text;
+      });
+    try {
+      await processExport(db, jobId, owner, {
+        put: async () => {},
+        get: async () => '',
+        delete: async () => {},
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    const row = (
+      await db.query('SELECT status, error_code FROM export_jobs WHERE id=$1', [
+        jobId,
+      ])
+    ).rows[0];
+    expect(row).toEqual({ status: 'failed', error_code: 'EXPORT_TOO_LARGE' });
+    expect(largest).toBeLessThan(TWENTY_FIVE_MB);
   });
 });

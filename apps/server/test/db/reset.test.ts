@@ -8,7 +8,7 @@ import {
 import { MemoryEmailSender } from '../../src/email/sender.js';
 import { hashPassword, verifyPassword } from '../../src/accounts/password.js';
 
-it('resets once, expires, revokes sessions, and preserves pending status', async () => {
+it('resets once, expires, revokes sessions, and never resets a pending account', async () => {
   const db = new Pool({ connectionString: process.env.DATABASE_URL });
   const sender = new MemoryEmailSender();
   const id = randomUUID();
@@ -70,14 +70,16 @@ it('resets once, expires, revokes sessions, and preserves pending status', async
     await db.query("UPDATE accounts SET status='pending_email' WHERE id=$1", [
       id,
     ]);
+    const sentBefore = sender.messages.length;
     await requestPasswordReset(db, sender, email);
+    expect(sender.messages.length).toBe(sentBefore);
     expect(
       await confirmPasswordReset(
         db,
         sender.messages.at(-1)?.token ?? '',
         newPassword,
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       (await db.query('SELECT status FROM accounts WHERE id=$1', [id])).rows[0]
         .status,
