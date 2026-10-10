@@ -576,4 +576,24 @@ describe('Room commit safety', () => {
       gameState: { recap: { recap: 'Previously...', memoryHash: 'h1' } },
     });
   });
+
+  it('rejects rest, death-save and TPK writes while the DM is narrating', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room, latestSnapshot } = setup(runner);
+    const account = randomUUID();
+    await room.join(account, { send() {} });
+    await room.submitAction(account, randomUUID(), 'I wait.');
+    await expect(room.takeRest(account, 'short')).rejects.toThrow(
+      'still narrating',
+    );
+    await expect(room.rollDeathSave(account)).rejects.toThrow(
+      'still narrating',
+    );
+    await expect(
+      room.chooseTpkResolution(account, 'fail-forward', 'The bridge falls.'),
+    ).rejects.toThrow('still narrating');
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(latestSnapshot()).not.toBeNull();
+  });
 });

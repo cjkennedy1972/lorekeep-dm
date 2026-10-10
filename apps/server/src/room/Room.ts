@@ -352,6 +352,7 @@ export class Room {
     catalog: Catalog = loadCatalog(),
   ): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
       const gameState = this.state.gameState as
@@ -372,6 +373,7 @@ export class Room {
 
   rollDeathSave(accountId: string): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
       const gameState = this.state.gameState as
@@ -411,6 +413,7 @@ export class Room {
     narrative?: string,
   ): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
       const gameState = this.state.gameState as
@@ -457,6 +460,11 @@ export class Room {
         );
       }
     });
+  }
+
+  private assertNotNarrating(): void {
+    if (this.turnInFlight)
+      throw new Error('The DM is still narrating; try again in a moment.');
   }
 
   private async commitGameState(
