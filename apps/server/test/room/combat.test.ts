@@ -137,6 +137,29 @@ describe('Room combat command seam', () => {
     expect(events).toHaveLength(4);
   });
 
+  it('ends a target concentration when a hit damages it', () => {
+    const runtime = createCombatRuntime();
+    const engaged: RoomCombatState = {
+      ...combat,
+      entities: combat.entities.map((entity) =>
+        entity.id === 'ent_hero'
+          ? { ...entity, pos: { x: 4, y: 1 } }
+          : entity,
+      ),
+      concentration: { ent_goblin: 'srd:spell/bless' },
+    };
+    const result = runtime.execute(engaged, 'ent_hero', {
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
+    });
+    if ('code' in result) throw new Error(result.code);
+    expect(result.events.some((event) => event.type === 'HpChanged')).toBe(
+      true,
+    );
+    expect(result.state.concentration?.ent_goblin ?? null).toBeNull();
+  });
+
   it('persists an accepted websocket combat move and rejects another seated account', async () => {
     const { room, events, latestSnapshot } = setup();
     const owner = randomUUID();

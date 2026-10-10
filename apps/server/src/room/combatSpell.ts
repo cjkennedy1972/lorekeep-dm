@@ -14,7 +14,7 @@ import type {
   CombatTransition,
   RoomCombatState,
 } from './combatTypes.js';
-import { settle } from './combatEngine.js';
+import { settle, withHp } from './combatEngine.js';
 
 type Ev = Record<string, unknown>;
 type CastCommand = Extract<CombatCommand['payload'], { command: 'cast' }>;
@@ -185,25 +185,21 @@ export function castCommand(
   });
   if ('error' in result) return reject(result.hint);
   const events = result.events as unknown as Ev[];
-  let entities = state.entities;
-  for (const event of events)
-    if (event.type === 'HpChanged')
-      entities = entities.map((e) =>
-        e.id === event.entityId ? { ...e, hp: Number(event.to) } : e,
-      );
-  const next: RoomCombatState = {
-    ...state,
-    entities,
-    seed: result.rng,
-    concentration: result.state.concentration,
-    combat: {
-      ...state.combat,
-      resources: {
-        ...state.combat.resources,
-        [actorId]: { ...resources, action: false },
+  const next = withHp(
+    {
+      ...state,
+      seed: result.rng,
+      concentration: result.state.concentration,
+      combat: {
+        ...state.combat,
+        resources: {
+          ...state.combat.resources,
+          [actorId]: { ...resources, action: false },
+        },
       },
     },
-  };
+    events,
+  );
   const closing = settle(next);
   return {
     state: closing.state,

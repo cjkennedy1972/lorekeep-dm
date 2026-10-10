@@ -185,14 +185,18 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
   return { state, events };
 }
 
-function withHp(state: RoomCombatState, events: readonly Ev[]) {
+export function withHp(state: RoomCombatState, events: readonly Ev[]) {
   let entities = state.entities;
+  let concentration = state.concentration;
   for (const event of events)
-    if (event.type === 'HpChanged')
+    if (event.type === 'HpChanged') {
       entities = entities.map((e) =>
         e.id === event.entityId ? { ...e, hp: Number(event.to) } : e,
       );
-  return { ...state, entities };
+      if (Number(event.to) < Number(event.from) && concentration?.[String(event.entityId)])
+        concentration = { ...concentration, [String(event.entityId)]: null };
+    }
+  return { ...state, entities, ...(concentration ? { concentration } : {}) };
 }
 const combatant = (
   e: CombatEntity,

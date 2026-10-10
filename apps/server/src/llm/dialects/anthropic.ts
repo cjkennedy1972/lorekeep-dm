@@ -129,27 +129,37 @@ export class AnthropicMessagesAdapter implements LlmAdapter {
 
   private requestBody(request: LlmRequest): JsonObject {
     const systemMessages = request.messages.filter((m) => m.role === 'system');
-    const messages = request.messages
-      .filter((m) => m.role !== 'system')
-      .map((m) => {
-        if (m.role === 'tool')
-          return {
-            role: 'user',
-            content: [
-              {
-                type: 'tool_result',
-                tool_use_id: m.toolCallId ?? '',
-                content: m.content,
-              },
-            ],
-          };
-        if (m.role === 'assistant' && m.toolCallId)
-          return { role: 'assistant', content: m.content };
-        return {
-          role: m.role === 'assistant' ? 'assistant' : 'user',
+    const messages: JsonObject[] = [];
+    for (const m of request.messages.filter((m) => m.role !== 'system')) {
+      if (m.role === 'tool') {
+        const result = {
+          type: 'tool_result',
+          tool_use_id: m.toolCallId ?? '',
           content: m.content,
         };
-      });
+        const previous = messages.at(-1);
+        if (previous?.role === 'user' && Array.isArray(previous.content))
+          previous.content.push(result);
+        else messages.push({ role: 'user', content: [result] });
+      } else if (m.role === 'assistant' && m.toolCalls?.length) {
+        messages.push({
+          role: 'assistant',
+          content: [
+            ...(m.content ? [{ type: 'text', text: m.content }] : []),
+            ...m.toolCalls.map((call) => ({
+              type: 'tool_use',
+              id: call.id,
+              name: call.name,
+              input: call.arguments,
+            })),
+          ],
+        });
+      } else
+        messages.push({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content,
+        });
+    }
     const body: JsonObject = {
       model: this.config.model,
       max_tokens: request.maxTokens,

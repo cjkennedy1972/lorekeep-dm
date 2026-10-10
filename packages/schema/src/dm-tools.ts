@@ -258,6 +258,7 @@ export const DMToolErrorCodeSchema = z.enum([
   'concentration-conflict',
   'not-equipped',
   'not-actors-turn',
+  'action-spent',
   'incapacitated-actor',
   'restrained',
   'immune',
