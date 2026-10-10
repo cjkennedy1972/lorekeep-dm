@@ -3,7 +3,7 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import { attestAdult } from './retryBlock.js';
 import { hashPassword, validPassword } from './password.js';
-import type { EmailSender } from '../email/sender.js';
+import { sendBestEffort, type EmailSender } from '../email/sender.js';
 
 export const signupSchema = z
   .object({
@@ -40,6 +40,7 @@ export async function signup(
   response: typeof signupResponse | typeof underageResponse;
   retryBlockCookie?: string;
   refused?: boolean;
+  sendError?: string;
 }> {
   const now = options.now ?? new Date();
   const age = attestAdult(
@@ -97,7 +98,10 @@ export async function signup(
   } finally {
     client.release();
   }
-  if (inserted)
-    await sender.sendVerification(input.email.trim().toLowerCase(), token);
-  return { response: signupResponse };
+  if (!inserted) return { response: signupResponse };
+  // The account and token are committed; a failed send is recoverable via resend, so the response stays identical.
+  const sendError = await sendBestEffort(() =>
+    sender.sendVerification(input.email.trim().toLowerCase(), token),
+  );
+  return { response: signupResponse, sendError };
 }

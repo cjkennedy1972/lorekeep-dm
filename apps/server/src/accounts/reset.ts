@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import type { EmailSender } from '../email/sender.js';
+import { sendBestEffort, type EmailSender } from '../email/sender.js';
 import { hashPassword, validPassword } from './password.js';
 import { hashToken } from './signup.js';
 
@@ -12,30 +12,32 @@ export async function requestPasswordReset(
   sender: EmailSender,
   email: string,
   now = new Date(),
-): Promise<typeof forgotResponse> {
+): Promise<{ sendError?: string }> {
   // Identical expensive work for known and unknown addresses.
   await hashPassword(randomBytes(32).toString('base64url'));
   const account = await db.query(
     "SELECT id FROM accounts WHERE email=$1 AND status IN ('active','pending_email')",
     [email.trim().toLowerCase()],
   );
-  if (account.rowCount) {
-    const token = randomBytes(32).toString('base64url');
-    // Only the latest link works: retire older unused ones in the same transaction.
-    await inAccountLock(db, account.rows[0].id, async (client) => {
-      await invalidateResetTokens(client, account.rows[0].id, now);
-      await client.query(
-        "INSERT INTO email_tokens(token_hash,account_id,kind,expires_at) VALUES ($1,$2,'reset',$3)",
-        [
-          hashToken(token),
-          account.rows[0].id,
-          new Date(now.getTime() + 3600_000),
-        ],
-      );
-    });
+  if (!account.rowCount) return {};
+  const token = randomBytes(32).toString('base64url');
+  // Only the latest link works: retire older unused ones in the same transaction.
+  await inAccountLock(db, account.rows[0].id, async (client) => {
+    await invalidateResetTokens(client, account.rows[0].id, now);
+    await client.query(
+      "INSERT INTO email_tokens(token_hash,account_id,kind,expires_at) VALUES ($1,$2,'reset',$3)",
+      [
+        hashToken(token),
+        account.rows[0].id,
+        new Date(now.getTime() + 3600_000),
+      ],
+    );
+  });
+  // The link is committed; a failed send leaves the user able to request another one.
+  const sendError = await sendBestEffort(async () => {
     await sender.sendPasswordReset?.(email.trim().toLowerCase(), token);
-  }
-  return forgotResponse;
+  });
+  return { sendError };
 }
 
 export async function invalidateResetTokens(

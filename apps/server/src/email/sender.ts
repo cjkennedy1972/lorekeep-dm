@@ -5,6 +5,17 @@ export interface EmailSender {
   sendVerification(email: string, token: string): Promise<void>;
   sendPasswordReset?(email: string, token: string): Promise<void>;
 }
+/** Returns only the error class name on failure, never the message, which may carry the address or token. */
+export async function sendBestEffort(
+  send: () => Promise<void>,
+): Promise<string | undefined> {
+  try {
+    await send();
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.name : 'UnknownError';
+  }
+}
 export class MemoryEmailSender implements EmailSender {
   readonly messages: { email: string; token: string }[] = [];
   async sendVerification(email: string, token: string): Promise<void> {
