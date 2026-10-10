@@ -10,7 +10,8 @@ import { runSweep } from '../../src/retention/sweeper.js';
 let db: Pool;
 let dir: string;
 
-const q = async (sql: string, p: unknown[] = []) => (await db.query(sql, p)).rows;
+const q = async (sql: string, p: unknown[] = []) =>
+  (await db.query(sql, p)).rows;
 
 beforeAll(async () => {
   db = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -40,16 +41,33 @@ describe('ADR-017 owner-based account deletion rule', () => {
         [
           session,
           randomUUID(),
-          { seatId: randomUUID(), accountId: gone, displayName: 'Gone', presence: 'offline' },
+          {
+            seatId: randomUUID(),
+            accountId: gone,
+            displayName: 'Gone',
+            presence: 'offline',
+          },
           randomUUID(),
-          { seatId: randomUUID(), accountId: suspended, displayName: 'Sus', presence: 'offline' },
+          {
+            seatId: randomUUID(),
+            accountId: suspended,
+            displayName: 'Sus',
+            presence: 'offline',
+          },
         ],
       );
-      await q("UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1", [gone]);
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [gone],
+      );
       await runSweep(db, { store: new LocalObjectStore(dir), log: () => {} });
 
-      expect(await q('SELECT 1 FROM sessions WHERE id=$1', [session])).toHaveLength(0);
-      expect(await q('SELECT 1 FROM accounts WHERE id=$1', [gone])).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM sessions WHERE id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM accounts WHERE id=$1', [gone]),
+      ).toHaveLength(0);
     } finally {
       await q('SELECT purge_session($1)', [session]);
       await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, suspended]]);

@@ -16,7 +16,11 @@ let db: Pool;
 let dir: string;
 
 const failingAdapter: LlmAdapter = {
-  capabilities: () => ({ streaming: true, nativeTools: true, jsonSchema: true }),
+  capabilities: () => ({
+    streaming: true,
+    nativeTools: true,
+    jsonSchema: true,
+  }),
   probe: async () => false,
   // eslint-disable-next-line require-yield
   async *complete() {
@@ -24,7 +28,8 @@ const failingAdapter: LlmAdapter = {
   },
 };
 
-const q = async (sql: string, p: unknown[] = []) => (await db.query(sql, p)).rows;
+const q = async (sql: string, p: unknown[] = []) =>
+  (await db.query(sql, p)).rows;
 
 async function account(id: string) {
   await q(
@@ -53,22 +58,46 @@ describe('account deletion scrubs derived tables', () => {
     try {
       await q(
         'INSERT INTO sessions(id,owner_account_id,name,adventure_id,character_id) VALUES($1,$2,$3,$4,$5)',
-        [session, gone, 'Derived', 'adventure:01-hollow-under-marrowfell', charId],
+        [
+          session,
+          gone,
+          'Derived',
+          'adventure:01-hollow-under-marrowfell',
+          charId,
+        ],
       );
       await q(
         "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'SeatJoined',$3),($1,2,$2,'SeatJoined',$4),($1,3,$5,'ActionAccepted',$6)",
         [
           session,
           randomUUID(),
-          { seatId: randomUUID(), accountId: heir, displayName: 'Heir', presence: 'offline' },
-          { seatId: randomUUID(), accountId: gone, displayName: 'Acct', presence: 'offline' },
+          {
+            seatId: randomUUID(),
+            accountId: heir,
+            displayName: 'Heir',
+            presence: 'offline',
+          },
+          {
+            seatId: randomUUID(),
+            accountId: gone,
+            displayName: 'Acct',
+            presence: 'offline',
+          },
           randomUUID(),
-          { accountId: gone, actionId: 'a1', text: TYPED, playerName: 'Mirelle' },
+          {
+            accountId: gone,
+            actionId: 'a1',
+            text: TYPED,
+            playerName: 'Mirelle',
+          },
         ],
       );
       await q('INSERT INTO snapshots(session_id,seq,state) VALUES($1,3,$2)', [
         session,
-        { lastPlayerText: TYPED, party: { [gone]: { id: charId, name: CHAR_NAME } } },
+        {
+          lastPlayerText: TYPED,
+          party: { [gone]: { id: charId, name: CHAR_NAME } },
+        },
       ]);
 
       await closeScene({
@@ -77,7 +106,10 @@ describe('account deletion scrubs derived tables', () => {
         sceneId: 'scene-marowfell-well',
         adapter: failingAdapter,
         events: [
-          { type: 'ActionAccepted', payload: { accountId: gone, text: TYPED, playerName: 'Mirelle' } },
+          {
+            type: 'ActionAccepted',
+            payload: { accountId: gone, text: TYPED, playerName: 'Mirelle' },
+          },
           { type: 'CharacterCreated', payload: { name: CHAR_NAME } },
         ],
       });
@@ -93,17 +125,30 @@ describe('account deletion scrubs derived tables', () => {
         },
       });
 
-      expect(JSON.stringify(await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [session]))).toContain(TYPED);
+      expect(
+        JSON.stringify(
+          await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+            session,
+          ]),
+        ),
+      ).toContain(TYPED);
 
-      await q("UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1", [gone]);
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [gone],
+      );
       await runSweep(db, { store: new LocalObjectStore(dir), log: () => {} });
 
-      expect(await q('SELECT 1 FROM accounts WHERE id=$1', [gone])).toHaveLength(0);
-      expect(await q('SELECT owner_account_id FROM sessions WHERE id=$1', [session])).toEqual([
-        { owner_account_id: heir },
-      ]);
+      expect(
+        await q('SELECT 1 FROM accounts WHERE id=$1', [gone]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT owner_account_id FROM sessions WHERE id=$1', [session]),
+      ).toEqual([{ owner_account_id: heir }]);
       const derived = JSON.stringify([
-        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [session]),
+        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+          session,
+        ]),
         await q(
           'SELECT name, aliases, payload::text AS payload, search_document FROM registry_entries WHERE session_id=$1',
           [session],

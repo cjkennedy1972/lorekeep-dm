@@ -29,7 +29,12 @@ async function seat(session: string, accountId: string, seq: number) {
       session,
       seq,
       'SeatJoined',
-      { seatId: randomUUID(), accountId, displayName: 'Seat', presence: 'offline' },
+      {
+        seatId: randomUUID(),
+        accountId,
+        displayName: 'Seat',
+        presence: 'offline',
+      },
     ],
   );
 }
@@ -63,10 +68,12 @@ describe('account deletion honors legal holds', () => {
     try {
       await runSweep(pool, { store: new LocalObjectStore(dir), log });
 
-      expect(await q('SELECT status FROM accounts WHERE id=$1', [gone])).toEqual([
-        { status: 'deleting' },
-      ]);
-      expect(await q('SELECT 1 FROM export_jobs WHERE id=$1', [exportId])).toHaveLength(1);
+      expect(
+        await q('SELECT status FROM accounts WHERE id=$1', [gone]),
+      ).toEqual([{ status: 'deleting' }]);
+      expect(
+        await q('SELECT 1 FROM export_jobs WHERE id=$1', [exportId]),
+      ).toHaveLength(1);
       expect(await readdir(dir)).toEqual([`${exportId}.json`]);
       expect(await audit(exportId)).toEqual([
         { item_kind: 'export', action: 'skipped_legal_hold' },
@@ -76,7 +83,9 @@ describe('account deletion honors legal holds', () => {
         exportId,
       ]);
       await runSweep(pool, { store: new LocalObjectStore(dir), log });
-      expect(await q('SELECT 1 FROM accounts WHERE id=$1', [gone])).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM accounts WHERE id=$1', [gone]),
+      ).toHaveLength(0);
       expect(await readdir(dir)).toEqual([]);
     } finally {
       await q('DELETE FROM legal_holds WHERE item_id=$1', [exportId]);
@@ -98,10 +107,12 @@ describe('account deletion honors legal holds', () => {
     ]);
     try {
       await sweep();
-      expect(await q('SELECT 1 FROM sessions WHERE id=$1', [session])).toHaveLength(1);
-      expect(await q('SELECT status FROM accounts WHERE id=$1', [gone])).toEqual([
-        { status: 'deleting' },
-      ]);
+      expect(
+        await q('SELECT 1 FROM sessions WHERE id=$1', [session]),
+      ).toHaveLength(1);
+      expect(
+        await q('SELECT status FROM accounts WHERE id=$1', [gone]),
+      ).toEqual([{ status: 'deleting' }]);
       expect(await audit(session)).toEqual([
         { item_kind: 'session', action: 'skipped_legal_hold' },
       ]);
@@ -128,17 +139,25 @@ describe('account deletion honors legal holds', () => {
     ]);
     try {
       await sweep();
-      expect(await q('SELECT 1 FROM sessions WHERE id=$1', [session])).toHaveLength(1);
-      expect(await q('SELECT 1 FROM accounts WHERE id=$1', [gone])).toHaveLength(1);
+      expect(
+        await q('SELECT 1 FROM sessions WHERE id=$1', [session]),
+      ).toHaveLength(1);
+      expect(
+        await q('SELECT 1 FROM accounts WHERE id=$1', [gone]),
+      ).toHaveLength(1);
       expect(await audit(coSeat)).toContainEqual({
         item_kind: 'account',
         action: 'skipped_legal_hold',
       });
 
-      await q("DELETE FROM legal_holds WHERE item_id=$1", [coSeat]);
+      await q('DELETE FROM legal_holds WHERE item_id=$1', [coSeat]);
       await sweep();
-      expect(await q('SELECT 1 FROM sessions WHERE id=$1', [session])).toHaveLength(0);
-      expect(await q('SELECT 1 FROM accounts WHERE id=$1', [gone])).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM sessions WHERE id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM accounts WHERE id=$1', [gone]),
+      ).toHaveLength(0);
     } finally {
       await q('DELETE FROM legal_holds WHERE item_id=$1', [coSeat]);
       await q('SELECT purge_session($1)', [session]);

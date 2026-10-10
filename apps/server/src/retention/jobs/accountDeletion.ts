@@ -273,12 +273,16 @@ async function deleteAccount(
   }
 
   const needles = new Set<string>();
-  for (const row of eventRows) collectScrubNeedles(row.payload, accountId, charIds, needles);
-  for (const row of snapshotRows) collectScrubNeedles(row.state, accountId, charIds, needles);
+  for (const row of eventRows)
+    collectScrubNeedles(row.payload, accountId, charIds, needles);
+  for (const row of snapshotRows)
+    collectScrubNeedles(row.state, accountId, charIds, needles);
   await scrubDerived(
     client,
     touched,
-    [...needles].filter((n) => n.length >= MIN_NEEDLE).sort((a, b) => b.length - a.length),
+    [...needles]
+      .filter((n) => n.length >= MIN_NEEDLE)
+      .sort((a, b) => b.length - a.length),
   );
 
   if (charIds.size) {
@@ -310,7 +314,8 @@ function collectScrubNeedles(
   out: Set<string>,
 ) {
   if (Array.isArray(value)) {
-    for (const item of value) collectScrubNeedles(item, accountId, charIds, out);
+    for (const item of value)
+      collectScrubNeedles(item, accountId, charIds, out);
     return;
   }
   if (!value || typeof value !== 'object') return;
@@ -320,7 +325,10 @@ function collectScrubNeedles(
   );
   for (const [key, child] of Object.entries(obj)) {
     if (typeof child === 'string') {
-      if (key === 'lastPlayerText' || (owned && ['text', 'playerName', 'name'].includes(key)))
+      if (
+        key === 'lastPlayerText' ||
+        (owned && ['text', 'playerName', 'name'].includes(key))
+      )
         out.add(child);
     }
     collectScrubNeedles(child, accountId, charIds, out);
@@ -329,7 +337,8 @@ function collectScrubNeedles(
 
 function redactText(text: string, needles: readonly string[]) {
   let out = text;
-  for (const needle of needles) out = out.split(needle).join(DERIVED_PLACEHOLDER);
+  for (const needle of needles)
+    out = out.split(needle).join(DERIVED_PLACEHOLDER);
   return out;
 }
 
@@ -397,7 +406,10 @@ async function scrubDerived(
   for (const row of facts.rows) {
     const fact = redactText(row.fact, needles);
     if (fact !== row.fact)
-      await client.query('UPDATE registry_facts SET fact=$2 WHERE id=$1', [row.id, fact]);
+      await client.query('UPDATE registry_facts SET fact=$2 WHERE id=$1', [
+        row.id,
+        fact,
+      ]);
   }
 }
 
