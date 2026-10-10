@@ -163,6 +163,12 @@ describe('Room combat command seam', () => {
     const dropped = result.events.some(
       (event) => event.type === 'ConcentrationDropped',
     );
+    const replay = runtime.execute(engaged, 'ent_hero', {
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
+    });
+    expect(replay).toEqual(result);
     expect(result.state.concentration?.ent_goblin ?? null).toBe(
       dropped ? null : 'srd:spell/bless',
     );

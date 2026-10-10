@@ -26,6 +26,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     rolls: z.array(z.int()),
     modifier: z.int(),
     total: z.int(),
+    dc: z.int().optional(),
+    success: z.boolean().optional(),
   }),
   ev('CombatStarted', {
     combatId: z.string().min(1),

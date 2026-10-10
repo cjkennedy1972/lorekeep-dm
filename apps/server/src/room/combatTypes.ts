@@ -25,6 +25,10 @@ export type CombatEntity = {
   ac?: number;
   speed?: number;
   abilities?: Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>;
+  /** Total saving-throw bonuses; an ability without one falls back to its modifier. */
+  saves?: Partial<
+    Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>
+  >;
   attacks?: CombatAttack[];
   /** A monster that ran away is out of the fight without being dead. */
   fled?: boolean;

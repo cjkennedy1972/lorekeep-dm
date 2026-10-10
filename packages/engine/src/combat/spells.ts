@@ -38,6 +38,8 @@ export type SpellEvent =
       spellId: string;
       kind: 'attack' | 'save' | 'damage' | 'healing';
       breakdown: RollBreakdown;
+      dc?: number;
+      success?: boolean;
     }
   | {
       type: 'HpChanged';
@@ -595,10 +597,18 @@ export function concentrationSave(
   const [breakdown, rng] = roll('1d20', seed, {
     modifiers: [{ label: 'constitution', value: constitution }],
   });
-  const events: SpellEvent[] = [
-    { type: 'RollEvent', entityId, spellId, kind: 'save', breakdown },
-  ];
   const success = breakdown.total >= dc;
+  const events: SpellEvent[] = [
+    {
+      type: 'RollEvent',
+      entityId,
+      spellId,
+      kind: 'save',
+      breakdown,
+      dc,
+      success,
+    },
+  ];
   if (!success)
     events.push({ type: 'ConcentrationDropped', entityId, spellId });
   return { ok: true, success, events, rng };

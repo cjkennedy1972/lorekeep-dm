@@ -213,7 +213,7 @@ export function withHp(
     const save = concentrationSave(
       id,
       from - to,
-      abilityModifier(entity.abilities?.con ?? 10),
+      entity.saves?.con ?? abilityModifier(entity.abilities?.con ?? 10),
       seed ?? 1,
       { concentration, hp: {}, slots: {} },
     );

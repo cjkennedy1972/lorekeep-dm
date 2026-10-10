@@ -1,5 +1,6 @@
 import {
   abilityModifier,
+  deriveSheet,
   emptyCombatState,
   proficiencyBonus,
   type Catalog,
@@ -53,12 +54,12 @@ const unarmed = (character: CharacterInput): CombatAttack => {
     damageType: 'bludgeoning',
   };
 };
-function attacksFor(
+export function attacksFor(
   entity: EngineEntity,
   character: CharacterInput | undefined,
   registry: Record<string, ToolAttack>,
   catalog: Catalog,
-): Pick<CombatEntity, 'attacks' | 'abilities'> {
+): Pick<CombatEntity, 'attacks' | 'abilities' | 'saves'> {
   if (character) {
     const owned = Object.entries(registry)
       .filter(([, attack]) => attack.ownerId === entity.id)
@@ -75,6 +76,7 @@ function attacksFor(
       );
     return {
       abilities: character.abilities,
+      saves: deriveSheet(character, catalog).saves,
       attacks: owned.length ? owned : [unarmed(character)],
     };
   }
@@ -82,6 +84,7 @@ function attacksFor(
   const monster = catalog.get('monster', catalogId);
   return {
     abilities: monster?.abilities,
+    saves: monster?.saves,
     attacks: (monster?.attacks ?? []).map((attack) => ({
       id: slug(attack.name),
       name: attack.name,
