@@ -41,7 +41,11 @@ export const rooms = new RoomRegistry(
   soloTurnRunner,
 );
 const connections = new ConnectionRegistry(db);
-const app = createApp(db, { rooms, connections });
+const app = createApp(db, {
+  rooms,
+  connections,
+  trustProxy: config.TRUST_PROXY,
+});
 const closeGateway = installGateway(app, db, rooms, connections);
 // Disabled in tests or with SWEEP_INTERVAL_MS=0.
 const stopSweeper =

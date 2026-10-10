@@ -103,3 +103,70 @@ describe('server app', () => {
     }
   });
 });
+
+describe('reverse proxy trust', () => {
+  const noDb = {
+    connect: async () => {
+      throw new Error('database accessed');
+    },
+    query: async () => {
+      throw new Error('database accessed');
+    },
+  } as never;
+  const underage = {
+    email: 'minor@example.test',
+    password: 'a-unique-password-123',
+    displayName: 'Player',
+    birthdate: '2015-01-01',
+    termsVersion: 'v1',
+  };
+  const build = (trustProxy: boolean) =>
+    createApp(noDb, { cookieSecret: 'test-secret', rateLimit: 1, trustProxy });
+  const signupFrom = (
+    app: ReturnType<typeof build>,
+    client: string,
+    headers: Record<string, string> = {},
+  ) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/signup',
+      remoteAddress: '10.0.0.1',
+      headers: { 'x-forwarded-for': client, ...headers },
+      payload: { ...underage, email: `${client}@example.test` },
+    });
+
+  it('keys rate limits on the forwarded client when trusted', async () => {
+    const app = build(true);
+    expect((await signupFrom(app, '203.0.113.1')).statusCode).toBe(403);
+    expect((await signupFrom(app, '203.0.113.1')).statusCode).toBe(429);
+    const other = await signupFrom(app, '203.0.113.2');
+    expect(other.statusCode).toBe(403);
+    expect(other.json().code).toBe('UNDERAGE');
+    await app.close();
+  });
+
+  it('ignores forwarded client addresses when not trusted', async () => {
+    const app = build(false);
+    expect((await signupFrom(app, '203.0.113.1')).statusCode).toBe(403);
+    expect((await signupFrom(app, '203.0.113.2')).statusCode).toBe(429);
+    await app.close();
+  });
+
+  it('accepts an https Origin behind a TLS-terminating proxy only when trusted', async () => {
+    const headers = {
+      origin: 'https://game.example.test',
+      host: 'game.example.test',
+      'x-forwarded-proto': 'https',
+    };
+    const trusted = build(true);
+    expect(
+      (await signupFrom(trusted, '203.0.113.9', headers)).json().code,
+    ).toBe('UNDERAGE');
+    await trusted.close();
+    const untrusted = build(false);
+    expect(
+      (await signupFrom(untrusted, '203.0.113.9', headers)).json().code,
+    ).toBe('BAD_ORIGIN');
+    await untrusted.close();
+  });
+});

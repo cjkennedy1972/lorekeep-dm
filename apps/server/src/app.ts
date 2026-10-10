@@ -69,10 +69,12 @@ export function createApp(
     rooms?: Pick<RoomRegistry, 'get'>;
     connections?: Pick<ConnectionRegistry, 'sweep'>;
     isOperator?: (accountId: string) => Promise<boolean>;
+    trustProxy?: boolean;
   } = {},
 ) {
   const app = Fastify({
     loggerInstance: createLogger(),
+    trustProxy: options.trustProxy ?? false,
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
   });
