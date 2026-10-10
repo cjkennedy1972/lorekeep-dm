@@ -73,7 +73,10 @@ export async function processExport(
       sessions,
       ownedRooms,
       characters,
-      snapshots,
+      snapshots: snapshots.map((row) => ({
+        ...row,
+        state: ownSeatState(row.state, accountId),
+      })),
       summaries,
     };
     const key = `${id}.json`;
@@ -88,6 +91,28 @@ export async function processExport(
       [id],
     );
   }
+}
+// ponytail: keeps only the exporter's own character; drops lastPlayerText since its author is not recorded.
+function ownSeatState(state: unknown, accountId: string) {
+  if (!state || typeof state !== 'object') return state;
+  const snapshot = { ...(state as Record<string, unknown>) };
+  const characters = snapshot.characters as
+    | Record<string, { id?: string }>
+    | undefined;
+  const engine = snapshot.gameEngine as
+    | { actors?: Record<string, unknown> }
+    | undefined;
+  const own = characters?.[accountId];
+  if (characters) snapshot.characters = own ? { [accountId]: own } : {};
+  if (engine?.actors)
+    snapshot.gameEngine = {
+      ...engine,
+      actors: Object.fromEntries(
+        Object.entries(engine.actors).filter(([id]) => id === own?.id),
+      ),
+    };
+  delete snapshot.lastPlayerText;
+  return snapshot;
 }
 export async function latestExport(db: Pool, accountId: string) {
   const row = (
