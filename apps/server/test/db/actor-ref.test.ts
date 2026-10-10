@@ -127,3 +127,68 @@ describe('actor tools accept the real player character id', () => {
     expect(JSON.parse(toolResults[0]!)).toMatchObject({ ok: true });
   });
 });
+
+describe('model tool calls stay on the submitting seat', () => {
+  it('rejects a request_check that names another seat character', async () => {
+    const catalog = loadCatalog();
+    const own = {
+      ...quickBuild(catalog, 'class:cleric', 0x28, 1).character,
+      id: randomUUID(),
+    };
+    const other = {
+      ...quickBuild(catalog, 'class:cleric', 0x29, 2).character,
+      id: randomUUID(),
+    };
+    const accountId = randomUUID();
+    const otherAccountId = randomUUID();
+    for (const id of [accountId, otherAccountId]) {
+      await db.query(
+        `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'hash','Seat','active',true,now(),'v1',now())`,
+        [id, `${id}@example.test`],
+      );
+      accountIds.push(id);
+    }
+    await db.query(
+      `INSERT INTO catalog_snapshots(catalog_version,entries) VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
+      [catalog.catalogVersion, JSON.stringify(catalog.entries)],
+    );
+    const sessionId = randomUUID();
+    await db.query(
+      `INSERT INTO sessions(id,owner_account_id,name,status,mode,adventure_id,difficulty,catalog_version,character_id,character)
+       VALUES($1,$2,'Seat scope','active','solo',$3,'moderate',$4,$5,$6::jsonb)`,
+      [
+        sessionId,
+        accountId,
+        ADVENTURE,
+        catalog.catalogVersion,
+        own.id,
+        JSON.stringify(own),
+      ],
+    );
+    sessionIds.push(sessionId);
+    const toolResults: string[] = [];
+    const runner = new ProductionSoloTurnRunner(
+      db,
+      undefined,
+      'record',
+      join(dir, 'scope.ndjson'),
+      checkingDm(other.id, toolResults),
+    );
+    await runner.run(
+      {
+        sessionId,
+        accountId,
+        actionId: randomUUID(),
+        text: 'I check on my companion.',
+        state: {
+          sceneId: 'scene-marowfell-well',
+          adventureId: ADVENTURE,
+          characters: { [accountId]: own, [otherAccountId]: other },
+        },
+      },
+      () => undefined,
+    );
+    expect(toolResults.length).toBeGreaterThan(0);
+    expect(JSON.parse(toolResults[0]!)).toMatchObject({ ok: false });
+  });
+});

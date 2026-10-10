@@ -243,6 +243,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             rulings: [],
           },
         }) as unknown as ToolExecutorState & { world: WorldRegistry };
+    const otherSeatIds = Object.entries(actors)
+      .filter(([accountId]) => accountId !== request.accountId)
+      .map(([, character]) => character.id);
     const context: DmToolContext = {
       seed: 0,
       rollIndex: 0,
@@ -296,6 +299,14 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       engineExecute(prior, call, seed) {
         const current = prior as ToolExecutorState & { world: WorldRegistry };
         const request = call as { name?: string; args?: unknown };
+        const serializedArgs = JSON.stringify(request.args ?? {});
+        if (otherSeatIds.some((id) => serializedArgs.includes(id)))
+          return {
+            ok: false,
+            error: 'unknown-entity',
+            hint: 'Only your own character can be named in this action.',
+            events: [],
+          };
         const worldExecutors = {
           upsert_npc: upsertNpc,
           upsert_location: upsertLocation,
