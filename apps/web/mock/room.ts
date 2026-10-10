@@ -17,7 +17,7 @@ const SCRIPTED = {
   displayName: 'Scripted Sam',
 } as const;
 
-/** Trivial single-room actor: join, presence, StateSync, one scripted participant. */
+/** Trivial single-table actor: join, presence, StateSync, one scripted participant. */
 export class Room {
   private seq = 0;
   private seats = new Map<string, Seat>();

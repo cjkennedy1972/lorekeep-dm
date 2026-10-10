@@ -36,6 +36,12 @@ async function cookieFetch(): Promise<typeof fetch> {
     }),
   });
   const cookie = res.headers.get('set-cookie')!.split(';')[0]!;
+  // Tickets only issue to a seated account, so seat Cy at a table first.
+  await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ name: 'Client Table' }),
+  });
   return (url, init) =>
     fetch(url, { ...init, headers: { ...init?.headers, cookie } });
 }

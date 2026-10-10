@@ -127,6 +127,12 @@ const until = async (f: () => boolean) => {
 test('two connections see each other presence; ticket is single use', async () => {
   const a = await signup('p1@example.com', 'P1');
   const b = await signup('p2@example.com', 'P2');
+  const table = (await (
+    await post('/api/rooms', { name: 'Presence Table' }, a.cookie)
+  ).json()) as { room: { code: string } };
+  expect(
+    (await post(`/api/invites/${table.room.code}/join`, {}, b.cookie)).status,
+  ).toBe(200);
   const c1 = await connect(a.cookie);
   await until(() => c1.msgs.some((m) => m.type === 'StateSync'));
   const c2 = await connect(b.cookie);
