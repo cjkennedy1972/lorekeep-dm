@@ -713,4 +713,30 @@ describe('Room commit safety', () => {
     expect(saved.gameState.characters[combatAccount]?.hp.current).toBe(hero.hp.current - 4);
     expect(saved.gameState.combatRoom.entities.find((e) => e.id === hero.id)?.pos.x).toBe(aria.pos.x + 1);
   });
+
+  it('does not start a queued LLM turn once drain begins', async () => {
+    let calls = 0;
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const runner: SoloTurnRunner = {
+      async run() {
+        calls += 1;
+        await gate;
+        return result as never;
+      },
+    };
+    const { room } = setup(runner);
+    const account = randomUUID();
+    await room.join(account, { send() {} });
+    expect(await room.submitAction(account, randomUUID(), 'one')).toBe(true);
+    expect(await room.submitAction(account, randomUUID(), 'two')).toBe(true);
+    const draining = room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finish();
+    await draining;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toBe(1);
+  });
 });
