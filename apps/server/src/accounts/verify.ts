@@ -1,8 +1,11 @@
 import type { Pool } from 'pg';
 import { hashToken } from './signup.js';
+import { hashPassword } from './password.js';
+// The verifier's own password replaces the signup-time one, so a link started by someone else never activates their password.
 export async function verifyEmail(
   db: Pool,
   token: string,
+  password: string,
   now: Date = new Date(),
 ): Promise<boolean> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
@@ -17,10 +20,15 @@ export async function verifyEmail(
       await client.query('ROLLBACK');
       return false;
     }
-    await client.query(
-      `UPDATE accounts SET status='active' WHERE id=$1 AND status='pending_email'`,
-      [result.rows[0].account_id],
+    const passwordHash = await hashPassword(password);
+    const activated = await client.query(
+      `UPDATE accounts SET status='active', password_hash=$2 WHERE id=$1 AND status='pending_email'`,
+      [result.rows[0].account_id, passwordHash],
     );
+    if (activated.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return false;
+    }
     await client.query('COMMIT');
     return true;
   } catch (error) {

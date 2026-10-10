@@ -35,7 +35,9 @@ describe('persistent sessions', () => {
       expect((await login(db, email, 'unique-password-123', 'test')).kind).toBe(
         'pending',
       );
-      expect(await verifyEmail(db, sender.messages[0]!.token)).toBe(true);
+      expect(
+        await verifyEmail(db, sender.messages[0]!.token, 'unique-password-123'),
+      ).toBe(true);
       const result = await login(db, email, 'unique-password-123', 'test');
       expect(result.kind).toBe('ok');
       if (result.kind !== 'ok') throw new Error('login failed');

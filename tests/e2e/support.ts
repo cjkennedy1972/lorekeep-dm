@@ -182,7 +182,7 @@ export async function createVerifiedAccount(url: string): Promise<Account> {
   const verified = await fetch(`${url}/api/verify-email`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: url },
-    body: JSON.stringify({ token: verifyToken }),
+    body: JSON.stringify({ token: verifyToken, password }),
   });
   if (!verified.ok) throw new Error(`Verification failed: ${verified.status}`);
   const login = await fetch(`${url}/api/login`, {
