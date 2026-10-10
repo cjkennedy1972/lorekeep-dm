@@ -459,8 +459,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       },
     });
 
-    if (emittedSceneEvents.length)
-      result.events = [...result.events, ...emittedSceneEvents];
+    // Tool-emitted events are already in result.events; only add ones that are not.
+    const missingSceneEvents = emittedSceneEvents.filter(
+      (event) => !result.events.includes(event),
+    );
+    if (missingSceneEvents.length)
+      result.events = [...result.events, ...missingSceneEvents];
     for (const event of result.events) {
       if (
         event &&

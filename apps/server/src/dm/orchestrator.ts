@@ -541,7 +541,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         };
         if (outcome.output?.nextState !== undefined)
           input.context.engineState = outcome.output.nextState;
-        if (outcome.output && input.context.commitState)
+        if (
+          outcome.output?.nextState !== undefined &&
+          input.context.commitState
+        )
           input.context.state = input.context.commitState(
             input.context.state,
             outcome.output,
