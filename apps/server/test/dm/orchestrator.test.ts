@@ -384,6 +384,22 @@ describe('DM orchestrator', () => {
     await runTurn(h.input);
     expect(executions).toBe(0);
   });
+  it('replays the assistant tool calls so the follow-up request carries them', async () => {
+    const h = setup([
+      [call('c1', 'request_check', validCheck)],
+      [{ type: 'text', delta: narration }],
+    ]);
+    await runTurn(h.input);
+    const followUp = h.requests[1]?.messages ?? [];
+    const assistant = followUp.find(
+      (m) => m.role === 'assistant' && m.toolCalls?.length,
+    );
+    expect(assistant?.toolCalls).toEqual([
+      { id: 'c1', name: 'request_check', arguments: validCheck },
+    ]);
+    expect(followUp.find((m) => m.role === 'tool')?.toolCallId).toBe('c1');
+  });
+
   it('discards tool-response prose and appends combat-start tool results before narration', async () => {
     const h = setup(
       [

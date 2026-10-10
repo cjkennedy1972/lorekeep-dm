@@ -17,6 +17,7 @@ import {
   movementState,
   runMonsters,
   settle,
+  withHp,
 } from './combatEngine.js';
 import { reconcileCombat, type Reconciled } from './combatBootstrap.js';
 import { areaOptions, castCommand } from './combatSpell.js';
@@ -240,24 +241,20 @@ export function createCombatRuntime(
         });
         if ('error' in result)
           return reject('That target is not a legal attack.');
-        const hp = result.events.find((event) => event.type === 'HpChanged');
-        const hit: RoomCombatState = {
-          ...state,
-          entities:
-            hp?.type === 'HpChanged'
-              ? state.entities.map((item) =>
-                  item.id === hp.entityId ? { ...item, hp: hp.to } : item,
-                )
-              : state.entities,
-          seed: result.rng,
-          combat: {
-            ...state.combat,
-            resources: {
-              ...state.combat.resources,
-              [actorId]: { ...resource, action: false },
+        const hit = withHp(
+          {
+            ...state,
+            seed: result.rng,
+            combat: {
+              ...state.combat,
+              resources: {
+                ...state.combat.resources,
+                [actorId]: { ...resource, action: false },
+              },
             },
           },
-        };
+          result.events,
+        );
         const closing = settle(hit);
         return {
           state: closing.state,

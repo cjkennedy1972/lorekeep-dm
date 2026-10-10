@@ -433,7 +433,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         done = true;
         break;
       }
-      messages.push({ role: 'assistant', content: textDeltas.join('') });
+      messages.push({
+        role: 'assistant',
+        content: textDeltas.join(''),
+        toolCalls: calls.map((call) => ({
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+        })),
+      });
       // Any prose co-emitted with calls is intentionally discarded.
       for (const call of calls) {
         const validated = safeArgs(call.name, call.arguments);
