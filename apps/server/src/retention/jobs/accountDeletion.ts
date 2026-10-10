@@ -7,6 +7,7 @@ import type { RoomCombatState } from '../../room/combatTypes.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
+const HELD = 'HELD';
 
 interface Scrub {
   accountId: string;
@@ -32,7 +33,7 @@ const FENCE_NODE = 'retention:accountDeletion';
 /**
  * Coordinates with live Rooms the way Persistence.transaction does: lock the session row,
  * then take its lease (bumping the epoch). A live lease means a Room may hold unsaved
- * state, so fail closed (HELD_SESSION: the account stays 'deleting', retried next sweep).
+ * state, so fail closed (HELD: the account stays 'deleting', retried next sweep).
  * Once we commit, the lease is released but the epoch has moved, so a stale Room's commit
  * fails its fence and the Room reloads from the scrubbed snapshot.
  */
@@ -44,7 +45,7 @@ async function fenceSession(
 ) {
   if (fenced.has(sessionId)) return;
   if (await skipIfHeld(ctx, 'accountDeletion', 'session', sessionId))
-    throw new Error('HELD_SESSION');
+    throw new Error(HELD);
   await client.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE', [
     sessionId,
   ]);
@@ -57,7 +58,7 @@ async function fenceSession(
      RETURNING epoch`,
     [sessionId, FENCE_NODE],
   );
-  if (!lease.rowCount) throw new Error('HELD_SESSION');
+  if (!lease.rowCount) throw new Error(HELD);
   fenced.add(sessionId);
 }
 
@@ -86,11 +87,14 @@ async function deleteAccount(
     snapshotsScrubbed: 0,
   };
   const exportRows = (
-    await client.query<{ archive_key: string | null }>(
-      'SELECT archive_key FROM export_jobs WHERE account_id=$1',
+    await client.query<{ id: string; archive_key: string | null }>(
+      'SELECT id, archive_key FROM export_jobs WHERE account_id=$1',
       [accountId],
     )
   ).rows;
+  for (const r of exportRows)
+    if (await skipIfHeld(ctx, 'accountDeletion', 'export', r.id))
+      throw new Error(HELD);
   for (const r of exportRows) await removeArchive(ctx, r.archive_key);
   counts.exports = exportRows.length;
 
@@ -119,6 +123,17 @@ async function deleteAccount(
       );
       counts.roomsHandedOff++;
     } else {
+      const coSeats = (
+        await client.query<{ account_id: string }>(
+          `SELECT DISTINCT payload->>'accountId' AS account_id FROM events
+            WHERE session_id=$1 AND type='SeatJoined'
+              AND payload->>'accountId' IS NOT NULL AND payload->>'accountId' <> $2`,
+          [id, accountId],
+        )
+      ).rows;
+      for (const { account_id } of coSeats)
+        if (await skipIfHeld(ctx, 'accountDeletion', 'account', account_id))
+          throw new Error(HELD);
       await client.query('SELECT purge_session($1)', [id]);
       counts.roomsDeleted++;
     }
@@ -446,7 +461,7 @@ export async function runAccountDeletions(ctx: JobContext & { db: Pool }) {
       ctx.log({ job: 'accountDeletion', accountId: id, ...counts });
     } catch (error) {
       await client.query('ROLLBACK');
-      if ((error as Error).message === 'HELD_SESSION') held++;
+      if ((error as Error).message === HELD) held++;
       else {
         failed++;
         ctx.log({ job: 'accountDeletion', accountId: id, event: 'failed' });
