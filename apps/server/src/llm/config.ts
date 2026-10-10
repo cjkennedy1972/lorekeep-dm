@@ -2,6 +2,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createHmac,
   randomBytes,
 } from 'node:crypto';
 import type { Pool } from 'pg';
@@ -76,6 +77,15 @@ function masterKey(raw = process.env.OPERATOR_ENDPOINT_MASTER_KEY): {
     : keys.at(-1);
   if (!active) throw new Error('Endpoint encryption key unavailable');
   return active;
+}
+export function endpointKeyFingerprint(
+  value: string,
+  rawMasterKey?: string,
+): string {
+  return createHmac('sha256', masterKey(rawMasterKey).key)
+    .update(value)
+    .digest('hex')
+    .slice(0, 12);
 }
 export function encryptEndpointKey(
   value: string,
@@ -250,7 +260,7 @@ export async function saveEndpoint(
         : config.apiKey;
     const encrypted = keyValue ? encryptEndpointKey(keyValue, master) : null;
     const fingerprint = keyValue
-      ? createHash('sha256').update(keyValue).digest('hex').slice(0, 12)
+      ? endpointKeyFingerprint(keyValue, master)
       : null;
     const result = await client.query(
       `INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,context_window,unsupported_tool_schema_keywords,probe,updated_at)
