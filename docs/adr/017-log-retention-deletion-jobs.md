@@ -16,6 +16,7 @@ Status: Proposed (human decision 2026-10-06: 30-day log retention) · Date: 2026
 | Backups | Postgres backups | rolling 30 days, so full erasure lags deletion by at most 30 days |
 
 - **Jobs** (one `retention-sweeper` worker, idempotent, nightly, logged with counts only): purge expired log rows by `expires_at` column set at write time; purge reverted turns; archive idle sessions; delete archived sessions; purge expired exports; run **account deletion pipeline** (immediate deactivation, PII hard-deleted within 30 days, solo sessions deleted, shared-session redaction).
+- **Account deletion rule (owner-based):** a session the deleted account owns passes to a seated co-player whose account is `active`; if none exists the session is purged, solo or not. Sessions where the deleted account is only a seat are redacted, not purged. "Last remaining seat" is deliberately not a criterion: a co-seat that is suspended or deleting does not keep a session alive.
 - **Log hygiene by design:** logs store IDs and decision labels, not raw text where avoidable; raw text sits in the 30-day class only. LLM provider retention is the operator's responsibility and is attested in endpoint config (ADR-013).
 - **Legal hold:** an operator-set hold flag on a flagged item suspends deletion for that item only, with an audit entry. Policy for holds is a human decision.
 - **Verification:** each job has a test that seeds expired rows and asserts deletion; a monitor alerts if a sweep has not completed in 26 hours.
