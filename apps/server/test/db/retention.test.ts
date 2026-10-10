@@ -7,6 +7,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
 import { retentionHealth, runSweep } from '../../src/retention/sweeper.js';
+import { purgeArchivedSessions } from '../../src/retention/jobs/sessions.js';
+import { restoreForMember } from '../../src/rooms/invites.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 afterAll(() => pool.end());
@@ -196,6 +198,57 @@ describe('retention sweeper (Postgres)', () => {
     expect(await new RegistryMemory(pool).entities(sess)).toMatchObject([
       { entityId: 'npc_old_lore', facts: ['Keeps the east key.'] },
     ]);
+  });
+
+  it('does not purge a session restored between the sweep select and its purge', async () => {
+    const acc = await account('active');
+    const sess = randomUUID();
+    await q(
+      "INSERT INTO sessions(id,owner_account_id,status,archived_at) VALUES($1,$2,'archived','2020-01-01')",
+      [sess, acc],
+    );
+    let raced = false;
+    const db = {
+      query: async (sql: string, params?: unknown[]) => {
+        if (sql.includes('purge_') && !raced) {
+          raced = true;
+          expect(await restoreForMember(pool, sess, acc)).toBe(true);
+        }
+        return pool.query(sql, params);
+      },
+    } as unknown as Pick<Pool, 'query'>;
+    const result = await purgeArchivedSessions({
+      db,
+      store: new LocalObjectStore(await mkdtemp(join(tmpdir(), 'purge-race-'))),
+      now: new Date('2026-10-08T00:00:00Z'),
+      log,
+    });
+    expect(raced).toBe(true);
+    expect(result.deleted).toBe(0);
+    expect(await q('SELECT status FROM sessions WHERE id=$1', [sess])).toEqual([
+      { status: 'active' },
+    ]);
+  });
+
+  it('still purges an archived session once it is past the 90-day cutoff', async () => {
+    const acc = await account('active');
+    const sess = randomUUID();
+    await q(
+      "INSERT INTO sessions(id,owner_account_id,status,archived_at) VALUES($1,$2,'archived','2020-01-01')",
+      [sess, acc],
+    );
+    const result = await purgeArchivedSessions({
+      db: pool,
+      store: new LocalObjectStore(
+        await mkdtemp(join(tmpdir(), 'purge-stale-')),
+      ),
+      now: new Date('2026-10-08T00:00:00Z'),
+      log,
+    });
+    expect(result.deleted).toBeGreaterThanOrEqual(1);
+    expect(
+      await count('SELECT count(*)::int n FROM sessions WHERE id=$1', [sess]),
+    ).toBe(0);
   });
 
   it('fully removes a deleting account, hands off/deletes rooms, anonymizes seats, and is a no-op twice', async () => {
