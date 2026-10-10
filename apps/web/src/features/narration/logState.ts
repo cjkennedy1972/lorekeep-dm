@@ -17,6 +17,7 @@ export type NarrationTurn = {
   turnId: string;
   chunks: Record<number, string>;
   narration?: string;
+  fallback?: 'no-narration' | 'endpoint-error' | 'budget-exhausted';
   complete: boolean;
   rollEvents: RollPayload[];
 };
@@ -125,7 +126,14 @@ export function narrationLogReducer(
       const entries = state.entries.filter((entry) => entry.kind !== 'pending');
       const next = upsertTurn(
         { ...state, entries },
-        { ...turn, narration, complete: true },
+        {
+          ...turn,
+          narration,
+          ...(typeof payload.fallback === 'string'
+            ? { fallback: payload.fallback as NarrationTurn['fallback'] }
+            : {}),
+          complete: true,
+        },
       );
       return { ...next, announced: [...next.announced, turnId] };
     }

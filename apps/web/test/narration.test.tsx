@@ -63,6 +63,31 @@ describe('NarrationLog', () => {
     expect(screen.getByText('slick stone wall')).toBeVisible();
   });
 
+  it('renders fallback completion as a distinct accessible notice', async () => {
+    render(
+      <NarrationLog
+        messages={[
+          {
+            seq: 1,
+            type: 'NarrationCompleted',
+            payload: {
+              turnId: 'fallback-turn',
+              text: 'A brief fallback scene.',
+              words: 4,
+              fallback: 'endpoint-error',
+            },
+          },
+        ]}
+      />,
+    );
+    const notice = await screen.findByText(/narration service was unavailable/);
+    expect(notice).toHaveTextContent('narration service was unavailable');
+    expect(screen.getByText('A brief fallback scene.')).toBeInTheDocument();
+    expect(notice.closest('li')).toContainElement(
+      screen.getByText('A brief fallback scene.'),
+    );
+  });
+
   it('announces a completed narration once, not each streamed chunk', async () => {
     const view = render(<NarrationLog messages={messages.slice(0, 5)} />);
     expect(screen.getByText(/The door/)).toBeInTheDocument();
