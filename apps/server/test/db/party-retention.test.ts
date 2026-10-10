@@ -19,7 +19,9 @@ const rooms = new RoomRegistry(
   'party-retention-test',
 );
 const app = createApp(db, { rooms, joinRateLimit: 100 });
-const store = new LocalObjectStore(await mkdtemp(join(tmpdir(), 'party-sweep-')));
+const store = new LocalObjectStore(
+  await mkdtemp(join(tmpdir(), 'party-sweep-')),
+);
 
 afterAll(async () => {
   await rooms.drain();

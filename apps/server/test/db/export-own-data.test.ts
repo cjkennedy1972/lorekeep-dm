@@ -36,11 +36,11 @@ describe('account export carries the player’s own gameplay data', () => {
       [theirs, other, JSON.stringify({ id: 'c-2', name: 'Vesper' })],
     );
     await db.query(
-      "INSERT INTO snapshots(session_id,seq,state) VALUES($1,1,'{\"recap\":{\"recap\":\"old\"}}'),($1,2,'{\"recap\":{\"recap\":\"Latest recap\"}}')",
+      'INSERT INTO snapshots(session_id,seq,state) VALUES($1,1,\'{"recap":{"recap":"old"}}\'),($1,2,\'{"recap":{"recap":"Latest recap"}}\')',
       [mine],
     );
     await db.query(
-      "INSERT INTO snapshots(session_id,seq,state) VALUES($1,1,'{\"recap\":{\"recap\":\"Their recap\"}}')",
+      'INSERT INTO snapshots(session_id,seq,state) VALUES($1,1,\'{"recap":{"recap":"Their recap"}}\')',
       [theirs],
     );
     await db.query(
@@ -49,13 +49,19 @@ describe('account export carries the player’s own gameplay data', () => {
     );
 
     let archive = '';
-    await processExport(db, (await db.query("SELECT id FROM export_jobs WHERE account_id=$1", [me])).rows[0].id, me, {
-      put: async (_key, contents) => {
-        archive = contents;
+    await processExport(
+      db,
+      (await db.query('SELECT id FROM export_jobs WHERE account_id=$1', [me]))
+        .rows[0].id,
+      me,
+      {
+        put: async (_key, contents) => {
+          archive = contents;
+        },
+        get: async () => archive,
+        delete: async () => {},
       },
-      get: async () => archive,
-      delete: async () => {},
-    });
+    );
     const parsed = JSON.parse(archive);
 
     expect(parsed.characters).toEqual([
