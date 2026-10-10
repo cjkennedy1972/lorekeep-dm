@@ -45,9 +45,7 @@ function capturingEgress(): {
 
 async function drain(stream: AsyncIterable<unknown>) {
   try {
-    for await (const _ of stream) {
-      // The captured request body is the assertion target.
-    }
+    for await (const chunk of stream) void chunk;
   } catch {
     // An empty stream may end in an endpoint error; the body is still captured.
   }

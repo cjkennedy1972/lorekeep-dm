@@ -3,7 +3,6 @@ import type { Ability } from '@game/schema';
 import { loadCatalog } from '../src/catalog-node.js';
 import type { CharacterInput } from '../src/character/types.js';
 import { executeAttack } from '../src/tools/attack.js';
-import { executeSpell } from '../src/tools/spell.js';
 
 const catalog = loadCatalog();
 const actor = (id: string): CharacterInput => ({
