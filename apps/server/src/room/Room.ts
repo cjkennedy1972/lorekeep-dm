@@ -500,16 +500,7 @@ export class Room {
         this.queuedActions.length + (this.turnInFlight ? 1 : 0) >=
           MAX_QUEUED_ACTIONS_PER_ROOM
       ) {
-        this.broadcast({
-          seq: this.seq,
-          type: 'Error',
-          payload: {
-            code: 'ACTION_REJECTED',
-            message: 'Too many actions are queued.',
-            actionId,
-          },
-        } as ServerMessage);
-        return false;
+        throw new Error('ACTION_REJECTED');
       }
       this.pendingActions.add(actionId);
       this.broadcast({

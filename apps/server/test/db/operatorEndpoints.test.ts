@@ -300,6 +300,59 @@ describe('operator endpoint configuration', () => {
     }
   });
 
+  it('answers a host change without a replacement key with 400 KEY_REQUIRED', async () => {
+    const db = await createTestDatabase();
+    const operatorId = randomUUID();
+    const app = Fastify({ loggerInstance: createLogger({ write() {} }) });
+    try {
+      await db.pool.query(
+        'CREATE TABLE accounts(id uuid PRIMARY KEY,email text NOT NULL,status text NOT NULL)',
+      );
+      await db.pool.query(
+        'CREATE TABLE auth_sessions(token_hash text PRIMARY KEY,account_id uuid NOT NULL REFERENCES accounts(id),expires_at timestamptz NOT NULL,absolute_expires_at timestamptz NOT NULL,last_active_at timestamptz NOT NULL)',
+      );
+      await db.pool.query(
+        `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
+      );
+      await db.pool.query(
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+      );
+      await db.pool.query(
+        "INSERT INTO accounts VALUES($1,'op@example.test','active')",
+        [operatorId],
+      );
+      await db.pool.query(
+        "INSERT INTO auth_sessions VALUES($1,$2,now()+interval '1 day',now()+interval '2 days',now())",
+        [hashToken(token), operatorId],
+      );
+      const egress = createEgressGuard({
+        resolver: async () => [{ address: '93.184.216.34', family: 4 }],
+        transport: async () => ({ status: 200, headers: {}, body: null }),
+      });
+      registerOperatorRoutes(app, db.pool, async (id) => id === operatorId, {
+        egress,
+      });
+      const put = (payload: Record<string, unknown>) =>
+        app.inject({
+          method: 'PUT',
+          url: '/api/operator/endpoints/fast',
+          headers: { cookie: `sid=${token}` },
+          payload: { model: 'm', apiStyle: 'openai', ...payload },
+        });
+      const apiKey = ['test-', 'credential-', 'value'].join('');
+      expect(
+        (await put({ baseUrl: 'https://one.example.test/v1', apiKey }))
+          .statusCode,
+      ).toBe(200);
+      const redirected = await put({ baseUrl: 'https://two.example.test/v1' });
+      expect(redirected.statusCode).toBe(400);
+      expect(redirected.json()).toEqual({ code: 'KEY_REQUIRED' });
+    } finally {
+      await app.close();
+      await db.close();
+    }
+  });
+
   it('rejects unsafe save URLs before network access', async () => {
     const guard = createEgressGuard({
       resolver: async () => [{ address: '127.0.0.1', family: 4 }],

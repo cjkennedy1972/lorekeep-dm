@@ -65,6 +65,8 @@ export function registerOperatorRoutes(
         error.message === 'Endpoint URL is not allowed'
       )
         return reply.code(400).send({ code: 'INVALID_ENDPOINT_URL' });
+      if (error instanceof Error && error.message === 'KEY_REQUIRED')
+        return reply.code(400).send({ code: 'KEY_REQUIRED' });
       if (
         error instanceof Error &&
         error.message === 'Endpoint credential unavailable'
