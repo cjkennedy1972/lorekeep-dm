@@ -46,7 +46,7 @@ export function createRoomClient(opts: RoomClientOptions) {
   };
 
   const send = (type: string, payload: Record<string, unknown> = {}) => {
-    if (socket?.readyState !== WS.OPEN) return;
+    if (socket?.readyState !== WS.OPEN) return false;
     const env: ClientEnvelope = {
       actionId: crypto.randomUUID() as ClientEnvelope['actionId'],
       type,
@@ -54,6 +54,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       lastSeq: snap.lastSeq,
     };
     socket.send(JSON.stringify(env));
+    return true;
   };
 
   const onMessage = (data: unknown) => {
