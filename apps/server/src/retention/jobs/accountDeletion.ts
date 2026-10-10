@@ -487,10 +487,17 @@ function pruneCombat(
     !!pendingReaction &&
     (charIds.has(pendingReaction.entityId) ||
       charIds.has(pendingReaction.moverId));
+  const liveReactions = engineReactions
+    ? Object.fromEntries(
+        Object.entries(engineReactions).filter(
+          ([, r]) => !charIds.has(r.moverId) && !charIds.has(r.hostileId),
+        ),
+      )
+    : undefined;
   const pruned: RoomCombatState = {
     ...rest,
     ...(pendingReaction && !reactionDeleted
-      ? { pendingReaction, engineReactions }
+      ? { pendingReaction, engineReactions: liveReactions }
       : {}),
     entities: rest.entities.filter((e) => !charIds.has(e.id)),
     combat: {
