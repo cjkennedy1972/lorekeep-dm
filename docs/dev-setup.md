@@ -10,6 +10,13 @@ docker compose -f infra/docker-compose.yml up -d --wait
 
 The default connection string is `postgres://lorekeep:lorekeep@localhost:5432/lorekeep`. Copy `.env.example` to `.env` if you want to load it into your shell; `DATABASE_URL` is the only database environment variable required by the server, migration runner, and test database helper.
 
+Run the server locally with `NODE_ENV=development`. An unset `NODE_ENV` means production, so the server refuses to boot without operator and secret configuration. With `NODE_ENV=development` and `DATABASE_URL` set, the server boots with no other variables. Never set `NODE_ENV=development` on a deployed host.
+
+```sh
+pnpm --filter @game/server build
+NODE_ENV=development node apps/server/dist/main.js
+```
+
 Run migrations from the repository root:
 
 ```sh
