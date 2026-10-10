@@ -64,3 +64,10 @@
     line-height: 1.7;
   }
 }
+
+.narration-log__fallback {
+  padding: 0.5rem 0.75rem;
+  border-inline-start: 0.25rem solid #8b6b22;
+  background: #fff5d8;
+  font-weight: 600;
+}
