@@ -40,6 +40,48 @@ const messages: ServerMessage[] = [
 ];
 
 describe('NarrationLog', () => {
+  it('renders and announces concentration saves and drops accessibly', async () => {
+    const messages: ServerMessage[] = [
+      {
+        seq: 1,
+        type: 'CombatEvents',
+        payload: {
+          events: [
+            {
+              type: 'RollEvent',
+              entityId: 'ent_aria',
+              kind: 'save',
+              total: 14,
+              dc: 10,
+              success: true,
+            },
+            {
+              type: 'ConcentrationDropped',
+              entityId: 'ent_aria',
+              spellId: 'srd:spell/bless',
+            },
+          ],
+        },
+      },
+    ];
+    const { container } = render(
+      <NarrationLog
+        messages={messages}
+        combatantNames={{ ent_aria: 'Aria' }}
+      />,
+    );
+    expect(
+      await screen.findByText(
+        'Aria: Constitution save 14 vs DC 10 - concentration kept',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Aria: concentration lost')).toHaveLength(2);
+    expect(
+      container.querySelector('[role=status][aria-live=polite]'),
+    ).toHaveTextContent('Aria: concentration lost');
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
   it('uses the room reducer sequence and places rolls before streamed narration', async () => {
     let view = initialRoomView;
     for (const message of messages) view = roomReducer(view, message);

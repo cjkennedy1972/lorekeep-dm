@@ -29,6 +29,10 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     dc: z.int().optional(),
     success: z.boolean().optional(),
   }),
+  ev('ConcentrationDropped', {
+    entityId,
+    spellId: z.string().min(1).optional(),
+  }),
   ev('CombatStarted', {
     combatId: z.string().min(1),
     entityIds: z.array(entityId),

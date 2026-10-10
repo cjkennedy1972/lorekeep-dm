@@ -11,6 +11,7 @@ import './narration-log.css';
 
 type Props = {
   messages: readonly ServerMessage[];
+  combatantNames?: Readonly<Record<string, string>>;
   onRetry?: (actionId: string) => void;
   onResubmit?: (actionId: string) => void;
 };
@@ -28,7 +29,12 @@ function rollEvent(payload: RollPayload) {
 }
 
 /** An accessible, replayable view of transient room narration and roll messages. */
-export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
+export function NarrationLog({
+  messages,
+  combatantNames = {},
+  onRetry,
+  onResubmit,
+}: Props) {
   const [state, dispatch] = useReducer(
     (current: typeof initialNarrationLog, message: ServerMessage) =>
       narrationLogReducer(current, message),
@@ -40,6 +46,39 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
   const seen = useRef(new Set<string>());
   const announcedTurns = useRef(new Set<string>());
   const announcedRolls = useRef(new Set<string>());
+  const announcedCombatEvents = useRef(new Set<string>());
+
+  useEffect(() => {
+    for (const message of messages) {
+      if (message.type !== 'CombatEvents') continue;
+      const events = (message.payload as { events?: unknown }).events;
+      if (!Array.isArray(events)) continue;
+      events.forEach((raw, index) => {
+        if (!raw || typeof raw !== 'object') return;
+        const event = raw as Record<string, unknown>;
+        const key = `${message.seq}:${index}:${JSON.stringify(event)}`;
+        if (announcedCombatEvents.current.has(key)) return;
+        announcedCombatEvents.current.add(key);
+        const actorId = String(event.entityId ?? event.actorId ?? 'Unknown');
+        const name =
+          combatantNames[actorId] ??
+          (actorId.startsWith('ent_')
+            ? actorId.slice(4).replaceAll('-', ' ')
+            : 'Player');
+        if (
+          event.type === 'RollEvent' &&
+          event.kind === 'save' &&
+          typeof event.dc === 'number' &&
+          typeof event.success === 'boolean'
+        )
+          setAnnouncement(
+            `${name}: Constitution save ${String(event.total)} vs DC ${event.dc} - concentration ${event.success ? 'kept' : 'lost'}`,
+          );
+        else if (event.type === 'ConcentrationDropped')
+          setAnnouncement(`${name}: concentration lost`);
+      });
+    }
+  }, [messages, combatantNames]);
 
   useEffect(() => {
     for (const message of messages) {
@@ -182,6 +221,43 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
             </li>
           );
         })}
+        {messages
+          .filter((message) => message.type === 'CombatEvents')
+          .flatMap((message, messageIndex) => {
+            const events = (message.payload as { events?: unknown }).events;
+            if (!Array.isArray(events)) return [];
+            return events.map((raw, eventIndex) => {
+              if (!raw || typeof raw !== 'object') return null;
+              const event = raw as Record<string, unknown>;
+              const actorId = String(
+                event.entityId ?? event.actorId ?? 'Unknown',
+              );
+              const name =
+                combatantNames[actorId] ??
+                (actorId.startsWith('ent_')
+                  ? actorId.slice(4).replaceAll('-', ' ')
+                  : 'Player');
+              if (
+                event.type === 'RollEvent' &&
+                event.kind === 'save' &&
+                typeof event.dc === 'number' &&
+                typeof event.success === 'boolean'
+              )
+                return (
+                  <li key={`combat-${messageIndex}-${eventIndex}`}>
+                    {name}: Constitution save {String(event.total)} vs DC{' '}
+                    {event.dc} - concentration {event.success ? 'kept' : 'lost'}
+                  </li>
+                );
+              if (event.type === 'ConcentrationDropped')
+                return (
+                  <li key={`combat-${messageIndex}-${eventIndex}`}>
+                    {name}: concentration lost
+                  </li>
+                );
+              return null;
+            });
+          })}
       </ol>
       {state.entries.some((entry) => entry.kind === 'pending') && (
         <p className="sr-only" role="status" aria-live="polite">

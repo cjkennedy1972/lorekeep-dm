@@ -150,6 +150,7 @@ const events: EngineEvent[] = [
     total: 12,
   },
   { type: 'CombatStarted', combatId: 'c', entityIds: ['a'] },
+  { type: 'ConcentrationDropped', entityId: 'a' },
   { type: 'InitiativeRolled', entityId: 'a', total: 12 },
   { type: 'ReactionAvailable', entityId: 'a', trigger: 'opportunity' },
   { type: 'ReactionResolved', entityId: 'a', used: true },
@@ -169,6 +170,7 @@ const events: EngineEvent[] = [
 function label(e: EngineEvent): string {
   switch (e.type) {
     case 'RollEvent':
+    case 'ConcentrationDropped':
     case 'CombatStarted':
     case 'InitiativeRolled':
     case 'ReactionAvailable':
