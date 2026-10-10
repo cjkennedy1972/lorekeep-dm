@@ -7,6 +7,7 @@ import {
 } from '../../src/room/Room.js';
 import type { SoloTurnRequest, SoloTurnRunner } from '../../src/room/dmTurn.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
+import { account as combatAccount, bootstrapped, hero } from './combatFixtures.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -659,5 +660,57 @@ describe('Room commit safety', () => {
     await expect(room.submit(randomUUID())).rejects.toThrow(/draining/);
     expect(error).toHaveBeenCalledWith(expect.stringMatching(/deadline/));
     error.mockRestore();
+  });
+
+  it('keeps a character change from the turn when combat advances during narration', async () => {
+    const { state: combat, game } = bootstrapped();
+    const aria = combat.entities.find((e) => e.id === hero.id)!;
+    const moved = {
+      ...combat,
+      entities: combat.entities.map((e) =>
+        e.id === hero.id ? { ...e, pos: { x: aria.pos.x + 1, y: aria.pos.y } } : e,
+      ),
+    };
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const fixture: { room?: Room } = {};
+    const runner: SoloTurnRunner = {
+      async run(request) {
+        await gate;
+        fixture.room!.state = {
+          ...fixture.room!.state,
+          gameState: {
+            ...(fixture.room!.state.gameState as object),
+            combatRoom: moved,
+          } as never,
+        };
+        const characters = request.state.characters as Record<string, object>;
+        const hurt = { ...hero, hp: { ...hero.hp, current: hero.hp.current - 4 } };
+        return {
+          ...result,
+          state: {
+            ...request.state,
+            characters: { ...characters, [combatAccount]: hurt },
+          },
+        } as never;
+      },
+    };
+    const { room, latestSnapshot } = setup(runner);
+    fixture.room = room;
+    room.state = { ...room.state, gameState: game };
+    await room.join(combatAccount, { send() {} });
+    expect(await room.submitAction(combatAccount, randomUUID(), 'I charge.')).toBe(true);
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const saved = latestSnapshot()?.state as {
+      gameState: {
+        characters: Record<string, { hp: { current: number } }>;
+        combatRoom: { entities: { id: string; pos: { x: number }; hp: number }[] };
+      };
+    };
+    expect(saved.gameState.characters[combatAccount]?.hp.current).toBe(hero.hp.current - 4);
+    expect(saved.gameState.combatRoom.entities.find((e) => e.id === hero.id)?.pos.x).toBe(aria.pos.x + 1);
   });
 });
