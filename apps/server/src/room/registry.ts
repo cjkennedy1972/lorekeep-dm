@@ -102,13 +102,13 @@ export class RoomRegistry {
     timer.unref();
     this.timers.set(sessionId, timer);
   }
-  async drain(): Promise<void> {
+  async drain(deadlineMs?: number): Promise<void> {
     clearInterval(this.idleTimer);
     for (const timer of this.timers.values()) clearInterval(timer);
     this.timers.clear();
     await Promise.all(
       [...this.rooms.values()].map(async (room) => {
-        await room.drain();
+        await room.drain(deadlineMs);
         await this.leases.release(room.lease);
       }),
     );

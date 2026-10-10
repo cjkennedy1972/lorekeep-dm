@@ -54,12 +54,14 @@ export interface Connection {
 }
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
+const DRAIN_DEADLINE_MS = 30_000;
 
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
   private readonly actionIds: Set<string>;
   private accepting = true;
+  private draining = false;
   private readonly turnRunner?: SoloTurnRunner;
   private readonly combatRuntime: CombatRuntime;
   private reactionTimer?: NodeJS.Timeout;
@@ -109,6 +111,11 @@ export class Room {
     const result = this.mailbox.then(work);
     this.mailbox = result.catch(() => undefined);
     return result;
+  }
+
+  private enqueuePlayer<T>(work: () => Promise<T>): Promise<T> {
+    if (this.draining) return Promise.reject(new Error('Room is draining'));
+    return this.enqueue(work);
   }
 
   private async persist(type: string, payload: unknown): Promise<StoredEvent> {
@@ -514,7 +521,7 @@ export class Room {
     text: string,
     playerName?: string,
   ): Promise<boolean> {
-    return this.enqueue(async () => {
+    return this.enqueuePlayer(async () => {
       const seat = this.state.seats.find(
         (item) => item.accountId === accountId,
       );
@@ -554,7 +561,7 @@ export class Room {
     actionId: string,
     answer: string,
   ): Promise<boolean> {
-    return this.enqueue(async () => {
+    return this.enqueuePlayer(async () => {
       const open = this.state.openClarifications?.[actionId];
       if (!open || open.accountId !== accountId) return false;
       await this.closeClarification(actionId, 'answered');
@@ -867,7 +874,7 @@ export class Room {
     actionId: string,
     command: CombatCommand['payload'],
   ): Promise<boolean> {
-    return this.enqueue(async () => {
+    return this.enqueuePlayer(async () => {
       const seat = this.state.seats.find(
         (item) => item.accountId === accountId,
       );
@@ -1071,12 +1078,32 @@ export class Room {
     for (const connection of this.connections.values())
       connection.send(message);
   }
-  async drain(): Promise<void> {
+  async drain(deadlineMs = DRAIN_DEADLINE_MS): Promise<void> {
+    this.draining = true;
     clearTimeout(this.reactionTimer);
     for (const timer of this.clarificationTimers.values()) clearTimeout(timer);
-    while (this.turnInFlight) await this.activeTurn;
-    this.accepting = false;
-    await this.mailbox;
-    this.connections.clear();
+    let deadline: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<boolean>((resolve) => {
+      deadline = setTimeout(() => resolve(true), deadlineMs);
+    });
+    try {
+      const settled = this.settleTurns().then(() => false);
+      if (await Promise.race([settled, timedOut]))
+        console.error(
+          `Room ${this.sessionId} drain deadline of ${deadlineMs}ms passed with a turn still in flight`,
+        );
+    } finally {
+      clearTimeout(deadline);
+      this.accepting = false;
+      this.connections.clear();
+    }
+  }
+
+  private async settleTurns(): Promise<void> {
+    for (;;) {
+      await this.mailbox;
+      if (!this.turnInFlight) return;
+      await this.activeTurn;
+    }
   }
 }

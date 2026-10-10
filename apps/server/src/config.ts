@@ -9,6 +9,7 @@ const schema = z.object({
     // ponytail: unset means production so the operator and email boot checks fail closed; dev/test opt in.
     .default('production'),
   SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).default(3_600_000),
+  ROOM_DRAIN_DEADLINE_MS: z.coerce.number().int().min(0).default(30_000),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
   /** Trust X-Forwarded-For/Proto from the reverse proxy in front of the server. */
   TRUST_PROXY: z.stringbool().default(false),
