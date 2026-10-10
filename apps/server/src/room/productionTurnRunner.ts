@@ -224,7 +224,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const engineState = (state.gameEngine
       ? { ...state.gameEngine, catalog }
       : {
-          actors,
+          // Tools address actors by character id; the saved map is keyed by account id.
+          actors: Object.fromEntries(
+            Object.values(actors).map((actor) => [actor.id, actor]),
+          ),
           attacks: {},
           hp: Object.fromEntries(
             Object.values(actors).map((actor) => [actor.id, actor.hp.current]),
