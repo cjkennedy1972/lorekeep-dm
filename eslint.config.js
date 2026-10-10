@@ -18,6 +18,18 @@ export default [
     files: ['apps/server/migrations/**/*.js'],
     languageOptions: { globals: { URL: 'readonly' } },
   },
+  {
+    files: ['apps/server/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        setTimeout: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
   ...tseslint.configs.recommended,
   {
     files: ['packages/**/*.{ts,tsx}'],

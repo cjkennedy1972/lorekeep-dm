@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --exclude=**/test/db/**",
     "test:db": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required for test:db'); process.exit(1); }\" && vitest run --no-file-parallelism test/db",
+    "smoke:prod": "node scripts/smoke-production.mjs",
     "sweep": "node dist/retention/cli.js",
     "presweep": "pnpm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
