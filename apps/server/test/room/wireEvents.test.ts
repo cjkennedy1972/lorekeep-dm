@@ -53,6 +53,20 @@ describe('toWireEvent', () => {
     };
     expect(EngineEventSchema.safeParse(toWireEvent(engine)).success).toBe(true);
   });
+  it('accepts a concentration drop with its optional spell id', () => {
+    const event = {
+      type: 'ConcentrationDropped',
+      entityId: 'ent_goblin',
+      spellId: 'srd:spell/bless',
+    };
+    expect(EngineEventSchema.safeParse(toWireEvent(event)).success).toBe(true);
+    expect(
+      EngineEventSchema.safeParse({
+        type: event.type,
+        entityId: event.entityId,
+      }).success,
+    ).toBe(true);
+  });
   it('leaves other events untouched', () => {
     const event = { type: 'HpChanged', entityId: 'ent_a', delta: -3, hp: 7 };
     expect(toWireEvent(event)).toEqual(event);

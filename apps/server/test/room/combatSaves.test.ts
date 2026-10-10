@@ -42,4 +42,29 @@ describe('saving throw bonuses on combat entities', () => {
     );
     expect(saves).toEqual({ dex: 2, wis: 2 });
   });
+
+  it('falls back to the ability modifier when the catalog omits that save', () => {
+    const monster = catalog.get('monster', 'monster:brass-dragon-wyrmling')!;
+    const altered = { ...monster, saves: { wis: 2 } };
+    const noDexCatalog = {
+      ...catalog,
+      get: (kind: string, id: string) =>
+        kind === 'monster' && id === altered.id
+          ? altered
+          : catalog.get(kind as never, id),
+    };
+    const { saves, abilities } = attacksFor(
+      {
+        id: 'ent_brass-dragon-wyrmling_1',
+        team: 'dragons',
+        speed: 30,
+        ...place,
+      },
+      undefined,
+      {},
+      noDexCatalog,
+    );
+    expect(saves?.dex).toBeUndefined();
+    expect(abilities?.dex).toBe(10);
+  });
 });

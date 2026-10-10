@@ -26,6 +26,7 @@ type Tracker = NonNullable<ReturnType<typeof gameStore.getState>['tracker']>;
 type Entity = {
   id: string;
   kind: 'character' | 'monster' | 'npc';
+  name?: string;
   team: string;
   pos: { x: number; y: number };
   size: number;
@@ -628,6 +629,16 @@ export function Game() {
       {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
       <NarrationLog
         messages={messages}
+        combatantNames={Object.fromEntries(
+          entities.map((entity) => [
+            entity.id,
+            entity.name ??
+              entity.id
+                .replace(/^ent_/, '')
+                .replace(/_\d+$/, '')
+                .replaceAll('-', ' '),
+          ]),
+        )}
         // The server has no retry message: retrying resubmits the last action as a new one.
         onRetry={() => {
           if (lastActionText.current) submitAction(lastActionText.current);
