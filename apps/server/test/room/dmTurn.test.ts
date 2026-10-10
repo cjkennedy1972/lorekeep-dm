@@ -122,24 +122,27 @@ describe('Room solo DM turn lifecycle', () => {
     const { room } = setup(runner);
     const accountId = randomUUID();
     const messages: { type: string; payload?: { code?: string } }[] = [];
+    const otherMessages: { type: string; payload?: { code?: string } }[] = [];
     await room.join(accountId, {
       send: (message) => messages.push(message as (typeof messages)[number]),
+    });
+    await room.join(randomUUID(), {
+      send: (message) =>
+        otherMessages.push(message as (typeof otherMessages)[number]),
     });
     expect(await room.submitAction(accountId, randomUUID(), 'one')).toBe(true);
     expect(await room.submitAction(accountId, randomUUID(), 'two')).toBe(true);
     expect(await room.submitAction(accountId, randomUUID(), 'three')).toBe(
       true,
     );
-    expect(await room.submitAction(accountId, randomUUID(), 'four')).toBe(
-      false,
-    );
+    await expect(
+      room.submitAction(accountId, randomUUID(), 'four'),
+    ).rejects.toThrow('ACTION_REJECTED');
     expect(
-      messages.some(
-        (message) =>
-          message.type === 'Error' &&
-          message.payload?.code === 'ACTION_REJECTED',
+      otherMessages.some(
+        (message) => message.payload?.code === 'ACTION_REJECTED',
       ),
-    ).toBe(true);
+    ).toBe(false);
     release();
   });
 

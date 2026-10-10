@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DMToolCallSchema } from '@game/schema';
-import { buildPrompt, estimateTokens } from '../../src/dm/prompt.js';
+import {
+  buildPrompt,
+  COMBAT_ONLY_TOOLS,
+  estimateTokens,
+} from '../../src/dm/prompt.js';
 import { projectState } from '../../src/dm/projection.js';
 
 const character = {
@@ -221,15 +225,7 @@ describe('DM prompt builder', () => {
       DMToolCallSchema.options
         .map((tool) => tool.shape.name.value)
         .filter(
-          (name) =>
-            ![
-              'attack',
-              'cast_spell',
-              'move_to',
-              'suggest_area_target',
-              'start_combat',
-              'end_combat',
-            ].includes(name),
+          (name) => ![...COMBAT_ONLY_TOOLS, 'start_combat'].includes(name),
         ),
     );
   });

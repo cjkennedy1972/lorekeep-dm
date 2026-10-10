@@ -15,7 +15,12 @@ import type {
   LlmRequest,
 } from '../llm/adapter.js';
 import { LlmEndpointError, normalizeEndpointError } from '../llm/adapter.js';
-import { buildPrompt, zodSchema, type BuildPromptInput } from './prompt.js';
+import {
+  buildPrompt,
+  COMBAT_ONLY_TOOLS,
+  zodSchema,
+  type BuildPromptInput,
+} from './prompt.js';
 import { formatTurnSeed, createTurnSeed } from './seed.js';
 
 export const MAX_TOOL_CALLS = 8;
@@ -491,16 +496,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           continue;
         }
         attempts.set(callSite, attempt);
-        const combatOnlyTools: readonly string[] = [
-          'attack',
-          'cast_spell',
-          'apply_condition',
-          'remove_condition',
-          'end_combat',
-        ];
         if (
           input.prompt.activeMode !== 'combat' &&
-          combatOnlyTools.includes(call.name)
+          COMBAT_ONLY_TOOLS.includes(call.name)
         ) {
           reject('unknown-tool', 'This tool is unavailable outside combat.');
           retries++;

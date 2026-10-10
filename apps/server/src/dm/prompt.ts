@@ -80,19 +80,21 @@ export const TOKEN_ESTIMATE_METHOD =
 function quoteData(label: string, text: string): string {
   return `<<<${label}_DATA encoding=base64>>>\n${Buffer.from(text, 'utf8').toString('base64')}\n<<<END_${label}_DATA>>>`;
 }
+export const COMBAT_ONLY_TOOLS: readonly string[] = [
+  'attack',
+  'cast_spell',
+  'apply_condition',
+  'remove_condition',
+  'move_to',
+  'suggest_area_target',
+  'end_combat',
+];
 function makeStatic(input: BuildPromptInput): string {
   const modeTools = DMToolCallSchema.options
     .map((tool) => tool.shape.name.value)
     .filter((name) => {
       if (input.activeMode === 'combat') return true;
-      return ![
-        'attack',
-        'cast_spell',
-        'move_to',
-        'suggest_area_target',
-        'start_combat',
-        'end_combat',
-      ].includes(name);
+      return ![...COMBAT_ONLY_TOOLS, 'start_combat'].includes(name);
     });
   const schemas = modeTools.map((name) => ({
     name,
