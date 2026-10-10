@@ -17,6 +17,15 @@ const schema = z.object({
     .min(1)
     .transform((v) => new Secret(v))
     .optional(),
+  /** Resend API key for verification and reset email: env only, wrapped like LLM_API_KEY. */
+  RESEND_API_KEY: z
+    .string()
+    .min(1)
+    .transform((v) => new Secret(v))
+    .optional(),
+  EMAIL_FROM: z.string().min(1).optional(),
+  /** Public web origin used to build verification and reset links, e.g. https://lorekeep.example. */
+  APP_BASE_URL: z.url().optional(),
   OPERATOR_EMAILS: z.string().default(''),
   /** AES-256-GCM master key: exactly 32 bytes in hex or base64. */
   OPERATOR_ENDPOINT_MASTER_KEY: z.string().optional(),
