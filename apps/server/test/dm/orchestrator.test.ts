@@ -154,6 +154,81 @@ describe('DM orchestrator', () => {
       ),
     ).toBe(false);
   });
+  it('routes close_scene through the scene handler and emits its event', async () => {
+    const h = setup([
+      [call('c1', 'close_scene', { summary: 'The seal is opened.' })],
+      [{ type: 'text', delta: narration }],
+    ]);
+    h.input.context.closeScene = ({ summary, nextSceneId }) => ({
+      ok: true,
+      summary: 'Scene closed.',
+      output: {
+        events: [
+          {
+            type: 'SceneClosed',
+            sceneId: 'scene-1',
+            summary,
+            ...(nextSceneId ? { nextSceneId } : {}),
+          },
+        ],
+      },
+      events: [],
+    });
+    await runTurn(h.input);
+    expect(h.events).toContainEqual({
+      type: 'SceneClosed',
+      sceneId: 'scene-1',
+      summary: 'The seal is opened.',
+    });
+  });
+  it('rejects invalid authored next scene through the normal tool rejection path', async () => {
+    const h = setup([
+      [
+        call('c1', 'close_scene', {
+          summary: 'The well is secured.',
+          nextSceneId: 'scene-lamp-vault',
+        }),
+      ],
+      [{ type: 'text', delta: narration }],
+    ]);
+    h.input.context.closeScene = () => ({
+      ok: false,
+      error: 'invalid-scene-transition',
+      hint: 'Choose an authored next scene.',
+    });
+    await runTurn(h.input);
+    expect(h.events).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        toolName: 'close_scene',
+        error: 'invalid-scene-transition',
+      }),
+    );
+    expect(
+      h.events.some(
+        (event) => (event as { type?: string }).type === 'SceneClosed',
+      ),
+    ).toBe(false);
+  });
+  it('rejects close_scene outside an adventure context', async () => {
+    const h = setup([
+      [call('c1', 'close_scene', { summary: 'Done.' })],
+      [{ type: 'text', delta: narration }],
+    ]);
+    await runTurn(h.input);
+    expect(h.events).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        toolName: 'close_scene',
+        error: 'unknown-tool',
+      }),
+    );
+    expect(
+      h.events.some(
+        (event) => (event as { type?: string }).type === 'SceneClosed',
+      ),
+    ).toBe(false);
+  });
   it('rejects combat-only tools in exploration before executor invocation', async () => {
     let executions = 0;
     const h = setup(

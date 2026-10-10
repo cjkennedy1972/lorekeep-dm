@@ -55,6 +55,26 @@ describe('DM prompt builder', () => {
     );
     expect(first.promptPrefixHash).not.toBe(other.promptPrefixHash);
   });
+  it('exposes current and authored successor scene context without putting it in narration text', () => {
+    const value = input();
+    const result = buildPrompt({
+      ...value,
+      session: {
+        ...value.session,
+        currentScene: {
+          id: 'scene-a',
+          title: 'The Well',
+          summary: 'A bitter well.',
+        },
+        nextScenes: [
+          { id: 'scene-b', title: 'Gatehouse', summary: 'A broken gate.' },
+        ],
+      },
+    });
+    expect(result.blocks[1]).toContain('scene-a');
+    expect(result.blocks[1]).toContain('scene-b');
+    expect(result.blocks[0]).toContain('close_scene');
+  });
   it('changes the hash when a declared tool schema changes', () => {
     const before = buildPrompt(input()).promptPrefixHash;
     const changedSchema = {

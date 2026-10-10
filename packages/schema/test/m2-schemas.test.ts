@@ -7,6 +7,7 @@ import {
 } from '../src/index.js';
 
 const valid = {
+  close_scene: { summary: 'The objective has been resolved.' },
   request_check: {
     actorId: 'ent_ayla',
     ability: 'dex',

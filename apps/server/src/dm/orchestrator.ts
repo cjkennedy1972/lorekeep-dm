@@ -27,6 +27,7 @@ const POLICY_ERRORS = new Set<DMToolErrorCode>([
   'loot-budget-exceeded',
   'enemy-cap-exceeded',
   'fact-immutable',
+  'invalid-scene-transition',
   'dc-out-of-range',
 ]);
 const BUDGET_ERRORS = new Set<DMToolErrorCode>([
@@ -59,6 +60,10 @@ export interface ToolEngineResult {
 export interface DmToolContext {
   state: unknown;
   engineState: unknown;
+  closeScene?: (args: {
+    summary: string;
+    nextSceneId?: string;
+  }) => ToolExecution;
   commitState?: (previous: unknown, output: EngineToolOutput) => unknown;
   seed: number;
   rollIndex: number;
@@ -170,6 +175,17 @@ async function executeTool(
   args: unknown,
   context: DmToolContext,
 ): Promise<ToolExecution> {
+  if (name === 'close_scene') {
+    if (!context.closeScene)
+      return {
+        ok: false,
+        error: 'unknown-tool',
+        hint: 'Scene closing is unavailable outside an active solo adventure.',
+      };
+    return context.closeScene(
+      args as { summary: string; nextSceneId?: string },
+    );
+  }
   if (context.execute) return context.execute(name, args, context);
   if (name === 'rules_lookup') {
     if (!context.rulesLookup)
@@ -525,7 +541,10 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         };
         if (outcome.output?.nextState !== undefined)
           input.context.engineState = outcome.output.nextState;
-        if (outcome.output && input.context.commitState)
+        if (
+          outcome.output?.nextState !== undefined &&
+          input.context.commitState
+        )
           input.context.state = input.context.commitState(
             input.context.state,
             outcome.output,

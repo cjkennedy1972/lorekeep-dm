@@ -156,6 +156,27 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       table.rows[0].adventure_id === 'adventure:01-hollow-under-marrowfell'
         ? loadAdventure(AdventureSchema.parse(adventure01), catalog)
         : undefined;
+    const currentScene = adventure?.ok
+      ? adventure.adventure.scenes.find((scene) => scene.id === initialSceneId)
+      : undefined;
+    const nextScenes = currentScene
+      ? currentScene.nextSceneIds.flatMap((id) => {
+          const scene = adventure!.ok
+            ? adventure!.adventure.scenes.find(
+                (candidate) => candidate.id === id,
+              )
+            : undefined;
+          return scene
+            ? [
+                {
+                  id: scene.id,
+                  title: scene.title,
+                  summary: scene.text.slice(0, 240),
+                },
+              ]
+            : [];
+        })
+      : [];
     const savedCharacter = table.rows[0].character as unknown as
       | ToolExecutorState['actors'][string]
       | null;
@@ -225,6 +246,32 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       turnId: request.actionId,
       state,
       engineState,
+      closeScene: ({ summary, nextSceneId }) => {
+        if (!adventure?.ok || !initialSceneId)
+          return {
+            ok: false,
+            error: 'unknown-tool',
+            hint: 'Scene closing is unavailable outside an active solo adventure.',
+          };
+        if (nextSceneId && !currentScene?.nextSceneIds.includes(nextSceneId))
+          return {
+            ok: false,
+            error: 'invalid-scene-transition',
+            hint: 'Choose one of the authored next scenes listed in the context, or omit nextSceneId.',
+          };
+        const event = {
+          type: 'SceneClosed',
+          sceneId: initialSceneId,
+          summary,
+          ...(nextSceneId ? { nextSceneId } : {}),
+        };
+        return {
+          ok: true,
+          summary: 'The current scene was closed.',
+          events: [],
+          output: { events: [event] },
+        };
+      },
       commitState(previous, output) {
         return {
           ...(previous as GameState),
@@ -370,6 +417,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           sceneSummary:
             state.sceneSummary ??
             'The party is at the beginning of its adventure.',
+          ...(currentScene
+            ? {
+                currentScene: {
+                  id: currentScene.id,
+                  title: currentScene.title,
+                  summary: currentScene.text.slice(0, 240),
+                },
+                nextScenes,
+              }
+            : {}),
         },
         activeMode:
           state &&
@@ -402,8 +459,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       },
     });
 
-    if (emittedSceneEvents.length)
-      result.events = [...result.events, ...emittedSceneEvents];
+    // Tool-emitted events are already in result.events; only add ones that are not.
+    const missingSceneEvents = emittedSceneEvents.filter(
+      (event) => !result.events.includes(event),
+    );
+    if (missingSceneEvents.length)
+      result.events = [...result.events, ...missingSceneEvents];
     for (const event of result.events) {
       if (
         event &&
