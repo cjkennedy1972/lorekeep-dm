@@ -335,8 +335,10 @@ export class Room {
         | Record<string, unknown>
         | undefined;
       if (!gameState) throw new Error('Game state is unavailable');
+      const current = { ...gameState };
+      delete current.checkpoint;
       await this.commitGameState(
-        { ...gameState, checkpoint: structuredClone(gameState) },
+        { ...gameState, checkpoint: structuredClone(current) },
         [{ type: 'CheckpointSaved' }],
       );
     });

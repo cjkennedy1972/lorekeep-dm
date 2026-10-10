@@ -529,3 +529,21 @@ describe('Room solo DM turn lifecycle', () => {
     }
   });
 });
+
+describe('Room commit safety', () => {
+  it('does not nest the previous checkpoint inside a new one', async () => {
+    const { room, latestSnapshot } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    await room.persistRecap({ recap: 'start', memoryHash: 'h0' });
+    await room.saveCheckpoint();
+    await room.saveCheckpoint();
+    const checkpoint = (
+      latestSnapshot()?.state as { gameState: { checkpoint: object } }
+    ).gameState.checkpoint as Record<string, unknown>;
+    expect(checkpoint.recap).toEqual({ recap: 'start', memoryHash: 'h0' });
+    expect(checkpoint.checkpoint).toBeUndefined();
+  });
+});
