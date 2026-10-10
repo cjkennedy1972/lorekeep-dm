@@ -39,3 +39,9 @@ The disposable Postgres service used for local DB/e2e verification was started f
 ## Scope and status
 
 The current Workboard milestone card (`884bbdfd-d8c7-418d-863d-5b18290845aa`) remains `running`, and its notes include M2 areas beyond this proof wave (including M2-28, M2-34, M2-39 and M2-41). This report does not claim the entire milestone is complete. The M2-42 proof card should remain open until its live-provider and full Adventure #1 browser/restart requirements are either completed or explicitly accepted as gaps; milestone completion additionally requires reconciling the milestone card's remaining child/scope status.
+
+## Operator decision: reference-endpoint criterion (2026-10-10)
+
+The operator (Chris Kennedy) accepted the local OpenAI-compatible model (`qwen3.8-35b-a3b-distill-q4` at `http://172.31.25.75:8080/v1`) as sufficient evidence for the live-endpoint exit criterion. No hosted reference endpoint was run; that gap is explicitly accepted, not closed. The model remains `qualified: false` in the probe profile (JSON-schema mode 0/20; aggregate valid-call rate 0.50), so this accepts the live evidence recorded above, including the tool-driven Adventure #1 transcript (`docs/plan/evidence/m2-live-adventure-qwen.md`), and does not claim model qualification. `swift-qwen3.8-27b` stays NOT RUN (fails to load on the server).
+
+Still open outside the proof wave: the milestone card's other scope items, and the robustness follow-ups on card `8d5e9892` (repeated `close_scene` calls, narration cap, fallback text shown as narration).
