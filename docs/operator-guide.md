@@ -78,7 +78,8 @@ A recording is an NDJSON file of prompt hashes and responses (`apps/server/src/l
 
 | `LLM_FIXTURE_MODE` | Behavior |
 | --- | --- |
-| `strict` (default) | Replay. Any prompt-hash drift throws with expected and actual hashes and tool names; in a live turn the DM falls back to a generic "the storyteller has lost the thread" narration. |
+| unset (default) | Live endpoint: no replay, no recording. |
+| `strict` | Replay. Any prompt-hash drift throws with expected and actual hashes and tool names; in a live turn the DM falls back to a generic "the storyteller has lost the thread" narration. |
 | `lenient` | Replay; drift does not fail the turn (the adapter's `warn` hook reports it, but the server's turn runner does not wire it, so nothing is logged today). |
 | `record` | Calls the configured endpoint and appends request hash and response to `LLM_FIXTURE_PATH` (default `fixtures/solo-turn.ndjson`). Requires `NODE_ENV` of `development` or `test`. |
 
@@ -89,7 +90,7 @@ Workflow:
 ```sh
 # record against the real endpoint saved in the moderate slot
 NODE_ENV=development LLM_FIXTURE_MODE=record LLM_FIXTURE_PATH=fixtures/solo-turn.ndjson node apps/server/dist/main.js
-# replay (default mode)
+# replay
 LLM_FIXTURE_MODE=strict LLM_FIXTURE_PATH=fixtures/solo-turn.ndjson node apps/server/dist/main.js
 ```
 
