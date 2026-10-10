@@ -672,6 +672,10 @@ export class Room {
     clarificationAsked: boolean,
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
+    const startGame = structuredClone(this.state.gameState ?? {}) as Record<
+      string,
+      unknown
+    >;
     const result = await this.turnRunner!.run(
       {
         sessionId: this.sessionId,
@@ -762,13 +766,21 @@ export class Room {
           | Record<string, unknown>
           | undefined;
         // A clarification turn made no state changes; its result.state is only the prompt's stub.
-        let incoming = (
+        const turnState = (
           clarification
-            ? (live ?? {})
+            ? {}
             : result.state && typeof result.state === 'object'
               ? result.state
               : {}
         ) as Record<string, unknown>;
+        // Only keys the turn changed overwrite live state, so writes made while narrating survive.
+        const turnWrites = Object.fromEntries(
+          Object.entries(turnState).filter(
+            ([key, value]) =>
+              JSON.stringify(value) !== JSON.stringify(startGame[key]),
+          ),
+        );
+        let incoming = { ...live, ...turnWrites } as Record<string, unknown>;
         // Combat that moved on while the DM was narrating is owned by the Room, not by the turn.
         if (live && JSON.stringify(live.combatRoom ?? null) !== startCombat)
           incoming = {
