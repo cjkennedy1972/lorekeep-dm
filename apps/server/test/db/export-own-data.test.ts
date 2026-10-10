@@ -86,4 +86,68 @@ describe('account export carries the player’s own gameplay data', () => {
     expect(archive).not.toContain('Their recap');
     expect(archive).not.toContain('argon2id');
   });
+
+  it('omits co-players’ characters from snapshots of rooms the player owns', async () => {
+    const owner = await account(`owner-${randomUUID()}@example.test`);
+    const coPlayer = await account(`seat-${randomUUID()}@example.test`);
+    const room = randomUUID();
+    const ownerCharacter = { id: 'c-owner', name: 'Brannoc', level: 2 };
+    const coPlayerCharacter = { id: 'c-seat-b', name: 'Vesper', level: 3 };
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,name,status,mode,character) VALUES($1,$2,'Shared','active','party',$3::jsonb)",
+      [room, owner, JSON.stringify(ownerCharacter)],
+    );
+    await db.query(
+      'INSERT INTO snapshots(session_id,seq,state) VALUES($1,1,$2::jsonb)',
+      [
+        room,
+        JSON.stringify({
+          recap: { recap: 'The party crossed the mere.' },
+          characters: {
+            [owner]: ownerCharacter,
+            [coPlayer]: coPlayerCharacter,
+          },
+          gameEngine: {
+            actors: {
+              [ownerCharacter.id]: ownerCharacter,
+              [coPlayerCharacter.id]: coPlayerCharacter,
+            },
+          },
+        }),
+      ],
+    );
+
+    let archive = '';
+    await processExport(
+      db,
+      (
+        await db.query('SELECT id FROM export_jobs WHERE account_id=$1', [
+          owner,
+        ])
+      ).rows[0].id,
+      owner,
+      {
+        put: async (_key, contents) => {
+          archive = contents;
+        },
+        get: async () => archive,
+        delete: async () => {},
+      },
+    );
+    const parsed = JSON.parse(archive);
+
+    expect(parsed.snapshots).toEqual([
+      expect.objectContaining({
+        sessionId: room,
+        state: expect.objectContaining({
+          recap: { recap: 'The party crossed the mere.' },
+          characters: { [owner]: ownerCharacter },
+        }),
+      }),
+    ]);
+    expect(archive).toContain('Brannoc');
+    expect(archive).not.toContain(coPlayer);
+    expect(archive).not.toContain('Vesper');
+    expect(archive).not.toContain('c-seat-b');
+  });
 });
