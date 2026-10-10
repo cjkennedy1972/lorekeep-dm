@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, createLogger } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 
@@ -168,5 +168,60 @@ describe('reverse proxy trust', () => {
       (await signupFrom(untrusted, '203.0.113.9', headers)).json().code,
     ).toBe('BAD_ORIGIN');
     await untrusted.close();
+  });
+});
+
+describe('cookie secret and secure defaults', () => {
+  const db = {
+    connect: async () => {},
+    query: async () => ({ rows: [] }),
+  } as never;
+  const saved = {
+    env: process.env.NODE_ENV,
+    secret: process.env.AGE_RETRY_SECRET,
+  };
+  afterEach(() => {
+    if (saved.env === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = saved.env;
+    if (saved.secret === undefined) delete process.env.AGE_RETRY_SECRET;
+    else process.env.AGE_RETRY_SECRET = saved.secret;
+  });
+  it('refuses to boot without AGE_RETRY_SECRET unless NODE_ENV is development or test', () => {
+    delete process.env.AGE_RETRY_SECRET;
+    for (const env of [undefined, 'production', 'prodution', '']) {
+      if (env === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = env;
+      expect(() => createApp(db)).toThrow('AGE_RETRY_SECRET is required');
+    }
+  });
+  it('boots with the development fallback only when NODE_ENV is development or test', async () => {
+    delete process.env.AGE_RETRY_SECRET;
+    for (const env of ['development', 'test']) {
+      process.env.NODE_ENV = env;
+      const app = createApp(db);
+      await app.close();
+    }
+  });
+  it('marks the age-gate retry cookie Secure in production behind a trusted proxy', async () => {
+    process.env.NODE_ENV = 'production';
+    const app = createApp(db, {
+      cookieSecret: 'test-secret',
+      trustProxy: true,
+    });
+    const minor = await app.inject({
+      method: 'POST',
+      url: '/api/signup',
+      headers: { 'x-forwarded-proto': 'https' },
+      payload: {
+        email: 'minor@example.test',
+        password: 'a-unique-password-123',
+        displayName: 'Player',
+        birthdate: '2015-01-01',
+        termsVersion: 'v1',
+      },
+    });
+    expect(minor.statusCode).toBe(403);
+    expect(String(minor.headers['set-cookie'])).toContain('; Secure');
+    await app.close();
   });
 });

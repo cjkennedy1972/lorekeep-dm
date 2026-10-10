@@ -4,6 +4,7 @@ import pino, { type DestinationStream } from 'pino';
 import { startSpan } from './telemetry.js';
 import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { isDevelopmentOrTest } from './accounts/sessions.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerTableRoutes } from './routes/tables.js';
 import { retentionHealth } from './retention/sweeper.js';
@@ -103,7 +104,7 @@ export function createApp(
   });
   if (db.connect) {
     const cookieSecret = options.cookieSecret ?? process.env.AGE_RETRY_SECRET;
-    if (process.env.NODE_ENV === 'production' && !cookieSecret)
+    if (!cookieSecret && !isDevelopmentOrTest())
       throw new Error('AGE_RETRY_SECRET is required');
     registerAuthRoutes(
       app,
