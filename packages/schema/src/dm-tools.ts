@@ -17,6 +17,10 @@ const duration = z.enum([
 ]);
 
 export const DMToolArgsSchema = {
+  close_scene: strict({
+    summary: z.string().max(1200),
+    nextSceneId: z.string().min(1).optional(),
+  }),
   request_check: strict({
     actorId: entityRef,
     ability,
@@ -156,6 +160,10 @@ export type DMToolArgs<N extends DMToolName> = z.infer<
 >;
 export const DMToolCallSchema = z.discriminatedUnion('name', [
   strict({
+    name: z.literal('close_scene'),
+    args: DMToolArgsSchema.close_scene,
+  }),
+  strict({
     name: z.literal('request_check'),
     args: DMToolArgsSchema.request_check,
   }),
@@ -221,6 +229,7 @@ export const DMToolErrorCodeSchema = z.enum([
   'unknown-skill',
   'unknown-condition',
   'unknown-quest',
+  'invalid-scene-transition',
   'option-expired',
   'out-of-range',
   'no-line-of-sight',
