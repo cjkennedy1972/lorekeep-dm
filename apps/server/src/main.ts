@@ -54,7 +54,12 @@ const closeGateway = installGateway(app, db, rooms, connections);
 const stopSweeper =
   config.NODE_ENV === 'test' || config.SWEEP_INTERVAL_MS === 0
     ? () => undefined
-    : startSweepScheduler(db, new LocalObjectStore(), config.SWEEP_INTERVAL_MS);
+    : startSweepScheduler(
+        db,
+        new LocalObjectStore(),
+        config.SWEEP_INTERVAL_MS,
+        (id) => rooms.evictSession(id),
+      );
 let closing = false;
 async function shutdown() {
   if (closing) return;

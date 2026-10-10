@@ -13,6 +13,7 @@ export interface SweepOptions {
   store: ObjectStore;
   now?: () => Date;
   log?: SweepLog;
+  drainRoom?: (sessionId: string) => Promise<void>;
 }
 export const consoleLog: SweepLog = (entry) =>
   console.log(JSON.stringify({ component: 'retention', ...entry }));
@@ -34,6 +35,7 @@ export async function runSweep(db: Pool, options: SweepOptions) {
         store: options.store,
         now: (options.now ?? (() => new Date()))(),
         log: options.log ?? consoleLog,
+        drainRoom: options.drainRoom,
       };
       const logs = await purgeLogs(ctx);
       await db.query(
@@ -84,9 +86,10 @@ export function startSweepScheduler(
   db: Pool,
   store: ObjectStore,
   intervalMs: number,
+  drainRoom?: (sessionId: string) => Promise<void>,
 ) {
   const tick = () =>
-    void runSweep(db, { store }).catch(() =>
+    void runSweep(db, { store, drainRoom }).catch(() =>
       consoleLog({ job: 'sweep', event: 'failed' }),
     );
   const timer = setInterval(tick, intervalMs);

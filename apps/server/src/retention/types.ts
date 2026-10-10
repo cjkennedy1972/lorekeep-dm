@@ -8,6 +8,8 @@ export interface JobContext {
   store: ObjectStore;
   now: Date;
   log: SweepLog;
+  /** Evicts a live in-process Room (drain + lease release) before its session is scrubbed. */
+  drainRoom?: (sessionId: string) => Promise<void>;
 }
 
 /** Legal-hold stub (ADR-017): a held item is skipped and an audit row is written. */

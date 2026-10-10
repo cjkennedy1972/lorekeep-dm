@@ -16,6 +16,7 @@ Status: Proposed (human decision 2026-10-06: 30-day log retention) · Date: 2026
 | Backups | Postgres backups | rolling 30 days, so full erasure lags deletion by at most 30 days |
 
 - **Jobs** (one `retention-sweeper` worker, idempotent, nightly, logged with counts only): purge expired log rows by `expires_at` column set at write time; purge reverted turns; archive idle sessions; delete archived sessions; purge expired exports; run **account deletion pipeline** (immediate deactivation, PII hard-deleted within 30 days, solo sessions deleted, shared-session redaction).
+- **Account deletion rule (owner-based):** a session the deleted account owns passes to a seated co-player whose account is `active`; if none exists the session is purged, solo or not. Sessions where the deleted account is only a seat are redacted, not purged. "Last remaining seat" is deliberately not a criterion: a co-seat that is suspended or deleting does not keep a session alive.
 - **Log hygiene by design:** logs store IDs and decision labels, not raw text where avoidable; raw text sits in the 30-day class only. LLM provider retention is the operator's responsibility and is attested in endpoint config (ADR-013).
 - **Legal hold:** an operator-set hold flag on a flagged item suspends deletion for that item only, with an audit entry. Policy for holds is a human decision.
 - **Verification:** each job has a test that seeds expired rows and asserts deletion; a monitor alerts if a sweep has not completed in 26 hours.
@@ -24,4 +25,14 @@ Status: Proposed (human decision 2026-10-06: 30-day log retention) · Date: 2026
 
 **Consequences.** Abuse investigations older than 30 days are impossible without a hold. Redaction is the only mutation of an otherwise append-only log.
 
-**Needs human?** Legal-hold policy (deferred, architecture §17).
+**Known limits (account deletion).**
+- A session with a live Room on another node defers deletion until the room is idle or its lease expires; the sweeper never evicts it.
+- The sweeper defers on any live lease for the session, with no preemption.
+- The deletion transaction sets no `lock_timeout`; a blocked lock waits rather than failing fast.
+- Archive file removal runs inside the transaction. It is idempotent, so a rollback at worst leaves an export row whose archive is already gone.
+- A pending room whose `start()` has not completed fails closed: deletion defers.
+- DM-authored derived memory (scene summaries, registry entries and facts, and their `search_document`) is not scrubbed. It may contain a deleted character's name or paraphrased or quoted player text. Follow-up card: store references to seats and characters instead of free text.
+- A held deletion is checked for holds before any room is drained, so a held export or session does not drain live rooms.
+- There is no admin path to clear a legal hold. Clearing is a manual database action until a follow-up card adds one.
+
+**Needs human?** Legal-hold policy and an admin hold-clear path (deferred, architecture §17; follow-up card).

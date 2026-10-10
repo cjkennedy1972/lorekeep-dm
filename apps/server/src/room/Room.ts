@@ -53,6 +53,7 @@ export interface RoomStore {
 }
 export interface Connection {
   send(message: ServerMessage): void;
+  close?(code: number, reason: string): void;
 }
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
@@ -1153,6 +1154,8 @@ export class Room {
     } finally {
       clearTimeout(deadline);
       this.accepting = false;
+      for (const connection of this.connections.values())
+        connection.close?.(1013, 'Room unavailable; retry');
       this.connections.clear();
     }
   }
