@@ -36,6 +36,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
       };
     }
     case 'ActionQueued':
+    case 'ActionWithdrawn':
     case 'TurnThinking':
     case 'RollEvent':
     case 'NarrationChunk':
