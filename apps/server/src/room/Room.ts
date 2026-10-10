@@ -62,6 +62,7 @@ export class Room {
   private readonly actionIds: Set<string>;
   private accepting = true;
   private draining = false;
+  private readonly drainAbort = new AbortController();
   private readonly turnRunner?: SoloTurnRunner;
   private readonly combatRuntime: CombatRuntime;
   private reactionTimer?: NodeJS.Timeout;
@@ -702,6 +703,7 @@ export class Room {
         playerName,
         allowClarification: !clarificationAsked,
         clarificationAsked,
+        signal: this.drainAbort.signal,
       },
       (event) => {
         const type = event.type;
@@ -1088,10 +1090,12 @@ export class Room {
     });
     try {
       const settled = this.settleTurns().then(() => false);
-      if (await Promise.race([settled, timedOut]))
+      if (await Promise.race([settled, timedOut])) {
+        this.drainAbort.abort();
         console.error(
           `Room ${this.sessionId} drain deadline of ${deadlineMs}ms passed with a turn still in flight`,
         );
+      }
     } finally {
       clearTimeout(deadline);
       this.accepting = false;
