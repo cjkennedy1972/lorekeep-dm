@@ -123,10 +123,12 @@ export function grantItem(
         .map((e) => `srd:item/${e.id.replace(/^equipment:/, '')}`)
         .join(', ')}.`,
     );
-  const equipment = [...character.equipment];
-  const existing = equipment.find((item) => item.itemId === catalogId);
-  if (existing) existing.qty += qty;
-  else equipment.push({ itemId: catalogId, qty, equipped: false });
+  const held = character.equipment.some((item) => item.itemId === catalogId);
+  const equipment = held
+    ? character.equipment.map((item) =>
+        item.itemId === catalogId ? { ...item, qty: item.qty + qty } : item,
+      )
+    : [...character.equipment, { itemId: catalogId, qty, equipped: false }];
   return ok(
     { ...character, equipment },
     [{ type: 'ItemGranted', entityId: character.id, itemId, qty }],

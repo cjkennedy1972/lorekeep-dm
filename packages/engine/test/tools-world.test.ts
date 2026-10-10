@@ -73,6 +73,9 @@ describe('world tool executors', () => {
       { itemId: 'equipment:rope', qty: 2, equipped: false },
     ]);
     expect(original.equipment).toEqual([]);
+    const stacked = good(grantItem(granted, 'srd:item/rope', 3, catalog));
+    expect(stacked.equipment[0]!.qty).toBe(5);
+    expect(granted.equipment[0]!.qty).toBe(2);
     expect(badCode(grantItem(original, 'srd:item/not-real', 1, catalog))).toBe(
       'unknown-item',
     );
