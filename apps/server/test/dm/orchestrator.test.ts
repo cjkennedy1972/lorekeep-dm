@@ -421,4 +421,22 @@ describe('DM orchestrator', () => {
       promptPrefixHash: expect.stringMatching(/^sha256:/),
     });
   });
+  it('sends real JSON-schema parameters for every native tool', async () => {
+    const h = setup([[{ type: 'text', delta: 'The door creaks open.' }]]);
+    await runTurn(h.input);
+    const tools = h.requests[0]!.tools ?? [];
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools)
+      expect(
+        tool.parameters,
+        `${tool.name} must not have empty parameters`,
+      ).toMatchObject({ type: 'object' });
+    const close = tools.find((tool) => tool.name === 'close_scene')!;
+    expect(
+      Object.keys(
+        (close.parameters as { properties: Record<string, unknown> })
+          .properties,
+      ).sort(),
+    ).toEqual(['nextSceneId', 'summary']);
+  });
 });
