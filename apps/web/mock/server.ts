@@ -67,13 +67,17 @@ export function createMock(
   } = {},
 ) {
   const { exportReadyMs = 1500, exportExpireMs = 60_000 } = opts;
-  const room = new Room(opts.scriptedFlipMs);
+  const tableRooms = new Map<string, Room>(); // table id -> its own six seats
+  const roomFor = (tableId: string) => {
+    let r = tableRooms.get(tableId);
+    if (!r) tableRooms.set(tableId, (r = new Room(opts.scriptedFlipMs)));
+    return r;
+  };
   const users = new Map<string, { account: Account; password: string }>(); // by email
   const sessions = new Map<string, string>(); // token -> accountId
   const meta = new Map<string, { id: string; label: string; at: number }>(); // token -> device info
   const exports = new Map<string, number>(); // accountId -> requestedAt ms
-  const tickets = new Map<string, string>(); // ticket -> accountId (single use)
-  // Every mock table shares the one Room actor below; only the invite/membership bookkeeping is per table.
+  const tickets = new Map<string, { accountId: string; tableId: string }>(); // single use
   type MockRoom = {
     id: string;
     name: string;
@@ -359,7 +363,7 @@ export function createMock(
         sessions.delete(t);
         meta.delete(t);
       }
-      room.remove(account.id);
+      for (const r of tableRooms.values()) r.remove(account.id);
       return json(res, 200, {}, { 'set-cookie': 'sid=; Path=/; Max-Age=0' });
     }
     if (route === 'GET /api/tables')
@@ -463,8 +467,14 @@ export function createMock(
       return json(res, 200, { room: roomView(r, account.id) });
     }
     if (route === 'POST /api/ws-ticket') {
+      // Like the real server: the ticket binds to the latest table the account is seated at.
+      const table = [...rooms.values()]
+        .filter((r) => r.members.has(account.id))
+        .at(-1);
+      if (!table)
+        return err(res, 403, 'FORBIDDEN', 'You are not seated at a table.');
       const ticket = crypto.randomUUID();
-      tickets.set(ticket, account.id);
+      tickets.set(ticket, { accountId: account.id, tableId: table.id });
       setTimeout(() => tickets.delete(ticket), 30_000).unref();
       return json(res, 200, { ticket });
     }
@@ -475,15 +485,15 @@ export function createMock(
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://mock');
     const ticket = url.searchParams.get('ticket') ?? '';
-    const accountId = tickets.get(ticket);
+    const issued = tickets.get(ticket);
     tickets.delete(ticket); // single use
-    const account = accountId ? byId(accountId) : undefined;
-    if (url.pathname !== '/ws' || !account) {
+    const account = issued ? byId(issued.accountId) : undefined;
+    if (url.pathname !== '/ws' || !account || !issued) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       return void socket.destroy();
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const leave = room.join(
+      const leave = roomFor(issued.tableId).join(
         account,
         (m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m)),
       );
@@ -491,7 +501,9 @@ export function createMock(
       ws.on('close', leave);
     });
   });
-  server.on('close', () => room.close());
+  server.on('close', () => {
+    for (const r of tableRooms.values()) r.close();
+  });
   return server;
 }
 

@@ -1,7 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test, type BrowserContext } from '@playwright/test';
 
 const API = 'http://localhost:8787';
-let n = 0;
 
 /** The lobby suites test the lobby, so seed the table through the API: the solo start flow (M2-37) opens on the Game screen. */
 async function createTable(context: BrowserContext, name: string) {
@@ -20,7 +20,7 @@ async function createTable(context: BrowserContext, name: string) {
 async function signedIn(context: BrowserContext, name: string) {
   const res = await context.request.post(`${API}/api/signup`, {
     data: {
-      email: `${name.toLowerCase()}${Date.now()}${n++}@example.com`,
+      email: `${name.toLowerCase()}-${randomUUID()}@example.com`,
       password: 'correct-horse-battery',
       displayName: name,
       birthdate: '1990-01-01',
