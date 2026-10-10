@@ -94,3 +94,17 @@ test('invalid server messages surface an error without crashing', async () => {
   expect(client.getSnapshot().room).not.toBeNull();
   client.stop();
 });
+
+test('send reports whether the message went out', async () => {
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+    baseDelayMs: 10,
+  });
+  expect(client.send('PlayerAction', { text: 'hi' })).toBe(false);
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  expect(client.send('Resync')).toBe(true);
+  client.stop();
+});

@@ -10,7 +10,7 @@ import { initialGameState } from '../src/state/gameStore.js';
 import { http } from '../src/api.js';
 
 const hoisted = vi.hoisted(() => ({
-  send: vi.fn(),
+  send: vi.fn(() => true),
   onMessage: undefined as ((m: ServerMessage) => void) | undefined,
   room: undefined as unknown,
   account: { id: 'acct-1' },

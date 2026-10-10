@@ -319,9 +319,12 @@ export function Game() {
   const submitAction = (text: string) => {
     lastActionText.current = text;
     const id = `local-${crypto.randomUUID()}`;
+    if (!live.send('PlayerAction', { text })) {
+      setError('Not connected, so your action was not sent. Try again.');
+      return;
+    }
     setError('');
     updatePendingAction(() => ({ id, text, acknowledged: false }));
-    live.send('PlayerAction', { text });
     setMessages((current) => [
       ...current,
       {
