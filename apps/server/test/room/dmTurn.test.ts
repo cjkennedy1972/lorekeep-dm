@@ -151,6 +151,36 @@ describe('Room solo DM turn lifecycle', () => {
     release();
   });
 
+  it('keeps the committed game state when a turn ends in a clarifying question', async () => {
+    const world = { sceneId: 'crypt', gameEngine: { round: 3 } };
+    let call = 0;
+    const runner: SoloTurnRunner = {
+      async run(request) {
+        call += 1;
+        if (call === 1) return { ...result, state: world } as never;
+        return {
+          narration: '',
+          events: [],
+          state: { characters: [] },
+          turnSeed: '0x0000000000000001',
+          usage: { in: 1, out: 1 },
+          clarification: { actionId: request.actionId, question: 'Which?' },
+        } as never;
+      },
+    };
+    const { room, latestSnapshot } = setup(runner);
+    const owner = randomUUID();
+    await room.join(owner, { send() {} });
+    await room.submitAction(owner, randomUUID(), 'look');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await room.submitAction(owner, randomUUID(), 'open it');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const committed = (
+      latestSnapshot()?.state as { gameState?: Record<string, unknown> }
+    ).gameState;
+    expect(committed).toMatchObject(world);
+  });
+
   it('holds an action open for one clarifying answer from its owner, then resolves it once', async () => {
     const requests: SoloTurnRequest[] = [];
     const runner: SoloTurnRunner = {

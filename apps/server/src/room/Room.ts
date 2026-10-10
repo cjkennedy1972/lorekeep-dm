@@ -756,12 +756,17 @@ export class Room {
           });
         }
         const nextSeq = this.seq + writes.length;
-        let incoming = (
-          result.state && typeof result.state === 'object' ? result.state : {}
-        ) as Record<string, unknown>;
         const live = this.state.gameState as
           | Record<string, unknown>
           | undefined;
+        // A clarification turn made no state changes; its result.state is only the prompt's stub.
+        let incoming = (
+          clarification
+            ? (live ?? {})
+            : result.state && typeof result.state === 'object'
+              ? result.state
+              : {}
+        ) as Record<string, unknown>;
         // Combat that moved on while the DM was narrating is owned by the Room, not by the turn.
         if (live && JSON.stringify(live.combatRoom ?? null) !== startCombat)
           incoming = {
