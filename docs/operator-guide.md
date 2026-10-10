@@ -7,6 +7,9 @@ For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-p
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Postgres connection string (required). |
+| `RESEND_API_KEY` | Resend API key for verification and password-reset email. Required when `NODE_ENV` is not `development` or `test`; the server refuses to start without it. Never logged. |
+| `EMAIL_FROM` | Sender address, e.g. `Lorekeep <noreply@your-domain>`. Required with `RESEND_API_KEY`; the verified domain must exist in Resend. |
+| `APP_BASE_URL` | Public web origin, e.g. `https://lorekeep.example`. Verification and reset links are `<APP_BASE_URL>/verify?token=…` and `<APP_BASE_URL>/reset?token=…`. Required with `RESEND_API_KEY`. |
 | `OPERATOR_EMAILS` | Comma-separated emails of accounts allowed to use `/api/operator/*`. Empty means nobody. Everyone else gets `404 NOT_FOUND`. |
 | `OPERATOR_ENDPOINT_MASTER_KEY` | AES-256-GCM key for stored endpoint API keys: 32 bytes as 64 hex chars or base64, or a keyring `id:key,id:key`. Required when `NODE_ENV=production`; outside production a fixed development key is used, so never reuse a development database in production. |
 | `OPERATOR_ENDPOINT_ACTIVE_KEY_ID` | Keyring entry used for new writes (default: last entry). |

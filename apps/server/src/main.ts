@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
+import { emailSenderFromConfig } from './email/sender.js';
 import { setupTelemetry } from './telemetry.js';
 import { Persistence } from './persistence/index.js';
 import { SessionLease } from './room/lease.js';
@@ -18,6 +19,7 @@ if (
   (!config.OPERATOR_EMAILS.trim() || !config.OPERATOR_ENDPOINT_MASTER_KEY)
 )
   throw new Error('Operator configuration is required');
+const emailSender = emailSenderFromConfig(config);
 const telemetry = setupTelemetry(config);
 const db = new Pool({ connectionString: config.DATABASE_URL });
 const catalog = loadCatalog();
@@ -44,6 +46,7 @@ const connections = new ConnectionRegistry(db);
 const app = createApp(db, {
   rooms,
   connections,
+  sender: emailSender,
   trustProxy: config.TRUST_PROXY,
 });
 const closeGateway = installGateway(app, db, rooms, connections);
