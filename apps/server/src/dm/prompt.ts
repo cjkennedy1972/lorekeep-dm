@@ -107,7 +107,7 @@ function makeStatic(input: BuildPromptInput): string {
     RULES_CHEATSHEET,
   ].join('\n\n');
 }
-function zodSchema(
+export function zodSchema(
   schema: (typeof DMToolArgsSchema)[keyof typeof DMToolArgsSchema],
 ): unknown {
   return sortSchemaKeys(z.toJSONSchema(schema));

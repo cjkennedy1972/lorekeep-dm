@@ -15,7 +15,7 @@ import type {
   LlmRequest,
 } from '../llm/adapter.js';
 import { LlmEndpointError, normalizeEndpointError } from '../llm/adapter.js';
-import { buildPrompt, type BuildPromptInput } from './prompt.js';
+import { buildPrompt, zodSchema, type BuildPromptInput } from './prompt.js';
 import { formatTurnSeed, createTurnSeed } from './seed.js';
 
 export const MAX_TOOL_CALLS = 8;
@@ -140,7 +140,11 @@ function toolSchemas(input: TurnInput): LlmTool[] {
       name,
       description:
         input.toolDescriptions?.[name] ?? `Validated ${name} action.`,
-      parameters: (input.toolSchemas?.[name] ?? {}) as Record<string, unknown>,
+      // Native tool calling needs real JSON schemas; empty parameters made models emit {} args.
+      parameters: (input.toolSchemas?.[name] ??
+        zodSchema(
+          DMToolArgsSchema[name as keyof typeof DMToolArgsSchema],
+        )) as Record<string, unknown>,
     };
   });
 }
