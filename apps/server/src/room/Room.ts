@@ -26,6 +26,7 @@ import {
   type RoomCombatState,
 } from './combat.js';
 import { settleEngine } from './combatBootstrap.js';
+import { withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
 import type { Catalog } from '@game/rules-engine';
@@ -683,6 +684,14 @@ export class Room {
         } as ServerMessage);
       }
     }
+    for (const action of this.queuedActions.splice(0)) {
+      this.pendingActions.delete(action.actionId);
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionWithdrawn',
+        payload: { actionId: action.actionId },
+      } as ServerMessage);
+    }
     this.turnInFlight = false;
   }
 
@@ -827,27 +836,34 @@ export class Room {
             hpDelta.set(character.id, character.hp.current - before.hp.current);
         }
         const combatNow = incoming.combatRoom as RoomCombatState | undefined;
-        if (combatNow && hpDelta.size > 0)
-          incoming = {
-            ...incoming,
-            combatRoom: {
-              ...combatNow,
-              entities: combatNow.entities.map((entity) => {
-                const delta = hpDelta.get(entity.id);
-                return delta === undefined
-                  ? entity
-                  : {
-                      ...entity,
-                      hp: Math.min(
+        const hpChanges = combatNow
+          ? [...hpDelta].flatMap(([entityId, delta]) => {
+              const entity = combatNow.entities.find((e) => e.id === entityId);
+              return entity
+                ? [
+                    {
+                      type: 'HpChanged',
+                      entityId,
+                      from: entity.hp,
+                      to: Math.min(
                         entity.maxHp,
                         Math.max(0, entity.hp + delta),
                       ),
-                    };
-              }),
-            },
-          };
+                    },
+                  ]
+                : [];
+            })
+          : [];
+        const hurt =
+          combatNow && hpChanges.length
+            ? withHp(combatNow, hpChanges)
+            : undefined;
+        if (hurt) incoming = { ...incoming, combatRoom: hurt.state };
         const reconciled = this.combatRuntime.reconcile(incoming, Date.now());
-        const combatEvents = reconciled?.events ?? [];
+        const combatEvents = [
+          ...(hurt?.events ?? []),
+          ...(reconciled?.events ?? []),
+        ];
         const turnGameState = reconciled?.gameState ?? incoming;
         for (const event of combatEvents)
           writes.push({

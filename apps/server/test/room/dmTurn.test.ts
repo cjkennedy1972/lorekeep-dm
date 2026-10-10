@@ -756,4 +756,135 @@ describe('Room commit safety', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(calls).toBe(1);
   });
+
+  it('tells a queued player their action is dropped when drain begins', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room } = setup(runner);
+    const messages: { type: string; payload?: unknown }[] = [];
+    const account = randomUUID();
+    await room.join(account, {
+      send: (message) => messages.push(message as never),
+    });
+    const queued = randomUUID();
+    expect(await room.submitAction(account, randomUUID(), 'one')).toBe(true);
+    expect(await room.submitAction(account, queued, 'two')).toBe(true);
+    const draining = room.drain();
+    finish();
+    await draining;
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: 'ActionWithdrawn',
+        payload: { actionId: queued },
+      }),
+    );
+    expect(room['pendingActions'].has(queued)).toBe(false);
+  });
+});
+
+describe('Room turn HP merge', () => {
+  type SavedGame = {
+    characters: Record<string, { hp: { current: number; temp: number } }>;
+    combatRoom: {
+      entities: { id: string; hp: number }[];
+      concentration?: Record<string, string | null>;
+    };
+  };
+
+  async function commitHeroTurn(
+    startHp: number,
+    turnHp: { current: number; temp: number },
+    concentrating = false,
+  ) {
+    const { state: combat, game } = bootstrapped();
+    const combatRoom = {
+      ...combat,
+      entities: combat.entities.map((e) =>
+        e.id === hero.id ? { ...e, hp: startHp } : e,
+      ),
+      ...(concentrating && { concentration: { [hero.id]: 'srd:spell/bless' } }),
+    };
+    const runner: SoloTurnRunner = {
+      async run(request) {
+        const characters = request.state.characters as Record<string, object>;
+        return {
+          ...result,
+          state: {
+            ...request.state,
+            characters: {
+              ...characters,
+              [combatAccount]: { ...hero, hp: { ...hero.hp, ...turnHp } },
+            },
+          },
+        } as never;
+      },
+    };
+    const { room, events, latestSnapshot } = setup(runner);
+    room.state = {
+      ...room.state,
+      gameState: {
+        ...(game as object),
+        characters: {
+          [combatAccount]: { ...hero, hp: { ...hero.hp, current: startHp } },
+        },
+        combatRoom,
+      } as never,
+    };
+    await room.join(combatAccount, { send() {} });
+    expect(await room.submitAction(combatAccount, randomUUID(), 'I act.')).toBe(
+      true,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const saved = (latestSnapshot()?.state as { gameState: SavedGame })
+      .gameState;
+    return { events, saved };
+  }
+
+  it('makes exactly one concentration save when a turn damages a concentrating character', async () => {
+    const { events, saved } = await commitHeroTurn(
+      30,
+      { current: 26, temp: 0 },
+      true,
+    );
+    const saves = events.filter(
+      (event) =>
+        event.type === 'RollEvent' &&
+        (event.payload as { kind?: string }).kind === 'save',
+    );
+    expect(saves).toHaveLength(1);
+    const dropped = events.some(
+      (event) => event.type === 'ConcentrationDropped',
+    );
+    expect(saved.combatRoom.concentration?.[hero.id] ?? null).toBe(
+      dropped ? null : 'srd:spell/bless',
+    );
+  });
+
+  it('keeps healing and temp HP from a turn through the combat merge', async () => {
+    const { saved } = await commitHeroTurn(20, { current: 25, temp: 3 });
+    expect(saved.characters[combatAccount]?.hp).toMatchObject({
+      current: 25,
+      temp: 3,
+    });
+    expect(saved.combatRoom.entities.find((e) => e.id === hero.id)?.hp).toBe(
+      25,
+    );
+  });
+
+  it('keeps a character at 0 HP and ends concentration without a save', async () => {
+    const { events, saved } = await commitHeroTurn(
+      4,
+      { current: 0, temp: 0 },
+      true,
+    );
+    expect(saved.characters[combatAccount]?.hp.current).toBe(0);
+    expect(saved.combatRoom.entities.find((e) => e.id === hero.id)?.hp).toBe(0);
+    expect(saved.combatRoom.concentration?.[hero.id] ?? null).toBeNull();
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'RollEvent' &&
+          (event.payload as { kind?: string }).kind === 'save',
+      ),
+    ).toHaveLength(0);
+  });
 });
