@@ -23,6 +23,7 @@ import {
   reactionMessage,
   type CombatRuntime,
   type CombatTransition,
+  type RoomCombatState,
 } from './combat.js';
 import { settleEngine } from './combatBootstrap.js';
 import type { ActionId } from '@game/schema';
@@ -809,8 +810,41 @@ export class Room {
             ...incoming,
             combatRoom: live.combatRoom,
             combatActors: live.combatActors,
-            characters: live.characters,
-            gameEngine: live.gameEngine,
+          };
+        // settleEngine copies combat HP back onto characters, so the turn's HP changes land as deltas on combat HP.
+        const startChars = (startGame.characters ?? {}) as Record<
+          string,
+          { id: string; hp: { current: number } }
+        >;
+        const turnChars = (turnWrites.characters ?? {}) as Record<
+          string,
+          { id: string; hp: { current: number } }
+        >;
+        const hpDelta = new Map<string, number>();
+        for (const [accountKey, character] of Object.entries(turnChars)) {
+          const before = startChars[accountKey];
+          if (before)
+            hpDelta.set(character.id, character.hp.current - before.hp.current);
+        }
+        const combatNow = incoming.combatRoom as RoomCombatState | undefined;
+        if (combatNow && hpDelta.size > 0)
+          incoming = {
+            ...incoming,
+            combatRoom: {
+              ...combatNow,
+              entities: combatNow.entities.map((entity) => {
+                const delta = hpDelta.get(entity.id);
+                return delta === undefined
+                  ? entity
+                  : {
+                      ...entity,
+                      hp: Math.min(
+                        entity.maxHp,
+                        Math.max(0, entity.hp + delta),
+                      ),
+                    };
+              }),
+            },
           };
         const reconciled = this.combatRuntime.reconcile(incoming, Date.now());
         const combatEvents = reconciled?.events ?? [];
