@@ -546,4 +546,57 @@ describe('Room commit safety', () => {
     expect(checkpoint.recap).toEqual({ recap: 'start', memoryHash: 'h0' });
     expect(checkpoint.checkpoint).toBeUndefined();
   });
+
+  function gatedRunner() {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const runner: SoloTurnRunner = {
+      async run() {
+        await gate;
+        return result as never;
+      },
+    };
+    return { runner, finish };
+  }
+
+  it('keeps a state write made while the DM is narrating', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room, latestSnapshot } = setup(runner);
+    const account = randomUUID();
+    await room.join(account, { send() {} });
+    expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
+      true,
+    );
+    await room.persistRecap({ recap: 'Previously...', memoryHash: 'h1' });
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(latestSnapshot()?.state).toMatchObject({
+      gameState: { recap: { recap: 'Previously...', memoryHash: 'h1' } },
+    });
+  });
+
+  it('rejects rest, death-save and TPK writes while the DM is narrating', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room, latestSnapshot } = setup(runner);
+    const account = randomUUID();
+    await room.join(account, { send() {} });
+    await room.submitAction(account, randomUUID(), 'I wait.');
+    await expect(room.takeRest(account, 'short')).rejects.toThrow(
+      'still narrating',
+    );
+    await expect(room.rollDeathSave(account)).rejects.toThrow(
+      'still narrating',
+    );
+    await expect(
+      room.chooseTpkResolution(account, 'fail-forward', 'The bridge falls.'),
+    ).rejects.toThrow('still narrating');
+    await expect(room.persistGameState({ premise: 'x' })).rejects.toThrow(
+      'still narrating',
+    );
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(latestSnapshot()).not.toBeNull();
+  });
 });

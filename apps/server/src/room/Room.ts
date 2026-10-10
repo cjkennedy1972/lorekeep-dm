@@ -271,6 +271,7 @@ export class Room {
   /** Persist initial or lifecycle game metadata in a lease-fenced room snapshot. */
   persistGameState(gameState: unknown): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       const nextState = RoomStateSchema.parse({ ...this.state, gameState });
       const stored = await this.store.writeTurn(
         this.sessionId,
@@ -352,6 +353,7 @@ export class Room {
     catalog: Catalog = loadCatalog(),
   ): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
       const gameState = this.state.gameState as
@@ -372,6 +374,7 @@ export class Room {
 
   rollDeathSave(accountId: string): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
       const gameState = this.state.gameState as
@@ -411,6 +414,7 @@ export class Room {
     narrative?: string,
   ): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
       const gameState = this.state.gameState as
@@ -457,6 +461,11 @@ export class Room {
         );
       }
     });
+  }
+
+  private assertNotNarrating(): void {
+    if (this.turnInFlight)
+      throw new Error('The DM is still narrating; try again in a moment.');
   }
 
   private async commitGameState(
@@ -672,6 +681,10 @@ export class Room {
     clarificationAsked: boolean,
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
+    const startGame = structuredClone(this.state.gameState ?? {}) as Record<
+      string,
+      unknown
+    >;
     const result = await this.turnRunner!.run(
       {
         sessionId: this.sessionId,
@@ -762,13 +775,21 @@ export class Room {
           | Record<string, unknown>
           | undefined;
         // A clarification turn made no state changes; its result.state is only the prompt's stub.
-        let incoming = (
+        const turnState = (
           clarification
-            ? (live ?? {})
+            ? {}
             : result.state && typeof result.state === 'object'
               ? result.state
               : {}
         ) as Record<string, unknown>;
+        // Only keys the turn changed overwrite live state, so writes made while narrating survive.
+        const turnWrites = Object.fromEntries(
+          Object.entries(turnState).filter(
+            ([key, value]) =>
+              JSON.stringify(value) !== JSON.stringify(startGame[key]),
+          ),
+        );
+        let incoming = { ...live, ...turnWrites } as Record<string, unknown>;
         // Combat that moved on while the DM was narrating is owned by the Room, not by the turn.
         if (live && JSON.stringify(live.combatRoom ?? null) !== startCombat)
           incoming = {
