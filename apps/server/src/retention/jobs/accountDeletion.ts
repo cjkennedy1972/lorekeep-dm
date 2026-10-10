@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { removeArchive } from './exports.js';
 import { skipIfHeld, type JobContext } from '../types.js';
+import { advanceTurn, runMonsters } from '../../room/combatEngine.js';
+import type { RoomCombatState } from '../../room/combatTypes.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
@@ -9,6 +11,7 @@ const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
 interface Scrub {
   accountId: string;
   placeholder: string;
+  charPlaceholder: string;
   charIds: Set<string>;
 }
 
@@ -124,6 +127,36 @@ async function deleteAccount(
     );
   }
 
+  const touched = [
+    ...new Set([
+      ...eventRows.map((row) => row.session_id),
+      ...snapshotRows.map((row) => row.session_id),
+    ]),
+  ];
+  for (const id of touched) {
+    if (owned.some((row) => row.id === id)) continue;
+    if (await skipIfHeld(ctx, 'accountDeletion', 'session', id))
+      throw new Error('HELD_SESSION');
+  }
+  if (touched.length) {
+    eventRows.push(
+      ...(
+        await client.query<EventRow>(
+          "SELECT session_id, seq, payload FROM events WHERE session_id = ANY($1) AND payload::text LIKE '%lastPlayerText%'",
+          [touched],
+        )
+      ).rows,
+    );
+    snapshotRows.push(
+      ...(
+        await client.query<SnapshotRow>(
+          "SELECT session_id, seq, state FROM snapshots WHERE session_id = ANY($1) AND state::text LIKE '%lastPlayerText%'",
+          [touched],
+        )
+      ).rows,
+    );
+  }
+
   const placeholders = new Map<string, string>();
   const placeholderFor = async (sessionId: string) => {
     let placeholder = placeholders.get(sessionId);
@@ -141,6 +174,7 @@ async function deleteAccount(
     return placeholder;
   };
 
+  const charPlaceholder = randomUUID();
   const seenEvents = new Set<string>();
   for (const row of eventRows) {
     const key = `${row.session_id}:${row.seq}`;
@@ -150,6 +184,7 @@ async function deleteAccount(
     const scrubbed = scrub(payload, {
       accountId,
       placeholder: await placeholderFor(row.session_id),
+      charPlaceholder,
       charIds,
     });
     if (JSON.stringify(scrubbed) === JSON.stringify(payload)) continue;
@@ -169,6 +204,7 @@ async function deleteAccount(
     const scrubbed = scrub(row.state, {
       accountId,
       placeholder: await placeholderFor(row.session_id),
+      charPlaceholder,
       charIds,
     });
     if (JSON.stringify(scrubbed) === JSON.stringify(row.state)) continue;
@@ -208,13 +244,29 @@ function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
 
 function scrub(value: unknown, s: Scrub): unknown {
   if (typeof value === 'string') {
-    return value === s.accountId || s.charIds.has(value)
-      ? s.placeholder
-      : value;
+    if (value === s.accountId) return s.placeholder;
+    return s.charIds.has(value) ? s.charPlaceholder : value;
   }
-  if (Array.isArray(value)) return value.map((item) => scrub(item, s));
-  if (!value || typeof value !== 'object') return value;
-  const obj = value as Record<string, unknown>;
+  if (Array.isArray(value))
+    return value
+      .filter((item) => !isDeletedCharacterRef(item, s.charIds))
+      .map((item) => scrub(item, s));
+  if (!isRecord(value)) return value;
+  let obj = value;
+  if (isRecord(obj.combatRoom))
+    obj = {
+      ...obj,
+      combatRoom: pruneCombat(obj.combatRoom as RoomCombatState, s.charIds),
+    };
+  if (isRecord(obj.openClarifications))
+    obj = {
+      ...obj,
+      openClarifications: Object.fromEntries(
+        Object.entries(obj.openClarifications).filter(
+          ([, c]) => !(isRecord(c) && c.accountId === s.accountId),
+        ),
+      ),
+    };
   const owned = obj.accountId === s.accountId;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(obj)) {
@@ -231,6 +283,61 @@ function scrub(value: unknown, s: Scrub): unknown {
     }
   }
   return out;
+}
+
+/** Drops the deleted character's entity (and its initiative slot) and moves the turn off it first. */
+function pruneCombat(
+  room: RoomCombatState,
+  charIds: Set<string>,
+): RoomCombatState {
+  let state = room;
+  for (
+    let turns = state.combat.initiative.length;
+    turns > 0 && charIds.has(state.combat.activeEntityId ?? '');
+    turns--
+  )
+    state = advanceTurn(state).state;
+  const { pendingReaction, engineReactions, ...rest } = state;
+  const reactionDeleted =
+    !!pendingReaction &&
+    (charIds.has(pendingReaction.entityId) ||
+      charIds.has(pendingReaction.moverId));
+  const pruned: RoomCombatState = {
+    ...rest,
+    ...(pendingReaction && !reactionDeleted
+      ? { pendingReaction, engineReactions }
+      : {}),
+    entities: rest.entities.filter((e) => !charIds.has(e.id)),
+    combat: {
+      ...rest.combat,
+      initiative: rest.combat.initiative.filter(
+        (item) => !charIds.has(item.entityId),
+      ),
+      resources: withoutKeys(rest.combat.resources, charIds),
+    },
+    ...(rest.concentration
+      ? { concentration: withoutKeys(rest.concentration, charIds) }
+      : {}),
+  };
+  return runMonsters(pruned, Date.now()).state;
+}
+
+function isDeletedCharacterRef(item: unknown, charIds: Set<string>) {
+  if (!isRecord(item)) return false;
+  return (
+    (typeof item.id === 'string' && charIds.has(item.id)) ||
+    (typeof item.entityId === 'string' && charIds.has(item.entityId))
+  );
+}
+
+function withoutKeys<T>(record: Record<string, T>, keys: Set<string>) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => !keys.has(key)),
+  ) as Record<string, T>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 export async function runAccountDeletions(ctx: JobContext & { db: Pool }) {
