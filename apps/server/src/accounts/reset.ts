@@ -16,7 +16,7 @@ export async function requestPasswordReset(
   // Identical expensive work for known and unknown addresses.
   await hashPassword(randomBytes(32).toString('base64url'));
   const account = await db.query(
-    "SELECT id FROM accounts WHERE email=$1 AND status IN ('active','pending_email')",
+    "SELECT id FROM accounts WHERE email=$1 AND status='active'",
     [email.trim().toLowerCase()],
   );
   if (!account.rowCount) return {};
@@ -115,7 +115,7 @@ export async function confirmPasswordReset(
     );
     if (used.rowCount !== 1) return false;
     const changed = await client.query(
-      "UPDATE accounts SET password_hash=$2 WHERE id=$1 AND status IN ('active','pending_email') RETURNING id",
+      "UPDATE accounts SET password_hash=$2 WHERE id=$1 AND status='active' RETURNING id",
       [used.rows[0].account_id, passwordHash],
     );
     if (changed.rowCount !== 1) throw new Abort(); // roll back: token stays unused

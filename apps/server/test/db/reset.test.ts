@@ -8,7 +8,7 @@ import {
 import { MemoryEmailSender } from '../../src/email/sender.js';
 import { hashPassword, verifyPassword } from '../../src/accounts/password.js';
 
-it('resets once, expires, revokes sessions, and preserves pending status', async () => {
+it('resets once, expires, revokes sessions, and never resets a pending account', async () => {
   const db = new Pool({ connectionString: process.env.DATABASE_URL });
   const sender = new MemoryEmailSender();
   const id = randomUUID();
