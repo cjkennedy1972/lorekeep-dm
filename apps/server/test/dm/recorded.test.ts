@@ -145,6 +145,45 @@ describe('recorded LLM adapter with the OpenAI adapter and in-process fake serve
       }),
     ).toThrow(/forbidden/);
   });
+  it('treats an unset NODE_ENV as production for fixture modes', () => {
+    expect(() =>
+      fixtureModeFromEnvironment({ LLM_FIXTURE_MODE: 'lenient' }),
+    ).toThrow(/forbidden/);
+    expect(() =>
+      fixtureModeFromEnvironment({ LLM_FIXTURE_MODE: 'record' }),
+    ).toThrow(/forbidden/);
+    expect(
+      fixtureModeFromEnvironment({ LLM_FIXTURE_MODE: 'strict' }),
+    ).toBe('strict');
+  });
+  it('keeps lenient fixture modes available under NODE_ENV test or development', () => {
+    expect(
+      fixtureModeFromEnvironment({ NODE_ENV: 'test', LLM_FIXTURE_MODE: 'lenient' }),
+    ).toBe('lenient');
+    expect(
+      fixtureModeFromEnvironment({
+        NODE_ENV: 'development',
+        LLM_FIXTURE_MODE: 'lenient',
+      }),
+    ).toBe('lenient');
+  });
+  it('adapter with unset environment and NODE_ENV treats it as production', () => {
+    const saved = process.env.NODE_ENV;
+    delete process.env.NODE_ENV;
+    try {
+      expect(
+        () =>
+          new RecordedLlmAdapter({
+            mode: 'lenient',
+            fixturePath: '/nonexistent.ndjson',
+            prefix: 'p',
+            dynamic: () => 'body',
+          }),
+      ).toThrow(/forbidden in production/);
+    } finally {
+      if (saved !== undefined) process.env.NODE_ENV = saved;
+    }
+  });
 });
 
 describe('turn seeds', () => {
