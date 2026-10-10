@@ -132,6 +132,7 @@ export function installGateway(
               ws.send(JSON.stringify(message));
             }
           },
+          close: (code: number, reason: string) => ws.close(code, reason),
         };
         const send = connection.send;
         let active = true;
