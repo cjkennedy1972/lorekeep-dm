@@ -1072,11 +1072,11 @@ export class Room {
       connection.send(message);
   }
   async drain(): Promise<void> {
-    this.accepting = false;
     clearTimeout(this.reactionTimer);
     for (const timer of this.clarificationTimers.values()) clearTimeout(timer);
+    while (this.turnInFlight) await this.activeTurn;
+    this.accepting = false;
     await this.mailbox;
-    await this.activeTurn;
     this.connections.clear();
   }
 }

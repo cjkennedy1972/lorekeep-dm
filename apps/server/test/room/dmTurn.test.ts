@@ -599,4 +599,22 @@ describe('Room commit safety', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(latestSnapshot()).not.toBeNull();
   });
+
+  it('commits an in-flight turn when the room drains mid-narration', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room, events } = setup(runner);
+    const messages: { type: string }[] = [];
+    const account = randomUUID();
+    await room.join(account, {
+      send: (message) => messages.push(message as { type: string }),
+    });
+    expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
+      true,
+    );
+    const draining = room.drain();
+    finish();
+    await draining;
+    expect(messages.map((message) => message.type)).not.toContain('Error');
+    expect(events.map((event) => event.type)).toContain('ActionAccepted');
+  });
 });
