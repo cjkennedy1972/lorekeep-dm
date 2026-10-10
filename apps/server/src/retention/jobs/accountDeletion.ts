@@ -272,6 +272,15 @@ async function deleteAccount(
     counts.snapshotsScrubbed++;
   }
 
+  const needles = new Set<string>();
+  for (const row of eventRows) collectScrubNeedles(row.payload, accountId, charIds, needles);
+  for (const row of snapshotRows) collectScrubNeedles(row.state, accountId, charIds, needles);
+  await scrubDerived(
+    client,
+    touched,
+    [...needles].filter((n) => n.length >= MIN_NEEDLE).sort((a, b) => b.length - a.length),
+  );
+
   if (charIds.size) {
     await client.query(
       'UPDATE sessions SET character=NULL, character_id=NULL WHERE character_id = ANY($1)',
@@ -288,6 +297,108 @@ async function deleteAccount(
   );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
+}
+
+const MIN_NEEDLE = 3;
+const DERIVED_PLACEHOLDER = '[redacted]';
+
+// ponytail: exact-string match only; LLM paraphrases of typed text in derived rows survive.
+function collectScrubNeedles(
+  value: unknown,
+  accountId: string,
+  charIds: Set<string>,
+  out: Set<string>,
+) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectScrubNeedles(item, accountId, charIds, out);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const obj = value as Record<string, unknown>;
+  const owned = Object.values(obj).some(
+    (v) => v === accountId || (typeof v === 'string' && charIds.has(v)),
+  );
+  for (const [key, child] of Object.entries(obj)) {
+    if (typeof child === 'string') {
+      if (key === 'lastPlayerText' || (owned && ['text', 'playerName', 'name'].includes(key)))
+        out.add(child);
+    }
+    collectScrubNeedles(child, accountId, charIds, out);
+  }
+}
+
+function redactText(text: string, needles: readonly string[]) {
+  let out = text;
+  for (const needle of needles) out = out.split(needle).join(DERIVED_PLACEHOLDER);
+  return out;
+}
+
+function redactDeep(value: unknown, needles: readonly string[]): unknown {
+  if (typeof value === 'string') return redactText(value, needles);
+  if (Array.isArray(value)) return value.map((v) => redactDeep(v, needles));
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, redactDeep(v, needles)]),
+    );
+  return value;
+}
+
+async function scrubDerived(
+  client: PoolClient,
+  sessionIds: string[],
+  needles: readonly string[],
+) {
+  if (!sessionIds.length || !needles.length) return;
+  const summaries = await client.query<{ id: string; summary: string }>(
+    'SELECT id, summary FROM scene_summaries WHERE session_id = ANY($1)',
+    [sessionIds],
+  );
+  for (const row of summaries.rows) {
+    const summary = redactText(row.summary, needles);
+    if (summary !== row.summary)
+      await client.query('UPDATE scene_summaries SET summary=$2 WHERE id=$1', [
+        row.id,
+        summary,
+      ]);
+  }
+  const entries = await client.query<{
+    id: string;
+    name: string;
+    aliases: string[];
+    payload: unknown;
+    search_document: string;
+  }>(
+    'SELECT id, name, aliases, payload, search_document FROM registry_entries WHERE session_id = ANY($1)',
+    [sessionIds],
+  );
+  for (const row of entries.rows) {
+    const name = redactText(row.name, needles);
+    const aliases = row.aliases.map((a) => redactText(a, needles));
+    const payload = redactDeep(row.payload, needles);
+    const searchDocument = redactText(row.search_document, needles);
+    if (
+      name === row.name &&
+      JSON.stringify(aliases) === JSON.stringify(row.aliases) &&
+      JSON.stringify(payload) === JSON.stringify(row.payload) &&
+      searchDocument === row.search_document
+    )
+      continue;
+    await client.query(
+      'UPDATE registry_entries SET name=$2, aliases=$3, payload=$4, search_document=$5 WHERE id=$1',
+      [row.id, name, aliases, payload, searchDocument],
+    );
+  }
+  const facts = await client.query<{ id: string; fact: string }>(
+    `SELECT f.id, f.fact FROM registry_facts f
+      JOIN registry_entries e ON e.id = f.entry_id
+      WHERE e.session_id = ANY($1)`,
+    [sessionIds],
+  );
+  for (const row of facts.rows) {
+    const fact = redactText(row.fact, needles);
+    if (fact !== row.fact)
+      await client.query('UPDATE registry_facts SET fact=$2 WHERE id=$1', [row.id, fact]);
+  }
 }
 
 function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
