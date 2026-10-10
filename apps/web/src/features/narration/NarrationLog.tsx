@@ -147,6 +147,15 @@ export function NarrationLog({ messages, onRetry, onResubmit }: Props) {
                     );
                   })}
               </div>
+              {entry.turn.fallback && (
+                <p className="narration-log__fallback" role="status">
+                  {entry.turn.fallback === 'endpoint-error'
+                    ? 'The narration service was unavailable; this is a fallback response.'
+                    : entry.turn.fallback === 'budget-exhausted'
+                      ? 'The narration limit was reached; this is a fallback response.'
+                      : 'Narration could not be generated; this is a fallback response.'}
+                </p>
+              )}
               <p>
                 {body ||
                   (entry.turn.complete
