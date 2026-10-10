@@ -255,11 +255,12 @@ export function createCombatRuntime(
           },
           result.events,
         );
-        const closing = settle(hit);
+        const closing = settle(hit.state);
         return {
           state: closing.state,
           events: [
             ...result.events,
+            ...hit.events,
             { type: 'ActionSpent', entityId: actorId },
             ...closing.events,
           ],
