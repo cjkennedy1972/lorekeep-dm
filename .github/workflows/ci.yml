@@ -44,6 +44,7 @@ jobs:
       - run: pnpm --filter @game/server test:db
       - run: pnpm --filter e2e test
       - run: pnpm -r build
+      - run: pnpm --filter @game/server smoke:prod
       - name: Verify lockfile is stable
         run: |
           pnpm install --lockfile-only --ignore-scripts
