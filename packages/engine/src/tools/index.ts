@@ -19,6 +19,10 @@ import { callForRest } from './rest.js';
 import type { CombatToolState } from './combat.js';
 import type { MovementToolState, AreaToolState } from './movement.js';
 
+// Engine entities use ent_ refs; player characters carry UUID ids (CharacterSchema).
+const ENTITY_REF =
+  /^(?:ent_[a-z0-9_-]{1,32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
 export type ToolExecutorState = CheckToolState &
   AttackToolState &
   SpellToolState &
@@ -65,7 +69,7 @@ export function execute(
   const rawArgs = call.args as Record<string, unknown>;
   for (const key of ['actorId', 'attackerId', 'targetId', 'casterId']) {
     const value = rawArgs[key];
-    if (typeof value === 'string' && !/^ent_[a-z0-9_-]{1,32}$/.test(value))
+    if (typeof value === 'string' && !ENTITY_REF.test(value))
       return fail(
         'malformed-ref',
         `${key} must be a valid session entity reference.`,

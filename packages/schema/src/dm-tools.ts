@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 const strict = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
-const entityRef = z.string().regex(/^ent_[a-z0-9_-]{1,32}$/);
+// Player characters carry UUID ids (CharacterSchema); engine-spawned entities use ent_ refs.
+const entityRef = z.union([
+  z.string().regex(/^ent_[a-z0-9_-]{1,32}$/),
+  z.uuid(),
+]);
 const targetRef = z.string().regex(/^(ent|feat|mk)_[a-z0-9_-]{1,32}$/);
 const registryRef = (prefix: string) =>
   z.string().regex(new RegExp(`^${prefix}_[a-z0-9_-]{1,32}$`));
