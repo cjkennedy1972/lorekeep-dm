@@ -255,10 +255,12 @@ export class RecordedLlmAdapter implements LlmAdapter {
     this.entries = entries;
   }
 }
+/** undefined means no fixture replay or recording: callers use the live endpoint. */
 export const fixtureModeFromEnvironment = (
   env: NodeJS.ProcessEnv = process.env,
-): FixtureMode => {
-  const value = env.LLM_FIXTURE_MODE ?? 'strict';
+): FixtureMode | undefined => {
+  const value = env.LLM_FIXTURE_MODE;
+  if (value === undefined) return undefined;
   if (value !== 'strict' && value !== 'lenient' && value !== 'record')
     throw new Error(`invalid LLM_FIXTURE_MODE: ${value}`);
   if (env.NODE_ENV === 'production' && value !== 'strict')

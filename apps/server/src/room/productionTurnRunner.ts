@@ -187,28 +187,30 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     if (Object.keys(actors).length && !actors[request.accountId])
       throw new Error('Player character is not configured for this table');
 
-    const recorded = new RecordedLlmAdapter({
-      mode: this.fixtureMode,
-      fixturePath: this.fixturePath,
-      header: {
-        suite: 'solo-turn',
-        turn: request.actionId,
-        toolMode: 'native',
-        model: 'operator-configured',
-        catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
-        turnSeed: process.env.LLM_FIXTURE_MODE
-          ? '0x0000000000000000'
-          : 'random',
-        endpointProfile: endpointSlot,
-      },
-      upstream: this.fixtureMode === 'record' ? endpoint : undefined,
-      allowRecord: process.env.NODE_ENV === 'test',
-      environment: process.env.NODE_ENV,
-      prefix: 'Lorekeep solo turn',
-    });
+    const llm = this.fixtureMode
+      ? new RecordedLlmAdapter({
+          mode: this.fixtureMode,
+          fixturePath: this.fixturePath,
+          header: {
+            suite: 'solo-turn',
+            turn: request.actionId,
+            toolMode: 'native',
+            model: 'operator-configured',
+            catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
+            turnSeed: process.env.LLM_FIXTURE_MODE
+              ? '0x0000000000000000'
+              : 'random',
+            endpointProfile: endpointSlot,
+          },
+          upstream: this.fixtureMode === 'record' ? endpoint : undefined,
+          allowRecord: process.env.NODE_ENV === 'test',
+          environment: process.env.NODE_ENV,
+          prefix: 'Lorekeep solo turn',
+        })
+      : endpoint;
     const adapter =
       this.adapterOverride ??
-      new MeteredLlmAdapter(recorded, new PostgresUsageSink(this.db), {
+      new MeteredLlmAdapter(llm, new PostgresUsageSink(this.db), {
         sessionId: request.sessionId,
         turnId: request.actionId,
         purpose: 'narration',
@@ -493,14 +495,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           nextSceneId?: string;
         };
         const summaryAdapter = new MeteredLlmAdapter(
-          new RecordedLlmAdapter({
-            mode: this.fixtureMode,
-            fixturePath: this.fixturePath,
-            upstream: endpoint,
-            allowRecord: process.env.NODE_ENV === 'test',
-            environment: process.env.NODE_ENV,
-            prefix: 'Lorekeep scene summary',
-          }),
+          this.fixtureMode
+            ? new RecordedLlmAdapter({
+                mode: this.fixtureMode,
+                fixturePath: this.fixturePath,
+                upstream: endpoint,
+                allowRecord: process.env.NODE_ENV === 'test',
+                environment: process.env.NODE_ENV,
+                prefix: 'Lorekeep scene summary',
+              })
+            : endpoint,
           new PostgresUsageSink(this.db),
           {
             sessionId: request.sessionId,

@@ -254,15 +254,18 @@ export function registerTableRoutes(
           endpointSlot as 'fast' | 'frontier' | 'moderate',
           createEndpointEgress(),
         );
+        const mode = fixtureModeFromEnvironment();
         adapter = new MeteredLlmAdapter(
-          new RecordedLlmAdapter({
-            mode: fixtureModeFromEnvironment(),
-            fixturePath:
-              process.env.LLM_FIXTURE_PATH ?? 'fixtures/solo-turn.ndjson',
-            upstream: raw,
-            allowRecord: process.env.NODE_ENV === 'test',
-            environment: process.env.NODE_ENV,
-          }),
+          mode
+            ? new RecordedLlmAdapter({
+                mode,
+                fixturePath:
+                  process.env.LLM_FIXTURE_PATH ?? 'fixtures/solo-turn.ndjson',
+                upstream: raw,
+                allowRecord: process.env.NODE_ENV === 'test',
+                environment: process.env.NODE_ENV,
+              })
+            : raw,
           new PostgresUsageSink(db),
           {
             sessionId: request.params.id,
