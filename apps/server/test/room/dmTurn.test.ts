@@ -619,12 +619,12 @@ describe('Room commit safety', () => {
     expect(events.map((event) => event.type)).toContain('ActionAccepted');
   });
 
-  it('commits a turn started by work queued before drain', async () => {
+  it('commits a turn already in flight when drain begins', async () => {
     const { runner, finish } = gatedRunner();
     const { room, events } = setup(runner);
     const account = randomUUID();
     await room.join(account, { send() {} });
-    void room.submitAction(account, randomUUID(), 'I wait.');
+    await room.submitAction(account, randomUUID(), 'I wait.');
     const draining = room.drain();
     await new Promise((resolve) => setTimeout(resolve, 0));
     finish();
