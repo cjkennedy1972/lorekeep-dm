@@ -599,4 +599,65 @@ describe('Room commit safety', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(latestSnapshot()).not.toBeNull();
   });
+
+  it('commits an in-flight turn when the room drains mid-narration', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room, events } = setup(runner);
+    const messages: { type: string }[] = [];
+    const account = randomUUID();
+    await room.join(account, {
+      send: (message) => messages.push(message as { type: string }),
+    });
+    expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
+      true,
+    );
+    const draining = room.drain();
+    finish();
+    await draining;
+    expect(messages.map((message) => message.type)).not.toContain('Error');
+    expect(events.map((event) => event.type)).toContain('ActionAccepted');
+  });
+
+  it('commits a turn started by work queued before drain', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room, events } = setup(runner);
+    const account = randomUUID();
+    await room.join(account, { send() {} });
+    void room.submitAction(account, randomUUID(), 'I wait.');
+    const draining = room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finish();
+    await draining;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events.map((event) => event.type)).toContain('ActionAccepted');
+  });
+
+  it('rejects new player submissions once drain starts', async () => {
+    const { runner, finish } = gatedRunner();
+    const { room } = setup(runner);
+    const account = randomUUID();
+    await room.join(account, { send() {} });
+    expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
+      true,
+    );
+    const draining = room.drain();
+    await expect(
+      room.submitAction(account, randomUUID(), 'Me too.'),
+    ).rejects.toThrow(/draining/);
+    finish();
+    await draining;
+  });
+
+  it('stops waiting for a turn that outlives the drain deadline', async () => {
+    const { runner } = gatedRunner();
+    const { room } = setup(runner);
+    const account = randomUUID();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await room.join(account, { send() {} });
+    await room.submitAction(account, randomUUID(), 'I wait.');
+    await room.drain(20);
+    await expect(room.submit(randomUUID())).rejects.toThrow(/draining/);
+    expect(error).toHaveBeenCalledWith(expect.stringMatching(/deadline/));
+    error.mockRestore();
+  });
 });

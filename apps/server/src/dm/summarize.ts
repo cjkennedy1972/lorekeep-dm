@@ -231,6 +231,7 @@ export async function closeScene(
   input: CloseSceneInput,
 ): Promise<SceneSummaryResult & { persisted: boolean }> {
   const result = await summarizeScene(input);
+  input.signal?.throwIfAborted();
   const memory = new RegistryMemory(input.db);
   const persisted = await memory.closeScene(
     input.sessionId,

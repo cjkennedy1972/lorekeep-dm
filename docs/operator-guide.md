@@ -23,6 +23,7 @@ For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-p
 | `LLM_FIXTURE_MODE` | Must be unset | unset (live endpoint) | `strict` is the only allowed value in production; `lenient`/`record` fail boot, and unknown values fail. | Recorded-LLM replay, section 4. |
 | `LLM_FIXTURE_PATH` | No | `fixtures/solo-turn.ndjson` | Read only when fixture mode is set. | Section 4. |
 | `SWEEP_INTERVAL_MS` | No | `3600000` | Non-integer or negative fails config load. | `0` disables the retention sweeper. |
+| `ROOM_DRAIN_DEADLINE_MS` | No | `30000` | Non-integer or negative fails config load. | Shutdown stops waiting for in-flight turns after this many milliseconds and releases the room lease; `0` gives up immediately. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset (no exporter) | Invalid URL fails config load. | OTLP trace export. |
 | `EXPORT_ARCHIVE_DIR` | Yes, set explicitly | `/tmp/lorekeep-exports` | Not in the config schema. Nothing refuses the `/tmp` default. | Export archives are written here (0700 directory, 0600 files). `/tmp` is not acceptable for production data. Card 1ada4844 tracks a production refusal. |
 | `WS_ALLOWED_ORIGINS` | Only for cross-origin web clients | unset (same-host origins only) | Not in the config schema; read raw. | Comma-separated full origins (e.g. `https://app.example`). A trailing slash or path never matches. |

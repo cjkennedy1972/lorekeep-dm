@@ -61,7 +61,7 @@ async function shutdown() {
   closing = true;
   stopSweeper();
   await closeGateway();
-  await rooms.drain();
+  await rooms.drain(config.ROOM_DRAIN_DEADLINE_MS);
   await app.close();
   await db.end();
   await telemetry?.shutdown();

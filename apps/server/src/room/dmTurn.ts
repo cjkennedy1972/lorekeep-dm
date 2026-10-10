@@ -10,6 +10,7 @@ export interface SoloTurnRequest {
   playerName?: string;
   allowClarification?: boolean;
   clarificationAsked?: boolean;
+  signal?: AbortSignal;
 }
 
 /** Runtime-specific prompt, endpoint, and engine bindings stay outside the Room actor. */

@@ -413,6 +413,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
 
     const emittedSceneEvents: unknown[] = [];
     const result = await runTurn({
+      signal: request.signal,
       turnId: request.actionId,
       allowClarification: request.allowClarification,
       clarificationAsked: request.clarificationAsked,
@@ -535,6 +536,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             entry === event ? transitionEvent : entry,
           );
         await closeScene({
+          signal: request.signal,
           sessionId: request.sessionId,
           sceneId: closed.sceneId,
           events: result.events.map((entry) => ({
