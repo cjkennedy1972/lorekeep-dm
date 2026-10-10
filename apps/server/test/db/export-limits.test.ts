@@ -107,10 +107,9 @@ describe('export abuse limits', () => {
       delete: async () => {},
     });
     const row = (
-      await db.query(
-        'SELECT status, error_code FROM export_jobs WHERE id=$1',
-        [jobId],
-      )
+      await db.query('SELECT status, error_code FROM export_jobs WHERE id=$1', [
+        jobId,
+      ])
     ).rows[0];
     expect(put).toEqual([]);
     expect(row).toEqual({ status: 'failed', error_code: 'EXPORT_TOO_LARGE' });

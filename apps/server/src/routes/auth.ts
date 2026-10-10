@@ -76,6 +76,7 @@ export function registerAuthRoutes(
   const ipFailures = new BoundedCounter(600_000);
   const EMAIL_FAIL_LIMIT = 5;
   const IP_FAIL_LIMIT = 20;
+  const EXPORTS_PER_WEEK = 10;
   app.addHook('onRequest', async (request, reply) => {
     if (!validOrigin(request))
       return reply
@@ -301,6 +302,16 @@ export function registerAuthRoutes(
         message: 'Please wait before requesting another export.',
       });
     const body = request.body as { password?: unknown } | null;
+    const throttleKey = `export:${session.account_id}`;
+    // Throttle first so guesses never reach argon2; per account across IPs, and per IP.
+    if (
+      emailFailures.count(throttleKey) >= EMAIL_FAIL_LIMIT ||
+      ipFailures.count(request.ip) >= IP_FAIL_LIMIT
+    )
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many password attempts. Try again later.',
+      });
     {
       const row = (
         await db.query('SELECT password_hash FROM accounts WHERE id=$1', [
@@ -311,11 +322,25 @@ export function registerAuthRoutes(
         typeof body?.password !== 'string' ||
         !row ||
         !(await verifyPassword(row.password_hash, body.password))
-      )
+      ) {
+        emailFailures.hit(throttleKey);
+        ipFailures.hit(request.ip);
         return reply
           .code(403)
           .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
+      }
     }
+    const recent = (
+      await db.query(
+        "SELECT count(*)::int AS n FROM export_jobs WHERE account_id=$1 AND requested_at > now() - interval '7 days'",
+        [session.account_id],
+      )
+    ).rows[0].n;
+    if (recent >= EXPORTS_PER_WEEK)
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Export limit reached for this week.',
+      });
     exportHits.set(session.account_id, Date.now());
     return reply
       .code(202)

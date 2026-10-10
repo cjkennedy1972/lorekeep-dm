@@ -2,6 +2,8 @@ import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { ObjectStore } from '../storage/objectStore.js';
 const WEEK = 7 * 86400_000;
+const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
+class ArchiveTooLarge extends Error {}
 
 export async function createExport(
   db: Pool,
@@ -79,16 +81,22 @@ export async function processExport(
       })),
       summaries,
     };
+    const body = JSON.stringify(archive);
+    if (Buffer.byteLength(body) > MAX_ARCHIVE_BYTES)
+      throw new ArchiveTooLarge();
     const key = `${id}.json`;
-    await store.put(key, JSON.stringify(archive));
+    await store.put(key, body);
     await db.query(
       "UPDATE export_jobs SET status='completed',completed_at=now(),expires_at=$2,archive_key=$3 WHERE id=$1",
       [id, new Date(Date.now() + WEEK), key],
     );
-  } catch {
+  } catch (error) {
     await db.query(
-      "UPDATE export_jobs SET status='failed',error_code='EXPORT_FAILED' WHERE id=$1",
-      [id],
+      "UPDATE export_jobs SET status='failed',error_code=$2 WHERE id=$1",
+      [
+        id,
+        error instanceof ArchiveTooLarge ? 'EXPORT_TOO_LARGE' : 'EXPORT_FAILED',
+      ],
     );
   }
 }
