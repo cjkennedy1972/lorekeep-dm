@@ -48,8 +48,11 @@ async function exportArchive(accountId: string) {
   let archive = '';
   await processExport(
     db,
-    (await db.query('SELECT id FROM export_jobs WHERE account_id=$1', [accountId]))
-      .rows[0].id,
+    (
+      await db.query('SELECT id FROM export_jobs WHERE account_id=$1', [
+        accountId,
+      ])
+    ).rows[0].id,
     accountId,
     {
       put: async (_key, contents) => {
@@ -80,7 +83,10 @@ describe('account export carries the player’s own gameplay data', () => {
     await insertSnapshot(
       mine,
       1,
-      roomState([me], { recap: { recap: 'old' }, characters: { [me]: character } }),
+      roomState([me], {
+        recap: { recap: 'old' },
+        characters: { [me]: character },
+      }),
     );
     await insertSnapshot(
       mine,
@@ -283,7 +289,9 @@ describe('account export carries the player’s own gameplay data', () => {
     await insertSnapshot(
       formerRoom,
       1,
-      roomState([owner, former], { recap: { recap: 'Former co-player narrative' } }),
+      roomState([owner, former], {
+        recap: { recap: 'Former co-player narrative' },
+      }),
     );
     await insertSnapshot(
       formerRoom,
