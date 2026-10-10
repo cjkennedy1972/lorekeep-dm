@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { Room, type RoomStore } from '../../src/room/Room.js';
-import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
+import type { SoloTurnRequest, SoloTurnRunner } from '../../src/room/dmTurn.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
 
 const sessionId = randomUUID();
@@ -144,6 +144,69 @@ describe('Room solo DM turn lifecycle', () => {
       ),
     ).toBe(false);
     release();
+  });
+
+  it('holds an action open for one clarifying answer from its owner, then resolves it once', async () => {
+    const requests: SoloTurnRequest[] = [];
+    const runner: SoloTurnRunner = {
+      async run(request) {
+        requests.push(request);
+        if (requests.length === 1)
+          return {
+            narration: '',
+            events: [],
+            state: {},
+            turnSeed: '0x0000000000000001',
+            usage: { in: 1, out: 1 },
+            clarification: {
+              actionId: request.actionId,
+              question: 'Which door?',
+            },
+          } as never;
+        return result as never;
+      },
+    };
+    const { room, events } = setup(runner);
+    const owner = randomUUID();
+    const other = randomUUID();
+    const ownerMessages: { type: string; payload?: unknown }[] = [];
+    await room.join(owner, {
+      send: (message) =>
+        ownerMessages.push(message as { type: string; payload?: unknown }),
+    });
+    await room.join(other, { send() {} });
+    const actionId = randomUUID();
+    expect(await room.submitAction(owner, actionId, 'open the door')).toBe(
+      true,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(ownerMessages).toContainEqual(
+      expect.objectContaining({
+        type: 'ClarificationRequested',
+        payload: { actionId, question: 'Which door?' },
+      }),
+    );
+    expect(events.some((event) => event.type === 'ActionAccepted')).toBe(false);
+    expect(
+      await room.answerClarification(other, actionId, 'the left one'),
+    ).toBe(false);
+    expect(
+      await room.answerClarification(owner, actionId, 'the left one'),
+    ).toBe(true);
+    expect(await room.answerClarification(owner, actionId, 'again')).toBe(
+      false,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(2);
+    expect(requests[1].clarificationAsked).toBe(true);
+    expect(requests[1].allowClarification).toBe(false);
+    expect(requests[1].text).toContain('the left one');
+    expect(
+      events
+        .filter((event) => event.type === 'ActionAccepted')
+        .map((event) => (event.payload as { actionId: string }).actionId),
+    ).toEqual([actionId]);
+    expect(await room.answerClarification(owner, actionId, 'late')).toBe(false);
   });
 
   it('withdraws a queued action only for its owner and before it resolves', async () => {

@@ -5,6 +5,7 @@ import {
   ClientEnvelopeSchema,
   CombatCommandSchema,
   PlayerActionSchema,
+  ClarificationAnswerSchema,
   WithdrawActionSchema,
   type ServerMessage,
 } from '@game/schema';
@@ -317,6 +318,39 @@ export function installGateway(
                       code: 'NOT_WITHDRAWABLE',
                       message: 'This action can no longer be withdrawn.',
                       actionId: withdraw.data.payload.withdrawnActionId,
+                    },
+                  });
+              });
+          }
+          if (msg.type === 'ClarificationAnswer') {
+            const answer = ClarificationAnswerSchema.safeParse(msg);
+            if (!answer.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Clarification reply is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .answerClarification(
+                identity.accountId,
+                answer.data.payload.actionId,
+                answer.data.payload.answer,
+              )
+              .then((answered) => {
+                if (!answered)
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'clarification-closed',
+                      message: 'This question is no longer open.',
+                      actionId: answer.data.payload.actionId,
                     },
                   });
               });

@@ -169,6 +169,7 @@ export function narrationLogReducer(
       };
     }
     case 'ToolRejected':
+    case 'ClarificationRequested':
     case 'CombatTracker':
     case 'ReactionPrompt':
     case 'CombatOptions':

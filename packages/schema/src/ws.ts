@@ -25,6 +25,17 @@ export const WithdrawActionSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const ClarificationAnswerSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ClarificationAnswer'),
+    payload: z.object({
+      actionId: ActionIdSchema,
+      answer: z.string().trim().min(1).max(4000),
+    }),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const CombatCommandSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -97,6 +108,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     type: z.enum([
       'ActionQueued',
       'ActionWithdrawn',
+      'ClarificationRequested',
       'TurnThinking',
       'RollEvent',
       'NarrationChunk',

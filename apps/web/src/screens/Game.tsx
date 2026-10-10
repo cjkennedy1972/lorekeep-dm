@@ -167,6 +167,17 @@ export function Game() {
               : current,
           );
       }
+      if (message.type === 'ClarificationRequested') {
+        const payload = asRecord(message.payload);
+        const actionId = String(payload.actionId ?? '');
+        setClarification({
+          actionId,
+          question: String(payload.question ?? ''),
+        });
+        updatePendingAction((current) =>
+          current && current.id === actionId ? null : current,
+        );
+      }
       if (message.type === 'NarrationCompleted') {
         const actionId = String(asRecord(message.payload).actionId ?? '');
         updatePendingAction((current) =>
@@ -463,7 +474,13 @@ export function Game() {
         clarification={clarification}
         onReply={(actionId, reply) => {
           setClarification(null);
-          submitAction(`Reply to action ${actionId}: ${reply}`);
+          setError('');
+          updatePendingAction(() => ({
+            id: actionId,
+            text: reply,
+            acknowledged: true,
+          }));
+          live.send('ClarificationAnswer', { actionId, answer: reply });
         }}
       />
       {!tracker && (

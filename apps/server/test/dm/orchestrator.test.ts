@@ -286,6 +286,83 @@ describe('DM orchestrator', () => {
     await runTurn(h.input);
     expect(executions).toBe(0);
   });
+  it('rejects ask_clarification outside player action turns before executor invocation', async () => {
+    let executions = 0;
+    const h = setup(
+      [
+        [
+          call('q1', 'ask_clarification', {
+            actionId: 'turn-1',
+            question: 'Which door?',
+          }),
+        ],
+        [{ type: 'text', delta: narration }],
+      ],
+      () => {
+        executions++;
+        return { ok: true, events: [] };
+      },
+    );
+    const result = await runTurn(h.input);
+    expect(executions).toBe(0);
+    expect(result.clarification).toBeUndefined();
+    expect(
+      h.events.some(
+        (event) =>
+          (event as { type?: string }).type === 'ToolCallRejected' &&
+          (event as { error?: string }).error === 'unknown-tool',
+      ),
+    ).toBe(true);
+  });
+  it('ends a player turn on a clarifying question without narrating or committing', async () => {
+    const h = setup([
+      [
+        call('q1', 'ask_clarification', {
+          actionId: 'turn-1',
+          question: 'Which door?',
+        }),
+      ],
+    ]);
+    h.input.allowClarification = true;
+    const result = await runTurn(h.input);
+    expect(result.clarification).toEqual({
+      actionId: 'turn-1',
+      question: 'Which door?',
+    });
+    expect(h.requests).toHaveLength(1);
+    expect(h.events).toContainEqual({
+      type: 'ClarificationRequested',
+      actionId: 'turn-1',
+      question: 'Which door?',
+    });
+    expect(
+      h.events.some(
+        (event) => (event as { type?: string }).type === 'NarrationCompleted',
+      ),
+    ).toBe(false);
+  });
+  it('refuses a second clarifying question for the same action', async () => {
+    const h = setup([
+      [
+        call('q1', 'ask_clarification', {
+          actionId: 'turn-1',
+          question: 'Which door?',
+        }),
+      ],
+      [{ type: 'text', delta: narration }],
+    ]);
+    h.input.allowClarification = true;
+    h.input.clarificationAsked = true;
+    const result = await runTurn(h.input);
+    expect(result.clarification).toBeUndefined();
+    expect(result.narration).toBe(narration);
+    expect(
+      h.events.some(
+        (event) =>
+          (event as { error?: string }).error === 'clarification-already-asked',
+      ),
+    ).toBe(true);
+  });
   it('rejects move_to in exploration before executor invocation', async () => {
     let executions = 0;
     const h = setup(

@@ -69,7 +69,13 @@ export class Room {
     actionId: string;
     text: string;
     playerName: string;
+    clarificationAsked?: boolean;
   }[] = [];
+  // ponytail: open questions live in memory; a restart drops them and the action must be resubmitted.
+  private readonly openClarifications = new Map<
+    string,
+    { accountId: string; text: string; playerName: string; question: string }
+  >();
   readonly sessionId: string;
   state: RoomState;
   seq: number;
@@ -514,13 +520,37 @@ export class Room {
         text,
         playerName: playerName ?? seat.displayName,
       });
-      if (!this.turnInFlight) {
-        this.turnInFlight = true;
-        this.activeTurn = this.resolveQueuedTurns();
-        void this.activeTurn.catch(() => undefined);
-      }
+      this.kickQueue();
       return true;
     });
+  }
+
+  answerClarification(
+    accountId: string,
+    actionId: string,
+    answer: string,
+  ): Promise<boolean> {
+    return this.enqueue(async () => {
+      const open = this.openClarifications.get(actionId);
+      if (!open || open.accountId !== accountId) return false;
+      this.openClarifications.delete(actionId);
+      this.queuedActions.unshift({
+        accountId,
+        actionId,
+        text: `${open.text}\n[Clarifying question: ${open.question}] Player answers: ${answer}`,
+        playerName: open.playerName,
+        clarificationAsked: true,
+      });
+      this.kickQueue();
+      return true;
+    });
+  }
+
+  private kickQueue(): void {
+    if (this.turnInFlight) return;
+    this.turnInFlight = true;
+    this.activeTurn = this.resolveQueuedTurns();
+    void this.activeTurn.catch(() => undefined);
   }
 
   withdrawAction(accountId: string, actionId: string): Promise<boolean> {
@@ -556,6 +586,7 @@ export class Room {
           action.actionId,
           action.text,
           action.playerName,
+          action.clarificationAsked === true,
         );
       } catch {
         // A turn that throws (e.g. no endpoint configured, table state unavailable) must not
@@ -581,6 +612,7 @@ export class Room {
     actionId: string,
     text: string,
     playerName: string,
+    clarificationAsked: boolean,
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
     const result = await this.turnRunner!.run(
@@ -591,6 +623,8 @@ export class Room {
         text,
         state: this.state.gameState ?? this.state,
         playerName,
+        allowClarification: !clarificationAsked,
+        clarificationAsked,
       },
       (event) => {
         const type = event.type;
@@ -651,18 +685,21 @@ export class Room {
             type: String((event as { type: string }).type),
             payload: event,
           }));
-        writes.push({
-          seq: undefined,
-          turnId: id,
-          type: 'NarrationCompleted',
-          payload: { actionId, narration: result.narration },
-        });
-        writes.push({
-          seq: undefined,
-          turnId: id,
-          type: 'ActionAccepted',
-          payload: { actionId },
-        });
+        const clarification = result.clarification;
+        if (!clarification) {
+          writes.push({
+            seq: undefined,
+            turnId: id,
+            type: 'NarrationCompleted',
+            payload: { actionId, narration: result.narration },
+          });
+          writes.push({
+            seq: undefined,
+            turnId: id,
+            type: 'ActionAccepted',
+            payload: { actionId },
+          });
+        }
         const nextSeq = this.seq + writes.length;
         let incoming = (
           result.state && typeof result.state === 'object' ? result.state : {}
@@ -701,7 +738,9 @@ export class Room {
         });
         const snapshotState = {
           ...nextState,
-          actionIds: [...this.actionIds, actionId],
+          actionIds: clarification
+            ? [...this.actionIds]
+            : [...this.actionIds, actionId],
         };
         const stored = await this.store.writeTurn(
           this.sessionId,
@@ -712,12 +751,24 @@ export class Room {
         );
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;
-        this.actionIds.add(actionId);
+        if (clarification) {
+          this.openClarifications.set(actionId, {
+            accountId,
+            text,
+            playerName,
+            question: clarification.question,
+          });
+          this.broadcast({
+            seq: this.seq,
+            type: 'ClarificationRequested',
+            payload: { actionId, question: clarification.question },
+          } as ServerMessage);
+        } else this.actionIds.add(actionId);
         const room = roomGameState(nextState);
         if (room && combatEvents.length)
           this.announceCombat(room, combatEvents, accountId);
       }
-      this.pendingActions.delete(actionId);
+      if (!result.clarification) this.pendingActions.delete(actionId);
     });
   }
   submitCombatCommand(

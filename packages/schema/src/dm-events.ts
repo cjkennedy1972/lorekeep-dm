@@ -115,6 +115,13 @@ export const TurnCommittedSchema = z
       .strict(),
   })
   .strict();
+export const ClarificationRequestedSchema = z
+  .object({
+    type: z.literal('ClarificationRequested'),
+    actionId: z.string().min(1),
+    question: z.string().min(1).max(280),
+  })
+  .strict();
 export const DMTurnEventSchema = z.discriminatedUnion('type', [
   TurnStartedSchema,
   NarrationChunkSchema,
@@ -128,6 +135,7 @@ export const DMTurnEventSchema = z.discriminatedUnion('type', [
   PromptOverBudgetSchema,
   EntityDownedSchema,
   TurnCommittedSchema,
+  ClarificationRequestedSchema,
 ]);
 export type DMTurnEvent = z.infer<typeof DMTurnEventSchema>;
 export type DMToolNameEvent = DMToolName;

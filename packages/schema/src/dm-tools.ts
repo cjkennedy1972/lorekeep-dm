@@ -153,6 +153,10 @@ export const DMToolArgsSchema = {
     value: z.union([z.boolean(), z.string().max(64), z.int()]),
   }),
   rules_lookup: strict({ topic: z.string().min(3).max(80) }),
+  ask_clarification: strict({
+    actionId: z.string().min(1).max(64),
+    question: z.string().min(1).max(280),
+  }),
   log_ruling: strict({
     topic: z.string().min(1).max(80),
     ruling: z.string().min(1).max(400),
@@ -218,6 +222,14 @@ export const DMToolCallSchema = z.discriminatedUnion('name', [
     name: z.literal('rules_lookup'),
     args: DMToolArgsSchema.rules_lookup,
   }),
+  strict({
+    name: z.literal('ask_clarification'),
+    args: DMToolArgsSchema.ask_clarification,
+  }),
+  strict({
+    name: z.literal('ask_clarification'),
+    args: DMToolArgsSchema.ask_clarification,
+  }),
   strict({ name: z.literal('log_ruling'), args: DMToolArgsSchema.log_ruling }),
 ]);
 
@@ -267,6 +279,7 @@ export const DMToolErrorCodeSchema = z.enum([
   'turn-budget-exhausted',
   'lookup-budget-exhausted',
   'scene-already-closed',
+  'clarification-already-asked',
 ]);
 export type DMToolErrorCode = z.infer<typeof DMToolErrorCodeSchema>;
 export const DMToolResultSchema = z.union([
