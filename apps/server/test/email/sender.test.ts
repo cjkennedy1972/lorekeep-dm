@@ -3,6 +3,7 @@ import { loadConfig } from '../../src/config.js';
 import {
   ConsoleEmailSender,
   emailSenderFromConfig,
+  sendBestEffort,
 } from '../../src/email/sender.js';
 import { ResendEmailSender } from '../../src/email/resend.js';
 
@@ -149,5 +150,15 @@ describe('emailSenderFromConfig boot policy', () => {
       });
       expect(emailSenderFromConfig(config)).toBeInstanceOf(ConsoleEmailSender);
     }
+  });
+});
+
+describe('sendBestEffort', () => {
+  it('reports only the error class, never the message that may carry the address or token', async () => {
+    const error = new TypeError(
+      `fetch failed for ${token} player@example.test`,
+    );
+    expect(await sendBestEffort(() => Promise.reject(error))).toBe('TypeError');
+    expect(await sendBestEffort(() => Promise.resolve())).toBeUndefined();
   });
 });

@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { Server } from 'node:http';
 import type { Logger } from 'pino';
 import type { Pool } from 'pg';
-import type { EmailSender } from '../email/sender.js';
-import { signup, signupSchema } from '../accounts/signup.js';
-import { verifyEmail } from '../accounts/verify.js';
+import { sendBestEffort, type EmailSender } from '../email/sender.js';
+import { signup, signupResponse, signupSchema } from '../accounts/signup.js';
+import { resendVerification, verifyEmail } from '../accounts/verify.js';
 import { login, badCredentials } from '../accounts/login.js';
 import { BoundedCounter, BusyError } from '../accounts/throttle.js';
 import type { ConnectionRegistry } from '../gateway/connections.js';
@@ -92,7 +92,7 @@ export function registerAuthRoutes(
     .object({ token: z.string(), password: z.string() })
     .strict();
   const forgot = async (
-    request: { body: unknown; ip: string },
+    request: { body: unknown; ip: string; log: Logger },
     reply: { code: (status: number) => { send: (body: unknown) => unknown } },
   ) => {
     const parsed = forgotSchema.safeParse(request.body);
@@ -103,7 +103,11 @@ export function registerAuthRoutes(
     const email = parsed.data.email.trim().toLowerCase();
     const throttled =
       limited(`forgot-ip:${request.ip}`) || limited(`forgot-email:${email}`);
-    if (!throttled) await requestPasswordReset(db, sender, email);
+    if (!throttled) {
+      const { sendError } = await requestPasswordReset(db, sender, email);
+      if (sendError)
+        request.log.warn({ errorClass: sendError }, 'password reset not sent');
+    }
     return reply.code(202).send({});
   };
   app.post('/api/password/forgot', forgot);
@@ -482,6 +486,11 @@ export function registerAuthRoutes(
         cookieSecret,
         cookie: request.headers.cookie,
       });
+      if (result.sendError)
+        request.log.warn(
+          { errorClass: result.sendError },
+          'verification email not sent',
+        );
       if (result.retryBlockCookie)
         reply.header('set-cookie', result.retryBlockCookie);
       return reply.code(result.refused ? 403 : 202).send(result.response);
@@ -506,5 +515,31 @@ export function registerAuthRoutes(
     return reply.code(ok ? 200 : 400).send({
       message: ok ? 'Email verified' : 'Invalid or expired verification link',
     });
+  });
+  const resendSchema = z.object({ email: z.email() }).strict();
+  app.post('/api/verify-email/resend', async (request, reply) => {
+    const parsed = resendSchema.safeParse(request.body);
+    if (!parsed.success)
+      return reply
+        .code(400)
+        .send({ code: 'INVALID_INPUT', message: 'Invalid email.' });
+    const email = parsed.data.email.trim().toLowerCase();
+    const throttled =
+      limited(`resend-ip:${request.ip}`) || limited(`resend-email:${email}`);
+    if (!throttled) {
+      const token = await resendVerification(db, email);
+      // Not awaited: send latency must not distinguish known from unknown addresses.
+      if (token)
+        void sendBestEffort(() => sender.sendVerification(email, token)).then(
+          (sendError) => {
+            if (sendError)
+              request.log.warn(
+                { errorClass: sendError },
+                'verification resend not sent',
+              );
+          },
+        );
+    }
+    return reply.code(202).send(signupResponse);
   });
 }
