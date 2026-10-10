@@ -104,9 +104,14 @@ export function registerAuthRoutes(
     const throttled =
       limited(`forgot-ip:${request.ip}`) || limited(`forgot-email:${email}`);
     if (!throttled) {
-      const { sendError } = await requestPasswordReset(db, sender, email);
-      if (sendError)
-        request.log.warn({ errorClass: sendError }, 'password reset not sent');
+      const { sent } = await requestPasswordReset(db, sender, email);
+      void sent?.then((sendError) => {
+        if (sendError)
+          request.log.warn(
+            { errorClass: sendError },
+            'password reset not sent',
+          );
+      });
     }
     return reply.code(202).send({});
   };
@@ -486,11 +491,13 @@ export function registerAuthRoutes(
         cookieSecret,
         cookie: request.headers.cookie,
       });
-      if (result.sendError)
-        request.log.warn(
-          { errorClass: result.sendError },
-          'verification email not sent',
-        );
+      void result.sent?.then((sendError) => {
+        if (sendError)
+          request.log.warn(
+            { errorClass: sendError },
+            'verification email not sent',
+          );
+      });
       if (result.retryBlockCookie)
         reply.header('set-cookie', result.retryBlockCookie);
       return reply.code(result.refused ? 403 : 202).send(result.response);

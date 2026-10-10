@@ -24,8 +24,10 @@ it('resets once, expires, revokes sessions, and preserves pending status', async
       "INSERT INTO auth_sessions(token_hash,account_id,expires_at,absolute_expires_at,last_active_at) VALUES ($1,$2,now()+interval '1 day',now()+interval '2 days',now())",
       ['session-' + id, id],
     );
-    expect(await requestPasswordReset(db, sender, email)).toEqual(
-      await requestPasswordReset(db, sender, 'absent-' + email),
+    const known = await requestPasswordReset(db, sender, email);
+    expect(await known.sent).toBeUndefined();
+    expect(await requestPasswordReset(db, sender, 'absent-' + email)).toEqual(
+      {},
     );
     const token = sender.messages[0]?.token ?? '';
     expect(token).toHaveLength(43);

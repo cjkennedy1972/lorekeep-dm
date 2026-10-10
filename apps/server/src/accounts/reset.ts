@@ -12,7 +12,7 @@ export async function requestPasswordReset(
   sender: EmailSender,
   email: string,
   now = new Date(),
-): Promise<{ sendError?: string }> {
+): Promise<{ sent?: Promise<string | undefined> }> {
   // Identical expensive work for known and unknown addresses.
   await hashPassword(randomBytes(32).toString('base64url'));
   const account = await db.query(
@@ -33,11 +33,11 @@ export async function requestPasswordReset(
       ],
     );
   });
-  // The link is committed; a failed send leaves the user able to request another one.
-  const sendError = await sendBestEffort(async () => {
+  // The link is committed; a failed send leaves the user able to request another one. Not awaited: send latency must not distinguish known from unknown addresses.
+  const sent = sendBestEffort(async () => {
     await sender.sendPasswordReset?.(email.trim().toLowerCase(), token);
   });
-  return { sendError };
+  return { sent };
 }
 
 export async function invalidateResetTokens(

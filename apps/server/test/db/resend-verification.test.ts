@@ -126,7 +126,7 @@ describe('password reset survives a failing send', () => {
       new FailingEmailSender(),
       email,
     );
-    expect(result.sendError).toBe('TypeError');
+    expect(await result.sent).toBe('TypeError');
     const reset = (
       await db.query(
         "SELECT count(*)::int AS n FROM email_tokens t JOIN accounts a ON a.id=t.account_id WHERE a.email=$1 AND t.kind='reset' AND t.used_at IS NULL",

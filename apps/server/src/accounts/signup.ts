@@ -40,7 +40,7 @@ export async function signup(
   response: typeof signupResponse | typeof underageResponse;
   retryBlockCookie?: string;
   refused?: boolean;
-  sendError?: string;
+  sent?: Promise<string | undefined>;
 }> {
   const now = options.now ?? new Date();
   const age = attestAdult(
@@ -99,9 +99,9 @@ export async function signup(
     client.release();
   }
   if (!inserted) return { response: signupResponse };
-  // The account and token are committed; a failed send is recoverable via resend, so the response stays identical.
-  const sendError = await sendBestEffort(() =>
+  // The account and token are committed; a failed send is recoverable via resend. Not awaited so send latency cannot reveal existing accounts.
+  const sent = sendBestEffort(() =>
     sender.sendVerification(input.email.trim().toLowerCase(), token),
   );
-  return { response: signupResponse, sendError };
+  return { response: signupResponse, sent };
 }
