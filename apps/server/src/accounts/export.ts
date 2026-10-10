@@ -54,30 +54,41 @@ export async function processExport(
         [accountId],
       )
     ).rows;
+    // solo: no snapshot of the room has ever seated anyone but the exporter.
     const snapshots = (
       await db.query(
-        `SELECT s.id AS "sessionId", snap.seq, snap.state FROM sessions s
+        `SELECT s.id AS "sessionId", snap.seq, snap.state,
+            NOT EXISTS (
+              SELECT 1 FROM snapshots x
+                CROSS JOIN LATERAL jsonb_array_elements(COALESCE(x.state->'seats', '[]'::jsonb)) seat
+               WHERE x.session_id=s.id AND seat->>'accountId' IS DISTINCT FROM $1::uuid::text
+            ) AS solo
+          FROM sessions s
           CROSS JOIN LATERAL (SELECT seq, state FROM snapshots WHERE session_id=s.id ORDER BY seq DESC LIMIT 1) snap
           WHERE s.owner_account_id=$1`,
         [accountId],
       )
     ).rows;
+    const soloRooms = new Set(
+      snapshots.filter((row) => row.solo).map((row) => row.sessionId),
+    );
     const summaries = (
       await db.query(
         `SELECT m.session_id AS "sessionId", m.scene_id AS "sceneId", m.summary FROM scene_summaries m
           JOIN sessions s ON s.id=m.session_id WHERE s.owner_account_id=$1 ORDER BY m.id`,
         [accountId],
       )
-    ).rows;
+    ).rows.filter((row) => soloRooms.has(row.sessionId));
     const archive = {
       exportedAt: new Date().toISOString(),
       profile,
       sessions,
       ownedRooms,
       characters,
-      snapshots: snapshots.map((row) => ({
-        ...row,
-        state: ownSeatState(row.state, accountId),
+      snapshots: snapshots.map(({ sessionId, seq, state, solo }) => ({
+        sessionId,
+        seq,
+        state: ownSeatState(state, accountId, solo),
       })),
       summaries,
     };
@@ -100,27 +111,46 @@ export async function processExport(
     );
   }
 }
-// ponytail: keeps only the exporter's own character; drops lastPlayerText since its author is not recorded.
-function ownSeatState(state: unknown, accountId: string) {
-  if (!state || typeof state !== 'object') return state;
-  const snapshot = { ...(state as Record<string, unknown>) };
-  const characters = snapshot.characters as
-    | Record<string, { id?: string }>
-    | undefined;
-  const engine = snapshot.gameEngine as
-    | { actors?: Record<string, unknown> }
-    | undefined;
-  const own = characters?.[accountId];
-  if (characters) snapshot.characters = own ? { [accountId]: own } : {};
-  if (engine?.actors)
-    snapshot.gameEngine = {
-      ...engine,
-      actors: Object.fromEntries(
-        Object.entries(engine.actors).filter(([id]) => id === own?.id),
-      ),
-    };
-  delete snapshot.lastPlayerText;
-  return snapshot;
+// ponytail: allowlist, so new gameState keys stay out of exports until someone adds them here.
+// Narrative (recap, summaries) is attributed to no one, so it is exported only for solo rooms.
+const SHARED_STATE_KEYS = [
+  'sceneId',
+  'adventureId',
+  'catalogVersion',
+  'difficulty',
+  'adventureCompleted',
+  'premise',
+] as const;
+const SOLO_NARRATIVE_KEYS = ['recap', 'sceneSummary', 'lastNarration'] as const;
+
+function ownSeatState(state: unknown, accountId: string, solo: boolean) {
+  const game = (state as { gameState?: Record<string, unknown> } | null)
+    ?.gameState;
+  if (!game || typeof game !== 'object') return {};
+  const own = (
+    game.characters as Record<string, { id?: string }> | undefined
+  )?.[accountId];
+  const actors =
+    (game.gameEngine as { actors?: Record<string, unknown> } | undefined)
+      ?.actors ?? {};
+  const kept: Record<string, unknown> = {};
+  for (const key of [
+    ...SHARED_STATE_KEYS,
+    ...(solo ? SOLO_NARRATIVE_KEYS : []),
+  ]) {
+    if (key in game) kept[key] = game[key];
+  }
+  return {
+    gameState: {
+      ...kept,
+      characters: own ? { [accountId]: own } : {},
+      gameEngine: {
+        actors: Object.fromEntries(
+          Object.entries(actors).filter(([id]) => id === own?.id),
+        ),
+      },
+    },
+  };
 }
 export async function latestExport(db: Pool, accountId: string) {
   const row = (
