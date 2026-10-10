@@ -442,9 +442,13 @@ export class Room {
           checkpoint as Record<string, unknown>,
           oldSeed,
         );
+        const restoredCombat = (restored as { combatRoom?: object }).combatRoom;
         await this.commitGameState(
           {
             ...restored,
+            ...(restoredCombat
+              ? { combatRoom: { ...restoredCombat, seed: restored.seed } }
+              : {}),
             checkpoint,
             retrySeed: restored.seed,
             characterChoice: undefined,
