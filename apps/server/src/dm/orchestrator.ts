@@ -105,6 +105,8 @@ export interface TurnInput {
   signal?: AbortSignal;
   eventSeqStart?: number;
   modelId?: string;
+  allowClarification?: boolean;
+  clarificationAsked?: boolean;
 }
 export interface TurnResult {
   narration: string;
@@ -113,6 +115,7 @@ export interface TurnResult {
   turnSeed: string;
   usage: { in: number; out: number; cacheRead?: number };
   fallback?: 'no-narration' | 'endpoint-error' | 'budget-exhausted';
+  clarification?: { actionId: string; question: string };
 }
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -139,19 +142,25 @@ function truncateAtSentence(text: string, limit: number): string {
   return (end === undefined ? prefix : prefix.slice(0, end + 1)).trim();
 }
 function toolSchemas(input: TurnInput): LlmTool[] {
-  return DMToolCallSchema.options.map((option) => {
+  return DMToolCallSchema.options.flatMap((option) => {
     const name = option.shape.name.value;
-    return {
-      name,
-      description:
-        input.toolDescriptions?.[name] ?? `Validated ${name} action.`,
-      // Native tool calling needs real JSON schemas; empty parameters made models emit {} args.
-      parameters: (input.toolSchemas?.[name] ??
-        zodSchema(
-          DMToolArgsSchema[name as keyof typeof DMToolArgsSchema],
-        )) as Record<string, unknown>,
-    };
+    if (name === 'ask_clarification' && !canAskClarification(input)) return [];
+    return [
+      {
+        name,
+        description:
+          input.toolDescriptions?.[name] ?? `Validated ${name} action.`,
+        // Native tool calling needs real JSON schemas; empty parameters made models emit {} args.
+        parameters: (input.toolSchemas?.[name] ??
+          zodSchema(
+            DMToolArgsSchema[name as keyof typeof DMToolArgsSchema],
+          )) as Record<string, unknown>,
+      },
+    ];
   });
+}
+function canAskClarification(input: TurnInput): boolean {
+  return input.allowClarification === true && input.clarificationAsked !== true;
 }
 function safeArgs(
   name: string,
@@ -367,6 +376,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     sceneClosed = false;
   const callCapHits = new Set<string>();
   let endpointFailed = false;
+  let clarification: TurnResult['clarification'];
   const makeFallback = (reason: NonNullable<TurnResult['fallback']>) => {
     fallback = reason;
     emit({ type: 'TurnFallback', turnId: input.turnId, reason });
@@ -496,6 +506,38 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           continue;
         }
         attempts.set(callSite, attempt);
+        if (call.name === 'ask_clarification') {
+          if (!input.allowClarification) {
+            reject(
+              'unknown-tool',
+              'Clarifying questions are unavailable for this turn.',
+            );
+            continue;
+          }
+          if (input.clarificationAsked) {
+            reject(
+              'clarification-already-asked',
+              'A clarifying question was already asked for this action; decide and narrate.',
+            );
+            continue;
+          }
+          const args = validated.value as {
+            actionId: string;
+            question: string;
+          };
+          if (args.actionId !== input.turnId) {
+            reject('malformed-ref', `Use actionId ${input.turnId}.`);
+            continue;
+          }
+          clarification = { actionId: input.turnId, question: args.question };
+          emit({
+            type: 'ClarificationRequested',
+            actionId: input.turnId,
+            question: args.question,
+          });
+          done = true;
+          break;
+        }
         if (
           input.prompt.activeMode !== 'combat' &&
           COMBAT_ONLY_TOOLS.includes(call.name)
@@ -594,6 +636,20 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       endpointFailed = true;
       makeFallback('endpoint-error');
     } else throw error;
+  }
+  if (clarification) {
+    return {
+      narration: '',
+      events: [],
+      state: input.prompt.turn.state,
+      turnSeed: seedText,
+      usage: {
+        in: totalIn,
+        out: totalOut,
+        ...(cacheRead ? { cacheRead } : {}),
+      },
+      clarification,
+    };
   }
   const finalWords = words(finalText);
   const keepWords = Math.max(

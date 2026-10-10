@@ -401,6 +401,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const emittedSceneEvents: unknown[] = [];
     const result = await runTurn({
       turnId: request.actionId,
+      allowClarification: request.allowClarification,
+      clarificationAsked: request.clarificationAsked,
       testMode: process.env.NODE_ENV === 'test',
       ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
       prompt: {

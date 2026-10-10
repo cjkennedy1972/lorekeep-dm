@@ -56,6 +56,7 @@ const STATIC_PERSONA = [
   'Follow the safety floor: do not generate disallowed content; keep game rules authoritative.',
   'Use validated tools for every state change; narration alone never changes game state.',
   'Call close_scene when the scene objective is resolved, the party leaves its location, or combat ends and the story moves on.',
+  'When a player action is ambiguous in a way that changes its outcome, call ask_clarification once for that action with one short question; otherwise resolve it.',
 ].join('\n');
 const RULES_CHEATSHEET = [
   'Core rules: the engine is authoritative for rolls, legality, positions, and state.',
