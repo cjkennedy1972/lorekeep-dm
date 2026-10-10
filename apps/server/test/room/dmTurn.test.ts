@@ -592,6 +592,9 @@ describe('Room commit safety', () => {
     await expect(
       room.chooseTpkResolution(account, 'fail-forward', 'The bridge falls.'),
     ).rejects.toThrow('still narrating');
+    await expect(room.persistGameState({ premise: 'x' })).rejects.toThrow(
+      'still narrating',
+    );
     finish();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(latestSnapshot()).not.toBeNull();

@@ -271,6 +271,7 @@ export class Room {
   /** Persist initial or lifecycle game metadata in a lease-fenced room snapshot. */
   persistGameState(gameState: unknown): Promise<void> {
     return this.enqueue(async () => {
+      this.assertNotNarrating();
       const nextState = RoomStateSchema.parse({ ...this.state, gameState });
       const stored = await this.store.writeTurn(
         this.sessionId,
