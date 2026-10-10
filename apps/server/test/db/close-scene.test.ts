@@ -19,8 +19,12 @@ let dir: string;
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
 
-/** Scripted DM: calls close_scene once with the given args; summary requests (no tools) get plain text. */
-function closingDm(args: Record<string, unknown>, calls: LlmRequest[]) {
+/** Scripted DM: calls close_scene once per args entry; summary requests (no tools) get plain text. */
+function closingDm(
+  args: Record<string, unknown> | Record<string, unknown>[],
+  calls: LlmRequest[],
+) {
+  const batch = Array.isArray(args) ? args : [args];
   const adapter: LlmAdapter = {
     capabilities: () => ({
       streaming: true,
@@ -34,14 +38,12 @@ function closingDm(args: Record<string, unknown>, calls: LlmRequest[]) {
       const sawTool = request.messages.some((m) => m.role === 'tool');
       const chunks: LlmChunk[] =
         isDmTurn && !sawTool
-          ? [
-              {
-                type: 'tool-call',
-                id: 'call_close',
-                name: 'close_scene',
-                arguments: args,
-              },
-            ]
+          ? batch.map((closeArgs, index) => ({
+              type: 'tool-call',
+              id: `call_close_${index}`,
+              name: 'close_scene',
+              arguments: closeArgs,
+            }))
           : [{ type: 'text', delta: 'The party moves on.' }];
       for (const chunk of chunks) yield chunk;
     },
@@ -65,7 +67,10 @@ async function table() {
   return { accountId, sessionId };
 }
 
-async function turn(sceneId: string, args: Record<string, unknown>) {
+async function turn(
+  sceneId: string,
+  args: Record<string, unknown> | Record<string, unknown>[],
+) {
   const { accountId, sessionId } = await table();
   const calls: LlmRequest[] = [];
   const seen: unknown[] = [];
@@ -114,6 +119,24 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     });
     expect(closed).toHaveLength(1);
     expect(closed[0]).toMatchObject({ nextSceneId: 'scene-broken-gatehouse' });
+    expect(result.state).toMatchObject({ sceneId: 'scene-broken-gatehouse' });
+    expect(calls.filter((c) => !(c.tools?.length ?? 0))).toHaveLength(1);
+  });
+
+  it('closes once and summarizes once when one response calls close_scene repeatedly', async () => {
+    const { result, closed, calls } = await turn('scene-marowfell-well', [
+      { summary: 'The party leaves the well.' },
+      {
+        summary: 'Skipping ahead.',
+        nextSceneId: 'scene-broken-gatehouse',
+      },
+      { summary: 'And again.' },
+    ]);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatchObject({
+      summary: 'The party leaves the well.',
+      nextSceneId: 'scene-broken-gatehouse',
+    });
     expect(result.state).toMatchObject({ sceneId: 'scene-broken-gatehouse' });
     expect(calls.filter((c) => !(c.tools?.length ?? 0))).toHaveLength(1);
   });
