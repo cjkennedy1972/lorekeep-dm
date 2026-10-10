@@ -5,6 +5,7 @@ import {
   ClientEnvelopeSchema,
   CombatCommandSchema,
   PlayerActionSchema,
+  WithdrawActionSchema,
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
@@ -287,6 +288,38 @@ export function installGateway(
                   },
                 }),
               );
+          }
+          if (msg.type === 'WithdrawAction') {
+            const withdraw = WithdrawActionSchema.safeParse(msg);
+            if (!withdraw.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Withdraw request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .withdrawAction(
+                identity.accountId,
+                withdraw.data.payload.withdrawnActionId,
+              )
+              .then((withdrawn) => {
+                if (!withdrawn)
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'NOT_WITHDRAWABLE',
+                      message: 'This action can no longer be withdrawn.',
+                      actionId: withdraw.data.payload.withdrawnActionId,
+                    },
+                  });
+              });
           }
           if (msg.type === 'PlayerAction') {
             const action = PlayerActionSchema.safeParse(msg);

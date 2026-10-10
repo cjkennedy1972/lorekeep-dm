@@ -93,6 +93,15 @@ export function narrationLogReducer(
         entries: [...state.entries, { kind: 'pending', actionId }],
       };
     }
+    case 'ActionWithdrawn': {
+      const actionId = String(payload.actionId ?? '');
+      return {
+        ...state,
+        entries: state.entries.filter(
+          (entry) => !(entry.kind === 'pending' && entry.actionId === actionId),
+        ),
+      };
+    }
     case 'RollEvent': {
       const event = payload as RollPayload;
       const turnId = String(event.turnId ?? '');

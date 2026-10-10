@@ -523,6 +523,24 @@ export class Room {
     });
   }
 
+  withdrawAction(accountId: string, actionId: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const index = this.queuedActions.findIndex(
+        (action) =>
+          action.accountId === accountId && action.actionId === actionId,
+      );
+      if (index === -1) return false;
+      this.queuedActions.splice(index, 1);
+      this.pendingActions.delete(actionId);
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionWithdrawn',
+        payload: { actionId },
+      } as ServerMessage);
+      return true;
+    });
+  }
+
   private async resolveQueuedTurns(): Promise<void> {
     while (this.queuedActions.length > 0) {
       const action = this.queuedActions.shift();

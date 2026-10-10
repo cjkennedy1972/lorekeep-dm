@@ -146,6 +146,47 @@ describe('Room solo DM turn lifecycle', () => {
     release();
   });
 
+  it('withdraws a queued action only for its owner and before it resolves', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const runner: SoloTurnRunner = {
+      async run() {
+        calls++;
+        await gate;
+        return result as never;
+      },
+    };
+    const { room, events } = setup(runner);
+    const owner = randomUUID();
+    const other = randomUUID();
+    const ownerMessages: { type: string }[] = [];
+    await room.join(owner, {
+      send: (message) => ownerMessages.push(message as { type: string }),
+    });
+    await room.join(other, { send() {} });
+    const inFlight = randomUUID();
+    const queued = randomUUID();
+    expect(await room.submitAction(owner, inFlight, 'first')).toBe(true);
+    expect(await room.submitAction(owner, queued, 'second')).toBe(true);
+    expect(await room.withdrawAction(other, queued)).toBe(false);
+    expect(await room.withdrawAction(owner, inFlight)).toBe(false);
+    expect(await room.withdrawAction(owner, queued)).toBe(true);
+    expect(await room.withdrawAction(owner, queued)).toBe(false);
+    expect(ownerMessages.some((m) => m.type === 'ActionWithdrawn')).toBe(true);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toBe(1);
+    expect(
+      events
+        .filter((event) => event.type === 'ActionAccepted')
+        .map((event) => (event.payload as { actionId: string }).actionId),
+    ).toEqual([inFlight]);
+    expect(await room.submitAction(owner, queued, 'second')).toBe(true);
+  });
+
   it('allows a later retry after an endpoint failure without persisting action state', async () => {
     let calls = 0;
     const runner: SoloTurnRunner = {
