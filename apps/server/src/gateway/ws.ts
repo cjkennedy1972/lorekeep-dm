@@ -120,6 +120,8 @@ export function installGateway(
           ws.close(1013, 'Room unavailable; retry');
           return;
         }
+        // The close handler below is not registered yet; bail so no seat or heartbeat is leaked.
+        if (ws.readyState !== WebSocket.OPEN) return;
         const connection = {
           send: (message: ServerMessage) => {
             if (ws.readyState === WebSocket.OPEN) {
