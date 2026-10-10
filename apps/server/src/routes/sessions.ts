@@ -35,16 +35,8 @@ export function registerSessionRoutes(
   const maxRooms = limits.maxRooms ?? MAX_ACTIVE_ROOMS;
   const createPerHour = limits.createPerHour ?? CREATE_PER_HOUR;
   const createHits = new BoundedCounter(3_600_000);
-  const joinHits = new Map<string, { count: number; reset: number }>();
-  const throttled = (key: string) => {
-    const now = Date.now();
-    const item = joinHits.get(key);
-    if (!item || item.reset <= now) {
-      joinHits.set(key, { count: 1, reset: now + 60_000 });
-      return false;
-    }
-    return ++item.count > joinLimit;
-  };
+  const joinHits = new BoundedCounter(60_000);
+  const throttled = (key: string) => joinHits.hit(key) > joinLimit;
   // ponytail: in-process map, move to shared store when running >1 node.
   /** Resolves the signed-in account, or sends 401 (anonymous) / 403 (account exists but is unverified). */
   async function member(

@@ -59,23 +59,27 @@ export function registerAuthRoutes(
   /** Close sockets whose auth session/account is gone; call after any revocation. */
   const closeRevoked = () => connections?.sweep().catch(() => {});
   const store = new LocalObjectStore();
-  const exportHits = new Map<string, number>();
-  const hits = new Map<string, { count: number; reset: number }>();
+  const exportCooldown = new BoundedCounter(60_000);
+  const hits = new BoundedCounter(60_000);
   function limited(key: string): boolean {
-    const now = Date.now();
-    const item = hits.get(key);
-    if (!item || item.reset <= now) {
-      hits.set(key, { count: 1, reset: now + 60_000 });
-      return false;
-    }
-    item.count++;
-    return item.count > rateLimit;
+    return hits.hit(key) > rateLimit;
   }
-  // Failed-login limiters (bounded, TTL-evicted): per IP+email and per IP across emails.
+  // Failure limiters (bounded, TTL-evicted). Login: per IP+email, per account across IPs, per IP.
+  // Password checks (export, password change, deletion) share one per-account budget.
   const emailFailures = new BoundedCounter(600_000);
+  const accountFailures = new BoundedCounter(600_000);
   const ipFailures = new BoundedCounter(600_000);
   const EMAIL_FAIL_LIMIT = 5;
+  const ACCOUNT_FAIL_LIMIT = 10;
   const IP_FAIL_LIMIT = 20;
+  const passwordKey = (accountId: string) => `pw:${accountId}`;
+  const passwordBlocked = (accountId: string, ip: string) =>
+    emailFailures.count(passwordKey(accountId)) >= EMAIL_FAIL_LIMIT ||
+    ipFailures.count(ip) >= IP_FAIL_LIMIT;
+  const passwordFailed = (accountId: string, ip: string) => {
+    emailFailures.hit(passwordKey(accountId));
+    ipFailures.hit(ip);
+  };
   const EXPORTS_PER_WEEK = 10;
   app.addHook('onRequest', async (request, reply) => {
     if (!validOrigin(request))
@@ -149,6 +153,7 @@ export function registerAuthRoutes(
     // Throttle first so blocked requests never reach argon2.
     if (
       emailFailures.count(key) >= EMAIL_FAIL_LIMIT ||
+      accountFailures.count(email) >= ACCOUNT_FAIL_LIMIT ||
       ipFailures.count(request.ip) >= IP_FAIL_LIMIT
     )
       return reply.code(429).send(badCredentials);
@@ -170,6 +175,7 @@ export function registerAuthRoutes(
     }
     if (result.kind === 'invalid') {
       emailFailures.hit(key);
+      accountFailures.hit(email);
       ipFailures.hit(request.ip);
       return reply.code(401).send(badCredentials);
     }
@@ -184,6 +190,7 @@ export function registerAuthRoutes(
         message: 'Check your email and verify your account before signing in.',
       });
     emailFailures.clear(key);
+    accountFailures.clear(email);
     reply.header('set-cookie', sessionCookie(result.token, secureCookies()));
     const a = result.account;
     return {
@@ -270,6 +277,11 @@ export function registerAuthRoutes(
         code: 'INVALID_INPUT',
         message: 'New password must be at least 12 characters.',
       });
+    if (passwordBlocked(session.account_id, request.ip))
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many password attempts. Try again later.',
+      });
     const row = (
       await db.query('SELECT password_hash FROM accounts WHERE id=$1', [
         session.account_id,
@@ -278,11 +290,13 @@ export function registerAuthRoutes(
     if (
       !row ||
       !(await verifyPassword(row.password_hash, parsed.data.currentPassword))
-    )
+    ) {
+      passwordFailed(session.account_id, request.ip);
       return reply.code(403).send({
         code: 'BAD_CREDENTIALS',
         message: 'Current password is incorrect.',
       });
+    }
     await changePassword(
       db,
       session.account_id,
@@ -295,19 +309,14 @@ export function registerAuthRoutes(
   app.post('/api/me/export', async (request, reply) => {
     const session = await authed(request, reply);
     if (!session) return reply;
-    const previous = exportHits.get(session.account_id) ?? 0;
-    if (Date.now() - previous < 60_000)
+    if (exportCooldown.count(session.account_id) > 0)
       return reply.code(429).send({
         code: 'RATE_LIMITED',
         message: 'Please wait before requesting another export.',
       });
     const body = request.body as { password?: unknown } | null;
-    const throttleKey = `export:${session.account_id}`;
-    // Throttle first so guesses never reach argon2; per account across IPs, and per IP.
-    if (
-      emailFailures.count(throttleKey) >= EMAIL_FAIL_LIMIT ||
-      ipFailures.count(request.ip) >= IP_FAIL_LIMIT
-    )
+    // Throttle first so guesses never reach argon2.
+    if (passwordBlocked(session.account_id, request.ip))
       return reply.code(429).send({
         code: 'RATE_LIMITED',
         message: 'Too many password attempts. Try again later.',
@@ -323,8 +332,7 @@ export function registerAuthRoutes(
         !row ||
         !(await verifyPassword(row.password_hash, body.password))
       ) {
-        emailFailures.hit(throttleKey);
-        ipFailures.hit(request.ip);
+        passwordFailed(session.account_id, request.ip);
         return reply
           .code(403)
           .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
@@ -341,7 +349,7 @@ export function registerAuthRoutes(
         code: 'RATE_LIMITED',
         message: 'Export limit reached for this week.',
       });
-    exportHits.set(session.account_id, Date.now());
+    exportCooldown.hit(session.account_id);
     return reply
       .code(202)
       .send({ job: await createExport(db, session.account_id, store) });
@@ -401,10 +409,19 @@ export function registerAuthRoutes(
         code: 'INVALID_INPUT',
         message: 'Type the confirmation phrase exactly.',
       });
-    if (!(await requestDeletion(db, session.account_id, parsed.data.password)))
+    if (passwordBlocked(session.account_id, request.ip))
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many password attempts. Try again later.',
+      });
+    if (
+      !(await requestDeletion(db, session.account_id, parsed.data.password))
+    ) {
+      passwordFailed(session.account_id, request.ip);
       return reply
         .code(403)
         .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
+    }
     await closeRevoked();
     reply.header('set-cookie', clearSessionCookie(secureCookies()));
     return {

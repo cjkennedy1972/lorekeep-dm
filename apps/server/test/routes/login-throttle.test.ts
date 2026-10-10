@@ -63,6 +63,23 @@ describe('login throttle', () => {
     expect((await post('fresh@example.test', '10.0.0.3')).statusCode).toBe(401);
     await app.close();
   });
+  it('throttles one account across rotating IPs before any password work', async () => {
+    const { app, post, queries } = await setup();
+    for (let i = 0; i < 10; i++)
+      expect((await post('known@example.test', `10.0.1.${i}`)).statusCode).toBe(
+        401,
+      );
+    const before = queries();
+    const blocked = await post(
+      'known@example.test',
+      '10.0.2.1',
+      'correct-password-1',
+    );
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toEqual(badCredentials);
+    expect(queries()).toBe(before);
+    await app.close();
+  });
   it('unknown email and wrong password bodies are byte-identical', async () => {
     const { app, post } = await setup();
     const unknown = await post('nobody@example.test', '10.0.0.4');
