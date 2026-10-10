@@ -68,10 +68,6 @@ export function mergeCombatOutput<T extends object>(
   name: string | undefined,
   value: unknown,
 ): T {
-  if (name === 'attack' || name === 'cast_spell') {
-    const spent = (value as { combat?: unknown }).combat;
-    return spent ? { ...current, combat: spent } : current;
-  }
   if (name !== 'start_combat' && name !== 'end_combat') return current;
   const out = value as CombatOutput;
   if (!out.entities || !out.combat) return current;

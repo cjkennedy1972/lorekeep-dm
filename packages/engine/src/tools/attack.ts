@@ -12,7 +12,6 @@ import type { Placed } from '../map/geometry.js';
 import { distance } from '../map/geometry.js';
 import type { Battlemap } from '@game/schema';
 import { fail, ok, type ToolResult } from './result.js';
-import { actionBlock, spendAction, type TurnState } from './turn.js';
 
 export type ToolAttack = {
   id: string;
@@ -34,14 +33,13 @@ export type AttackToolState = {
   placements?: Readonly<Record<string, Placed & { id: string }>>;
   map?: Battlemap;
   conditions?: Readonly<Record<string, readonly ActiveCondition[]>>;
-  combat?: TurnState;
   catalog: Catalog;
 };
 export function executeAttack(
   state: AttackToolState,
   args: unknown,
   rng: RngState,
-): ToolResult<{ events: AttackEvent[]; rng: RngState; combat?: TurnState }> {
+): ToolResult<{ events: AttackEvent[]; rng: RngState }> {
   const parsed = DMToolArgsSchema.attack.safeParse(args);
   if (!parsed.success)
     return fail(
@@ -49,8 +47,6 @@ export function executeAttack(
       parsed.error.issues[0]?.message ?? 'Provide valid attack arguments.',
     );
   const { attackerId, targetId, attackId } = parsed.data;
-  const blocked = actionBlock(state.combat, attackerId);
-  if (blocked) return fail(blocked.code, blocked.hint);
   if (!state.actors[attackerId] && !state.placements?.[attackerId])
     return fail('unknown-entity', 'Choose an attacker present in the session.');
   if (!state.actors[targetId] && !state.placements?.[targetId])
@@ -132,11 +128,7 @@ export function executeAttack(
       result.hint,
     );
   return ok(
-    {
-      events: result.events,
-      rng: result.rng,
-      combat: spendAction(state.combat, attackerId),
-    },
+    { events: result.events, rng: result.rng },
     result.events.map((event) => event.type),
     `${attackerId} ${result.hit ? 'hits' : 'misses'} ${targetId}${result.crit ? ' critically' : ''}.`,
   );

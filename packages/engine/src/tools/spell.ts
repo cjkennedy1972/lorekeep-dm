@@ -11,7 +11,6 @@ import {
 import type { Catalog } from '../catalog/types.js';
 import type { RngState } from '../rng.js';
 import { fail, ok, type ToolResult } from './result.js';
-import { actionBlock, spendAction, type TurnState } from './turn.js';
 
 type AreaOption = { optionId: string; pos: GridPos; expiresTurn: string };
 export type SpellToolState = {
@@ -20,7 +19,6 @@ export type SpellToolState = {
   catalog: Catalog;
   map?: SpellMapContext;
   spellState?: SpellState;
-  combat?: TurnState;
   turnId: string;
   options?: Readonly<Record<string, AreaOption>>;
 };
@@ -52,12 +50,7 @@ export function executeSpell(
   state: SpellToolState,
   args: unknown,
   rng: RngState,
-): ToolResult<{
-  events: SpellEvent[];
-  rng: RngState;
-  state: SpellState;
-  combat?: TurnState;
-}> {
+): ToolResult<{ events: SpellEvent[]; rng: RngState; state: SpellState }> {
   const parsed = DMToolArgsSchema.cast_spell.safeParse(args);
   if (!parsed.success)
     return fail(
@@ -65,8 +58,6 @@ export function executeSpell(
       parsed.error.issues[0]?.message ?? 'Provide valid spell arguments.',
     );
   const { casterId, slotLevel, target: targetRef } = parsed.data;
-  const blocked = actionBlock(state.combat, casterId);
-  if (blocked) return fail(blocked.code, blocked.hint);
   const spellId = parsed.data.spellId.replace(/^srd:spell\//, 'spell:');
   if (!state.catalog.get('spell', spellId))
     return fail('unknown-spell', 'Choose a spell in the loaded catalog.');
@@ -141,12 +132,7 @@ export function executeSpell(
   if ('error' in result) return fail(engineCode(result.error), result.hint);
   const events = result.events.map((event) => event.type);
   return ok(
-    {
-      events: result.events,
-      rng: result.rng,
-      state: result.state,
-      combat: spendAction(state.combat, casterId),
-    },
+    { events: result.events, rng: result.rng, state: result.state },
     events,
     `${caster.name} casts ${spellId.replace('srd:spell/', '').replaceAll('-', ' ')}.`,
   );
