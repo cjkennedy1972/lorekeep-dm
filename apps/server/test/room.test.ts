@@ -115,4 +115,22 @@ describe('room actor', () => {
     await room.drain();
     await expect(room.submit(randomUUID())).rejects.toThrow(/draining/);
   });
+  it('gives a checkpoint retry the combat seed that combat rolls read', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, { snapshot: null, events: [] });
+    const accountId = randomUUID();
+    await room.seat(accountId, 'Aria');
+    await room.persistGameState({
+      checkpoint: { combatRoom: { seed: 1111, ended: false } },
+      combatRoom: { seed: 2222, ended: true },
+      retrySeed: 2222,
+    });
+    await room.chooseTpkResolution(accountId, 'retry-checkpoint');
+    const gameState = room.state.gameState as {
+      retrySeed: number;
+      combatRoom: { seed: number };
+    };
+    expect(gameState.combatRoom.seed).toBe(gameState.retrySeed);
+    expect(gameState.combatRoom.seed).not.toBe(1111);
+  });
 });
