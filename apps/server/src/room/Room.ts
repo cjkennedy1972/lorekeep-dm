@@ -53,6 +53,8 @@ export interface Connection {
   send(message: ServerMessage): void;
 }
 
+export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
+
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
@@ -71,11 +73,7 @@ export class Room {
     playerName: string;
     clarificationAsked?: boolean;
   }[] = [];
-  // ponytail: open questions live in memory; a restart drops them and the action must be resubmitted.
-  private readonly openClarifications = new Map<
-    string,
-    { accountId: string; text: string; playerName: string; question: string }
-  >();
+  private readonly clarificationTimers = new Map<string, NodeJS.Timeout>();
   readonly sessionId: string;
   state: RoomState;
   seq: number;
@@ -98,6 +96,12 @@ export class Room {
     this.actionIds = recovered.actionIds;
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     this.scheduleReaction();
+    for (const [actionId, open] of Object.entries(
+      this.state.openClarifications ?? {},
+    )) {
+      this.pendingActions.add(actionId);
+      this.scheduleClarificationTimer(actionId, open.deadlineAt);
+    }
   }
 
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -149,6 +153,15 @@ export class Room {
           payload: { state: this.state },
         });
       this.sendCombatSnapshot(connection);
+      for (const [actionId, open] of Object.entries(
+        this.state.openClarifications ?? {},
+      ))
+        if (open.accountId === accountId)
+          connection.send({
+            seq: this.seq,
+            type: 'ClarificationRequested',
+            payload: { actionId, question: open.question },
+          } as ServerMessage);
     });
   }
 
@@ -531,9 +544,9 @@ export class Room {
     answer: string,
   ): Promise<boolean> {
     return this.enqueue(async () => {
-      const open = this.openClarifications.get(actionId);
+      const open = this.state.openClarifications?.[actionId];
       if (!open || open.accountId !== accountId) return false;
-      this.openClarifications.delete(actionId);
+      await this.closeClarification(actionId, 'answered');
       this.queuedActions.unshift({
         accountId,
         actionId,
@@ -544,6 +557,43 @@ export class Room {
       this.kickQueue();
       return true;
     });
+  }
+
+  private closeClarification(
+    actionId: string,
+    outcome: 'answered' | 'expired',
+  ): Promise<StoredEvent> {
+    clearTimeout(this.clarificationTimers.get(actionId));
+    this.clarificationTimers.delete(actionId);
+    return this.persist('ClarificationClosed', { actionId, outcome });
+  }
+
+  private scheduleClarificationTimer(
+    actionId: string,
+    deadlineAt: number,
+  ): void {
+    const timer = setTimeout(
+      () => {
+        this.clarificationTimers.delete(actionId);
+        void this.enqueue(() => this.expireClarification(actionId)).catch(
+          () => undefined,
+        );
+      },
+      Math.max(0, deadlineAt - Date.now()),
+    );
+    timer.unref?.();
+    this.clarificationTimers.set(actionId, timer);
+  }
+
+  private async expireClarification(actionId: string): Promise<void> {
+    if (!this.state.openClarifications?.[actionId]) return;
+    this.pendingActions.delete(actionId);
+    await this.closeClarification(actionId, 'expired');
+    this.broadcast({
+      seq: this.seq,
+      type: 'ActionWithdrawn',
+      payload: { actionId },
+    } as ServerMessage);
   }
 
   private kickQueue(): void {
@@ -726,9 +776,22 @@ export class Room {
             type: String(event.type),
             payload: event,
           });
+        const deadlineAt = Date.now() + CLARIFICATION_TIMEOUT_MS;
         const nextState = {
           ...this.state,
           gameState: settleEngine(turnGameState),
+          ...(clarification && {
+            openClarifications: {
+              ...this.state.openClarifications,
+              [actionId]: {
+                accountId,
+                playerName,
+                text,
+                question: clarification.question,
+                deadlineAt,
+              },
+            },
+          }),
         } as RoomState;
         writes.push({
           seq: undefined,
@@ -752,12 +815,7 @@ export class Room {
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;
         if (clarification) {
-          this.openClarifications.set(actionId, {
-            accountId,
-            text,
-            playerName,
-            question: clarification.question,
-          });
+          this.scheduleClarificationTimer(actionId, deadlineAt);
           this.broadcast({
             seq: this.seq,
             type: 'ClarificationRequested',
@@ -983,6 +1041,7 @@ export class Room {
   async drain(): Promise<void> {
     this.accepting = false;
     clearTimeout(this.reactionTimer);
+    for (const timer of this.clarificationTimers.values()) clearTimeout(timer);
     await this.mailbox;
     await this.activeTurn;
     this.connections.clear();
