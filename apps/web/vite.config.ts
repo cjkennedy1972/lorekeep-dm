@@ -20,6 +20,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
-    exclude: ['e2e/**', 'e2e-live/**', 'dist/**', 'node_modules/**'],
+    exclude: [
+      'e2e/**',
+      'e2e-live/**',
+      'e2e-adventure/**',
+      'dist/**',
+      'node_modules/**',
+    ],
   },
 });
