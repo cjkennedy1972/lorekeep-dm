@@ -651,7 +651,7 @@ export class Room {
   }
 
   private async resolveQueuedTurns(): Promise<void> {
-    while (this.queuedActions.length > 0) {
+    while (!this.draining && this.queuedActions.length > 0) {
       const action = this.queuedActions.shift();
       if (!action) continue;
       this.broadcast({
