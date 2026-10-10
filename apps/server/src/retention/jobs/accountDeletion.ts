@@ -1,13 +1,39 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { removeArchive } from './exports.js';
 import { skipIfHeld, type JobContext } from '../types.js';
 
 const ANON_NAME = 'Deleted player';
+const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
+
+interface Scrub {
+  accountId: string;
+  placeholder: string;
+  charIds: Set<string>;
+}
+
+interface EventRow {
+  session_id: string;
+  seq: string;
+  payload: unknown;
+}
+
+interface SnapshotRow {
+  session_id: string;
+  seq: string;
+  state: unknown;
+}
 
 /**
- * ADR-017 account deletion: purge exports, hand off or delete owned rooms,
- * anonymize the account's seats (redact_event is the only event mutation),
- * then hard-delete the accounts row (cascades tokens, auth sessions, tickets, jobs).
+ * ADR-017 account deletion: purge exports, hand off or delete owned rooms, then
+ * scrub the account from every surviving room (events via redact_event, snapshots
+ * via UPDATE), and finally hard-delete the accounts row (cascades tokens, auth
+ * sessions, tickets, jobs).
+ *
+ * Heir handoff: an owned room passes to another seated active account. The deleted
+ * player's character sheet is cleared, and their account id, character id, and
+ * player-typed text are removed everywhere. The heir keeps their own characters and
+ * shared room state; the export whitelist never exposes other seats.
  */
 async function deleteAccount(
   ctx: JobContext,
@@ -18,7 +44,8 @@ async function deleteAccount(
     exports: 0,
     roomsDeleted: 0,
     roomsHandedOff: 0,
-    seatsAnonymized: 0,
+    eventsScrubbed: 0,
+    snapshotsScrubbed: 0,
   };
   const exportRows = (
     await client.query<{ archive_key: string | null }>(
@@ -30,15 +57,17 @@ async function deleteAccount(
   counts.exports = exportRows.length;
 
   const owned = (
-    await client.query<{ id: string }>(
-      'SELECT id FROM sessions WHERE owner_account_id=$1',
+    await client.query<{ id: string; character_id: string | null }>(
+      'SELECT id, character_id FROM sessions WHERE owner_account_id=$1',
       [accountId],
     )
   ).rows;
-  for (const { id } of owned) {
+  const charIds = new Set<string>();
+  for (const { id, character_id } of owned) {
     if (await skipIfHeld(ctx, 'accountDeletion', 'session', id)) {
       throw new Error('HELD_SESSION');
     }
+    if (character_id) charIds.add(character_id);
     const heir = (
       await client.query<{ account_id: string }>(
         `SELECT DISTINCT e.payload->>'accountId' AS account_id FROM events e
@@ -49,7 +78,7 @@ async function deleteAccount(
     ).rows[0];
     if (heir) {
       await client.query(
-        'UPDATE sessions SET owner_account_id=$2 WHERE id=$1',
+        'UPDATE sessions SET owner_account_id=$2, character=NULL, character_id=NULL WHERE id=$1',
         [id, heir.account_id],
       );
       counts.roomsHandedOff++;
@@ -59,56 +88,149 @@ async function deleteAccount(
     }
   }
 
-  const seats = (
-    await client.query<{
-      session_id: string;
-      seq: string;
-      payload: Record<string, unknown>;
-    }>(
-      `SELECT session_id,seq,payload FROM events WHERE type='SeatJoined' AND payload->>'accountId'=$1`,
-      [accountId],
+  const accountPattern = `%${accountId}%`;
+  const eventRows = (
+    await client.query<EventRow>(
+      'SELECT session_id, seq, payload FROM events WHERE payload::text LIKE $1',
+      [accountPattern],
     )
   ).rows;
-  for (const s of seats) {
-    await client.query('SELECT redact_event($1,$2,$3)', [
-      s.session_id,
-      s.seq,
-      {
-        ...s.payload,
-        accountId: s.payload.seatId,
-        displayName: ANON_NAME,
-        anonymized: true,
-      },
-    ]);
-    counts.seatsAnonymized++;
-  }
-  const snaps = (
-    await client.query<{
-      session_id: string;
-      seq: string;
-      state: { seats?: Record<string, unknown>[] };
-    }>('SELECT session_id,seq,state FROM snapshots WHERE state @> $1::jsonb', [
-      JSON.stringify({ seats: [{ accountId }] }),
-    ])
+  const snapshotRows = (
+    await client.query<SnapshotRow>(
+      'SELECT session_id, seq, state FROM snapshots WHERE state::text LIKE $1',
+      [accountPattern],
+    )
   ).rows;
-  for (const s of snaps) {
-    const seatsState = (s.state.seats ?? []).map((seat) =>
-      seat.accountId === accountId
-        ? {
-            ...seat,
-            accountId: seat.seatId,
-            displayName: ANON_NAME,
-            anonymized: true,
-          }
-        : seat,
+  for (const row of eventRows) collectCharIds(row.payload, accountId, charIds);
+  for (const row of snapshotRows) collectCharIds(row.state, accountId, charIds);
+
+  if (charIds.size) {
+    const charPatterns = [...charIds].map((id) => `%${id}%`);
+    eventRows.push(
+      ...(
+        await client.query<EventRow>(
+          'SELECT session_id, seq, payload FROM events WHERE payload::text LIKE ANY($1)',
+          [charPatterns],
+        )
+      ).rows,
     );
+    snapshotRows.push(
+      ...(
+        await client.query<SnapshotRow>(
+          'SELECT session_id, seq, state FROM snapshots WHERE state::text LIKE ANY($1)',
+          [charPatterns],
+        )
+      ).rows,
+    );
+  }
+
+  const placeholders = new Map<string, string>();
+  const placeholderFor = async (sessionId: string) => {
+    let placeholder = placeholders.get(sessionId);
+    if (!placeholder) {
+      const seat = (
+        await client.query<{ seat_id: string | null }>(
+          `SELECT payload->>'seatId' AS seat_id FROM events
+            WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId'=$2 LIMIT 1`,
+          [sessionId, accountId],
+        )
+      ).rows[0];
+      placeholder = seat?.seat_id ?? randomUUID();
+      placeholders.set(sessionId, placeholder);
+    }
+    return placeholder;
+  };
+
+  const seenEvents = new Set<string>();
+  for (const row of eventRows) {
+    const key = `${row.session_id}:${row.seq}`;
+    if (seenEvents.has(key)) continue;
+    seenEvents.add(key);
+    const payload = row.payload as Record<string, unknown>;
+    const scrubbed = scrub(payload, {
+      accountId,
+      placeholder: await placeholderFor(row.session_id),
+      charIds,
+    });
+    if (JSON.stringify(scrubbed) === JSON.stringify(payload)) continue;
+    await client.query('SELECT redact_event($1,$2,$3)', [
+      row.session_id,
+      row.seq,
+      scrubbed,
+    ]);
+    counts.eventsScrubbed++;
+  }
+
+  const seenSnapshots = new Set<string>();
+  for (const row of snapshotRows) {
+    const key = `${row.session_id}:${row.seq}`;
+    if (seenSnapshots.has(key)) continue;
+    seenSnapshots.add(key);
+    const scrubbed = scrub(row.state, {
+      accountId,
+      placeholder: await placeholderFor(row.session_id),
+      charIds,
+    });
+    if (JSON.stringify(scrubbed) === JSON.stringify(row.state)) continue;
     await client.query(
       'UPDATE snapshots SET state=$3 WHERE session_id=$1 AND seq=$2',
-      [s.session_id, s.seq, { ...s.state, seats: seatsState }],
+      [row.session_id, row.seq, scrubbed],
+    );
+    counts.snapshotsScrubbed++;
+  }
+
+  if (charIds.size) {
+    await client.query(
+      'UPDATE sessions SET character=NULL, character_id=NULL WHERE character_id = ANY($1)',
+      [[...charIds]],
     );
   }
+  await client.query(
+    'UPDATE operator_endpoint_audit SET actor_id=NULL WHERE actor_id=$1',
+    [accountId],
+  );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
+}
+
+function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectCharIds(item, accountId, out);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value)) {
+    const id = (child as { id?: unknown } | null)?.id;
+    if (key === accountId && typeof id === 'string') out.add(id);
+    collectCharIds(child, accountId, out);
+  }
+}
+
+function scrub(value: unknown, s: Scrub): unknown {
+  if (typeof value === 'string') {
+    return value === s.accountId || s.charIds.has(value)
+      ? s.placeholder
+      : value;
+  }
+  if (Array.isArray(value)) return value.map((item) => scrub(item, s));
+  if (!value || typeof value !== 'object') return value;
+  const obj = value as Record<string, unknown>;
+  const owned = obj.accountId === s.accountId;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(obj)) {
+    if (key === s.accountId || s.charIds.has(key)) continue;
+    if (key === 'lastPlayerText') continue;
+    if (owned && PLAYER_TEXT_KEYS.includes(key)) continue;
+    out[key] = scrub(child, s);
+  }
+  if (owned) {
+    out.accountId = s.placeholder;
+    if ('displayName' in obj) {
+      out.displayName = ANON_NAME;
+      out.anonymized = true;
+    }
+  }
+  return out;
 }
 
 export async function runAccountDeletions(ctx: JobContext & { db: Pool }) {
