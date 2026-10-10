@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { removeArchive } from './exports.js';
 import { skipIfHeld, type JobContext } from '../types.js';
-import { advanceTurn, runMonsters } from '../../room/combatEngine.js';
+import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
 
 const ANON_NAME = 'Deleted player';
@@ -27,6 +27,40 @@ interface SnapshotRow {
   state: unknown;
 }
 
+const FENCE_NODE = 'retention:accountDeletion';
+
+/**
+ * Coordinates with live Rooms the way Persistence.transaction does: lock the session row,
+ * then take its lease (bumping the epoch). A live lease means a Room may hold unsaved
+ * state, so fail closed (HELD_SESSION: the account stays 'deleting', retried next sweep).
+ * Once we commit, the lease is released but the epoch has moved, so a stale Room's commit
+ * fails its fence and the Room reloads from the scrubbed snapshot.
+ */
+async function fenceSession(
+  ctx: JobContext,
+  client: PoolClient,
+  fenced: Set<string>,
+  sessionId: string,
+) {
+  if (fenced.has(sessionId)) return;
+  if (await skipIfHeld(ctx, 'accountDeletion', 'session', sessionId))
+    throw new Error('HELD_SESSION');
+  await client.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE', [
+    sessionId,
+  ]);
+  const lease = await client.query(
+    `INSERT INTO session_lease(session_id,node_id,expires_at,epoch)
+     VALUES ($1,$2,clock_timestamp() + interval '5 minutes',1)
+     ON CONFLICT (session_id) DO UPDATE SET
+       node_id = EXCLUDED.node_id, expires_at = EXCLUDED.expires_at, epoch = session_lease.epoch + 1
+     WHERE session_lease.expires_at <= clock_timestamp()
+     RETURNING epoch`,
+    [sessionId, FENCE_NODE],
+  );
+  if (!lease.rowCount) throw new Error('HELD_SESSION');
+  fenced.add(sessionId);
+}
+
 /**
  * ADR-017 account deletion: purge exports, hand off or delete owned rooms, then
  * scrub the account from every surviving room (events via redact_event, snapshots
@@ -43,6 +77,7 @@ async function deleteAccount(
   client: PoolClient,
   accountId: string,
 ) {
+  const fenced = new Set<string>();
   const counts = {
     exports: 0,
     roomsDeleted: 0,
@@ -67,9 +102,7 @@ async function deleteAccount(
   ).rows;
   const charIds = new Set<string>();
   for (const { id, character_id } of owned) {
-    if (await skipIfHeld(ctx, 'accountDeletion', 'session', id)) {
-      throw new Error('HELD_SESSION');
-    }
+    await fenceSession(ctx, client, fenced, id);
     if (character_id) charIds.add(character_id);
     const heir = (
       await client.query<{ account_id: string }>(
@@ -92,6 +125,17 @@ async function deleteAccount(
   }
 
   const accountPattern = `%${accountId}%`;
+  // Fence every session that mentions the account before reading its rows, so a live
+  // Room cannot commit between our read and our write.
+  const mentioning = await client.query<{ session_id: string }>(
+    `SELECT session_id FROM events WHERE payload::text LIKE $1
+     UNION SELECT session_id FROM snapshots WHERE state::text LIKE $1`,
+    [accountPattern],
+  );
+  for (const { session_id } of mentioning.rows.sort((a, b) =>
+    a.session_id.localeCompare(b.session_id),
+  ))
+    await fenceSession(ctx, client, fenced, session_id);
   const eventRows = (
     await client.query<EventRow>(
       'SELECT session_id, seq, payload FROM events WHERE payload::text LIKE $1',
@@ -134,9 +178,7 @@ async function deleteAccount(
     ]),
   ];
   for (const id of touched) {
-    if (owned.some((row) => row.id === id)) continue;
-    if (await skipIfHeld(ctx, 'accountDeletion', 'session', id))
-      throw new Error('HELD_SESSION');
+    await fenceSession(ctx, client, fenced, id);
   }
   if (touched.length) {
     eventRows.push(
@@ -225,6 +267,10 @@ async function deleteAccount(
     'UPDATE operator_endpoint_audit SET actor_id=NULL WHERE actor_id=$1',
     [accountId],
   );
+  await client.query(
+    "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1) AND node_id=$2",
+    [[...fenced], FENCE_NODE],
+  );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }
@@ -285,18 +331,31 @@ function scrub(value: unknown, s: Scrub): unknown {
   return out;
 }
 
-/** Drops the deleted character's entity (and its initiative slot) and moves the turn off it first. */
+/**
+ * Drops the deleted character's entity and initiative slot. Pure and deterministic, so an
+ * event payload and its snapshot scrub to the same state; it never runs monsters (their
+ * events would be lost). If the deleted character held the turn, the turn passes to the
+ * next living party member (monsters in between forfeit that stretch, nothing in the
+ * engine resumes a monster turn on load). With no party left combat is ended.
+ */
 function pruneCombat(
   room: RoomCombatState,
   charIds: Set<string>,
 ): RoomCombatState {
+  const up = (e: RoomCombatState['entities'][number]) =>
+    e.team === 'party' && e.hp > 0 && !e.fled && !charIds.has(e.id);
   let state = room;
-  for (
-    let turns = state.combat.initiative.length;
-    turns > 0 && charIds.has(state.combat.activeEntityId ?? '');
-    turns--
-  )
-    state = advanceTurn(state).state;
+  if (!state.ended && charIds.has(state.combat.activeEntityId ?? '')) {
+    for (
+      let turns = state.combat.initiative.length;
+      turns > 0 &&
+      !state.entities.some(
+        (e) => e.id === state.combat.activeEntityId && up(e),
+      );
+      turns--
+    )
+      state = advanceTurn(state).state;
+  }
   const { pendingReaction, engineReactions, ...rest } = state;
   const reactionDeleted =
     !!pendingReaction &&
@@ -319,7 +378,22 @@ function pruneCombat(
       ? { concentration: withoutKeys(rest.concentration, charIds) }
       : {}),
   };
-  return runMonsters(pruned, Date.now()).state;
+  const active = pruned.combat.activeEntityId;
+  const dangling = !!active && !pruned.entities.some((e) => e.id === active);
+  if (
+    pruned.ended ||
+    (!dangling && pruned.entities.some((e) => e.team === 'party'))
+  )
+    return pruned.ended ? pruned : settle(pruned).state;
+  // No party seat left (or no party member up to take the turn): close combat cleanly.
+  const open = { ...pruned };
+  delete open.pendingReaction;
+  delete open.engineReactions;
+  return {
+    ...open,
+    ended: { outcome: 'dm-ended' },
+    combat: { ...open.combat, activeEntityId: null },
+  };
 }
 
 function isDeletedCharacterRef(item: unknown, charIds: Set<string>) {
@@ -353,6 +427,15 @@ export async function runAccountDeletions(ctx: JobContext & { db: Pool }) {
     if (await skipIfHeld(ctx, 'accountDeletion', 'account', id)) {
       held++;
       continue;
+    }
+    // Drain live Rooms (this process) first; the lease fence in the transaction covers the rest.
+    if (ctx.drainRoom) {
+      const seen = await ctx.db.query<{ session_id: string }>(
+        `SELECT id AS session_id FROM sessions WHERE owner_account_id=$1
+         UNION SELECT session_id FROM events WHERE type='SeatJoined' AND payload->>'accountId'=$2`,
+        [id, id],
+      );
+      for (const row of seen.rows) await ctx.drainRoom(row.session_id);
     }
     const client = await ctx.db.connect();
     try {

@@ -48,6 +48,12 @@ export class RoomRegistry {
     this.evicting.set(sessionId, done);
     return done;
   }
+  /** Drains and releases this node's Room for a session, if any (retention scrub). */
+  async evictSession(sessionId: string): Promise<void> {
+    const room = this.rooms.get(sessionId);
+    if (room) await this.evict(sessionId, room);
+    else await this.evicting.get(sessionId);
+  }
   async get(sessionId: string): Promise<Room> {
     await this.evicting.get(sessionId);
     const existing = this.rooms.get(sessionId);

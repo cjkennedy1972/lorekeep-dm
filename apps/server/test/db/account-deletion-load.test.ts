@@ -64,7 +64,10 @@ async function account(status: string, name: string) {
 }
 
 /** A three-seat room mid-combat, persisted as the production runner would: GameStateCommitted events plus a snapshot. */
-async function seedCombatRoom(opts: { clarification: boolean }) {
+async function seedCombatRoom(opts: {
+  clarification: boolean;
+  shape?: 'only-entry' | 'no-party';
+}) {
   const gone = await account('deleting', 'SecretName');
   const heir = await account('active', 'Heir');
   const third = await account('active', 'Third');
@@ -126,6 +129,16 @@ async function seedCombatRoom(opts: { clarification: boolean }) {
   };
   // The deleted player's character acts first, so the deletion lands on its turn.
   gameState.combatRoom.combat.activeEntityId = chars[0]!.id;
+  if (opts.shape) {
+    const keep = (e: { id: string; team?: string }) =>
+      e.id === chars[0]!.id ||
+      (opts.shape === 'no-party' && e.team !== 'party');
+    const room = gameState.combatRoom;
+    room.entities = room.entities.filter(keep);
+    room.combat.initiative = room.combat.initiative.filter((i) =>
+      room.entities.some((e) => e.id === i.entityId),
+    );
+  }
   const clarifyAction = randomUUID();
   const openClarifications = opts.clarification
     ? {
@@ -418,5 +431,199 @@ describe('account deletion: holds, idempotence, and nested checkpoints', () => {
     for (const secret of SECRETS) expect(snap).not.toContain(secret);
     expect(snap).not.toContain(f.gone);
     expect(room.state.gameState).toBeDefined();
+  });
+});
+
+const stateOf = async (session: string) =>
+  JSON.stringify(
+    await q('SELECT state FROM snapshots WHERE session_id=$1 ORDER BY seq', [
+      session,
+    ]),
+  ) +
+  JSON.stringify(
+    await q('SELECT payload FROM events WHERE session_id=$1', [session]),
+  );
+
+describe('account deletion: coordinates with live Rooms through the session lease', () => {
+  const stale = (f: { session: string; gone: string }) => ({
+    sessionId: f.session,
+    phase: 'lobby',
+    seats: [
+      {
+        seatId: randomUUID(),
+        accountId: f.gone,
+        displayName: 'SecretName',
+        presence: 'online',
+      },
+    ],
+    gameState: { lastPlayerText: 'SecretText', who: f.gone },
+    actionIds: [],
+  });
+
+  it('fails closed while a live Room holds the lease; its later commit is retried clean by the next sweep', async () => {
+    const f = await seedCombatRoom({ clarification: false });
+    const room = await reload(f.session);
+    await sweep();
+    expect(
+      (await q('SELECT status FROM accounts WHERE id=$1', [f.gone]))[0]?.status,
+    ).toBe('deleting');
+    // The Room commits stale state under its still-live lease.
+    await new Persistence(pool).writeTurn(
+      f.session,
+      [
+        {
+          turnId: randomUUID(),
+          type: 'GameStateCommitted',
+          payload: { gameState: { who: f.gone, lastPlayerText: 'SecretText' } },
+        },
+      ],
+      stale(f),
+      { nodeId: room.lease.nodeId, epoch: room.lease.epoch },
+    );
+    await new SessionLease(pool).release(room.lease);
+    await sweep();
+    expect(
+      await q('SELECT 1 FROM accounts WHERE id=$1', [f.gone]),
+    ).toHaveLength(0);
+    const dump = await stateOf(f.session);
+    for (const secret of [...SECRETS, f.gone])
+      expect(dump).not.toContain(secret);
+  });
+
+  it('a stale live-Room commit after the sweep cannot put the deleted data back', async () => {
+    const f = await seedCombatRoom({ clarification: false });
+    const room = await reload(f.session);
+    // The Room stops heartbeating (crash, partition): the lease lapses and the sweep takes over.
+    await q(
+      "UPDATE session_lease SET expires_at=now() - interval '1 second' WHERE session_id=$1",
+      [f.session],
+    );
+    await sweep();
+    expect(
+      await q('SELECT 1 FROM accounts WHERE id=$1', [f.gone]),
+    ).toHaveLength(0);
+    await expect(
+      new Persistence(pool).writeTurn(
+        f.session,
+        [
+          {
+            turnId: randomUUID(),
+            type: 'GameStateCommitted',
+            payload: {
+              gameState: { who: f.gone, lastPlayerText: 'SecretText' },
+            },
+          },
+        ],
+        stale(f),
+        { nodeId: room.lease.nodeId, epoch: room.lease.epoch },
+      ),
+    ).rejects.toThrow('Lease fencing check failed');
+    const dump = await stateOf(f.session);
+    for (const secret of [...SECRETS, f.gone])
+      expect(dump).not.toContain(secret);
+    await reload(f.session);
+  });
+
+  it('drains the in-process Room first, then scrubs; the Room reloads the scrubbed state', async () => {
+    const f = await seedCombatRoom({ clarification: false });
+    const room = await reload(f.session);
+    const leases = new SessionLease(pool);
+    const store = new LocalObjectStore(
+      await mkdtemp(join(tmpdir(), 'acct-load-')),
+    );
+    await runSweep(pool, {
+      store,
+      log,
+      drainRoom: async () => {
+        await room.drain();
+        await leases.release(room.lease);
+      },
+    });
+    expect(
+      await q('SELECT 1 FROM accounts WHERE id=$1', [f.gone]),
+    ).toHaveLength(0);
+    const dump = await stateOf(f.session);
+    for (const secret of [...SECRETS, f.gone])
+      expect(dump).not.toContain(secret);
+    await reload(f.session);
+  });
+});
+
+describe('account deletion: combat left without the deleted character', () => {
+  for (const shape of ['only-entry', 'no-party'] as const) {
+    it(`${shape}: combat ends cleanly and the production load path still works`, async () => {
+      const f = await seedCombatRoom({ clarification: false, shape });
+      await sweep();
+      const room = await reload(f.session);
+      const combat = combatOf(room);
+      expect(combat.ended).toBeDefined();
+      expect(combat.combat.activeEntityId).toBeNull();
+      expect(combat.entities.map((e) => e.id)).not.toContain(f.goneChar);
+      const before = room.seq;
+      await room.submitAction(f.heir, randomUUID(), 'I look around');
+      await settle(room);
+      expect(room.seq).toBeGreaterThan(before);
+    });
+  }
+
+  it('does not run monsters: the snapshot combat state equals the last committed event', async () => {
+    const f = await seedCombatRoom({ clarification: false });
+    await sweep();
+    const [snap] = await q(
+      'SELECT state FROM snapshots WHERE session_id=$1 ORDER BY seq DESC LIMIT 1',
+      [f.session],
+    );
+    const [ev] = await q(
+      "SELECT payload FROM events WHERE session_id=$1 AND type='GameStateCommitted' ORDER BY seq DESC LIMIT 1",
+      [f.session],
+    );
+    expect(snap.state.gameState.combatRoom).toEqual(
+      ev.payload.gameState.combatRoom,
+    );
+    const combat = snap.state.gameState.combatRoom as RoomCombatState;
+    expect(
+      combat.entities.find((e) => e.id === combat.combat.activeEntityId)?.team,
+    ).toBe('party');
+  });
+
+  it('purges a room whose only seat is the deleted account instead of handing it off', async () => {
+    const gone = await account('deleting', 'SecretName');
+    const other = await account('deleting', 'AlsoGone');
+    const session = randomUUID();
+    sessionIds.push(session);
+    await q('INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)', [
+      session,
+      gone,
+      'Solo',
+    ]);
+    await q(
+      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,$2,$3),($1,2,$1,$2,$4)',
+      [
+        session,
+        'SeatJoined',
+        {
+          seatId: randomUUID(),
+          accountId: gone,
+          displayName: 'SecretName',
+          presence: 'online',
+        },
+        {
+          seatId: randomUUID(),
+          accountId: other,
+          displayName: 'AlsoGone',
+          presence: 'online',
+        },
+      ],
+    );
+    await sweep();
+    expect(
+      await q('SELECT 1 FROM sessions WHERE id=$1', [session]),
+    ).toHaveLength(0);
+    expect(
+      await q('SELECT 1 FROM events WHERE session_id=$1', [session]),
+    ).toHaveLength(0);
+    expect(await q('SELECT 1 FROM accounts WHERE id=$1', [gone])).toHaveLength(
+      0,
+    );
   });
 });
