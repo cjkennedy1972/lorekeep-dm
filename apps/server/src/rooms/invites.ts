@@ -36,11 +36,32 @@ export async function revokeInvite(
 export async function sessionForCode(
   db: Pick<Pool, 'query'>,
   code: string,
-): Promise<{ id: string; name: string; owner: string } | undefined> {
+): Promise<
+  { id: string; name: string; owner: string; status: string } | undefined
+> {
   if (!plausibleCode(code)) return undefined;
-  const r = await db.query<{ id: string; name: string; owner: string }>(
-    `SELECT id,name,owner_account_id AS owner FROM sessions WHERE invite_hash=$1 AND status='active'`,
+  const r = await db.query<{
+    id: string;
+    name: string;
+    owner: string;
+    status: string;
+  }>(
+    `SELECT id,name,owner_account_id AS owner,status FROM sessions WHERE invite_hash=$1 AND status IN ('active','archived')`,
     [hashInvite(code)],
   );
   return r.rows[0];
+}
+/** A table archived for inactivity comes back when one of its members (or the host) rejoins. */
+export async function restoreForMember(
+  db: Pick<Pool, 'query'>,
+  sessionId: string,
+  accountId: string,
+): Promise<boolean> {
+  const r = await db.query(
+    `UPDATE sessions s SET status='active', archived_at=NULL, last_active_at=now()
+      WHERE s.id=$1 AND s.status='archived' AND (s.owner_account_id=$2 OR EXISTS (
+        SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$2::text))`,
+    [sessionId, accountId],
+  );
+  return !!r.rowCount;
 }

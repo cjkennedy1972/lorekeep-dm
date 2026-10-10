@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import type { ObjectStore } from '../storage/objectStore.js';
 import { purgeLogs } from './jobs/logs.js';
 import { purgeExports } from './jobs/exports.js';
+import { purgeArchivedSessions } from './jobs/sessions.js';
 import { runAccountDeletions } from './jobs/accountDeletion.js';
 import type { SweepLog } from './types.js';
 
@@ -39,6 +40,7 @@ export async function runSweep(db: Pool, options: SweepOptions) {
         "UPDATE sessions SET status='archived', archived_at=$1 WHERE status='active' AND last_active_at < $2",
         [ctx.now, new Date(ctx.now.getTime() - 14 * 86_400_000)],
       );
+      const sessions = await purgeArchivedSessions(ctx);
       await db.query('DELETE FROM endpoint_usage WHERE created_at < $1', [
         new Date(ctx.now.getTime() - 30 * 86_400_000),
       ]);
@@ -51,7 +53,7 @@ export async function runSweep(db: Pool, options: SweepOptions) {
           [ctx.now],
         );
       }
-      return { logs, exports, accounts };
+      return { logs, sessions, exports, accounts };
     } finally {
       await client.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]);
     }

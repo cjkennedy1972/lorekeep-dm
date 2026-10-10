@@ -46,15 +46,35 @@ export async function processExport(
         [accountId],
       )
     ).rows;
+    const characters = (
+      await db.query(
+        'SELECT id AS "sessionId", character FROM sessions WHERE owner_account_id=$1 AND character IS NOT NULL',
+        [accountId],
+      )
+    ).rows;
+    const snapshots = (
+      await db.query(
+        `SELECT s.id AS "sessionId", snap.seq, snap.state FROM sessions s
+          CROSS JOIN LATERAL (SELECT seq, state FROM snapshots WHERE session_id=s.id ORDER BY seq DESC LIMIT 1) snap
+          WHERE s.owner_account_id=$1`,
+        [accountId],
+      )
+    ).rows;
+    const summaries = (
+      await db.query(
+        `SELECT m.session_id AS "sessionId", m.scene_id AS "sceneId", m.summary FROM scene_summaries m
+          JOIN sessions s ON s.id=m.session_id WHERE s.owner_account_id=$1 ORDER BY m.id`,
+        [accountId],
+      )
+    ).rows;
     const archive = {
       exportedAt: new Date().toISOString(),
       profile,
       sessions,
       ownedRooms,
-      characters: [],
-      snapshots: [],
-      summaries: [],
-      transcripts: [],
+      characters,
+      snapshots,
+      summaries,
     };
     const key = `${id}.json`;
     await store.put(key, JSON.stringify(archive));
