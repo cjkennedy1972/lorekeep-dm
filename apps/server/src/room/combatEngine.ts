@@ -1,4 +1,6 @@
 import {
+  abilityModifier,
+  concentrationSave,
   monsterPolicy,
   moveAlong,
   resolveMonsterAttack,
@@ -185,21 +187,50 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
   return { state, events };
 }
 
-export function withHp(state: RoomCombatState, events: readonly Ev[]) {
+/** Apply HP changes; damage to a concentrating survivor forces a CON save, and dropping to 0 HP ends concentration outright. */
+export function withHp(
+  state: RoomCombatState,
+  events: readonly Ev[],
+): { state: RoomCombatState; events: Ev[] } {
   let entities = state.entities;
   let concentration = state.concentration;
-  for (const event of events)
-    if (event.type === 'HpChanged') {
-      entities = entities.map((e) =>
-        e.id === event.entityId ? { ...e, hp: Number(event.to) } : e,
-      );
-      if (
-        Number(event.to) < Number(event.from) &&
-        concentration?.[String(event.entityId)]
-      )
-        concentration = { ...concentration, [String(event.entityId)]: null };
+  let seed = state.seed;
+  const saves: Ev[] = [];
+  for (const event of events) {
+    if (event.type !== 'HpChanged') continue;
+    const id = String(event.entityId);
+    const from = Number(event.from);
+    const to = Number(event.to);
+    entities = entities.map((e) =>
+      e.id === event.entityId ? { ...e, hp: to } : e,
+    );
+    if (!concentration?.[id] || to >= from) continue;
+    if (to <= 0) {
+      concentration = { ...concentration, [id]: null };
+      continue;
     }
-  return { ...state, entities, ...(concentration ? { concentration } : {}) };
+    const entity = entities.find((e) => e.id === event.entityId)!;
+    const save = concentrationSave(
+      id,
+      from - to,
+      abilityModifier(entity.abilities?.con ?? 10),
+      seed ?? 1,
+      { concentration, hp: {}, slots: {} },
+    );
+    if ('error' in save) continue;
+    seed = save.rng;
+    saves.push(...save.events);
+    if (!save.success) concentration = { ...concentration, [id]: null };
+  }
+  return {
+    state: {
+      ...state,
+      entities,
+      ...(concentration ? { concentration } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+    },
+    events: saves,
+  };
 }
 const combatant = (
   e: CombatEntity,
@@ -266,7 +297,7 @@ function monsterTurn(
         type: 'ActionSpent',
         entityId: id,
       });
-      state = withHp(
+      const hurt = withHp(
         {
           ...state,
           seed: result.rng,
@@ -280,6 +311,8 @@ function monsterTurn(
         },
         result.events as Ev[],
       );
+      state = hurt.state;
+      events.push(...hurt.events);
       continue;
     }
     // approach / flee: engine movement, so cost, terrain and opportunity attacks all apply

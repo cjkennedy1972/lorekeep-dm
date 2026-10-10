@@ -185,7 +185,7 @@ export function castCommand(
   });
   if ('error' in result) return reject(result.hint);
   const events = result.events as unknown as Ev[];
-  const next = withHp(
+  const applied = withHp(
     {
       ...state,
       seed: result.rng,
@@ -200,11 +200,12 @@ export function castCommand(
     },
     events,
   );
-  const closing = settle(next);
+  const closing = settle(applied.state);
   return {
     state: closing.state,
     events: [
       ...events,
+      ...applied.events,
       { type: 'ActionSpent', entityId: actorId },
       ...closing.events,
     ],

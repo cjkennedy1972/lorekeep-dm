@@ -137,13 +137,14 @@ describe('Room combat command seam', () => {
     expect(events).toHaveLength(4);
   });
 
-  it('ends a target concentration when a hit damages it', () => {
+  it('makes a CON save when a hit damages a concentrating target', () => {
     const runtime = createCombatRuntime();
     const engaged: RoomCombatState = {
       ...combat,
-      entities: combat.entities.map((entity) =>
-        entity.id === 'ent_hero' ? { ...entity, pos: { x: 4, y: 1 } } : entity,
-      ),
+      entities: combat.entities.map((entity) => {
+        if (entity.id === 'ent_hero') return { ...entity, pos: { x: 4, y: 1 } };
+        return { ...entity, hp: 40, maxHp: 40 };
+      }),
       concentration: { ent_goblin: 'srd:spell/bless' },
     };
     const result = runtime.execute(engaged, 'ent_hero', {
@@ -155,7 +156,16 @@ describe('Room combat command seam', () => {
     expect(result.events.some((event) => event.type === 'HpChanged')).toBe(
       true,
     );
-    expect(result.state.concentration?.ent_goblin ?? null).toBeNull();
+    const saves = result.events.filter(
+      (event) => event.type === 'RollEvent' && event.kind === 'save',
+    );
+    expect(saves).toHaveLength(1);
+    const dropped = result.events.some(
+      (event) => event.type === 'ConcentrationDropped',
+    );
+    expect(result.state.concentration?.ent_goblin ?? null).toBe(
+      dropped ? null : 'srd:spell/bless',
+    );
   });
 
   it('persists an accepted websocket combat move and rejects another seated account', async () => {
