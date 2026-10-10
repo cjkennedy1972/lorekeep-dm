@@ -101,6 +101,8 @@ export function execute(
     const parsed = DMToolArgsSchema.call_for_rest.safeParse(call.args);
     if (!parsed.success)
       return fail('schema-violation', 'Choose a short or long rest.');
+    if (state.combat?.combatants.length)
+      return fail('already-in-combat', 'End combat before resting.');
     const actor = Object.values(state.actors)[0];
     if (!actor)
       return fail('unknown-entity', 'No solo character is available to rest.');

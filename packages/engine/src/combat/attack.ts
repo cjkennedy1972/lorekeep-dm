@@ -127,7 +127,7 @@ export function attack(input: AttackInput): AttackResult {
       if (band === 'out')
         return bad('Target is beyond long range.', 'Choose a closer target.');
       if (band === 'long')
-        mode = mode === 'disadvantage' ? 'disadvantage' : 'disadvantage';
+        mode = mode === 'advantage' ? 'normal' : 'disadvantage';
     } else if (distanceFt > (input.map.reachFt ?? 5)) {
       return bad(
         'Target is beyond melee reach.',

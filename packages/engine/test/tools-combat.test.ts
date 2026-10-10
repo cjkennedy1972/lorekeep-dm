@@ -3,6 +3,8 @@ import type { Battlemap } from '@game/schema';
 import { loadCatalog } from '../src/catalog-node.js';
 import type { CharacterInput } from '../src/character/types.js';
 import { seedRng } from '../src/rng.js';
+import { attack } from '../src/combat/attack.js';
+import { execute } from '../src/tools/index.js';
 import { executeEndCombat, executeStartCombat } from '../src/tools/combat.js';
 import {
   executeMoveTo,
@@ -373,5 +375,51 @@ describe('M2-11 combat/movement tools', () => {
         ),
       ),
     ).toBe('unknown-spell');
+  });
+
+  test('call_for_rest is refused while combat is active', () => {
+    const base = state();
+    const started = good(
+      executeStartCombat(
+        base,
+        { enemies: [{ monsterId: 'srd:monster/goblin-warrior', count: 1 }] },
+        seedRng(77),
+      ),
+    ) as typeof base;
+    const result = execute(
+      { ...base, ...started },
+      { name: 'call_for_rest', args: { kind: 'long' } },
+      seedRng(1),
+    );
+    expect(err(result as never)).toBe('already-in-combat');
+  });
+
+  test('advantage and long range cancel instead of becoming disadvantage', () => {
+    const base = state();
+    const at = (x: number) => ({ pos: { x, y: 5 }, size: 1 as const });
+    const roll = (mode: 'advantage' | 'normal') => {
+      const r = attack({
+        attackerId: 'a',
+        targetId: 'b',
+        attackId: 'bow',
+        seed: 7,
+        attackBonus: 4,
+        damage: '1d6',
+        damageType: 'piercing',
+        targetAc: 10,
+        target: { hp: 10, kind: 'monster' },
+        mode,
+        map: {
+          map: base.map,
+          attacker: at(1),
+          target: at(9),
+          range: { normalFt: 30, longFt: 120 },
+        },
+      });
+      const e = 'events' in r ? r.events[0] : undefined;
+      return e?.type === 'RollEvent' ? e.breakdown.dice.length : 0;
+    };
+    expect(roll('normal')).toBe(2);
+    expect(roll('advantage')).toBe(1);
   });
 });
