@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DMToolArgsSchema } from '@game/schema';
 import { z } from 'zod';
@@ -83,6 +84,46 @@ describe('OpenAI-compatible LLM adapter', () => {
       type: 'usage',
       usage: { estimate: true },
     });
+  });
+
+  it('ignores reasoning deltas while assembling native tool calls from recorded SSE', async () => {
+    const fixture = await readFile(
+      new URL('./fixtures/reasoning-native.sse', import.meta.url),
+      'utf8',
+    );
+    server = await startFakeOpenAIServer({ chunks: [fixture] });
+    const chunks = await collect(adapterFor());
+    expect(chunks.filter((chunk) => chunk.type === 'text')).toEqual([]);
+    expect(chunks.find((chunk) => chunk.type === 'tool-call')).toEqual({
+      type: 'tool-call',
+      id: 'call_probe_1',
+      name: 'probe_capability',
+      arguments: { scenarioId: 'scenario-00', accepted: true },
+    });
+    expect(JSON.stringify(chunks)).not.toContain('Let me consider');
+  });
+
+  it('ignores reasoning deltas and keeps only narration-channel content for JSON-schema output', async () => {
+    const fixture = await readFile(
+      new URL('./fixtures/reasoning-json-schema.sse', import.meta.url),
+      'utf8',
+    );
+    server = await startFakeOpenAIServer({ chunks: [fixture] });
+    const chunks = [];
+    for await (const chunk of adapterFor().complete({
+      messages: [{ role: 'user', content: 'x' }],
+      maxTokens: 2_048,
+      toolMode: 'json-schema',
+      responseSchema: { type: 'object' },
+    }))
+      chunks.push(chunk);
+    expect(chunks.filter((chunk) => chunk.type === 'text')).toEqual([
+      {
+        type: 'text',
+        delta: '{"scenarioId":"scenario-00","accepted":true}',
+      },
+    ]);
+    expect(JSON.stringify(chunks)).not.toContain('I will format');
   });
 
   it('rejects a malformed SSE payload without exposing payload contents', async () => {
