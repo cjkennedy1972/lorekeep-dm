@@ -6,7 +6,8 @@ const schema = z.object({
   HOST: z.string().default('0.0.0.0'),
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
-    .default('development'),
+    // ponytail: unset means production so the operator and email boot checks fail closed; dev/test opt in.
+    .default('production'),
   SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).default(3_600_000),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
   /** Trust X-Forwarded-For/Proto from the reverse proxy in front of the server. */

@@ -4,25 +4,46 @@ For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-p
 
 ## 1. Server environment
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | Postgres connection string (required). |
-| `RESEND_API_KEY` | Resend API key for verification and password-reset email. Required when `NODE_ENV` is not `development` or `test`; the server refuses to start without it. Never logged. |
-| `EMAIL_FROM` | Sender address, e.g. `Lorekeep <noreply@your-domain>`. Required with `RESEND_API_KEY`; the verified domain must exist in Resend. |
-| `APP_BASE_URL` | Public web origin, e.g. `https://lorekeep.example`. Verification and reset links are `<APP_BASE_URL>/verify?token=…` and `<APP_BASE_URL>/reset?token=…`. Required with `RESEND_API_KEY`. |
-| `OPERATOR_EMAILS` | Comma-separated emails of accounts allowed to use `/api/operator/*`. Empty means nobody. Everyone else gets `404 NOT_FOUND`. |
-| `OPERATOR_ENDPOINT_MASTER_KEY` | AES-256-GCM key for stored endpoint API keys: 32 bytes as 64 hex chars or base64, or a keyring `id:key,id:key`. Required when `NODE_ENV=production`; outside production a fixed development key is used, so never reuse a development database in production. |
-| `OPERATOR_ENDPOINT_ACTIVE_KEY_ID` | Keyring entry used for new writes (default: last entry). |
-| `LLM_ALLOW_LOCAL_HOSTS` | Comma-separated exact hosts allowed to be loopback/private and to use plain `http` (section 2). Default empty. |
-| `SOLO_TURN_ENDPOINT_SLOT` | Slot used for solo turns: `fast`, `frontier`, or `moderate` (default `moderate`). |
-| `AGE_RETRY_SECRET` | Required unless `NODE_ENV` is exactly `development` or `test` (the server refuses to start without it), together with `OPERATOR_EMAILS` and `OPERATOR_ENDPOINT_MASTER_KEY`. |
-| `LLM_FIXTURE_MODE`, `LLM_FIXTURE_PATH` | Recorded-LLM mode and file (section 4). |
+"Production" below means `NODE_ENV` is unset or anything other than `development` or `test`. An unset `NODE_ENV` is production, so the boot checks fail closed.
+
+| Variable | Required in production | Default | Missing or invalid in production | Notes |
+| --- | --- | --- | --- | --- |
+| `NODE_ENV` | Set to `production` (or leave unset) | `production` | Only `development`, `test`, `production` are accepted; anything else fails config load. | `development`/`test` enable the dev-only fallbacks below. Never set them on a production host. |
+| `DATABASE_URL` | Yes | none | Config load fails. | Run `pnpm --filter @game/server migrate:up` before the first boot. |
+| `HOST` | No | `0.0.0.0` | Any string. | Use `127.0.0.1` when the proxy runs on the same host. See the proxy sample below. |
+| `PORT` | No | `3000` | Outside 1 to 65535 fails config load. | The app port must be reachable only through the proxy. |
+| `TRUST_PROXY` | Yes when behind a proxy | `false` | Non-boolean fails config load. | `true` trusts every hop. Fastify uses the leftmost `X-Forwarded-For` entry, so the proxy must overwrite that header (the sample does). Hop/CIDR-aware trust is tracked in card 8df422f6. With `false` behind a proxy, all clients share the proxy's IP and one rate-limit bucket. |
+| `AGE_RETRY_SECRET` | Yes | `development-only-secret` in development/test only | `AGE_RETRY_SECRET is required` at boot. | Signs the session cookie and age-gate cookie. Generate with `openssl rand -hex 32`. |
+| `OPERATOR_EMAILS` | Yes, non-empty | empty (nobody is an operator) | Boot fails with `Operator configuration is required`. | Comma-separated. Everyone else gets `404 NOT_FOUND` on `/api/operator/*`. |
+| `OPERATOR_ENDPOINT_MASTER_KEY` | Yes | none; development/test use a fixed development key | Boot fails with `Operator configuration is required`; the first endpoint use throws `Endpoint encryption key unavailable`. | AES-256-GCM key: 32 bytes as 64 hex or base64, or a keyring `id:key,id:key`. Generate with `openssl rand -hex 32`. Store it in your secret manager. |
+| `OPERATOR_ENDPOINT_ACTIVE_KEY_ID` | No | last keyring entry | n/a | Keyring entry used for new writes. |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `APP_BASE_URL` | All three, or none in development/test | none | Partial set fails boot. None set in production fails boot. | `EMAIL_FROM` is e.g. `Lorekeep <noreply@your-domain>` and its domain must be verified in Resend. `APP_BASE_URL` must be a full URL (e.g. `https://lorekeep.example`); links are `<APP_BASE_URL>/verify?token=…` and `/reset?token=…`. The key is never logged. In development/test, missing email config uses a console sender that logs only that delivery is not configured. |
+| `LLM_ALLOW_LOCAL_HOSTS` | No | empty | Endpoints on loopback/private hosts, or with plain `http`, are rejected on save and probe. | Comma-separated exact hosts (e.g. a local model). Section 2. |
+| `SOLO_TURN_ENDPOINT_SLOT` | No | `moderate` | Must be `fast`, `frontier`, or `moderate`. | Endpoint slot used for solo turns. |
+| `LLM_FIXTURE_MODE` | Must be unset | unset (live endpoint) | `strict` is the only allowed value in production; `lenient`/`record` fail boot, and unknown values fail. | Recorded-LLM replay, section 4. |
+| `LLM_FIXTURE_PATH` | No | `fixtures/solo-turn.ndjson` | Read only when fixture mode is set. | Section 4. |
+| `SWEEP_INTERVAL_MS` | No | `3600000` | Non-integer or negative fails config load. | `0` disables the retention sweeper. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset (no exporter) | Invalid URL fails config load. | OTLP trace export. |
+| `EXPORT_ARCHIVE_DIR` | Yes, set explicitly | `/tmp/lorekeep-exports` | Not in the config schema. Nothing refuses the `/tmp` default. | Export archives are written here (0700 directory, 0600 files). `/tmp` is not acceptable for production data. Card 1ada4844 tracks a production refusal. |
+| `WS_ALLOWED_ORIGINS` | Only for cross-origin web clients | unset (same-host origins only) | Not in the config schema; read raw. | Comma-separated full origins (e.g. `https://app.example`). A trailing slash or path never matches. |
+| `LLM_API_KEY` | Do not set | none | Parsed and redacted, but no server code path reads it. | Endpoint keys are stored per slot (encrypted), not from this variable. |
 
 Generate a master key locally (output is a secret; put it in your secret manager, not in the repo):
 
 ```sh
 openssl rand -hex 32
 ```
+
+### Production behind a reverse proxy
+
+Use nginx: its `proxy_set_header` gives explicit control over `X-Forwarded-For` (overwritten with `$remote_addr`, never appended), the `/ws` upgrade, and per-location timeouts. The sample is [`infra/proxy/lorekeep.nginx.conf`](../infra/proxy/lorekeep.nginx.conf). It is not deployed anywhere; adapt the host name and certificate paths.
+
+- Run the app with `HOST=127.0.0.1`, `PORT=3000`, `TRUST_PROXY=true`, and firewall the app port so only the proxy can reach it. With `TRUST_PROXY=true`, a client that can reach the app port directly can forge `X-Forwarded-For` and bypass per-IP rate limits.
+- Long LLM turns: HTTP has a 300 s timeout; `/ws` has 3600 s because the connection stays open across turns, and the server pings every 10 s.
+- Rate-limit buckets live in process memory, so each instance has its own. Running several replicas multiplies the effective limits.
+- Session cookies are `__Host-sid` with `Secure` in every non-development run, regardless of `X-Forwarded-Proto`, so a plain-HTTP request to the app still gets a `Secure` cookie.
+
+Smoke test: `DATABASE_URL=postgres://… pnpm --filter @game/server smoke:prod` after `pnpm -r build`. It migrates the database at `DATABASE_URL` (use a scratch database), boots `dist` in production mode with dummy values and a local stub LLM endpoint, and checks `/healthz`, the login cookie with `X-Forwarded-Proto: https`, separate rate-limit buckets for two forwarded addresses, and one solo turn reaching the stub. It exits non-zero on failure and needs no real credentials.
 
 ## 2. Configure an endpoint
 
