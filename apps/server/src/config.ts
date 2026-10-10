@@ -9,6 +9,8 @@ const schema = z.object({
     .default('development'),
   SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).default(3_600_000),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  /** Trust X-Forwarded-For/Proto from the reverse proxy in front of the server. */
+  TRUST_PROXY: z.stringbool().default(false),
   /** LLM provider key: env only, wrapped so it cannot be logged or serialized. */
   LLM_API_KEY: z
     .string()
