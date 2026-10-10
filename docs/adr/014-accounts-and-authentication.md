@@ -25,7 +25,7 @@ Status: Proposed (human decision 2026-10-06: accounts required) · Date: 2026-10
 ## Security review addendum (M0-FIX-07)
 
 - **WebSocket/session binding.** `ws_tickets.auth_token_hash` references `auth_sessions` (ON DELETE CASCADE). A ticket is consumable only while that auth session is unexpired and the account is `active`. The gateway keeps a `ConnectionRegistry` of open sockets by auth session; logout, device revoke, revoke-others, password change/reset and account deletion sweep it and close affected sockets with code 4401 `session revoked`. A ~15 s tick (and a throttled check on inbound messages) re-validates against the database so revocations performed on another node also land.
-- **Cookie rule.** Production accepts only `__Host-sid`; plain `sid` is accepted only when `NODE_ENV` is not `production`. More than one session cookie present means unauthenticated.
+- **Cookie rule.** Production accepts only `__Host-sid`; plain `sid` is accepted only when `NODE_ENV` is exactly `development` or `test`. More than one session cookie present means unauthenticated.
 - **Reset tokens.** A successful reset or authenticated password change marks every outstanding reset token for the account used (row-locked transaction); a new forgot request retires older unused tokens.
 
 - **Room invites:** store only SHA-256 hashes of 128-bit random base64url codes; database hash lookup replaces a timing-safe plaintext comparison, and the code's high entropy makes offline guessing infeasible. Regeneration overwrites the single stored hash, invalidating the previous code.

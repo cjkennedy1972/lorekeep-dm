@@ -3,16 +3,25 @@ import type { Pool } from 'pg';
 import { hashToken } from './signup.js';
 const DAY = 86_400_000;
 export const COOKIE_NAME = '__Host-sid';
-export function sessionCookie(token: string, secure = true): string {
+export function isDevelopmentOrTest(): boolean {
+  return ['development', 'test'].includes(process.env.NODE_ENV ?? '');
+}
+
+// ponytail: static flag, not request protocol, so it holds behind a TLS proxy regardless of TRUST_PROXY
+export function secureCookies(): boolean {
+  return !isDevelopmentOrTest();
+}
+
+export function sessionCookie(token: string, secure = secureCookies()): string {
   return `${secure ? COOKIE_NAME : 'sid'}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}${secure ? '; Secure' : ''}`;
 }
-export function clearSessionCookie(secure = true): string {
+export function clearSessionCookie(secure = secureCookies()): string {
   return `${secure ? COOKIE_NAME : 'sid'}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`;
 }
 /** Production accepts only `__Host-sid`; plain `sid` is a dev/test fallback. More than one session cookie is ambiguous (injection) and means unauthenticated. */
 export function tokenFromCookie(
   header?: string,
-  production = process.env.NODE_ENV === 'production',
+  production = secureCookies(),
 ): string | undefined {
   const pairs = (header ?? '')
     .split(';')

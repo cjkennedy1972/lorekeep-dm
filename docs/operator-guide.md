@@ -12,7 +12,7 @@ For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-p
 | `OPERATOR_ENDPOINT_ACTIVE_KEY_ID` | Keyring entry used for new writes (default: last entry). |
 | `LLM_ALLOW_LOCAL_HOSTS` | Comma-separated exact hosts allowed to be loopback/private and to use plain `http` (section 2). Default empty. |
 | `SOLO_TURN_ENDPOINT_SLOT` | Slot used for solo turns: `fast`, `frontier`, or `moderate` (default `moderate`). |
-| `AGE_RETRY_SECRET` | Required when `NODE_ENV=production` (the server refuses to start without it), together with `OPERATOR_EMAILS` and `OPERATOR_ENDPOINT_MASTER_KEY`. |
+| `AGE_RETRY_SECRET` | Required unless `NODE_ENV` is exactly `development` or `test` (the server refuses to start without it), together with `OPERATOR_EMAILS` and `OPERATOR_ENDPOINT_MASTER_KEY`. |
 | `LLM_FIXTURE_MODE`, `LLM_FIXTURE_PATH` | Recorded-LLM mode and file (section 4). |
 
 Generate a master key locally (output is a secret; put it in your secret manager, not in the repo):

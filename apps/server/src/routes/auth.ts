@@ -12,6 +12,7 @@ import {
   clearSessionCookie,
   deviceLabel,
   revokeSession,
+  secureCookies,
   sessionCookie,
   tokenFromCookie,
 } from '../accounts/sessions.js';
@@ -182,10 +183,7 @@ export function registerAuthRoutes(
         message: 'Check your email and verify your account before signing in.',
       });
     emailFailures.clear(key);
-    reply.header(
-      'set-cookie',
-      sessionCookie(result.token, process.env.NODE_ENV === 'production'),
-    );
+    reply.header('set-cookie', sessionCookie(result.token, secureCookies()));
     const a = result.account;
     return {
       account: {
@@ -203,10 +201,7 @@ export function registerAuthRoutes(
       await revokeSession(db, token);
       await closeRevoked();
     }
-    reply.header(
-      'set-cookie',
-      clearSessionCookie(process.env.NODE_ENV === 'production'),
-    );
+    reply.header('set-cookie', clearSessionCookie(secureCookies()));
     return {};
   });
   const authed = async (
@@ -386,10 +381,7 @@ export function registerAuthRoutes(
         .code(403)
         .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
     await closeRevoked();
-    reply.header(
-      'set-cookie',
-      clearSessionCookie(process.env.NODE_ENV === 'production'),
-    );
+    reply.header('set-cookie', clearSessionCookie(secureCookies()));
     return {
       message:
         'Account deletion requested. This cannot be undone. Personal data will be purged within 30 days.',
@@ -423,10 +415,7 @@ export function registerAuthRoutes(
       return reply.code(404).send({ code: 'NOT_FOUND', message: 'Not found.' });
     await closeRevoked();
     if (id === session.token_hash)
-      reply.header(
-        'set-cookie',
-        clearSessionCookie(process.env.NODE_ENV === 'production'),
-      );
+      reply.header('set-cookie', clearSessionCookie(secureCookies()));
     return {};
   });
   app.post('/api/me/sessions/revoke-others', async (request, reply) => {
