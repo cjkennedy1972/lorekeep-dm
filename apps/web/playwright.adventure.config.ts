@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { resolve } from 'node:path';
 
 const stateFile = resolve('test-results/adventure-live-state.json');
 const apiPort = Number(process.env.LIVE_API_PORT ?? 8799);
