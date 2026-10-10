@@ -27,7 +27,7 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
     // pg_trgm lives in public (database-wide extension); keep the test schema first so tables stay isolated.
     database = await createTestDatabase({ extraSearchPath: ['public'] });
     await database.pool.query(
-      `CREATE TABLE sessions (id uuid PRIMARY KEY, owner_account_id uuid);
+      `CREATE TABLE sessions (id uuid PRIMARY KEY, owner_account_id uuid, last_active_at timestamptz NOT NULL DEFAULT now());
        CREATE TABLE events (session_id uuid NOT NULL REFERENCES sessions(id), seq bigint NOT NULL, turn_id uuid NOT NULL, type text NOT NULL, payload jsonb NOT NULL, ts timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(session_id,seq));
        CREATE TABLE snapshots (session_id uuid NOT NULL REFERENCES sessions(id), seq bigint NOT NULL, state jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(session_id,seq))`,
     );

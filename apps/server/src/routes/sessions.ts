@@ -6,7 +6,12 @@ import { CreateRoomInputSchema, type RoomInfo } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import { tokenFromCookie } from '../accounts/sessions.js';
 import { hashToken } from '../accounts/signup.js';
-import { revokeInvite, sessionForCode, setInvite } from '../rooms/invites.js';
+import {
+  restoreForMember,
+  revokeInvite,
+  sessionForCode,
+  setInvite,
+} from '../rooms/invites.js';
 import type { RoomRegistry } from '../room/registry.js';
 import { BoundedCounter } from '../accounts/throttle.js';
 
@@ -205,7 +210,11 @@ export function registerSessionRoutes(
         message: 'Too many attempts. Wait a minute.',
       });
     const found = await sessionForCode(db, code);
-    if (!found)
+    if (
+      !found ||
+      (found.status === 'archived' &&
+        !(await restoreForMember(db, found.id, accountId)))
+    )
       return reply.code(404).send({
         code: 'INVITE_INVALID',
         message: 'This invite link is no longer valid.',

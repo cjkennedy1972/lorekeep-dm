@@ -108,6 +108,9 @@ export class Persistence {
       const inserted = await appendEvents(client, sessionId, events);
       const last = inserted.at(-1);
       if (!last) throw new Error('A turn needs at least one event');
+      await client.query('UPDATE sessions SET last_active_at=now() WHERE id=$1', [
+        sessionId,
+      ]);
       const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
       return { events: inserted, snapshot };
     });
