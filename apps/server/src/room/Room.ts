@@ -23,8 +23,10 @@ import {
   reactionMessage,
   type CombatRuntime,
   type CombatTransition,
+  type RoomCombatState,
 } from './combat.js';
 import { settleEngine } from './combatBootstrap.js';
+import { withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
 import type { Catalog } from '@game/rules-engine';
@@ -650,7 +652,7 @@ export class Room {
   }
 
   private async resolveQueuedTurns(): Promise<void> {
-    while (this.queuedActions.length > 0) {
+    while (!this.draining && this.queuedActions.length > 0) {
       const action = this.queuedActions.shift();
       if (!action) continue;
       this.broadcast({
@@ -681,6 +683,14 @@ export class Room {
           },
         } as ServerMessage);
       }
+    }
+    for (const action of this.queuedActions.splice(0)) {
+      this.pendingActions.delete(action.actionId);
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionWithdrawn',
+        payload: { actionId: action.actionId },
+      } as ServerMessage);
     }
     this.turnInFlight = false;
   }
@@ -809,11 +819,51 @@ export class Room {
             ...incoming,
             combatRoom: live.combatRoom,
             combatActors: live.combatActors,
-            characters: live.characters,
-            gameEngine: live.gameEngine,
           };
+        // settleEngine copies combat HP back onto characters, so the turn's HP changes land as deltas on combat HP.
+        const startChars = (startGame.characters ?? {}) as Record<
+          string,
+          { id: string; hp: { current: number } }
+        >;
+        const turnChars = (turnWrites.characters ?? {}) as Record<
+          string,
+          { id: string; hp: { current: number } }
+        >;
+        const hpDelta = new Map<string, number>();
+        for (const [accountKey, character] of Object.entries(turnChars)) {
+          const before = startChars[accountKey];
+          if (before)
+            hpDelta.set(character.id, character.hp.current - before.hp.current);
+        }
+        const combatNow = incoming.combatRoom as RoomCombatState | undefined;
+        const hpChanges = combatNow
+          ? [...hpDelta].flatMap(([entityId, delta]) => {
+              const entity = combatNow.entities.find((e) => e.id === entityId);
+              return entity
+                ? [
+                    {
+                      type: 'HpChanged',
+                      entityId,
+                      from: entity.hp,
+                      to: Math.min(
+                        entity.maxHp,
+                        Math.max(0, entity.hp + delta),
+                      ),
+                    },
+                  ]
+                : [];
+            })
+          : [];
+        const hurt =
+          combatNow && hpChanges.length
+            ? withHp(combatNow, hpChanges)
+            : undefined;
+        if (hurt) incoming = { ...incoming, combatRoom: hurt.state };
         const reconciled = this.combatRuntime.reconcile(incoming, Date.now());
-        const combatEvents = reconciled?.events ?? [];
+        const combatEvents = [
+          ...(hurt?.events ?? []),
+          ...(reconciled?.events ?? []),
+        ];
         const turnGameState = reconciled?.gameState ?? incoming;
         for (const event of combatEvents)
           writes.push({
