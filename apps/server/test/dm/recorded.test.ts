@@ -152,13 +152,16 @@ describe('recorded LLM adapter with the OpenAI adapter and in-process fake serve
     expect(() =>
       fixtureModeFromEnvironment({ LLM_FIXTURE_MODE: 'record' }),
     ).toThrow(/forbidden/);
-    expect(
-      fixtureModeFromEnvironment({ LLM_FIXTURE_MODE: 'strict' }),
-    ).toBe('strict');
+    expect(fixtureModeFromEnvironment({ LLM_FIXTURE_MODE: 'strict' })).toBe(
+      'strict',
+    );
   });
   it('keeps lenient fixture modes available under NODE_ENV test or development', () => {
     expect(
-      fixtureModeFromEnvironment({ NODE_ENV: 'test', LLM_FIXTURE_MODE: 'lenient' }),
+      fixtureModeFromEnvironment({
+        NODE_ENV: 'test',
+        LLM_FIXTURE_MODE: 'lenient',
+      }),
     ).toBe('lenient');
     expect(
       fixtureModeFromEnvironment({

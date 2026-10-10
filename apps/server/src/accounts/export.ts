@@ -79,22 +79,31 @@ export async function processExport(
         [accountId],
       )
     ).rows.filter((row) => soloRooms.has(row.sessionId));
-    const archive = {
-      exportedAt: new Date().toISOString(),
-      profile,
-      sessions,
-      ownedRooms,
-      characters,
-      snapshots: snapshots.map(({ sessionId, seq, state, solo }) => ({
-        sessionId,
-        seq,
-        state: ownSeatState(state, accountId, solo),
-      })),
-      summaries,
+    // ponytail: bounds the serialized size, not the DB fetch; snapshot rows are still loaded whole.
+    let size = 0;
+    const encode = (value: unknown) => {
+      const text = JSON.stringify(value);
+      size += Buffer.byteLength(text);
+      if (size > MAX_ARCHIVE_BYTES) throw new ArchiveTooLarge();
+      return text;
     };
-    const body = JSON.stringify(archive);
-    if (Buffer.byteLength(body) > MAX_ARCHIVE_BYTES)
-      throw new ArchiveTooLarge();
+    const body = `{${[
+      `"exportedAt":${encode(new Date().toISOString())}`,
+      `"profile":${encode(profile)}`,
+      `"sessions":${encode(sessions)}`,
+      `"ownedRooms":${encode(ownedRooms)}`,
+      `"characters":${encode(characters)}`,
+      `"snapshots":[${snapshots
+        .map(({ sessionId, seq, state, solo }) =>
+          encode({
+            sessionId,
+            seq,
+            state: ownSeatState(state, accountId, solo),
+          }),
+        )
+        .join(',')}]`,
+      `"summaries":${encode(summaries)}`,
+    ].join(',')}}`;
     const key = `${id}.json`;
     await store.put(key, body);
     await db.query(
