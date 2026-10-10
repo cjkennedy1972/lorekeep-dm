@@ -1,3 +1,4 @@
+import { DMTurnEventSchema } from '@game/schema';
 import { describe, expect, it } from 'vitest';
 import type {
   LlmAdapter,
@@ -210,6 +211,41 @@ describe('DM orchestrator', () => {
       ),
     ).toBe(false);
   });
+  it('executes only the first close_scene per turn and rejects the rest', async () => {
+    const h = setup([
+      [
+        call('c1', 'close_scene', { summary: 'The seal is opened.' }),
+        call('c2', 'close_scene', { summary: 'Second close.' }),
+        call('c3', 'close_scene', { summary: 'Third close.' }),
+      ],
+      [{ type: 'text', delta: narration }],
+    ]);
+    const closes: string[] = [];
+    h.input.context.closeScene = ({ summary }) => {
+      closes.push(summary);
+      return {
+        ok: true,
+        summary: 'Scene closed.',
+        events: [],
+        output: {
+          events: [{ type: 'SceneClosed', sceneId: 'scene-1', summary }],
+        },
+      };
+    };
+    await runTurn(h.input);
+    expect(closes).toEqual(['The seal is opened.']);
+    expect(
+      h.events.filter(
+        (event) => (event as { type?: string }).type === 'SceneClosed',
+      ),
+    ).toHaveLength(1);
+    expect(
+      h.events.filter(
+        (event) =>
+          (event as { error?: string }).error === 'scene-already-closed',
+      ),
+    ).toHaveLength(2);
+  });
   it('rejects close_scene outside an adventure context', async () => {
     const h = setup([
       [call('c1', 'close_scene', { summary: 'Done.' })],
@@ -357,6 +393,67 @@ describe('DM orchestrator', () => {
         (event) => (event as { type?: string }).type === 'ToolCallRejected',
       ),
     ).toHaveLength(3);
+  });
+  it('trims narration cut at the output-token cap to the last full sentence', async () => {
+    const h = setup([
+      [
+        {
+          type: 'usage',
+          usage: { input: 10, output: 512, estimate: false },
+        },
+        {
+          type: 'text',
+          delta:
+            'First sentence here. Second sentence here. Third sentence cut',
+        },
+      ],
+    ]);
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe('First sentence here. Second sentence here.');
+    expect(h.events).toContainEqual({
+      type: 'NarrationTruncated',
+      turnId: 'turn-1',
+      words: 9,
+    });
+  });
+  it('keeps narration that ends before the output-token cap', async () => {
+    const h = setup([
+      [
+        { type: 'usage', usage: { input: 10, output: 100, estimate: false } },
+        {
+          type: 'text',
+          delta: 'First sentence here. Second sentence cut',
+        },
+      ],
+    ]);
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe('First sentence here. Second sentence cut');
+    expect(
+      h.events.some(
+        (event) => (event as { type?: string }).type === 'NarrationTruncated',
+      ),
+    ).toBe(false);
+  });
+  it('marks fallback narration on NarrationCompleted for client notices', async () => {
+    const endpoint = setup([
+      new LlmEndpointError('endpoint-timeout', 'timeout'),
+    ]);
+    await runTurn(endpoint.input);
+    const endpointDone = endpoint.events.find(
+      (event) => (event as { type?: string }).type === 'NarrationCompleted',
+    );
+    expect(DMTurnEventSchema.parse(endpointDone)).toMatchObject({
+      fallback: 'endpoint-error',
+    });
+
+    const empty = setup([[]]);
+    await runTurn(empty.input);
+    const emptyDone = empty.events.find(
+      (event) => (event as { type?: string }).type === 'NarrationCompleted',
+    );
+    expect(DMTurnEventSchema.parse(emptyDone)).toMatchObject({
+      fallback: 'no-narration',
+    });
   });
   it('uses the engine template when the endpoint fails and does not commit partial engine state', async () => {
     const h = setup([

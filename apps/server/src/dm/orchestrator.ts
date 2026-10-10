@@ -357,7 +357,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     totalOut = 0,
     cacheRead = 0;
   let finalText = '',
-    fallback: TurnResult['fallback'];
+    fallback: TurnResult['fallback'],
+    finalCut = false,
+    sceneClosed = false;
   const callCapHits = new Set<string>();
   let endpointFailed = false;
   const makeFallback = (reason: NonNullable<TurnResult['fallback']>) => {
@@ -382,6 +384,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         throw new LlmEndpointError('stream-aborted', 'LLM request was aborted');
       const textDeltas: string[] = [],
         calls: Extract<LlmChunk, { type: 'tool-call' }>[] = [];
+      let requestOut = 0;
       const request: LlmRequest = {
         messages: [...messages],
         maxTokens: toolCalls > 0 ? 400 : 512,
@@ -395,6 +398,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           if (chunk.type === 'usage') {
             totalIn += chunk.usage.input;
             totalOut += chunk.usage.output;
+            requestOut += chunk.usage.output;
             cacheRead += chunk.usage.cacheRead ?? 0;
           } else if (chunk.type === 'text') textDeltas.push(chunk.delta);
           else calls.push(chunk);
@@ -410,6 +414,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       }
       if (calls.length === 0) {
         finalText = textDeltas.join('');
+        finalCut = requestOut >= request.maxTokens;
         done = true;
         break;
       }
@@ -509,6 +514,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         if (call.name !== 'suggest_area_target' && call.name !== 'rules_lookup')
           toolCalls++;
         else if (call.name === 'rules_lookup') rulesLookups++;
+        if (call.name === 'close_scene' && sceneClosed) {
+          reject(
+            'scene-already-closed',
+            'The scene was already closed this turn; narrate the outcome.',
+            true,
+          );
+          continue;
+        }
         const outcome = await executeTool(
           call.name as DMToolName,
           validated.value,
@@ -537,6 +550,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           }
           continue;
         }
+        if (call.name === 'close_scene') sceneClosed = true;
         const toolResult = {
           ok: true,
           events: [...(outcome.events ?? [])],
@@ -584,8 +598,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     } else throw error;
   }
   const finalWords = words(finalText);
-  if (finalWords > 300) {
-    finalText = truncateAtSentence(finalText, 300);
+  const keepWords = Math.max(
+    0,
+    Math.min(finalCut ? finalWords - 1 : finalWords, 300),
+  );
+  if (keepWords < finalWords) {
+    finalText = truncateAtSentence(finalText, keepWords);
     emit({
       type: 'NarrationTruncated',
       turnId: input.turnId,
@@ -617,6 +635,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     turnId: input.turnId,
     text: finalText,
     words: finalCount,
+    ...(fallback ? { fallback } : {}),
   });
   const inSeq = input.eventSeqStart ?? 0;
   emit({

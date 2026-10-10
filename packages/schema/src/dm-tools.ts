@@ -266,6 +266,7 @@ export const DMToolErrorCodeSchema = z.enum([
   'dc-out-of-range',
   'turn-budget-exhausted',
   'lookup-budget-exhausted',
+  'scene-already-closed',
 ]);
 export type DMToolErrorCode = z.infer<typeof DMToolErrorCodeSchema>;
 export const DMToolResultSchema = z.union([
