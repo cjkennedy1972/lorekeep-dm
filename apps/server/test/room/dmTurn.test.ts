@@ -423,7 +423,10 @@ describe('Room solo DM turn lifecycle', () => {
           state: {},
           turnSeed: '0x0000000000000001',
           usage: { in: 1, out: 1 },
-          clarification: { actionId: request.actionId, question: 'Which door?' },
+          clarification: {
+            actionId: request.actionId,
+            question: 'Which door?',
+          },
         } as never;
       },
     };
@@ -437,7 +440,9 @@ describe('Room solo DM turn lifecycle', () => {
         bystanderMessages.push(message as { type: string; payload?: unknown }),
     });
     const actionId = randomUUID();
-    expect(await room.submitAction(owner, actionId, 'open the door')).toBe(true);
+    expect(await room.submitAction(owner, actionId, 'open the door')).toBe(
+      true,
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
     const queuedBefore = bystanderMessages.filter(
       (m) => m.type === 'ActionQueued',
