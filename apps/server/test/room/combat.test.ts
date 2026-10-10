@@ -142,9 +142,7 @@ describe('Room combat command seam', () => {
     const engaged: RoomCombatState = {
       ...combat,
       entities: combat.entities.map((entity) =>
-        entity.id === 'ent_hero'
-          ? { ...entity, pos: { x: 4, y: 1 } }
-          : entity,
+        entity.id === 'ent_hero' ? { ...entity, pos: { x: 4, y: 1 } } : entity,
       ),
       concentration: { ent_goblin: 'srd:spell/bless' },
     };

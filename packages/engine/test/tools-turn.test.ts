@@ -57,19 +57,37 @@ const attackArgs = {
 const turnOf = (activeEntityId: string, action = true) => ({
   activeEntityId,
   resources: {
-    ent_hero: { action, bonusAction: true, reaction: true, movementRemaining: 30 },
-    ent_goblin: { action: true, bonusAction: true, reaction: true, movementRemaining: 30 },
+    ent_hero: {
+      action,
+      bonusAction: true,
+      reaction: true,
+      movementRemaining: 30,
+    },
+    ent_goblin: {
+      action: true,
+      bonusAction: true,
+      reaction: true,
+      movementRemaining: 30,
+    },
   },
 });
 
 describe('attack turn and action economy', () => {
   test('rejects an attack by an actor who is not active', () => {
-    const result = executeAttack(attackState(turnOf('ent_goblin')), attackArgs, rng);
+    const result = executeAttack(
+      attackState(turnOf('ent_goblin')),
+      attackArgs,
+      rng,
+    );
     expect(result).toMatchObject({ ok: false, error: 'not-actors-turn' });
   });
 
   test('rejects a second action in the same turn', () => {
-    const result = executeAttack(attackState(turnOf('ent_hero', false)), attackArgs, rng);
+    const result = executeAttack(
+      attackState(turnOf('ent_hero', false)),
+      attackArgs,
+      rng,
+    );
     expect(result).toMatchObject({ ok: false, error: 'action-spent' });
   });
 });

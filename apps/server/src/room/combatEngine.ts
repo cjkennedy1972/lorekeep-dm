@@ -193,7 +193,10 @@ export function withHp(state: RoomCombatState, events: readonly Ev[]) {
       entities = entities.map((e) =>
         e.id === event.entityId ? { ...e, hp: Number(event.to) } : e,
       );
-      if (Number(event.to) < Number(event.from) && concentration?.[String(event.entityId)])
+      if (
+        Number(event.to) < Number(event.from) &&
+        concentration?.[String(event.entityId)]
+      )
         concentration = { ...concentration, [String(event.entityId)]: null };
     }
   return { ...state, entities, ...(concentration ? { concentration } : {}) };
