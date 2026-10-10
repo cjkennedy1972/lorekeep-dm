@@ -25,4 +25,12 @@ Status: Proposed (human decision 2026-10-06: 30-day log retention) · Date: 2026
 
 **Consequences.** Abuse investigations older than 30 days are impossible without a hold. Redaction is the only mutation of an otherwise append-only log.
 
+**Known limits (account deletion).**
+- A session with a live Room on another node defers deletion until the room is idle or its lease expires; the sweeper never evicts it.
+- The sweeper defers on any live lease for the session, with no preemption.
+- The deletion transaction sets no `lock_timeout`; a blocked lock waits rather than failing fast.
+- Archive file removal runs inside the transaction. It is idempotent, so a rollback at worst leaves an export row whose archive is already gone.
+- A pending room whose `start()` has not completed fails closed: deletion defers.
+- Exact-string scrubbing removes typed text and character names from derived rows. LLM paraphrases of them in scene summaries and registry facts are not scrubbed.
+
 **Needs human?** Legal-hold policy (deferred, architecture §17).
