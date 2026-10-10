@@ -14,7 +14,7 @@
     "@game/schema": "workspace:*",
     "@game/server": "workspace:*",
     "pg": "8.16.3",
-    "ws": "8.18.3"
+    "ws": "8.21.0"
   },
   "devDependencies": {
     "@types/node": "26.0.0",
