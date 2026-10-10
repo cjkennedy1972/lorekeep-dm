@@ -164,4 +164,64 @@ describe('account deletion honors legal holds', () => {
       await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, coSeat]]);
     }
   });
+
+  it('a held export does not drain the live rooms of the held deletion', async () => {
+    const gone = await account('deleting', 'DrainGone');
+    const heir = await account('active', 'DrainCoPlayer');
+    const session = randomUUID();
+    const exportId = randomUUID();
+    const dir = await mkdtemp(join(tmpdir(), 'acct-drain-hold-'));
+    await q('INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)', [
+      session,
+      gone,
+      'Drained',
+    ]);
+    await seat(session, gone, 1);
+    await seat(session, heir, 2);
+    await q(
+      "INSERT INTO export_jobs(id,account_id,status,expires_at,archive_key) VALUES($1,$2,'completed',now() + interval '1 day',$3)",
+      [exportId, gone, `${exportId}.json`],
+    );
+    await new LocalObjectStore(dir).put(`${exportId}.json`, '{}');
+    await q("INSERT INTO legal_holds(kind,item_id) VALUES('export',$1)", [
+      exportId,
+    ]);
+    const drained: string[] = [];
+    const drainRoom = async (id: string) => {
+      drained.push(id);
+    };
+    try {
+      await runSweep(pool, {
+        store: new LocalObjectStore(dir),
+        log,
+        drainRoom,
+      });
+      await runSweep(pool, {
+        store: new LocalObjectStore(dir),
+        log,
+        drainRoom,
+      });
+      expect(drained).not.toContain(session);
+      expect(
+        await q('SELECT status FROM accounts WHERE id=$1', [gone]),
+      ).toEqual([{ status: 'deleting' }]);
+
+      await q("DELETE FROM legal_holds WHERE kind='export' AND item_id=$1", [
+        exportId,
+      ]);
+      await runSweep(pool, {
+        store: new LocalObjectStore(dir),
+        log,
+        drainRoom,
+      });
+      expect(drained).toContain(session);
+      expect(
+        await q('SELECT 1 FROM accounts WHERE id=$1', [gone]),
+      ).toHaveLength(0);
+    } finally {
+      await q('DELETE FROM legal_holds WHERE item_id=$1', [exportId]);
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, heir]]);
+    }
+  });
 });

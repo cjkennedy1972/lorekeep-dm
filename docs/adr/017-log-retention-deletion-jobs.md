@@ -31,6 +31,10 @@ Status: Proposed (human decision 2026-10-06: 30-day log retention) · Date: 2026
 - The deletion transaction sets no `lock_timeout`; a blocked lock waits rather than failing fast.
 - Archive file removal runs inside the transaction. It is idempotent, so a rollback at worst leaves an export row whose archive is already gone.
 - A pending room whose `start()` has not completed fails closed: deletion defers.
-- Exact-string scrubbing removes typed text and character names from derived rows. LLM paraphrases of them in scene summaries and registry facts are not scrubbed.
+- Derived-row scrubbing (scene summaries, registry entries and facts, `search_document`) removes only deleted character names. Typed text and LLM paraphrases of it in derived memory are not scrubbed.
+- Character-name scrubbing matches whole words, case-insensitively. Names shorter than 4 characters are not scrubbed. A name that clashes with another name in the session is skipped rather than guessed at.
+- Replacement keeps the same length (asterisks), so scrubbing cannot grow a row past its CHECK length limits.
+- A held deletion is checked for holds before any room is drained, so a held export or session does not drain live rooms.
+- There is no admin path to clear a legal hold. Clearing is a manual database action until a follow-up card adds one.
 
-**Needs human?** Legal-hold policy (deferred, architecture §17).
+**Needs human?** Legal-hold policy and an admin hold-clear path (deferred, architecture §17; follow-up card).
