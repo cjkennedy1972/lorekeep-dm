@@ -410,4 +410,87 @@ describe('Room solo DM turn lifecycle', () => {
       vi.useRealTimers();
     }
   });
+
+  it('tells every room member when a clarified action resumes after an answer', async () => {
+    let calls = 0;
+    const runner: SoloTurnRunner = {
+      async run(request) {
+        calls++;
+        if (calls > 1) return result as never;
+        return {
+          narration: '',
+          events: [],
+          state: {},
+          turnSeed: '0x0000000000000001',
+          usage: { in: 1, out: 1 },
+          clarification: { actionId: request.actionId, question: 'Which door?' },
+        } as never;
+      },
+    };
+    const { room } = setup(runner);
+    const owner = randomUUID();
+    const bystander = randomUUID();
+    const bystanderMessages: { type: string; payload?: unknown }[] = [];
+    await room.join(owner, { send() {} });
+    await room.join(bystander, {
+      send: (message) =>
+        bystanderMessages.push(message as { type: string; payload?: unknown }),
+    });
+    const actionId = randomUUID();
+    expect(await room.submitAction(owner, actionId, 'open the door')).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const queuedBefore = bystanderMessages.filter(
+      (m) => m.type === 'ActionQueued',
+    ).length;
+    expect(await room.answerClarification(owner, actionId, 'left')).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      bystanderMessages.filter((m) => m.type === 'ActionQueued').length,
+    ).toBeGreaterThan(queuedBefore);
+  });
+
+  it('tells every room member when a clarified action is dropped on timeout', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const runner: SoloTurnRunner = {
+        async run(request) {
+          return {
+            narration: '',
+            events: [],
+            state: {},
+            turnSeed: '0x0000000000000001',
+            usage: { in: 1, out: 1 },
+            clarification: {
+              actionId: request.actionId,
+              question: 'Which door?',
+            },
+          } as never;
+        },
+      };
+      const { room } = setup(runner);
+      const owner = randomUUID();
+      const bystander = randomUUID();
+      const bystanderMessages: { type: string; payload?: unknown }[] = [];
+      await room.join(owner, { send() {} });
+      await room.join(bystander, {
+        send: (message) =>
+          bystanderMessages.push(
+            message as { type: string; payload?: unknown },
+          ),
+      });
+      const actionId = randomUUID();
+      expect(await room.submitAction(owner, actionId, 'open the door')).toBe(
+        true,
+      );
+      await vi.advanceTimersByTimeAsync(CLARIFICATION_TIMEOUT_MS);
+      expect(bystanderMessages).toContainEqual(
+        expect.objectContaining({
+          type: 'ActionWithdrawn',
+          payload: { actionId },
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

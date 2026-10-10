@@ -554,6 +554,11 @@ export class Room {
         playerName: open.playerName,
         clarificationAsked: true,
       });
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionQueued',
+        payload: { actionId },
+      } as ServerMessage);
       this.kickQueue();
       return true;
     });
