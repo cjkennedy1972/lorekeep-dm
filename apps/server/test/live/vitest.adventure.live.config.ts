@@ -1,9 +1,10 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
-// Existing combat live browser harness; Adventure #1 owns its restartable config.
 export default defineConfig({
+  root: resolve('apps/server'),
   test: {
-    include: ['test/live/serve.live.ts'],
+    include: ['test/live/serve.adventure.live.ts'],
     testTimeout: 0,
     hookTimeout: 120_000,
   },
