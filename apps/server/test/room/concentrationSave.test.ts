@@ -99,4 +99,44 @@ describe('concentration after damage', () => {
       ).breakdown.total;
     expect(total(tough)).toBe(total(plain) + 5);
   });
+
+  it('uses the recorded CON save bonus, which carries proficiency', () => {
+    const state = stateWith(3);
+    state.entities[0] = { ...state.entities[0]!, saves: { con: 6 } };
+    const next = withHp(state, [hit(40, 36)]);
+    const roll = next.events.find((e) => e.type === 'RollEvent') as {
+      breakdown: { modifiers: { label: string; value: number }[] };
+    };
+    expect(roll.breakdown.modifiers).toEqual([
+      { label: 'constitution', value: 6 },
+    ]);
+  });
+
+  it('replays identical save outcomes from the same seed and damage', () => {
+    const run = () =>
+      withHp(stateWith(42), [hit(40, 36), hit(36, 30), hit(30, 24)]);
+    expect(run()).toEqual(run());
+  });
+
+  it('continues the RNG cursor from the previous save', () => {
+    const seed = seedWhere(4, true);
+    const first = withHp(stateWith(seed), [hit(40, 36)]);
+    const second = withHp(first.state, [hit(36, 30)]);
+    const expected = concentrationSave(
+      'ent_goblin',
+      6,
+      0,
+      first.state.seed!,
+      spellState,
+    );
+    if (!('ok' in expected)) throw new Error(expected.hint);
+    const secondRoll = second.events.find((e) => e.type === 'RollEvent') as {
+      breakdown: { total: number };
+    };
+    const expectedRoll = expected.events[0] as {
+      breakdown: { total: number };
+    };
+    expect(secondRoll.breakdown.total).toBe(expectedRoll.breakdown.total);
+    expect(second.state.seed).toBe(expected.rng);
+  });
 });

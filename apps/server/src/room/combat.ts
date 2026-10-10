@@ -7,6 +7,7 @@ import {
   attack,
   moveAlong,
   type Catalog,
+  type RollBreakdown,
 } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/room-tools';
 import {
@@ -321,6 +322,21 @@ export function toWireEvent(
 ): Record<string, unknown> {
   if (event.type === 'SlotSpent' && event.level === undefined)
     return { ...event, level: event.slotLevel };
+  if (event.type === 'RollEvent' && event.breakdown) {
+    const roll = event.breakdown as RollBreakdown;
+    return {
+      type: 'RollEvent',
+      actorId: event.entityId,
+      label: `${String(event.kind)} ${String(event.attackId ?? event.spellId)}`,
+      dice: roll.expression,
+      rolls: roll.dice.filter((die) => die.kept).map((die) => die.value),
+      modifier: roll.modifiers.reduce((sum, m) => sum + m.value, 0),
+      total: roll.total,
+      ...(event.dc === undefined
+        ? {}
+        : { dc: event.dc, success: event.success }),
+    };
+  }
   return { ...event };
 }
 
