@@ -236,9 +236,19 @@ test('logged-out join link: login returns to the join and the lobby opens', asyn
 test('verify: valid token succeeds, bad token reports failure', async () => {
   useJar();
   const { unmount } = renderApp('/verify?token=valid-token');
+  await userEvent.type(
+    screen.getByLabelText('Password'),
+    'a-brand-new-password',
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Verify email' }));
   expect(await screen.findByText(/email is verified/i)).toBeInTheDocument();
   unmount();
   renderApp('/verify?token=stale');
+  await userEvent.type(
+    screen.getByLabelText('Password'),
+    'a-brand-new-password',
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Verify email' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(
     /invalid or has expired/i,
   );

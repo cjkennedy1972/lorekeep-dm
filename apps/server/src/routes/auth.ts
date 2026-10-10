@@ -460,20 +460,20 @@ export function registerAuthRoutes(
       throw error;
     }
   });
-  const verify = async (
-    request: { query?: unknown; body?: unknown },
-    reply: { code: (status: number) => { send: (body: unknown) => unknown } },
-  ) => {
-    const source = request.body ?? request.query;
-    const token =
-      typeof source === 'object' && source !== null && 'token' in source
-        ? source.token
-        : undefined;
-    const ok = typeof token === 'string' && (await verifyEmail(db, token));
+  app.post('/api/verify-email', async (request, reply) => {
+    const body = (request.body ?? {}) as {
+      token?: unknown;
+      password?: unknown;
+    };
+    if (typeof body.password !== 'string' || !validPassword(body.password))
+      return reply.code(400).send({
+        message: 'Use at least 12 characters, and not a common password.',
+      });
+    const ok =
+      typeof body.token === 'string' &&
+      (await verifyEmail(db, body.token, body.password));
     return reply.code(ok ? 200 : 400).send({
       message: ok ? 'Email verified' : 'Invalid or expired verification link',
     });
-  };
-  app.get('/api/verify-email', verify);
-  app.post('/api/verify-email', verify);
+  });
 }

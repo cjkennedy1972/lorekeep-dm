@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { MemoryEmailSender } from '../../src/email/sender.js';
 import { signup, underageResponse } from '../../src/accounts/signup.js';
 import { verifyEmail } from '../../src/accounts/verify.js';
+import { login } from '../../src/accounts/login.js';
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 afterAll(async () => db.end());
 const input = (email: string, birthdate = '1990-01-01') => ({
@@ -72,17 +73,37 @@ describe('signup persistence', () => {
     );
     expect(columns.rows).toEqual([]);
     const token = sender.messages[0]!.token;
-    expect(await verifyEmail(db, token)).toBe(true);
-    expect(await verifyEmail(db, token)).toBe(false);
+    expect(await verifyEmail(db, token, 'victim-password-456')).toBe(true);
+    expect(await verifyEmail(db, token, 'victim-password-456')).toBe(false);
     await db.query(
       "UPDATE email_tokens SET used_at=NULL, expires_at=now()-interval '1 second' WHERE account_id=$1",
       [account.id],
     );
-    expect(await verifyEmail(db, token)).toBe(false);
+    expect(await verifyEmail(db, token, 'victim-password-456')).toBe(false);
     expect(
       (await db.query('SELECT status FROM accounts WHERE id=$1', [account.id]))
         .rows[0].status,
     ).toBe('active');
     await db.query('DELETE FROM accounts WHERE id=$1', [account.id]);
+  });
+
+  it('activates only with the verifier-chosen password, never the signup-time one', async () => {
+    const email = `${randomUUID()}@example.test`;
+    const sender = new MemoryEmailSender();
+    await signup(
+      db,
+      sender,
+      { ...input(email), password: 'attacker-password-123' },
+      { cookieSecret: 'test-secret' },
+    );
+    const token = sender.messages[0]!.token;
+    expect(await verifyEmail(db, token, 'victim-password-456')).toBe(true);
+    expect((await login(db, email, 'attacker-password-123', 'test')).kind).toBe(
+      'invalid',
+    );
+    expect((await login(db, email, 'victim-password-456', 'test')).kind).toBe(
+      'ok',
+    );
+    await db.query('DELETE FROM accounts WHERE email=$1', [email]);
   });
 });

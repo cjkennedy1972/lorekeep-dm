@@ -129,6 +129,8 @@ test('login: same error for unknown email and wrong password; keyboard login ret
 
 test('verify and reset pages work end to end', async ({ page }) => {
   await page.goto('/verify?token=valid-token');
+  await page.getByLabel('Password').fill('a-brand-new-password');
+  await page.getByRole('button', { name: 'Verify email' }).click();
   await expect(page.getByText(/email is verified/i)).toBeVisible();
   await page.goto('/reset?token=valid-token');
   await page.getByLabel('New password').fill('a-brand-new-password');
