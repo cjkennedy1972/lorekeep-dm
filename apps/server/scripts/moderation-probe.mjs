@@ -69,6 +69,7 @@ const moderator = new JudgeModerator({
   deterministic: {
     hardFloorCheck: () => ({ blocked: false }),
     denylistCheck: () => ({ blocked: false }),
+    maxSpanChars: 0,
   },
 });
 

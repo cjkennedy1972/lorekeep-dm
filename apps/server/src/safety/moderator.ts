@@ -7,20 +7,43 @@ import {
 export type Category = (typeof MODERATION_CATEGORIES)[number];
 export type Direction = 'input' | 'output';
 
-export interface Verdict {
+/**
+ * Which fail-closed table row applies when `unavailable` is true (ADR-023).
+ * `hard-floor` => BLOCK, `tier` => HOLD. The category is unknown on outage,
+ * so the verdict defaults to `hard-floor`; M3-10 maps this field, not `category`.
+ */
+export type FailClosedRow = 'hard-floor' | 'tier';
+
+interface VerdictBase {
   verdict: 'allow' | 'block';
   category: Category;
   source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed';
   latencyMs: number;
-  /** True when the judge could not produce a usable verdict (fail-closed). */
-  unavailable: boolean;
+}
+
+/** `unavailable` is true when the judge could not produce a usable verdict (fail-closed). */
+export type Verdict = VerdictBase &
+  (
+    | { unavailable: false }
+    | { unavailable: true; failClosedRow: FailClosedRow }
+  );
+
+export function failClosedVerdict(latencyMs: number): Verdict {
+  return {
+    verdict: 'block',
+    category: 'other',
+    source: 'failclosed',
+    latencyMs,
+    unavailable: true,
+    failClosedRow: 'hard-floor',
+  };
 }
 
 export interface ModerationRequest {
   text: string;
   tier: ContentTier;
   tableLines?: readonly string[];
-  /** Earlier text for reference only; the verdict applies to `text` alone. */
+  /** Earlier text for reference only; the verdict applies to `text` alone. Deterministic rules also scan `context + text`, so a term split across a chunk cut is seen whole. */
   context?: string;
   direction: Direction;
 }
@@ -34,10 +57,18 @@ export interface DeterministicCheckResult {
   category?: Category;
 }
 
+/**
+ * Longest span, in characters, that any deterministic rule can match. The output
+ * gate holds back this many trailing characters of each approved chunk, so a term
+ * that straddles a cut is judged before any of it is shown.
+ */
+export const MAX_RULE_SPAN_CHARS = 64;
+
 /** Rules run before any judge call; a block here is final. */
 export interface DeterministicLayer {
   hardFloorCheck(text: string): DeterministicCheckResult;
   denylistCheck(text: string): DeterministicCheckResult;
+  maxSpanChars: number;
 }
 
 export interface ChatMessage {
@@ -140,9 +171,15 @@ export class JudgeModerator implements Moderator {
   constructor(private readonly options: JudgeModeratorOptions) {
     if (
       typeof options.deterministic?.hardFloorCheck !== 'function' ||
-      typeof options.deterministic?.denylistCheck !== 'function'
+      typeof options.deterministic?.denylistCheck !== 'function' ||
+      typeof options.deterministic?.maxSpanChars !== 'number'
     ) {
       throw new Error('JudgeModerator requires a deterministic layer');
+    }
+    if (options.deterministic.maxSpanChars > MAX_RULE_SPAN_CHARS) {
+      throw new Error(
+        `deterministic rule span ${options.deterministic.maxSpanChars} chars exceeds the ${MAX_RULE_SPAN_CHARS}-char hold-back`,
+      );
     }
     this.timeoutMs = options.timeoutMs ?? DEFAULT_JUDGE_TIMEOUT_MS;
     this.now = options.now ?? (() => performance.now());
@@ -151,27 +188,21 @@ export class JudgeModerator implements Moderator {
   async moderate(req: ModerationRequest): Promise<Verdict> {
     const started = this.now();
     const elapsed = () => this.now() - started;
-    const failClosed = (): Verdict => ({
-      verdict: 'block',
-      category: 'other',
-      source: 'failclosed',
-      latencyMs: elapsed(),
-      unavailable: true,
-    });
 
     let rule: { category: Category; source: 'hardfloor' | 'denylist' } | null =
       null;
+    const window = (req.context ?? '') + req.text;
     try {
-      const hard = this.options.deterministic.hardFloorCheck(req.text);
+      const hard = this.options.deterministic.hardFloorCheck(window);
       if (hard.blocked)
         rule = { category: hard.category ?? 'other', source: 'hardfloor' };
       else {
-        const denied = this.options.deterministic.denylistCheck(req.text);
+        const denied = this.options.deterministic.denylistCheck(window);
         if (denied.blocked)
           rule = { category: denied.category ?? 'other', source: 'denylist' };
       }
     } catch {
-      return failClosed();
+      return failClosedVerdict(elapsed());
     }
     if (rule) {
       return {
@@ -183,7 +214,7 @@ export class JudgeModerator implements Moderator {
     }
 
     const judged = await this.judge(req);
-    if (judged === null) return failClosed();
+    if (judged === null) return failClosedVerdict(elapsed());
     return {
       ...judged,
       source: 'judge',

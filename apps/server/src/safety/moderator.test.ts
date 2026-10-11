@@ -13,6 +13,7 @@ import { MODERATION_SECTIONS } from './moderationRubric.generated.js';
 const NOOP: DeterministicLayer = {
   hardFloorCheck: () => ({ blocked: false }),
   denylistCheck: () => ({ blocked: false }),
+  maxSpanChars: 0,
 };
 const ALLOW = '{"verdict":"allow","category":"none"}';
 
@@ -262,6 +263,7 @@ describe('deterministic layer', () => {
     const deterministic: DeterministicLayer = {
       hardFloorCheck: () => ({ blocked: true, category: 'minor_sexual' }),
       denylistCheck: () => ({ blocked: false }),
+      maxSpanChars: 0,
     };
     const v = await moderatorWith(chat, deterministic).moderate(request('x'));
     expect(v).toMatchObject({
@@ -278,6 +280,7 @@ describe('deterministic layer', () => {
     const deterministic: DeterministicLayer = {
       hardFloorCheck: () => ({ blocked: false }),
       denylistCheck: () => ({ blocked: true }),
+      maxSpanChars: 0,
     };
     const v = await moderatorWith(chat, deterministic).moderate(request('x'));
     expect(v).toMatchObject({
@@ -295,6 +298,7 @@ describe('deterministic layer', () => {
     const deterministic: DeterministicLayer = {
       hardFloorCheck: () => ({ blocked: true, category: 'other' }),
       denylistCheck: () => ({ blocked: false }),
+      maxSpanChars: 0,
     };
     const v = await moderatorWith(chat, deterministic).moderate(request('x'));
     expect(v.source).toBe('hardfloor');
@@ -307,6 +311,7 @@ describe('deterministic layer', () => {
       denylistCheck: () => {
         throw new Error('scan error');
       },
+      maxSpanChars: 0,
     };
     const v = await moderatorWith(chat, deterministic).moderate(request('x'));
     expect(v).toMatchObject({
@@ -426,5 +431,30 @@ describe('golden plumbing on boundary-100 (fake judge, not accuracy)', () => {
         source: 'judge',
       });
     }
+  });
+});
+
+describe('fail-closed row', () => {
+  it('a judge outage carries the hard-floor row so the caller blocks rather than holds', async () => {
+    const moderator = new JudgeModerator({
+      chat: async () => {
+        throw new Error('endpoint down');
+      },
+      deterministic: {
+        hardFloorCheck: () => ({ blocked: false }),
+        denylistCheck: () => ({ blocked: false }),
+        maxSpanChars: 0,
+      },
+    });
+    const verdict = await moderator.moderate({
+      text: 'Hi.',
+      tier: 'family',
+      direction: 'output',
+    });
+    expect(verdict).toMatchObject({
+      verdict: 'block',
+      unavailable: true,
+      failClosedRow: 'hard-floor',
+    });
   });
 });
