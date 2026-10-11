@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.6';
+export const HARD_FLOOR_VERSION = '2026-10-10.7';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
 export const MAX_INPUT_CHARS = 20_000;
@@ -555,7 +555,7 @@ const MAX_TERM_CHARS = 24;
 
 const PROXIMITY = HARD_FLOOR_RULES['minor-sexual.proximity'];
 const UNIT_AFTER = `(?!\\s*(?:${[...QUANTITY_UNITS].join('|')})${WORD_END})`;
-const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*)?(?:and\\s+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
+const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:and\\s+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
 /**
  * "Mira 12, ..." / "Mira; 12 ..." after a letter. Punctuation separators need no tail;
  * a bare space needs a sexual or undress word right after the number (plus optional "and"),
@@ -623,10 +623,10 @@ function normalizeText(input: string): string {
   const folded = input
     .normalize('NFKD')
     .replace(/\p{M}+/gu, '')
-    .replace(/(?<=[\p{L}])\p{Cf}+(?=\p{N})/gu, ' ')
+    .replace(/(?<=\p{L})\p{Cf}+(?=\p{N})|(?<=\p{N})\p{Cf}+(?=\p{L})/gu, ' ')
     .replace(/\p{Cf}+/gu, '')
     .toLowerCase()
-    .replace(/(?<=\p{L})['’‘ʼ`´′]s(?!\p{L})/gu, '');
+    .replace(/(?<=\p{L})['’‘ʼʻʹꞌ`´′]s(?!\p{L})/gu, '');
   let s = '';
   for (const c of folded) s += CONFUSABLE.get(c) ?? UNICODE_DIGIT.get(c) ?? c;
   s = s.replace(/@/g, 'a').replace(/\$/g, 's').replace(/\*/g, 'e');
@@ -738,7 +738,9 @@ function scan(words: string[]): {
             (prev === 's' && inIndex(MINOR, prev2)) ||
             inIndex(MINOR, next) ||
             inIndex(YOUTH_WORD, prev) ||
-            inIndex(YOUTH_WORD, next)
+            inIndex(YOUTH_WORD, next) ||
+            (YOUTH_PREFIX.has(prev2) && inIndex(YOUTH_NOUN, prev)) ||
+            (prev === 's' && YOUTH_PREFIX.has(prev3) && inIndex(YOUTH_NOUN, prev2))
           )
             sexualHere = true;
         } else if (inIndex(LAID, w) && inIndex(LAID_BEFORE, prev))
