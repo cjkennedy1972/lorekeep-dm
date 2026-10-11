@@ -17,6 +17,7 @@ import {
   tokenFromCookie,
 } from '../accounts/sessions.js';
 import { authenticateRequest } from '../middleware/auth.js';
+import { hardFloorBlocked } from '../safety/hardFloorGate.js';
 import { validOrigin } from '../middleware/origin.js';
 import {
   LoginInputSchema,
@@ -261,6 +262,11 @@ export function registerAuthRoutes(
       return reply
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Enter a display name.' });
+    if (hardFloorBlocked(name, 'display-name', request.log, session.account_id))
+      return reply.code(400).send({
+        code: 'CONTENT_REJECTED',
+        message: 'That display name cannot be used.',
+      });
     const a = (
       await db.query(
         'UPDATE accounts SET display_name=$2 WHERE id=$1 RETURNING id,email,display_name,is_adult,age_checked_at',
@@ -483,6 +489,11 @@ export function registerAuthRoutes(
     const parsed = signupSchema.safeParse(request.body);
     if (!parsed.success)
       return reply.code(400).send({ message: 'Invalid signup details' });
+    if (hardFloorBlocked(parsed.data.displayName, 'display-name', request.log))
+      return reply.code(400).send({
+        code: 'CONTENT_REJECTED',
+        message: 'That display name cannot be used.',
+      });
     const email = parsed.data.email.trim().toLowerCase();
     if (limited(`ip:${request.ip}`) || limited(`email:${email}`))
       return reply.code(429).send({ message: 'Too many requests' });

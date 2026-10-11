@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import type { registerAuthRoutes } from './auth.js';
 import type { Pool } from 'pg';
+import { hardFloorBlocked } from '../safety/hardFloorGate.js';
 import { CreateRoomInputSchema, type RoomInfo } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import { tokenFromCookie } from '../accounts/sessions.js';
@@ -96,6 +97,13 @@ export function registerSessionRoutes(
         return reply
           .code(400)
           .send({ code: 'INVALID_INPUT', message: 'Enter a table name.' });
+      if (
+        hardFloorBlocked(parsed.data.name, 'room-name', request.log, accountId)
+      )
+        return reply.code(400).send({
+          code: 'CONTENT_REJECTED',
+          message: 'That table name cannot be used.',
+        });
       if (createHits.hit(accountId) > createPerHour)
         return reply.code(429).send({
           code: 'RATE_LIMITED',

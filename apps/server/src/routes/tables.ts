@@ -11,6 +11,7 @@ import { adventure01RegistrySeed } from '@game/rules-engine/adventure-node';
 import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import { RegistryMemory } from '../dm/memory.js';
 import { authenticateRequest } from '../middleware/auth.js';
+import { hardFloorBlocked } from '../safety/hardFloorGate.js';
 import { buildResumeRecap } from '../dm/recap.js';
 import {
   createConfiguredAdapter,
@@ -87,6 +88,19 @@ export function registerTableRoutes(
           'Check the table, adventure, difficulty and character choices.',
       });
     const body = parsed.data;
+    if (
+      body.character &&
+      hardFloorBlocked(body.character.name, 'character', request.log, accountId)
+    )
+      return reply.code(400).send({
+        code: 'CONTENT_REJECTED',
+        message: 'That character name cannot be used.',
+      });
+    if (hardFloorBlocked(body.name, 'table-name', request.log, accountId))
+      return reply.code(400).send({
+        code: 'CONTENT_REJECTED',
+        message: 'That table name cannot be used.',
+      });
     if (body.adventureId !== adventureData.id)
       return reply.code(400).send({
         code: 'ADVENTURE_UNAVAILABLE',
