@@ -112,6 +112,12 @@ export class Persistence {
         'UPDATE sessions SET last_active_at=now() WHERE id=$1',
         [sessionId],
       );
+      for (const event of events)
+        if (event.type === 'ContentTierChanged')
+          await client.query(
+            'UPDATE sessions SET content_tier=$2 WHERE id=$1 AND content_tier IS DISTINCT FROM $2',
+            [sessionId, (event.payload as { to: string }).to],
+          );
       const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
       return { events: inserted, snapshot };
     });

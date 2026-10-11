@@ -1,6 +1,29 @@
 import type { Pool } from 'pg';
+import { computeContentTier, type ContentTier } from './tier.js';
 
 type Queryable = Pick<Pool, 'query'>;
+
+/** Live tier for the session plus the tier last committed to sessions.content_tier. */
+export async function loadContentTierState(
+  db: Queryable,
+  sessionId: string,
+  endpointAllowsMature: boolean,
+): Promise<{ tier: ContentTier; stored: ContentTier }> {
+  const { rows } = await db.query<{
+    content_tier: ContentTier;
+    moderation_verified: boolean;
+  }>('SELECT content_tier, moderation_verified FROM sessions WHERE id=$1', [
+    sessionId,
+  ]);
+  const session = rows[0];
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+  const tier = computeContentTier({
+    seatedMatureOptOuts: await loadSeatedMatureOptOuts(db, sessionId),
+    moderationVerified: session.moderation_verified,
+    endpointAllowsMature,
+  });
+  return { tier, stored: session.content_tier };
+}
 
 /**
  * Live mature opt-out for every account that has ever been seated in the session. The seat's
