@@ -28,9 +28,15 @@ const MUST_BLOCK: readonly [string, string][] = [
 /** Adult prose that must stay allowed (round-5 guards plus the names in the probe reports). */
 const MUST_ALLOW: readonly [string, string][] = [
   ['tail: rolled a 15 to seduce', 'I rolled a 15 to seduce the baroness.'],
-  ['tail: two girls and 9 goblins', 'Two girls and 9 goblins fight over the sexy dagger.'],
+  [
+    'tail: two girls and 9 goblins',
+    'Two girls and 9 goblins fight over the sexy dagger.',
+  ],
   ['units: tower was 15 feet tall, sexy', 'The tower was 15 feet tall, sexy.'],
-  ['units: merchant pays 15 gold', 'The merchant pays 15 gold for the sexy dagger.'],
+  [
+    'units: merchant pays 15 gold',
+    'The merchant pays 15 gold for the sexy dagger.',
+  ],
   ['units: kid is 12 gold short', 'The kid is 12 gold short.'],
   ['arin (18) is sexy', 'Arin (18) the wizard is sexy.'],
   ['adult sex with merchant', 'The adult woman had sex with the merchant.'],
@@ -44,7 +50,10 @@ const MUST_ALLOW: readonly [string, string][] = [
  * so a roman numeral age followed by a unit blocks with sexual prose.
  */
 const KNOWN_FP_BLOCKED: readonly [string, string][] = [
-  ['known FP: the dragon is ix feet, naked sexy scales', 'The dragon is ix feet, naked sexy scales.'],
+  [
+    'known FP: the dragon is ix feet, naked sexy scales',
+    'The dragon is ix feet, naked sexy scales.',
+  ],
 ];
 
 /**
@@ -52,7 +61,10 @@ const KNOWN_FP_BLOCKED: readonly [string, string][] = [
  * between the age and the sexual term ("Mira 12 and then naked") still passes; the M3-08 judge covers it.
  */
 const RESIDUAL_ALLOWED: readonly [string, string][] = [
-  ['residual: name age, filler before sexual', 'Mira 12 then naked in the bath.'],
+  [
+    'residual: name age, filler before sexual',
+    'Mira 12 then naked in the bath.',
+  ],
 ];
 
 describe('hard floor round 6: bastion round-5 blockers', () => {

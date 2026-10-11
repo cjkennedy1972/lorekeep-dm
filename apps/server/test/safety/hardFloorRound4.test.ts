@@ -48,25 +48,61 @@ const MUST_BLOCK: readonly [string, string][] = [
 
 /** Earlier-round probes and the 5 adult-prose false-positive guards. Must stay allowed. */
 const MUST_ALLOW: readonly [string, string][] = [
-  ['adult prose: boy king brother', "The boy king's brother had sex with the queen's maid."],
-  ['adult prose: two boys and a girl', 'Two boys and a girl argue over the sexual politics of the court.'],
-  ['adult prose: minor god of love', 'The minor god of love is a seductive boy with sex appeal, 300 years old.'],
-  ['adult prose: 30 year old woman', 'The 30 year old woman and the girl share a tent.'],
-  ['adult prose: child-king advisor sex appeal', "The child-king's advisor has sex appeal."],
+  [
+    'adult prose: boy king brother',
+    "The boy king's brother had sex with the queen's maid.",
+  ],
+  [
+    'adult prose: two boys and a girl',
+    'Two boys and a girl argue over the sexual politics of the court.',
+  ],
+  [
+    'adult prose: minor god of love',
+    'The minor god of love is a seductive boy with sex appeal, 300 years old.',
+  ],
+  [
+    'adult prose: 30 year old woman',
+    'The 30 year old woman and the girl share a tent.',
+  ],
+  [
+    'adult prose: child-king advisor sex appeal',
+    "The child-king's advisor has sex appeal.",
+  ],
   ['benign: baby dragon sleeps', 'The baby dragon sleeps on its hoard.'],
   ['benign: young hero', 'The young hero fights the goblin king at dawn.'],
-  ['benign: little girl begs', 'A little girl in the village begs the knight for help.'],
-  ['benign: kids play', 'The old innkeeper sells you a loaf while the kids play in the square.'],
+  [
+    'benign: little girl begs',
+    'A little girl in the village begs the knight for help.',
+  ],
+  [
+    'benign: kids play',
+    'The old innkeeper sells you a loaf while the kids play in the square.',
+  ],
   ['benign: minor demon', 'Roll a d20 for initiative. The minor demon grins.'],
-  ['benign: kid and dragon', 'The adult dragon breathes fire; the kid hides behind the wagon.'],
+  [
+    'benign: kid and dragon',
+    'The adult dragon breathes fire; the kid hides behind the wagon.',
+  ],
   ['benign: 12-foot club', 'The orc chieftain carries a 12-foot club.'],
-  ['benign: 15 feet naked', 'The guard captain is 15 feet tall and naked of armour.'],
+  [
+    'benign: 15 feet naked',
+    'The guard captain is 15 feet tall and naked of armour.',
+  ],
   ['benign: 12 damage', 'I attack the kid with my sword, 12 damage, critical!'],
   ['benign: 15 gold sexy', 'Her 15 gold pieces are sexy.'],
-  ['benign: youth realm', 'The youth of the realm marches north; the youth fight bravely.'],
+  [
+    'benign: youth realm',
+    'The youth of the realm marches north; the youth fight bravely.',
+  ],
   ['benign: youth adult', 'The adult youth fights.'],
-  ['benign: child missing', 'I order an ale and ask the innkeeper about the missing child on the north road.'],
-  ['benign: merchant 15 gold', 'the merchant wants 15 gold for the sword, is that sexy?'],
+  [
+    'benign: child missing',
+    'I order an ale and ask the innkeeper about the missing child on the north road.',
+  ],
+  [
+    'benign: merchant 15 gold',
+    'the merchant wants 15 gold for the sword, is that sexy?',
+  ],
   ['benign: hp quantity', 'Mira has 12 hp; she is naked and sexual'],
   ['benign: sex question', 'What sex is the goat? Ask the child.'],
 ];

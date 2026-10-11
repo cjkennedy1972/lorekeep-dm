@@ -579,7 +579,14 @@ const UNDRESS = termIndex(PROXIMITY.undressTerms);
 const UNDRESS_OBJECT = new Set<string>(PROXIMITY.undressObjects);
 const MAKE = termIndex(['make', 'makes', 'made', 'making']);
 const CLOTHES = termIndex(['clothes', 'clothing', 'garments', 'underwear']);
-const POSSESSIVE = new Set<string>(['her', 'his', 'their', 'its', 'my', 'your']);
+const POSSESSIVE = new Set<string>([
+  'her',
+  'his',
+  'their',
+  'its',
+  'my',
+  'your',
+]);
 const REMOVE = termIndex([
   'remove',
   'removes',
