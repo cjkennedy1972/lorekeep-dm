@@ -201,6 +201,24 @@ describe('live mode guard', () => {
       checkLiveUrl('http://LOCALHOST:11434/v1', 'localhost:11434').hostname,
     ).toBe('localhost');
   });
+
+  it('shared URL corpus verdicts (differential partner: apps/server test/llm/live-url-differential.test.ts)', () => {
+    const corpus = data('live-url-corpus.json') as {
+      id: string;
+      url: string;
+      allow: string[];
+      expect: 'allow' | 'deny';
+    }[];
+    for (const c of corpus) {
+      let verdict: 'allow' | 'deny' = 'allow';
+      try {
+        checkLiveUrl(c.url, c.allow.join(','));
+      } catch {
+        verdict = 'deny';
+      }
+      expect(verdict, c.id).toBe(c.expect);
+    }
+  });
 });
 
 describe('live mode', () => {

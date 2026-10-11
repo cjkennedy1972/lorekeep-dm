@@ -15,10 +15,6 @@ import WebSocket from 'ws';
 
 const serverDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl)
-  fail('DATABASE_URL must point at a scratch Postgres database');
-if (!existsSync(join(serverDir, 'dist/main.js')))
-  fail('dist/main.js missing: run `pnpm -r build` first');
 
 const secrets = {
   ageRetry: randomBytes(32).toString('base64url'),
@@ -42,6 +38,11 @@ function fail(message) {
   console.error(`SMOKE FAIL: ${redact(message)}`);
   process.exit(1);
 }
+
+if (!databaseUrl)
+  fail('DATABASE_URL must point at a scratch Postgres database');
+if (!existsSync(join(serverDir, 'dist/main.js')))
+  fail('dist/main.js missing: run `pnpm -r build` first');
 
 const freePort = () =>
   new Promise((resolve, reject) => {

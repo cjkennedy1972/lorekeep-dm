@@ -1,0 +1,332 @@
+[
+  {
+    "id": "public-https-default-port",
+    "url": "https://api.example.com/v1",
+    "allow": [],
+    "expect": "allow"
+  },
+  {
+    "id": "public-https-443",
+    "url": "https://api.example.com:443/v1",
+    "allow": [],
+    "expect": "allow"
+  },
+  {
+    "id": "public-https-9999",
+    "url": "https://api.example.com:9999/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "public-https-80",
+    "url": "https://api.example.com:80/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "public-http-unlisted",
+    "url": "http://api.example.com/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "ftp-scheme",
+    "url": "ftp://api.example.com/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "userinfo-https",
+    "url": "https://user:pw@api.example.com/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "userinfo-listed-http",
+    "url": "http://user@localhost:11434/v1",
+    "allow": ["localhost:11434"],
+    "expect": "deny"
+  },
+  {
+    "id": "case-host-https",
+    "url": "https://Api.Example.COM/v1",
+    "allow": [],
+    "expect": "allow"
+  },
+  {
+    "id": "trailing-dot-public",
+    "url": "https://api.example.com./v1",
+    "allow": [],
+    "expect": "allow"
+  },
+  {
+    "id": "trailing-dot-public-port",
+    "url": "https://api.example.com.:9999/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "idn-public-punycode",
+    "url": "https://bücher.example/v1",
+    "allow": [],
+    "expect": "allow"
+  },
+  {
+    "id": "idn-listed-punycode-entry",
+    "url": "http://bücher.example:11434/v1",
+    "allow": ["xn--bcher-kva.example:11434"],
+    "expect": "allow"
+  },
+  {
+    "id": "idn-listed-unicode-entry",
+    "url": "http://bücher.example:11434/v1",
+    "allow": ["bücher.example:11434"],
+    "expect": "deny"
+  },
+  {
+    "id": "localhost-http-bare-unlisted",
+    "url": "http://localhost:11434/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "localhost-http-host-port",
+    "url": "http://localhost:11434/v1",
+    "allow": ["localhost:11434"],
+    "expect": "allow"
+  },
+  {
+    "id": "localhost-http-bare-entry-80",
+    "url": "http://localhost/v1",
+    "allow": ["localhost"],
+    "expect": "allow"
+  },
+  {
+    "id": "localhost-http-bare-entry-11434",
+    "url": "http://localhost:11434/v1",
+    "allow": ["localhost"],
+    "expect": "deny"
+  },
+  {
+    "id": "localhost-https-bare-entry-11434",
+    "url": "https://localhost:11434/v1",
+    "allow": ["localhost"],
+    "expect": "deny"
+  },
+  {
+    "id": "localhost-https-bare-entry-443",
+    "url": "https://localhost:443/v1",
+    "allow": ["localhost"],
+    "expect": "allow"
+  },
+  {
+    "id": "localhost-https-host-port",
+    "url": "https://localhost:11434/v1",
+    "allow": ["localhost:11434"],
+    "expect": "allow"
+  },
+  {
+    "id": "localhost-http-other-port",
+    "url": "http://localhost:8080/v1",
+    "allow": ["localhost:11434"],
+    "expect": "deny"
+  },
+  {
+    "id": "localhost-case-entry",
+    "url": "http://LOCALHOST:11434/v1",
+    "allow": ["localhost:11434"],
+    "expect": "allow"
+  },
+  {
+    "id": "localhost-case-entry-upper",
+    "url": "http://localhost:11434/v1",
+    "allow": ["LOCALHOST:11434"],
+    "expect": "allow"
+  },
+  {
+    "id": "localhost-trailing-dot-url",
+    "url": "http://localhost.:11434/v1",
+    "allow": ["localhost:11434"],
+    "expect": "allow"
+  },
+  {
+    "id": "localhost-trailing-dot-entry",
+    "url": "http://localhost.:11434/v1",
+    "allow": ["localhost.:11434"],
+    "expect": "deny"
+  },
+  {
+    "id": "whitespace-entry",
+    "url": "http://localhost:11434/v1",
+    "allow": [" localhost:11434 "],
+    "expect": "allow"
+  },
+  {
+    "id": "lan-http-bare-80",
+    "url": "http://172.31.25.75/v1",
+    "allow": ["172.31.25.75"],
+    "expect": "allow"
+  },
+  {
+    "id": "lan-http-bare-9999",
+    "url": "http://172.31.25.75:9999/v1",
+    "allow": ["172.31.25.75"],
+    "expect": "deny"
+  },
+  {
+    "id": "lan-http-bare-8080",
+    "url": "http://172.31.25.75:8080/v1",
+    "allow": ["172.31.25.75"],
+    "expect": "deny"
+  },
+  {
+    "id": "lan-https-bare-9999",
+    "url": "https://172.31.25.75:9999/v1",
+    "allow": ["172.31.25.75"],
+    "expect": "deny"
+  },
+  {
+    "id": "lan-https-bare-443",
+    "url": "https://172.31.25.75/v1",
+    "allow": ["172.31.25.75"],
+    "expect": "allow"
+  },
+  {
+    "id": "lan-http-host-port",
+    "url": "http://172.31.25.75:8080/v1",
+    "allow": ["172.31.25.75:8080"],
+    "expect": "allow"
+  },
+  {
+    "id": "lan-https-host-port",
+    "url": "https://172.31.25.75:8080/v1",
+    "allow": ["172.31.25.75:8080"],
+    "expect": "allow"
+  },
+  {
+    "id": "lan-host-port-mismatch",
+    "url": "http://172.31.25.75:8080/v1",
+    "allow": ["172.31.25.75:8081"],
+    "expect": "deny"
+  },
+  {
+    "id": "lan-http-port-leading-zero",
+    "url": "http://172.31.25.75:080/v1",
+    "allow": ["172.31.25.75"],
+    "expect": "allow"
+  },
+  {
+    "id": "lan-unlisted-https-private",
+    "url": "https://172.31.25.75/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "loopback-https-listed",
+    "url": "https://127.0.0.1:443/v1",
+    "allow": ["127.0.0.1"],
+    "expect": "allow"
+  },
+  {
+    "id": "loopback-https-unlisted",
+    "url": "https://127.0.0.1:443/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "loopback-short-form",
+    "url": "https://127.1/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "loopback-hex-form",
+    "url": "https://0x7f.0.0.1/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "ipv6-loopback-host-port",
+    "url": "http://[::1]:8080/v1",
+    "allow": ["[::1]:8080"],
+    "expect": "allow"
+  },
+  {
+    "id": "ipv6-loopback-port-mismatch",
+    "url": "http://[::1]:9090/v1",
+    "allow": ["[::1]:8080"],
+    "expect": "deny"
+  },
+  {
+    "id": "ipv6-loopback-bare-80",
+    "url": "http://[::1]/v1",
+    "allow": ["[::1]"],
+    "expect": "allow"
+  },
+  {
+    "id": "ipv6-zero-compressed",
+    "url": "http://[0:0::1]:8080/v1",
+    "allow": ["[::1]:8080"],
+    "expect": "allow"
+  },
+  {
+    "id": "ipv6-https-host-port",
+    "url": "https://[::1]:8080/v1",
+    "allow": ["[::1]:8080"],
+    "expect": "allow"
+  },
+  {
+    "id": "ipv6-zone-id",
+    "url": "http://[fe80::1%25en0]:8080/v1",
+    "allow": ["[fe80::1]:8080"],
+    "expect": "deny"
+  },
+  {
+    "id": "ipv4-mapped-public",
+    "url": "https://[::ffff:93.184.216.34]/v1",
+    "allow": [],
+    "expect": "allow"
+  },
+  {
+    "id": "ipv4-mapped-private-unlisted",
+    "url": "https://[::ffff:10.0.0.1]/v1",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "metadata-ipv4-https",
+    "url": "https://169.254.169.254/latest",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "metadata-ipv4-listed-http",
+    "url": "http://169.254.169.254/latest",
+    "allow": ["169.254.169.254"],
+    "expect": "deny"
+  },
+  {
+    "id": "metadata-ipv4-mapped-listed",
+    "url": "http://[::ffff:169.254.169.254]/latest",
+    "allow": ["[::ffff:169.254.169.254]"],
+    "expect": "deny"
+  },
+  {
+    "id": "metadata-ipv6-imds",
+    "url": "https://[fd00:ec2::254]/latest",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "metadata-hostname-https",
+    "url": "https://metadata.google.internal/computeMetadata",
+    "allow": [],
+    "expect": "deny"
+  },
+  {
+    "id": "metadata-hostname-listed-http",
+    "url": "http://metadata.google.internal:80/",
+    "allow": ["metadata.google.internal:80"],
+    "expect": "deny"
+  }
+]

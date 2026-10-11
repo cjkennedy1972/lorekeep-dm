@@ -147,3 +147,5 @@ Note (M3-38): local-model entries now need the port. Use `LLM_ALLOW_LOCAL_HOSTS=
 
 
 Note (M3-38 r2): bare-host `LLM_ALLOW_LOCAL_HOSTS` examples above are superseded. A bare host allows only ports 80 and 443. For a non-default port, list `host:port` exactly (for example `localhost:11434` or `172.31.25.75:8080`). This applies to the server guard, `apps/server/scripts/smoke-production.mjs`, and the live eval path (`packages/evals`).
+
+Note (M3-38 r3): the live eval path now applies the same port rule to `https:` endpoints, so `https://172.31.25.75:9999` is refused when only `172.31.25.75` is listed. It also strips a trailing dot from the URL host (as the guard does), refuses URL credentials, and refuses metadata and link-local addresses even when listed. Entries are not dot-normalized: `localhost.:11434` in the list matches nothing. The shared verdict corpus is `packages/evals/data/live-url-corpus.json`.

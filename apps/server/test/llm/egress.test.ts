@@ -326,8 +326,14 @@ describe('egress guard: operator local allowlist', () => {
   });
 
   it('keeps a single plain-http scheme check, in the guard', () => {
-    const egressSrc = readFileSync(join(__dirname, '../../src/llm/egress.ts'), 'utf8');
-    const configSrc = readFileSync(join(__dirname, '../../src/llm/config.ts'), 'utf8');
+    const egressSrc = readFileSync(
+      join(__dirname, '../../src/llm/egress.ts'),
+      'utf8',
+    );
+    const configSrc = readFileSync(
+      join(__dirname, '../../src/llm/config.ts'),
+      'utf8',
+    );
     expect(egressSrc.match(/protocol === 'http:'/g)).toHaveLength(1);
     expect(configSrc).not.toMatch(/protocol === 'http:'/);
   });
