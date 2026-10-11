@@ -43,7 +43,7 @@ describe('operator endpoint configuration', () => {
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,reason text,details jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
       );
       await db.pool.query(
         "INSERT INTO accounts VALUES($1,'op@example.test','active'),($2,'player@example.test','active')",
@@ -191,6 +191,8 @@ describe('operator endpoint configuration', () => {
         'SELECT * FROM operator_endpoint_audit ORDER BY id',
       );
       expect(audit.rows.map((row) => [row.action, row.actor_id])).toEqual([
+        ['denied', playerId],
+        ['denied', playerId],
         ['created', operatorId],
         ['updated', operatorId],
         ['tested', operatorId],
@@ -232,7 +234,7 @@ describe('operator endpoint configuration', () => {
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,reason text,details jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
       );
       await db.pool.query(
         "INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,updated_at) VALUES('fast',$1,'m','openai',$2,$3,now())",
@@ -295,7 +297,7 @@ describe('operator endpoint configuration', () => {
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,reason text,details jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
       );
       const egress = createEgressGuard({
         resolver: async () => [{ address: '93.184.216.34', family: 4 }],
@@ -343,7 +345,7 @@ describe('operator endpoint configuration', () => {
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,reason text,details jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
       );
       const egress = createEgressGuard({
         resolver: async () => [{ address: '93.184.216.34', family: 4 }],
@@ -399,7 +401,7 @@ describe('operator endpoint configuration', () => {
         `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
       );
       await db.pool.query(
-        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,reason text,details jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
       );
       await db.pool.query(
         "INSERT INTO accounts VALUES($1,'op@example.test','active')",

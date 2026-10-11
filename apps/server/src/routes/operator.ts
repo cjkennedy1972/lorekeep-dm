@@ -19,6 +19,7 @@ import {
   ENDPOINT_SLOTS,
   isOperatorAccount,
   readEndpoints,
+  recordDeniedAttempt,
   saveEndpoint,
   testEndpoint,
   type EndpointSlot,
@@ -36,6 +37,41 @@ export function registerOperatorRoutes(
   dependencies: { egress?: EgressGuard } = {},
 ) {
   const egress = dependencies.egress ?? createEndpointEgress();
+  // ponytail: per-process daily counter; N nodes allow N× the cap. Move to a DB count if that matters.
+  const DENIED_ROWS_PER_CALLER_PER_DAY = 100;
+  let deniedDay = '';
+  const deniedRows = new Map<string, number>();
+  const auditDenied = async (
+    request: Parameters<typeof authenticateRequest>[1],
+    actorId: string | null,
+    reason: string,
+  ) => {
+    const day = new Date().toISOString().slice(0, 10);
+    if (day !== deniedDay) {
+      deniedDay = day;
+      deniedRows.clear();
+    }
+    const key = actorId ?? 'anonymous';
+    const seen = deniedRows.get(key) ?? 0;
+    if (seen >= DENIED_ROWS_PER_CALLER_PER_DAY) return;
+    deniedRows.set(key, seen + 1);
+    const { slot } = request.params as { slot?: string };
+    try {
+      await recordDeniedAttempt(db, {
+        actorId,
+        slot: ENDPOINT_SLOTS.includes(slot as EndpointSlot)
+          ? (slot as EndpointSlot)
+          : null,
+        reason,
+        details: {
+          method: request.method,
+          route: request.routeOptions.url ?? '',
+        },
+      });
+    } catch (error) {
+      request.log.warn({ err: error }, 'operator denial audit write failed');
+    }
+  };
   app.addHook('onRequest', async (request, reply) => {
     if (!validOrigin(request))
       return reply
@@ -48,6 +84,11 @@ export function registerOperatorRoutes(
   ): Promise<Awaited<ReturnType<typeof authenticateRequest>>> => {
     const session = await authenticateRequest(db, request);
     if (!session || !(await isOperator(session.account_id))) {
+      await auditDenied(
+        request,
+        session?.account_id ?? null,
+        session ? 'NOT_OPERATOR' : 'UNAUTHENTICATED',
+      );
       reply.code(404).send({ code: 'NOT_FOUND' });
       return undefined;
     }
@@ -78,17 +119,29 @@ export function registerOperatorRoutes(
       if (
         error instanceof Error &&
         error.message === 'Endpoint URL is not allowed'
-      )
+      ) {
+        await auditDenied(request, session.account_id, 'INVALID_ENDPOINT_URL');
         return reply.code(400).send({ code: 'INVALID_ENDPOINT_URL' });
-      if (error instanceof Error && error.message === 'KEY_REQUIRED')
+      }
+      if (error instanceof Error && error.message === 'KEY_REQUIRED') {
+        await auditDenied(request, session.account_id, 'KEY_REQUIRED');
         return reply.code(400).send({ code: 'KEY_REQUIRED' });
+      }
       if (
         error instanceof Error &&
         error.message === 'Endpoint credential unavailable'
-      )
+      ) {
+        await auditDenied(
+          request,
+          session.account_id,
+          'CREDENTIAL_UNAVAILABLE',
+        );
         return reply.code(503).send({ code: 'CREDENTIAL_UNAVAILABLE' });
-      if (error instanceof Error && error.name === 'ZodError')
+      }
+      if (error instanceof Error && error.name === 'ZodError') {
+        await auditDenied(request, session.account_id, 'INVALID_INPUT');
         return reply.code(400).send({ code: 'INVALID_INPUT' });
+      }
       throw error;
     }
   });
