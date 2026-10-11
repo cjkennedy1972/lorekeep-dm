@@ -14,16 +14,18 @@
  * is described only with a bare noun ("the boy was raped"). The LLM judge (M3-07) is the
  * second layer for those ambiguous cases. These rules alone do not satisfy R-S2.
  *
- * Matching: a minor reference and a sexual term are evaluated across the whole message,
- * not per sentence: within WINDOW_TOKENS tokens anywhere, or within CARRY_TOKENS tokens
- * and two sentences when the sexual sentence uses a pronoun ("She is a child. Describe
- * her sexually."). One linear pass over at most MAX_INPUT_CHARS characters.
+ * Message-level taint: once a minor reference appears anywhere in a message, any sexual
+ * term anywhere in that same message blocks, before or after it. No sentence or token
+ * distance applies. Documented allowance: a minor term with no sexual term passes
+ * ("the baby dragon sleeps"). A youth word (youth, youngster, young girl) directly next to
+ * an explicit adult marker (adult, grown) does not taint. Core child words and stated
+ * ages never take that allowance. One linear pass over at most MAX_INPUT_CHARS characters.
  *
- * Known limits (see HARD_FLOOR_KNOWN_MISSES): other languages, euphemism and slang beyond
- * the list, references more than CARRY_TOKENS apart, bare-noun minors, images.
+ * Known limits (see HARD_FLOOR_KNOWN_MISSES): other languages, slang beyond the list,
+ * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.2';
+export const HARD_FLOOR_VERSION = '2026-10-10.3';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
 export const MAX_INPUT_CHARS = 20_000;
@@ -84,8 +86,7 @@ export const HARD_FLOOR_RULES = {
       'babies',
       'juvenile',
       'juveniles',
-      'youngster',
-      'youngsters',
+      'childlike',
       'schoolgirl',
       'schoolgirls',
       'schoolboy',
@@ -95,8 +96,17 @@ export const HARD_FLOOR_RULES = {
       'stepchild',
       'stepchildren',
     ],
-    /** "young girl", "little boy": the noun counts only right after one of these. */
-    youthPrefixes: ['young', 'little'],
+    /** Youth words: a minor only when no explicit adult marker touches them (module header). */
+    youthWords: [
+      'youth',
+      'youths',
+      'youngster',
+      'youngsters',
+      'youngling',
+      'younglings',
+    ],
+    /** "young girl", "tiny boy": the noun counts only right after one of these. */
+    youthPrefixes: ['young', 'little', 'tiny', 'small'],
     youthNouns: [
       'girl',
       'girls',
@@ -107,6 +117,30 @@ export const HARD_FLOOR_RULES = {
       'lass',
       'lasses',
     ],
+    /** A bare number 1 to 17 right next to one of these is an age: "girl, 12," "woman (13)". */
+    personNouns: [
+      'girl',
+      'girls',
+      'boy',
+      'boys',
+      'lad',
+      'lads',
+      'lass',
+      'lasses',
+      'woman',
+      'women',
+      'man',
+      'men',
+      'lady',
+      'ladies',
+      'maiden',
+      'maidens',
+      'female',
+      'females',
+      'male',
+      'males',
+    ],
+    adultMarkers: ['adult', 'adults', 'grown', 'grownup', 'grownups'],
     sexualTerms: [
       'sexual',
       'sexually',
@@ -172,7 +206,28 @@ export const HARD_FLOOR_RULES = {
       'breasts',
       'nipple',
       'nipples',
+      'buttocks',
+      'crotch',
+      'groin',
+      'anal',
+      'boobs',
+      'tits',
+      'pussy',
+      'cock',
+      'cocks',
     ],
+    /** "undress her", "strip the girl": sexual only with an object. "undressed for bed" is not. */
+    undressTerms: [
+      'undress',
+      'undresses',
+      'undressed',
+      'undressing',
+      'strip',
+      'strips',
+      'stripped',
+      'stripping',
+    ],
+    undressObjects: ['her', 'him', 'them', 'the', 'his', 'their'],
     /** "sex" counts only in these phrases: "have sex", "in sex", "sex with", "sex scene"; "got laid" likewise. */
     sexPhraseNeighbours: {
       before: ['have', 'has', 'had', 'having', 'in'],
@@ -204,16 +259,6 @@ export const HARD_FLOOR_RULES = {
       ],
       laidBefore: ['got', 'get', 'gets', 'getting'],
     },
-    /** Same sentence: minor and sexual term within this many tokens. */
-    windowTokens: 8,
-    /** Different sentences (up to two apart): adjacent when this close. */
-    adjacentTokens: 4,
-    /** Any sentence distance: the sexual sentence uses a pronoun ("She is a child. Ok. Describe her sexually."), or the minor is the subject of the previous sentence. */
-    carryTokens: 60,
-    /** A minor indicator within this many tokens of its sentence start counts as its subject. */
-    subjectTokens: 3,
-    /** Messages up to this many characters: any minor indicator and any sexual term block. */
-    shortMessageChars: 400,
   },
 } as const;
 
@@ -383,6 +428,7 @@ const MINOR_PHRASES: readonly RegExp[] = [
   /\bschool[\s-]+uniform\b/g,
   /\byoung[\s-]+looking\b/g,
   /\blittle[\s-]+one\b/g,
+  /\bschool[\s-]+age[ds]?\b/g,
 ];
 /** "c.h.i.l.d", "sex.ual": short letter pieces joined by a bare dot are one word. */
 const DOT_SPELLING = /(?<!\p{L})(\p{L}{1,3})\.(?=\p{L})/gu;
@@ -463,61 +509,15 @@ const AGE_LINKS = new Set([
   'at',
   'when',
 ]);
-const PRONOUNS = new Set([
-  'she',
-  'her',
-  'hers',
-  'herself',
-  'he',
-  'him',
-  'his',
-  'himself',
-  'they',
-  'them',
-  'their',
-  'theirs',
-  'themselves',
-]);
-
-type TermIndex = Map<string, number[][]>;
-
-/** Run-length view of a word: collapsed letters plus the length of each run. */
-function runs(word: string): { key: string; counts: number[] } {
-  let key = '';
-  const counts: number[] = [];
-  for (const c of word) {
-    if (key.endsWith(c)) counts[counts.length - 1]!++;
-    else {
-      key += c;
-      counts.push(1);
-    }
-  }
-  return { key, counts };
-}
-
-/** Term lookup that tolerates stretched letters ("chiiild") but keeps "teen" distinct from "ten". */
-function termIndex(terms: readonly string[]): TermIndex {
-  const index: TermIndex = new Map();
-  for (const term of terms) {
-    const { key, counts } = runs(term);
-    index.set(key, [...(index.get(key) ?? []), counts]);
-  }
-  return index;
-}
-const MAX_TERM_CHARS = 40;
-const inIndex = (index: TermIndex, word: string): boolean => {
-  if (word.length > MAX_TERM_CHARS) return false;
-  const { key, counts } = runs(word);
-  return (
-    index.get(key)?.some((min) => min.every((m, i) => counts[i]! >= m)) ?? false
-  );
-};
-const inSet = (set: ReadonlySet<string>, word: string) =>
-  set.has(runs(word).key) || set.has(word);
+const termIndex = (terms: readonly string[]) => new Set(terms);
+const inIndex = (index: Set<string>, w: string) => index.has(w);
+/** Longest vocabulary entry plus slack; bounds the joined-piece length in scan(). */
+const MAX_TERM_CHARS = 24;
 
 const PROXIMITY = HARD_FLOOR_RULES['minor-sexual.proximity'];
 const EXPLICIT = termIndex(HARD_FLOOR_RULES['csam.explicit-term'].terms);
 const MINOR = termIndex(PROXIMITY.minorTerms);
+const YOUTH_WORD = termIndex(PROXIMITY.youthWords);
 const SEXUAL = termIndex(PROXIMITY.sexualTerms);
 const SEX = termIndex(['sex']);
 const LAID = termIndex(['laid']);
@@ -525,11 +525,17 @@ const BEFORE = termIndex(PROXIMITY.sexPhraseNeighbours.before);
 const AFTER = termIndex(PROXIMITY.sexPhraseNeighbours.after);
 const NOT_AFTER = termIndex(PROXIMITY.sexPhraseNeighbours.notAfter);
 const LAID_BEFORE = termIndex(PROXIMITY.sexPhraseNeighbours.laidBefore);
+const UNDRESS = termIndex(PROXIMITY.undressTerms);
+const UNDRESS_OBJECT = new Set<string>(PROXIMITY.undressObjects);
 const YOUTH_PREFIX = new Set<string>(PROXIMITY.youthPrefixes);
 const YOUTH_NOUN = termIndex(PROXIMITY.youthNouns);
+const PERSON_NOUN = termIndex(PROXIMITY.personNouns);
+const ADULT_MARKER = new Set<string>(PROXIMITY.adultMarkers);
 
+const wordValue = (w: string) =>
+  Object.hasOwn(NUMBER_WORDS, w) ? NUMBER_WORDS[w] : undefined;
 const ageValue = (raw: string) =>
-  /^\d+$/.test(raw) ? Number(raw) : NUMBER_WORDS[raw];
+  /^\d+$/.test(raw) ? Number(raw) : wordValue(raw);
 
 /** Every Unicode decimal digit (\\p{Nd}) mapped to its value. Digit runs are contiguous blocks of ten from zero. */
 const UNICODE_DIGIT = (() => {
@@ -575,6 +581,12 @@ function normalizeText(input: string): string {
 
 /** Spellings of a word with digit look-alikes folded; "1" may be "i" or "l". */
 function variants(word: string): string[] {
+  const forms = wordForms(word);
+  const collapsed = forms.map((f) => f.replace(/(\p{L})\1{2,}/gu, '$1'));
+  return [...new Set([...forms, ...collapsed])];
+}
+
+function wordForms(word: string): string[] {
   if (!/\p{L}/u.test(word)) return [word];
   const base = word.replace(/[034578]/g, (d) => LEET[d]!);
   const ones = (base.match(/1/g) ?? []).length;
@@ -589,64 +601,33 @@ function variants(word: string): string[] {
   return out;
 }
 
-interface Tokens {
-  words: string[];
-  /** Sentence number of each word. */
-  sentence: number[];
-}
-
-function tokenize(text: string): Tokens {
-  const words: string[] = [];
-  const sentence: number[] = [];
-  let sent = 0;
-  for (const m of text.matchAll(/([\p{L}\p{N}]+)([^\p{L}\p{N}]*)/gu)) {
-    words.push(m[1]!);
-    sentence.push(sent);
-    if (/[.!?;\n]/.test(m[2]!)) sent++;
-  }
-  return { words, sentence };
-}
-
 const SHORT_PIECE = 2;
 /** Longest run of short pieces joined back into one word ("s e x ua l"). */
 const MAX_JOIN = 12;
 
-interface Event {
-  kind: 'minor' | 'sexual';
-  pos: number;
-  sentence: number;
-  /** Minor word starts its sentence, so it is that sentence's subject. */
-  subject: boolean;
+/** A bare number that reads as an age: digits 1 to 17; number words only 5 to 17, so "two boys" stays adult prose. */
+function bareAge(word: string): boolean {
+  if (/^\d+$/.test(word)) {
+    const v = Number(word);
+    return v >= 1 && v <= 17;
+  }
+  const v = wordValue(word);
+  return v !== undefined && v >= 5 && v <= 17;
 }
 
 /**
- * Finds minor and sexual references. A word is a single token, or a run of up to
- * MAX_JOIN short tokens joined together ("c h i l d", "s-e-x-ua-l"). Cost is
- * O(tokens x MAX_JOIN).
+ * Message-level verdict. `minor` is set by any minor reference that is not a youth word
+ * next to an adult marker; `sexual` by any sexual term. The caller blocks when both hold.
+ * Each word position joins at most MAX_JOIN short pieces, so cost is O(tokens x MAX_JOIN).
  */
-function scan(tokens: Tokens): {
+function scan(words: string[]): {
   explicit: boolean;
-  events: Event[];
-  pronounSentences: Set<number>;
+  minor: boolean;
+  sexual: boolean;
 } {
-  const { words, sentence } = tokens;
   const base = words.map((w) => variants(w)[0]!);
-  const pronounSentences = new Set<number>();
-  base.forEach((w, i) => {
-    if (PRONOUNS.has(w)) pronounSentences.add(sentence[i]!);
-  });
-  const events: Event[] = [];
-  const sentenceStart: number[] = [];
-  sentence.forEach((sent, i) => {
-    if (sentenceStart[sent] === undefined) sentenceStart[sent] = i;
-  });
-  const emit = (kind: Event['kind'], pos: number) =>
-    events.push({
-      kind,
-      pos,
-      sentence: sentence[pos]!,
-      subject: pos - sentenceStart[sentence[pos]!]! < PROXIMITY.subjectTokens,
-    });
+  let minor = false;
+  let sexual = false;
   for (let s = 0; s < words.length; s++) {
     let joined = '';
     for (let e = s; e < Math.min(words.length, s + MAX_JOIN); e++) {
@@ -660,79 +641,47 @@ function scan(tokens: Tokens): {
       const prev = s > 0 ? base[s - 1]! : '';
       const prev2 = s > 1 ? base[s - 2]! : '';
       const next = e + 1 < words.length ? base[e + 1]! : '';
-      let isMinor = false;
-      let isSexual = false;
+      let core = false;
+      let youth = false;
+      let sexualHere = false;
       for (const w of variants(joined)) {
-        if (inIndex(EXPLICIT, w))
-          return { explicit: true, events, pronounSentences };
-        if (inIndex(MINOR, w)) isMinor = true;
-        else if (w === 'age' && prev === 'under') isMinor = true;
-        else if (YOUTH_PREFIX.has(prev) && inIndex(YOUTH_NOUN, w))
-          isMinor = true;
-        else if (e === s && bareAge(w, prev, prev2, next)) isMinor = true;
-        else if (e === s && youthAdjacentAge(w, prev, next)) isMinor = true;
-        if (inIndex(SEXUAL, w)) isSexual = true;
+        if (inIndex(EXPLICIT, w)) return { explicit: true, minor, sexual };
+        if (inIndex(MINOR, w)) core = true;
+        else if (w === 'age' && prev === 'under') core = true;
+        else if (inIndex(YOUTH_WORD, w)) youth = true;
+        else if (YOUTH_PREFIX.has(prev) && inIndex(YOUTH_NOUN, w)) youth = true;
+        else if (e === s && bareAge(w) && !QUANTITY_UNITS.has(next)) {
+          if (
+            AGE_LINKS.has(prev) ||
+            (prev === 's' && (prev2 === 'she' || prev2 === 'he')) ||
+            inIndex(PERSON_NOUN, prev) ||
+            inIndex(PERSON_NOUN, next)
+          )
+            core = true;
+        }
+        if (inIndex(SEXUAL, w)) sexualHere = true;
         else if (inIndex(SEX, w)) {
           if (
             (inIndex(BEFORE, prev) && !inIndex(NOT_AFTER, next)) ||
             inIndex(AFTER, next)
           )
-            isSexual = true;
+            sexualHere = true;
         } else if (inIndex(LAID, w) && inIndex(LAID_BEFORE, prev))
-          isSexual = true;
+          sexualHere = true;
+        else if (inIndex(UNDRESS, w) && UNDRESS_OBJECT.has(next))
+          sexualHere = true;
       }
-      if (isMinor) emit('minor', s);
-      if (isSexual) emit('sexual', s);
+      if (core || (youth && !ADULT_MARKER.has(prev) && !ADULT_MARKER.has(next)))
+        minor = true;
+      if (sexualHere) sexual = true;
+      if (minor && sexual) return { explicit: false, minor, sexual };
     }
   }
-  return { explicit: false, events, pronounSentences };
+  return { explicit: false, minor, sexual };
 }
 
-/** "she is 15", "was fifteen": a bare number 5 to 17 right after a link word, not followed by a unit. */
-function bareAge(word: string, prev: string, prev2: string, next: string) {
-  const value = ageValue(word);
-  if (value === undefined || value < 5 || value > 17) return false;
-  if (inSet(QUANTITY_UNITS, next)) return false;
-  return (
-    AGE_LINKS.has(prev) || (prev === 's' && (prev2 === 'she' || prev2 === 'he'))
-  );
-}
-
-/** "girl 15", "15 girl": a bare number 5 to 17 next to a youth noun, not a quantity. */
-function youthAdjacentAge(word: string, prev: string, next: string) {
-  const value = ageValue(word);
-  if (value === undefined || value < 5 || value > 17) return false;
-  if (inSet(QUANTITY_UNITS, next)) return false;
-  return inIndex(YOUTH_NOUN, prev) || inIndex(YOUTH_NOUN, next);
-}
-
-function minorNearSexual(
-  events: readonly Event[],
-  pronounSentences: ReadonlySet<number>,
-): boolean {
-  let lastMinor: Event | undefined;
-  let lastSexual: Event | undefined;
-  const near = (minor: Event, sexual: Event) => {
-    const d = Math.abs(minor.pos - sexual.pos);
-    const sd = Math.abs(minor.sentence - sexual.sentence);
-    if (sd === 0 && d <= PROXIMITY.windowTokens) return true;
-    if (sd >= 1 && sd <= 2 && d <= PROXIMITY.adjacentTokens) return true;
-    if (d > PROXIMITY.carryTokens) return false;
-    return (
-      pronounSentences.has(sexual.sentence) ||
-      (minor.subject && sexual.sentence - minor.sentence === 1)
-    );
-  };
-  for (const ev of events) {
-    if (ev.kind === 'minor') {
-      if (lastSexual && near(ev, lastSexual)) return true;
-      lastMinor = ev;
-    } else {
-      if (lastMinor && near(lastMinor, ev)) return true;
-      lastSexual = ev;
-    }
-  }
-  return false;
+function tokenize(text: string): string[] {
+  return text.match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
 export function checkHardFloor(text: string): HardFloorResult {
@@ -742,17 +691,8 @@ export function checkHardFloor(text: string): HardFloorResult {
     version: HARD_FLOOR_VERSION,
   });
   if (text.length > MAX_INPUT_CHARS) return blocked('input.over-limit');
-  const { explicit, events, pronounSentences } = scan(
-    tokenize(normalizeText(text)),
-  );
+  const { explicit, minor, sexual } = scan(tokenize(normalizeText(text)));
   if (explicit) return blocked('csam.explicit-term');
-  if (minorNearSexual(events, pronounSentences))
-    return blocked('minor-sexual.proximity');
-  if (
-    text.length <= PROXIMITY.shortMessageChars &&
-    events.some((e) => e.kind === 'minor') &&
-    events.some((e) => e.kind === 'sexual')
-  )
-    return blocked('minor-sexual.proximity');
+  if (minor && sexual) return blocked('minor-sexual.proximity');
   return { blocked: false, version: HARD_FLOOR_VERSION };
 }
