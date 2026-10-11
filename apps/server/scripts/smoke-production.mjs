@@ -143,7 +143,7 @@ async function main() {
       RESEND_API_KEY: secrets.resend,
       EMAIL_FROM: 'Lorekeep Smoke <noreply@smoke.invalid>',
       APP_BASE_URL: 'https://app.smoke.invalid',
-      LLM_ALLOW_LOCAL_HOSTS: '127.0.0.1',
+      LLM_ALLOW_LOCAL_HOSTS: `127.0.0.1:${stub.port}`,
       EXPORT_ARCHIVE_DIR: exportDir,
       SWEEP_INTERVAL_MS: '0',
     },

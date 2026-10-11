@@ -144,3 +144,6 @@ Rules content comes from SRD 5.2.1 under CC-BY-4.0. A deployment must show this 
 "Compatible with fifth edition" or "5E compatible" is allowed; do not use Wizards marks in the product name. The same statement is in the repository `README.md`. This guide does not claim the web UI page exists; check it before release.
 
 Note (M3-38): local-model entries now need the port. Use `LLM_ALLOW_LOCAL_HOSTS=172.31.25.75:8080` (a bare host allows only ports 80 and 443) and `LLM_ALLOW_LOCAL_HOSTS=localhost:11434` for an Ollama-style endpoint; the examples above that list a bare host are superseded.
+
+
+Note (M3-38 r2): bare-host `LLM_ALLOW_LOCAL_HOSTS` examples above are superseded. A bare host allows only ports 80 and 443. For a non-default port, list `host:port` exactly (for example `localhost:11434` or `172.31.25.75:8080`). This applies to the server guard, `apps/server/scripts/smoke-production.mjs`, and the live eval path (`packages/evals`).

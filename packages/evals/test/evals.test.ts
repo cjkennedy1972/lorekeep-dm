@@ -165,11 +165,41 @@ describe('live mode guard', () => {
       /LLM_ALLOW_LOCAL_HOSTS/,
     );
     expect(
-      checkLiveUrl('http://localhost:11434/v1', 'localhost').hostname,
+      checkLiveUrl('http://localhost:11434/v1', 'localhost:11434').hostname,
     ).toBe('localhost');
     expect(checkLiveUrl('https://api.example.com/v1', '').hostname).toBe(
       'api.example.com',
     );
+  });
+
+  it('bare host allows only ports 80 and 443; host:port allows only that port', () => {
+    expect(() =>
+      checkLiveUrl('http://172.31.25.75:9999/v1', '172.31.25.75'),
+    ).toThrow(/LLM_ALLOW_LOCAL_HOSTS/);
+    expect(() =>
+      checkLiveUrl('http://172.31.25.75:8080/v1', '172.31.25.75'),
+    ).toThrow(/LLM_ALLOW_LOCAL_HOSTS/);
+    expect(
+      checkLiveUrl('http://172.31.25.75/v1', '172.31.25.75').hostname,
+    ).toBe('172.31.25.75');
+    expect(() =>
+      checkLiveUrl('http://172.31.25.75:8080/v1', '172.31.25.75:8081'),
+    ).toThrow(/LLM_ALLOW_LOCAL_HOSTS/);
+    expect(
+      checkLiveUrl('http://172.31.25.75:8080/v1', '172.31.25.75:8080').hostname,
+    ).toBe('172.31.25.75');
+  });
+
+  it('matches the egress guard entry rule for bracketed IPv6 and case', () => {
+    expect(checkLiveUrl('http://[::1]:8080/v1', ' [::1]:8080 ').hostname).toBe(
+      '[::1]',
+    );
+    expect(() => checkLiveUrl('http://[::1]:9090/v1', '[::1]:8080')).toThrow(
+      /LLM_ALLOW_LOCAL_HOSTS/,
+    );
+    expect(
+      checkLiveUrl('http://LOCALHOST:11434/v1', 'localhost:11434').hostname,
+    ).toBe('localhost');
   });
 });
 

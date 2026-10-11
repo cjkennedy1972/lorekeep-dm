@@ -3,6 +3,24 @@ import { dirname } from 'node:path';
 import { runEval } from './run.js';
 import type { EvalModel, EvalRecord } from './types.js';
 
+/** Mirrors apps/server/src/llm/egress.ts: a bare host allows ports 80 and 443; host:port allows that port only. */
+function localEntryAllows(
+  entries: string[],
+  hostname: string,
+  port: number,
+): boolean {
+  return entries.some((raw) => {
+    const e = raw.trim().toLowerCase();
+    const m = /^\[(.+)\](?::(\d+))?$/.exec(e) ?? /^([^:]+):(\d+)$/.exec(e);
+    const host = m ? m[1] : e;
+    const entryPort = m?.[2] ? Number(m[2]) : undefined;
+    if (host !== hostname) return false;
+    return entryPort === undefined
+      ? port === 80 || port === 443
+      : port === entryPort;
+  });
+}
+
 /** Hosts allowed for plain-http/loopback endpoints; same contract as LLM_ALLOW_LOCAL_HOSTS (exact hosts, no wildcard). */
 export function checkLiveUrl(
   baseUrl: string,
@@ -13,13 +31,11 @@ export function checkLiveUrl(
     .split(',')
     .map((h) => h.trim())
     .filter(Boolean);
-  const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+  const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+  const hostname = url.hostname.replace(/^\[|\]$/g, '');
   if (
     url.protocol !== 'https:' &&
-    !(
-      url.protocol === 'http:' &&
-      allowed.some((e) => e === url.hostname || e === `${url.hostname}:${port}`)
-    )
+    !(url.protocol === 'http:' && localEntryAllows(allowed, hostname, port))
   )
     throw new Error(
       `live endpoint ${url.hostname} must be https or listed in LLM_ALLOW_LOCAL_HOSTS`,
