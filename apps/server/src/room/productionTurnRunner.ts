@@ -35,12 +35,17 @@ import {
   createConfiguredAdapter,
   createEndpointEgress,
 } from '../llm/config.js';
+import { liveDmAllowed } from '../llm/liveDmGate.js';
 import {
   fixtureModeFromEnvironment,
   RecordedLlmAdapter,
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
-import type { SoloTurnRequest, SoloTurnRunner } from './dmTurn.js';
+import {
+  LiveDmRestrictedError,
+  type SoloTurnRequest,
+  type SoloTurnRunner,
+} from './dmTurn.js';
 
 type GameState = {
   characters?: Record<string, ToolExecutorState['actors'][string]>;
@@ -85,6 +90,24 @@ export function mergeCombatOutput<T extends object>(
     ...(name === 'start_combat' ? { combatSeed: out.rng } : {}),
   };
 }
+/** Live combatant whose turn it is; not persisted. Null outside combat or once combat ended. */
+function liveTurnActorId(state: unknown): string | null {
+  const room = (
+    state as {
+      combatRoom?: {
+        ended?: unknown;
+        combat: {
+          activeEntityId: string | null;
+          initiative: readonly { entityId: string }[];
+        };
+      };
+    }
+  ).combatRoom;
+  if (!room || room.ended) return null;
+  return (
+    room.combat.activeEntityId ?? room.combat.initiative[0]?.entityId ?? null
+  );
+}
 const withoutCatalog = (engine: unknown) =>
   Object.fromEntries(
     Object.entries(engine as Record<string, unknown>).filter(
@@ -108,12 +131,22 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       'fixtures/solo-turn.ndjson',
     /** A fixed adapter for deterministic tests; skips endpoint configuration. */
     private readonly adapterOverride?: LlmAdapter,
+    private readonly liveDmAllowlistOnly = true,
   ) {}
 
   async run(
     request: SoloTurnRequest,
     onEvent: Parameters<SoloTurnRunner['run']>[1],
   ): Promise<TurnResult> {
+    if (
+      !(await liveDmAllowed(
+        this.db,
+        request.accountId,
+        this.liveDmAllowlistOnly,
+        this.fixtureMode,
+      ))
+    )
+      throw new LiveDmRestrictedError();
     const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
     if (!['fast', 'frontier', 'moderate'].includes(endpointSlot))
       throw new Error('Solo turn endpoint slot is invalid');
@@ -321,7 +354,11 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           : undefined;
         const result = worldExecute
           ? worldExecute(current.world, request.args)
-          : execute(current, call, seed);
+          : execute(
+              { ...current, turnActorId: liveTurnActorId(state) },
+              call,
+              seed,
+            );
         if (!result.ok) return { ...result, events: [] };
         const value = result.value as
           | { events?: readonly unknown[] }
@@ -455,6 +492,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             : 'exploration',
         turn: {
           state: { characters: Object.values(actors) },
+          activeActorId: liveTurnActorId(state),
           registryFacts: memoryContext.registryFacts,
           retrievedMemory: memoryContext.retrievedMemory,
           playerText: `${request.playerName ?? 'Player'}: ${request.text}`,

@@ -71,9 +71,10 @@ export function createApp(
     connections?: Pick<ConnectionRegistry, 'sweep'>;
     isOperator?: (accountId: string) => Promise<boolean>;
     trustProxy?: boolean | number | string[];
+    liveDmAllowlistOnly?: boolean;
   } = {},
 ) {
-  const { trustProxy = false } = options;
+  const { trustProxy = false, liveDmAllowlistOnly = true } = options;
   // ponytail: Fastify 5 ignores numeric trustProxy (fails closed), so count hops here; hop 0 is the socket peer.
   const app = Fastify({
     loggerInstance: createLogger(),
@@ -133,6 +134,7 @@ export function createApp(
         app as unknown as FastifyInstance,
         db as Pool,
         options.rooms as Pick<RoomRegistry, 'get'>,
+        liveDmAllowlistOnly,
       );
     }
   }

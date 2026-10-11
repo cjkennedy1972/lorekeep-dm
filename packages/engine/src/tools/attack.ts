@@ -11,7 +11,7 @@ import type { RngState } from '../rng.js';
 import type { Placed } from '../map/geometry.js';
 import { distance } from '../map/geometry.js';
 import type { Battlemap } from '@game/schema';
-import { fail, ok, type ToolResult } from './result.js';
+import { fail, ok, turnHint, type ToolResult } from './result.js';
 
 export type ToolAttack = {
   id: string;
@@ -34,6 +34,7 @@ export type AttackToolState = {
   map?: Battlemap;
   conditions?: Readonly<Record<string, readonly ActiveCondition[]>>;
   catalog: Catalog;
+  turnActorId?: string | null;
 };
 export function executeAttack(
   state: AttackToolState,
@@ -49,6 +50,8 @@ export function executeAttack(
   const { attackerId, targetId, attackId } = parsed.data;
   if (!state.actors[attackerId] && !state.placements?.[attackerId])
     return fail('unknown-entity', 'Choose an attacker present in the session.');
+  if (state.turnActorId && state.turnActorId !== attackerId)
+    return fail('not-actors-turn', turnHint(state.turnActorId));
   if (!state.actors[targetId] && !state.placements?.[targetId])
     return fail('unknown-entity', 'Choose a target present in the session.');
   const definition = state.attacks[attackId];

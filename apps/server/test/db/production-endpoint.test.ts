@@ -18,6 +18,7 @@ const saved = {
   LLM_FIXTURE_PATH: process.env.LLM_FIXTURE_PATH,
   LLM_ALLOW_LOCAL_HOSTS: process.env.LLM_ALLOW_LOCAL_HOSTS,
   OPERATOR_ENDPOINT_MASTER_KEY: process.env.OPERATOR_ENDPOINT_MASTER_KEY,
+  OPERATOR_EMAILS: process.env.OPERATOR_EMAILS,
 };
 let db: Pool;
 let endpoint: FakeOpenAIServer;
@@ -69,6 +70,7 @@ afterAll(async () => {
 describe('ProductionSoloTurnRunner under default production env', () => {
   it('sends the solo turn to the configured endpoint', async () => {
     process.env.NODE_ENV = 'production';
+    process.env.OPERATOR_EMAILS = `${ownerId}@example.test`;
     delete process.env.LLM_FIXTURE_MODE;
     delete process.env.LLM_FIXTURE_PATH;
     const runner = new ProductionSoloTurnRunner(db);

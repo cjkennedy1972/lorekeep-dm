@@ -33,6 +33,10 @@ const leases = new SessionLease(db);
 const soloTurnRunner = new ProductionSoloTurnRunner(
   db,
   config.OPERATOR_ENDPOINT_MASTER_KEY,
+  undefined,
+  undefined,
+  undefined,
+  config.LIVE_DM_ALLOWLIST_ONLY,
 );
 export const rooms = new RoomRegistry(
   persistence,
@@ -48,7 +52,16 @@ const app = createApp(db, {
   connections,
   sender: emailSender,
   trustProxy: config.TRUST_PROXY,
+  liveDmAllowlistOnly: config.LIVE_DM_ALLOWLIST_ONLY,
 });
+if (
+  config.NODE_ENV === 'test' &&
+  config.LIVE_DM_ALLOWLIST_ONLY &&
+  !/@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(config.DATABASE_URL)
+)
+  app.log.warn(
+    'NODE_ENV=test disables the live DM allowlist gate; never run production with NODE_ENV=test',
+  );
 const closeGateway = installGateway(app, db, rooms, connections);
 // Disabled in tests or with SWEEP_INTERVAL_MS=0.
 const stopSweeper =

@@ -221,7 +221,6 @@ async function main() {
       throw new Error('session cookie missing Secure');
     if (!/;\s*HttpOnly/i.test(setCookie))
       throw new Error('session cookie missing HttpOnly');
-    const playerCookie = cookieFrom(setCookie);
     console.log(
       'ok: login Set-Cookie is __Host-sid, Secure, HttpOnly with X-Forwarded-Proto: https',
     );
@@ -288,9 +287,10 @@ async function main() {
         `operator endpoint PUT returned ${put.status}: ${await put.text()}`,
       );
 
+    // Live DM turns are operator-allowlisted until M3 moderation lands (LIVE_DM_ALLOWLIST_ONLY).
     const created = await fetch(`${base}/api/tables`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', cookie: playerCookie },
+      headers: { 'content-type': 'application/json', cookie: opCookie },
       body: JSON.stringify({
         name: 'Smoke Crypt',
         adventureId: 'adventure:01-hollow-under-marrowfell',
@@ -307,7 +307,7 @@ async function main() {
       headers: {
         'content-type': 'application/json',
         origin,
-        cookie: playerCookie,
+        cookie: opCookie,
       },
       body: JSON.stringify({ sessionId }),
     });

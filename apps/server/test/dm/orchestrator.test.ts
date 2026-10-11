@@ -651,3 +651,85 @@ describe('DM orchestrator', () => {
     ).toEqual(['nextSceneId', 'summary']);
   });
 });
+
+describe('DM orchestrator turn order in combat', () => {
+  const npcAttack = (id: string, attackerId: string): LlmChunk =>
+    call(id, 'attack', {
+      attackerId,
+      targetId: 'ent_ayla',
+      attackId: 'srd:weapon/scimitar',
+    });
+  const ayla = (id: string): LlmChunk =>
+    call(id, 'attack', {
+      attackerId: 'ent_ayla',
+      targetId: 'ent_goblin_1',
+      attackId: 'srd:weapon/longsword',
+    });
+  const combatSetup = (chunks: (LlmChunk[] | Error)[]) => {
+    const executed: string[] = [];
+    const h = setup(chunks, (_name, args) => {
+      const { attackerId } = args as { attackerId: string };
+      if (attackerId !== 'ent_ayla')
+        return {
+          ok: false,
+          error: 'not-actors-turn',
+          hint: "It is ent_ayla's turn. Narrate ent_ayla's action or wait for the turn order.",
+        };
+      executed.push(attackerId);
+      return {
+        ok: true,
+        summary: 'The blow lands.',
+        events: [],
+        output: { events: [] },
+      };
+    });
+    h.input.prompt.activeMode = 'combat';
+    h.input.prompt.turn.activeActorId = 'ent_ayla';
+    return { ...h, executed };
+  };
+  const rejections = (events: unknown[]) =>
+    events.filter(
+      (event) => (event as { type?: string }).type === 'ToolCallRejected',
+    );
+
+  it('completes the narration when the DM names five NPC attacks out of turn', async () => {
+    const h = combatSetup([
+      [1, 2, 3, 4, 5].map((n) => npcAttack(`n${n}`, `ent_goblin_${n}`)),
+      [{ type: 'text', delta: narration }],
+    ]);
+    const result = await runTurn(h.input);
+    expect(rejections(h.events)).toHaveLength(5);
+    expect(h.executed).toEqual([]);
+    expect(result.fallback).toBeUndefined();
+    expect(result.narration).toBe(narration);
+    expect(h.requests).toHaveLength(2);
+    expect(h.requests[1]?.messages.at(-1)?.content).toContain(
+      "It is ent_ayla's turn",
+    );
+  });
+
+  it('does not spend the tool-call cap on out-of-turn attacks', async () => {
+    const h = combatSetup([
+      [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) =>
+        npcAttack(`n${n}`, `ent_goblin_${n}`),
+      ),
+      [ayla('a1')],
+      [{ type: 'text', delta: narration }],
+    ]);
+    const result = await runTurn(h.input);
+    expect(h.executed).toEqual(['ent_ayla']);
+    expect(result.fallback).toBeUndefined();
+    expect(result.narration).toBe(narration);
+  });
+
+  it('completes normally when the active combatant attacks', async () => {
+    const h = combatSetup([[ayla('a1')], [{ type: 'text', delta: narration }]]);
+    const result = await runTurn(h.input);
+    expect(h.executed).toEqual(['ent_ayla']);
+    expect(rejections(h.events)).toHaveLength(0);
+    expect(result.fallback).toBeUndefined();
+    expect(h.requests[0]?.messages.map((m) => m.content).join('\n')).toContain(
+      'Active combatant: ent_ayla',
+    );
+  });
+});

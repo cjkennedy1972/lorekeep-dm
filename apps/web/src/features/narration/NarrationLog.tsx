@@ -150,17 +150,19 @@ export function NarrationLog({
                 className="narration-log__error"
               >
                 <strong>{entry.code}:</strong> {entry.message}
-                {entry.actionId && onRetry && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onRetry(entry.actionId!);
-                      onResubmit?.(entry.actionId!);
-                    }}
-                  >
-                    Retry this action
-                  </button>
-                )}
+                {entry.actionId &&
+                  onRetry &&
+                  entry.code !== 'LIVE_DM_RESTRICTED' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onRetry(entry.actionId!);
+                        onResubmit?.(entry.actionId!);
+                      }}
+                    >
+                      Retry this action
+                    </button>
+                  )}
               </li>
             );
           }
