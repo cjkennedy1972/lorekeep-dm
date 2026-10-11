@@ -149,3 +149,6 @@ The five Low findings are deferred to M3; they are hardening work outside the fo
 - F7 — Defer expanded audit details and denied-attempt auditing to M3's auditability work.
 - F8 — Defer host:port allow-list semantics and duplicate HTTP-check cleanup to M3's egress hardening work.
 - F9 — Defer quoting of session free-text fields to M3's prompt-boundary hardening pass.
+
+
+Note (M3-38 r2): bare-host `LLM_ALLOW_LOCAL_HOSTS` examples above are superseded. A bare host allows only ports 80 and 443. For a non-default port, list `host:port` exactly (for example `localhost:11434` or `172.31.25.75:8080`). This applies to the server guard, `apps/server/scripts/smoke-production.mjs`, and the live eval path (`packages/evals`).

@@ -15,10 +15,6 @@ import WebSocket from 'ws';
 
 const serverDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl)
-  fail('DATABASE_URL must point at a scratch Postgres database');
-if (!existsSync(join(serverDir, 'dist/main.js')))
-  fail('dist/main.js missing: run `pnpm -r build` first');
 
 const secrets = {
   ageRetry: randomBytes(32).toString('base64url'),
@@ -42,6 +38,11 @@ function fail(message) {
   console.error(`SMOKE FAIL: ${redact(message)}`);
   process.exit(1);
 }
+
+if (!databaseUrl)
+  fail('DATABASE_URL must point at a scratch Postgres database');
+if (!existsSync(join(serverDir, 'dist/main.js')))
+  fail('dist/main.js missing: run `pnpm -r build` first');
 
 const freePort = () =>
   new Promise((resolve, reject) => {
@@ -75,11 +76,18 @@ function startStub() {
         return;
       }
       const parsed = JSON.parse(body || '{}');
-      requests.push({ auth: req.headers.authorization, model: parsed.model });
+      const isJudge = String(parsed.messages?.[0]?.content ?? '').startsWith(
+        'You are moderating',
+      );
+      if (!isJudge)
+        requests.push({ auth: req.headers.authorization, model: parsed.model });
+      const content = isJudge
+        ? JSON.stringify({ verdict: 'allow', category: 'none' })
+        : 'The crypt is quiet.';
       const chunk = (delta, extra = {}) =>
         `data: ${JSON.stringify({ id: 'smoke', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: null }], ...extra })}\n\n`;
       res.writeHead(200, { 'content-type': 'text/event-stream' });
-      res.write(chunk({ role: 'assistant', content: 'The crypt is quiet.' }));
+      res.write(chunk({ role: 'assistant', content }));
       res.write(
         `data: ${JSON.stringify({ id: 'smoke', object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
       );
@@ -143,7 +151,7 @@ async function main() {
       RESEND_API_KEY: secrets.resend,
       EMAIL_FROM: 'Lorekeep Smoke <noreply@smoke.invalid>',
       APP_BASE_URL: 'https://app.smoke.invalid',
-      LLM_ALLOW_LOCAL_HOSTS: '127.0.0.1',
+      LLM_ALLOW_LOCAL_HOSTS: `127.0.0.1:${stub.port}`,
       EXPORT_ARCHIVE_DIR: exportDir,
       SWEEP_INTERVAL_MS: '0',
     },

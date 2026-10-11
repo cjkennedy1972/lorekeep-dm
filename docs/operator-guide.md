@@ -142,3 +142,10 @@ Rules content comes from SRD 5.2.1 under CC-BY-4.0. A deployment must show this 
 > This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
 
 "Compatible with fifth edition" or "5E compatible" is allowed; do not use Wizards marks in the product name. The same statement is in the repository `README.md`. This guide does not claim the web UI page exists; check it before release.
+
+Note (M3-38): local-model entries now need the port. Use `LLM_ALLOW_LOCAL_HOSTS=172.31.25.75:8080` (a bare host allows only ports 80 and 443) and `LLM_ALLOW_LOCAL_HOSTS=localhost:11434` for an Ollama-style endpoint; the examples above that list a bare host are superseded.
+
+
+Note (M3-38 r2): bare-host `LLM_ALLOW_LOCAL_HOSTS` examples above are superseded. A bare host allows only ports 80 and 443. For a non-default port, list `host:port` exactly (for example `localhost:11434` or `172.31.25.75:8080`). This applies to the server guard, `apps/server/scripts/smoke-production.mjs`, and the live eval path (`packages/evals`).
+
+Note (M3-38 r3): the live eval path now applies the same port rule to `https:` endpoints, so `https://172.31.25.75:9999` is refused when only `172.31.25.75` is listed. It also strips a trailing dot from the URL host (as the guard does), refuses URL credentials, and refuses metadata and link-local IP literals even when listed. It does not follow redirects (a 3xx from the live endpoint is an error). It does not resolve DNS: a hostname that resolves to a private or metadata address is not refused by the live path, so list only hosts you control. Entries are not dot-normalized: `localhost.:11434` in the list matches nothing. The shared verdict corpus is `packages/evals/data/live-url-corpus.json`.

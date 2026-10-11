@@ -1,7 +1,15 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+} from 'vitest';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { installGateway } from '../../src/gateway/ws.js';
@@ -155,7 +163,7 @@ beforeAll(async () => {
     runner,
   );
   const connections = new ConnectionRegistry(db);
-  app = createApp(db, { rooms, connections });
+  app = createApp(db, { inputGate: allowInputGate, rooms, connections });
   installGateway(app, db, rooms, connections, 300);
   base = await app.listen({ host: '127.0.0.1', port: 0 });
   process.env.NODE_ENV = 'test';
@@ -236,6 +244,13 @@ describe('solo turn persisted lifecycle', () => {
   it('replays the recorded-LLM fixture through the production runner over websocket', async () => {
     const owner = await createUser();
     fakeEndpoint = await startFakeOpenAIServer({ chunks: textStream });
+    const priorAllowLocalHosts = process.env.LLM_ALLOW_LOCAL_HOSTS;
+    onTestFinished(() => {
+      if (priorAllowLocalHosts === undefined)
+        delete process.env.LLM_ALLOW_LOCAL_HOSTS;
+      else process.env.LLM_ALLOW_LOCAL_HOSTS = priorAllowLocalHosts;
+    });
+    process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(fakeEndpoint.baseUrl).host;
     await saveEndpoint(
       db,
       'moderate',
@@ -266,7 +281,11 @@ describe('solo turn persisted lifecycle', () => {
     rooms = tableRoomRegistry;
     const table = await createTable(owner.id);
     const connections = new ConnectionRegistry(db);
-    const recordedApp = createApp(db, { rooms, connections });
+    const recordedApp = createApp(db, {
+      inputGate: allowInputGate,
+      rooms,
+      connections,
+    });
     installGateway(recordedApp, db, rooms, connections, 300);
     const recordedBase = await recordedApp.listen({
       host: '127.0.0.1',
@@ -593,7 +612,7 @@ describe('solo turn persisted lifecycle', () => {
       runner,
     );
     const connections = new ConnectionRegistry(db);
-    app = createApp(db, { rooms, connections });
+    app = createApp(db, { inputGate: allowInputGate, rooms, connections });
     installGateway(app, db, rooms, connections, 300);
     base = await app.listen({ host: '127.0.0.1', port: 0 });
 

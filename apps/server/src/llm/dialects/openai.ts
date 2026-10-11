@@ -245,6 +245,8 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
       stream: true,
       stream_options: { include_usage: true },
     };
+    if (request.temperature !== undefined)
+      body.temperature = request.temperature;
     if (request.toolMode === 'native' && request.tools?.length) {
       body.tools = request.tools.map((tool) => ({
         type: 'function',

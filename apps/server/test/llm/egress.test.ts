@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../src/config.js';
 import {
   EgressError,
@@ -253,14 +253,89 @@ describe('egress guard: default policy (no local allowlist)', () => {
 });
 
 describe('egress guard: operator local allowlist', () => {
-  it('allows an allowlisted loopback endpoint over http on any port', async () => {
+  it('allows an allowlisted loopback endpoint over http on its listed port', async () => {
     const h = harness(
-      { allowLocalHosts: ['127.0.0.1', 'localhost'] },
+      { allowLocalHosts: ['127.0.0.1:11434', 'localhost:1234'] },
       { localhost: ['127.0.0.1', '::1'] },
     );
     await h.guard.fetch('http://127.0.0.1:11434/v1/chat/completions');
     await h.guard.fetch('http://localhost:1234/v1/chat/completions');
     expect(h.calls).toHaveLength(2);
+  });
+
+  it('rejects a non-listed port on an allowlisted host', async () => {
+    const h = harness({ allowLocalHosts: ['127.0.0.1:11434'] });
+    await rejects(h.guard.fetch('http://127.0.0.1:8080/'), 'egress-port');
+    await rejects(h.guard.fetch('https://127.0.0.1:443/'), 'egress-port');
+    expect(h.calls).toHaveLength(0);
+  });
+
+  it('rejects an allowed port on a host that is not allowlisted', async () => {
+    const h = harness(
+      { allowLocalHosts: ['127.0.0.1:11434'] },
+      { 'api.example.com': [PUBLIC] },
+    );
+    await rejects(
+      h.guard.fetch('https://api.example.com:11434/'),
+      'egress-port',
+    );
+    expect(h.calls).toHaveLength(0);
+  });
+
+  it('bare host entries permit default ports only (80 and 443)', async () => {
+    const h = harness({ allowLocalHosts: ['127.0.0.1'] });
+    await h.guard.fetch('http://127.0.0.1/');
+    await h.guard.fetch('https://127.0.0.1/');
+    await rejects(h.guard.fetch('http://127.0.0.1:11434/'), 'egress-port');
+    expect(h.calls).toHaveLength(2);
+  });
+
+  it('a host:port entry does not permit its port on another listed host', async () => {
+    const h = harness({ allowLocalHosts: ['127.0.0.1:11434', '[::1]:8080'] });
+    await h.guard.fetch('http://127.0.0.1:11434/');
+    await h.guard.fetch('http://[::1]:8080/');
+    await rejects(h.guard.fetch('http://[::1]:11434/'), 'egress-port');
+    await rejects(h.guard.fetch('http://127.0.0.1:8080/'), 'egress-port');
+  });
+
+  it('legacy port-only allowedPorts apply only to hosts already allowlisted', async () => {
+    const h = harness(
+      { allowLocalHosts: ['127.0.0.1'], allowedPorts: [11434] },
+      { 'api.example.com': [PUBLIC] },
+    );
+    await h.guard.fetch('http://127.0.0.1:11434/');
+    await rejects(h.guard.fetch('http://127.0.0.1:8080/'), 'egress-port');
+    await rejects(
+      h.guard.fetch('https://api.example.com:11434/'),
+      'egress-port',
+    );
+  });
+
+  it('warns once when the deprecated allowedPorts option is used', async () => {
+    vi.resetModules();
+    const fresh = await import('../../src/llm/egress.js');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const opts = { allowLocalHosts: ['127.0.0.1'], allowedPorts: [11434] };
+      fresh.createEgressGuard(opts);
+      fresh.createEgressGuard(opts);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('keeps a single plain-http scheme check, in the guard', () => {
+    const egressSrc = readFileSync(
+      join(__dirname, '../../src/llm/egress.ts'),
+      'utf8',
+    );
+    const configSrc = readFileSync(
+      join(__dirname, '../../src/llm/config.ts'),
+      'utf8',
+    );
+    expect(egressSrc.match(/protocol === 'http:'/g)).toHaveLength(1);
+    expect(configSrc).not.toMatch(/protocol === 'http:'/);
   });
 
   it('only allowlists the exact host named, not other local hosts', async () => {
@@ -310,7 +385,7 @@ describe('egress guard: operator local allowlist', () => {
         body: null,
       }),
     });
-    await rejects(guard.fetch('http://127.0.0.1:8080/'), 'egress-redirect');
+    await rejects(guard.fetch('http://127.0.0.1/'), 'egress-redirect');
   });
 });
 
@@ -323,7 +398,7 @@ describe('egress guard: real transport (loopback only, no external network)', ()
     try {
       // "model.invalid" cannot resolve via real DNS; only the pinned address works.
       const guard = createEgressGuard({
-        allowLocalHosts: ['model.invalid'],
+        allowLocalHosts: [`model.invalid:${port}`],
         resolver: async () => [{ address: '127.0.0.1', family: 4 }],
       });
       const res = await guard.fetch(`http://model.invalid:${port}/`);

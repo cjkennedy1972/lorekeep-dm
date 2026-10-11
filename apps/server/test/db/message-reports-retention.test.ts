@@ -12,6 +12,7 @@ import { runAccountDeletions } from '../../src/retention/jobs/accountDeletion.js
 import { runSweep } from '../../src/retention/sweeper.js';
 import { registerReportRoutes } from '../../src/routes/reports.js';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
+import { allowInputGate } from '../support/allowInputGate.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 afterAll(() => pool.end());
@@ -211,6 +212,7 @@ describe('message report retention (Postgres)', () => {
       );
 
     const app = Fastify();
+    app.decorate('inputGate', allowInputGate);
     registerReportRoutes(app, pool);
     const reportBy = async (who: string, messageRef: number) =>
       app.inject({
@@ -348,6 +350,7 @@ describe('message report retention (Postgres)', () => {
     } as unknown as Pool;
 
     const app = Fastify();
+    app.decorate('inputGate', allowInputGate);
     registerReportRoutes(app, racing);
     const response = await app.inject({
       method: 'POST',

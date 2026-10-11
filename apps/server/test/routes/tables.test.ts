@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { registerTableRoutes } from '../../src/routes/tables.js';
@@ -22,7 +23,7 @@ describe('solo table lifecycle routes', () => {
           return { rows: [], rowCount: 0 };
         },
       } as never,
-      { cookieSecret: 'test-secret' },
+      { cookieSecret: 'test-secret', inputGate: allowInputGate },
     );
     registerTableRoutes(
       app as never,

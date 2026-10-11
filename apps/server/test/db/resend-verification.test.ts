@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -56,6 +57,7 @@ describe('signup survives a failing verification send', () => {
   it('returns the normal response and keeps the pending account and token', async () => {
     const email = newEmail();
     const app = createApp(db, {
+      inputGate: allowInputGate,
       sender: new FailingEmailSender(),
       cookieSecret: 'test-secret',
     });
@@ -77,10 +79,12 @@ describe('signup survives a failing verification send', () => {
     const ok = newEmail();
     const failed = newEmail();
     const okRes = await createApp(db, {
+      inputGate: allowInputGate,
       sender: new MemoryEmailSender(),
       cookieSecret: 'test-secret',
     }).inject({ method: 'POST', url: '/api/signup', payload: signupBody(ok) });
     const failRes = await createApp(db, {
+      inputGate: allowInputGate,
       sender: new FailingEmailSender(),
       cookieSecret: 'test-secret',
     }).inject({
@@ -99,7 +103,11 @@ describe('signup survives a failing verification send', () => {
     const failing = new FailingEmailSender();
     await signup(db, failing, { ...signupBody(email), password }, options);
     const sender = new MemoryEmailSender();
-    const app = createApp(db, { sender, cookieSecret: 'test-secret' });
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      sender,
+      cookieSecret: 'test-secret',
+    });
     const res = await app.inject({
       method: 'POST',
       url: '/api/verify-email/resend',
@@ -144,7 +152,11 @@ describe('POST /api/verify-email/resend', () => {
     const sender = new MemoryEmailSender();
     await signup(db, new FailingEmailSender(), signupBody(email), options);
     const id = (await accountId(email))!;
-    const app = createApp(db, { sender, cookieSecret: 'test-secret' });
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      sender,
+      cookieSecret: 'test-secret',
+    });
     const res = await app.inject({
       method: 'POST',
       url: '/api/verify-email/resend',
@@ -177,7 +189,11 @@ describe('POST /api/verify-email/resend', () => {
     await signup(db, sender, signupBody(pending), options);
     await signup(db, sender, signupBody(active), options);
     await verifyEmail(db, sender.messages[1]!.token, password);
-    const app = createApp(db, { sender, cookieSecret: 'test-secret' });
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      sender,
+      cookieSecret: 'test-secret',
+    });
     const send = (email: string, ip: string) =>
       app.inject({
         method: 'POST',
@@ -208,7 +224,11 @@ describe('POST /api/verify-email/resend', () => {
     const sender = new MemoryEmailSender();
     await signup(db, new FailingEmailSender(), signupBody(email), options);
     const id = (await accountId(email))!;
-    const app = createApp(db, { sender, cookieSecret: 'test-secret' });
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      sender,
+      cookieSecret: 'test-secret',
+    });
     const responses = [];
     for (let i = 0; i < 7; i++)
       responses.push(
@@ -231,6 +251,7 @@ describe('POST /api/verify-email/resend', () => {
 
   it('rejects malformed email without touching accounts', async () => {
     const app = createApp(db, {
+      inputGate: allowInputGate,
       sender: new MemoryEmailSender(),
       cookieSecret: 'test-secret',
     });

@@ -166,6 +166,8 @@ export class AnthropicMessagesAdapter implements LlmAdapter {
       stream: true,
       messages,
     };
+    if (request.temperature !== undefined)
+      body.temperature = request.temperature;
     if (systemMessages.length) {
       const stableCount = request.cacheHints?.stablePrefixMessages ?? 0;
       body.system = systemMessages.map((m, i) => ({

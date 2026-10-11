@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import type { registerAuthRoutes } from './auth.js';
 import type { Pool } from 'pg';
-import { hardFloorBlocked } from '../safety/hardFloorGate.js';
 import { CreateRoomInputSchema, type RoomInfo } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import { tokenFromCookie } from '../accounts/sessions.js';
@@ -19,7 +18,7 @@ import { BoundedCounter } from '../accounts/throttle.js';
 type Seater = Pick<RoomRegistry, 'get'>;
 const JOIN_LIMIT = 10;
 export const MAX_ACTIVE_ROOMS = 20;
-const CREATE_PER_HOUR = 10;
+export const CREATE_PER_HOUR = 10;
 export const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host FROM sessions s
   WHERE s.status='active' AND (s.owner_account_id=$1 OR EXISTS (
     SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$1::text))`;
@@ -97,17 +96,26 @@ export function registerSessionRoutes(
         return reply
           .code(400)
           .send({ code: 'INVALID_INPUT', message: 'Enter a table name.' });
-      if (
-        hardFloorBlocked(parsed.data.name, 'room-name', request.log, accountId)
-      )
-        return reply.code(400).send({
-          code: 'CONTENT_REJECTED',
-          message: 'That table name cannot be used.',
-        });
       if (createHits.hit(accountId) > createPerHour)
         return reply.code(429).send({
           code: 'RATE_LIMITED',
           message: 'You are creating tables too quickly. Try again later.',
+        });
+      const decision = await app.inputGate.check({
+        text: parsed.data.name,
+        surface: 'room-name',
+        accountId,
+        ip: request.ip,
+      });
+      if (decision === 'limited')
+        return reply.code(429).send({
+          code: 'RATE_LIMITED',
+          message: 'Too many requests. Try again later.',
+        });
+      if (decision === 'block')
+        return reply.code(400).send({
+          code: 'CONTENT_REJECTED',
+          message: 'That table name cannot be used.',
         });
       const id = randomUUID();
       // ponytail: count+insert is not serialized; concurrent creates can overshoot by a few. Add an advisory lock if that matters.

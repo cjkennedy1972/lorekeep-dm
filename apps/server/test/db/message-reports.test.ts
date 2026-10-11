@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSession } from '../../src/accounts/sessions.js';
 import { registerOperatorRoutes } from '../../src/routes/operator.js';
 import { registerReportRoutes } from '../../src/routes/reports.js';
+import { allowInputGate } from '../support/allowInputGate.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
 
 const HOST = 'http://lorekeep.test';
@@ -99,6 +100,7 @@ describe('message reports', () => {
 
   function app() {
     const server = Fastify();
+    server.decorate('inputGate', allowInputGate);
     registerReportRoutes(server, pool());
     registerOperatorRoutes(server, pool(), async (id) => id === operator, {
       egress: {} as never,

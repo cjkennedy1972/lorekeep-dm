@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -26,7 +27,10 @@ describe('export abuse limits', () => {
   it('throttles password guesses per account across IPs, before any password check', async () => {
     const id = await account();
     const token = await createSession(db, id, 'Test device');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+    });
     const post = (ip: string, password: string) =>
       app.inject({
         method: 'POST',
@@ -56,7 +60,10 @@ describe('export abuse limits', () => {
         "INSERT INTO export_jobs(id,account_id,status,requested_at) VALUES($1,$2,'completed',now() - interval '1 day')",
         [randomUUID(), id],
       );
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+    });
     const response = await app.inject({
       method: 'POST',
       url: '/api/me/export',

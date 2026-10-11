@@ -30,7 +30,7 @@ describe('OpenAI-compatible LLM adapter', () => {
       model: 'fixture-model',
       apiKey: new Secret('test-secret'),
       egress: createEgressGuard({
-        allowLocalHosts: ['127.0.0.1', 'localhost'],
+        allowLocalHosts: [new URL(server.baseUrl).host],
       }),
       timeoutMs,
       unsupportedToolSchemaKeywords,

@@ -28,7 +28,7 @@ let sessionId: string;
 beforeAll(async () => {
   db = new Pool({ connectionString: databaseUrl });
   endpoint = await startFakeOpenAIServer({ chunks: textStream });
-  process.env.LLM_ALLOW_LOCAL_HOSTS = '127.0.0.1';
+  process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(endpoint.baseUrl).host;
   process.env.OPERATOR_ENDPOINT_MASTER_KEY = `primary:${randomBytes(32).toString('base64')}`;
   ownerId = randomUUID();
   sessionId = randomUUID();
