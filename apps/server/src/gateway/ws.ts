@@ -348,6 +348,7 @@ export function installGateway(
                 answer.data.payload.answer,
                 'clarification',
                 app.log,
+                identity.accountId,
               )
             ) {
               send({
@@ -399,6 +400,7 @@ export function installGateway(
                 action.data.payload.text,
                 'player-action',
                 app.log,
+                identity.accountId,
               )
             ) {
               send({
