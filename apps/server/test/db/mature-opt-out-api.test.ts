@@ -128,9 +128,9 @@ describe('mature opt-out API', () => {
     expect(
       (await put(`sid=${playerToken}`, { tier: 'family' })).statusCode,
     ).toBe(403);
-    expect(
-      (await put(`sid=${hostToken}`, { tier: 'mature' })).statusCode,
-    ).toBe(400);
+    expect((await put(`sid=${hostToken}`, { tier: 'mature' })).statusCode).toBe(
+      400,
+    );
 
     const lowered = await put(`sid=${hostToken}`, {
       tier: 'family',
@@ -138,12 +138,66 @@ describe('mature opt-out API', () => {
     });
     expect(lowered.statusCode).toBe(200);
     expect(lowered.json()).toEqual({ tier: 'family' });
-    const row = await db.query<{ content_tier: string }>(
-      'SELECT content_tier FROM sessions WHERE id=$1',
+    const row = await db.query<{
+      content_tier: string;
+      host_tier_cap: string | null;
+    }>('SELECT content_tier, host_tier_cap FROM sessions WHERE id=$1', [
+      sessionId,
+    ]);
+    expect(row.rows[0]).toEqual({
+      content_tier: 'standard',
+      host_tier_cap: 'family',
+    });
+    const audit = await db.query<{ payload: unknown }>(
+      `SELECT payload FROM events WHERE session_id=$1 AND type='HostTierCapChanged'`,
       [sessionId],
     );
-    expect(row.rows[0]?.content_tier).toBe('family');
+    expect(audit.rows).toEqual([{ payload: { from: null, to: 'family' } }]);
     expect(await optOut(player)).toBe(true);
+    await app.close();
+  });
+
+  it('clears the host cap with null and rejects a cross-origin PATCH', async () => {
+    const host = await account();
+    const hostToken = await createSession(db, host, 'Host device');
+    const sessionId = await room(host);
+    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const cookie = `sid=${hostToken}`;
+    const put = (payload: unknown, origin?: string) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/sessions/${sessionId}/content-tier`,
+        remoteAddress: '10.9.0.5',
+        headers: origin ? { cookie, origin } : { cookie },
+        payload,
+      });
+
+    expect(
+      (await put({ tier: 'family' }, 'https://evil.example')).statusCode,
+    ).toBe(403);
+    expect((await put({ tier: 'family' })).statusCode).toBe(200);
+    expect((await put({ tier: null })).json()).toEqual({ tier: null });
+    const row = await db.query<{ host_tier_cap: string | null }>(
+      'SELECT host_tier_cap FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    expect(row.rows[0]?.host_tier_cap).toBeNull();
+    await app.close();
+  });
+
+  it('rejects a cross-origin content-settings PATCH', async () => {
+    const player = await account();
+    const token = await createSession(db, player, 'Test device');
+    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/me/content-settings',
+      remoteAddress: '10.9.0.6',
+      headers: { cookie: `sid=${token}`, origin: 'https://evil.example' },
+      payload: { matureOptOut: true },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(await optOut(player)).toBe(false);
     await app.close();
   });
 

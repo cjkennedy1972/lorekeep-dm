@@ -9,6 +9,8 @@ import type {
   LlmChunk,
   LlmRequest,
 } from '../../src/llm/adapter.js';
+import { createApp } from '../../src/app.js';
+import { createSession } from '../../src/accounts/sessions.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 
@@ -279,6 +281,96 @@ describe('content tier through the DM turn path', () => {
     const { changes } = await turn(sessionId, accountId, db, calls);
     expect(changes).toEqual([]);
     expect(promptTier(calls)).toBe('standard');
+  });
+});
+
+const promptTierOf = (calls: LlmRequest[]) =>
+  JSON.stringify(calls[0]).match(/contentTier\\":\\"(\w+)\\"/)?.[1];
+
+async function hostCap(sessionId: string, accountId: string, tier: unknown) {
+  const app = createApp(db, { cookieSecret: 'test-secret' });
+  try {
+    const token = await createSession(db, accountId, 'Host device');
+    return await app.inject({
+      method: 'PATCH',
+      url: `/api/sessions/${sessionId}/content-tier`,
+      remoteAddress: '10.9.2.1',
+      headers: { cookie: `sid=${token}` },
+      payload: { tier },
+    });
+  } finally {
+    await app.close();
+  }
+}
+
+describe('host tier cap through the DM turn path', () => {
+  it('holds a host lower through the next narration and does not overwrite it', async () => {
+    const { accountId, sessionId } = await table();
+    const first = await turn(sessionId, accountId, db, []);
+    await commit(sessionId, first.changes);
+    expect(await storedTier(sessionId)).toBe('mature');
+
+    expect((await hostCap(sessionId, accountId, 'family')).statusCode).toBe(
+      200,
+    );
+
+    const calls: LlmRequest[] = [];
+    const lowered = await turn(sessionId, accountId, db, calls);
+    expect(lowered.changes).toEqual([
+      { type: 'ContentTierChanged', from: 'mature', to: 'family' },
+    ]);
+    expect(promptTierOf(calls)).toBe('family');
+    await commit(sessionId, lowered.changes);
+    expect(await storedTier(sessionId)).toBe('family');
+
+    const again: LlmRequest[] = [];
+    const next = await turn(sessionId, accountId, db, again);
+    expect(next.changes).toEqual([]);
+    expect(promptTierOf(again)).toBe('family');
+    expect(await storedTier(sessionId)).toBe('family');
+  });
+
+  it('returns the table to the automatic tier when the host clears the cap', async () => {
+    const { accountId, sessionId } = await table();
+    expect((await hostCap(sessionId, accountId, 'family')).statusCode).toBe(
+      200,
+    );
+    const low = await turn(sessionId, accountId, db, []);
+    await commit(sessionId, low.changes);
+    expect(await storedTier(sessionId)).toBe('family');
+
+    expect((await hostCap(sessionId, accountId, null)).statusCode).toBe(200);
+    const calls: LlmRequest[] = [];
+    const back = await turn(sessionId, accountId, db, calls);
+    expect(back.changes).toEqual([
+      { type: 'ContentTierChanged', from: 'family', to: 'mature' },
+    ]);
+    expect(promptTierOf(calls)).toBe('mature');
+    await commit(sessionId, back.changes);
+    expect(await storedTier(sessionId)).toBe('mature');
+  });
+
+  it('never lets a host cap raise the tier, and a player opt-out still lowers it', async () => {
+    const { accountId, sessionId } = await table();
+    expect((await hostCap(sessionId, accountId, 'standard')).statusCode).toBe(
+      200,
+    );
+    const eligible: LlmRequest[] = [];
+    const capped = await turn(sessionId, accountId, db, eligible);
+    expect(capped.changes).toEqual([]);
+    expect(promptTierOf(eligible)).toBe('standard');
+
+    await setOptOut(accountId, true);
+    const optedOut: LlmRequest[] = [];
+    expect((await turn(sessionId, accountId, db, optedOut)).changes).toEqual(
+      [],
+    );
+    expect(promptTierOf(optedOut)).toBe('standard');
+
+    await setOptOut(accountId, false);
+    const cleared: LlmRequest[] = [];
+    expect((await turn(sessionId, accountId, db, cleared)).changes).toEqual([]);
+    expect(promptTierOf(cleared)).toBe('standard');
   });
 });
 

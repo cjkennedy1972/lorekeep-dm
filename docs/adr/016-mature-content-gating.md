@@ -32,3 +32,9 @@ Status: Proposed (human decision 2026-10-06, round 3; supersedes round 2 "off by
 - An account whose status is not `active` (e.g. `deleting`) counts as opted out, both for the tier predicate and for delivery.
 - `ContentTierChanged` is broadcast live to all connections and is persisted to the event log. It reveals the table tier level (not any player's identity beyond the existing seat state).
 - Non-mature narration is delivered to all connections as before.
+
+**Implementation notes (M3-17).**
+- The host's choice is a separate nullable column, `sessions.host_tier_cap` (migration 0022; NULL = no cap, otherwise `family` or `standard`). `sessions.content_tier` stays the last committed derived tier, so an opt-out never becomes a permanent cap and `mature` stays the default for eligible tables.
+- `PATCH /api/sessions/:id/content-tier` takes `tier: family | standard | null` (null clears the cap). A changed cap appends `HostTierCapChanged {from, to}` to the event log in the same locked transaction (`Persistence.setHostTierCap`). It does not emit `ContentTierChanged`: the tier only changes at the next narration, which emits it through the normal turn path.
+- `loadContentTierState` passes the cap to `computeContentTier`, which fails an invalid value closed to `standard`. A cap only lowers: it never raises the tier, and an opt-out still lowers the table when the cap is cleared.
+- Both content-settings PATCH routes check `validOrigin`.

@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
+import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
 
@@ -88,6 +90,30 @@ export class Persistence {
     return this.transaction(sessionId, lease, (client) =>
       appendEvents(client, sessionId, events),
     );
+  }
+
+  setHostTierCap(sessionId: string, cap: HostCap | null): Promise<void> {
+    return this.transaction(sessionId, undefined, async (client) => {
+      const from =
+        (
+          await client.query<{ host_tier_cap: HostCap | null }>(
+            'SELECT host_tier_cap FROM sessions WHERE id=$1',
+            [sessionId],
+          )
+        ).rows[0]?.host_tier_cap ?? null;
+      if (from === cap) return;
+      await client.query('UPDATE sessions SET host_tier_cap=$2 WHERE id=$1', [
+        sessionId,
+        cap,
+      ]);
+      await appendEvents(client, sessionId, [
+        {
+          turnId: randomUUID(),
+          type: 'HostTierCapChanged',
+          payload: { from, to: cap },
+        },
+      ]);
+    });
   }
 
   writeTurn(
