@@ -96,6 +96,7 @@ export async function startServer(): Promise<RunningServer> {
 }
 
 async function startServerOnce(port: number): Promise<RunningServer> {
+  await judge.start();
   const child = spawn(process.execPath, ['apps/server/dist/main.js'], {
     cwd: repoRoot,
     env: {
@@ -108,7 +109,7 @@ async function startServerOnce(port: number): Promise<RunningServer> {
       SWEEP_INTERVAL_MS: '0',
       OPERATOR_EMAILS: operatorEmail,
       OPERATOR_ENDPOINT_MASTER_KEY: endpointMasterKey,
-      LLM_ALLOW_LOCAL_HOSTS: '127.0.0.1',
+      LLM_ALLOW_LOCAL_HOSTS: `127.0.0.1,127.0.0.1:${judge.port}`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -159,7 +160,6 @@ function ensureModerateEndpoint(url: string): Promise<void> {
   return moderateEndpoint;
 }
 async function configureModerateEndpoint(url: string): Promise<void> {
-  await judge.start();
   const accountId = randomUUID();
   await proofDb.query(
     `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at)

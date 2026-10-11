@@ -12,7 +12,11 @@ export class ModerationStub {
   verdict: 'allow' | 'block' = 'allow';
   judgeCalls = 0;
   private server?: Server;
-  private port = 0;
+  private bound = 0;
+
+  get port(): number {
+    return this.bound;
+  }
 
   get baseUrl(): string {
     return `http://127.0.0.1:${this.port}/v1`;
@@ -23,9 +27,9 @@ export class ModerationStub {
     const server = createServer((req, res) => this.handle(req, res));
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(this.port, '127.0.0.1', () => resolve());
+      server.listen(this.bound, '127.0.0.1', () => resolve());
     });
-    this.port = (server.address() as AddressInfo).port;
+    this.bound = (server.address() as AddressInfo).port;
     this.server = server;
   }
 
