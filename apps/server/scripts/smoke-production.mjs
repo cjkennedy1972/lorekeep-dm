@@ -75,11 +75,18 @@ function startStub() {
         return;
       }
       const parsed = JSON.parse(body || '{}');
-      requests.push({ auth: req.headers.authorization, model: parsed.model });
+      const isJudge = String(parsed.messages?.[0]?.content ?? '').startsWith(
+        'You are moderating',
+      );
+      if (!isJudge)
+        requests.push({ auth: req.headers.authorization, model: parsed.model });
+      const content = isJudge
+        ? JSON.stringify({ verdict: 'allow', category: 'none' })
+        : 'The crypt is quiet.';
       const chunk = (delta, extra = {}) =>
         `data: ${JSON.stringify({ id: 'smoke', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: null }], ...extra })}\n\n`;
       res.writeHead(200, { 'content-type': 'text/event-stream' });
-      res.write(chunk({ role: 'assistant', content: 'The crypt is quiet.' }));
+      res.write(chunk({ role: 'assistant', content }));
       res.write(
         `data: ${JSON.stringify({ id: 'smoke', object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
       );

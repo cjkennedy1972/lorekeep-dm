@@ -37,7 +37,9 @@ installGateway(app, db, rooms);
 let base: string;
 let tokens: string[];
 
-function nextMessage(ws: WebSocket): Promise<{ type: string; payload: any }> {
+function nextMessage(
+  ws: WebSocket,
+): Promise<{ type: string; payload: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('socket timeout')), 3000);
     ws.once('message', (data) => {

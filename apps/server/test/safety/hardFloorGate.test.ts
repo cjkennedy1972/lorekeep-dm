@@ -77,6 +77,9 @@ describe('signup display-name hard floor', () => {
     });
     expect(res.body).not.toContain('lolicon');
     expect(queries.every((q) => /moderation_log/.test(q))).toBe(true);
+    expect(queries.some((q) => /INSERT\s+INTO\s+accounts/i.test(q))).toBe(
+      false,
+    );
     await app.close();
   });
 });
