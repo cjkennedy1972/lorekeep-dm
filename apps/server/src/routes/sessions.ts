@@ -19,7 +19,7 @@ type Seater = Pick<RoomRegistry, 'get'>;
 const JOIN_LIMIT = 10;
 export const MAX_ACTIVE_ROOMS = 20;
 const CREATE_PER_HOUR = 10;
-const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host FROM sessions s
+export const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host FROM sessions s
   WHERE s.status='active' AND (s.owner_account_id=$1 OR EXISTS (
     SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$1::text))`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

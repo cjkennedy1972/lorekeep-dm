@@ -3,6 +3,14 @@ import type { Server } from 'node:http';
 import type { Logger } from 'pino';
 import type { Pool } from 'pg';
 import type { EgressGuard } from '../llm/egress.js';
+import { z } from 'zod';
+import {
+  publicContext,
+  REPORT_TRANSITIONS,
+  reportPatchSchema,
+  reportQuerySchema,
+  type ReportStatus,
+} from './reports.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
 import {
@@ -117,5 +125,75 @@ export function registerOperatorRoutes(
     return deleted
       ? { deleted: true }
       : reply.code(404).send({ code: 'NOT_FOUND' });
+  });
+  app.get('/api/operator/reports', async (request, reply) => {
+    const session = await authorize(request, reply);
+    if (!session) return;
+    const query = reportQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ code: 'INVALID_INPUT' });
+    const { status, limit, offset } = query.data;
+    const result = await db.query<{ context: Array<Record<string, unknown>> }>(
+      `SELECT id,session_id,message_seq,reporter_account_id,author_account_id,category,reason,context,status,created_at,expires_at,reviewed_by,reviewed_at
+       FROM message_reports WHERE status=$1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
+      [status, limit, offset],
+    );
+    return {
+      reports: result.rows.map((row) => ({
+        ...row,
+        context: publicContext(row.context),
+      })),
+    };
+  });
+  app.patch('/api/operator/reports/:id', async (request, reply) => {
+    const session = await authorize(request, reply);
+    if (!session) return;
+    const { id } = request.params as { id: string };
+    const body = reportPatchSchema.safeParse(request.body);
+    if (!z.uuid().safeParse(id).success)
+      return reply.code(404).send({ code: 'NOT_FOUND' });
+    if (!body.success) return reply.code(400).send({ code: 'INVALID_INPUT' });
+    const to = body.data.status;
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const prev = (
+        await client.query<{ status: ReportStatus }>(
+          'SELECT status FROM message_reports WHERE id=$1 FOR UPDATE',
+          [id],
+        )
+      ).rows[0];
+      if (!prev || !REPORT_TRANSITIONS[prev.status].includes(to)) {
+        await client.query('ROLLBACK');
+        return prev
+          ? reply.code(409).send({
+              code: 'INVALID_TRANSITION',
+              message: `A ${prev.status} report cannot become ${to}.`,
+            })
+          : reply.code(404).send({ code: 'NOT_FOUND' });
+      }
+      const report = (
+        await client.query(
+          `UPDATE message_reports
+           SET status=$2::text,
+               reviewed_by=CASE WHEN $2::text='open' THEN NULL ELSE $3::uuid END,
+               reviewed_at=CASE WHEN $2::text='open' THEN NULL ELSE now() END,
+               expires_at=CASE WHEN $2::text='open' THEN now() + interval '90 days' ELSE now() + interval '30 days' END
+           WHERE id=$1
+           RETURNING id,status,reviewed_by,reviewed_at,expires_at`,
+          [id, to, session.account_id],
+        )
+      ).rows[0];
+      await client.query(
+        'INSERT INTO message_report_audit(report_id,actor_id,from_status,to_status) VALUES($1,$2,$3,$4)',
+        [id, session.account_id, prev.status, to],
+      );
+      await client.query('COMMIT');
+      return { report };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   });
 }

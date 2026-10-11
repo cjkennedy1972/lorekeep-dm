@@ -4,12 +4,15 @@ import { removeArchive } from './exports.js';
 import { skipIfHeld, type JobContext } from '../types.js';
 import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
+import { AUTHOR_KEY, TEXT_KEYS } from '../../routes/reports.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
+const REDACTED = '[removed]';
 const HELD = 'HELD';
 const MENTIONING_SQL = `SELECT session_id FROM events WHERE payload::text LIKE $1
-     UNION SELECT session_id FROM snapshots WHERE state::text LIKE $1`;
+     UNION SELECT session_id FROM snapshots WHERE state::text LIKE $1
+     UNION SELECT session_id FROM message_reports WHERE context::text LIKE $1`;
 type Queryable = Pick<Pool, 'query'>;
 
 async function heirFor(db: Queryable, sessionId: string, accountId: string) {
@@ -150,6 +153,7 @@ async function deleteAccount(
     roomsHandedOff: 0,
     eventsScrubbed: 0,
     snapshotsScrubbed: 0,
+    reportsRedacted: 0,
   };
   const exportRows = (
     await client.query<{ id: string; archive_key: string | null }>(
@@ -321,6 +325,22 @@ async function deleteAccount(
     counts.snapshotsScrubbed++;
   }
 
+  const reportRows = (
+    await client.query<{ id: string; context: unknown[] }>(
+      'SELECT id, context FROM message_reports WHERE context::text LIKE $1',
+      [accountPattern],
+    )
+  ).rows;
+  for (const row of reportRows) {
+    const context = redactAuthored(row.context, accountId);
+    if (JSON.stringify(context) === JSON.stringify(row.context)) continue;
+    await client.query('UPDATE message_reports SET context=$2 WHERE id=$1', [
+      row.id,
+      JSON.stringify(context),
+    ]);
+    counts.reportsRedacted++;
+  }
+
   if (charIds.size) {
     await client.query(
       'UPDATE sessions SET character=NULL, character_id=NULL WHERE character_id = ANY($1)',
@@ -335,8 +355,27 @@ async function deleteAccount(
     "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1) AND node_id=$2",
     [[...fenced], FENCE_NODE],
   );
+  await client.query(
+    "UPDATE message_reports SET reason='' WHERE reporter_account_id=$1",
+    [accountId],
+  );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
+}
+
+/** Blanks the text of entries the account authored in a report snapshot and drops the marker. */
+function redactAuthored(context: unknown[], accountId: string) {
+  return context.map((entry) => {
+    if (!isRecord(entry) || entry[AUTHOR_KEY] !== accountId) return entry;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(entry)) {
+      if (key === AUTHOR_KEY) continue;
+      out[key] = (TEXT_KEYS as readonly string[]).includes(key)
+        ? REDACTED
+        : value;
+    }
+    return out;
+  });
 }
 
 function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
