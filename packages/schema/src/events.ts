@@ -17,6 +17,8 @@ const ev = <T extends string, S extends z.ZodRawShape>(type: T, shape: S) =>
   z.object({ type: z.literal(type), ...shape });
 const entityId = z.string().min(1);
 const pos = GridPosSchema;
+export const ContentTierSchema = z.enum(['family', 'standard', 'mature']);
+export type ContentTier = z.infer<typeof ContentTierSchema>;
 
 export const EngineEventSchema = z.discriminatedUnion('type', [
   ev('RollEvent', {
@@ -62,5 +64,6 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   }),
   ev('ConditionRemoved', { entityId, conditionId: z.string().min(1) }),
   ev('SlotSpent', { entityId, level: z.int().min(1).max(9) }),
+  ev('ContentTierChanged', { from: ContentTierSchema, to: ContentTierSchema }),
 ]);
 export type EngineEvent = z.infer<typeof EngineEventSchema>;

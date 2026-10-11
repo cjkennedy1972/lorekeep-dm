@@ -36,6 +36,7 @@ const seat = {
   accountId: uuid,
   displayName: 'A',
   presence: 'online',
+  matureOptOut: false,
 };
 const room = { sessionId: uuid, phase: 'lobby', seats: [seat] };
 const cases = [

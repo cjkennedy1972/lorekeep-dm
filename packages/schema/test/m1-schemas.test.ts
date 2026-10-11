@@ -164,6 +164,7 @@ const events: EngineEvent[] = [
   { type: 'ConditionApplied', entityId: 'a', conditionId: 'condition:prone' },
   { type: 'ConditionRemoved', entityId: 'a', conditionId: 'condition:prone' },
   { type: 'SlotSpent', entityId: 'a', level: 1 },
+  { type: 'ContentTierChanged', from: 'mature', to: 'standard' },
 ];
 
 // Compile-time exhaustiveness: adding an event type without a case fails typecheck.
@@ -185,6 +186,7 @@ function label(e: EngineEvent): string {
     case 'ConditionApplied':
     case 'ConditionRemoved':
     case 'SlotSpent':
+    case 'ContentTierChanged':
       return e.type;
     default: {
       const _never: never = e;
