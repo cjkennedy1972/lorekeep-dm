@@ -428,3 +428,27 @@ describe('golden plumbing on boundary-100 (fake judge, not accuracy)', () => {
     }
   });
 });
+
+describe('fail-closed row', () => {
+  it('a judge outage carries the hard-floor row so the caller blocks rather than holds', async () => {
+    const moderator = new JudgeModerator({
+      chat: async () => {
+        throw new Error('endpoint down');
+      },
+      deterministic: {
+        hardFloorCheck: () => ({ blocked: false }),
+        denylistCheck: () => ({ blocked: false }),
+      },
+    });
+    const verdict = await moderator.moderate({
+      text: 'Hi.',
+      tier: 'family',
+      direction: 'output',
+    });
+    expect(verdict).toMatchObject({
+      verdict: 'block',
+      unavailable: true,
+      failClosedRow: 'hard-floor',
+    });
+  });
+});

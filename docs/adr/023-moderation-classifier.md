@@ -132,3 +132,21 @@ Recorded when M3-08 landed (#159). This addendum refines the decision above and 
 - The `hold` decision and copy are owned by M3-10, driven by the `unavailable` flag.
 
 **Also built.** The rubric is embedded at build time from `docs/security/moderation-rubric.md`, with a drift test. The `moderation:probe` script reads its endpoint from environment variables, is read-only, and is not run in CI.
+
+## Addendum: M3-08b follow-ups
+
+Recorded before gate wiring (M3-07/M3-10). This addendum refines the M3-08 addendum above and does not change the original text.
+
+**Judge context (C3).** The judge's `context` is the trailing 400 characters of text already approved in this turn, plus pending text ahead of the chunk, not only the immediately preceding chunk. It is for reference only; the verdict applies to `<text>` alone.
+
+**Judge concurrency across attempts (C4).** At most 2 judge calls are in flight per attempt. A blocked attempt's calls are not aborted (`moderate` takes no signal), so while the next attempt starts, up to 4 classifications can be in flight across attempts. Each call is bounded by its own verdict timeout (below).
+
+**Per-turn output ceiling (N3).** At most 30,000 characters are read from the upstream across all attempts of one turn (`maxTurnChars`). Exceeding it fails closed and goes straight to the safe redirect, with no further regeneration. The per-attempt 20,000-character budget still applies inside it. This supersedes the "Known limits" bullet above for the total.
+
+**Hung upstreams and verdicts (N1, C1, N2).** The gate races each upstream read against the attempt's abort and a source idle timeout (`sourceIdleMs`, default 15 s). An idle source fails the attempt, which throws to the consumer. When an attempt is abandoned, `return()` is called on the upstream from the consumer side, so a hung upstream is closed as soon as the gate stops reading, though a generator already blocked in `next()` may not run its `finally` until that `next()` settles. Each verdict is bounded at the gate (`verdictTimeoutMs`, default 10 s); a late verdict fails closed through the same path as a judge outage.
+
+**Fail-closed row contract for M3-10 (C2).** On an unavailable verdict (`unavailable: true`), `failClosedRow` says which row of the fail-closed table applies:
+- `'hard-floor'` maps to **BLOCK**.
+- `'tier'` maps to **HOLD**.
+
+The caller maps `failClosedRow`, not `category`. The category is `other` on outage because the judge did not answer. The gate and the moderator both set `'hard-floor'`, the stricter row, because an outage has no category to show it is a tier-only case, and the hard floor never fails open. A future path that knows the text is tier-only may set `'tier'`. `failClosedRow` is undefined when `unavailable` is false.

@@ -7,6 +7,13 @@ import {
 export type Category = (typeof MODERATION_CATEGORIES)[number];
 export type Direction = 'input' | 'output';
 
+/**
+ * Which fail-closed table row applies when `unavailable` is true (ADR-023).
+ * `hard-floor` => BLOCK, `tier` => HOLD. The category is unknown on outage,
+ * so the verdict defaults to `hard-floor`; M3-10 maps this field, not `category`.
+ */
+export type FailClosedRow = 'hard-floor' | 'tier';
+
 export interface Verdict {
   verdict: 'allow' | 'block';
   category: Category;
@@ -14,6 +21,18 @@ export interface Verdict {
   latencyMs: number;
   /** True when the judge could not produce a usable verdict (fail-closed). */
   unavailable: boolean;
+  failClosedRow?: FailClosedRow;
+}
+
+export function failClosedVerdict(latencyMs: number): Verdict {
+  return {
+    verdict: 'block',
+    category: 'other',
+    source: 'failclosed',
+    latencyMs,
+    unavailable: true,
+    failClosedRow: 'hard-floor',
+  };
 }
 
 export interface ModerationRequest {
@@ -151,13 +170,6 @@ export class JudgeModerator implements Moderator {
   async moderate(req: ModerationRequest): Promise<Verdict> {
     const started = this.now();
     const elapsed = () => this.now() - started;
-    const failClosed = (): Verdict => ({
-      verdict: 'block',
-      category: 'other',
-      source: 'failclosed',
-      latencyMs: elapsed(),
-      unavailable: true,
-    });
 
     let rule: { category: Category; source: 'hardfloor' | 'denylist' } | null =
       null;
@@ -171,7 +183,7 @@ export class JudgeModerator implements Moderator {
           rule = { category: denied.category ?? 'other', source: 'denylist' };
       }
     } catch {
-      return failClosed();
+      return failClosedVerdict(elapsed());
     }
     if (rule) {
       return {
@@ -183,7 +195,7 @@ export class JudgeModerator implements Moderator {
     }
 
     const judged = await this.judge(req);
-    if (judged === null) return failClosed();
+    if (judged === null) return failClosedVerdict(elapsed());
     return {
       ...judged,
       source: 'judge',

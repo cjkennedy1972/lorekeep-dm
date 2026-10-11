@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   SAFE_REDIRECT_TEMPLATE,
   runOutputGate,
@@ -382,6 +382,7 @@ describe('bounded judging and buffering', () => {
         moderator,
         tier: 'standard',
         maxStreamChars: 1_000_000,
+        maxTurnChars: 1_000_000,
       }),
     );
     const elapsedMs = performance.now() - started;
@@ -515,5 +516,128 @@ describe('metrics', () => {
       [0, 'allow', 'judge'],
       [0, 'allow', 'judge'],
     ]);
+  });
+});
+
+const hungAfter = (
+  first: string[],
+  ret: () => Promise<IteratorResult<string>>,
+) => ({
+  [Symbol.asyncIterator]() {
+    let n = 0;
+    return {
+      next: () =>
+        n < first.length
+          ? Promise.resolve({ value: first[n++]!, done: false })
+          : new Promise<IteratorResult<string>>(() => undefined),
+      return: ret,
+    };
+  },
+});
+
+describe('abandoned and hung upstreams', () => {
+  it('a hung upstream is return()ed when its attempt is blocked', async () => {
+    const ret = vi.fn(async () => ({ value: undefined, done: true as const }));
+    const { moderator } = scripted((text) =>
+      text.startsWith('Bad') ? BLOCK : ALLOW,
+    );
+    const events = await collect(
+      runOutputGate({
+        stream: hungAfter(['Bad. '], ret),
+        regenerate: () => tokens('Fine. '),
+        moderator,
+        tier: 'family',
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(ret).toHaveBeenCalledTimes(1);
+  });
+
+  it('a source that goes silent past sourceIdleMs fails the attempt and return()s upstream', async () => {
+    const ret = vi.fn(async () => ({ value: undefined, done: true as const }));
+    const { moderator } = scripted(() => ALLOW);
+    const seen: GateEvent[] = [];
+    await expect(
+      (async () => {
+        for await (const e of runOutputGate({
+          stream: hungAfter(['Hi. '], ret),
+          regenerate: () => tokens('x'),
+          moderator,
+          tier: 'family',
+          sourceIdleMs: 20,
+        }))
+          seen.push(e);
+      })(),
+    ).rejects.toThrow(/idle/);
+    expect(chunkTexts(seen)).toEqual(['Hi.']);
+    expect(ret).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('verdict bound', () => {
+  it('a verdict that never resolves fails closed and regenerates', async () => {
+    let calls = 0;
+    const moderator: Moderator = {
+      moderate: () => {
+        calls++;
+        return calls === 1
+          ? new Promise<Verdict>(() => undefined)
+          : Promise.resolve(ALLOW);
+      },
+    };
+    const events = await collect(
+      runOutputGate({
+        stream: tokens('Hi. '),
+        regenerate: () => tokens('Ok. '),
+        moderator,
+        tier: 'family',
+        verdictTimeoutMs: 20,
+      }),
+    );
+    expect(events.some((e) => e.kind === 'regenerate')).toBe(true);
+    expect(chunkTexts(events)).toEqual(['Ok.']);
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks[0]).toMatchObject({
+      verdict: 'block',
+      source: 'failclosed',
+    });
+  });
+});
+
+describe('per-turn ceiling', () => {
+  it('stops regenerating once total read across attempts exceeds maxTurnChars', async () => {
+    const { moderator } = scripted(() => ALLOW);
+    const events = await collect(
+      runOutputGate({
+        stream: tokens('Fine. ', 'x'.repeat(60)),
+        regenerate: () => {
+          throw new Error('not expected');
+        },
+        moderator,
+        tier: 'family',
+        maxTurnChars: 50,
+      }),
+    );
+    expect(events.some((e) => e.kind === 'regenerate')).toBe(false);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
+  });
+});
+
+describe('CJK sentence ends', () => {
+  it('cuts after 。！？ without requiring a following space', async () => {
+    const { moderator, seen } = scripted(() => ALLOW);
+    const events = await collect(
+      runOutputGate({
+        stream: tokens('这是第一句。这是第二句！'),
+        regenerate: () => {
+          throw new Error('not expected');
+        },
+        moderator,
+        tier: 'family',
+      }),
+    );
+    expect(seen).toEqual(['这是第一句。', '这是第二句！']);
+    expect(chunkTexts(events).join('')).toBe('这是第一句。这是第二句！');
   });
 });
