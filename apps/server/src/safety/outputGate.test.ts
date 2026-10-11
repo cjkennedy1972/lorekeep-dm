@@ -311,6 +311,186 @@ describe('block and regenerate', () => {
   });
 });
 
+describe('bounded judging and buffering', () => {
+  it('never has more judge calls in flight than maxInFlight across 500 sentences', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const moderator: Moderator = {
+      moderate: async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await flush();
+        inFlight--;
+        return ALLOW;
+      },
+    };
+    const sentences = Array.from({ length: 500 }, (_, i) => `S${i}. `);
+    const events = await collect(
+      runOutputGate({
+        stream: tokens(...sentences),
+        regenerate: () => {
+          throw new Error('not expected');
+        },
+        moderator,
+        tier: 'standard',
+        maxInFlight: 2,
+      }),
+    );
+    expect(chunkTexts(events)).toHaveLength(500);
+    expect(peak).toBeLessThanOrEqual(2);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+  });
+
+  it('forced cuts keep every chunk within maxChunkChars and concatenate to the input', async () => {
+    const text =
+      'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda';
+    const { moderator } = scripted(() => ALLOW);
+    const events = await collect(
+      runOutputGate({
+        stream: tokens(...splitTokens(text, 4)),
+        regenerate: () => {
+          throw new Error('not expected');
+        },
+        moderator,
+        tier: 'standard',
+        maxChunkChars: 12,
+      }),
+    );
+    const chunks = chunkTexts(events);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(12);
+    expect(chunks.join('')).toBe(text);
+  });
+
+  it('a 200k-delta run with no sentence end stays bounded and reassembles exactly', async () => {
+    const deltas = 200_000;
+    const text =
+      Array.from({ length: deltas - 5 }, (_, i) =>
+        i % 50 === 49 ? '. ' : 'x',
+      ).join('') + 'done.';
+    async function* source() {
+      for (let i = 0; i < text.length; i++) yield text[i]!;
+    }
+    const { moderator } = scripted(() => ALLOW);
+    const started = performance.now();
+    const events = await collect(
+      runOutputGate({
+        stream: source(),
+        regenerate: () => {
+          throw new Error('not expected');
+        },
+        moderator,
+        tier: 'standard',
+        maxStreamChars: 1_000_000,
+      }),
+    );
+    const elapsedMs = performance.now() - started;
+    const chunks = chunkTexts(events);
+    expect(chunks.join('')).toBe(text);
+    expect(Math.max(...chunks.map((c) => c.length))).toBeLessThanOrEqual(400);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    console.info(
+      `200k-delta gate run: ${elapsedMs.toFixed(0)} ms, ${chunks.length} chunks`,
+    );
+    expect(elapsedMs).toBeLessThan(10_000);
+  });
+
+  it('exceeding maxStreamChars fails closed and regenerates', async () => {
+    const { moderator } = scripted(() => ALLOW);
+    const calls: number[] = [];
+    const events = await collect(
+      runOutputGate({
+        stream: tokens(...Array.from({ length: 20 }, () => 'aaaa. ')),
+        regenerate: (attempt) => {
+          calls.push(attempt);
+          return tokens('Calm. ');
+        },
+        moderator,
+        tier: 'standard',
+        maxStreamChars: 50,
+      }),
+    );
+    expect(calls).toEqual([1]);
+    expect(chunkTexts(events).at(-1)).toBe('Calm.');
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks.find((c) => c.verdict === 'block')).toMatchObject(
+      {
+        attempt: 0,
+        verdict: 'block',
+        source: 'failclosed',
+      },
+    );
+  });
+
+  it('whitespace-only runs are never sent to the moderator', async () => {
+    const { moderator, seen } = scripted(() => ALLOW);
+    await collect(
+      runOutputGate({
+        stream: tokens('Hi. ', '   ', 'There. '),
+        regenerate: () => {
+          throw new Error('not expected');
+        },
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    expect(seen.every((t) => t.trim() !== '')).toBe(true);
+  });
+
+  it('passes the previous chunk as context and the verdict text alone', async () => {
+    const contexts: Array<string | undefined> = [];
+    const moderator: Moderator = {
+      moderate: async (req: ModerationRequest) => {
+        contexts.push(req.context);
+        return ALLOW;
+      },
+    };
+    await collect(
+      runOutputGate({
+        stream: tokens('One. ', 'Two. '),
+        regenerate: () => {
+          throw new Error('not expected');
+        },
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    expect(contexts).toEqual(['', 'One.']);
+  });
+
+  it('a blocked attempt aborts its upstream and its regenerate signal once it is abandoned', async () => {
+    let upstreamClosed = false;
+    async function* endless() {
+      try {
+        for (;;) yield 'Bad. ';
+      } finally {
+        upstreamClosed = true;
+      }
+    }
+    const { moderator } = scripted((text) =>
+      text.startsWith('Bad') ? BLOCK : ALLOW,
+    );
+    let signal: AbortSignal | undefined;
+    const events = await collect(
+      runOutputGate({
+        stream: endless(),
+        regenerate: (_attempt, _approved, s) => {
+          signal = s;
+          return tokens('Good. ');
+        },
+        moderator,
+        tier: 'standard',
+        maxInFlight: 1,
+      }),
+    );
+    await flush();
+    expect(chunkTexts(events)).toEqual(['Good.']);
+    expect(upstreamClosed).toBe(true);
+    expect(signal?.aborted).toBe(true);
+  });
+});
+
 describe('metrics', () => {
   it('reports time to first approved chunk and per-chunk verdict records', async () => {
     const { moderator } = scripted(() => ALLOW);

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   JUDGE_MAX_TOKENS,
   JudgeModerator,
+  buildJudgeMessages,
   parseVerdictReply,
   type DeterministicLayer,
   type JudgeChatRequest,
@@ -69,6 +70,13 @@ const MALFORMED: [string, string][] = [
   ['truncated object', '{"verdict":"allow","cat'],
   ['boolean verdict', '{"verdict":true,"category":"none"}'],
   ['null category', '{"verdict":"allow","category":null}'],
+  [
+    'escaped duplicate verdict key turning block into allow',
+    '{"verdict":"block","category":"none","\\u0076erdict":"allow"}',
+  ],
+  ['escaped verdict key alone', '{"\\u0076erdict":"allow","category":"none"}'],
+  ['escaped category value', '{"verdict":"allow","category":"n\\u006fne"}'],
+  ['escaped quote in a value', '{"verdict":"allow\\"","category":"none"}'],
 ];
 
 describe('parseVerdictReply strict schema', () => {
@@ -217,7 +225,38 @@ describe('request shape', () => {
   });
 });
 
+describe('direction and context framing', () => {
+  it('direction selects the framing sentence in the system text', () => {
+    const input = buildJudgeMessages({ ...request('x'), direction: 'input' });
+    const output = buildJudgeMessages({ ...request('x'), direction: 'output' });
+    expect(input[0]!.content).toContain('PLAYER INPUT');
+    expect(input[0]!.content).not.toContain('GAME MASTER OUTPUT');
+    expect(output[0]!.content).toContain('GAME MASTER OUTPUT');
+    expect(output[0]!.content).not.toContain('PLAYER INPUT');
+  });
+
+  it('context is a separate data block before the text, never in the system rubric', async () => {
+    const { chat, calls } = judgeReplying(ALLOW);
+    await moderatorWith(chat).moderate({
+      ...request('new text'),
+      context: 'earlier text',
+    });
+    const [system, user] = calls[0]!.messages;
+    expect(system!.content).not.toContain('earlier text');
+    expect(user!.content).toContain(
+      '<context>\n"earlier text"\n</context>\n<text>\n"new text"',
+    );
+  });
+});
+
 describe('deterministic layer', () => {
+  it('refuses to construct without a deterministic layer', () => {
+    const { chat } = judgeReplying(ALLOW);
+    expect(() => new JudgeModerator({ chat } as never)).toThrow(
+      'deterministic layer',
+    );
+  });
+
   it('a hard-floor hit short-circuits: the judge is never called', async () => {
     const { chat } = judgeReplying(ALLOW);
     const deterministic: DeterministicLayer = {
