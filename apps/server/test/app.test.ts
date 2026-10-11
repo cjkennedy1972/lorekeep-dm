@@ -64,6 +64,22 @@ describe('server app', () => {
     expect(response.body).not.toContain('secret');
     await app.close();
   });
+  it('reports the sweep as stale when its health read fails, without leaking details', async () => {
+    const app = createApp({
+      query: async (sql: string) => {
+        if (sql.startsWith('SELECT 1')) return { rows: [] };
+        throw new Error('secret');
+      },
+    } as never);
+    const response = await app.inject('/readyz');
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: 'ready',
+      retention: { lastCompletedAt: null, stale: true },
+    });
+    expect(response.body).not.toContain('secret');
+    await app.close();
+  });
   it('redacts credentials and birthdate from structured logs', () => {
     let output = '';
     const logger = createLogger({
