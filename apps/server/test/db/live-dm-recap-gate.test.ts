@@ -97,6 +97,7 @@ beforeAll(async () => {
     rooms,
     connections: new ConnectionRegistry(db),
     liveDmAllowlistOnly: true,
+    cookieSecret: 'live-dm-recap-gate-test-secret',
   });
   base = await app.listen({ host: '127.0.0.1', port: 0 });
 });
