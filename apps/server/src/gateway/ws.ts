@@ -10,6 +10,7 @@ import {
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
+import { hardFloorBlocked } from '../safety/hardFloorGate.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
   consumeTicket,
@@ -342,6 +343,24 @@ export function installGateway(
               });
               return;
             }
+            if (
+              hardFloorBlocked(
+                answer.data.payload.answer,
+                'clarification',
+                app.log,
+              )
+            ) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'CONTENT_REJECTED',
+                  message: 'That reply cannot be sent.',
+                  actionId: answer.data.payload.actionId,
+                },
+              });
+              return;
+            }
             return room
               .answerClarification(
                 identity.accountId,
@@ -370,6 +389,24 @@ export function installGateway(
                 payload: {
                   code: 'INVALID_ACTION',
                   message: 'Action is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            if (
+              hardFloorBlocked(
+                action.data.payload.text,
+                'player-action',
+                app.log,
+              )
+            ) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'CONTENT_REJECTED',
+                  message: 'That action cannot be sent.',
                   actionId: msg.actionId,
                 },
               });
