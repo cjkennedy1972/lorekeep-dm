@@ -23,7 +23,5 @@ CREATE TABLE message_report_audit (
  actor_id uuid REFERENCES accounts(id) ON DELETE SET NULL,
  from_status text NOT NULL,
  to_status text NOT NULL,
- created_at timestamptz NOT NULL DEFAULT now(),
- expires_at timestamptz NOT NULL DEFAULT (now() + interval '90 days')
+ created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX message_report_audit_expiry_idx ON message_report_audit(expires_at);

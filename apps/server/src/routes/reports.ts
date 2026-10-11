@@ -31,20 +31,27 @@ export const REPORT_TRANSITIONS: Record<ReportStatus, readonly ReportStatus[]> =
 const REPORTS_PER_HOUR = 10;
 const CONTEXT_BEFORE = 10;
 const TEXT_LIMIT = 500;
-const TEXT_KEYS = ['text', 'narrative', 'narration'] as const;
+export const TEXT_KEYS = ['text', 'narrative', 'narration'] as const;
+/** Internal author account id on a message entry. Never returned by the API; redacted on account deletion. */
+export const AUTHOR_KEY = '_authorId';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const bodySchema = z.object({
   messageRef: z.number().int().positive(),
   category: z.enum(REPORT_CATEGORIES),
-  reason: z.string().trim().max(500).default(''),
+  reason: z
+    .string()
+    .trim()
+    .refine((reason) => Array.from(reason).length <= 500)
+    .default(''),
 });
 
 // TODO: run `reason` through the hard-floor check once safety/hardFloor.ts (PR #153) is on main.
 
 /**
  * Keeps message text only. Player names become seat labels assigned in order of first
- * appearance; the reporter is 'Reporter'. Account ids never leave this function.
+ * appearance; the reporter is 'Reporter'. Account ids never leave this function except as
+ * AUTHOR_KEY on message entries.
  */
 function snapshotOf(
   events: Array<{
@@ -58,8 +65,13 @@ function snapshotOf(
   let players = 0;
   const labelOf = (accountId: unknown) => {
     if (typeof accountId !== 'string') return undefined;
-    if (!labels.has(accountId))
-      labels.set(accountId, `Player ${String.fromCharCode(65 + players++)}`);
+    if (!labels.has(accountId)) {
+      const n = players++;
+      labels.set(
+        accountId,
+        n < 26 ? `Player ${String.fromCharCode(65 + n)}` : `Player ${n + 1}`,
+      );
+    }
     return labels.get(accountId);
   };
   // Code points, not UTF-16 units: a cut inside a surrogate pair is invalid jsonb.
@@ -70,16 +82,32 @@ function snapshotOf(
       seq: Number(event.seq),
       type: event.type,
     };
-    if (typeof event.payload.playerName === 'string') {
-      const label = labelOf(event.payload.accountId);
-      if (label) out.playerName = label;
-    }
+    const label =
+      typeof event.payload.playerName === 'string'
+        ? labelOf(event.payload.accountId)
+        : undefined;
+    if (label) out.playerName = label;
     for (const key of TEXT_KEYS) {
       const value = event.payload[key];
       if (typeof value === 'string') out[key] = cut(value);
     }
+    const author = event.payload.accountId;
+    if (
+      typeof author === 'string' &&
+      (label || TEXT_KEYS.some((k) => k in out))
+    )
+      out[AUTHOR_KEY] = author;
     return out;
   });
+}
+
+/** Strips internal markers from snapshot entries before they leave the server. */
+export function publicContext(context: Array<Record<string, unknown>>) {
+  return context.map((entry) =>
+    Object.fromEntries(
+      Object.entries(entry).filter(([key]) => key !== AUTHOR_KEY),
+    ),
+  );
 }
 
 export function registerReportRoutes(

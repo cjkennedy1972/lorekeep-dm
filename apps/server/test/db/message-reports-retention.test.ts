@@ -55,24 +55,20 @@ async function session(owner: string, status = 'active', archivedAt?: Date) {
   return id;
 }
 
-async function insertReport(
-  sessionId: string,
-  expiresAt: Date,
-  reporter: string | null = null,
-) {
+async function insertReport(sessionId: string, expiresAt: Date) {
   const id = randomUUID();
   await q(
-    `INSERT INTO message_reports(id,session_id,message_seq,reporter_account_id,category,context,expires_at)
-     VALUES($1,$2,1,$3,'other','[]',$4)`,
-    [id, sessionId, reporter, expiresAt],
+    `INSERT INTO message_reports(id,session_id,message_seq,category,context,expires_at)
+     VALUES($1,$2,1,'other','[]',$3)`,
+    [id, sessionId, expiresAt],
   );
   return id;
 }
 
-async function insertAudit(reportId: string, expiresAt: Date) {
+async function insertAudit(reportId: string) {
   await q(
-    'INSERT INTO message_report_audit(report_id,from_status,to_status,expires_at) VALUES($1,$2,$3,$4)',
-    [reportId, 'open', 'dismissed', expiresAt],
+    'INSERT INTO message_report_audit(report_id,from_status,to_status) VALUES($1,$2,$3)',
+    [reportId, 'open', 'dismissed'],
   );
 }
 
@@ -80,13 +76,13 @@ const reportExists = async (id: string) =>
   (await q('SELECT 1 FROM message_reports WHERE id=$1', [id])).length === 1;
 
 describe('message report retention (Postgres)', () => {
-  it('purges expired reports and audit rows through the sweeper and keeps live ones', async () => {
+  it('purges expired reports through the sweeper; their audit rows cascade and live ones keep theirs', async () => {
     const owner = await account('Keeper');
     const sid = await session(owner);
     const expired = await insertReport(sid, ago(1));
     const live = await insertReport(sid, new Date(Date.now() + DAY));
-    await insertAudit(expired, ago(1));
-    await insertAudit(live, new Date(Date.now() + DAY));
+    await insertAudit(expired);
+    await insertAudit(live);
 
     const sweep = await runSweep(pool, { store, log: () => {} });
 
@@ -111,7 +107,7 @@ describe('message report retention (Postgres)', () => {
     ).toBe(1);
   });
 
-  it('skips expired reports under a session legal hold and logs the skip', async () => {
+  it('skips expired reports under a session legal hold and logs the skip once, not per sweep', async () => {
     const owner = await account('Held Keeper');
     const sid = await session(owner);
     const held = await insertReport(sid, ago(1));
@@ -119,9 +115,11 @@ describe('message report retention (Postgres)', () => {
       sid,
     ]);
 
-    const result = await purgeExpiredReports(ctx());
+    const first = await purgeExpiredReports(ctx());
+    const second = await purgeExpiredReports(ctx());
 
-    expect(result.held).toBeGreaterThanOrEqual(1);
+    expect(first.held).toBeGreaterThanOrEqual(1);
+    expect(second.held).toBeGreaterThanOrEqual(1);
     expect(await reportExists(held)).toBe(true);
     expect(
       (
@@ -130,14 +128,14 @@ describe('message report retention (Postgres)', () => {
           [sid],
         )
       )[0].n,
-    ).toBeGreaterThanOrEqual(1);
+    ).toBe(1);
   });
 
   it('removes a session reports when the session is purged', async () => {
     const owner = await account('Purged Keeper');
     const sid = await session(owner);
     const report = await insertReport(sid, new Date(Date.now() + DAY));
-    await insertAudit(report, new Date(Date.now() + DAY));
+    await insertAudit(report);
 
     await q('SELECT purge_session($1)', [sid]);
 
@@ -162,7 +160,7 @@ describe('message report retention (Postgres)', () => {
     expect(await reportExists(report)).toBe(false);
   });
 
-  it('keeps no names or ids in a snapshot after the reporter or the author is deleted by the account-deletion job', async () => {
+  it('blanks the text the deleted reporter and author typed in every report, keeping other players text', async () => {
     const keeper = await account('Keeper Kim');
     const reporter = await account('Hollis Host');
     const author = await account('Quinn Seated');
@@ -177,6 +175,26 @@ describe('message report retention (Postgres)', () => {
       [3, 'SeatJoined', { accountId: author, displayName: 'Quinn Seated' }],
       [
         4,
+        'ActionAccepted',
+        {
+          accountId: keeper,
+          playerName: 'Keeper Kim',
+          text: 'Keeper says hi.',
+          actionId: 'k1',
+        },
+      ],
+      [
+        5,
+        'ActionAccepted',
+        {
+          accountId: reporter,
+          playerName: 'Hollis Host',
+          text: 'Hollis own words.',
+          actionId: 'h1',
+        },
+      ],
+      [
+        6,
         'ActionAccepted',
         {
           accountId: author,
@@ -194,47 +212,84 @@ describe('message report retention (Postgres)', () => {
 
     const app = Fastify();
     registerReportRoutes(app, pool);
-    const cookie = `sid=${await createSession(pool, reporter, 'test', new Date(Date.now() + DAY))}`;
-    const posted = await app.inject({
-      method: 'POST',
-      url: `/api/rooms/${sid}/reports`,
-      headers: { cookie, origin: HOST, host: 'lorekeep.test' },
-      payload: {
-        messageRef: 4,
-        category: 'harassment',
-        reason: 'Quinn is rude',
-      },
-    });
-    expect(posted.statusCode).toBe(202);
-    const id = (
-      await q('SELECT id FROM message_reports WHERE session_id=$1', [sid])
-    )[0].id as string;
+    const reportBy = async (who: string, messageRef: number) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/rooms/${sid}/reports`,
+        headers: {
+          cookie: `sid=${await createSession(pool, who, 'test', new Date(Date.now() + DAY))}`,
+          origin: HOST,
+          host: 'lorekeep.test',
+        },
+        payload: { messageRef, category: 'harassment', reason: 'Rude.' },
+      });
+    expect((await reportBy(reporter, 6)).statusCode).toBe(202);
+    expect((await reportBy(keeper, 5)).statusCode).toBe(202);
+    const contexts = async () =>
+      JSON.stringify(
+        await q('SELECT context FROM message_reports WHERE session_id=$1', [
+          sid,
+        ]),
+      );
+    expect(await contexts()).toContain('Hollis own words.');
 
     await markDeleting(reporter);
     await runAccountDeletions(ctx());
-    const afterReporter = (
-      await q(
-        'SELECT reporter_account_id,reason,context,author_account_id FROM message_reports WHERE id=$1',
-        [id],
-      )
-    )[0];
-    expect(afterReporter.reporter_account_id).toBeNull();
-    expect(afterReporter.reason).toBe('');
-    expect(JSON.stringify(afterReporter.context)).not.toContain(reporter);
-    expect(JSON.stringify(afterReporter.context)).not.toContain('Hollis');
+    let dump = await contexts();
+    expect(dump).not.toContain('Hollis own words.');
+    expect(dump).not.toContain('Hollis');
+    expect(dump).not.toContain(reporter);
+    expect(dump).toContain('Keeper says hi.');
+    expect(dump).toContain('I hit the goblin.');
 
     await markDeleting(author);
     await runAccountDeletions(ctx());
-    const afterAuthor = (
-      await q(
-        'SELECT author_account_id,context FROM message_reports WHERE id=$1',
-        [id],
-      )
-    )[0];
-    const dump = JSON.stringify(afterAuthor.context);
-    expect(afterAuthor.author_account_id).toBeNull();
-    expect(dump).not.toContain(author);
+    dump = await contexts();
+    expect(dump).not.toContain('I hit the goblin.');
     expect(dump).not.toContain('Quinn');
-    expect(dump).toContain('I hit the goblin.');
+    expect(dump).not.toContain(author);
+    expect(dump).toContain('Keeper says hi.');
+    expect(dump).toContain('[removed]');
+  });
+
+  it('holds the account deletion when a report in a legally held session still mentions the account', async () => {
+    const keeper = await account('Keeper Lee');
+    const author = await account('Held Author');
+    const sid = await session(keeper);
+    const reportId = randomUUID();
+    await q(
+      `INSERT INTO message_reports(id,session_id,message_seq,category,context,expires_at)
+       VALUES($1,$2,1,'other',$3,now() + interval '90 days')`,
+      [
+        reportId,
+        sid,
+        JSON.stringify([
+          {
+            seq: 1,
+            type: 'ActionAccepted',
+            playerName: 'Player A',
+            text: 'Still here.',
+            _authorId: author,
+          },
+        ]),
+      ],
+    );
+    await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
+      sid,
+    ]);
+    await markDeleting(author);
+
+    await runAccountDeletions(ctx());
+
+    expect(
+      (await q('SELECT status FROM accounts WHERE id=$1', [author]))[0].status,
+    ).toBe('deleting');
+    expect(
+      JSON.stringify(
+        await q('SELECT context FROM message_reports WHERE id=$1', [reportId]),
+      ),
+    ).toContain('Still here.');
+    await q('DELETE FROM legal_holds WHERE item_id=$1', [sid]);
+    await runAccountDeletions(ctx());
   });
 });

@@ -5,6 +5,7 @@ import type { Pool } from 'pg';
 import type { EgressGuard } from '../llm/egress.js';
 import { z } from 'zod';
 import {
+  publicContext,
   REPORT_TRANSITIONS,
   reportPatchSchema,
   reportQuerySchema,
@@ -131,12 +132,17 @@ export function registerOperatorRoutes(
     const query = reportQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({ code: 'INVALID_INPUT' });
     const { status, limit, offset } = query.data;
-    const result = await db.query(
+    const result = await db.query<{ context: Array<Record<string, unknown>> }>(
       `SELECT id,session_id,message_seq,reporter_account_id,author_account_id,category,reason,context,status,created_at,expires_at,reviewed_by,reviewed_at
        FROM message_reports WHERE status=$1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
       [status, limit, offset],
     );
-    return { reports: result.rows };
+    return {
+      reports: result.rows.map((row) => ({
+        ...row,
+        context: publicContext(row.context),
+      })),
+    };
   });
   app.patch('/api/operator/reports/:id', async (request, reply) => {
     const session = await authorize(request, reply);
@@ -178,8 +184,8 @@ export function registerOperatorRoutes(
         )
       ).rows[0];
       await client.query(
-        'INSERT INTO message_report_audit(report_id,actor_id,from_status,to_status,expires_at) VALUES($1,$2,$3,$4,$5)',
-        [id, session.account_id, prev.status, to, report.expires_at],
+        'INSERT INTO message_report_audit(report_id,actor_id,from_status,to_status) VALUES($1,$2,$3,$4)',
+        [id, session.account_id, prev.status, to],
       );
       await client.query('COMMIT');
       return { report };

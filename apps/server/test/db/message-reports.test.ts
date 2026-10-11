@@ -146,8 +146,8 @@ describe('message reports', () => {
       text: 'I hit the goblin.',
     });
     const dump = JSON.stringify(row.context);
+    expect(dump).toContain('_authorId');
     expect(dump).not.toContain(host);
-    expect(dump).not.toContain(seated);
     expect(dump).not.toContain(operator);
   });
 
@@ -355,6 +355,24 @@ describe('message reports', () => {
       ).statusCode,
     ).toBe(400);
     expect(
+      (
+        await post(server, hostCookie, {
+          messageRef: 3,
+          category: 'other',
+          reason: '😀'.repeat(300),
+        })
+      ).statusCode,
+    ).toBe(202);
+    expect(
+      (
+        await post(server, hostCookie, {
+          messageRef: 3,
+          category: 'other',
+          reason: '😀'.repeat(501),
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
       (await post(server, hostCookie, { messageRef: 9999, category: 'other' }))
         .statusCode,
     ).toBe(404);
@@ -393,6 +411,8 @@ describe('message reports', () => {
       reporter_account_id: host,
       status: 'open',
     });
+    expect(ok.body).not.toContain('_authorId');
+    expect(JSON.stringify(ok.json().reports[0].context)).not.toContain(seated);
     const dismissed = await server.inject({
       method: 'GET',
       url: '/api/operator/reports?status=dismissed',
