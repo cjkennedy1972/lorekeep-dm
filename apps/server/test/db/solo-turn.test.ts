@@ -236,6 +236,7 @@ describe('solo turn persisted lifecycle', () => {
   it('replays the recorded-LLM fixture through the production runner over websocket', async () => {
     const owner = await createUser();
     fakeEndpoint = await startFakeOpenAIServer({ chunks: textStream });
+    process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(fakeEndpoint.baseUrl).host;
     await saveEndpoint(
       db,
       'moderate',

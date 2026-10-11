@@ -217,14 +217,6 @@ export async function validateEndpointUrl(
       url.password
     )
       throw new Error();
-    if (
-      url.protocol === 'http:' &&
-      !(process.env.LLM_ALLOW_LOCAL_HOSTS ?? '')
-        .split(',')
-        .map((v) => v.trim().toLowerCase())
-        .includes(url.hostname.toLowerCase())
-    )
-      throw new Error();
     await egress.validate(baseUrl);
   } catch {
     throw new Error('Endpoint URL is not allowed');

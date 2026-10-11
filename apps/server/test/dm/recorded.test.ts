@@ -48,7 +48,9 @@ const fakeAdapter = () => {
     model: 'fixture-model',
     apiKey: new Secret('secret-key'),
     // the fake server listens on loopback: allowed only via the operator allowlist (M2-19)
-    egress: createEgressGuard({ allowLocalHosts: ['127.0.0.1', 'localhost'] }),
+    egress: createEgressGuard({
+      allowLocalHosts: [new URL(server.baseUrl).host],
+    }),
   });
 };
 

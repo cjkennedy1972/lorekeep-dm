@@ -152,9 +152,9 @@ it.skipIf(process.env.LIVE_LLM !== '1')(
     if (
       !(process.env.LLM_ALLOW_LOCAL_HOSTS ?? '')
         .split(',')
-        .includes('172.31.25.75')
+        .includes('172.31.25.75:8080')
     )
-      throw new Error('LLM_ALLOW_LOCAL_HOSTS must include 172.31.25.75');
+      throw new Error('LLM_ALLOW_LOCAL_HOSTS must include 172.31.25.75:8080');
     const maxTokensFloor = process.env.LIVE_MAX_TOKENS
       ? Number(process.env.LIVE_MAX_TOKENS)
       : undefined;

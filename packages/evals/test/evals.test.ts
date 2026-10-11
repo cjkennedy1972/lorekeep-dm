@@ -191,7 +191,7 @@ describe('live mode', () => {
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const port = (server.address() as { port: number }).port;
-    process.env.LLM_ALLOW_LOCAL_HOSTS = '127.0.0.1';
+    process.env.LLM_ALLOW_LOCAL_HOSTS = `127.0.0.1:${port}`;
     try {
       const out = join(mkdtempSync(join(tmpdir(), 'eval-')), 'rec.json');
       const { record, path } = await runLiveAndStore({

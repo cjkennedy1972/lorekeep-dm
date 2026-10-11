@@ -142,3 +142,5 @@ Rules content comes from SRD 5.2.1 under CC-BY-4.0. A deployment must show this 
 > This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
 
 "Compatible with fifth edition" or "5E compatible" is allowed; do not use Wizards marks in the product name. The same statement is in the repository `README.md`. This guide does not claim the web UI page exists; check it before release.
+
+Note (M3-38): local-model entries now need the port. Use `LLM_ALLOW_LOCAL_HOSTS=172.31.25.75:8080` (a bare host allows only ports 80 and 443) and `LLM_ALLOW_LOCAL_HOSTS=localhost:11434` for an Ollama-style endpoint; the examples above that list a bare host are superseded.

@@ -13,9 +13,13 @@ export function checkLiveUrl(
     .split(',')
     .map((h) => h.trim())
     .filter(Boolean);
+  const port = url.port || (url.protocol === 'https:' ? '443' : '80');
   if (
     url.protocol !== 'https:' &&
-    !(url.protocol === 'http:' && allowed.includes(url.hostname))
+    !(
+      url.protocol === 'http:' &&
+      allowed.some((e) => e === url.hostname || e === `${url.hostname}:${port}`)
+    )
   )
     throw new Error(
       `live endpoint ${url.hostname} must be https or listed in LLM_ALLOW_LOCAL_HOSTS`,

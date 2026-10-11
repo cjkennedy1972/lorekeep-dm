@@ -51,12 +51,14 @@ export type Transport = (req: TransportRequest) => Promise<TransportResponse>;
 
 export interface EgressOptions {
   /**
-   * Operator allowlist of exact hostnames / IP literals (e.g. "localhost",
-   * "127.0.0.1", "10.0.0.5") that may resolve to loopback/private ranges and
-   * use plain http. Empty by default. Metadata/link-local never allowed.
+   * Operator allowlist of exact hostnames / IP literals, optionally with a port
+   * (e.g. "localhost", "172.31.25.75:8080", "[::1]:8080"). A bare host permits
+   * ports 80 and 443 only; a host:port permits that port only. Listed hosts may
+   * resolve to loopback/private ranges and use plain http. Metadata/link-local
+   * never allowed.
    */
   allowLocalHosts?: readonly string[];
-  /** Extra ports allowed for public hosts (443 always). Local hosts: any port. */
+  /** @deprecated Port-only list; applies only to hosts already in allowLocalHosts. Use host:port entries. */
   allowedPorts?: readonly number[];
   maxResponseBytes?: number;
   timeoutMs?: number;
@@ -206,11 +208,35 @@ const nodeTransport: Transport = (req) =>
     r.end(req.body);
   });
 
+const DEFAULT_LOCAL_PORTS = [80, 443];
+let warnedLegacyPorts = false;
+
+function parseAllowEntry(entry: string): { host: string; port?: number } {
+  const e = entry.trim().toLowerCase();
+  const m = /^\[(.+)\](?::(\d+))?$/.exec(e) ?? /^([^:]+):(\d+)$/.exec(e);
+  return m
+    ? { host: m[1]!, port: m[2] ? Number(m[2]) : undefined }
+    : { host: e };
+}
+
 export function createEgressGuard(options: EgressOptions = {}): EgressGuard {
-  const allow = new Set(
-    (options.allowLocalHosts ?? []).map((h) => h.toLowerCase()),
-  );
-  const extraPorts = new Set(options.allowedPorts ?? []);
+  const legacyPorts = options.allowedPorts ?? [];
+  if (legacyPorts.length && !warnedLegacyPorts) {
+    warnedLegacyPorts = true;
+    console.warn(
+      'egress: allowedPorts is deprecated; use host:port entries in allowLocalHosts',
+    );
+  }
+  const localPorts = new Map<string, Set<number>>();
+  for (const entry of options.allowLocalHosts ?? []) {
+    const { host, port } = parseAllowEntry(entry);
+    const ports = localPorts.get(host) ?? new Set<number>();
+    for (const p of port === undefined ? DEFAULT_LOCAL_PORTS : [port])
+      ports.add(p);
+    localPorts.set(host, ports);
+  }
+  for (const ports of localPorts.values())
+    for (const p of legacyPorts) ports.add(p);
   const maxBytes = options.maxResponseBytes ?? 8 * 1024 * 1024;
   const timeoutMs = options.timeoutMs ?? 60_000;
   const resolver = options.resolver ?? defaultResolver;
@@ -241,11 +267,12 @@ export function createEgressGuard(options: EgressOptions = {}): EgressGuard {
         'egress-blocked-address',
         'Endpoint address is blocked',
       );
-    const local = allow.has(host) || allow.has(url.hostname.toLowerCase());
+    const ports = localPorts.get(host);
+    const local = ports !== undefined;
     if (url.protocol === 'http:' && !local)
       throw new EgressError('egress-scheme', 'Endpoint must use https');
     const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
-    if (!local && port !== 443 && !extraPorts.has(port))
+    if (!(ports ? ports.has(port) : port === 443))
       throw new EgressError('egress-port', 'Endpoint port not allowed');
 
     let addrs: ResolvedAddress[];
