@@ -51,6 +51,11 @@ const schema = z.object({
   /** Public web origin used to build verification and reset links, e.g. https://lorekeep.example. */
   APP_BASE_URL: z.url().optional(),
   OPERATOR_EMAILS: z.string().default(''),
+  /** M3 gate: live DM turns only for OPERATOR_EMAILS accounts. Turn off only at M3 exit (M3-33). */
+  LIVE_DM_ALLOWLIST_ONLY: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   /** AES-256-GCM master key: exactly 32 bytes in hex or base64. */
   OPERATOR_ENDPOINT_MASTER_KEY: z.string().optional(),
   OPERATOR_ENDPOINT_ACTIVE_KEY_ID: z.string().optional(),

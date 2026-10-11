@@ -13,6 +13,13 @@ export interface SoloTurnRequest {
   signal?: AbortSignal;
 }
 
+export class LiveDmRestrictedError extends Error {
+  constructor() {
+    super('LIVE_DM_RESTRICTED');
+    this.name = 'LiveDmRestrictedError';
+  }
+}
+
 /** Runtime-specific prompt, endpoint, and engine bindings stay outside the Room actor. */
 export interface SoloTurnRunner {
   run(

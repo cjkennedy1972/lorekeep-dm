@@ -17,6 +17,7 @@ import {
   createEndpointEgress,
 } from '../llm/config.js';
 import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
+import { liveDmAllowed } from '../llm/liveDmGate.js';
 import {
   RecordedLlmAdapter,
   fixtureModeFromEnvironment,
@@ -60,6 +61,7 @@ export function registerTableRoutes(
   app: FastifyInstance,
   db: Pool,
   rooms: Pick<import('../room/registry.js').RoomRegistry, 'get'>,
+  liveDmAllowlistOnly: boolean,
 ) {
   async function account(
     request: Parameters<typeof authenticateRequest>[1],
@@ -255,35 +257,37 @@ export function registerTableRoutes(
         (row.state?.gameState as Record<string, unknown> | undefined)
           ?.recap) as { recap: string; memoryHash: string } | undefined;
       const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
+      const mode = fixtureModeFromEnvironment();
       let adapter;
-      try {
-        const raw = await createConfiguredAdapter(
-          db,
-          endpointSlot as 'fast' | 'frontier' | 'moderate',
-          createEndpointEgress(),
-        );
-        const mode = fixtureModeFromEnvironment();
-        adapter = new MeteredLlmAdapter(
-          mode
-            ? new RecordedLlmAdapter({
-                mode,
-                fixturePath:
-                  process.env.LLM_FIXTURE_PATH ?? 'fixtures/solo-turn.ndjson',
-                upstream: raw,
-                allowRecord: process.env.NODE_ENV === 'test',
-                environment: process.env.NODE_ENV,
-              })
-            : raw,
-          new PostgresUsageSink(db),
-          {
-            sessionId: request.params.id,
-            turnId: randomUUID(),
-            purpose: 'summary',
-            modelId: endpointSlot,
-          },
-        );
-      } catch {
-        /* deterministic recap remains available offline */
+      if (await liveDmAllowed(db, accountId, liveDmAllowlistOnly, mode)) {
+        try {
+          const raw = await createConfiguredAdapter(
+            db,
+            endpointSlot as 'fast' | 'frontier' | 'moderate',
+            createEndpointEgress(),
+          );
+          adapter = new MeteredLlmAdapter(
+            mode
+              ? new RecordedLlmAdapter({
+                  mode,
+                  fixturePath:
+                    process.env.LLM_FIXTURE_PATH ?? 'fixtures/solo-turn.ndjson',
+                  upstream: raw,
+                  allowRecord: process.env.NODE_ENV === 'test',
+                  environment: process.env.NODE_ENV,
+                })
+              : raw,
+            new PostgresUsageSink(db),
+            {
+              sessionId: request.params.id,
+              turnId: randomUUID(),
+              purpose: 'summary',
+              modelId: endpointSlot,
+            },
+          );
+        } catch {
+          /* deterministic recap remains available offline */
+        }
       }
       const recap = await buildResumeRecap({
         db,
