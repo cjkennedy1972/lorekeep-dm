@@ -138,10 +138,11 @@ describe('message reports', () => {
     expect(row.author_account_id).toBe(seated);
     expect(row.status).toBe('open');
     expect(row.live).toBe(true);
-    expect(row.life.days).toBe(30);
+    expect(row.life.days).toBe(90);
     expect(row.context.length).toBe(11);
     expect(row.context.at(-1)).toMatchObject({
       seq: ref,
+      playerName: 'Player A',
       text: 'I hit the goblin.',
     });
     const dump = JSON.stringify(row.context);
@@ -163,6 +164,118 @@ describe('message reports', () => {
     const context = (await pool().query('SELECT context FROM message_reports'))
       .rows[0].context as Array<{ narration?: string }>;
     expect(context.at(-1)?.narration?.length).toBeLessThanOrEqual(500);
+  });
+
+  it('keeps the snapshot valid when the 500-character cut falls inside an emoji', async () => {
+    await transcript();
+    const big = await addEvent('ActionAccepted', {
+      accountId: seated,
+      playerName: 'Seated',
+      text: `${'a'.repeat(499)}😀tail`,
+      actionId: 'a2',
+    });
+    const res = await post(app(), hostCookie, {
+      messageRef: big,
+      category: 'other',
+    });
+    expect(res.statusCode).toBe(202);
+    const context = (await pool().query('SELECT context FROM message_reports'))
+      .rows[0].context as Array<{ text?: string }>;
+    expect(context.at(-1)?.text).toBe(`${'a'.repeat(499)}😀`);
+  });
+
+  it('replaces player names in the snapshot with seat labels', async () => {
+    const ref = await transcript();
+    await post(app(), hostCookie, { messageRef: ref, category: 'other' });
+    const context = (await pool().query('SELECT context FROM message_reports'))
+      .rows[0].context as Array<{ playerName?: string }>;
+    expect(context.at(-1)?.playerName).toBe('Player A');
+    expect(JSON.stringify(context)).not.toContain('Seated');
+    expect(JSON.stringify(context)).not.toContain('Host');
+  });
+
+  it('moves open reports to a 90-day window and reviewed ones to 30 days from the review', async () => {
+    const ref = await transcript();
+    const server = app();
+    await post(server, hostCookie, { messageRef: ref, category: 'other' });
+    const id = (await pool().query('SELECT id FROM message_reports')).rows[0]
+      .id;
+    const url = `/api/operator/reports/${id}`;
+    const headers = {
+      cookie: operatorCookie,
+      origin: HOST,
+      host: 'lorekeep.test',
+    };
+    await server.inject({
+      method: 'PATCH',
+      url,
+      headers,
+      payload: { status: 'dismissed' },
+    });
+    expect(
+      (
+        await pool().query(
+          "SELECT expires_at - reviewed_at = interval '30 days' AS ok FROM message_reports WHERE id=$1",
+          [id],
+        )
+      ).rows[0].ok,
+    ).toBe(true);
+    await server.inject({
+      method: 'PATCH',
+      url,
+      headers,
+      payload: { status: 'open' },
+    });
+    expect(
+      (
+        await pool().query(
+          "SELECT expires_at - now() > interval '89 days' AS ok FROM message_reports WHERE id=$1",
+          [id],
+        )
+      ).rows[0].ok,
+    ).toBe(true);
+  });
+
+  it('rejects status changes outside the review state machine', async () => {
+    const ref = await transcript();
+    const server = app();
+    await post(server, hostCookie, { messageRef: ref, category: 'other' });
+    const id = (await pool().query('SELECT id FROM message_reports')).rows[0]
+      .id;
+    const url = `/api/operator/reports/${id}`;
+    const headers = {
+      cookie: operatorCookie,
+      origin: HOST,
+      host: 'lorekeep.test',
+    };
+    const patch = (status: string) =>
+      server.inject({ method: 'PATCH', url, headers, payload: { status } });
+    expect((await patch('open')).statusCode).toBe(409);
+    expect((await patch('reviewed')).statusCode).toBe(200);
+    expect((await patch('open')).statusCode).toBe(200);
+    expect((await patch('actioned')).statusCode).toBe(200);
+    const blocked = await patch('dismissed');
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json().code).toBe('INVALID_TRANSITION');
+    expect((await patch('reviewed')).statusCode).toBe(200);
+    expect(
+      (
+        await pool().query(
+          'SELECT count(*)::int AS n FROM message_report_audit WHERE report_id=$1',
+          [id],
+        )
+      ).rows[0].n,
+    ).toBe(4);
+  });
+
+  it('rejects offsets past the cap on the operator list', async () => {
+    await transcript();
+    const res = await app().inject({
+      method: 'GET',
+      url: '/api/operator/reports?offset=10001',
+      headers: { cookie: operatorCookie },
+    });
+    expect(res.statusCode).toBe(400);
   });
 
   it('rejects non-members without revealing the table', async () => {
@@ -337,6 +450,13 @@ describe('message reports', () => {
     expect(audit).toEqual([
       { actor_id: operator, from_status: 'open', to_status: 'actioned' },
     ]);
+    const toReviewed = await server.inject({
+      method: 'PATCH',
+      url,
+      headers: { cookie: operatorCookie, origin: HOST, host: 'lorekeep.test' },
+      payload: { status: 'reviewed' },
+    });
+    expect(toReviewed.statusCode).toBe(200);
     const reopened = await server.inject({
       method: 'PATCH',
       url,

@@ -1,6 +1,6 @@
 CREATE TABLE message_reports (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- session_id uuid NOT NULL,
+ session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
  message_seq bigint NOT NULL,
  reporter_account_id uuid REFERENCES accounts(id) ON DELETE SET NULL,
  author_account_id uuid REFERENCES accounts(id) ON DELETE SET NULL,
@@ -9,7 +9,7 @@ CREATE TABLE message_reports (
  context jsonb NOT NULL CHECK (octet_length(context::text) <= 131072),
  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','reviewed','dismissed','actioned')),
  created_at timestamptz NOT NULL DEFAULT now(),
- expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
+ expires_at timestamptz NOT NULL DEFAULT (now() + interval '90 days'),
  reviewed_by uuid REFERENCES accounts(id) ON DELETE SET NULL,
  reviewed_at timestamptz,
  CHECK ((status = 'open') = (reviewed_at IS NULL)),
@@ -19,11 +19,11 @@ CREATE INDEX message_reports_queue_idx ON message_reports(status, created_at DES
 CREATE INDEX message_reports_expiry_idx ON message_reports(expires_at);
 CREATE TABLE message_report_audit (
  id bigserial PRIMARY KEY,
- report_id uuid NOT NULL,
+ report_id uuid NOT NULL REFERENCES message_reports(id) ON DELETE CASCADE,
  actor_id uuid REFERENCES accounts(id) ON DELETE SET NULL,
  from_status text NOT NULL,
  to_status text NOT NULL,
  created_at timestamptz NOT NULL DEFAULT now(),
- expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days')
+ expires_at timestamptz NOT NULL DEFAULT (now() + interval '90 days')
 );
 CREATE INDEX message_report_audit_expiry_idx ON message_report_audit(expires_at);

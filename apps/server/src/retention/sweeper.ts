@@ -3,6 +3,7 @@ import type { ObjectStore } from '../storage/objectStore.js';
 import { purgeLogs } from './jobs/logs.js';
 import { purgeExports } from './jobs/exports.js';
 import { purgeArchivedSessions } from './jobs/sessions.js';
+import { purgeExpiredReports } from './jobs/reports.js';
 import { runAccountDeletions } from './jobs/accountDeletion.js';
 import type { SweepLog } from './types.js';
 
@@ -47,6 +48,7 @@ export async function runSweep(db: Pool, options: SweepOptions) {
         new Date(ctx.now.getTime() - 30 * 86_400_000),
       ]);
       const exports = await purgeExports(ctx);
+      const reports = await purgeExpiredReports(ctx);
       const accounts = await runAccountDeletions(ctx);
       if (accounts.failed === 0) {
         await db.query(
@@ -55,7 +57,7 @@ export async function runSweep(db: Pool, options: SweepOptions) {
           [ctx.now],
         );
       }
-      return { logs, sessions, exports, accounts };
+      return { logs, sessions, exports, reports, accounts };
     } finally {
       await client.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]);
     }

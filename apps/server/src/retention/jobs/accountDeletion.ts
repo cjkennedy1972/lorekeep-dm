@@ -335,6 +335,10 @@ async function deleteAccount(
     "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1) AND node_id=$2",
     [[...fenced], FENCE_NODE],
   );
+  await client.query(
+    "UPDATE message_reports SET reason='' WHERE reporter_account_id=$1",
+    [accountId],
+  );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }

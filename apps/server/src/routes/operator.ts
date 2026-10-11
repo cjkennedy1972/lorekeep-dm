@@ -4,7 +4,12 @@ import type { Logger } from 'pino';
 import type { Pool } from 'pg';
 import type { EgressGuard } from '../llm/egress.js';
 import { z } from 'zod';
-import { reportPatchSchema, reportQuerySchema } from './reports.js';
+import {
+  REPORT_TRANSITIONS,
+  reportPatchSchema,
+  reportQuerySchema,
+  type ReportStatus,
+} from './reports.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
 import {
@@ -141,24 +146,48 @@ export function registerOperatorRoutes(
     if (!z.uuid().safeParse(id).success)
       return reply.code(404).send({ code: 'NOT_FOUND' });
     if (!body.success) return reply.code(400).send({ code: 'INVALID_INPUT' });
-    const result = await db.query(
-      `WITH prev AS (SELECT id,status FROM message_reports WHERE id=$1 FOR UPDATE),
-       upd AS (
-         UPDATE message_reports r
-         SET status=$2::text,
-             reviewed_by=CASE WHEN $2::text='open' THEN NULL ELSE $3::uuid END,
-             reviewed_at=CASE WHEN $2::text='open' THEN NULL ELSE now() END
-         FROM prev WHERE r.id=prev.id
-         RETURNING r.id,r.status,r.reviewed_by,r.reviewed_at,prev.status AS from_status
-       ),
-       audit AS (
-         INSERT INTO message_report_audit(report_id,actor_id,from_status,to_status)
-         SELECT id,$3::uuid,from_status,status FROM upd
-       )
-       SELECT id,status,reviewed_by,reviewed_at FROM upd`,
-      [id, body.data.status, session.account_id],
-    );
-    const report = result.rows[0];
-    return report ? { report } : reply.code(404).send({ code: 'NOT_FOUND' });
+    const to = body.data.status;
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const prev = (
+        await client.query<{ status: ReportStatus }>(
+          'SELECT status FROM message_reports WHERE id=$1 FOR UPDATE',
+          [id],
+        )
+      ).rows[0];
+      if (!prev || !REPORT_TRANSITIONS[prev.status].includes(to)) {
+        await client.query('ROLLBACK');
+        return prev
+          ? reply.code(409).send({
+              code: 'INVALID_TRANSITION',
+              message: `A ${prev.status} report cannot become ${to}.`,
+            })
+          : reply.code(404).send({ code: 'NOT_FOUND' });
+      }
+      const report = (
+        await client.query(
+          `UPDATE message_reports
+           SET status=$2::text,
+               reviewed_by=CASE WHEN $2::text='open' THEN NULL ELSE $3::uuid END,
+               reviewed_at=CASE WHEN $2::text='open' THEN NULL ELSE now() END,
+               expires_at=CASE WHEN $2::text='open' THEN now() + interval '90 days' ELSE now() + interval '30 days' END
+           WHERE id=$1
+           RETURNING id,status,reviewed_by,reviewed_at,expires_at`,
+          [id, to, session.account_id],
+        )
+      ).rows[0];
+      await client.query(
+        'INSERT INTO message_report_audit(report_id,actor_id,from_status,to_status,expires_at) VALUES($1,$2,$3,$4,$5)',
+        [id, session.account_id, prev.status, to, report.expires_at],
+      );
+      await client.query('COMMIT');
+      return { report };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   });
 }

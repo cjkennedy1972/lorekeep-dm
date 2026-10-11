@@ -20,10 +20,18 @@ export const REPORT_STATUSES = [
   'dismissed',
   'actioned',
 ] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+export const REPORT_TRANSITIONS: Record<ReportStatus, readonly ReportStatus[]> =
+  {
+    open: ['reviewed', 'dismissed', 'actioned'],
+    reviewed: ['dismissed', 'actioned', 'open'],
+    dismissed: ['open'],
+    actioned: ['reviewed'],
+  };
 const REPORTS_PER_HOUR = 10;
 const CONTEXT_BEFORE = 10;
 const TEXT_LIMIT = 500;
-const TEXT_KEYS = ['playerName', 'text', 'narrative', 'narration'] as const;
+const TEXT_KEYS = ['text', 'narrative', 'narration'] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const bodySchema = z.object({
@@ -34,22 +42,41 @@ const bodySchema = z.object({
 
 // TODO: run `reason` through the hard-floor check once safety/hardFloor.ts (PR #153) is on main.
 
-/** Keeps only the text fields of each event; no account ids, so no other player's id reaches the review queue. */
+/**
+ * Keeps message text only. Player names become seat labels assigned in order of first
+ * appearance; the reporter is 'Reporter'. Account ids never leave this function.
+ */
 function snapshotOf(
   events: Array<{
     seq: string;
     type: string;
     payload: Record<string, unknown>;
   }>,
+  reporterId: string,
 ) {
+  const labels = new Map<string, string>([[reporterId, 'Reporter']]);
+  let players = 0;
+  const labelOf = (accountId: unknown) => {
+    if (typeof accountId !== 'string') return undefined;
+    if (!labels.has(accountId))
+      labels.set(accountId, `Player ${String.fromCharCode(65 + players++)}`);
+    return labels.get(accountId);
+  };
+  // Code points, not UTF-16 units: a cut inside a surrogate pair is invalid jsonb.
+  const cut = (value: string) =>
+    Array.from(value).slice(0, TEXT_LIMIT).join('');
   return events.map((event) => {
     const out: Record<string, unknown> = {
       seq: Number(event.seq),
       type: event.type,
     };
+    if (typeof event.payload.playerName === 'string') {
+      const label = labelOf(event.payload.accountId);
+      if (label) out.playerName = label;
+    }
     for (const key of TEXT_KEYS) {
       const value = event.payload[key];
-      if (typeof value === 'string') out[key] = value.slice(0, TEXT_LIMIT);
+      if (typeof value === 'string') out[key] = cut(value);
     }
     return out;
   });
@@ -107,7 +134,11 @@ export function registerReportRoutes(
         return reply
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });
-      if (!TEXT_KEYS.some((key) => typeof reported.payload[key] === 'string'))
+      if (
+        ![...TEXT_KEYS, 'playerName'].some(
+          (key) => typeof reported.payload[key] === 'string',
+        )
+      )
         return reply.code(422).send({
           code: 'NOT_REPORTABLE',
           message: 'That is not a message.',
@@ -143,7 +174,7 @@ export function registerReportRoutes(
           author,
           category,
           reason,
-          JSON.stringify(snapshotOf(context)),
+          JSON.stringify(snapshotOf(context, auth.account_id)),
         ],
       );
       return reply.code(202).send({ received: true });
@@ -154,7 +185,7 @@ export function registerReportRoutes(
 export const reportQuerySchema = z.object({
   status: z.enum(REPORT_STATUSES).default('open'),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-  offset: z.coerce.number().int().min(0).default(0),
+  offset: z.coerce.number().int().min(0).max(10_000).default(0),
 });
 
 export const reportPatchSchema = z.object({ status: z.enum(REPORT_STATUSES) });
