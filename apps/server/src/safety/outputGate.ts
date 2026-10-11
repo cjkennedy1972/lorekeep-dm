@@ -17,7 +17,7 @@ export const DEFAULT_MAX_STREAM_CHARS = 20_000;
 export const DEFAULT_MAX_TURN_CHARS = 30_000;
 export const DEFAULT_SOURCE_IDLE_MS = 15_000;
 export const DEFAULT_VERDICT_TIMEOUT_MS = 10_000;
-// ponytail: carry must be >= the longest deterministic rule span; raise if a rule can exceed 400 chars.
+// ponytail: judge-only carry; deterministic rules scan the whole turn (turnContext).
 const CONTEXT_CHARS = 400;
 const HOLD_BACK_CHARS = MAX_RULE_SPAN_CHARS;
 const FIRST_CHUNK_TOKENS = 12;
@@ -146,7 +146,9 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
     let wakeReader: (() => void) | null = null;
     let outstanding = 0;
     let stopped = false;
-    let contextTail = approved.join('').slice(-CONTEXT_CHARS);
+    const emittedBefore = approved.join('');
+    let judged = '';
+    let contextTail = emittedBefore.slice(-CONTEXT_CHARS);
     const it = source[Symbol.asyncIterator]();
     const stoppedSignal = new Promise<typeof STOPPED>((resolve) =>
       abort.signal.addEventListener('abort', () => resolve(STOPPED), {
@@ -198,6 +200,8 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
     const classify = (text: string): Chunk => {
       const cutAtMs = now() - start;
       const context = contextTail;
+      const turnContext = emittedBefore + judged;
+      judged += text;
       contextTail = (contextTail + text).slice(-CONTEXT_CHARS);
       const timedOut = () => failClosedVerdict(now() - start - cutAtMs);
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -209,6 +213,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           opts.moderator.moderate({
             text,
             context,
+            turnContext,
             tier: opts.tier,
             tableLines: opts.tableLines,
             direction: 'output',

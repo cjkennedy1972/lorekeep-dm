@@ -27,8 +27,8 @@
 
 export const HARD_FLOOR_VERSION = '2026-10-10.8';
 
-/** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
-export const MAX_INPUT_CHARS = 20_000;
+/** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
+export const MAX_INPUT_CHARS = 30_000;
 
 export const HARD_FLOOR_RULES = {
   'csam.explicit-term': {

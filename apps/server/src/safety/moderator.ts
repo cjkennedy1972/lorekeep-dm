@@ -45,6 +45,8 @@ export interface ModerationRequest {
   tableLines?: readonly string[];
   /** Earlier text for reference only; the verdict applies to `text` alone. Deterministic rules also scan `context + text`, so a term split across a chunk cut is seen whole. */
   context?: string;
+  /** All text the turn has produced before `text`. Only deterministic rules scan it; the judge sees `context`. Message-level rules need the whole turn, not a carry. */
+  turnContext?: string;
   direction: Direction;
 }
 
@@ -191,7 +193,7 @@ export class JudgeModerator implements Moderator {
 
     let rule: { category: Category; source: 'hardfloor' | 'denylist' } | null =
       null;
-    const window = (req.context ?? '') + req.text;
+    const window = (req.turnContext ?? req.context ?? '') + req.text;
     try {
       const hard = this.options.deterministic.hardFloorCheck(window);
       if (hard.blocked)
