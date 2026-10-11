@@ -266,9 +266,9 @@ flowchart LR
   I[X-card / pause] -.->|flag in next prompt,<br/>and abort in-flight if configured| D
 ```
 
-- **Input:** classifier (provider moderation endpoint or fast-tier model with a fixed rubric; choose in M3; the `moderate` role may have its own endpoint) plus deterministic rules for the **hard floor** (sexual content involving minors: always blocked, not configurable, identical at every tier). Runs in parallel with other submissions; rejection is private to the sender and logged (30 days, ADR-017).
+- **Input:** classifier (LLM judge on the dedicated `moderate` endpoint with a fixed rubric; decided in ADR-023, not shared with narration) plus deterministic rules for the **hard floor** (sexual content involving minors: always blocked, not configurable, identical at every tier). Runs in parallel with other submissions; rejection is private to the sender and logged (30 days, ADR-017).
 - **Prompt-injection (R-S3):** player text is placed in a delimited `<player_input player="Name">` block as quoted data; system prompt states it carries no authority. The real defense is architectural: no tool path lets text set state. Red-team set (100 prompts) runs in CI (§12).
-- **Output:** streaming is broadcast **only after** each sentence chunk passes the classifier, so nothing unsafe is shown and retracted. Cost: ~1 sentence of added latency on the first token (budget in §9; mitigated by running classifier on partial chunk at ~12 tokens for the first chunk). **[unverified]** against the 2.5 s first-token target; M3 gate.
+- **Output:** streaming is broadcast **only after** each sentence chunk passes the classifier, so nothing unsafe is shown and retracted. Cost: ~1 sentence of added latency on the first token (budget in §9; mitigated by running classifier on partial chunk at ~12 tokens for the first chunk). First-token SLO is 3 s uncached (ADR-023), measured in M3-30. Fail-closed behavior per category is in ADR-023.
 - **Content tiers (ADR-016):** `family | standard | mature`. **Mature is the default** and applies unless a seated player has opted out (`matureOptOut`; settable at join and any time). The server computes the table tier: mature only if no seated player opted out, `moderationVerified`, and the operator probe flag `endpoint_allows_mature` hold; it is re-evaluated at each round open and before each narration, so mid-session toggles, joins, and leaves take effect on the next narration. Text and the LLM cannot flip it; the host can lower but not override an opt-out; host transfer changes nothing. Per-player lines/veils and pause/X-card apply at every tier (strictest active setting shapes the shared narration). The mature clause is in the safety block only while the predicate holds; the rubric is tier-specific. Mature means graphic violence, dark themes, strong language, innuendo/allusion; explicit sexual content is out of scope. An endpoint that refuses mature prompts degrades to `standard` for the turn and clears the flag. The hard floor (sexual content involving minors, etc.) is deterministic and identical at every tier.
 - **Table settings** (tone/violence/lines/veils) live in the session block and in the classifier rubric.
 - **X-card / pause:** write `SafetyFlag` event; the next prompt gets a steer-away instruction; host may configure immediate abort of in-flight generation. X-card is anonymous in the UI; the event stores the seat internally for abuse handling but the broadcast excludes it.
@@ -311,7 +311,7 @@ Rationale: the hardest, most valuable code is the rules engine and Room state ma
 
 ## 9. Cost and latency levers vs targets
 
-### 9.1 Latency budget (spec §9.1, p95 exploration turn ≤ 8 s, first token ≤ 2.5 s)
+### 9.1 Latency budget (spec §9.1, p95 exploration turn ≤ 8 s, first token ≤ 3 s uncached per ADR-023, revised from 2.5 s)
 
 SLOs apply to a **reference configuration** (a hosted fast-tier endpoint with streaming), not to arbitrary operator endpoints. The adapter probe (§16) records time-to-first-token for any configured endpoint so the operator can see where it stands.
 
@@ -322,7 +322,7 @@ SLOs apply to a **reference configuration** (a hosted fast-tier endpoint with st
 | Prompt build + registry injection | ≤ 0.05 s | Deterministic, in-memory |
 | LLM first token (incl. tool loop) | ≤ 1.5 s | Fast tier default; max 3 tool iterations; tools return in < 50 ms; **uncached prefill adds latency (about +0.2–0.5 s for ~9k tokens, [unverified])**, so shrink prompts |
 | Output gate hold-back | ≤ 0.5 s | First chunk at ~12 tokens, then sentence chunks |
-| Total first narration token | ≈ 2.4–2.9 s | tight; **[unverified]** M3 measurement is the gate; may need the SLO relaxed to 3 s when uncached |
+| Total first narration token | ≈ 2.4–2.9 s | tight; SLO is 3 s uncached (ADR-023); M3-30 measurement is the gate |
 | Full turn (150–300 narration tokens) | ≈ 4–6 s | Narration capped by R-N1 |
 
 Combat with the map: engine work is cheap CPU (A* and LOS on ≤ 60x60 cells, well under 50 ms **[unverified]**); the engine resolves structured commands in ≤ 500 ms with no LLM; movement animates client-side from events; one narration per turn keeps per-action latency within 6 s. Local models can break the first-token target; the probe reports it and the operator chooses the trade.
@@ -406,7 +406,7 @@ Parallelism: Prism builds against a **mock Room server** from M0. The shared `@g
 - **Schedule:** about +5 weeks over v0.1; the 2D map engine, accounts, and adapter fallbacks sit on the critical path of M0-M4. Cut list in §11.1.
 - **Cost without caching:** reference estimates are about 20-45% above the $1.50/$0.60 figures, which are operator-configurable budgets, not product requirements (ADR-009); one extra tool round trip or 2x context makes it worse. Unmeasured.
 - Engine scope is large (SRD L1-5, 12 classes, spells up to L3, plus grid rules). Cut risk: fewer classes (D8).
-- Output-gate latency vs the 2.5 s first-token target is unmeasured, and uncached prefill makes it harder.
+- Output-gate latency vs the 3 s first-token SLO (ADR-023) is unmeasured end to end; per-call judge latency is measured (ADR-023), and uncached prefill makes it harder.
 - Weak or local models may fail tool calling; fallback modes mitigate safety, not quality. Valid-call threshold is an assumption.
 - Grid conventions (diagonals, cover, area shapes) not yet checked against SRD 5.2.1 text; our LOS/cover algorithm is custom.
 - Map accessibility is a design, not a built or tested thing; keyboard and text modes are required to ship.
