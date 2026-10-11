@@ -164,7 +164,7 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.state },
+          payload: { state: this.clientState() },
         });
       this.sendCombatSnapshot(connection);
       for (const [actionId, open] of Object.entries(
@@ -177,6 +177,15 @@ export class Room {
             payload: { actionId, question: open.question },
           } as ServerMessage);
     });
+  }
+
+  /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */
+  private clientState(): RoomState {
+    if (!this.state.gameState) return this.state;
+    const gameState = { ...(this.state.gameState as Record<string, unknown>) };
+    delete gameState.lastNarration;
+    delete gameState.lastPlayerText;
+    return { ...this.state, gameState };
   }
 
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */
@@ -210,7 +219,7 @@ export class Room {
         this.broadcast({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.state },
+          payload: { state: this.clientState() },
         });
       }
       this.connections.set(accountId, connection);
@@ -218,7 +227,7 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.state },
+          payload: { state: this.clientState() },
         });
       this.sendCombatSnapshot(connection);
       if (seat.presence !== 'online') {
@@ -254,7 +263,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.state },
+        payload: { state: this.clientState() },
       });
     });
   }

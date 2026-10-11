@@ -209,29 +209,45 @@ describe('mature narration delivery', () => {
     ]);
   });
 
-  it('never puts narration text into a joiner catch-up snapshot', async () => {
+  it('never puts the last mature narration into a joiner catch-up snapshot', async () => {
     const owner = randomUUID();
     const joiner = randomUUID();
-    const reached = gate();
-    const release = gate();
-    const room = setup(
-      narratingRunner('mature', [
-        { reached: reached.open, wait: release.promise },
-      ]),
-      new Set([owner]),
-    );
+    const requests: { state: unknown }[] = [];
+    const runner: SoloTurnRunner = {
+      async run(request, onEvent) {
+        requests.push({ state: request.state });
+        onEvent({ type: 'NarrationTier', tier: 'mature' });
+        onEvent({ type: 'NarrationCompleted', narration: 'chunk-1 done' });
+        return {
+          narration: 'chunk-1 done',
+          events: [{ type: 'TurnStarted', turnId: 't1' }],
+          state: {
+            lastNarration: 'chunk-1 done',
+            lastPlayerText: 'We look around.',
+          },
+          turnSeed: '0x0000000000000001',
+          usage: { in: 1, out: 1 },
+        };
+      },
+    };
+    const room = setup(runner, new Set([owner]));
     await room.join(owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
-    await reached.promise;
+    await settle();
 
     const joinerConn = recorder();
     await room.join(joiner, joinerConn, 'Joiner');
-    release.open();
-    await settle();
 
     const snapshots = joinerConn.sent.filter((m) => m.type === 'StateSync');
     expect(snapshots.length).toBeGreaterThan(0);
-    for (const snapshot of snapshots)
+    for (const snapshot of snapshots) {
       expect(JSON.stringify(snapshot)).not.toContain('chunk-1');
+      expect(JSON.stringify(snapshot)).not.toContain('We look around.');
+    }
+
+    await room.submitAction(owner, randomUUID(), 'Next move.', 'Owner');
+    expect(requests[1]?.state).toMatchObject({
+      lastNarration: 'chunk-1 done',
+    });
   });
 });

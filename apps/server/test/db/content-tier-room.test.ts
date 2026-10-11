@@ -195,4 +195,59 @@ describe('mature narration through Room and Persistence', () => {
 
     expect(narrationText(joiner.sent)).toBe('');
   });
+
+  it('does not send the last mature narration to an opted-out seat that joins after the turn', async () => {
+    const owner = await account(false);
+    const optedOut = await account(true);
+    const sessionId = await session(owner);
+    const room = await openRoom(sessionId, singleTextNarrator(LONG_NARRATION));
+    await room.join(owner, recorder().connection, 'Owner');
+    await room.submitAction(owner, randomUUID(), 'inspect-the-sconce', 'Owner');
+    await waitForCompletion(sessionId);
+
+    const late = recorder();
+    await room.join(optedOut, late.connection, 'Late');
+
+    const wire = JSON.stringify(late.sent);
+    expect(wire).toContain('StateSync');
+    expect(wire).not.toContain('The torch gutters');
+    expect(wire).not.toContain('inspect-the-sconce');
+  });
+
+  it('does not resend the last mature narration to an opted-out seat that reconnects after the turn', async () => {
+    const owner = await account(false);
+    const optedOut = await account(true);
+    const sessionId = await session(owner);
+    const room = await openRoom(sessionId, singleTextNarrator(LONG_NARRATION));
+    await room.join(owner, recorder().connection, 'Owner');
+    await room.join(optedOut, recorder().connection, 'Opted');
+    await room.disconnect(optedOut);
+    await room.submitAction(owner, randomUUID(), 'inspect-the-sconce', 'Owner');
+    await waitForCompletion(sessionId);
+
+    const reconnect = recorder();
+    await room.join(optedOut, reconnect.connection, 'Opted');
+
+    const wire = JSON.stringify(reconnect.sent);
+    expect(wire).toContain('StateSync');
+    expect(wire).not.toContain('The torch gutters');
+    expect(wire).not.toContain('inspect-the-sconce');
+  });
+
+  it('runs the round as standard when a deleting seat is already present at round open', async () => {
+    const owner = await account(false);
+    const deleting = await account(false, 'deleting');
+    const sessionId = await session(owner);
+    const room = await openRoom(sessionId, singleTextNarrator(LONG_NARRATION));
+    const ownerSeen = recorder();
+    const deletingSeen = recorder();
+    await room.join(owner, ownerSeen.connection, 'Owner');
+    await room.join(deleting, deletingSeen.connection, 'Deleting');
+
+    await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+    await waitForCompletion(sessionId);
+
+    expect(narrationText(ownerSeen.sent)).toBe(LONG_NARRATION);
+    expect(narrationText(deletingSeen.sent)).toBe(LONG_NARRATION);
+  });
 });
