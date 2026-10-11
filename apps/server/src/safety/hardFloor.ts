@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.7';
+export const HARD_FLOOR_VERSION = '2026-10-10.8';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
 export const MAX_INPUT_CHARS = 20_000;
@@ -594,6 +594,48 @@ const YOUTH_PREFIX = new Set<string>(PROXIMITY.youthPrefixes);
 const YOUTH_NOUN = termIndex(PROXIMITY.youthNouns);
 const PERSON_NOUN = termIndex(PROXIMITY.personNouns);
 const ADULT_MARKER = new Set<string>(PROXIMITY.adultMarkers);
+/** Tokens drop punctuation, so "&" and "," are already gaps; only words need listing here. */
+const FILLER = termIndex([
+  'and',
+  'or',
+  'with',
+  'the',
+  'a',
+  'an',
+  'of',
+  'to',
+  'in',
+]);
+const FILLER_WINDOW = 2;
+
+const minorWordAt = (base: string[], i: number) =>
+  inIndex(MINOR, base[i]!) || inIndex(YOUTH_WORD, base[i]!);
+/** Phrase ends at i: "child", "young girl" (noun at i, prefix at i - 1). */
+const minorPhraseEndsAt = (base: string[], i: number) =>
+  minorWordAt(base, i) ||
+  (i > 0 && YOUTH_PREFIX.has(base[i - 1]!) && inIndex(YOUTH_NOUN, base[i]!));
+/** Phrase starts at i: "child", "young girl" (prefix at i, noun at i + 1). */
+const minorPhraseStartsAt = (base: string[], i: number) =>
+  minorWordAt(base, i) ||
+  (i + 1 < base.length &&
+    YOUTH_PREFIX.has(base[i]!) &&
+    inIndex(YOUTH_NOUN, base[i + 1]!));
+/** Minor phrase before `s`, separated from it only by up to FILLER_WINDOW filler words. */
+function minorBefore(base: string[], s: number): boolean {
+  for (let n = s - 1, k = 0; n >= 0 && k <= FILLER_WINDOW; n--, k++) {
+    if (minorPhraseEndsAt(base, n)) return true;
+    if (!inIndex(FILLER, base[n]!)) return false;
+  }
+  return false;
+}
+/** Minor phrase after `e`, separated from it only by up to FILLER_WINDOW filler words. */
+function minorAfter(base: string[], e: number): boolean {
+  for (let n = e + 1, k = 0; n < base.length && k <= FILLER_WINDOW; n++, k++) {
+    if (minorPhraseStartsAt(base, n)) return true;
+    if (!inIndex(FILLER, base[n]!)) return false;
+  }
+  return false;
+}
 
 const wordValue = (w: string) =>
   Object.hasOwn(NUMBER_WORDS, w) ? NUMBER_WORDS[w] : undefined;
@@ -740,7 +782,11 @@ function scan(words: string[]): {
             inIndex(YOUTH_WORD, prev) ||
             inIndex(YOUTH_WORD, next) ||
             (YOUTH_PREFIX.has(prev2) && inIndex(YOUTH_NOUN, prev)) ||
-            (prev === 's' && YOUTH_PREFIX.has(prev3) && inIndex(YOUTH_NOUN, prev2))
+            (prev === 's' &&
+              YOUTH_PREFIX.has(prev3) &&
+              inIndex(YOUTH_NOUN, prev2)) ||
+            minorBefore(base, s) ||
+            minorAfter(base, e)
           )
             sexualHere = true;
         } else if (inIndex(LAID, w) && inIndex(LAID_BEFORE, prev))
@@ -751,7 +797,8 @@ function scan(words: string[]): {
         else if (
           inIndex(CLOTHES, w) &&
           POSSESSIVE.has(prev) &&
-          (inIndex(REMOVE, prev2) || (prev2 === 'off' && inIndex(REMOVE, prev3)))
+          (inIndex(REMOVE, prev2) ||
+            (prev2 === 'off' && inIndex(REMOVE, prev3)))
         )
           sexualHere = true;
       }
