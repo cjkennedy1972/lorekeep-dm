@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.3';
+export const HARD_FLOOR_VERSION = '2026-10-10.4';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
 export const MAX_INPUT_CHARS = 20_000;
@@ -267,6 +267,7 @@ export const HARD_FLOOR_RULES = {
         'toy',
         'toys',
         'trafficking',
+        'abuse',
       ],
       /** "has sex appeal", "in sex ed": a following word that cancels the before-neighbour. */
       notAfter: [
@@ -436,7 +437,7 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
 const AGE_NUMBER = `(\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')})`;
 const WORD_END = '(?![\\p{L}\\p{N}])';
 const AGE_PHRASE = new RegExp(
-  `\\b${AGE_NUMBER}(?:[\\s-]*(?:yo|y\\/o|y\\.o\\.?|(?:years?|yrs?)[\\s-]*old))${WORD_END}|\\b(?:age|aged)[\\s:]*${AGE_NUMBER}${WORD_END}`,
+  `\\b${AGE_NUMBER}(?:[\\s-]*(?:yo|y\\/o|y\\.o\\.?|(?:years?|yrs?)[\\s-]*old|years?[\\s-]*of[\\s-]*age))${WORD_END}|\\b(?:age|aged)[\\s:]*${AGE_NUMBER}${WORD_END}`,
   'giu',
 );
 const NO_OLDER_THAN = new RegExp(
@@ -452,7 +453,7 @@ const ONE_COMPOUND_AMBIGUOUS = new Set(['eight', 'nine']);
 /** Roman numerals 2 to 17 only: "i" and "x" alone collide with the pronoun and common words. */
 const ROMAN_AGE = 'ii|iii|iv|vi|vii|viii|ix|xi|xii|xiii|xiv|xv|xvi|xvii';
 const NAME_AGE = new RegExp(
-  `(\\p{L})\\s*[,(]\\s*${AGE_NUMBER}(?=\\s*[),]|\\s+(?:is|was|are|were)\\b)`,
+  `(\\p{L})(?:\\s*[,(:-]\\s*|\\s+)${AGE_NUMBER}(?=\\s*[),]|\\s+(?:is|was|are|were)\\b)`,
   'gu',
 );
 /** Euphemisms that imply a minor. "youth" and "tiny" are not here: adults use both words. */
@@ -538,6 +539,7 @@ const AGE_LINKS = new Set([
   'turning',
   'aged',
   'age',
+  'ages',
   'of',
   'at',
   'when',
@@ -549,7 +551,7 @@ const ROMAN_AGE_PHRASE = new RegExp(
   'gu',
 );
 const ROMAN_LINKED = new RegExp(
-  `(?<=\\b(?:${[...AGE_LINKS].join('|')})\\s+)(${ROMAN_AGE})${WORD_END}`,
+  `(?<=\\b(?:${[...AGE_LINKS].join('|')})\\s+)(${ROMAN_AGE})${WORD_END}(?!\\s+(?:feet|foot|ft|inches|miles?|yards?|gold|gp|sp|cp|hp|damage)\\b)`,
   'gu',
 );
 const termIndex = (terms: readonly string[]) => new Set(terms);
@@ -724,7 +726,11 @@ function scan(words: string[]): {
         else if (inIndex(SEX, w)) {
           if (
             (inIndex(BEFORE, prev) && !inIndex(NOT_AFTER, next)) ||
-            inIndex(AFTER, next)
+            inIndex(AFTER, next) ||
+            inIndex(MINOR, prev) ||
+            inIndex(MINOR, next) ||
+            inIndex(YOUTH_WORD, prev) ||
+            inIndex(YOUTH_WORD, next)
           )
             sexualHere = true;
         } else if (inIndex(LAID, w) && inIndex(LAID_BEFORE, prev))
