@@ -35,6 +35,7 @@ const POLICY_ERRORS = new Set<DMToolErrorCode>([
   'invalid-scene-transition',
   'dc-out-of-range',
 ]);
+const RECOVERABLE_ERRORS = new Set<DMToolErrorCode>(['not-actors-turn']);
 const BUDGET_ERRORS = new Set<DMToolErrorCode>([
   'turn-budget-exhausted',
   'lookup-budget-exhausted',
@@ -583,6 +584,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         );
         if (!outcome.ok) {
           const code = outcome.error ?? 'schema-violation';
+          if (RECOVERABLE_ERRORS.has(code)) {
+            // ponytail: an out-of-turn call never executed, so it must not spend the turn's tool-call cap.
+            toolCalls--;
+            reject(code, outcome.hint ?? 'Choose a legal alternative.');
+            continue;
+          }
           retries++;
           const cap = POLICY_ERRORS.has(code)
             ? attempt > 1

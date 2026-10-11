@@ -90,6 +90,24 @@ export function mergeCombatOutput<T extends object>(
     ...(name === 'start_combat' ? { combatSeed: out.rng } : {}),
   };
 }
+/** Live combatant whose turn it is; not persisted. Null outside combat or once combat ended. */
+function liveTurnActorId(state: unknown): string | null {
+  const room = (
+    state as {
+      combatRoom?: {
+        ended?: unknown;
+        combat: {
+          activeEntityId: string | null;
+          initiative: readonly { entityId: string }[];
+        };
+      };
+    }
+  ).combatRoom;
+  if (!room || room.ended) return null;
+  return (
+    room.combat.activeEntityId ?? room.combat.initiative[0]?.entityId ?? null
+  );
+}
 const withoutCatalog = (engine: unknown) =>
   Object.fromEntries(
     Object.entries(engine as Record<string, unknown>).filter(
@@ -336,7 +354,11 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           : undefined;
         const result = worldExecute
           ? worldExecute(current.world, request.args)
-          : execute(current, call, seed);
+          : execute(
+              { ...current, turnActorId: liveTurnActorId(state) },
+              call,
+              seed,
+            );
         if (!result.ok) return { ...result, events: [] };
         const value = result.value as
           | { events?: readonly unknown[] }
@@ -470,6 +492,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             : 'exploration',
         turn: {
           state: { characters: Object.values(actors) },
+          activeActorId: liveTurnActorId(state),
           registryFacts: memoryContext.registryFacts,
           retrievedMemory: memoryContext.retrievedMemory,
           playerText: `${request.playerName ?? 'Player'}: ${request.text}`,

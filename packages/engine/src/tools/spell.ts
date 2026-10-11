@@ -10,7 +10,7 @@ import {
 } from '../combat/spells.js';
 import type { Catalog } from '../catalog/types.js';
 import type { RngState } from '../rng.js';
-import { fail, ok, type ToolResult } from './result.js';
+import { fail, ok, turnHint, type ToolResult } from './result.js';
 
 type AreaOption = { optionId: string; pos: GridPos; expiresTurn: string };
 export type SpellToolState = {
@@ -20,6 +20,7 @@ export type SpellToolState = {
   map?: SpellMapContext;
   spellState?: SpellState;
   turnId: string;
+  turnActorId?: string | null;
   options?: Readonly<Record<string, AreaOption>>;
 };
 const engineCode = (
@@ -64,6 +65,8 @@ export function executeSpell(
   const caster = state.actors[casterId];
   if (!caster)
     return fail('unknown-entity', 'Choose a caster present in the session.');
+  if (state.turnActorId && state.turnActorId !== casterId)
+    return fail('not-actors-turn', turnHint(state.turnActorId));
   if (
     !caster.spellsKnown.includes(spellId) &&
     !caster.spellsPrepared.includes(spellId)

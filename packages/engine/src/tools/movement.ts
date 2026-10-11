@@ -9,7 +9,7 @@ import {
 import { path } from '../map/path.js';
 import { movementBudget } from '../map/reachable.js';
 import { suggestAreaTargets, type OptionsState } from '../map/options.js';
-import { fail, ok } from './result.js';
+import { fail, ok, turnHint } from './result.js';
 
 export type MovementToolState = {
   map?: Battlemap;
@@ -20,7 +20,7 @@ export type MovementToolState = {
   conditions?: MovementCommandState['conditions'];
   reactions?: Record<string, boolean>;
   pendingReactions?: MovementCommandState['pendingReactions'];
-  combat?: { activeEntityId: string | null };
+  turnActorId?: string | null;
   targetOptions?: Readonly<Record<string, GridPos>>;
   optionHandles?: Readonly<
     Record<string, { pos: GridPos; expiresTurn: string; affected: string[] }>
@@ -54,11 +54,8 @@ export function executeMoveTo(state: MovementToolState, args: unknown) {
     )
   )
     return fail('restrained', 'Remove restrained or choose another action.');
-  if (state.combat?.activeEntityId && state.combat.activeEntityId !== entityId)
-    return fail(
-      'not-actors-turn',
-      `It is ${state.combat.activeEntityId}'s turn.`,
-    );
+  if (state.turnActorId && state.turnActorId !== entityId)
+    return fail('not-actors-turn', turnHint(state.turnActorId));
   const marker = state.map.markers.find(
     (candidate) => candidate.markerId === targetRef,
   );

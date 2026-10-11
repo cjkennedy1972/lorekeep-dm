@@ -25,6 +25,7 @@ export interface PromptTurn {
   roundInputs?: readonly unknown[];
   retrievedMemory?: readonly string[];
   describeBrief?: string;
+  activeActorId?: string | null;
 }
 /** Fields the M2-21 orchestrator provides; no clock, RNG, or globals are read. */
 export interface BuildPromptInput {
@@ -168,6 +169,9 @@ function makeDynamic(
     }));
   return [
     `STATE PROJECTION (authoritative; never trim):\n${projectState(input.turn.state)}`,
+    input.activeMode === 'combat' && input.turn.activeActorId
+      ? `TURN ORDER\nActive combatant: ${input.turn.activeActorId}. Only this combatant may attack, cast, or move this turn.`
+      : '',
     input.activeMode === 'combat'
       ? `ENGINE DESCRIPTION\n${brief ? (input.turn.describeBrief ?? '') : (input.turn.state.combat?.description ?? '')}`
       : '',
