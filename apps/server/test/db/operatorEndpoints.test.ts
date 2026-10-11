@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { createTestDatabase } from './testDb.js';
 import { registerOperatorRoutes } from '../../src/routes/operator.js';
 import { createLogger } from '../../src/app.js';
@@ -8,8 +8,10 @@ import { hashToken } from '../../src/accounts/signup.js';
 import {
   decryptEndpointKey,
   encryptEndpointKey,
+  endpointKeyFingerprint,
   readEndpoints,
   saveEndpoint,
+  testEndpoint,
 } from '../../src/llm/config.js';
 import {
   createEgressGuard,
@@ -203,6 +205,88 @@ describe('operator endpoint configuration', () => {
       await db.close();
     }
   });
+  it('displays legacy fingerprints and recomputes them on save and test', async () => {
+    const db = await createTestDatabase();
+    const actorId = randomUUID();
+    const key = ['legacy-', 'credential-', 'fixture'].join('');
+    const master = '44'.repeat(32);
+    const legacy = createHmac('sha256', Buffer.from(master, 'hex'))
+      .update(key)
+      .digest('hex')
+      .slice(0, 12);
+    const egress = createEgressGuard({
+      resolver: async () => [{ address: '93.184.216.34', family: 4 }],
+      transport: async () => ({
+        status: 500,
+        headers: {},
+        body: new Response('unavailable').body,
+      }),
+    });
+    const raw = {
+      baseUrl: 'https://api.example.test/v1',
+      model: 'm',
+      apiStyle: 'openai',
+    };
+    try {
+      await db.pool.query(
+        `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
+      );
+      await db.pool.query(
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+      );
+      await db.pool.query(
+        "INSERT INTO operator_endpoints(slot,base_url,model,api_style,encrypted_key,key_fingerprint,updated_at) VALUES('fast',$1,'m','openai',$2,$3,now())",
+        [raw.baseUrl, encryptEndpointKey(key, master), legacy],
+      );
+      const storedFingerprint = async () =>
+        (
+          await db.pool.query<{ key_fingerprint: string }>(
+            'SELECT key_fingerprint FROM operator_endpoints',
+          )
+        ).rows[0]!.key_fingerprint;
+
+      const [displayed] = await readEndpoints(db.pool);
+      expect(displayed?.keySet).toBe(true);
+      expect(displayed?.keyFingerprint).toBe(legacy);
+
+      const expected = endpointKeyFingerprint(key, master);
+      expect(expected).toMatch(/^v2:[0-9a-f]{12}$/);
+      const saved = await saveEndpoint(
+        db.pool,
+        'fast',
+        raw,
+        egress,
+        actorId,
+        master,
+      );
+      expect(saved.keyFingerprint).toBe(expected);
+      expect(await storedFingerprint()).toBe(expected);
+      expect(
+        decryptEndpointKey(
+          (await db.pool.query('SELECT encrypted_key FROM operator_endpoints'))
+            .rows[0]!.encrypted_key,
+          master,
+        ),
+      ).toBe(key);
+
+      await db.pool.query(
+        "UPDATE operator_endpoints SET key_fingerprint=$1 WHERE slot='fast'",
+        [legacy],
+      );
+      await testEndpoint(db.pool, 'fast', egress, actorId, master);
+      expect(await storedFingerprint()).toBe(expected);
+      expect(
+        (
+          await db.pool.query<{ action: string }>(
+            'SELECT action FROM operator_endpoint_audit ORDER BY id',
+          )
+        ).rows.map((row) => row.action),
+      ).toEqual(['updated', 'tested']);
+    } finally {
+      await db.close();
+    }
+  });
+
   it('validates and defaults unsupported tool schema keyword lists', async () => {
     const db = await createTestDatabase();
     const actorId = randomUUID();

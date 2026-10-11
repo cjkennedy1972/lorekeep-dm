@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   decryptEndpointKey,
@@ -25,15 +25,27 @@ describe('endpoint encryption environment policy', () => {
     );
   });
 
-  it('keys the endpoint key fingerprint so it is not a plain sha256 prefix', () => {
+  it('derives a v2 fingerprint that is not any legacy form of the key', () => {
     const shortKey = 'opaque-short-fixture';
-    const fingerprint = endpointKeyFingerprint(shortKey, `22`.repeat(32));
-    expect(fingerprint).toMatch(/^[0-9a-f]{12}$/);
-    expect(fingerprint).not.toBe(
-      createHash('sha256').update(shortKey).digest('hex').slice(0, 12),
-    );
-    expect(endpointKeyFingerprint(shortKey, `22`.repeat(32))).toBe(fingerprint);
+    const masterKey = `22`.repeat(32);
+    const fingerprint = endpointKeyFingerprint(shortKey, masterKey);
+    expect(fingerprint).toMatch(/^v2:[0-9a-f]{12}$/);
+    const legacySha = createHash('sha256')
+      .update(shortKey)
+      .digest('hex')
+      .slice(0, 12);
+    const legacyHmac = createHmac('sha256', Buffer.from(masterKey, 'hex'))
+      .update(shortKey)
+      .digest('hex')
+      .slice(0, 12);
+    expect(fingerprint.slice(3)).not.toBe(legacySha);
+    expect(fingerprint.slice(3)).not.toBe(legacyHmac);
+    expect(fingerprint).not.toContain(shortKey);
+    expect(endpointKeyFingerprint(shortKey, masterKey)).toBe(fingerprint);
     expect(endpointKeyFingerprint(shortKey, `33`.repeat(32))).not.toBe(
+      fingerprint,
+    );
+    expect(endpointKeyFingerprint('other-fixture', masterKey)).not.toBe(
       fingerprint,
     );
   });

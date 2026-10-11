@@ -3,6 +3,7 @@ import {
   createDecipheriv,
   createHash,
   createHmac,
+  hkdfSync,
   randomBytes,
 } from 'node:crypto';
 import type { Pool } from 'pg';
@@ -82,10 +83,16 @@ export function endpointKeyFingerprint(
   value: string,
   rawMasterKey?: string,
 ): string {
-  return createHmac('sha256', masterKey(rawMasterKey).key)
-    .update(value)
-    .digest('hex')
-    .slice(0, 12);
+  const fingerprintKey = Buffer.from(
+    hkdfSync(
+      'sha256',
+      masterKey(rawMasterKey).key,
+      Buffer.alloc(0),
+      'lorekeep:endpoint-key-fingerprint:v2',
+      32,
+    ),
+  );
+  return `v2:${createHmac('sha256', fingerprintKey).update(value).digest('hex').slice(0, 12)}`;
 }
 export function encryptEndpointKey(
   value: string,
@@ -346,9 +353,10 @@ export async function testEndpoint(
     "INSERT INTO operator_endpoint_audit(slot,action,actor_id) VALUES($1,'tested',$2)",
     [slot, actorId],
   );
-  const apiKey = row.encrypted_key
-    ? new Secret(decryptEndpointKey(String(row.encrypted_key), master))
+  const keyValue = row.encrypted_key
+    ? decryptEndpointKey(String(row.encrypted_key), master)
     : undefined;
+  const apiKey = keyValue === undefined ? undefined : new Secret(keyValue);
   const adapter =
     row.api_style === 'anthropic'
       ? new AnthropicMessagesAdapter({
@@ -375,8 +383,12 @@ export async function testEndpoint(
       row.context_window === null ? undefined : Number(row.context_window),
   });
   await db.query(
-    'UPDATE operator_endpoints SET probe=$2::jsonb WHERE slot=$1',
-    [slot, JSON.stringify(probe)],
+    'UPDATE operator_endpoints SET probe=$2::jsonb, key_fingerprint=$3 WHERE slot=$1',
+    [
+      slot,
+      JSON.stringify(probe),
+      keyValue === undefined ? null : endpointKeyFingerprint(keyValue, master),
+    ],
   );
   return probe;
 }
