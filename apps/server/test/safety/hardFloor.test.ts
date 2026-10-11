@@ -3,6 +3,7 @@ import {
   HARD_FLOOR_VERSION,
   MAX_INPUT_CHARS,
   checkHardFloor,
+  variantCacheStats,
 } from '../../src/safety/hardFloor.js';
 import {
   HARD_FLOOR_KNOWN_FALSE_POSITIVES,
@@ -10,6 +11,9 @@ import {
   HARD_FLOOR_NEGATIVE,
   HARD_FLOOR_POSITIVE,
 } from '../fixtures/hard-floor-fixtures.js';
+import { medianMs } from '../fixtures/timing.js';
+
+const ABSOLUTE_CEILING_MS = 500;
 
 describe('checkHardFloor', () => {
   it.each(HARD_FLOOR_POSITIVE.map((f) => [f.id, f.text] as const))(
@@ -55,30 +59,51 @@ describe('checkHardFloor', () => {
   });
 
   it('handles adversarial long input in linear time', () => {
-    const cases = [
-      'kid sexual '.repeat(1800),
-      'child '.repeat(1800) + 'x'.repeat(1000),
-      'a '.repeat(9900),
-      's e x '.repeat(3300),
-      'ch1ld 1 '.repeat(2300),
-      ('kid ' + 'word '.repeat(5)).repeat(650),
+    const units = [
+      'kid sexual ',
+      'child ',
+      'a ',
+      's e x ',
+      'ch1ld 1 ',
+      'kid word word word word word ',
     ];
-    for (const text of cases) {
-      expect(text.length).toBeLessThanOrEqual(MAX_INPUT_CHARS);
-      const start = performance.now();
-      checkHardFloor(text);
-      expect(performance.now() - start).toBeLessThan(1000);
+    const sized = (unit: string, n: number) =>
+      unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+    for (const unit of units) {
+      const half = sized(unit, MAX_INPUT_CHARS / 2);
+      const full = sized(unit, MAX_INPUT_CHARS);
+      const halfMs = medianMs(() => checkHardFloor(half));
+      const fullMs = medianMs(() => checkHardFloor(full));
+      expect(fullMs / halfMs, `scaling for ${unit}`).toBeLessThan(3);
+      expect(fullMs, `ceiling for ${unit}`).toBeLessThan(ABSOLUTE_CEILING_MS);
     }
   });
 
-  it('blocks input over the hard cap without scanning it', () => {
-    const text = 'word '.repeat(100_000);
-    const start = performance.now();
-    expect(checkHardFloor(text)).toMatchObject({
+  it('rejects input over the hard cap without scanning it', () => {
+    const over = 'word '.repeat(100_000);
+    const atCap = 'word '.repeat(MAX_INPUT_CHARS / 5);
+    expect(checkHardFloor(over)).toMatchObject({
       blocked: true,
       rule: 'input.over-limit',
     });
-    expect(performance.now() - start).toBeLessThan(50);
+    expect(medianMs(() => checkHardFloor(over)) * 10).toBeLessThan(
+      medianMs(() => checkHardFloor(atCap)),
+    );
+  });
+
+  it('bounds the variant cache by characters as well as entries', () => {
+    let peak = 0;
+    for (let i = 0; i < 150; i++) {
+      const word = String.fromCharCode(
+        97 + (i % 26),
+        97 + Math.floor(i / 26),
+      ).padEnd(30_000, 'q');
+      checkHardFloor(word);
+      peak = Math.max(peak, variantCacheStats().chars);
+    }
+    expect(variantCacheStats().entries).toBeGreaterThan(0);
+    expect(peak).toBeLessThanOrEqual(2_000_000);
+    expect(peak * 2).toBeLessThanOrEqual(8 * 1024 * 1024);
   });
 
   it('scales linearly: 10x input costs well under 40x time', () => {

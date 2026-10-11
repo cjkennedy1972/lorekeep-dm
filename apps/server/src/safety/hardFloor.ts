@@ -702,6 +702,9 @@ function normalizeText(input: string): string {
 
 const VARIANT_CACHE = new Map<string, string[]>();
 const VARIANT_CACHE_MAX = 4096;
+/** Total characters (keys and forms, UTF-16 units) held by the cache: at most ~4 MB, 2 bytes per unit. */
+const VARIANT_CACHE_MAX_CHARS = 2_000_000;
+let variantCacheChars = 0;
 
 /** Spellings of a word with digit look-alikes folded; "1" may be "i" or "l". Memoized: a turn repeats tokens. */
 function variants(word: string): string[] {
@@ -710,9 +713,22 @@ function variants(word: string): string[] {
   const forms = wordForms(word);
   const collapsed = forms.map((f) => f.replace(/(\p{L})\1{2,}/gu, '$1'));
   const out = [...new Set([...forms, ...collapsed])];
-  if (VARIANT_CACHE.size >= VARIANT_CACHE_MAX) VARIANT_CACHE.clear();
+  const cost = word.length + out.reduce((n, f) => n + f.length, 0);
+  if (cost > VARIANT_CACHE_MAX_CHARS) return out;
+  if (
+    VARIANT_CACHE.size >= VARIANT_CACHE_MAX ||
+    variantCacheChars + cost > VARIANT_CACHE_MAX_CHARS
+  ) {
+    VARIANT_CACHE.clear();
+    variantCacheChars = 0;
+  }
   VARIANT_CACHE.set(word, out);
+  variantCacheChars += cost;
   return out;
+}
+
+export function variantCacheStats(): { entries: number; chars: number } {
+  return { entries: VARIANT_CACHE.size, chars: variantCacheChars };
 }
 
 function wordForms(word: string): string[] {
@@ -866,6 +882,9 @@ export function checkHardFloor(text: string): HardFloorResult {
 
 /** Raw characters kept between chunks so a term that straddles a cut is re-read whole. */
 const TURN_CARRY_CHARS = 400;
+/** Tokens kept between chunks, whatever the separator length, so a term is still seen when a long run of separators follows it. */
+const TURN_CARRY_TOKENS = 24;
+const TOKEN_RE = /[\p{L}\p{N}]+/gu;
 /** Last tokens of a window: their flags stay tentative until more text arrives. */
 const TURN_TAIL_TOKENS = MAX_JOIN + FILLER_WINDOW + 2;
 /** First tokens of a window cut mid-turn: no left context, so they set no flags. */
@@ -873,6 +892,23 @@ const TURN_LEFT_TOKENS = 3;
 
 export interface HardFloorTurn {
   push(chunk: string): HardFloorResult;
+}
+
+/**
+ * Start of the carry for `window`: the earlier of the last TURN_CARRY_CHARS characters and
+ * the start of the last TURN_CARRY_TOKENS tokens. Either bound keeps the carry at least as
+ * long as the other, so neither a long separator run nor a long token run can cut a term
+ * off from its neighbours. Returns 0 (keep everything) when there is nothing to drop.
+ */
+function carryStart(window: string): number {
+  const charStart = window.length - TURN_CARRY_CHARS;
+  if (charStart <= 0) return 0;
+  const tokens = [...window.matchAll(TOKEN_RE)];
+  const tokenStart =
+    tokens.length > TURN_CARRY_TOKENS
+      ? tokens[tokens.length - TURN_CARRY_TOKENS]!.index!
+      : 0;
+  return Math.min(charStart, tokenStart);
 }
 
 /**
@@ -888,11 +924,11 @@ export function createHardFloorTurn(): HardFloorTurn {
   };
   let total = 0;
   let carry = '';
+  let dropped = false;
   let blockedResult: HardFloorResult | null = null;
   return {
     push(chunk) {
       if (blockedResult) return blockedResult;
-      const before = total;
       total += chunk.length;
       if (total > MAX_INPUT_CHARS)
         return (blockedResult = {
@@ -900,9 +936,11 @@ export function createHardFloorTurn(): HardFloorTurn {
           rule: 'input.over-limit',
           version: HARD_FLOOR_VERSION,
         });
-      const atTurnStart = carry.length === before;
+      const atTurnStart = !dropped;
       const window = carry + chunk;
-      carry = window.slice(-TURN_CARRY_CHARS);
+      const cut = carryStart(window);
+      if (cut > 0) dropped = true;
+      carry = window.slice(cut);
       const words = tokenize(normalizeText(window));
       const n = words.length;
       const lo = atTurnStart ? 0 : Math.min(TURN_LEFT_TOKENS, n);
