@@ -84,6 +84,8 @@ export const HARD_FLOOR_RULES = {
       'babies',
       'juvenile',
       'juveniles',
+      'youngster',
+      'youngsters',
       'schoolgirl',
       'schoolgirls',
       'schoolboy',
@@ -206,8 +208,12 @@ export const HARD_FLOOR_RULES = {
     windowTokens: 8,
     /** Different sentences (up to two apart): adjacent when this close. */
     adjacentTokens: 4,
-    /** Up to two sentences apart and the sexual sentence uses a pronoun ("She is a child. Describe her sexually."). */
-    carryTokens: 30,
+    /** Any sentence distance: the sexual sentence uses a pronoun ("She is a child. Ok. Describe her sexually."), or the minor is the subject of the previous sentence. */
+    carryTokens: 60,
+    /** A minor indicator within this many tokens of its sentence start counts as its subject. */
+    subjectTokens: 3,
+    /** Messages up to this many characters: any minor indicator and any sexual term block. */
+    shortMessageChars: 400,
   },
 } as const;
 
@@ -358,10 +364,28 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
   seventeen: 17,
 };
 const AGE_NUMBER = `(\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')})`;
+const WORD_END = '(?![\\p{L}\\p{N}])';
 const AGE_PHRASE = new RegExp(
-  `\\b${AGE_NUMBER}(?:[\\s-]*(?:yo|y\\/o|y\\.o\\.?|(?:years?|yrs?)[\\s-]*old))\\b|\\b(?:age|aged)[\\s:]*${AGE_NUMBER}\\b`,
+  `\\b${AGE_NUMBER}(?:[\\s-]*(?:yo|y\\/o|y\\.o\\.?|(?:years?|yrs?)[\\s-]*old))${WORD_END}|\\b(?:age|aged)[\\s:]*${AGE_NUMBER}${WORD_END}`,
+  'giu',
+);
+const NO_OLDER_THAN = new RegExp(
+  `\\b(?:no|not)[\\s-]+older[\\s-]+than[\\s-]+${AGE_NUMBER}${WORD_END}`,
+  'giu',
+);
+const ONE_COMPOUND = new RegExp(
+  `\\bone-(${Object.keys(NUMBER_WORDS).slice(0, 7).join('|')})\\b`,
   'g',
 );
+/** Euphemisms that imply a minor. "youth" and "tiny" are not here: adults use both words. */
+const MINOR_PHRASES: readonly RegExp[] = [
+  /\bbarely[\s-]+(?:legal|out[\s-]+of[\s-]+school)\b/g,
+  /\bschool[\s-]+uniform\b/g,
+  /\byoung[\s-]+looking\b/g,
+  /\blittle[\s-]+one\b/g,
+];
+/** "c.h.i.l.d", "sex.ual": short letter pieces joined by a bare dot are one word. */
+const DOT_SPELLING = /(?<!\p{L})(\p{L}{1,3})\.(?=\p{L})/gu;
 const UNDER_EIGHTEEN =
   /\b(?:under|below|younger[\s-]+than)[\s-]*(?:the[\s-]+age[\s-]+of[\s-]+)?(?:18|eighteen)\b/g;
 
@@ -507,6 +531,25 @@ const YOUTH_NOUN = termIndex(PROXIMITY.youthNouns);
 const ageValue = (raw: string) =>
   /^\d+$/.test(raw) ? Number(raw) : NUMBER_WORDS[raw];
 
+/** Every Unicode decimal digit (\\p{Nd}) mapped to its value. Digit runs are contiguous blocks of ten from zero. */
+const UNICODE_DIGIT = (() => {
+  const map = new Map<string, string>();
+  let run = 0;
+  for (let cp = 0; cp < 0x20000; cp++) {
+    const c = String.fromCodePoint(cp);
+    if (/\p{Nd}/u.test(c)) {
+      map.set(c, String(run % 10));
+      run++;
+    } else run = 0;
+  }
+  return map;
+})();
+
+function ageMatch(match: string, a: string | undefined, b: string | undefined) {
+  const value = ageValue(a ?? b ?? '');
+  return value !== undefined && value < 18 ? ' minorage ' : match;
+}
+
 function normalizeText(input: string): string {
   const folded = input
     .normalize('NFKD')
@@ -514,17 +557,19 @@ function normalizeText(input: string): string {
     .replace(/\p{Cf}+/gu, '')
     .toLowerCase();
   let s = '';
-  for (const c of folded) s += CONFUSABLE.get(c) ?? c;
+  for (const c of folded) s += CONFUSABLE.get(c) ?? UNICODE_DIGIT.get(c) ?? c;
   s = s.replace(/@/g, 'a').replace(/\$/g, 's');
-  s = s.replace(
-    AGE_PHRASE,
-    (match, a: string | undefined, b: string | undefined) => {
-      const value = ageValue(a ?? b ?? '');
-      return value !== undefined && value < 18 ? ' minorage ' : match;
-    },
+  s = s.replace(DOT_SPELLING, '$1');
+  s = s.replace(ONE_COMPOUND, (_m, w: string) => ` ${10 + NUMBER_WORDS[w]!} `);
+  s = s.replace(AGE_PHRASE, (match, a?: string, b?: string) =>
+    ageMatch(match, a, b),
+  );
+  s = s.replace(NO_OLDER_THAN, (match, a?: string) =>
+    ageMatch(match, a, undefined),
   );
   s = s.replace(UNDER_EIGHTEEN, ' minorage ');
   for (const cue of SCHOOL_CUES) s = s.replace(cue, ' minorage ');
+  for (const phrase of MINOR_PHRASES) s = s.replace(phrase, ' minorage ');
   return s;
 }
 
@@ -570,6 +615,8 @@ interface Event {
   kind: 'minor' | 'sexual';
   pos: number;
   sentence: number;
+  /** Minor word starts its sentence, so it is that sentence's subject. */
+  subject: boolean;
 }
 
 /**
@@ -589,8 +636,17 @@ function scan(tokens: Tokens): {
     if (PRONOUNS.has(w)) pronounSentences.add(sentence[i]!);
   });
   const events: Event[] = [];
+  const sentenceStart: number[] = [];
+  sentence.forEach((sent, i) => {
+    if (sentenceStart[sent] === undefined) sentenceStart[sent] = i;
+  });
   const emit = (kind: Event['kind'], pos: number) =>
-    events.push({ kind, pos, sentence: sentence[pos]! });
+    events.push({
+      kind,
+      pos,
+      sentence: sentence[pos]!,
+      subject: pos - sentenceStart[sentence[pos]!]! < PROXIMITY.subjectTokens,
+    });
   for (let s = 0; s < words.length; s++) {
     let joined = '';
     for (let e = s; e < Math.min(words.length, s + MAX_JOIN); e++) {
@@ -614,6 +670,7 @@ function scan(tokens: Tokens): {
         else if (YOUTH_PREFIX.has(prev) && inIndex(YOUTH_NOUN, w))
           isMinor = true;
         else if (e === s && bareAge(w, prev, prev2, next)) isMinor = true;
+        else if (e === s && youthAdjacentAge(w, prev, next)) isMinor = true;
         if (inIndex(SEXUAL, w)) isSexual = true;
         else if (inIndex(SEX, w)) {
           if (
@@ -641,6 +698,14 @@ function bareAge(word: string, prev: string, prev2: string, next: string) {
   );
 }
 
+/** "girl 15", "15 girl": a bare number 5 to 17 next to a youth noun, not a quantity. */
+function youthAdjacentAge(word: string, prev: string, next: string) {
+  const value = ageValue(word);
+  if (value === undefined || value < 5 || value > 17) return false;
+  if (inSet(QUANTITY_UNITS, next)) return false;
+  return inIndex(YOUTH_NOUN, prev) || inIndex(YOUTH_NOUN, next);
+}
+
 function minorNearSexual(
   events: readonly Event[],
   pronounSentences: ReadonlySet<number>,
@@ -652,10 +717,10 @@ function minorNearSexual(
     const sd = Math.abs(minor.sentence - sexual.sentence);
     if (sd === 0 && d <= PROXIMITY.windowTokens) return true;
     if (sd >= 1 && sd <= 2 && d <= PROXIMITY.adjacentTokens) return true;
+    if (d > PROXIMITY.carryTokens) return false;
     return (
-      sd <= 2 &&
-      d <= PROXIMITY.carryTokens &&
-      pronounSentences.has(sexual.sentence)
+      pronounSentences.has(sexual.sentence) ||
+      (minor.subject && sexual.sentence - minor.sentence === 1)
     );
   };
   for (const ev of events) {
@@ -682,6 +747,12 @@ export function checkHardFloor(text: string): HardFloorResult {
   );
   if (explicit) return blocked('csam.explicit-term');
   if (minorNearSexual(events, pronounSentences))
+    return blocked('minor-sexual.proximity');
+  if (
+    text.length <= PROXIMITY.shortMessageChars &&
+    events.some((e) => e.kind === 'minor') &&
+    events.some((e) => e.kind === 'sexual')
+  )
     return blocked('minor-sexual.proximity');
   return { blocked: false, version: HARD_FLOOR_VERSION };
 }
