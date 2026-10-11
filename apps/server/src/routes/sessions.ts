@@ -217,6 +217,13 @@ export function registerSessionRoutes(
         code: 'INVITE_INVALID',
         message: 'This invite link is no longer valid.',
       });
+    const optOut = (request.body as { matureOptOut?: unknown } | null)
+      ?.matureOptOut;
+    if (typeof optOut === 'boolean')
+      await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
+        accountId,
+        optOut,
+      ]);
     try {
       const profile = await seatProfile(accountId);
       await (
