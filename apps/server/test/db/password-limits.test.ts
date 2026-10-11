@@ -25,11 +25,10 @@ describe('password-check abuse limits', () => {
   it('throttles wrong current-password guesses on password change across IPs', async () => {
     const id = await account();
     const token = await createSession(db, id, 'Test device');
-    const app = createApp(
-      db,
-      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
-      { inputGate: allowInputGate },
-    );
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+    });
     const change = (ip: string, currentPassword: string) =>
       app.inject({
         method: 'POST',
@@ -58,11 +57,10 @@ describe('password-check abuse limits', () => {
   it('throttles wrong passwords on account deletion and keeps the account active', async () => {
     const id = await account();
     const token = await createSession(db, id, 'Test device');
-    const app = createApp(
-      db,
-      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
-      { inputGate: allowInputGate },
-    );
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+    });
     const remove = (ip: string, password: string) =>
       app.inject({
         method: 'DELETE',

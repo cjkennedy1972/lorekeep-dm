@@ -44,11 +44,7 @@ it('serves the recorded combat stack for browser e2e', async () => {
     runner,
   );
   const connections = new ConnectionRegistry(db);
-  const app = createApp(
-    db,
-    { inputGate: allowInputGate, rooms, connections },
-    { inputGate: allowInputGate },
-  );
+  const app = createApp(db, { inputGate: allowInputGate, rooms, connections });
   installGateway(app, db, rooms, connections, 300);
 
   const accountId = randomUUID();

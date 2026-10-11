@@ -108,11 +108,7 @@ it('serves the restartable Adventure #1 scripted server', async () => {
     runner,
   );
   const connections = new ConnectionRegistry(db);
-  const app = createApp(
-    db,
-    { inputGate: allowInputGate, rooms, connections },
-    { inputGate: allowInputGate },
-  );
+  const app = createApp(db, { inputGate: allowInputGate, rooms, connections });
   installGateway(app, db, rooms, connections, 300);
   await app.listen({ host: '127.0.0.1', port });
   const bootToken = process.env.LIVE_BOOT_TOKEN;

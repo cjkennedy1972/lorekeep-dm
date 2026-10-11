@@ -298,11 +298,10 @@ const promptTierOf = (calls: LlmRequest[]) =>
   JSON.stringify(calls[0]).match(/contentTier\\":\\"(\w+)\\"/)?.[1];
 
 async function hostCap(sessionId: string, accountId: string, tier: unknown) {
-  const app = createApp(
-    db,
-    { inputGate: allowInputGate, cookieSecret: 'test-secret' },
-    { inputGate: allowInputGate },
-  );
+  const app = createApp(db, {
+    inputGate: allowInputGate,
+    cookieSecret: 'test-secret',
+  });
   try {
     const token = await createSession(db, accountId, 'Host device');
     return await app.inject({

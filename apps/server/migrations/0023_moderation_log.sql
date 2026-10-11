@@ -2,7 +2,7 @@ CREATE TABLE moderation_log (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  written_at timestamptz NOT NULL DEFAULT now(),
  expires_at timestamptz NOT NULL,
- surface text NOT NULL CHECK (surface IN ('player-action','clarification','character','table-name','room-name','display-name')),
+ surface text NOT NULL CHECK (surface IN ('player-action','clarification','character','table-name','room-name','display-name','report-reason')),
  account_id uuid,
  session_id uuid,
  category text NOT NULL CHECK (category IN ('none','violence','language','sexual','minor_sexual','hate','self_harm','lines_veils','other')),

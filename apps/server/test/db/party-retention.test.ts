@@ -19,11 +19,11 @@ const rooms = new RoomRegistry(
   new SessionLease(db),
   'party-retention-test',
 );
-const app = createApp(
-  db,
-  { inputGate: allowInputGate, rooms, joinRateLimit: 100 },
-  { inputGate: allowInputGate },
-);
+const app = createApp(db, {
+  inputGate: allowInputGate,
+  rooms,
+  joinRateLimit: 100,
+});
 const store = new LocalObjectStore(
   await mkdtemp(join(tmpdir(), 'party-sweep-')),
 );

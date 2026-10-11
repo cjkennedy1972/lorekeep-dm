@@ -15,11 +15,11 @@ const rooms = new RoomRegistry(
   new SessionLease(db),
   'rooms-test',
 );
-const app = createApp(
-  db,
-  { inputGate: allowInputGate, rooms, joinRateLimit: 100 },
-  { inputGate: allowInputGate },
-);
+const app = createApp(db, {
+  inputGate: allowInputGate,
+  rooms,
+  joinRateLimit: 100,
+});
 installGateway(app, db, rooms);
 const created: string[] = [];
 async function account(status = 'active') {

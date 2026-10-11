@@ -12,15 +12,11 @@ const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const store = new Persistence(db);
 const leases = new SessionLease(db);
 const rooms = new RoomRegistry(store, leases, 'room-limits');
-const app = createApp(
-  db,
-  {
-    inputGate: allowInputGate,
-    rooms,
-    roomLimits: { maxRooms: 3, createPerHour: 5 },
-  },
-  { inputGate: allowInputGate },
-);
+const app = createApp(db, {
+  inputGate: allowInputGate,
+  rooms,
+  roomLimits: { maxRooms: 3, createPerHour: 5 },
+});
 const ids: string[] = [];
 async function account() {
   const id = randomUUID();

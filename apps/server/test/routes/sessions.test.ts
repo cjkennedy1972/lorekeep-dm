@@ -32,11 +32,10 @@ const rooms = {
   },
 };
 const app = (account: 'none' | 'active' | 'pending') =>
-  createApp(
-    fakeDb(account) as never,
-    { inputGate: allowInputGate, rooms: rooms as never },
-    { inputGate: allowInputGate },
-  );
+  createApp(fakeDb(account) as never, {
+    inputGate: allowInputGate,
+    rooms: rooms as never,
+  });
 const cookie = { cookie: `sid=${token}` };
 
 describe('invite codes', () => {
@@ -102,11 +101,11 @@ describe('room routes', () => {
     expect(res.statusCode).toBe(400);
   });
   it('unknown code -> 404 INVITE_INVALID; rate limited per ip+code', async () => {
-    const a = createApp(
-      fakeDb('active') as never,
-      { inputGate: allowInputGate, rooms: rooms as never, joinRateLimit: 2 },
-      { inputGate: allowInputGate },
-    );
+    const a = createApp(fakeDb('active') as never, {
+      inputGate: allowInputGate,
+      rooms: rooms as never,
+      joinRateLimit: 2,
+    });
     const hit = () =>
       a.inject({ method: 'POST', url: '/api/join/nope', headers: cookie });
     expect((await hit()).statusCode).toBe(404);

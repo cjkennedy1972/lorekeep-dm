@@ -26,7 +26,7 @@ const allowAll: Moderator = {
   }),
 } as never;
 
-let gate: InputGate = { check: async () => true };
+let gate: InputGate = { check: async () => 'allow' };
 const app = createApp(db, { inputGate: { check: (i) => gate.check(i) } });
 const rooms = new RoomRegistry(
   new Persistence(db),
@@ -102,7 +102,10 @@ afterAll(async () => {
 
 describe('gateway input gate', () => {
   it('a rejected action never reaches the Room or the DM prompt', async () => {
-    gate = { check: async ({ text }) => !text.includes('forbidden') };
+    gate = {
+      check: async ({ text }) =>
+        text.includes('forbidden') ? 'block' : 'allow',
+    };
     const submit = vi.spyOn(Room.prototype, 'submitAction');
     const ws = await openSocket(tokens[0]!);
     ws.send(playerAction('forbidden plan'));
@@ -118,11 +121,45 @@ describe('gateway input gate', () => {
     submit.mockRestore();
   });
 
+  it('a blocked clarification answer is rejected privately and never reaches the Room', async () => {
+    gate = {
+      check: async ({ text }) =>
+        text.includes('forbidden') ? 'block' : 'allow',
+    };
+    const answer = vi.spyOn(Room.prototype, 'answerClarification');
+    const ws = await openSocket(tokens[0]!);
+    const actionId = randomUUID();
+    ws.send(
+      JSON.stringify({
+        actionId,
+        type: 'ClarificationAnswer',
+        payload: { actionId, answer: 'forbidden answer' },
+        lastSeq: 0,
+      }),
+    );
+    const received: string[] = [];
+    ws.on('message', (d) => received.push(d.toString()));
+    await vi.waitFor(() =>
+      expect(received.some((m) => m.includes('CONTENT_REJECTED'))).toBe(true),
+    );
+    const reply = JSON.parse(
+      received.find((m) => m.includes('CONTENT_REJECTED'))!,
+    );
+    expect(reply).toMatchObject({
+      type: 'Error',
+      payload: { code: 'CONTENT_REJECTED', actionId },
+    });
+    expect(received.join('')).not.toContain('forbidden');
+    expect(answer).not.toHaveBeenCalled();
+    ws.close();
+    answer.mockRestore();
+  });
+
   it('parallel submissions on one socket reach the Room in arrival order', async () => {
     gate = {
       check: ({ text }) =>
         new Promise((resolve) =>
-          setTimeout(() => resolve(true), text.startsWith('slow') ? 150 : 0),
+          setTimeout(() => resolve('allow'), text.startsWith('slow') ? 150 : 0),
         ),
     };
     const submitted: string[] = [];
@@ -163,7 +200,7 @@ describe('moderation_log row', () => {
         accountId,
         sessionId,
       }),
-    ).toBe(false);
+    ).toBe('block');
     const row = (
       await db.query<{
         written_at: Date;

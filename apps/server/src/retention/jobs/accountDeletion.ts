@@ -352,6 +352,10 @@ async function deleteAccount(
     [accountId],
   );
   await client.query(
+    'UPDATE moderation_log SET account_id=NULL WHERE account_id=$1',
+    [accountId],
+  );
+  await client.query(
     "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1) AND node_id=$2",
     [[...fenced], FENCE_NODE],
   );

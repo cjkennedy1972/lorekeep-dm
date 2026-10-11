@@ -15,11 +15,7 @@ import { SessionLease } from '../../src/room/lease.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const connections = new ConnectionRegistry(db);
-const app = createApp(
-  db,
-  { inputGate: allowInputGate, connections },
-  { inputGate: allowInputGate },
-);
+const app = createApp(db, { inputGate: allowInputGate, connections });
 const rooms = new RoomRegistry(
   new Persistence(db),
   new SessionLease(db),

@@ -261,13 +261,23 @@ export function registerAuthRoutes(
       return reply
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Enter a display name.' });
-    if (
-      !(await app.inputGate.check({
-        text: name,
-        surface: 'display-name',
-        accountId: session.account_id,
-      }))
-    )
+    if (limited(`name:${session.account_id}`))
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many requests. Try again later.',
+      });
+    const decision = await app.inputGate.check({
+      text: name,
+      surface: 'display-name',
+      accountId: session.account_id,
+      ip: request.ip,
+    });
+    if (decision === 'limited')
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many requests. Try again later.',
+      });
+    if (decision === 'block')
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That display name cannot be used.',
@@ -494,19 +504,21 @@ export function registerAuthRoutes(
     const parsed = signupSchema.safeParse(request.body);
     if (!parsed.success)
       return reply.code(400).send({ message: 'Invalid signup details' });
-    if (
-      !(await app.inputGate.check({
-        text: parsed.data.displayName,
-        surface: 'display-name',
-      }))
-    )
+    const email = parsed.data.email.trim().toLowerCase();
+    if (limited(`ip:${request.ip}`) || limited(`email:${email}`))
+      return reply.code(429).send({ message: 'Too many requests' });
+    const decision = await app.inputGate.check({
+      text: parsed.data.displayName,
+      surface: 'display-name',
+      ip: request.ip,
+    });
+    if (decision === 'limited')
+      return reply.code(429).send({ message: 'Too many requests' });
+    if (decision === 'block')
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That display name cannot be used.',
       });
-    const email = parsed.data.email.trim().toLowerCase();
-    if (limited(`ip:${request.ip}`) || limited(`email:${email}`))
-      return reply.code(429).send({ message: 'Too many requests' });
     try {
       const result = await signup(db, sender, parsed.data, {
         cookieSecret,

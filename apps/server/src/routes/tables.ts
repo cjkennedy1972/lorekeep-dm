@@ -5,9 +5,11 @@ import { CharacterSchema, AdventureSchema } from '@game/schema';
 import { z } from 'zod';
 import { quickBuild, validateCharacter } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { BoundedCounter } from '../accounts/throttle.js';
 import { catalogFromSnapshot } from '../room/catalogSnapshot.js';
 import { loadAdventure } from '@game/rules-engine/adventure-node';
 import { adventure01RegistrySeed } from '@game/rules-engine/adventure-node';
+import { CREATE_PER_HOUR } from './sessions.js';
 import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import { RegistryMemory } from '../dm/memory.js';
 import { authenticateRequest } from '../middleware/auth.js';
@@ -76,6 +78,7 @@ export function registerTableRoutes(
     }
     return auth.account_id;
   }
+  const createHits = new BoundedCounter(3_600_000);
   app.post('/api/tables', async (request, reply) => {
     const accountId = await account(request, reply);
     if (!accountId) return reply;
@@ -87,25 +90,41 @@ export function registerTableRoutes(
           'Check the table, adventure, difficulty and character choices.',
       });
     const body = parsed.data;
-    if (
+    if (createHits.hit(accountId) > CREATE_PER_HOUR)
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'You are creating tables too quickly. Try again later.',
+      });
+    const characterDecision =
       body.character &&
-      !(await app.inputGate.check({
+      (await app.inputGate.check({
         text: body.character.name,
         surface: 'character',
         accountId,
-      }))
-    )
+        ip: request.ip,
+      }));
+    if (characterDecision === 'limited')
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many requests. Try again later.',
+      });
+    if (characterDecision === 'block')
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That character name cannot be used.',
       });
-    if (
-      !(await app.inputGate.check({
-        text: body.name,
-        surface: 'table-name',
-        accountId,
-      }))
-    )
+    const nameDecision = await app.inputGate.check({
+      text: body.name,
+      surface: 'table-name',
+      accountId,
+      ip: request.ip,
+    });
+    if (nameDecision === 'limited')
+      return reply.code(429).send({
+        code: 'RATE_LIMITED',
+        message: 'Too many requests. Try again later.',
+      });
+    if (nameDecision === 'block')
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That table name cannot be used.',

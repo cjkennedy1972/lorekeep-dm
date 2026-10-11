@@ -9,11 +9,7 @@ const clientIp = async (
   remoteAddress: string,
   forwardedFor: string,
 ) => {
-  const app = createApp(
-    noDb,
-    { inputGate: allowInputGate, trustProxy },
-    { inputGate: allowInputGate },
-  );
+  const app = createApp(noDb, { inputGate: allowInputGate, trustProxy });
   app.get('/whoami', (request) => ({ ip: request.ip }));
   const response = await app.inject({
     method: 'GET',

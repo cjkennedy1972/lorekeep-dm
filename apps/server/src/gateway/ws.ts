@@ -349,8 +349,18 @@ export function installGateway(
                 accountId: identity.accountId,
                 sessionId: identity.sessionId,
               })
-              .then((allowed) => {
-                if (!allowed)
+              .then((decision) => {
+                if (decision === 'limited')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: answer.data.payload.actionId,
+                    },
+                  });
+                if (decision === 'block')
                   return send({
                     seq: room.seq,
                     type: 'Error',
@@ -407,7 +417,8 @@ export function installGateway(
               ),
             ])
               .then(async ([allowed, name]) => {
-                if (!allowed) return 'rejected' as const;
+                if (allowed === 'limited') return 'limited' as const;
+                if (allowed === 'block') return 'rejected' as const;
                 return room.submitAction(
                   identity.accountId,
                   action.data.actionId,
@@ -416,6 +427,16 @@ export function installGateway(
                 );
               })
               .then((accepted) => {
+                if (accepted === 'limited')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: msg.actionId,
+                    },
+                  });
                 if (accepted === 'rejected')
                   return send({
                     seq: room.seq,

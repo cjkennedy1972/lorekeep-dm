@@ -94,17 +94,13 @@ beforeAll(async () => {
     600_000,
     60_000,
   );
-  app = createApp(
-    db,
-    {
-      inputGate: allowInputGate,
-      rooms,
-      connections: new ConnectionRegistry(db),
-      liveDmAllowlistOnly: true,
-      cookieSecret: 'live-dm-recap-gate-test-secret',
-    },
-    { inputGate: allowInputGate },
-  );
+  app = createApp(db, {
+    inputGate: allowInputGate,
+    rooms,
+    connections: new ConnectionRegistry(db),
+    liveDmAllowlistOnly: true,
+    cookieSecret: 'live-dm-recap-gate-test-secret',
+  });
   base = await app.listen({ host: '127.0.0.1', port: 0 });
 });
 

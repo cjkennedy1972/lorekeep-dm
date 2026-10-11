@@ -62,11 +62,11 @@ class Stack {
       runner,
     );
     const connections = new ConnectionRegistry(db);
-    const app = createApp(
-      db,
-      { inputGate: allowInputGate, rooms, connections },
-      { inputGate: allowInputGate },
-    );
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      rooms,
+      connections,
+    });
     installGateway(app, db, rooms, connections, 300);
     const base = await app.listen({ host: '127.0.0.1', port: 0 });
     return new Stack(rooms, app, base, requests);

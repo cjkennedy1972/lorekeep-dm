@@ -24,15 +24,11 @@ describe('server app', () => {
         throw new Error('database accessed');
       },
     } as never;
-    const app = createApp(
-      db,
-      {
-        inputGate: allowInputGate,
-        cookieSecret: 'test-secret',
-        rateLimit: 100,
-      },
-      { inputGate: allowInputGate },
-    );
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+      rateLimit: 100,
+    });
     const payload = {
       email: 'minor@example.test',
       password: 'a-unique-password-123',
@@ -65,29 +61,23 @@ describe('server app', () => {
     await app.close();
   });
   it('reports database outage without revealing details', async () => {
-    const app = createApp(
-      {
-        query: async () => {
-          throw new Error('secret');
-        },
-      } as never,
-      { inputGate: allowInputGate },
-    );
+    const app = createApp({
+      query: async () => {
+        throw new Error('secret');
+      },
+    } as never);
     const response = await app.inject('/readyz');
     expect(response.statusCode).toBe(503);
     expect(response.body).not.toContain('secret');
     await app.close();
   });
   it('reports the sweep as stale when its health read fails, without leaking details', async () => {
-    const app = createApp(
-      {
-        query: async (sql: string) => {
-          if (sql.startsWith('SELECT 1')) return { rows: [] };
-          throw new Error('secret');
-        },
-      } as never,
-      { inputGate: allowInputGate },
-    );
+    const app = createApp({
+      query: async (sql: string) => {
+        if (sql.startsWith('SELECT 1')) return { rows: [] };
+        throw new Error('secret');
+      },
+    } as never);
     const response = await app.inject('/readyz');
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
@@ -154,16 +144,12 @@ describe('reverse proxy trust', () => {
     termsVersion: 'v1',
   };
   const build = (trustProxy: boolean) =>
-    createApp(
-      noDb,
-      {
-        inputGate: allowInputGate,
-        cookieSecret: 'test-secret',
-        rateLimit: 1,
-        trustProxy,
-      },
-      { inputGate: allowInputGate },
-    );
+    createApp(noDb, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+      rateLimit: 1,
+      trustProxy,
+    });
   const signupFrom = (
     app: ReturnType<typeof build>,
     client: string,
@@ -248,15 +234,11 @@ describe('cookie secret and secure defaults', () => {
   });
   it('marks the age-gate retry cookie Secure in production behind a trusted proxy', async () => {
     process.env.NODE_ENV = 'production';
-    const app = createApp(
-      db,
-      {
-        inputGate: allowInputGate,
-        cookieSecret: 'test-secret',
-        trustProxy: true,
-      },
-      { inputGate: allowInputGate },
-    );
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+      trustProxy: true,
+    });
     const minor = await app.inject({
       method: 'POST',
       url: '/api/signup',
