@@ -16,6 +16,7 @@ export const DEFAULT_MAX_STREAM_CHARS = 20_000;
 export const DEFAULT_MAX_TURN_CHARS = 30_000;
 export const DEFAULT_SOURCE_IDLE_MS = 15_000;
 export const DEFAULT_VERDICT_TIMEOUT_MS = 10_000;
+// ponytail: carry must be >= the longest deterministic rule span; raise if a rule can exceed 400 chars.
 const CONTEXT_CHARS = 400;
 const FIRST_CHUNK_TOKENS = 12;
 const SENTENCE_END = /[.!?…]+["'”’)\]]*(?=\s)|[。！？]+["'”’」』)\]]*/g;
@@ -46,8 +47,8 @@ export type GateEvent =
   | { kind: 'end'; outcome: 'approved' | 'redirected'; metrics: GateMetrics };
 
 export interface OutputGateOptions {
-  /** Narration deltas for the first attempt. */
-  stream: AsyncIterable<string>;
+  /** Caller owns the first LLM call. `signal` aborts when the attempt is abandoned; the source must honor it. */
+  stream: (signal: AbortSignal) => AsyncIterable<string>;
   /** Caller owns the LLM call. Receives the approved prefix so a retry continues it; `signal` aborts when the attempt is abandoned. */
   regenerate: (
     attempt: number,
@@ -97,8 +98,10 @@ export async function* runOutputGate(
 
   for (let attempt = 0; ; attempt++) {
     const abort = new AbortController();
-    let source = opts.stream;
-    if (attempt > 0) {
+    let source: AsyncIterable<string>;
+    if (attempt === 0) {
+      source = opts.stream(abort.signal);
+    } else {
       metrics.regenerations = attempt;
       yield { kind: 'regenerate', attempt };
       source = opts.regenerate(attempt, [...approved], abort.signal);

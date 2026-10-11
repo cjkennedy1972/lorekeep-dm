@@ -4,7 +4,13 @@ import {
   runOutputGate,
   type GateEvent,
 } from './outputGate.js';
-import type { Moderator, ModerationRequest, Verdict } from './moderator.js';
+import {
+  JudgeModerator,
+  type DeterministicLayer,
+  type Moderator,
+  type ModerationRequest,
+  type Verdict,
+} from './moderator.js';
 
 const ALLOW: Verdict = {
   verdict: 'allow',
@@ -71,7 +77,7 @@ describe('chunking', () => {
     const { moderator } = scripted(() => ALLOW);
     const events = await collect(
       runOutputGate({
-        stream: tokens(...splitTokens(text)),
+        stream: () => tokens(...splitTokens(text)),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -101,7 +107,7 @@ describe('chunking', () => {
     }
     const { moderator } = scripted(() => ALLOW);
     const gen = runOutputGate({
-      stream: source(),
+      stream: () => source(),
       regenerate: () => {
         throw new Error('not expected');
       },
@@ -124,7 +130,7 @@ describe('ordering guarantees', () => {
     const verdict = deferred<Verdict>();
     const { moderator } = scripted(() => verdict.promise);
     const gen = runOutputGate({
-      stream: tokens('Hello there. '),
+      stream: () => tokens('Hello there. '),
       regenerate: () => {
         throw new Error('not expected');
       },
@@ -151,7 +157,7 @@ describe('ordering guarantees', () => {
       text.startsWith('One') ? first.promise : ALLOW,
     );
     const gen = runOutputGate({
-      stream: tokens('One. ', 'Two. '),
+      stream: () => tokens('One. ', 'Two. '),
       regenerate: () => {
         throw new Error('not expected');
       },
@@ -171,7 +177,7 @@ describe('ordering guarantees', () => {
     );
     const events = await collect(
       runOutputGate({
-        stream: tokens(
+        stream: () => tokens(
           'Fine one. ',
           'Fine two. ',
           'Blocked three. ',
@@ -198,7 +204,7 @@ describe('block and regenerate', () => {
     const calls: [number, readonly string[]][] = [];
     const events = await collect(
       runOutputGate({
-        stream: tokens('Bad start. '),
+        stream: () => tokens('Bad start. '),
         regenerate: (attempt, approved) => {
           calls.push([attempt, [...approved]]);
           return tokens('Good start. ');
@@ -219,7 +225,7 @@ describe('block and regenerate', () => {
     const calls: [number, string[]][] = [];
     const events = await collect(
       runOutputGate({
-        stream: tokens('One. ', 'Two. ', 'Unsafe three. ', 'Four. '),
+        stream: () => tokens('One. ', 'Two. ', 'Unsafe three. ', 'Four. '),
         regenerate: (attempt, approved) => {
           calls.push([attempt, [...approved]]);
           return tokens('Safe three. ');
@@ -242,7 +248,7 @@ describe('block and regenerate', () => {
     const calls: number[] = [];
     const events = await collect(
       runOutputGate({
-        stream: tokens('Bad one. '),
+        stream: () => tokens('Bad one. '),
         regenerate: (attempt) => {
           calls.push(attempt);
           return tokens(`Bad again ${attempt}. `);
@@ -270,7 +276,7 @@ describe('block and regenerate', () => {
     const calls: number[] = [];
     const events = await collect(
       runOutputGate({
-        stream: tokens('Hello. '),
+        stream: () => tokens('Hello. '),
         regenerate: (attempt) => {
           calls.push(attempt);
           return tokens('Hi. ');
@@ -294,7 +300,7 @@ describe('block and regenerate', () => {
       throw new Error('stream reset');
     }
     const gen = runOutputGate({
-      stream: broken(),
+      stream: () => broken(),
       regenerate: () => {
         throw new Error('not expected');
       },
@@ -327,7 +333,7 @@ describe('bounded judging and buffering', () => {
     const sentences = Array.from({ length: 500 }, (_, i) => `S${i}. `);
     const events = await collect(
       runOutputGate({
-        stream: tokens(...sentences),
+        stream: () => tokens(...sentences),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -347,7 +353,7 @@ describe('bounded judging and buffering', () => {
     const { moderator } = scripted(() => ALLOW);
     const events = await collect(
       runOutputGate({
-        stream: tokens(...splitTokens(text, 4)),
+        stream: () => tokens(...splitTokens(text, 4)),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -375,7 +381,7 @@ describe('bounded judging and buffering', () => {
     const started = performance.now();
     const events = await collect(
       runOutputGate({
-        stream: source(),
+        stream: () => source(),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -401,7 +407,7 @@ describe('bounded judging and buffering', () => {
     const calls: number[] = [];
     const events = await collect(
       runOutputGate({
-        stream: tokens(...Array.from({ length: 20 }, () => 'aaaa. ')),
+        stream: () => tokens(...Array.from({ length: 20 }, () => 'aaaa. ')),
         regenerate: (attempt) => {
           calls.push(attempt);
           return tokens('Calm. ');
@@ -428,7 +434,7 @@ describe('bounded judging and buffering', () => {
     const { moderator, seen } = scripted(() => ALLOW);
     await collect(
       runOutputGate({
-        stream: tokens('Hi. ', '   ', 'There. '),
+        stream: () => tokens('Hi. ', '   ', 'There. '),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -449,7 +455,7 @@ describe('bounded judging and buffering', () => {
     };
     await collect(
       runOutputGate({
-        stream: tokens('One. ', 'Two. '),
+        stream: () => tokens('One. ', 'Two. '),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -475,7 +481,7 @@ describe('bounded judging and buffering', () => {
     let signal: AbortSignal | undefined;
     const events = await collect(
       runOutputGate({
-        stream: endless(),
+        stream: () => endless(),
         regenerate: (_attempt, _approved, s) => {
           signal = s;
           return tokens('Good. ');
@@ -497,7 +503,7 @@ describe('metrics', () => {
     const { moderator } = scripted(() => ALLOW);
     const events = await collect(
       runOutputGate({
-        stream: tokens('One. ', 'Two. '),
+        stream: () => tokens('One. ', 'Two. '),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -543,7 +549,7 @@ describe('abandoned and hung upstreams', () => {
     );
     const events = await collect(
       runOutputGate({
-        stream: hungAfter(['Bad. '], ret),
+        stream: () => hungAfter(['Bad. '], ret),
         regenerate: () => tokens('Fine. '),
         moderator,
         tier: 'family',
@@ -560,7 +566,7 @@ describe('abandoned and hung upstreams', () => {
     await expect(
       (async () => {
         for await (const e of runOutputGate({
-          stream: hungAfter(['Hi. '], ret),
+          stream: () => hungAfter(['Hi. '], ret),
           regenerate: () => tokens('x'),
           moderator,
           tier: 'family',
@@ -587,7 +593,7 @@ describe('verdict bound', () => {
     };
     const events = await collect(
       runOutputGate({
-        stream: tokens('Hi. '),
+        stream: () => tokens('Hi. '),
         regenerate: () => tokens('Ok. '),
         moderator,
         tier: 'family',
@@ -610,7 +616,7 @@ describe('per-turn ceiling', () => {
     const { moderator } = scripted(() => ALLOW);
     const events = await collect(
       runOutputGate({
-        stream: tokens('Fine. ', 'x'.repeat(60)),
+        stream: () => tokens('Fine. ', 'x'.repeat(60)),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -629,7 +635,7 @@ describe('CJK sentence ends', () => {
     const { moderator, seen } = scripted(() => ALLOW);
     const events = await collect(
       runOutputGate({
-        stream: tokens('这是第一句。这是第二句！'),
+        stream: () => tokens('这是第一句。这是第二句！'),
         regenerate: () => {
           throw new Error('not expected');
         },
@@ -639,5 +645,80 @@ describe('CJK sentence ends', () => {
     );
     expect(seen).toEqual(['这是第一句。', '这是第二句！']);
     expect(chunkTexts(events).join('')).toBe('这是第一句。这是第二句！');
+  });
+});
+
+describe('deterministic window across forced cuts', () => {
+  it('blocks a hard-floor term that straddles a forced 400-char cut before it is emitted whole', async () => {
+    const deterministic: DeterministicLayer = {
+      hardFloorCheck: (text) => ({
+        blocked: text.includes('禁词'),
+        category: 'sexual',
+      }),
+      denylistCheck: () => ({ blocked: false }),
+    };
+    const moderator = new JudgeModerator({
+      deterministic,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const events = await collect(
+      runOutputGate({
+        stream: () =>
+          tokens('中'.repeat(399) + '禁词' + '中'.repeat(50) + '。'),
+        regenerate: () => tokens('安全。'),
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    const out = chunkTexts(events).join('');
+    expect(out).not.toContain('禁词');
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks[1]).toMatchObject({
+      verdict: 'block',
+      source: 'hardfloor',
+    });
+  });
+});
+
+describe('first-attempt abort', () => {
+  it('aborts the first-attempt signal when the gate stops reading a hung upstream', async () => {
+    let firstSignal: AbortSignal | undefined;
+    async function* hungUntilAborted(signal: AbortSignal) {
+      yield 'Hi. ';
+      await new Promise<void>((resolve) =>
+        signal.addEventListener('abort', () => resolve(), { once: true }),
+      );
+    }
+    const { moderator } = scripted(() => ALLOW);
+    await expect(
+      collect(
+        runOutputGate({
+          stream: (signal) => {
+            firstSignal = signal;
+            return hungUntilAborted(signal);
+          },
+          regenerate: () => tokens('x'),
+          moderator,
+          tier: 'family',
+          sourceIdleMs: 20,
+        }),
+      ),
+    ).rejects.toThrow(/idle/);
+    expect(firstSignal?.aborted).toBe(true);
+  });
+});
+
+describe('unavailable verdict contract', () => {
+  it('requires failClosedRow when unavailable is true', () => {
+    // @ts-expect-error an unavailable verdict must name its fail-closed row
+    const v: Verdict = {
+      verdict: 'block',
+      category: 'other',
+      source: 'failclosed',
+      latencyMs: 0,
+      unavailable: true,
+    };
+    expect(v.unavailable).toBe(true);
   });
 });

@@ -150,3 +150,9 @@ Recorded before gate wiring (M3-07/M3-10). This addendum refines the M3-08 adden
 - `'tier'` maps to **HOLD**.
 
 The caller maps `failClosedRow`, not `category`. The category is `other` on outage because the judge did not answer. The gate and the moderator both set `'hard-floor'`, the stricter row, because an outage has no category to show it is a tier-only case, and the hard floor never fails open. A future path that knows the text is tier-only may set `'tier'`. `failClosedRow` is undefined when `unavailable` is false.
+
+**Correction to N1/C1 (M3-08b round 2).** The sentence "a hung upstream is closed as soon as the gate stops reading" holds only when the source honors its `signal`. The first attempt's source is now a factory `stream(signal)`, like `regenerate`, so the gate aborts both attempts' signals when it stops reading. A source that ignores `signal` and is blocked in `next()` is not closed by `return()`, because an async generator's `return()` queues behind a pending `next()`. Such a source stays open until its own transport timeout. Every upstream passed to the gate must honor `signal`.
+
+**Correction to the deterministic layer (B1, round 2).** Hard-floor and denylist checks run over `context + text`, where `context` is the carried tail above, so a term split across a forced cut is seen whole. Emission is still per chunk and each chunk is still judged by its own verdict. A fragment of an earlier allowed chunk can therefore reach the player before a straddling term is seen; the block then ends the attempt. The carry must be at least the longest deterministic rule span; a rule longer than 400 characters needs the carry raised with it.
+
+**Correction to the fail-closed contract (N3, round 2).** `Verdict` is now a union. `unavailable: true` requires `failClosedRow`; `unavailable: false` has no `failClosedRow`. A caller cannot read an outage verdict without naming its row.

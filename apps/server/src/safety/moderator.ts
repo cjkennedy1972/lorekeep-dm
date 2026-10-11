@@ -14,15 +14,16 @@ export type Direction = 'input' | 'output';
  */
 export type FailClosedRow = 'hard-floor' | 'tier';
 
-export interface Verdict {
+interface VerdictBase {
   verdict: 'allow' | 'block';
   category: Category;
   source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed';
   latencyMs: number;
-  /** True when the judge could not produce a usable verdict (fail-closed). */
-  unavailable: boolean;
-  failClosedRow?: FailClosedRow;
 }
+
+/** `unavailable` is true when the judge could not produce a usable verdict (fail-closed). */
+export type Verdict = VerdictBase &
+  ({ unavailable: false } | { unavailable: true; failClosedRow: FailClosedRow });
 
 export function failClosedVerdict(latencyMs: number): Verdict {
   return {
@@ -39,7 +40,7 @@ export interface ModerationRequest {
   text: string;
   tier: ContentTier;
   tableLines?: readonly string[];
-  /** Earlier text for reference only; the verdict applies to `text` alone. */
+  /** Earlier text for reference only; the verdict applies to `text` alone. Deterministic rules also scan `context + text`, so a term split across a chunk cut is seen whole. */
   context?: string;
   direction: Direction;
 }
@@ -173,12 +174,13 @@ export class JudgeModerator implements Moderator {
 
     let rule: { category: Category; source: 'hardfloor' | 'denylist' } | null =
       null;
+    const window = (req.context ?? '') + req.text;
     try {
-      const hard = this.options.deterministic.hardFloorCheck(req.text);
+      const hard = this.options.deterministic.hardFloorCheck(window);
       if (hard.blocked)
         rule = { category: hard.category ?? 'other', source: 'hardfloor' };
       else {
-        const denied = this.options.deterministic.denylistCheck(req.text);
+        const denied = this.options.deterministic.denylistCheck(window);
         if (denied.blocked)
           rule = { category: denied.category ?? 'other', source: 'denylist' };
       }
