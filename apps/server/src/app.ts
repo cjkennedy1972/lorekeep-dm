@@ -11,6 +11,7 @@ import { retentionHealth } from './retention/sweeper.js';
 import { registerUsageRoutes } from './llm/usageRoutes.js';
 import { registerOperatorRoutes } from './routes/operator.js';
 import { registerReportRoutes } from './routes/reports.js';
+import { registerContentSettingsRoutes } from './routes/contentSettings.js';
 import type { RoomRegistry } from './room/registry.js';
 import type { ConnectionRegistry } from './gateway/connections.js';
 
@@ -68,7 +69,7 @@ export function createApp(
     rateLimit?: number;
     joinRateLimit?: number;
     roomLimits?: { maxRooms?: number; createPerHour?: number };
-    rooms?: Pick<RoomRegistry, 'get'>;
+    rooms?: Pick<RoomRegistry, 'get' | 'peek'>;
     connections?: Pick<ConnectionRegistry, 'sweep'>;
     isOperator?: (accountId: string) => Promise<boolean>;
     trustProxy?: boolean | number | string[];
@@ -124,6 +125,7 @@ export function createApp(
     registerUsageRoutes(app, db as Pool, options.isOperator);
     registerOperatorRoutes(app, db as Pool, options.isOperator);
     registerReportRoutes(app, db as Pool);
+    registerContentSettingsRoutes(app, db as Pool, options.rooms);
     if (options.rooms) {
       registerSessionRoutes(
         app,

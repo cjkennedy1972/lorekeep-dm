@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
+import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
 
@@ -11,9 +13,42 @@ export interface LeaseFence {
   epoch: number;
 }
 
+/** The session is held by another Room or writer; the caller may retry. */
+export class LeaseConflictError extends Error {
+  readonly retryable = true;
+}
+
 export interface LatestState {
   snapshot: Snapshot | null;
   events: StoredEvent[];
+}
+
+async function applyHostTierCap(
+  client: PoolClient,
+  sessionId: string,
+  cap: HostCap | null,
+  seq?: number,
+): Promise<StoredEvent[]> {
+  const from =
+    (
+      await client.query<{ host_tier_cap: HostCap | null }>(
+        'SELECT host_tier_cap FROM sessions WHERE id=$1',
+        [sessionId],
+      )
+    ).rows[0]?.host_tier_cap ?? null;
+  if (from === cap) return [];
+  await client.query('UPDATE sessions SET host_tier_cap=$2 WHERE id=$1', [
+    sessionId,
+    cap,
+  ]);
+  return appendEvents(client, sessionId, [
+    {
+      seq,
+      turnId: randomUUID(),
+      type: 'HostTierCapChanged',
+      payload: { from, to: cap },
+    },
+  ]);
 }
 
 export class Persistence {
@@ -52,7 +87,7 @@ export class Persistence {
           current.node_id !== lease.nodeId ||
           Number(current.epoch) !== lease.epoch)
       ) {
-        throw new Error('Lease fencing check failed');
+        throw new LeaseConflictError('Lease fencing check failed');
       }
       const result = await work(client);
       await client.query('COMMIT');
@@ -87,6 +122,53 @@ export class Persistence {
   ): Promise<StoredEvent[]> {
     return this.transaction(sessionId, lease, (client) =>
       appendEvents(client, sessionId, events),
+    );
+  }
+
+  /** Cap change for a table with no live Room: takes the session lease for the write, as account deletion does. */
+  async setHostTierCap(sessionId: string, cap: HostCap | null): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE', [
+        sessionId,
+      ]);
+      const nodeId = randomUUID();
+      const taken = await client.query(
+        `INSERT INTO session_lease(session_id,node_id,expires_at,epoch)
+         VALUES ($1,$2,clock_timestamp() + interval '30 seconds',1)
+         ON CONFLICT (session_id) DO UPDATE SET
+           node_id = EXCLUDED.node_id, expires_at = EXCLUDED.expires_at, epoch = session_lease.epoch + 1
+         WHERE session_lease.expires_at <= clock_timestamp()
+         RETURNING epoch`,
+        [sessionId, nodeId],
+      );
+      if (!taken.rowCount)
+        throw new LeaseConflictError('Session is busy; retry the cap change.');
+      await applyHostTierCap(client, sessionId, cap);
+      await client.query(
+        `UPDATE session_lease SET node_id='', expires_at=clock_timestamp()
+         WHERE session_id=$1 AND node_id=$2`,
+        [sessionId, nodeId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Cap change from a live Room: appends at the Room's own seq, fenced by the Room's lease. */
+  writeHostTierCap(
+    sessionId: string,
+    cap: HostCap | null,
+    lease: LeaseFence,
+    seq: number,
+  ): Promise<StoredEvent[]> {
+    return this.transaction(sessionId, lease, (client) =>
+      applyHostTierCap(client, sessionId, cap, seq),
     );
   }
 

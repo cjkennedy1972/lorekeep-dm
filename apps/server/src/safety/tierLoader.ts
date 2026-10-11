@@ -1,9 +1,12 @@
 import type { Pool } from 'pg';
-import { computeContentTier, type ContentTier } from './tier.js';
+import { computeContentTier, type ContentTier, type HostCap } from './tier.js';
 
 type Queryable = Pick<Pool, 'query'>;
 
-/** Live tier for the session plus the tier last committed to sessions.content_tier. */
+/**
+ * Live tier for the session plus the tier last committed to sessions.content_tier. The host's
+ * cap (sessions.host_tier_cap, NULL = none) is applied here; computeContentTier fails it closed.
+ */
 export async function loadContentTierState(
   db: Queryable,
   sessionId: string,
@@ -12,15 +15,18 @@ export async function loadContentTierState(
   const { rows } = await db.query<{
     content_tier: ContentTier;
     moderation_verified: boolean;
-  }>('SELECT content_tier, moderation_verified FROM sessions WHERE id=$1', [
-    sessionId,
-  ]);
+    host_tier_cap: HostCap | null;
+  }>(
+    'SELECT content_tier, moderation_verified, host_tier_cap FROM sessions WHERE id=$1',
+    [sessionId],
+  );
   const session = rows[0];
   if (!session) throw new Error(`Session not found: ${sessionId}`);
   const tier = computeContentTier({
     seatedMatureOptOuts: await loadSeatedMatureOptOuts(db, sessionId),
     moderationVerified: session.moderation_verified,
     endpointAllowsMature,
+    hostCap: session.host_tier_cap ?? undefined,
   });
   return { tier, stored: session.content_tier };
 }
