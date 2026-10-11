@@ -45,16 +45,24 @@ export interface ModerationRequest {
   tableLines?: readonly string[];
   /** Earlier text for reference only; the verdict applies to `text` alone. Deterministic rules also scan `context + text`, so a term split across a chunk cut is seen whole. */
   context?: string;
+  /** Turn-scoped deterministic scanner. When set, it judges `text` in place of `context + text`; message-level rules need the whole turn, not a carry. */
+  turn?: DeterministicTurn;
   direction: Direction;
 }
 
 export interface Moderator {
   moderate(req: ModerationRequest): Promise<Verdict>;
+  startTurn?(): DeterministicTurn | undefined;
 }
 
 export interface DeterministicCheckResult {
   blocked: boolean;
   category?: Category;
+}
+
+/** Scans one turn's text in order; `push` returns the verdict for everything pushed so far. */
+export interface DeterministicTurn {
+  push(text: string): DeterministicCheckResult;
 }
 
 /**
@@ -68,6 +76,7 @@ export const MAX_RULE_SPAN_CHARS = 64;
 export interface DeterministicLayer {
   hardFloorCheck(text: string): DeterministicCheckResult;
   denylistCheck(text: string): DeterministicCheckResult;
+  startTurn?(): DeterministicTurn;
   maxSpanChars: number;
 }
 
@@ -185,6 +194,10 @@ export class JudgeModerator implements Moderator {
     this.now = options.now ?? (() => performance.now());
   }
 
+  startTurn(): DeterministicTurn | undefined {
+    return this.options.deterministic.startTurn?.();
+  }
+
   async moderate(req: ModerationRequest): Promise<Verdict> {
     const started = this.now();
     const elapsed = () => this.now() - started;
@@ -193,7 +206,9 @@ export class JudgeModerator implements Moderator {
       null;
     const window = (req.context ?? '') + req.text;
     try {
-      const hard = this.options.deterministic.hardFloorCheck(window);
+      const hard = req.turn
+        ? req.turn.push(req.text)
+        : this.options.deterministic.hardFloorCheck(window);
       if (hard.blocked)
         rule = { category: hard.category ?? 'other', source: 'hardfloor' };
       else {

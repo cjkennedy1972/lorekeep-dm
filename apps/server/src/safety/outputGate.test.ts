@@ -11,6 +11,7 @@ import {
   type ModerationRequest,
   type Verdict,
 } from './moderator.js';
+import { hardFloorLayer } from './deterministicLayer.js';
 
 const ALLOW: Verdict = {
   verdict: 'allow',
@@ -686,6 +687,36 @@ describe('deterministic window across forced cuts', () => {
       verdict: 'block',
       source: 'hardfloor',
     });
+  });
+});
+
+describe('turn-scoped hard floor across the carry', () => {
+  it('blocks a message-level minor-plus-sexual violation whose minor reference is beyond the carry', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const filler = 'The tavern is quiet and the fire is low. '.repeat(30);
+    const events = await collect(
+      runOutputGate({
+        stream: () =>
+          tokens(
+            ...splitTokens(
+              `A child sleeps by the door. ${filler}Then nude.`,
+              50,
+            ),
+          ),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'family',
+      }),
+    );
+    expect(chunkTexts(events).join('')).not.toContain('nude');
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
+      expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
+    ]);
   });
 });
 

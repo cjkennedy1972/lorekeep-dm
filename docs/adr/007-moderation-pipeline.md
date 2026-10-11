@@ -18,3 +18,5 @@ Status: Proposed (default). Amended 2026-10-06 by ADR-016 (content tiers, mature
 **Consequences.** Adds up to ~0.5 s before the first token; unverified against the 2.5 s target (M3 gate). Classifier choice (provider endpoint vs cheap LLM) decided in M3.
 
 **Needs human?** Age floor (18+, ADR-015) and 30-day retention are decided; training-use attestation per endpoint (ADR-013) and provider acceptable-use confirmation for mature (ADR-016) remain open.
+
+**Addendum (M3-08c, 2026-10-11): the "~0.5 s before the first token" line in Consequences is stale.** After the 64-character hold-back (ADR-023, M3-08b round 3), first visible text lags until more than 64 characters of the turn have been judged. Time to first visible text is therefore the time to generate and judge past that point, not the time to judge a single ~12-token chunk. The 2.5 s target is still unmeasured. This addendum supersedes that Consequences line only; the original text is left as written.

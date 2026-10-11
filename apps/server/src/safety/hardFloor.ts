@@ -27,8 +27,8 @@
 
 export const HARD_FLOOR_VERSION = '2026-10-10.8';
 
-/** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
-export const MAX_INPUT_CHARS = 20_000;
+/** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
+export const MAX_INPUT_CHARS = 30_000;
 
 export const HARD_FLOOR_RULES = {
   'csam.explicit-term': {
@@ -700,11 +700,35 @@ function normalizeText(input: string): string {
   return s;
 }
 
-/** Spellings of a word with digit look-alikes folded; "1" may be "i" or "l". */
+const VARIANT_CACHE = new Map<string, string[]>();
+const VARIANT_CACHE_MAX = 4096;
+/** Total characters (keys and forms, UTF-16 units) held by the cache: at most ~4 MB, 2 bytes per unit. */
+const VARIANT_CACHE_MAX_CHARS = 2_000_000;
+let variantCacheChars = 0;
+
+/** Spellings of a word with digit look-alikes folded; "1" may be "i" or "l". Memoized: a turn repeats tokens. */
 function variants(word: string): string[] {
+  const hit = VARIANT_CACHE.get(word);
+  if (hit) return hit;
   const forms = wordForms(word);
   const collapsed = forms.map((f) => f.replace(/(\p{L})\1{2,}/gu, '$1'));
-  return [...new Set([...forms, ...collapsed])];
+  const out = [...new Set([...forms, ...collapsed])];
+  const cost = word.length + out.reduce((n, f) => n + f.length, 0);
+  if (cost > VARIANT_CACHE_MAX_CHARS) return out;
+  if (
+    VARIANT_CACHE.size >= VARIANT_CACHE_MAX ||
+    variantCacheChars + cost > VARIANT_CACHE_MAX_CHARS
+  ) {
+    VARIANT_CACHE.clear();
+    variantCacheChars = 0;
+  }
+  VARIANT_CACHE.set(word, out);
+  variantCacheChars += cost;
+  return out;
+}
+
+export function variantCacheStats(): { entries: number; chars: number } {
+  return { entries: VARIANT_CACHE.size, chars: variantCacheChars };
 }
 
 function wordForms(word: string): string[] {
@@ -738,20 +762,27 @@ function nounAge(word: string): boolean {
   return v !== undefined && v >= 5 && v <= 17;
 }
 
-/**
- * Message-level verdict. `minor` is set by any minor reference that is not a youth word
- * next to an adult marker; `sexual` by any sexual term. The caller blocks when both hold.
- * Each word position joins at most MAX_JOIN pieces up to MAX_TERM_CHARS, so cost is O(tokens x MAX_JOIN).
- */
-function scan(words: string[]): {
+export interface HardFloorFlags {
   explicit: boolean;
   minor: boolean;
   sexual: boolean;
-} {
+}
+
+/**
+ * Message-level verdict. `minor` is set by any minor reference that is not a youth word
+ * next to an adult marker; `sexual` by any sexual term. The caller blocks when both hold.
+ * Only match starts in [from, to) set flags; neighbours are read from all of `words`.
+ * Each word position joins at most MAX_JOIN pieces up to MAX_TERM_CHARS, so cost is O(tokens x MAX_JOIN).
+ */
+export function scanFlags(
+  words: string[],
+  from: number,
+  to: number,
+): HardFloorFlags {
   const base = words.map((w) => variants(w)[0]!);
   let minor = false;
   let sexual = false;
-  for (let s = 0; s < words.length; s++) {
+  for (let s = from; s < to; s++) {
     let joined = '';
     for (let e = s; e < Math.min(words.length, s + MAX_JOIN); e++) {
       joined += words[e];
@@ -822,15 +853,110 @@ function tokenize(text: string): string[] {
   return text.match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
-export function checkHardFloor(text: string): HardFloorResult {
-  const blocked = (rule: string): HardFloorResult => ({
-    blocked: true,
-    rule,
-    version: HARD_FLOOR_VERSION,
-  });
-  if (text.length > MAX_INPUT_CHARS) return blocked('input.over-limit');
-  const { explicit, minor, sexual } = scan(tokenize(normalizeText(text)));
-  if (explicit) return blocked('csam.explicit-term');
-  if (minor && sexual) return blocked('minor-sexual.proximity');
+function verdictOf(flags: HardFloorFlags): HardFloorResult {
+  if (flags.explicit)
+    return {
+      blocked: true,
+      rule: 'csam.explicit-term',
+      version: HARD_FLOOR_VERSION,
+    };
+  if (flags.minor && flags.sexual)
+    return {
+      blocked: true,
+      rule: 'minor-sexual.proximity',
+      version: HARD_FLOOR_VERSION,
+    };
   return { blocked: false, version: HARD_FLOOR_VERSION };
+}
+
+export function checkHardFloor(text: string): HardFloorResult {
+  if (text.length > MAX_INPUT_CHARS)
+    return {
+      blocked: true,
+      rule: 'input.over-limit',
+      version: HARD_FLOOR_VERSION,
+    };
+  const words = tokenize(normalizeText(text));
+  return verdictOf(scanFlags(words, 0, words.length));
+}
+
+/** Raw characters kept between chunks so a term that straddles a cut is re-read whole. */
+const TURN_CARRY_CHARS = 400;
+/** Tokens kept between chunks, whatever the separator length, so a term is still seen when a long run of separators follows it. */
+const TURN_CARRY_TOKENS = 24;
+const TOKEN_RE = /[\p{L}\p{N}]+/gu;
+/** Last tokens of a window: their flags stay tentative until more text arrives. */
+const TURN_TAIL_TOKENS = MAX_JOIN + FILLER_WINDOW + 2;
+/** First tokens of a window cut mid-turn: no left context, so they set no flags. */
+const TURN_LEFT_TOKENS = 3;
+
+export interface HardFloorTurn {
+  push(chunk: string): HardFloorResult;
+}
+
+/**
+ * Start of the carry for `window`: the earlier of the last TURN_CARRY_CHARS characters and
+ * the start of the last TURN_CARRY_TOKENS tokens. Either bound keeps the carry at least as
+ * long as the other, so neither a long separator run nor a long token run can cut a term
+ * off from its neighbours. Returns 0 (keep everything) when there is nothing to drop.
+ */
+function carryStart(window: string): number {
+  const charStart = window.length - TURN_CARRY_CHARS;
+  if (charStart <= 0) return 0;
+  const tokens = [...window.matchAll(TOKEN_RE)];
+  const tokenStart =
+    tokens.length > TURN_CARRY_TOKENS
+      ? tokens[tokens.length - TURN_CARRY_TOKENS]!.index!
+      : 0;
+  return Math.min(charStart, tokenStart);
+}
+
+/**
+ * Incremental checkHardFloor over one turn. Each push scans the carry plus the new chunk.
+ * Flags from settled tokens are accumulated and never withdrawn; the tail is recomputed
+ * on every push and counts toward the verdict without being kept. Once blocked, stays blocked.
+ */
+export function createHardFloorTurn(): HardFloorTurn {
+  const settled: HardFloorFlags = {
+    explicit: false,
+    minor: false,
+    sexual: false,
+  };
+  let total = 0;
+  let carry = '';
+  let dropped = false;
+  let blockedResult: HardFloorResult | null = null;
+  return {
+    push(chunk) {
+      if (blockedResult) return blockedResult;
+      total += chunk.length;
+      if (total > MAX_INPUT_CHARS)
+        return (blockedResult = {
+          blocked: true,
+          rule: 'input.over-limit',
+          version: HARD_FLOOR_VERSION,
+        });
+      const atTurnStart = !dropped;
+      const window = carry + chunk;
+      const cut = carryStart(window);
+      if (cut > 0) dropped = true;
+      carry = window.slice(cut);
+      const words = tokenize(normalizeText(window));
+      const n = words.length;
+      const lo = atTurnStart ? 0 : Math.min(TURN_LEFT_TOKENS, n);
+      const hi = Math.max(lo, n - TURN_TAIL_TOKENS);
+      const fixed = scanFlags(words, lo, hi);
+      settled.explicit ||= fixed.explicit;
+      settled.minor ||= fixed.minor;
+      settled.sexual ||= fixed.sexual;
+      const tail = scanFlags(words, hi, n);
+      const result = verdictOf({
+        explicit: settled.explicit || tail.explicit,
+        minor: settled.minor || tail.minor,
+        sexual: settled.sexual || tail.sexual,
+      });
+      if (result.blocked) blockedResult = result;
+      return result;
+    },
+  };
 }
