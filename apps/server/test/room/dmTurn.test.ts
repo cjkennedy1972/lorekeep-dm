@@ -5,7 +5,11 @@ import {
   Room,
   type RoomStore,
 } from '../../src/room/Room.js';
-import type { SoloTurnRequest, SoloTurnRunner } from '../../src/room/dmTurn.js';
+import {
+  LiveDmRestrictedError,
+  type SoloTurnRequest,
+  type SoloTurnRunner,
+} from '../../src/room/dmTurn.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
 import {
   account as combatAccount,
@@ -348,6 +352,29 @@ describe('Room solo DM turn lifecycle', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(events.some((event) => event.type === 'ActionAccepted')).toBe(true);
     expect(calls).toBe(2);
+  });
+
+  it('tells the player a live turn is restricted without exposing the cause', async () => {
+    const runner: SoloTurnRunner = {
+      async run() {
+        throw new LiveDmRestrictedError();
+      },
+    };
+    const { room } = setup(runner);
+    const accountId = randomUUID();
+    const messages: { type: string; payload?: Record<string, unknown> }[] = [];
+    await room.join(accountId, {
+      send: (message) => messages.push(message as (typeof messages)[number]),
+    });
+    const actionId = randomUUID();
+    expect(await room.submitAction(accountId, actionId, 'I look.')).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const failure = messages.find((message) => message.type === 'Error');
+    expect(failure?.payload).toMatchObject({
+      code: 'LIVE_DM_RESTRICTED',
+      actionId,
+    });
+    expect(JSON.stringify(failure?.payload)).not.toMatch(/allowlist|OPERATOR/);
   });
 
   it('keeps an open clarification across a restart so its owner can still answer', async () => {

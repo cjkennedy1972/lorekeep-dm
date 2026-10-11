@@ -13,7 +13,7 @@ import type {
 import type { Lease } from './lease.js';
 import { recoverRoom } from './recovery.js';
 import { reduceRoom } from './reducer.js';
-import type { SoloTurnRunner } from './dmTurn.js';
+import { LiveDmRestrictedError, type SoloTurnRunner } from './dmTurn.js';
 import type { CombatCommand } from '@game/schema';
 import {
   createCombatRuntime,
@@ -669,19 +669,28 @@ export class Room {
           action.playerName,
           action.clarificationAsked === true,
         );
-      } catch {
+      } catch (error) {
         // A turn that throws (e.g. no endpoint configured, table state unavailable) must not
         // leave the player waiting forever. Nothing was committed, so the same action can be
         // resubmitted. The message is deliberately generic: no error text, prompt or secret.
         this.pendingActions.delete(action.actionId);
+        const restricted = error instanceof LiveDmRestrictedError;
         this.broadcast({
           seq: this.seq,
           type: 'Error',
-          payload: {
-            code: 'TURN_FAILED',
-            message: 'The DM could not complete that turn. You can try again.',
-            actionId: action.actionId,
-          },
+          payload: restricted
+            ? {
+                code: 'LIVE_DM_RESTRICTED',
+                message:
+                  'Live DM turns are limited to approved accounts while moderation is pending.',
+                actionId: action.actionId,
+              }
+            : {
+                code: 'TURN_FAILED',
+                message:
+                  'The DM could not complete that turn. You can try again.',
+                actionId: action.actionId,
+              },
         } as ServerMessage);
       }
     }

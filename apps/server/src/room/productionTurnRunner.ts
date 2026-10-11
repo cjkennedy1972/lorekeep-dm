@@ -34,13 +34,18 @@ import adventure01 from '../../../../packages/engine/adventures/01/adventure.jso
 import {
   createConfiguredAdapter,
   createEndpointEgress,
+  isOperatorAccount,
 } from '../llm/config.js';
 import {
   fixtureModeFromEnvironment,
   RecordedLlmAdapter,
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
-import type { SoloTurnRequest, SoloTurnRunner } from './dmTurn.js';
+import {
+  LiveDmRestrictedError,
+  type SoloTurnRequest,
+  type SoloTurnRunner,
+} from './dmTurn.js';
 
 type GameState = {
   characters?: Record<string, ToolExecutorState['actors'][string]>;
@@ -108,12 +113,20 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       'fixtures/solo-turn.ndjson',
     /** A fixed adapter for deterministic tests; skips endpoint configuration. */
     private readonly adapterOverride?: LlmAdapter,
+    private readonly liveDmAllowlistOnly = true,
   ) {}
 
   async run(
     request: SoloTurnRequest,
     onEvent: Parameters<SoloTurnRunner['run']>[1],
   ): Promise<TurnResult> {
+    if (
+      this.liveDmAllowlistOnly &&
+      !this.fixtureMode &&
+      process.env.NODE_ENV !== 'test' &&
+      !(await isOperatorAccount(this.db, request.accountId))
+    )
+      throw new LiveDmRestrictedError();
     const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
     if (!['fast', 'frontier', 'moderate'].includes(endpointSlot))
       throw new Error('Solo turn endpoint slot is invalid');

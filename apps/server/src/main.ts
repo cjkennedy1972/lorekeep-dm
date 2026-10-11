@@ -33,6 +33,10 @@ const leases = new SessionLease(db);
 const soloTurnRunner = new ProductionSoloTurnRunner(
   db,
   config.OPERATOR_ENDPOINT_MASTER_KEY,
+  undefined,
+  undefined,
+  undefined,
+  config.LIVE_DM_ALLOWLIST_ONLY,
 );
 export const rooms = new RoomRegistry(
   persistence,
