@@ -303,6 +303,46 @@ describe('block and regenerate', () => {
     expect(chunkTexts(events)).toEqual([]);
   });
 
+  it.each(['startTurn', 'initial push'])(
+    'a deterministic turn %s failure counts as a block',
+    async (failurePoint) => {
+      let starts = 0;
+      const moderator: Moderator = {
+        startTurn: () => {
+          starts++;
+          if (failurePoint === 'startTurn' && starts === 1)
+            throw new Error('scanner failed');
+          return {
+            push: () => {
+              if (failurePoint === 'initial push' && starts === 1)
+                throw new Error('scanner failed');
+              return { blocked: false };
+            },
+          };
+        },
+        moderate: async () => ALLOW,
+      };
+      const events = await collect(
+        runOutputGate({
+          stream: () => tokens('Hello. '),
+          regenerate: () => tokens('Hi. '),
+          moderator,
+          tier: 'standard',
+        }),
+      );
+      expect(starts).toBe(2);
+      expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
+      expect(chunkTexts(events)).toEqual(['Hi.']);
+      expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+      const end = events.at(-1);
+      if (end?.kind !== 'end') throw new Error('no end');
+      expect(end.metrics.chunks[0]).toMatchObject({
+        verdict: 'block',
+        source: 'failclosed',
+      });
+    },
+  );
+
   it('a source error stops emission and propagates', async () => {
     const { moderator } = scripted(() => ALLOW);
     async function* broken() {

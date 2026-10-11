@@ -3,6 +3,7 @@ import {
   failClosedVerdict,
   MAX_RULE_SPAN_CHARS,
   type Category,
+  type DeterministicTurn,
   type Moderator,
   type Verdict,
 } from './moderator.js';
@@ -148,9 +149,16 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
     let stopped = false;
     const emittedBefore = approved.join('');
     let contextTail = emittedBefore.slice(-CONTEXT_CHARS);
-    const turn = opts.moderator.startTurn?.();
-    turn?.push(emittedBefore);
-    const it = source[Symbol.asyncIterator]();
+    let turn: DeterministicTurn | undefined;
+    let it: AsyncIterator<string> | undefined;
+    let initializationFailed = false;
+    try {
+      turn = opts.moderator.startTurn?.();
+      turn?.push(emittedBefore);
+      it = source[Symbol.asyncIterator]();
+    } catch {
+      initializationFailed = true;
+    }
     const stoppedSignal = new Promise<typeof STOPPED>((resolve) =>
       abort.signal.addEventListener('abort', () => resolve(STOPPED), {
         once: true,
@@ -183,7 +191,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         timer = setTimeout(() => resolve(IDLE), sourceIdleMs);
       });
       try {
-        return await Promise.race([it.next(), idle, stoppedSignal]);
+        return await Promise.race([it!.next(), idle, stoppedSignal]);
       } finally {
         clearTimeout(timer);
       }
@@ -225,7 +233,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
       return { text, verdict, cutAtMs };
     };
 
-    void (async () => {
+    const readSource = async () => {
       let buffer = '';
       let pendingWs = '';
       let scanFrom = 0;
@@ -299,7 +307,9 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
       } catch (error) {
         push({ error });
       }
-    })();
+    };
+    if (initializationFailed) pushFailClosed();
+    else void readSource();
 
     let held = '';
     try {
@@ -353,7 +363,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
       stopped = true;
       wakeReaderNow();
       abort.abort();
-      void it.return?.()?.catch(() => undefined);
+      void it?.return?.()?.catch(() => undefined);
     }
   }
 }

@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.8';
+export const HARD_FLOOR_VERSION = '2026-10-10.9';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -668,17 +668,22 @@ function ageMatch(match: string, a: string | undefined, b: string | undefined) {
   return value !== undefined && value < 18 ? ' minorage ' : match;
 }
 
-function normalizeText(input: string): string {
+function foldCharacters(input: string): string {
   const folded = input
     .normalize('NFKD')
     .replace(/\p{M}+/gu, '')
     .replace(/(?<=\p{L})\p{Cf}+(?=\p{N})|(?<=\p{N})\p{Cf}+(?=\p{L})/gu, ' ')
     .replace(/\p{Cf}+/gu, '')
-    .toLowerCase()
-    .replace(/(?<=\p{L})['’‘ʼʻʹꞌ`´′]s(?!\p{L})/gu, '');
+    .toLowerCase();
   let s = '';
   for (const c of folded) s += CONFUSABLE.get(c) ?? UNICODE_DIGIT.get(c) ?? c;
   s = s.replace(/@/g, 'a').replace(/\$/g, 's').replace(/\*/g, 'e');
+  return s;
+}
+
+function normalizeText(input: string): string {
+  let s = foldCharacters(input);
+  s = s.replace(/(?<=\p{L})['’‘ʼʻʹꞌ`´′]s(?!\p{L})/gu, '');
   s = s.replace(ONE_COMPOUND, (_m, w: string) =>
     ONE_COMPOUND_AMBIGUOUS.has(w) ? ' minorage ' : ` ${10 + NUMBER_WORDS[w]!} `,
   );
@@ -885,10 +890,55 @@ const TURN_CARRY_CHARS = 400;
 /** Tokens kept between chunks, whatever the separator length, so a term is still seen when a long run of separators follows it. */
 const TURN_CARRY_TOKENS = 24;
 const TOKEN_RE = /[\p{L}\p{N}]+/gu;
+const MAX_CARRY_TOKEN_CHARS = MAX_TERM_CHARS + MAX_JOIN + 1;
+const LONG_TOKEN_MARKER = 'ab'.repeat(Math.ceil(MAX_CARRY_TOKEN_CHARS / 2));
 /** Last tokens of a window: their flags stay tentative until more text arrives. */
 const TURN_TAIL_TOKENS = MAX_JOIN + FILLER_WINDOW + 2;
 /** First tokens of a window cut mid-turn: no left context, so they set no flags. */
 const TURN_LEFT_TOKENS = 3;
+
+function compactLongToken(token: string): string {
+  if ([...token].length <= MAX_CARRY_TOKEN_CHARS) return token;
+  const hasLetters = /\p{L}/u.test(token);
+  const runs = [...token.matchAll(/([\p{L}\p{N}])\1*/gu)].map(([run, char]) => {
+    const repeatable =
+      /\p{L}/u.test(char!) || (hasLetters && /[034578]/.test(char!));
+    const limit = char === '1' ? 4 : repeatable ? 3 : Infinity;
+    return [...run!].slice(0, limit).join('');
+  });
+  const compacted = runs.join('');
+  const collapsedForms = wordForms(compacted).map((form) =>
+    form.replace(/(\p{L})\1{2,}/gu, '$1'),
+  );
+  if (collapsedForms.every((form) => form.length > MAX_CARRY_TOKEN_CHARS))
+    return LONG_TOKEN_MARKER;
+  const padChar = [...token].find((char) => /\p{L}/u.test(char));
+  if (!padChar) return LONG_TOKEN_MARKER;
+  const chars = [...compacted];
+  const padAt = chars.indexOf(padChar);
+  return [
+    ...chars.slice(0, padAt),
+    ...Array.from({ length: MAX_CARRY_TOKEN_CHARS + 1 }, () => padChar),
+    ...chars.slice(padAt),
+  ].join('');
+}
+
+/** Keep repeated pushes over sparse input bounded while preserving word variants. */
+function compactTurnWindow(text: string): string {
+  const trailingFormat = /\p{Cf}+$/u.exec(text)?.[0] ?? '';
+  const body = trailingFormat ? text.slice(0, -trailingFormat.length) : text;
+  const folded = foldCharacters(body);
+  const compacted = folded
+    .replace(/[\p{L}\p{N}]+/gu, compactLongToken)
+    .replace(/\s+/gu, ' ')
+    .replace(/-{5,}/g, '----')
+    .replace(/['’‘ʼʻʹꞌ`´′]{3,}/gu, (quotes) => [...quotes].slice(0, 2).join(''))
+    .replace(/[@*$]{27,}/g, (leets) => [...leets].slice(0, 26).join(''))
+    .replace(/[^\p{L}\p{N}\s@*$'’‘ʼʻʹꞌ`´′-]{5,}/gu, (separators) =>
+      [...separators].slice(0, 4).join(''),
+    );
+  return compacted + (trailingFormat ? trailingFormat[0] : '');
+}
 
 export interface HardFloorTurn {
   push(chunk: string): HardFloorResult;
@@ -937,7 +987,7 @@ export function createHardFloorTurn(): HardFloorTurn {
           version: HARD_FLOOR_VERSION,
         });
       const atTurnStart = !dropped;
-      const window = carry + chunk;
+      const window = compactTurnWindow(carry + chunk);
       const cut = carryStart(window);
       if (cut > 0) dropped = true;
       carry = window.slice(cut);

@@ -105,6 +105,7 @@ describe('createHardFloorTurn equivalence', () => {
       (_, i) => text.slice(i * 400, (i + 1) * 400),
     );
     expect(runTurn(chunks).blocked).toBe(true);
+    expectEquivalent(text, chunks);
   });
 
   it('keeps an early verdict sticky after the turn is blocked', () => {
