@@ -1,0 +1,160 @@
+import type { Pool } from 'pg';
+import { z } from 'zod';
+import { BoundedCounter } from '../accounts/throttle.js';
+import { authenticateRequest } from '../middleware/auth.js';
+import { validOrigin } from '../middleware/origin.js';
+import type { registerAuthRoutes } from './auth.js';
+import { ROOM_LIST_SQL } from './sessions.js';
+
+export const REPORT_CATEGORIES = [
+  'harassment',
+  'hate',
+  'sexual',
+  'threat_or_self_harm',
+  'underage',
+  'other',
+] as const;
+export const REPORT_STATUSES = [
+  'open',
+  'reviewed',
+  'dismissed',
+  'actioned',
+] as const;
+const REPORTS_PER_HOUR = 10;
+const CONTEXT_BEFORE = 10;
+const TEXT_LIMIT = 500;
+const TEXT_KEYS = ['playerName', 'text', 'narrative', 'narration'] as const;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const bodySchema = z.object({
+  messageRef: z.number().int().positive(),
+  category: z.enum(REPORT_CATEGORIES),
+  reason: z.string().trim().max(500).default(''),
+});
+
+// TODO: run `reason` through the hard-floor check once safety/hardFloor.ts (PR #153) is on main.
+
+/** Keeps only the text fields of each event; no account ids, so no other player's id reaches the review queue. */
+function snapshotOf(
+  events: Array<{
+    seq: string;
+    type: string;
+    payload: Record<string, unknown>;
+  }>,
+) {
+  return events.map((event) => {
+    const out: Record<string, unknown> = {
+      seq: Number(event.seq),
+      type: event.type,
+    };
+    for (const key of TEXT_KEYS) {
+      const value = event.payload[key];
+      if (typeof value === 'string') out[key] = value.slice(0, TEXT_LIMIT);
+    }
+    return out;
+  });
+}
+
+export function registerReportRoutes(
+  app: Parameters<typeof registerAuthRoutes>[0],
+  db: Pool,
+) {
+  const reportHits = new BoundedCounter(3_600_000);
+  app.post<{ Params: { id: string } }>(
+    '/api/rooms/:id/reports',
+    async (request, reply) => {
+      if (!validOrigin(request))
+        return reply
+          .code(403)
+          .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
+      const auth = await authenticateRequest(db, request);
+      if (!auth)
+        return reply
+          .code(401)
+          .send({ code: 'UNAUTHENTICATED', message: 'Sign in required.' });
+      const { id } = request.params;
+      const seated =
+        UUID.test(id) &&
+        (await db.query(`${ROOM_LIST_SQL} AND s.id=$2`, [auth.account_id, id]))
+          .rowCount;
+      if (!seated)
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
+      const parsed = bodySchema.safeParse(request.body);
+      if (!parsed.success)
+        return reply.code(400).send({
+          code: 'INVALID_INPUT',
+          message: 'Check the message and the report category.',
+        });
+      if (reportHits.hit(auth.account_id) > REPORTS_PER_HOUR)
+        return reply.code(429).send({
+          code: 'RATE_LIMITED',
+          message: 'Too many reports. Try again later.',
+        });
+      const { messageRef, category, reason } = parsed.data;
+      const reported = (
+        await db.query<{
+          seq: string;
+          type: string;
+          payload: Record<string, unknown>;
+        }>(
+          'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq=$2',
+          [id, messageRef],
+        )
+      ).rows[0];
+      if (!reported)
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
+      if (!TEXT_KEYS.some((key) => typeof reported.payload[key] === 'string'))
+        return reply.code(422).send({
+          code: 'NOT_REPORTABLE',
+          message: 'That is not a message.',
+        });
+      const author =
+        typeof reported.payload.accountId === 'string' &&
+        UUID.test(reported.payload.accountId)
+          ? reported.payload.accountId
+          : null;
+      if (author === auth.account_id)
+        return reply.code(422).send({
+          code: 'OWN_MESSAGE',
+          message: 'You cannot report your own message.',
+        });
+      const context = (
+        await db.query<{
+          seq: string;
+          type: string;
+          payload: Record<string, unknown>;
+        }>(
+          'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT $3',
+          [id, messageRef, CONTEXT_BEFORE + 1],
+        )
+      ).rows.reverse();
+      await db.query(
+        `INSERT INTO message_reports(session_id,message_seq,reporter_account_id,author_account_id,category,reason,context)
+         VALUES($1,$2,$3,(SELECT id FROM accounts WHERE id=$4),$5,$6,$7)
+         ON CONFLICT (session_id,message_seq,reporter_account_id) DO NOTHING`,
+        [
+          id,
+          messageRef,
+          auth.account_id,
+          author,
+          category,
+          reason,
+          JSON.stringify(snapshotOf(context)),
+        ],
+      );
+      return reply.code(202).send({ received: true });
+    },
+  );
+}
+
+export const reportQuerySchema = z.object({
+  status: z.enum(REPORT_STATUSES).default('open'),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const reportPatchSchema = z.object({ status: z.enum(REPORT_STATUSES) });
