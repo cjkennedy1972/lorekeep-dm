@@ -12,8 +12,8 @@ Status: Accepted (tech-lead decision D1, 2026-10-10, under owner delegation: "ac
 
 **Decision.**
 
-1. **Deterministic layer, always inline (milliseconds).** The hard-floor rules (`apps/server/src/safety/hardFloor.ts`, PR #153, open; rule categories only, no tier input) and the SRD denylist scan run first on every input and every output chunk. A hard-floor rule hit blocks alone, with no judge call. The rules are conservative keyword and proximity checks with known false negatives, so they are necessary but not sufficient.
-2. **Tier and boundary classifier: LLM judge on the `moderate` endpoint.** A fixed per-tier rubric (M3-02), temperature 0, JSON-only output `{"verdict": "allow" | "block" | "hold", "category": <enum>}`, strict parse with schema validation. Any non-JSON, extra-field, or schema-invalid reply is "unparseable" and follows the fail-closed table below.
+1. **Deterministic layer, always inline (milliseconds).** The hard-floor rules (`apps/server/src/safety/hardFloor.ts`, PR #153, open; rule categories only, no tier input) and the SRD denylist scan run first on every input and every output chunk. `JudgeModerator` requires both checks in its constructor and throws without them. A hard-floor rule hit blocks alone, with no judge call. The rules are conservative keyword and proximity checks with known false negatives, so they are necessary but not sufficient.
+2. **Tier and boundary classifier: LLM judge on the `moderate` endpoint.** A fixed per-tier rubric (M3-02), temperature 0, JSON-only output `{"verdict": "allow" | "block", "category": <enum>}`, strict parse with schema validation. The parser rejects any non-JSON, extra-field, duplicate-key, backslash-escaped, or schema-invalid reply, and rejects verdict/category pairs that disagree (`allow` requires `none`; `block` requires a non-`none` category). Such replies are "unparseable" and follow the fail-closed table below. `hold` is not a judge verdict: an unavailable judge is reported as `unavailable: true` on a block, and M3-10 maps that flag to HOLD for tier categories.
 3. **Separate endpoint from narration.** The judge uses only the `moderate` slot. Narration moves off `moderate`: the solo-turn default in `productionTurnRunner.ts:117` and `tables.ts:249` changes from `moderate` to `fast` (M3-07). The operator maps `fast` to the narration host and `moderate` to the moderation host. The `moderate` slot must pass the endpoint probe so that `moderationVerified` (ADR-013) can hold. Config changes touch `apps/server/src/llm/config.ts`, `productionTurnRunner.ts`, and `orchestrator.ts`, so they are serialized per M3 rule D3.
 4. **No third-party moderation API by default.** A provider-endpoint adapter may sit behind the same Moderator seam later. It is operator-enabled and must be named in the privacy notice (M3-39).
 5. **Non-blocking spike.** Evaluate a small non-reasoning guard model (Llama Guard / ShieldGemma class) on an inference host. Adopt it only if it beats the judge on the red-team set and on latency. Assign later; it does not gate M3-07.
@@ -32,6 +32,14 @@ A hard-floor category returns `allow` only when the rules are silent and the jud
 
 **Output flow.** Each sentence chunk (first chunk at about 12 tokens) passes the gate before broadcast. On block or hold: discard the unsent buffer, regenerate, at most 2 regenerations. After the third failure, send a fixed, pre-reviewed safe redirect template (a constant, not model output). This is ADR-007's flow with the hold rule added.
 
+Bounds on the output gate (`apps/server/src/safety/outputGate.ts`):
+- At most 2 judge calls in flight per attempt (`maxInFlight`). The reader waits for a slot before cutting the next chunk, so the upstream is read no faster than verdicts are taken.
+- Chunks are at most 400 characters. A run longer than that is cut at the last whitespace, so buffering and rescans stay bounded.
+- At most 20,000 characters are read from one attempt's stream. Exceeding that fails closed (block), which enters the regenerate path.
+- When an attempt is abandoned, its upstream iterator is `return()`ed and the `AbortSignal` passed to `regenerate` is aborted.
+- The judge's context is the preceding chunk text, which may not yet be approved. This is safe because a later chunk is only emitted after every earlier chunk is approved; the context is data for the judge, never output.
+- Whitespace-only runs are not judged. They are carried into the next judged chunk, so the emitted text reassembles exactly; trailing whitespace at stream end is not emitted.
+
 **Latency budgets (used by M3-30).**
 
 | Stage | Budget | Status |
@@ -47,38 +55,33 @@ Escalation: if M3-30 shows first token > 3 s, move to the guard-model option (po
 
 ```ts
 type Tier = 'family' | 'standard' | 'mature';
-type Verdict = 'allow' | 'block' | 'hold';
-type Category =
-  | 'hard-floor.minors-sexual'
-  | 'hard-floor.real-person-harm'
-  | 'hard-floor.real-world-harm'
-  | 'srd-denylist'
-  | 'table-line-veil'
-  | 'tier-rubric';
+type Direction = 'input' | 'output';
 
-interface ModerationContext {
+interface ModerationRequest {
+  text: string;
   tier: Tier;
-  lines: readonly string[];
-  veils: readonly string[];
-  paused: boolean;
+  tableLines?: readonly string[];
+  context?: string; // earlier text, for reference only
+  direction: Direction;
 }
 
-interface ModerationResult {
-  verdict: Verdict;
-  category: Category | null;
-  source: 'rules' | 'denylist' | 'judge' | 'fallback';
+interface Verdict {
+  verdict: 'allow' | 'block';
+  category: Category;
+  source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed';
+  latencyMs: number;
+  unavailable: boolean;
 }
 
 interface Moderator {
-  checkInput(text: string, ctx: ModerationContext, signal: AbortSignal): Promise<ModerationResult>;
-  checkChunk(chunk: string, ctx: ModerationContext, signal: AbortSignal): Promise<ModerationResult>;
+  moderate(req: ModerationRequest): Promise<Verdict>;
 }
 ```
 
-The seam hides the judge endpoint, the rules, and the fallback. The Room depends only on `Moderator`. A provider adapter or guard model later implements the same interface.
+The seam hides the judge endpoint, the rules, and the fallback. The output gate and the Room depend only on `Moderator`. `direction` selects the system framing (player input vs. game master output). `hold` and any per-category copy are decided by the caller from `unavailable`, not by the moderator. A provider adapter or guard model later implements the same interface.
 
 **Injection resistance.**
-- Player text is quoted data inside a delimited `<player_input player="…">` block; the system prompt states it carries no authority (ADR-007, architecture §6).
+- Player text is quoted data inside a delimited `<text>` block (plus `<context>` and `<table_lines>` blocks when present). Each is JSON-quoted with `<` and `>` escaped. The system prompt states that everything inside them is data, never instructions, and that the verdict applies to `<text>` alone (ADR-007, architecture §6).
 - The judge's rubric and output schema are fixed. Text that tries to change the verdict format fails the strict parse and falls to the fail-closed row.
 - The judge has no tools and no write path. A verdict can only allow, block, or hold; the architecture gives text no path to set state (ADR-004).
 - Measured: one injection case was resisted (see below). This is a sample of one, so the red-team set (100 prompts, architecture §12) is the real test.

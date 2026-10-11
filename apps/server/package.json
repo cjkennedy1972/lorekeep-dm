@@ -8,6 +8,8 @@
     "test": "vitest run --exclude=**/test/db/**",
     "test:db": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required for test:db'); process.exit(1); }\" && vitest run --no-file-parallelism test/db",
     "smoke:prod": "node scripts/smoke-production.mjs",
+    "moderation:probe": "pnpm run build && node scripts/moderation-probe.mjs",
+    "embed:moderation-rubric": "node scripts/embed-moderation-rubric.mjs",
     "sweep": "node dist/retention/cli.js",
     "presweep": "pnpm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
