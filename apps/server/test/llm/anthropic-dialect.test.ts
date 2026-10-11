@@ -24,7 +24,7 @@ describe('Anthropic Messages adapter', () => {
       apiKey: new Secret('test-secret'),
       cache,
       egress: createEgressGuard({
-        allowLocalHosts: ['127.0.0.1', 'localhost'],
+        allowLocalHosts: [new URL(server.baseUrl).host],
       }),
       timeoutMs,
     });

@@ -66,7 +66,7 @@ beforeAll(async () => {
   endpoint = await startFakeOpenAIServer({ chunks: textStream });
   process.env.NODE_ENV = 'production';
   delete process.env.LLM_FIXTURE_MODE;
-  process.env.LLM_ALLOW_LOCAL_HOSTS = '127.0.0.1';
+  process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(endpoint.baseUrl).host;
   process.env.OPERATOR_ENDPOINT_MASTER_KEY = `primary:${randomBytes(32).toString('base64')}`;
   operatorEmail = `operator-${randomUUID()}@example.test`;
   process.env.OPERATOR_EMAILS = operatorEmail;

@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+} from 'vitest';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { installGateway } from '../../src/gateway/ws.js';
@@ -236,6 +243,13 @@ describe('solo turn persisted lifecycle', () => {
   it('replays the recorded-LLM fixture through the production runner over websocket', async () => {
     const owner = await createUser();
     fakeEndpoint = await startFakeOpenAIServer({ chunks: textStream });
+    const priorAllowLocalHosts = process.env.LLM_ALLOW_LOCAL_HOSTS;
+    onTestFinished(() => {
+      if (priorAllowLocalHosts === undefined)
+        delete process.env.LLM_ALLOW_LOCAL_HOSTS;
+      else process.env.LLM_ALLOW_LOCAL_HOSTS = priorAllowLocalHosts;
+    });
+    process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(fakeEndpoint.baseUrl).host;
     await saveEndpoint(
       db,
       'moderate',
