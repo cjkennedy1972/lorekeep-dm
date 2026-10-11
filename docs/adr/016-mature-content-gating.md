@@ -20,3 +20,8 @@ Status: Proposed (human decision 2026-10-06, round 3; supersedes round 2 "off by
 **Consequences.** No verifier vendor and no mixed-age predicate. Opt-out is live, so the predicate runs on the hot path (a cheap server-side check). Red-team set gains tier and opt-out dimensions (M3).
 
 **Needs human?** Confirm the chosen endpoint's provider acceptable-use rules permit the mature tier (the probe flag handles the runtime case). Explicit sexual content stays out unless the human reverses it.
+
+**Implementation notes (M3-05).**
+- Recompute happens once per turn, inside the solo turn runner before narration, not at a separate round-open hook (no round model exists yet). The tier is snapshotted at narration start.
+- Departed players: "seated" means ever-seated in the session. There is no seat-leave signal, so a departed player's opt-out still counts. Account deletion replaces the seat's accountId with a placeholder that has no account row, which counts as opted out (fail-closed).
+- `endpoint_allows_mature` defaults to false until the M3-19 probe sets it.
