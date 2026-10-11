@@ -6,11 +6,12 @@ interface WarnLog {
   warn: (obj: object, msg: string) => void;
 }
 
-/** Returns true when text must be rejected. Logs structured metadata only, never the text. */
+/** Returns true when text must be rejected. Logs structured metadata only (account id for abuse correlation), never the text. */
 export function hardFloorBlocked(
   text: string,
   surface: string,
   log: WarnLog,
+  accountId?: string,
 ): boolean {
   const result = checkHardFloor(text);
   if (!result.blocked) return false;
@@ -18,6 +19,7 @@ export function hardFloorBlocked(
     {
       event: 'hard_floor_block',
       surface,
+      ...(accountId ? { accountId } : {}),
       rule: result.rule,
       version: result.version,
       expiresAt: new Date(

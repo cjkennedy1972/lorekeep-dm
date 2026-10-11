@@ -90,11 +90,16 @@ export function registerTableRoutes(
     const body = parsed.data;
     if (
       body.character &&
-      hardFloorBlocked(body.character.name, 'character', request.log)
+      hardFloorBlocked(body.character.name, 'character', request.log, accountId)
     )
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That character name cannot be used.',
+      });
+    if (hardFloorBlocked(body.name, 'table-name', request.log, accountId))
+      return reply.code(400).send({
+        code: 'CONTENT_REJECTED',
+        message: 'That table name cannot be used.',
       });
     if (body.adventureId !== adventureData.id)
       return reply.code(400).send({

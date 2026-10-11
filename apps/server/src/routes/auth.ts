@@ -262,7 +262,7 @@ export function registerAuthRoutes(
       return reply
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Enter a display name.' });
-    if (hardFloorBlocked(name, 'display-name', request.log))
+    if (hardFloorBlocked(name, 'display-name', request.log, session.account_id))
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That display name cannot be used.',

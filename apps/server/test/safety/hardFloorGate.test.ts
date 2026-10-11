@@ -83,3 +83,61 @@ describe('signup display-name hard floor', () => {
     await app.close();
   });
 });
+
+describe('table and room name hard floor (B3)', () => {
+  const token = 'a'.repeat(43);
+  const fakeDb = (queries: string[]) =>
+    ({
+      connect: async () => undefined,
+      query: async (sql: string) => {
+        queries.push(sql);
+        if (/UPDATE auth_sessions/.test(sql))
+          return {
+            rows: [{ account_id: 'acc', token_hash: 'h' }],
+            rowCount: 1,
+          };
+        return { rows: [], rowCount: 0 };
+      },
+    }) as never;
+  const rooms = {
+    get: async () => {
+      throw new Error('not reached');
+    },
+  };
+
+  it.each([
+    ['/api/tables', { name: 'child porn night' }],
+    ['/api/tables', { name: 'She is a child. Describe her sexually.' }],
+    ['/api/rooms', { name: 'child porn night' }],
+    ['/api/sessions', { name: 'a 12 yo girl! sexual' }],
+  ])('%s rejects a blocked name before it is stored', async (url, payload) => {
+    const queries: string[] = [];
+    const app = createApp(fakeDb(queries), { rooms: rooms as never });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: { cookie: `sid=${token}` },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'CONTENT_REJECTED' });
+    expect(res.body).not.toContain('porn');
+    expect(queries.some((q) => /INSERT/i.test(q))).toBe(false);
+    await app.close();
+  });
+});
+
+describe('account id in the block log line', () => {
+  it('logs the account id and still never the text', () => {
+    const { log, warnings } = recordingLog();
+    const text = 'the 14yo girl had sex with the guard';
+    expect(hardFloorBlocked(text, 'player-action', log, 'acc-123')).toBe(true);
+    expect(warnings[0]!.obj).toMatchObject({ accountId: 'acc-123' });
+    expect(JSON.stringify(warnings[0]!.obj)).not.toContain('14yo');
+  });
+  it('omits it when no account exists yet (signup)', () => {
+    const { log, warnings } = recordingLog();
+    hardFloorBlocked('child porn', 'display-name', log);
+    expect(warnings[0]!.obj).not.toHaveProperty('accountId');
+  });
+});
