@@ -140,7 +140,15 @@ export function registerTableRoutes(
     );
     try {
       const room = await rooms.get(id);
-      await room.seat(accountId, 'Adventurer');
+      const { rows: optOut } = await db.query<{ mature_opt_out: boolean }>(
+        'SELECT mature_opt_out FROM accounts WHERE id=$1',
+        [accountId],
+      );
+      await room.seat(
+        accountId,
+        'Adventurer',
+        optOut[0]?.mature_opt_out ?? false,
+      );
       await room.persistGameState({
         characters: { [accountId]: character },
         premise,

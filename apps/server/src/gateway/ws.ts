@@ -176,14 +176,17 @@ export function installGateway(
           early.push(data);
         });
         try {
-          const name = await db.query<{ display_name: string }>(
-            'SELECT display_name FROM accounts WHERE id=$1',
-            [identity.accountId],
-          );
+          const name = await db.query<{
+            display_name: string;
+            mature_opt_out: boolean;
+          }>('SELECT display_name, mature_opt_out FROM accounts WHERE id=$1', [
+            identity.accountId,
+          ]);
           await room.join(
             identity.accountId,
             connection,
             name.rows[0]?.display_name ?? identity.accountId,
+            name.rows[0]?.mature_opt_out ?? false,
           );
           if (!active) {
             await room.disconnect(identity.accountId);

@@ -15,6 +15,7 @@ const SCRIPTED = {
   seatId: SeatIdSchema.parse('00000000-0000-4000-8000-0000000000b1'),
   accountId: AccountIdSchema.parse('00000000-0000-4000-8000-0000000000a1'),
   displayName: 'Scripted Sam',
+  matureOptOut: false,
 } as const;
 
 /** Trivial single-table actor: join, presence, StateSync, one scripted participant. */
@@ -58,6 +59,7 @@ export class Room {
         accountId: account.id,
         displayName: account.displayName,
         presence: 'offline',
+        matureOptOut: false,
       };
       this.seats.set(account.id, seat);
     }
