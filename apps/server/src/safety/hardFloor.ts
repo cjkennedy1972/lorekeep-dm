@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.5';
+export const HARD_FLOOR_VERSION = '2026-10-10.6';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
 export const MAX_INPUT_CHARS = 20_000;
@@ -555,14 +555,14 @@ const MAX_TERM_CHARS = 24;
 
 const PROXIMITY = HARD_FLOOR_RULES['minor-sexual.proximity'];
 const UNIT_AFTER = `(?!\\s*(?:${[...QUANTITY_UNITS].join('|')})${WORD_END})`;
-const SEXUAL_AFTER = `(?=[\\s,]+(?:and\\s+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
+const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*)?(?:and\\s+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
 /**
  * "Mira 12, ..." / "Mira; 12 ..." after a letter. Punctuation separators need no tail;
  * a bare space needs a sexual or undress word right after the number (plus optional "and"),
  * so "rolled a 15 to seduce" and "Two girls and 9 goblins" stay allowed.
  */
 const NAME_AGE = new RegExp(
-  `(\\p{L})(?:\\s*[,(:;=/|\\-\\u2014\\u2013.]{1,3}\\s*${AGE_NUMBER}${WORD_END}${UNIT_AFTER}|\\s+${AGE_NUMBER}${WORD_END}${SEXUAL_AFTER})`,
+  `(\\p{L})(?:\\s*[^\\p{L}\\p{N}\\s]{1,3}\\s*${AGE_NUMBER}${WORD_END}${UNIT_AFTER}|\\s+${AGE_NUMBER}${WORD_END}${SEXUAL_AFTER})`,
   'gu',
 );
 const EXPLICIT = termIndex(HARD_FLOOR_RULES['csam.explicit-term'].terms);
@@ -623,9 +623,10 @@ function normalizeText(input: string): string {
   const folded = input
     .normalize('NFKD')
     .replace(/\p{M}+/gu, '')
+    .replace(/(?<=[\p{L}])\p{Cf}+(?=\p{N})/gu, ' ')
     .replace(/\p{Cf}+/gu, '')
     .toLowerCase()
-    .replace(/(?<=\p{L})['’]s(?!\p{L})/gu, '');
+    .replace(/(?<=\p{L})['’‘ʼ`´′]s(?!\p{L})/gu, '');
   let s = '';
   for (const c of folded) s += CONFUSABLE.get(c) ?? UNICODE_DIGIT.get(c) ?? c;
   s = s.replace(/@/g, 'a').replace(/\$/g, 's').replace(/\*/g, 'e');
@@ -734,6 +735,7 @@ function scan(words: string[]): {
             (inIndex(BEFORE, prev) && !inIndex(NOT_AFTER, next)) ||
             inIndex(AFTER, next) ||
             inIndex(MINOR, prev) ||
+            (prev === 's' && inIndex(MINOR, prev2)) ||
             inIndex(MINOR, next) ||
             inIndex(YOUTH_WORD, prev) ||
             inIndex(YOUTH_WORD, next)
