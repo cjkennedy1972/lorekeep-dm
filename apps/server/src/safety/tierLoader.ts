@@ -27,14 +27,15 @@ export async function loadContentTierState(
 
 /**
  * Live mature opt-out for every account that has ever been seated in the session. The seat's
- * join-time snapshot is not used; a seated account with no row counts as opted out.
+ * join-time snapshot is not used; a seated account with no row, or a status other than active
+ * (e.g. deleting), counts as opted out.
  */
 export async function loadSeatedMatureOptOuts(
   db: Queryable,
   sessionId: string,
 ): Promise<boolean[]> {
   const { rows } = await db.query<{ opted_out: boolean }>(
-    `SELECT COALESCE(a.mature_opt_out, true) AS opted_out
+    `SELECT (a.id IS NULL OR a.status <> 'active' OR a.mature_opt_out IS NOT FALSE) AS opted_out
        FROM (SELECT DISTINCT payload->>'accountId' AS account_id FROM events
               WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId' IS NOT NULL) seated
        LEFT JOIN accounts a ON a.id = seated.account_id::uuid`,

@@ -170,6 +170,7 @@ export function narrationLogReducer(
     }
     case 'ToolRejected':
     case 'ClarificationRequested':
+    case 'ContentTierChanged':
     case 'CombatTracker':
     case 'ReactionPrompt':
     case 'CombatOptions':

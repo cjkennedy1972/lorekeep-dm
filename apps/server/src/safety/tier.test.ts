@@ -91,6 +91,22 @@ describe('reasonForTier', () => {
 });
 
 describe('tier predicate inputs', () => {
+  it('accepts only booleans, arrays of booleans, and the host-cap enum', () => {
+    for (const input of allCombinations()) {
+      expect(Object.keys(input).sort()).toEqual([
+        'endpointAllowsMature',
+        'hostCap',
+        'moderationVerified',
+        'seatedMatureOptOuts',
+      ]);
+      expect(
+        input.seatedMatureOptOuts.every((v) => typeof v === 'boolean'),
+      ).toBe(true);
+      expect(typeof input.moderationVerified).toBe('boolean');
+      expect(typeof input.endpointAllowsMature).toBe('boolean');
+      expect([undefined, 'family', 'standard']).toContain(input.hostCap);
+    }
+  });
   it('ignores untyped values that would otherwise read as truthy', () => {
     const base = { ...eligible, hostCap: undefined };
     expect(

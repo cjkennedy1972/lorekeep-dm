@@ -123,6 +123,15 @@ export class Persistence {
     });
   }
 
+  async matureEligibleAccounts(accountIds: string[]): Promise<string[]> {
+    const { rows } = await this.pool.query<{ id: string }>(
+      `SELECT id::text AS id FROM accounts
+        WHERE id = ANY($1::uuid[]) AND status='active' AND mature_opt_out=false`,
+      [accountIds],
+    );
+    return rows.map((row) => row.id);
+  }
+
   async loadLatest(sessionId: string): Promise<LatestState> {
     const client = await this.pool.connect();
     try {

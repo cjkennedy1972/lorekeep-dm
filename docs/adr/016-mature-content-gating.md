@@ -25,3 +25,10 @@ Status: Proposed (human decision 2026-10-06, round 3; supersedes round 2 "off by
 - Recompute happens once per turn, inside the solo turn runner before narration, not at a separate round-open hook (no round model exists yet). The tier is snapshotted at narration start.
 - Departed players: "seated" means ever-seated in the session. There is no seat-leave signal, so a departed player's opt-out still counts. Account deletion replaces the seat's accountId with a placeholder that has no account row, which counts as opted out (fail-closed).
 - `endpoint_allows_mature` defaults to false until the M3-19 probe sets it.
+
+**Delivery rule (M3-05 rework, atlas decision).**
+- The tier is fixed per narration turn at start. Mature narration is sent only to connections that were attached when that turn started; a connection that joins mid-narration receives no chunks or completion for that turn, and catch-up/StateSync carries no narration text.
+- Each chunk is re-checked against live `mature_opt_out` and account status before sending. An opt-out toggled mid-stream stops delivery of the remainder to that seat. A reconnect is a new connection and is excluded from the in-flight turn.
+- An account whose status is not `active` (e.g. `deleting`) counts as opted out, both for the tier predicate and for delivery.
+- `ContentTierChanged` is broadcast live to all connections and is persisted to the event log. It reveals the table tier level (not any player's identity beyond the existing seat state).
+- Non-mature narration is delivered to all connections as before.

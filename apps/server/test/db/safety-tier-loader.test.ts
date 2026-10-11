@@ -19,8 +19,8 @@ async function applyMigrations(database: TestDatabase) {
 async function account(database: TestDatabase, matureOptOut: boolean) {
   const id = randomUUID();
   await database.pool.query(
-    `INSERT INTO accounts(id,email,password_hash,display_name,is_adult,age_checked_at,terms_version,terms_accepted_at,mature_opt_out)
-     VALUES ($1,$2,'hash','Player',true,now(),'v1',now(),$3)`,
+    `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at,mature_opt_out)
+     VALUES ($1,$2,'hash','Player','active',true,now(),'v1',now(),$3)`,
     [id, `${id}@example.test`, matureOptOut],
   );
   return id;
@@ -86,6 +86,19 @@ describe('loadSeatedMatureOptOuts', () => {
     const optOuts = await loadSeatedMatureOptOuts(database.pool, sessionId);
 
     expect([...optOuts].sort()).toEqual([false, true]);
+  });
+
+  it('counts a seated account that is being deleted as opted out', async () => {
+    const deleting = await account(database, false);
+    await database.pool.query(
+      "UPDATE accounts SET status='deleting' WHERE id=$1",
+      [deleting],
+    );
+    await seatJoined(database, sessionId, 1, deleting, false);
+
+    expect(await loadSeatedMatureOptOuts(database.pool, sessionId)).toEqual([
+      true,
+    ]);
   });
 
   it('counts a seated account whose row is gone as opted out', async () => {

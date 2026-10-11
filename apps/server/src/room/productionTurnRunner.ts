@@ -461,6 +461,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       tier === stored
         ? []
         : [{ type: 'ContentTierChanged', from: stored, to: tier }];
+    onEvent({ type: 'NarrationTier', tier });
     const emittedSceneEvents: unknown[] = [];
     const result = await runTurn({
       signal: request.signal,
