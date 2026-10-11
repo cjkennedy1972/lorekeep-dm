@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   checkLiveUrl,
+  liveModel,
   runLiveAndStore,
   mapContradictions,
   puppets,
@@ -239,6 +240,7 @@ describe('live mode', () => {
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const port = (server.address() as { port: number }).port;
+    const priorAllow = process.env.LLM_ALLOW_LOCAL_HOSTS;
     process.env.LLM_ALLOW_LOCAL_HOSTS = `127.0.0.1:${port}`;
     try {
       const out = join(mkdtempSync(join(tmpdir(), 'eval-')), 'rec.json');
@@ -259,8 +261,48 @@ describe('live mode', () => {
       expect(record.passed).toBe(false); // canned non-answers must not pass
       expect(new Set(seeds).size).toBeGreaterThan(100); // distinct fixed per-case seeds sent
     } finally {
-      delete process.env.LLM_ALLOW_LOCAL_HOSTS;
+      if (priorAllow === undefined) delete process.env.LLM_ALLOW_LOCAL_HOSTS;
+      else process.env.LLM_ALLOW_LOCAL_HOSTS = priorAllow;
       server.close();
+    }
+  });
+
+  it('refuses a redirect from a listed endpoint to an unlisted one', async () => {
+    let targetHits = 0;
+    const target = createServer((_req, res) => {
+      targetHits += 1;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ choices: [{ message: { content: 'x' } }] }));
+    });
+    await new Promise<void>((r) => target.listen(0, '127.0.0.1', r));
+    const targetPort = (target.address() as { port: number }).port;
+    const listed = createServer((_req, res) => {
+      res.statusCode = 302;
+      res.setHeader(
+        'location',
+        `http://127.0.0.1:${targetPort}/v1/chat/completions`,
+      );
+      res.end();
+    });
+    await new Promise<void>((r) => listed.listen(0, '127.0.0.1', r));
+    const listedPort = (listed.address() as { port: number }).port;
+    const priorAllow = process.env.LLM_ALLOW_LOCAL_HOSTS;
+    process.env.LLM_ALLOW_LOCAL_HOSTS = `127.0.0.1:${listedPort}`;
+    try {
+      const model = liveModel(
+        `http://127.0.0.1:${listedPort}/v1`,
+        'local-m',
+        '',
+      );
+      await expect(
+        model({ suite: 'rules', caseId: 'c', prompt: 'p', seed: 1 }),
+      ).rejects.toThrow();
+      expect(targetHits).toBe(0);
+    } finally {
+      if (priorAllow === undefined) delete process.env.LLM_ALLOW_LOCAL_HOSTS;
+      else process.env.LLM_ALLOW_LOCAL_HOSTS = priorAllow;
+      listed.close();
+      target.close();
     }
   });
 });

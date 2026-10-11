@@ -165,6 +165,7 @@ export function liveModel(
       `${url.toString().replace(/\/$/, '')}/chat/completions`,
       {
         method: 'POST',
+        redirect: 'error',
         headers: {
           'content-type': 'application/json',
           ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
