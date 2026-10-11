@@ -95,6 +95,13 @@ export const HARD_FLOOR_RULES = {
       'schoolchildren',
       'stepchild',
       'stepchildren',
+      'tot',
+      'tots',
+      'nipper',
+      'nippers',
+      'bairn',
+      'bairns',
+      'kidz',
     ],
     /** Youth words: a minor only when no explicit adult marker touches them (module header). */
     youthWords: [
@@ -106,7 +113,7 @@ export const HARD_FLOOR_RULES = {
       'younglings',
     ],
     /** "young girl", "tiny boy": the noun counts only right after one of these. */
-    youthPrefixes: ['young', 'little', 'tiny', 'small'],
+    youthPrefixes: ['young', 'little', 'tiny', 'small', 'wee'],
     youthNouns: [
       'girl',
       'girls',
@@ -215,6 +222,24 @@ export const HARD_FLOOR_RULES = {
       'pussy',
       'cock',
       'cocks',
+      'fuck',
+      'fucks',
+      'fucked',
+      'fucking',
+      'fucker',
+      'fuckers',
+      'fuckin',
+      'deflower',
+      'deflowers',
+      'deflowered',
+      'deflowering',
+      'virginity',
+      'intercourse',
+      'hentai',
+      'grope',
+      'gropes',
+      'groped',
+      'groping',
     ],
     /** "undress her", "strip the girl": sexual only with an object. "undressed for bed" is not. */
     undressTerms: [
@@ -230,7 +255,7 @@ export const HARD_FLOOR_RULES = {
     undressObjects: ['her', 'him', 'them', 'the', 'his', 'their'],
     /** "sex" counts only in these phrases: "have sex", "in sex", "sex with", "sex scene"; "got laid" likewise. */
     sexPhraseNeighbours: {
-      before: ['have', 'has', 'had', 'having', 'in'],
+      before: ['have', 'has', 'had', 'having', 'in', 'for'],
       after: [
         'with',
         'scene',
@@ -419,8 +444,16 @@ const NO_OLDER_THAN = new RegExp(
   'giu',
 );
 const ONE_COMPOUND = new RegExp(
-  `\\bone-(${Object.keys(NUMBER_WORDS).slice(0, 7).join('|')})\\b`,
+  `\\bone-(${Object.keys(NUMBER_WORDS).slice(0, 9).join('|')})\\b`,
   'g',
+);
+/** "one-eight" and "one-nine" read as 18 or 19 or as a split 1-8 / 1-9 age: ambiguous, so minor. */
+const ONE_COMPOUND_AMBIGUOUS = new Set(['eight', 'nine']);
+/** Roman numerals 2 to 17 only: "i" and "x" alone collide with the pronoun and common words. */
+const ROMAN_AGE = 'ii|iii|iv|vi|vii|viii|ix|xi|xii|xiii|xiv|xv|xvi|xvii';
+const NAME_AGE = new RegExp(
+  `(\\p{L})\\s*[,(]\\s*${AGE_NUMBER}(?=\\s*[),]|\\s+(?:is|was|are|were)\\b)`,
+  'gu',
 );
 /** Euphemisms that imply a minor. "youth" and "tiny" are not here: adults use both words. */
 const MINOR_PHRASES: readonly RegExp[] = [
@@ -430,8 +463,8 @@ const MINOR_PHRASES: readonly RegExp[] = [
   /\blittle[\s-]+one\b/g,
   /\bschool[\s-]+age[ds]?\b/g,
 ];
-/** "c.h.i.l.d", "sex.ual": short letter pieces joined by a bare dot are one word. */
-const DOT_SPELLING = /(?<!\p{L})(\p{L}{1,3})\.(?=\p{L})/gu;
+/** "c.h.i.l.d", "sex.ual": a dot between letters is a split, so the pieces join in scan(). */
+const DOT_SPLIT = /(?<=\p{L})\.(?=\p{L})/gu;
 const UNDER_EIGHTEEN =
   /\b(?:under|below|younger[\s-]+than)[\s-]*(?:the[\s-]+age[\s-]+of[\s-]+)?(?:18|eighteen)\b/g;
 
@@ -508,7 +541,17 @@ const AGE_LINKS = new Set([
   'of',
   'at',
   'when',
+  'looks',
+  'looked',
 ]);
+const ROMAN_AGE_PHRASE = new RegExp(
+  `\\b(${ROMAN_AGE})(?=[\\s-]*(?:yo\\b|y\\/o|y\\.o|(?:years?|yrs?)[\\s-]*old))`,
+  'gu',
+);
+const ROMAN_LINKED = new RegExp(
+  `(?<=\\b(?:${[...AGE_LINKS].join('|')})\\s+)(${ROMAN_AGE})${WORD_END}`,
+  'gu',
+);
 const termIndex = (terms: readonly string[]) => new Set(terms);
 const inIndex = (index: Set<string>, w: string) => index.has(w);
 /** Longest vocabulary entry plus slack; bounds the joined-piece length in scan(). */
@@ -527,6 +570,19 @@ const NOT_AFTER = termIndex(PROXIMITY.sexPhraseNeighbours.notAfter);
 const LAID_BEFORE = termIndex(PROXIMITY.sexPhraseNeighbours.laidBefore);
 const UNDRESS = termIndex(PROXIMITY.undressTerms);
 const UNDRESS_OBJECT = new Set<string>(PROXIMITY.undressObjects);
+const MAKE = termIndex(['make', 'makes', 'made', 'making']);
+const CLOTHES = termIndex(['clothes', 'clothing', 'garments', 'underwear']);
+const POSSESSIVE = new Set<string>(['her', 'his', 'their', 'its', 'my', 'your']);
+const REMOVE = termIndex([
+  'remove',
+  'removes',
+  'removed',
+  'removing',
+  'take',
+  'takes',
+  'took',
+  'taking',
+]);
 const YOUTH_PREFIX = new Set<string>(PROXIMITY.youthPrefixes);
 const YOUTH_NOUN = termIndex(PROXIMITY.youthNouns);
 const PERSON_NOUN = termIndex(PROXIMITY.personNouns);
@@ -564,15 +620,22 @@ function normalizeText(input: string): string {
     .toLowerCase();
   let s = '';
   for (const c of folded) s += CONFUSABLE.get(c) ?? UNICODE_DIGIT.get(c) ?? c;
-  s = s.replace(/@/g, 'a').replace(/\$/g, 's');
-  s = s.replace(DOT_SPELLING, '$1');
-  s = s.replace(ONE_COMPOUND, (_m, w: string) => ` ${10 + NUMBER_WORDS[w]!} `);
+  s = s.replace(/@/g, 'a').replace(/\$/g, 's').replace(/\*/g, 'e');
+  s = s.replace(ONE_COMPOUND, (_m, w: string) =>
+    ONE_COMPOUND_AMBIGUOUS.has(w) ? ' minorage ' : ` ${10 + NUMBER_WORDS[w]!} `,
+  );
   s = s.replace(AGE_PHRASE, (match, a?: string, b?: string) =>
     ageMatch(match, a, b),
   );
   s = s.replace(NO_OLDER_THAN, (match, a?: string) =>
     ageMatch(match, a, undefined),
   );
+  s = s.replace(NAME_AGE, (match, _l: string, a: string) =>
+    ageMatch(match, a, undefined),
+  );
+  s = s.replace(ROMAN_AGE_PHRASE, ' minorage ');
+  s = s.replace(ROMAN_LINKED, ' minorage ');
+  s = s.replace(DOT_SPLIT, ' ');
   s = s.replace(UNDER_EIGHTEEN, ' minorage ');
   for (const cue of SCHOOL_CUES) s = s.replace(cue, ' minorage ');
   for (const phrase of MINOR_PHRASES) s = s.replace(phrase, ' minorage ');
@@ -601,16 +664,18 @@ function wordForms(word: string): string[] {
   return out;
 }
 
-const SHORT_PIECE = 2;
-/** Longest run of short pieces joined back into one word ("s e x ua l"). */
+/** Longest run of pieces joined back into one word ("s e x ua l", "s*xual"). */
 const MAX_JOIN = 12;
 
-/** A bare number that reads as an age: digits 1 to 17; number words only 5 to 17, so "two boys" stays adult prose. */
+/** A bare number 1 to 17 (digits or words). Needs an age link or a person noun to count. */
 function bareAge(word: string): boolean {
-  if (/^\d+$/.test(word)) {
-    const v = Number(word);
-    return v >= 1 && v <= 17;
-  }
+  const v = /^\d+$/.test(word) ? Number(word) : wordValue(word);
+  return v !== undefined && v >= 1 && v <= 17;
+}
+
+/** Next to a person noun ("two boys" is adult prose), a word number counts only from five up. */
+function nounAge(word: string): boolean {
+  if (/^\d+$/.test(word)) return bareAge(word);
   const v = wordValue(word);
   return v !== undefined && v >= 5 && v <= 17;
 }
@@ -618,7 +683,7 @@ function bareAge(word: string): boolean {
 /**
  * Message-level verdict. `minor` is set by any minor reference that is not a youth word
  * next to an adult marker; `sexual` by any sexual term. The caller blocks when both hold.
- * Each word position joins at most MAX_JOIN short pieces, so cost is O(tokens x MAX_JOIN).
+ * Each word position joins at most MAX_JOIN pieces up to MAX_TERM_CHARS, so cost is O(tokens x MAX_JOIN).
  */
 function scan(words: string[]): {
   explicit: boolean;
@@ -631,15 +696,11 @@ function scan(words: string[]): {
   for (let s = 0; s < words.length; s++) {
     let joined = '';
     for (let e = s; e < Math.min(words.length, s + MAX_JOIN); e++) {
-      if (
-        e > s &&
-        (words[e]!.length > SHORT_PIECE || words[s]!.length > SHORT_PIECE)
-      )
-        break;
       joined += words[e];
       if (e > s && joined.length > MAX_TERM_CHARS) break;
       const prev = s > 0 ? base[s - 1]! : '';
       const prev2 = s > 1 ? base[s - 2]! : '';
+      const prev3 = s > 2 ? base[s - 3]! : '';
       const next = e + 1 < words.length ? base[e + 1]! : '';
       let core = false;
       let youth = false;
@@ -654,8 +715,8 @@ function scan(words: string[]): {
           if (
             AGE_LINKS.has(prev) ||
             (prev === 's' && (prev2 === 'she' || prev2 === 'he')) ||
-            inIndex(PERSON_NOUN, prev) ||
-            inIndex(PERSON_NOUN, next)
+            ((inIndex(PERSON_NOUN, prev) || inIndex(PERSON_NOUN, next)) &&
+              nounAge(w))
           )
             core = true;
         }
@@ -669,6 +730,13 @@ function scan(words: string[]): {
         } else if (inIndex(LAID, w) && inIndex(LAID_BEFORE, prev))
           sexualHere = true;
         else if (inIndex(UNDRESS, w) && UNDRESS_OBJECT.has(next))
+          sexualHere = true;
+        else if (w === 'love' && inIndex(MAKE, prev)) sexualHere = true;
+        else if (
+          inIndex(CLOTHES, w) &&
+          POSSESSIVE.has(prev) &&
+          (inIndex(REMOVE, prev2) || (prev2 === 'off' && inIndex(REMOVE, prev3)))
+        )
           sexualHere = true;
       }
       if (core || (youth && !ADULT_MARKER.has(prev) && !ADULT_MARKER.has(next)))

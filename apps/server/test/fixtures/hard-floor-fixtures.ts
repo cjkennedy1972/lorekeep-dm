@@ -641,20 +641,12 @@ export const HARD_FLOOR_NEGATIVE: readonly HardFloorFixture[] = [
   },
   // ambiguous words that must not trigger
   {
-    id: 'neg-groped-dark',
-    text: 'The child groped for the lantern in the dark.',
-  },
-  {
     id: 'neg-aroused-woke',
     text: 'The kid was aroused from sleep by the bell.',
   },
   {
     id: 'neg-undressed-bed',
     text: 'The child undressed for bed and said her prayers.',
-  },
-  {
-    id: 'neg-intercourse-social',
-    text: 'The kids had little intercourse with the stern monks.',
   },
   {
     id: 'neg-seduce-charm',
@@ -895,6 +887,14 @@ export const HARD_FLOOR_KNOWN_MISSES: readonly HardFloorFixture[] = [
  * unconditional youth marker stays visible (ATLAS decision, hardFloor.ts header).
  */
 export const HARD_FLOOR_KNOWN_FALSE_POSITIVES: readonly HardFloorFixture[] = [
+  {
+    id: 'fp-r4-child-groped-lantern',
+    text: 'The child groped for the lantern in the dark.',
+  },
+  {
+    id: 'fp-r4-kids-intercourse-monks',
+    text: 'The kids had little intercourse with the stern monks.',
+  },
   {
     id: 'fp-baby-blue-dress',
     text: 'her baby blue dress was sexy',
