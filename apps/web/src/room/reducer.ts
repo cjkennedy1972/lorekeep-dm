@@ -43,6 +43,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'NarrationCompleted':
     case 'ToolRejected':
     case 'ClarificationRequested':
+    case 'ContentTierChanged':
       return view; // surfaced by the client, not part of room state
     case 'CombatTracker':
     case 'ReactionPrompt':

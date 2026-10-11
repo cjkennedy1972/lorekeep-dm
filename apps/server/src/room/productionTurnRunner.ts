@@ -2,6 +2,7 @@ import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { closeScene } from '../dm/summarize.js';
+import { loadContentTierState } from '../safety/tierLoader.js';
 import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
 // Node-only subpath: it pulls in the catalog loader (node:fs), so it must never be reachable
 // from the browser-safe engine index (see test/purity.test.ts).
@@ -132,6 +133,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     /** A fixed adapter for deterministic tests; skips endpoint configuration. */
     private readonly adapterOverride?: LlmAdapter,
     private readonly liveDmAllowlistOnly = true,
+    // ponytail: false until the M3-19 endpoint probe sets it, so mature stays unreachable.
+    private readonly endpointAllowsMature = false,
   ) {}
 
   async run(
@@ -448,6 +451,17 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       rulesLookup: (topic) => rulesLookup(this.db as Pool, topic),
     };
 
+    // Snapshotted once here, before narration: an opt-out flipped during this narration lands on the next one.
+    const { tier, stored } = await loadContentTierState(
+      this.db,
+      request.sessionId,
+      this.endpointAllowsMature,
+    );
+    const tierEvents =
+      tier === stored
+        ? []
+        : [{ type: 'ContentTierChanged', from: stored, to: tier }];
+    onEvent({ type: 'NarrationTier', tier });
     const emittedSceneEvents: unknown[] = [];
     const result = await runTurn({
       signal: request.signal,
@@ -462,7 +476,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         sceneId: state.sceneId ?? request.sessionId,
         settingsHash: 'default',
         session: {
-          contentTier: 'standard',
+          contentTier: tier,
           safetySettings: {},
           partyRoster: Object.values(actors).map((actor) => ({
             id: actor.id,
@@ -588,7 +602,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     }
     return {
       ...result,
-      events: [...result.events, ...registryEvents],
+      events: [...tierEvents, ...result.events, ...registryEvents],
       state: {
         ...(result.state as GameState),
         ...(transitionedSceneId ? { sceneId: transitionedSceneId } : {}),

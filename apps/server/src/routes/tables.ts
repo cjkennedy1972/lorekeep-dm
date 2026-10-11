@@ -309,7 +309,7 @@ export function registerTableRoutes(
         game: {
           ...gameView({ ...row, recap: { recap: recap.recap } }),
           recap: recap.recap,
-          state: room.state,
+          state: room.clientState(),
           catalogVersion: row.catalog_version,
         },
       };

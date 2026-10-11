@@ -50,6 +50,8 @@ export interface RoomStore {
     lease: Lease,
     registryEvents?: readonly RegistryEvent[],
   ): Promise<{ events: StoredEvent[] }>;
+  /** Accounts among these that are active and not opted out of mature content. */
+  matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
 }
 export interface Connection {
   send(message: ServerMessage): void;
@@ -70,6 +72,7 @@ export class Room {
   private readonly combatRuntime: CombatRuntime;
   private reactionTimer?: NodeJS.Timeout;
   private turnInFlight = false;
+  private matureDelivery: Promise<void> = Promise.resolve();
   private readonly pendingActions = new Set<string>();
   private activeTurn: Promise<void> = Promise.resolve();
   private readonly queuedActions: {
@@ -161,7 +164,7 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.state },
+          payload: { state: this.clientState() },
         });
       this.sendCombatSnapshot(connection);
       for (const [actionId, open] of Object.entries(
@@ -174,6 +177,15 @@ export class Room {
             payload: { actionId, question: open.question },
           } as ServerMessage);
     });
+  }
+
+  /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */
+  clientState(): RoomState {
+    if (!this.state.gameState) return this.state;
+    const gameState = { ...(this.state.gameState as Record<string, unknown>) };
+    delete gameState.lastNarration;
+    delete gameState.lastPlayerText;
+    return { ...this.state, gameState };
   }
 
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */
@@ -207,7 +219,7 @@ export class Room {
         this.broadcast({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.state },
+          payload: { state: this.clientState() },
         });
       }
       this.connections.set(accountId, connection);
@@ -215,7 +227,7 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.state },
+          payload: { state: this.clientState() },
         });
       this.sendCombatSnapshot(connection);
       if (seat.presence !== 'online') {
@@ -251,7 +263,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.state },
+        payload: { state: this.clientState() },
       });
     });
   }
@@ -726,6 +738,9 @@ export class Room {
       string,
       unknown
     >;
+    // Mature narration reaches only the connections present now, so a joiner never receives a turn it was not present for.
+    const audience = new Set(this.connections.values());
+    let matureAudience: ReadonlySet<Connection> | undefined;
     const result = await this.turnRunner!.run(
       {
         sessionId: this.sessionId,
@@ -740,18 +755,25 @@ export class Room {
       },
       (event) => {
         const type = event.type;
-        if (type === 'RollEvent') {
+        if (type === 'NarrationTier') {
+          matureAudience =
+            (event as { tier?: unknown }).tier === 'mature'
+              ? audience
+              : undefined;
+        } else if (type === 'RollEvent') {
           this.broadcast({
             seq: this.seq,
             type: 'RollEvent',
             payload: event,
           } as ServerMessage);
         } else if (type === 'NarrationChunk' || type === 'NarrationCompleted') {
-          this.broadcast({
+          const message = {
             seq: this.seq,
             type,
             payload: event,
-          } as ServerMessage);
+          } as ServerMessage;
+          if (matureAudience) this.deliverMature(message, matureAudience);
+          else this.broadcast(message);
         } else if (type === 'ToolCallRejected') {
           this.broadcast({
             seq: this.seq,
@@ -761,6 +783,7 @@ export class Room {
         }
       },
     );
+    await this.matureDelivery;
     // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
     await this.enqueue(async () => {
       // Endpoint fallback invalidates all partial engine effects; only successful results are saved.
@@ -929,6 +952,13 @@ export class Room {
         );
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;
+        for (const event of stored.events)
+          if (event.type === 'ContentTierChanged')
+            this.broadcast({
+              seq: event.seq,
+              type: 'ContentTierChanged',
+              payload: event.payload,
+            } as ServerMessage);
         if (clarification) {
           this.scheduleClarificationTimer(actionId, deadlineAt);
           this.broadcast({
@@ -1152,6 +1182,39 @@ export class Room {
   private broadcast(message: ServerMessage): void {
     for (const connection of this.connections.values())
       connection.send(message);
+  }
+
+  /** Chained so chunks keep their order; each chunk re-checks opt-outs, and any lookup failure sends nothing. */
+  private deliverMature(
+    message: ServerMessage,
+    audience: ReadonlySet<Connection>,
+  ): void {
+    this.matureDelivery = this.matureDelivery
+      .then(async () => {
+        const recipients = [...this.connections].filter(
+          ([accountId, connection]) =>
+            audience.has(connection) &&
+            this.state.seats.some((seat) => seat.accountId === accountId),
+        );
+        if (recipients.length === 0) return;
+        let eligible: string[] = [];
+        try {
+          eligible =
+            (await this.store.matureEligibleAccounts?.(
+              recipients.map(([accountId]) => accountId),
+            )) ?? [];
+        } catch {
+          eligible = [];
+        }
+        const allowed = new Set(eligible);
+        for (const [accountId, connection] of recipients)
+          if (
+            allowed.has(accountId) &&
+            this.connections.get(accountId) === connection
+          )
+            connection.send(message);
+      })
+      .catch(() => undefined);
   }
   async drain(deadlineMs = DRAIN_DEADLINE_MS): Promise<void> {
     this.draining = true;

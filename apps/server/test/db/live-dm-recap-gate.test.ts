@@ -143,3 +143,26 @@ describe('resume recap and the live DM allowlist', () => {
     expect(endpoint.requests.length).toBeGreaterThan(calls);
   });
 });
+
+describe('resume snapshot projection', () => {
+  it('omits last-turn narration from the GET snapshot for an opted-out owner', async () => {
+    const owner = await createAccount();
+    await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
+      owner.id,
+    ]);
+    const table = await createResumableTable(owner.id);
+    const room = await rooms.get(table);
+    await room.persistGameState({
+      sceneId: 'scene:opening',
+      lastNarration: 'The torch gutters.',
+      lastPlayerText: 'look around',
+    });
+    const response = await fetch(`${base}/api/tables/${table}`, {
+      headers: { cookie: `${COOKIE_NAME}=${owner.token}` },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).not.toContain('The torch gutters.');
+    expect(body).not.toContain('look around');
+  });
+});

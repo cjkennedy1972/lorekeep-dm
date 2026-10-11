@@ -29,9 +29,9 @@ function* allCombinations(): Generator<TierInput> {
 describe('computeContentTier', () => {
   it('is mature only when every condition holds', () => {
     expect(computeContentTier(eligible)).toBe('mature');
-    expect(computeContentTier({ ...eligible, seatedMatureOptOuts: [] })).toBe(
-      'mature',
-    );
+    expect(
+      computeContentTier({ ...eligible, seatedMatureOptOuts: [false] }),
+    ).toBe('mature');
   });
 
   it.each([
@@ -106,6 +106,79 @@ describe('tier predicate inputs', () => {
       expect(typeof input.endpointAllowsMature).toBe('boolean');
       expect([undefined, 'family', 'standard']).toContain(input.hostCap);
     }
+  });
+  it('ignores untyped values that would otherwise read as truthy', () => {
+    const base = { ...eligible, hostCap: undefined };
+    expect(
+      computeContentTier({
+        ...base,
+        moderationVerified: 'yes' as unknown as boolean,
+      }),
+    ).toBe('standard');
+    expect(
+      computeContentTier({
+        ...base,
+        endpointAllowsMature: 1 as unknown as boolean,
+      }),
+    ).toBe('standard');
+    expect(
+      computeContentTier({
+        ...base,
+        seatedMatureOptOuts: [0 as unknown as boolean],
+      }),
+    ).toBe('standard');
+    expect(
+      computeContentTier({
+        ...base,
+        seatedMatureOptOuts: [null as unknown as boolean],
+      }),
+    ).toBe('standard');
+  });
+
+  it.each([
+    ['the string mature', 'mature'],
+    ['a null', null],
+    ['a number', 1],
+    ['an object', { tier: 'mature' }],
+    ['an unknown string', 'family-ish'],
+    ['an empty string', ''],
+  ])(
+    'fails closed to standard for an off-enum host cap of %s',
+    (_, hostCap) => {
+      for (const input of allCombinations()) {
+        const tier = computeContentTier({
+          ...input,
+          hostCap: hostCap as unknown as TierInput['hostCap'],
+        });
+        expect(tier).toBe('standard');
+        expect(tier).not.toBe('mature');
+      }
+    },
+  );
+
+  it('reports an off-enum host cap as invalid, not as a host cap or unverified', () => {
+    expect(
+      reasonForTier({ ...eligible, hostCap: 'mature' as unknown as 'family' }),
+    ).toBe('invalid_host_cap');
+  });
+
+  it('reports host_cap, not unverified, when a valid cap is set', () => {
+    expect(
+      reasonForTier({
+        ...eligible,
+        moderationVerified: false,
+        hostCap: 'standard',
+      }),
+    ).toBe('host_cap');
+  });
+
+  it('is standard with zero seated accounts, even when everything else passes', () => {
+    expect(computeContentTier({ ...eligible, seatedMatureOptOuts: [] })).toBe(
+      'standard',
+    );
+    expect(reasonForTier({ ...eligible, seatedMatureOptOuts: [] })).toBe(
+      'no_seats',
+    );
   });
 
   it('types every input except the host cap as boolean', () => {
