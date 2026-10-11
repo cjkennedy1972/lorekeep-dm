@@ -20,6 +20,7 @@ export type SpellToolState = {
   map?: SpellMapContext;
   spellState?: SpellState;
   turnId: string;
+  turnActorId?: string | null;
   options?: Readonly<Record<string, AreaOption>>;
 };
 const engineCode = (
@@ -64,6 +65,8 @@ export function executeSpell(
   const caster = state.actors[casterId];
   if (!caster)
     return fail('unknown-entity', 'Choose a caster present in the session.');
+  if (state.turnActorId && state.turnActorId !== casterId)
+    return fail('not-actors-turn', `It is ${state.turnActorId}'s turn.`);
   if (
     !caster.spellsKnown.includes(spellId) &&
     !caster.spellsPrepared.includes(spellId)

@@ -21,6 +21,7 @@ export type MovementToolState = {
   reactions?: Record<string, boolean>;
   pendingReactions?: MovementCommandState['pendingReactions'];
   combat?: { activeEntityId: string | null };
+  turnActorId?: string | null;
   targetOptions?: Readonly<Record<string, GridPos>>;
   optionHandles?: Readonly<
     Record<string, { pos: GridPos; expiresTurn: string; affected: string[] }>
@@ -54,11 +55,9 @@ export function executeMoveTo(state: MovementToolState, args: unknown) {
     )
   )
     return fail('restrained', 'Remove restrained or choose another action.');
-  if (state.combat?.activeEntityId && state.combat.activeEntityId !== entityId)
-    return fail(
-      'not-actors-turn',
-      `It is ${state.combat.activeEntityId}'s turn.`,
-    );
+  const activeId = state.turnActorId ?? state.combat?.activeEntityId;
+  if (activeId && activeId !== entityId)
+    return fail('not-actors-turn', `It is ${activeId}'s turn.`);
   const marker = state.map.markers.find(
     (candidate) => candidate.markerId === targetRef,
   );

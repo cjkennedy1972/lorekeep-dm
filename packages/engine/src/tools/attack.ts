@@ -34,6 +34,7 @@ export type AttackToolState = {
   map?: Battlemap;
   conditions?: Readonly<Record<string, readonly ActiveCondition[]>>;
   catalog: Catalog;
+  turnActorId?: string | null;
 };
 export function executeAttack(
   state: AttackToolState,
@@ -49,6 +50,8 @@ export function executeAttack(
   const { attackerId, targetId, attackId } = parsed.data;
   if (!state.actors[attackerId] && !state.placements?.[attackerId])
     return fail('unknown-entity', 'Choose an attacker present in the session.');
+  if (state.turnActorId && state.turnActorId !== attackerId)
+    return fail('not-actors-turn', `It is ${state.turnActorId}'s turn.`);
   if (!state.actors[targetId] && !state.placements?.[targetId])
     return fail('unknown-entity', 'Choose a target present in the session.');
   const definition = state.attacks[attackId];

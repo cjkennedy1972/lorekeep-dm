@@ -319,9 +319,25 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         const worldExecute = request.name
           ? worldExecutors[request.name as keyof typeof worldExecutors]
           : undefined;
+        const room = (
+          state as {
+            combatRoom?: {
+              ended?: unknown;
+              combat: {
+                activeEntityId: string | null;
+                initiative: readonly { entityId: string }[];
+              };
+            };
+          }
+        ).combatRoom;
+        const turnActorId = room?.ended
+          ? null
+          : (room?.combat.activeEntityId ??
+            room?.combat.initiative[0]?.entityId ??
+            null);
         const result = worldExecute
           ? worldExecute(current.world, request.args)
-          : execute(current, call, seed);
+          : execute({ ...current, turnActorId }, call, seed);
         if (!result.ok) return { ...result, events: [] };
         const value = result.value as
           | { events?: readonly unknown[] }
