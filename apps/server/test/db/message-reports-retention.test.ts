@@ -292,4 +292,81 @@ describe('message report retention (Postgres)', () => {
     await q('DELETE FROM legal_holds WHERE item_id=$1', [sid]);
     await runAccountDeletions(ctx());
   });
+
+  it('does not keep the author text when their deletion commits between the report context read and the insert', async () => {
+    const keeper = await account('Keeper Kim');
+    const reporter = await account('Hollis Host');
+    const author = await account('Quinn Seated');
+    const sid = randomUUID();
+    await q(
+      "INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,'Table')",
+      [sid, keeper],
+    );
+    const events: [number, string, Record<string, unknown>][] = [
+      [1, 'SeatJoined', { accountId: keeper, displayName: 'Keeper Kim' }],
+      [2, 'SeatJoined', { accountId: reporter, displayName: 'Hollis Host' }],
+      [3, 'SeatJoined', { accountId: author, displayName: 'Quinn Seated' }],
+      [
+        4,
+        'ActionAccepted',
+        {
+          accountId: author,
+          playerName: 'Quinn Seated',
+          text: 'SECRET WORDS',
+          actionId: 'a1',
+        },
+      ],
+    ];
+    for (const [seq, type, payload] of events)
+      await q(
+        'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,$2,$3,$4,$5)',
+        [sid, seq, randomUUID(), type, JSON.stringify(payload)],
+      );
+
+    let deletion: Promise<unknown> | undefined;
+    const racing = {
+      query: pool.query.bind(pool),
+      connect: async () => {
+        const client = await pool.connect();
+        const query = client.query.bind(client);
+        client.query = (async (text: string, params?: unknown[]) => {
+          if (!deletion && text.startsWith('INSERT INTO message_reports')) {
+            await q(
+              "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+              [author],
+            );
+            deletion = runAccountDeletions(ctx());
+            await Promise.race([
+              deletion,
+              new Promise((resolve) => setTimeout(resolve, 300)),
+            ]);
+          }
+          return query(text, params);
+        }) as typeof client.query;
+        return client;
+      },
+    } as unknown as Pool;
+
+    const app = Fastify();
+    registerReportRoutes(app, racing);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${sid}/reports`,
+      headers: {
+        cookie: `sid=${await createSession(pool, reporter, 'test', new Date(Date.now() + DAY))}`,
+        origin: HOST,
+        host: 'lorekeep.test',
+      },
+      payload: { messageRef: 4, category: 'harassment', reason: 'Rude.' },
+    });
+    expect(response.statusCode).toBe(202);
+    await deletion;
+
+    const dump = JSON.stringify(
+      await q('SELECT context FROM message_reports WHERE session_id=$1', [sid]),
+    );
+    expect(dump).not.toContain('SECRET WORDS');
+    expect(dump).not.toContain(author);
+    expect(dump).toContain('[removed]');
+  });
 });

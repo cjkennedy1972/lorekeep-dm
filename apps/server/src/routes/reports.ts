@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import { BoundedCounter } from '../accounts/throttle.js';
 import { authenticateRequest } from '../middleware/auth.js';
@@ -101,6 +101,32 @@ function snapshotOf(
   });
 }
 
+/**
+ * Runs `work` in a transaction holding FOR SHARE on the session row, so a concurrent account
+ * deletion (which takes FOR UPDATE on it) either finishes before the reads or waits until this commits.
+ */
+async function withSessionShareLock<T>(
+  db: Pool,
+  sessionId: string,
+  work: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT 1 FROM sessions WHERE id=$1 FOR SHARE', [
+      sessionId,
+    ]);
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /** Strips internal markers from snapshot entries before they leave the server. */
 export function publicContext(context: Array<Record<string, unknown>>) {
   return context.map((entry) =>
@@ -148,63 +174,71 @@ export function registerReportRoutes(
           message: 'Too many reports. Try again later.',
         });
       const { messageRef, category, reason } = parsed.data;
-      const reported = (
-        await db.query<{
-          seq: string;
-          type: string;
-          payload: Record<string, unknown>;
-        }>(
-          'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq=$2',
-          [id, messageRef],
+      const rejected = await withSessionShareLock(db, id, async (client) => {
+        const reported = (
+          await client.query<{
+            seq: string;
+            type: string;
+            payload: Record<string, unknown>;
+          }>(
+            'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq=$2',
+            [id, messageRef],
+          )
+        ).rows[0];
+        if (!reported)
+          return {
+            code: 404,
+            body: { code: 'NOT_FOUND', message: 'Not found.' },
+          };
+        if (
+          ![...TEXT_KEYS, 'playerName'].some(
+            (key) => typeof reported.payload[key] === 'string',
+          )
         )
-      ).rows[0];
-      if (!reported)
-        return reply
-          .code(404)
-          .send({ code: 'NOT_FOUND', message: 'Not found.' });
-      if (
-        ![...TEXT_KEYS, 'playerName'].some(
-          (key) => typeof reported.payload[key] === 'string',
-        )
-      )
-        return reply.code(422).send({
-          code: 'NOT_REPORTABLE',
-          message: 'That is not a message.',
-        });
-      const author =
-        typeof reported.payload.accountId === 'string' &&
-        UUID.test(reported.payload.accountId)
-          ? reported.payload.accountId
-          : null;
-      if (author === auth.account_id)
-        return reply.code(422).send({
-          code: 'OWN_MESSAGE',
-          message: 'You cannot report your own message.',
-        });
-      const context = (
-        await db.query<{
-          seq: string;
-          type: string;
-          payload: Record<string, unknown>;
-        }>(
-          'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT $3',
-          [id, messageRef, CONTEXT_BEFORE + 1],
-        )
-      ).rows.reverse();
-      await db.query(
-        `INSERT INTO message_reports(session_id,message_seq,reporter_account_id,author_account_id,category,reason,context)
-         VALUES($1,$2,$3,(SELECT id FROM accounts WHERE id=$4),$5,$6,$7)
-         ON CONFLICT (session_id,message_seq,reporter_account_id) DO NOTHING`,
-        [
-          id,
-          messageRef,
-          auth.account_id,
-          author,
-          category,
-          reason,
-          JSON.stringify(snapshotOf(context, auth.account_id)),
-        ],
-      );
+          return {
+            code: 422,
+            body: { code: 'NOT_REPORTABLE', message: 'That is not a message.' },
+          };
+        const author =
+          typeof reported.payload.accountId === 'string' &&
+          UUID.test(reported.payload.accountId)
+            ? reported.payload.accountId
+            : null;
+        if (author === auth.account_id)
+          return {
+            code: 422,
+            body: {
+              code: 'OWN_MESSAGE',
+              message: 'You cannot report your own message.',
+            },
+          };
+        const context = (
+          await client.query<{
+            seq: string;
+            type: string;
+            payload: Record<string, unknown>;
+          }>(
+            'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT $3',
+            [id, messageRef, CONTEXT_BEFORE + 1],
+          )
+        ).rows.reverse();
+        await client.query(
+          `INSERT INTO message_reports(session_id,message_seq,reporter_account_id,author_account_id,category,reason,context)
+           VALUES($1,$2,$3,(SELECT id FROM accounts WHERE id=$4),$5,$6,$7)
+           ON CONFLICT (session_id,message_seq,reporter_account_id) DO NOTHING`,
+          [
+            id,
+            messageRef,
+            auth.account_id,
+            author,
+            category,
+            reason,
+            JSON.stringify(snapshotOf(context, auth.account_id)),
+          ],
+        );
+        return null;
+      });
+      if (rejected) return reply.code(rejected.code).send(rejected.body);
       return reply.code(202).send({ received: true });
     },
   );
