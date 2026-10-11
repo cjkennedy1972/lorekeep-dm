@@ -72,8 +72,8 @@ describe('checkHardFloor', () => {
     for (const unit of units) {
       const half = sized(unit, MAX_INPUT_CHARS / 2);
       const full = sized(unit, MAX_INPUT_CHARS);
-      const halfMs = medianMs(() => checkHardFloor(half));
-      const fullMs = medianMs(() => checkHardFloor(full));
+      const halfMs = medianMs(() => checkHardFloor(half), 11);
+      const fullMs = medianMs(() => checkHardFloor(full), 11);
       expect(fullMs / halfMs, `scaling for ${unit}`).toBeLessThan(3);
       expect(fullMs, `ceiling for ${unit}`).toBeLessThan(ABSOLUTE_CEILING_MS);
     }
