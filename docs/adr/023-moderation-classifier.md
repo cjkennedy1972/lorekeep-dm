@@ -164,3 +164,15 @@ The caller maps `failClosedRow`, not `category`. The category is `other` on outa
 Known residual, not closed: a sexual term emitted before its minor reference arrives is already visible when the message blocks. Only whole-turn buffering closes this, and that makes first-token latency equal to full generation time. This needs an owner decision.
 
 Performance, measured on this branch at 30,000 characters: one full scan takes 2 to 96 ms (96 ms on adversarial input). Re-scanning the cumulative turn at each of 75 chunks takes 0.7 to 2.5 s. The cumulative cost misses the ~100 ms budget and is open. Candidate fixes are incremental or cached minor and sexual flags, or a full-turn scan only at chunk boundaries that can complete a rule.
+
+**Addendum (M3-08c round 2): incremental turn scanner.** This supersedes the `turnContext` description above. `ModerationRequest.turn` replaces `turnContext`: the gate creates one `DeterministicTurn` per attempt, seeds it with `emittedBefore`, and pushes each judged chunk. `hardFloor.ts` exposes pure flags (`scanFlags(words, from, to)`, `HardFloorFlags`) and `checkHardFloor` is built on them, so behavior is unchanged and `HARD_FLOOR_VERSION` stays `2026-10-10.8`. `createHardFloorTurn()` keeps cumulative `explicit`, `minor`, and `sexual` flags for token starts whose right context is settled (16 tokens of tail), recomputes the unsettled tail on each push, and carries the last 400 raw characters for left context. Once blocked, a turn stays blocked. Nothing is buffered beyond the carry.
+
+Residual, accepted: sexual text emitted before a later minor reference stays visible, because the gate has already sent it. This is the same residual as above. Decision: accept it and do not buffer the turn.
+
+Intentional divergences from `checkHardFloor` on the whole text:
+1. Rule labels may differ across chunk splits (for example, `childporn` joined in a prefix, `childpornography` in the full text). Both block.
+2. A streamed prefix can over-block where it is itself a hard-floor match ("harvest rapes" before "eed", "has sex" before "appeal"). Each costs a regeneration. The equivalence contract allows this only when `checkHardFloor(prefix)` blocks.
+3. Adjacency longer than the 400-character carry can diverge. NAME_AGE-style unbounded separator runs are the main case.
+4. Tail tokens beyond the carry can diverge for the same reason.
+
+Performance (this branch, 30,000 characters, 75 chunks of 400, median of 5 runs): benign about 10 ms; adversarial 43 to 89 ms across runs. Both are under the 100 ms budget, but the adversarial case is close to it.

@@ -68,15 +68,17 @@ describe('turn-scoped evaluation', () => {
     expect(verdict.verdict).toBe('allow');
   });
 
-  it('the cumulative turn text catches the same message-level violation', async () => {
+  it('the turn scanner catches the same message-level violation', async () => {
     const moderator = new JudgeModerator({
       deterministic: hardFloorLayer,
       chat: ALLOW,
     });
+    const turn = moderator.startTurn()!;
+    turn.push(`A child sleeps. ${'x '.repeat(500)}`);
     const verdict = await moderator.moderate({
       text: 'nude',
       context: 'x'.repeat(400),
-      turnContext: `A child sleeps. ${'x '.repeat(500)}`,
+      turn,
       tier: 'family',
       direction: 'output',
     });
