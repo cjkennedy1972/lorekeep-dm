@@ -53,7 +53,7 @@ Endpoints live in three slots: `fast`, `frontier`, `moderate`. All calls need a 
 
 | Method and path | Effect |
 | --- | --- |
-| `GET /api/operator/endpoints` | List slots. Never returns the key: only `keySet` and a 12-hex `keyFingerprint`. |
+| `GET /api/operator/endpoints` | List slots. Never returns the key: only `keySet` and a `keyFingerprint` (`v2:` plus 12 hex, an HMAC keyed by the master key; legacy values are bare 12 hex and are replaced on the next save or test). |
 | `PUT /api/operator/endpoints/:slot` | Save the config; returns it with `"probe": null`. Saving does not call the endpoint: run the test route next. |
 | `POST /api/operator/endpoints/:slot/test` | Run the probe on the saved config and store the result (shown as `probe` by `GET`). |
 | `DELETE /api/operator/endpoints/:slot` | Remove the slot: `200 {"deleted":true}`, or `404 NOT_FOUND` if the slot is empty. A slot other than `fast`, `frontier`, `moderate` returns `400 INVALID_SLOT`. |
