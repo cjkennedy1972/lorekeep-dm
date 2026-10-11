@@ -54,6 +54,10 @@ export class RoomRegistry {
     if (room) await this.evict(sessionId, room);
     else await this.evicting.get(sessionId);
   }
+  /** The Room this process holds for a session right now; never starts one. */
+  peek(sessionId: string): Room | undefined {
+    return this.rooms.get(sessionId);
+  }
   async get(sessionId: string): Promise<Room> {
     await this.evicting.get(sessionId);
     const existing = this.rooms.get(sessionId);

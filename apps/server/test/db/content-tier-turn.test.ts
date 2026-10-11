@@ -12,6 +12,7 @@ import type {
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { Persistence } from '../../src/persistence/index.js';
+import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -132,18 +133,26 @@ async function turn(
   return { result, changes };
 }
 
-/** What Room's turn commit does: persist the turn's events, including the tier change. */
+/** What Room's turn commit does: persist the turn's events, including the tier change, under the session lease. */
 async function commit(sessionId: string, changes: unknown[]) {
   if (!changes.length) return;
-  await new Persistence(db).writeTurn(
-    sessionId,
-    changes.map((event) => ({
-      turnId: randomUUID(),
-      type: 'ContentTierChanged',
-      payload: event,
-    })),
-    {},
-  );
+  const leases = new SessionLease(db);
+  const lease = await leases.acquire(sessionId, randomUUID());
+  if (!lease) throw new Error('lease unavailable');
+  try {
+    await new Persistence(db).writeTurn(
+      sessionId,
+      changes.map((event) => ({
+        turnId: randomUUID(),
+        type: 'ContentTierChanged',
+        payload: event,
+      })),
+      {},
+      lease,
+    );
+  } finally {
+    await leases.release(lease);
+  }
 }
 
 const storedTier = async (sessionId: string) =>

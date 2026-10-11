@@ -69,7 +69,7 @@ export function createApp(
     rateLimit?: number;
     joinRateLimit?: number;
     roomLimits?: { maxRooms?: number; createPerHour?: number };
-    rooms?: Pick<RoomRegistry, 'get'>;
+    rooms?: Pick<RoomRegistry, 'get' | 'peek'>;
     connections?: Pick<ConnectionRegistry, 'sweep'>;
     isOperator?: (accountId: string) => Promise<boolean>;
     trustProxy?: boolean | number | string[];
@@ -125,7 +125,7 @@ export function createApp(
     registerUsageRoutes(app, db as Pool, options.isOperator);
     registerOperatorRoutes(app, db as Pool, options.isOperator);
     registerReportRoutes(app, db as Pool);
-    registerContentSettingsRoutes(app, db as Pool);
+    registerContentSettingsRoutes(app, db as Pool, options.rooms);
     if (options.rooms) {
       registerSessionRoutes(
         app,

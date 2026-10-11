@@ -2,12 +2,17 @@ import type { Pool } from 'pg';
 import type { registerAuthRoutes } from './auth.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
-import { Persistence } from '../persistence/index.js';
+import { LeaseConflictError, Persistence } from '../persistence/index.js';
+import type { RoomRegistry } from '../room/registry.js';
 
 type App = Parameters<typeof registerAuthRoutes>[0];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function registerContentSettingsRoutes(app: App, db: Pool) {
+export function registerContentSettingsRoutes(
+  app: App,
+  db: Pool,
+  rooms?: Pick<RoomRegistry, 'peek'>,
+) {
   const persistence = new Persistence(db);
   app.patch('/api/me/content-settings', async (request, reply) => {
     if (!validOrigin(request))
@@ -70,7 +75,19 @@ export function registerContentSettingsRoutes(app: App, db: Pool) {
           code: 'FORBIDDEN',
           message: 'Only the host can change the table content tier.',
         });
-      await persistence.setHostTierCap(id, tier);
+      try {
+        const room = rooms?.peek(id);
+        if (room) await room.setHostTierCap(tier);
+        else await persistence.setHostTierCap(id, tier);
+      } catch (error) {
+        if (error instanceof LeaseConflictError)
+          return reply.code(409).send({
+            code: 'SESSION_BUSY',
+            message: 'The table is busy. Try the tier change again.',
+            retryable: true,
+          });
+        throw error;
+      }
       return { tier };
     },
   );

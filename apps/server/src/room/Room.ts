@@ -5,11 +5,13 @@ import {
   type ServerMessage,
 } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
-import type {
-  EventInput,
-  LatestState,
-  StoredEvent,
+import {
+  LeaseConflictError,
+  type EventInput,
+  type LatestState,
+  type StoredEvent,
 } from '../persistence/index.js';
+import type { HostCap } from '../safety/tier.js';
 import type { Lease } from './lease.js';
 import { recoverRoom } from './recovery.js';
 import { reduceRoom } from './reducer.js';
@@ -50,6 +52,12 @@ export interface RoomStore {
     lease: Lease,
     registryEvents?: readonly RegistryEvent[],
   ): Promise<{ events: StoredEvent[] }>;
+  writeHostTierCap(
+    sessionId: string,
+    cap: HostCap | null,
+    lease: Lease,
+    seq: number,
+  ): Promise<StoredEvent[]>;
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
 }
@@ -530,6 +538,26 @@ export class Room {
     );
     this.seq = stored.events.at(-1)?.seq ?? this.seq;
     this.state = parsed;
+  }
+
+  /** Host cap change, serialized with this Room's own writes so its seq stays contiguous. */
+  setHostTierCap(cap: HostCap | null): Promise<void> {
+    if (!this.accepting) throw new LeaseConflictError('Room is draining');
+    return this.enqueue(async () => {
+      const [event] = await this.store.writeHostTierCap(
+        this.sessionId,
+        cap,
+        this.lease,
+        this.seq + 1,
+      );
+      if (!event) return;
+      this.seq = event.seq;
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+    });
   }
 
   submit(actionId: string): Promise<boolean> {
