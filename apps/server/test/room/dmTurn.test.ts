@@ -363,8 +363,14 @@ describe('Room solo DM turn lifecycle', () => {
     const { room } = setup(runner);
     const accountId = randomUUID();
     const messages: { type: string; payload?: Record<string, unknown> }[] = [];
+    const otherMessages: { type: string; payload?: Record<string, unknown> }[] =
+      [];
     await room.join(accountId, {
       send: (message) => messages.push(message as (typeof messages)[number]),
+    });
+    await room.join(randomUUID(), {
+      send: (message) =>
+        otherMessages.push(message as (typeof otherMessages)[number]),
     });
     const actionId = randomUUID();
     expect(await room.submitAction(accountId, actionId, 'I look.')).toBe(true);
@@ -375,6 +381,9 @@ describe('Room solo DM turn lifecycle', () => {
       actionId,
     });
     expect(JSON.stringify(failure?.payload)).not.toMatch(/allowlist|OPERATOR/);
+    expect(otherMessages.some((message) => message.type === 'Error')).toBe(
+      false,
+    );
   });
 
   it('keeps an open clarification across a restart so its owner can still answer', async () => {

@@ -74,13 +74,18 @@ export function registerSessionRoutes(
     isHost: boolean,
     code?: string,
   ): RoomInfo => ({ id, name, isHost, ...(code ? { code } : {}) }) as RoomInfo;
-  const displayName = async (accountId: string) =>
-    (
-      await db.query<{ display_name: string }>(
-        'SELECT display_name FROM accounts WHERE id=$1',
+  const seatProfile = async (accountId: string) => {
+    const row = (
+      await db.query<{ display_name: string; mature_opt_out: boolean }>(
+        'SELECT display_name, mature_opt_out FROM accounts WHERE id=$1',
         [accountId],
       )
-    ).rows[0]?.display_name ?? accountId;
+    ).rows[0];
+    return {
+      displayName: row?.display_name ?? accountId,
+      matureOptOut: row?.mature_opt_out ?? false,
+    };
+  };
 
   for (const base of ['/api/rooms', '/api/sessions']) {
     app.post(base, async (request, reply) => {
@@ -109,9 +114,10 @@ export function registerSessionRoutes(
           message: `You can have at most ${maxRooms} active tables. Close one before creating another.`,
         });
       try {
+        const profile = await seatProfile(accountId);
         await (
           await rooms.get(id)
-        ).seat(accountId, await displayName(accountId));
+        ).seat(accountId, profile.displayName, profile.matureOptOut);
       } catch (error) {
         await db.query('DELETE FROM sessions WHERE id=$1', [id]);
         throw error;
@@ -212,9 +218,10 @@ export function registerSessionRoutes(
         message: 'This invite link is no longer valid.',
       });
     try {
+      const profile = await seatProfile(accountId);
       await (
         await rooms.get(found.id)
-      ).seat(accountId, await displayName(accountId));
+      ).seat(accountId, profile.displayName, profile.matureOptOut);
     } catch (error) {
       if (error instanceof Error && error.message === 'Room is full')
         return reply

@@ -34,8 +34,8 @@ import adventure01 from '../../../../packages/engine/adventures/01/adventure.jso
 import {
   createConfiguredAdapter,
   createEndpointEgress,
-  isOperatorAccount,
 } from '../llm/config.js';
+import { liveDmAllowed } from '../llm/liveDmGate.js';
 import {
   fixtureModeFromEnvironment,
   RecordedLlmAdapter,
@@ -121,10 +121,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     onEvent: Parameters<SoloTurnRunner['run']>[1],
   ): Promise<TurnResult> {
     if (
-      this.liveDmAllowlistOnly &&
-      !this.fixtureMode &&
-      process.env.NODE_ENV !== 'test' &&
-      !(await isOperatorAccount(this.db, request.accountId))
+      !(await liveDmAllowed(
+        this.db,
+        request.accountId,
+        this.liveDmAllowlistOnly,
+        this.fixtureMode,
+      ))
     )
       throw new LiveDmRestrictedError();
     const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';

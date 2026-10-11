@@ -7,15 +7,17 @@ import {
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 
 const OPERATOR = 'Operator@Example.test';
-const accounts: Record<string, string> = {
-  'acct-operator': OPERATOR,
-  'acct-player': 'player@example.test',
+const accounts: Record<string, { email: string; status: string }> = {
+  'acct-operator': { email: OPERATOR, status: 'active' },
+  'acct-pending-operator': { email: OPERATOR, status: 'pending_email' },
+  'acct-player': { email: 'player@example.test', status: 'active' },
 };
 const db = {
   async query(sql: string, params: unknown[] = []) {
     if (!sql.includes('FROM accounts')) return { rows: [] };
-    const email = accounts[params[0] as string];
-    return { rows: email ? [{ email }] : [] };
+    const account = accounts[params[0] as string];
+    const active = account?.status === 'active';
+    return { rows: active ? [{ email: account.email }] : [] };
   },
 } as never;
 
@@ -65,6 +67,10 @@ describe('live DM allowlist gate', () => {
 
   it('lets an allowlisted operator account start a live turn, case-insensitively', async () => {
     expect(await restricted(liveRunner(), 'acct-operator')).toBe(false);
+  });
+
+  it('restricts an allowlisted address whose account is not active', async () => {
+    expect(await restricted(liveRunner(), 'acct-pending-operator')).toBe(true);
   });
 
   it('allows every account when the flag is off', async () => {

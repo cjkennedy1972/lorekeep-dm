@@ -99,6 +99,7 @@ describe('rooms + invites (postgres)', () => {
     expect(Object.keys(seats[1]).sort()).toEqual([
       'accountId',
       'displayName',
+      'matureOptOut',
       'presence',
       'seatId',
     ]);

@@ -189,6 +189,7 @@ export class Room {
     accountId: string,
     connection: Connection,
     displayName = accountId,
+    matureOptOut = false,
     lastSeq = -1,
   ): Promise<void> {
     return this.enqueue(async () => {
@@ -200,6 +201,7 @@ export class Room {
           accountId: accountId as RoomState['seats'][number]['accountId'],
           displayName,
           presence: 'offline',
+          matureOptOut,
         };
         await this.persist('SeatJoined', seat);
         this.broadcast({
@@ -231,7 +233,11 @@ export class Room {
   }
 
   /** Seat an account without a socket; idempotent, atomic against the 6-seat cap via the actor mailbox. */
-  seat(accountId: string, displayName: string): Promise<void> {
+  seat(
+    accountId: string,
+    displayName: string,
+    matureOptOut = false,
+  ): Promise<void> {
     return this.enqueue(async () => {
       if (this.state.seats.some((item) => item.accountId === accountId)) return;
       if (this.state.seats.length >= 6) throw new Error('Room is full');
@@ -240,6 +246,7 @@ export class Room {
         accountId,
         displayName,
         presence: 'offline',
+        matureOptOut,
       });
       this.broadcast({
         seq: this.seq,
@@ -675,7 +682,7 @@ export class Room {
         // resubmitted. The message is deliberately generic: no error text, prompt or secret.
         this.pendingActions.delete(action.actionId);
         const restricted = error instanceof LiveDmRestrictedError;
-        this.broadcast({
+        const failure = {
           seq: this.seq,
           type: 'Error',
           payload: restricted
@@ -691,7 +698,9 @@ export class Room {
                   'The DM could not complete that turn. You can try again.',
                 actionId: action.actionId,
               },
-        } as ServerMessage);
+        } as ServerMessage;
+        if (restricted) this.connections.get(action.accountId)?.send(failure);
+        else this.broadcast(failure);
       }
     }
     for (const action of this.queuedActions.splice(0)) {

@@ -7,6 +7,7 @@ export const SeatSchema = z.object({
   accountId: AccountIdSchema,
   displayName: z.string().min(1),
   presence: PresenceSchema,
+  matureOptOut: z.boolean().default(false),
 });
 export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,

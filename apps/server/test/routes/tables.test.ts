@@ -24,11 +24,16 @@ describe('solo table lifecycle routes', () => {
       } as never,
       { cookieSecret: 'test-secret' },
     );
-    registerTableRoutes(app as never, db, {
-      get: async () => {
-        throw new Error('not reached');
-      },
-    } as never);
+    registerTableRoutes(
+      app as never,
+      db,
+      {
+        get: async () => {
+          throw new Error('not reached');
+        },
+      } as never,
+      true,
+    );
     const response = await app.inject({ method: 'GET', url: '/api/tables' });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' });

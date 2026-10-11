@@ -131,3 +131,13 @@ jobs:
           node-version-file: .nvmrc
       - run: node --test scripts/check-assets.test.mjs
       - run: node scripts/check-assets.mjs
+
+  moderation-rubric:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: node --test scripts/moderation-rubric.test.mjs
