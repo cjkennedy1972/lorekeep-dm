@@ -6,6 +6,8 @@ export const fail = (
   error: DMToolErrorCode,
   hint: string,
 ): ToolResult<never> => ({ ok: false, error, hint });
+export const turnHint = (activeId: string) =>
+  `It is ${activeId}'s turn. Narrate ${activeId}'s action, or wait for the turn order.`;
 export const ok = <T>(
   value: T,
   events: string[],

@@ -248,7 +248,7 @@ describe('M2-11 combat/movement tools', () => {
     expect(
       err(
         executeMoveTo(
-          { ...base, entities, combat: { activeEntityId: 'ent_guard' } },
+          { ...base, entities, turnActorId: 'ent_guard' },
           { entityId: 'ent_hero', targetRef: 'mk_goal', mode: 'within' },
         ),
       ),

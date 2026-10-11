@@ -10,7 +10,7 @@ import {
 } from '../combat/spells.js';
 import type { Catalog } from '../catalog/types.js';
 import type { RngState } from '../rng.js';
-import { fail, ok, type ToolResult } from './result.js';
+import { fail, ok, turnHint, type ToolResult } from './result.js';
 
 type AreaOption = { optionId: string; pos: GridPos; expiresTurn: string };
 export type SpellToolState = {
@@ -66,7 +66,7 @@ export function executeSpell(
   if (!caster)
     return fail('unknown-entity', 'Choose a caster present in the session.');
   if (state.turnActorId && state.turnActorId !== casterId)
-    return fail('not-actors-turn', `It is ${state.turnActorId}'s turn.`);
+    return fail('not-actors-turn', turnHint(state.turnActorId));
   if (
     !caster.spellsKnown.includes(spellId) &&
     !caster.spellsPrepared.includes(spellId)
