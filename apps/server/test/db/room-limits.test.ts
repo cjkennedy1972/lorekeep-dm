@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -12,6 +13,7 @@ const store = new Persistence(db);
 const leases = new SessionLease(db);
 const rooms = new RoomRegistry(store, leases, 'room-limits');
 const app = createApp(db, {
+  inputGate: allowInputGate,
   rooms,
   roomLimits: { maxRooms: 3, createPerHour: 5 },
 });

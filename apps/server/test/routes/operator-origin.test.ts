@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import { createApp, createLogger } from '../../src/app.js';
@@ -48,6 +49,7 @@ describe('operator non-GET routes reject foreign Origin', () => {
     '%s %s through createApp rejects a foreign Origin',
     async (method, url) => {
       const app = createApp(appDb as never, {
+        inputGate: allowInputGate,
         rooms: { get: async () => undefined } as never,
         isOperator: async () => false,
       });
@@ -115,6 +117,7 @@ describe('operator Origin check behind a TLS proxy', () => {
 
   it('accepts the https same-origin request when TRUST_PROXY is set', async () => {
     const app = createApp(appDb as never, {
+      inputGate: allowInputGate,
       rooms: { get: async () => undefined } as never,
       isOperator: async () => false,
       trustProxy: true,
@@ -132,6 +135,7 @@ describe('operator Origin check behind a TLS proxy', () => {
 
   it('rejects the same request when TRUST_PROXY is not set', async () => {
     const app = createApp(appDb as never, {
+      inputGate: allowInputGate,
       rooms: { get: async () => undefined } as never,
       isOperator: async () => false,
     });

@@ -1,10 +1,13 @@
+import { allowInputGate } from './support/allowInputGate.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, createLogger } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 
 describe('server app', () => {
   it('answers liveness and readiness', async () => {
-    const app = createApp({ query: async () => ({ rows: [] }) } as never);
+    const app = createApp({ query: async () => ({ rows: [] }) } as never, {
+      inputGate: allowInputGate,
+    });
     expect((await app.inject('/healthz')).statusCode).toBe(200);
     expect((await app.inject('/readyz')).statusCode).toBe(200);
     await app.close();
@@ -21,7 +24,11 @@ describe('server app', () => {
         throw new Error('database accessed');
       },
     } as never;
-    const app = createApp(db, { cookieSecret: 'test-secret', rateLimit: 100 });
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+      rateLimit: 100,
+    });
     const payload = {
       email: 'minor@example.test',
       password: 'a-unique-password-123',
@@ -137,7 +144,12 @@ describe('reverse proxy trust', () => {
     termsVersion: 'v1',
   };
   const build = (trustProxy: boolean) =>
-    createApp(noDb, { cookieSecret: 'test-secret', rateLimit: 1, trustProxy });
+    createApp(noDb, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+      rateLimit: 1,
+      trustProxy,
+    });
   const signupFrom = (
     app: ReturnType<typeof build>,
     client: string,
@@ -207,20 +219,23 @@ describe('cookie secret and secure defaults', () => {
     for (const env of [undefined, 'production', 'prodution', '']) {
       if (env === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = env;
-      expect(() => createApp(db)).toThrow('AGE_RETRY_SECRET is required');
+      expect(() => createApp(db, { inputGate: allowInputGate })).toThrow(
+        'AGE_RETRY_SECRET is required',
+      );
     }
   });
   it('boots with the development fallback only when NODE_ENV is development or test', async () => {
     delete process.env.AGE_RETRY_SECRET;
     for (const env of ['development', 'test']) {
       process.env.NODE_ENV = env;
-      const app = createApp(db);
+      const app = createApp(db, { inputGate: allowInputGate });
       await app.close();
     }
   });
   it('marks the age-gate retry cookie Secure in production behind a trusted proxy', async () => {
     process.env.NODE_ENV = 'production';
     const app = createApp(db, {
+      inputGate: allowInputGate,
       cookieSecret: 'test-secret',
       trustProxy: true,
     });

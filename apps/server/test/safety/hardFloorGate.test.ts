@@ -1,64 +1,42 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import {
-  HARD_FLOOR_LOG_RETENTION_MS,
-  hardFloorBlocked,
-} from '../../src/safety/hardFloorGate.js';
+import type {
+  InputCheck,
+  InputDecision,
+  InputGate,
+} from '../../src/safety/inputGate.js';
 
-const recordingLog = () => {
-  const warnings: { obj: Record<string, unknown>; msg: string }[] = [];
-  return {
-    warnings,
-    log: {
-      warn: (obj: object, msg: string) =>
-        warnings.push({ obj: obj as Record<string, unknown>, msg }),
+const token = 'a'.repeat(43);
+const fakeDb = (queries: string[], rowCount = 0) =>
+  ({
+    connect: async () => undefined,
+    query: async (sql: string) => {
+      queries.push(sql);
+      if (/UPDATE auth_sessions/.test(sql))
+        return { rows: [{ account_id: 'acc', token_hash: 'h' }], rowCount: 1 };
+      return { rows: [], rowCount };
+    },
+  }) as never;
+
+const countingGate = (decision: InputDecision = 'allow') => {
+  const calls: InputCheck[] = [];
+  const gate: InputGate = {
+    check: async (input) => {
+      calls.push(input);
+      return decision;
     },
   };
+  return { gate, calls };
 };
 
-describe('hardFloorBlocked', () => {
-  it('returns false and logs nothing for allowed text', () => {
-    const { log, warnings } = recordingLog();
-    expect(
-      hardFloorBlocked('The innkeeper pours ale.', 'player-action', log),
-    ).toBe(false);
-    expect(warnings).toHaveLength(0);
-  });
-
-  it('logs structured metadata with a 30-day expiry and never the submitted text', () => {
-    const { log, warnings } = recordingLog();
-    const text = 'the 14yo girl had sex with the guard';
-    const before = Date.now();
-    expect(hardFloorBlocked(text, 'character', log)).toBe(true);
-    expect(warnings).toHaveLength(1);
-    const { obj } = warnings[0]!;
-    expect(obj).toMatchObject({
-      event: 'hard_floor_block',
-      surface: 'character',
-      rule: 'minor-sexual.proximity',
-    });
-    expect(JSON.stringify(obj)).not.toContain('14yo');
-    const expiresAt = Date.parse(obj.expiresAt as string);
-    expect(expiresAt - before).toBeGreaterThanOrEqual(
-      HARD_FLOOR_LOG_RETENTION_MS - 1000,
-    );
-    expect(expiresAt - before).toBeLessThanOrEqual(
-      HARD_FLOOR_LOG_RETENTION_MS + 60_000,
-    );
-  });
-});
-
 describe('signup display-name hard floor', () => {
-  it('rejects a blocked display name privately before any database access', async () => {
-    let calls = 0;
+  it('rejects a blocked display name privately; only the moderation log is written', async () => {
+    const queries: string[] = [];
     const db = {
-      connect: async () => {
-        calls++;
-        throw new Error('database accessed');
-      },
-      query: async () => {
-        calls++;
-        throw new Error('database accessed');
+      connect: async () => undefined,
+      query: async (sql: string) => {
+        queries.push(sql);
+        return { rows: [], rowCount: 1 };
       },
     } as never;
     const app = createApp(db, { cookieSecret: 'test-secret', rateLimit: 100 });
@@ -79,26 +57,38 @@ describe('signup display-name hard floor', () => {
       message: 'That display name cannot be used.',
     });
     expect(res.body).not.toContain('lolicon');
-    expect(calls).toBe(0);
+    expect(queries.every((q) => /moderation_log/.test(q))).toBe(true);
+    expect(queries.some((q) => /INSERT\s+INTO\s+accounts/i.test(q))).toBe(
+      false,
+    );
+    await app.close();
+  });
+
+  it('checks the signup limiter before the input gate', async () => {
+    const { gate, calls } = countingGate();
+    const app = createApp(fakeDb([]), {
+      cookieSecret: 'test-secret',
+      rateLimit: 0,
+      inputGate: gate,
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/signup',
+      payload: {
+        email: 'adult@example.test',
+        password: 'a-unique-password-123',
+        displayName: 'Player',
+        birthdate: '1990-01-01',
+        termsVersion: 'v1',
+      },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(calls).toHaveLength(0);
     await app.close();
   });
 });
 
 describe('table and room name hard floor (B3)', () => {
-  const token = 'a'.repeat(43);
-  const fakeDb = (queries: string[]) =>
-    ({
-      connect: async () => undefined,
-      query: async (sql: string) => {
-        queries.push(sql);
-        if (/UPDATE auth_sessions/.test(sql))
-          return {
-            rows: [{ account_id: 'acc', token_hash: 'h' }],
-            rowCount: 1,
-          };
-        return { rows: [], rowCount: 0 };
-      },
-    }) as never;
   const rooms = {
     get: async () => {
       throw new Error('not reached');
@@ -122,22 +112,123 @@ describe('table and room name hard floor (B3)', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ code: 'CONTENT_REJECTED' });
     expect(res.body).not.toContain('porn');
-    expect(queries.some((q) => /INSERT/i.test(q))).toBe(false);
+    expect(
+      queries.some((q) => /INSERT/i.test(q) && !/moderation_log/.test(q)),
+    ).toBe(false);
+    await app.close();
+  });
+
+  it('maps a gate limit to 429 RATE_LIMITED on PATCH /api/me', async () => {
+    const { gate } = countingGate('limited');
+    const app = createApp(fakeDb([]), {
+      rooms: rooms as never,
+      inputGate: gate,
+    });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/me',
+      headers: { cookie: `sid=${token}` },
+      payload: { displayName: 'Player' },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toMatchObject({ code: 'RATE_LIMITED' });
+    await app.close();
+  });
+
+  it('checks the per-account limiter before the gate on PATCH /api/me', async () => {
+    const { gate, calls } = countingGate();
+    const app = createApp(fakeDb([]), { rateLimit: 0, inputGate: gate });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/me',
+      headers: { cookie: `sid=${token}` },
+      payload: { displayName: 'Player' },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(calls).toHaveLength(0);
+    await app.close();
+  });
+
+  it('checks the table limiter before the gate on /api/tables', async () => {
+    const { gate, calls } = countingGate();
+    const app = createApp(fakeDb([]), {
+      rooms: rooms as never,
+      inputGate: gate,
+    });
+    let last = 0;
+    for (let i = 0; i < 11; i++)
+      last = (
+        await app.inject({
+          method: 'POST',
+          url: '/api/tables',
+          headers: { cookie: `sid=${token}` },
+          payload: { name: 'Friendly table' },
+        })
+      ).statusCode;
+    expect(last).toBe(429);
+    expect(calls).toHaveLength(10);
+    await app.close();
+  });
+
+  it('checks the room-creation limiter before the gate on /api/rooms', async () => {
+    const { gate, calls } = countingGate();
+    const app = createApp(fakeDb([]), {
+      rooms: rooms as never,
+      inputGate: gate,
+      roomLimits: { createPerHour: 0 },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/rooms',
+      headers: { cookie: `sid=${token}` },
+      payload: { name: 'Friendly table' },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(calls).toHaveLength(0);
     await app.close();
   });
 });
 
-describe('account id in the block log line', () => {
-  it('logs the account id and still never the text', () => {
-    const { log, warnings } = recordingLog();
-    const text = 'the 14yo girl had sex with the guard';
-    expect(hardFloorBlocked(text, 'player-action', log, 'acc-123')).toBe(true);
-    expect(warnings[0]!.obj).toMatchObject({ accountId: 'acc-123' });
-    expect(JSON.stringify(warnings[0]!.obj)).not.toContain('14yo');
+describe('report reason gate', () => {
+  const reportBody = {
+    messageRef: 1,
+    category: 'other',
+    reason: 'a bad reason',
+  };
+
+  it('rejects a blocked reason privately; nothing is persisted', async () => {
+    const queries: string[] = [];
+    const { gate, calls } = countingGate('block');
+    const app = createApp(fakeDb(queries, 1), { inputGate: gate });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${'11111111-1111-4111-8111-111111111111'}/reports`,
+      headers: { cookie: `sid=${token}` },
+      payload: reportBody,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'CONTENT_REJECTED' });
+    expect(res.body).not.toContain('bad reason');
+    expect(calls[0]).toMatchObject({
+      surface: 'report-reason',
+      accountId: 'acc',
+    });
+    expect(queries.some((q) => /INSERT INTO message_reports/i.test(q))).toBe(
+      false,
+    );
+    await app.close();
   });
-  it('omits it when no account exists yet (signup)', () => {
-    const { log, warnings } = recordingLog();
-    hardFloorBlocked('child porn', 'display-name', log);
-    expect(warnings[0]!.obj).not.toHaveProperty('accountId');
+
+  it('does not gate an empty reason', async () => {
+    const { gate, calls } = countingGate('block');
+    const app = createApp(fakeDb([], 1), { inputGate: gate });
+    await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${'11111111-1111-4111-8111-111111111111'}/reports`,
+      headers: { cookie: `sid=${token}` },
+      payload: { ...reportBody, reason: '' },
+    });
+    expect(calls).toHaveLength(0);
+    await app.close();
   });
 });

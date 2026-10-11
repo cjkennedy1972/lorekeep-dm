@@ -46,8 +46,6 @@ const bodySchema = z.object({
     .default(''),
 });
 
-// TODO: run `reason` through the hard-floor check once safety/hardFloor.ts (PR #153) is on main.
-
 /**
  * Keeps message text only. Player names become seat labels assigned in order of first
  * appearance; the reporter is 'Reporter'. Account ids never leave this function except as
@@ -173,6 +171,25 @@ export function registerReportRoutes(
           code: 'RATE_LIMITED',
           message: 'Too many reports. Try again later.',
         });
+      if (parsed.data.reason) {
+        const decision = await app.inputGate.check({
+          text: parsed.data.reason,
+          surface: 'report-reason',
+          accountId: auth.account_id,
+          ip: request.ip,
+        });
+        if (decision === 'limited')
+          return reply.code(429).send({
+            code: 'RATE_LIMITED',
+            message: 'Too many requests. Try again later.',
+          });
+        if (decision === 'block')
+          return reply.code(400).send({
+            code: 'CONTENT_REJECTED',
+            message:
+              'That report reason cannot be sent. You can report without a reason.',
+          });
+      }
       const { messageRef, category, reason } = parsed.data;
       const rejected = await withSessionShareLock(db, id, async (client) => {
         const reported = (

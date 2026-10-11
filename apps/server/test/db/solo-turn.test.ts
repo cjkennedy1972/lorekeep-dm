@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
@@ -162,7 +163,7 @@ beforeAll(async () => {
     runner,
   );
   const connections = new ConnectionRegistry(db);
-  app = createApp(db, { rooms, connections });
+  app = createApp(db, { inputGate: allowInputGate, rooms, connections });
   installGateway(app, db, rooms, connections, 300);
   base = await app.listen({ host: '127.0.0.1', port: 0 });
   process.env.NODE_ENV = 'test';
@@ -280,7 +281,11 @@ describe('solo turn persisted lifecycle', () => {
     rooms = tableRoomRegistry;
     const table = await createTable(owner.id);
     const connections = new ConnectionRegistry(db);
-    const recordedApp = createApp(db, { rooms, connections });
+    const recordedApp = createApp(db, {
+      inputGate: allowInputGate,
+      rooms,
+      connections,
+    });
     installGateway(recordedApp, db, rooms, connections, 300);
     const recordedBase = await recordedApp.listen({
       host: '127.0.0.1',
@@ -607,7 +612,7 @@ describe('solo turn persisted lifecycle', () => {
       runner,
     );
     const connections = new ConnectionRegistry(db);
-    app = createApp(db, { rooms, connections });
+    app = createApp(db, { inputGate: allowInputGate, rooms, connections });
     installGateway(app, db, rooms, connections, 300);
     base = await app.listen({ host: '127.0.0.1', port: 0 });
 

@@ -10,7 +10,6 @@ import {
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
-import { hardFloorBlocked } from '../safety/hardFloorGate.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
   consumeTicket,
@@ -343,41 +342,51 @@ export function installGateway(
               });
               return;
             }
-            if (
-              hardFloorBlocked(
-                answer.data.payload.answer,
-                'clarification',
-                app.log,
-                identity.accountId,
-              )
-            ) {
-              send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'CONTENT_REJECTED',
-                  message: 'That reply cannot be sent.',
-                  actionId: answer.data.payload.actionId,
-                },
-              });
-              return;
-            }
-            return room
-              .answerClarification(
-                identity.accountId,
-                answer.data.payload.actionId,
-                answer.data.payload.answer,
-              )
-              .then((answered) => {
-                if (!answered)
-                  send({
+            return app.inputGate
+              .check({
+                text: answer.data.payload.answer,
+                surface: 'clarification',
+                accountId: identity.accountId,
+                sessionId: identity.sessionId,
+              })
+              .then((decision) => {
+                if (decision === 'limited')
+                  return send({
                     seq: room.seq,
                     type: 'Error',
                     payload: {
-                      code: 'clarification-closed',
-                      message: 'This question is no longer open.',
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
                       actionId: answer.data.payload.actionId,
                     },
+                  });
+                if (decision === 'block')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'CONTENT_REJECTED',
+                      message: 'That reply cannot be sent.',
+                      actionId: answer.data.payload.actionId,
+                    },
+                  });
+                return room
+                  .answerClarification(
+                    identity.accountId,
+                    answer.data.payload.actionId,
+                    answer.data.payload.answer,
+                  )
+                  .then((answered) => {
+                    if (!answered)
+                      send({
+                        seq: room.seq,
+                        type: 'Error',
+                        payload: {
+                          code: 'clarification-closed',
+                          message: 'This question is no longer open.',
+                          actionId: answer.data.payload.actionId,
+                        },
+                      });
                   });
               });
           }
@@ -395,39 +404,49 @@ export function installGateway(
               });
               return;
             }
-            if (
-              hardFloorBlocked(
-                action.data.payload.text,
-                'player-action',
-                app.log,
-                identity.accountId,
-              )
-            ) {
-              send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'CONTENT_REJECTED',
-                  message: 'That action cannot be sent.',
-                  actionId: msg.actionId,
-                },
-              });
-              return;
-            }
-            return db
-              .query<{ display_name: string }>(
+            return Promise.all([
+              app.inputGate.check({
+                text: action.data.payload.text,
+                surface: 'player-action',
+                accountId: identity.accountId,
+                sessionId: identity.sessionId,
+              }),
+              db.query<{ display_name: string }>(
                 'SELECT display_name FROM accounts WHERE id=$1',
                 [identity.accountId],
-              )
-              .then((name) =>
-                room.submitAction(
+              ),
+            ])
+              .then(async ([allowed, name]) => {
+                if (allowed === 'limited') return 'limited' as const;
+                if (allowed === 'block') return 'rejected' as const;
+                return room.submitAction(
                   identity.accountId,
                   action.data.actionId,
                   action.data.payload.text,
                   name.rows[0]?.display_name ?? identity.accountId,
-                ),
-              )
+                );
+              })
               .then((accepted) => {
+                if (accepted === 'limited')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: msg.actionId,
+                    },
+                  });
+                if (accepted === 'rejected')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'CONTENT_REJECTED',
+                      message: 'That action cannot be sent.',
+                      actionId: msg.actionId,
+                    },
+                  });
                 if (!accepted)
                   send({
                     seq: room.seq,

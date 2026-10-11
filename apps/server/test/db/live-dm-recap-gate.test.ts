@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -94,6 +95,7 @@ beforeAll(async () => {
     60_000,
   );
   app = createApp(db, {
+    inputGate: allowInputGate,
     rooms,
     connections: new ConnectionRegistry(db),
     liveDmAllowlistOnly: true,
