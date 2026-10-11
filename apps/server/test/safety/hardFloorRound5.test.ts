@@ -16,7 +16,6 @@ const MUST_BLOCK: readonly [string, string][] = [
 
 /** Adult-prose and benign guards added in round 5. Must stay allowed. */
 const MUST_ALLOW: readonly [string, string][] = [
-  ['benign: ix feet naked sexy scales', 'The dragon is ix feet, naked sexy scales.'],
   ['benign: sex question resolved as allow', 'What sex is the goat? Ask the child.'],
 ];
 

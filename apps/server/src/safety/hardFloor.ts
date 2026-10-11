@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.4';
+export const HARD_FLOOR_VERSION = '2026-10-10.5';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. */
 export const MAX_INPUT_CHARS = 20_000;
@@ -452,10 +452,6 @@ const ONE_COMPOUND = new RegExp(
 const ONE_COMPOUND_AMBIGUOUS = new Set(['eight', 'nine']);
 /** Roman numerals 2 to 17 only: "i" and "x" alone collide with the pronoun and common words. */
 const ROMAN_AGE = 'ii|iii|iv|vi|vii|viii|ix|xi|xii|xiii|xiv|xv|xvi|xvii';
-const NAME_AGE = new RegExp(
-  `(\\p{L})(?:\\s*[,(:-]\\s*|\\s+)${AGE_NUMBER}(?=\\s*[),]|\\s+(?:is|was|are|were)\\b)`,
-  'gu',
-);
 /** Euphemisms that imply a minor. "youth" and "tiny" are not here: adults use both words. */
 const MINOR_PHRASES: readonly RegExp[] = [
   /\bbarely[\s-]+(?:legal|out[\s-]+of[\s-]+school)\b/g,
@@ -498,8 +494,6 @@ const QUANTITY_UNITS = new Set([
   'weeks',
   'month',
   'months',
-  'year',
-  'years',
   'feet',
   'foot',
   'ft',
@@ -551,7 +545,7 @@ const ROMAN_AGE_PHRASE = new RegExp(
   'gu',
 );
 const ROMAN_LINKED = new RegExp(
-  `(?<=\\b(?:${[...AGE_LINKS].join('|')})\\s+)(${ROMAN_AGE})${WORD_END}(?!\\s+(?:feet|foot|ft|inches|miles?|yards?|gold|gp|sp|cp|hp|damage)\\b)`,
+  `(?<=\\b(?:${[...AGE_LINKS].join('|')})\\s+)(${ROMAN_AGE})${WORD_END}`,
   'gu',
 );
 const termIndex = (terms: readonly string[]) => new Set(terms);
@@ -560,6 +554,17 @@ const inIndex = (index: Set<string>, w: string) => index.has(w);
 const MAX_TERM_CHARS = 24;
 
 const PROXIMITY = HARD_FLOOR_RULES['minor-sexual.proximity'];
+const UNIT_AFTER = `(?!\\s*(?:${[...QUANTITY_UNITS].join('|')})${WORD_END})`;
+const SEXUAL_AFTER = `(?=[\\s,]+(?:and\\s+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
+/**
+ * "Mira 12, ..." / "Mira; 12 ..." after a letter. Punctuation separators need no tail;
+ * a bare space needs a sexual or undress word right after the number (plus optional "and"),
+ * so "rolled a 15 to seduce" and "Two girls and 9 goblins" stay allowed.
+ */
+const NAME_AGE = new RegExp(
+  `(\\p{L})(?:\\s*[,(:;=/|\\-\\u2014\\u2013.]{1,3}\\s*${AGE_NUMBER}${WORD_END}${UNIT_AFTER}|\\s+${AGE_NUMBER}${WORD_END}${SEXUAL_AFTER})`,
+  'gu',
+);
 const EXPLICIT = termIndex(HARD_FLOOR_RULES['csam.explicit-term'].terms);
 const MINOR = termIndex(PROXIMITY.minorTerms);
 const YOUTH_WORD = termIndex(PROXIMITY.youthWords);
@@ -619,7 +624,8 @@ function normalizeText(input: string): string {
     .normalize('NFKD')
     .replace(/\p{M}+/gu, '')
     .replace(/\p{Cf}+/gu, '')
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/(?<=\p{L})['’]s(?!\p{L})/gu, '');
   let s = '';
   for (const c of folded) s += CONFUSABLE.get(c) ?? UNICODE_DIGIT.get(c) ?? c;
   s = s.replace(/@/g, 'a').replace(/\$/g, 's').replace(/\*/g, 'e');
@@ -632,8 +638,8 @@ function normalizeText(input: string): string {
   s = s.replace(NO_OLDER_THAN, (match, a?: string) =>
     ageMatch(match, a, undefined),
   );
-  s = s.replace(NAME_AGE, (match, _l: string, a: string) =>
-    ageMatch(match, a, undefined),
+  s = s.replace(NAME_AGE, (match, _l: string, a?: string, b?: string) =>
+    ageMatch(match, a, b),
   );
   s = s.replace(ROMAN_AGE_PHRASE, ' minorage ');
   s = s.replace(ROMAN_LINKED, ' minorage ');
