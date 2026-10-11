@@ -1,3 +1,4 @@
+import { allowInputGate } from './support/allowInputGate.js';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { parseTrustProxy } from '../src/config.js';
@@ -8,7 +9,11 @@ const clientIp = async (
   remoteAddress: string,
   forwardedFor: string,
 ) => {
-  const app = createApp(noDb, { trustProxy });
+  const app = createApp(
+    noDb,
+    { inputGate: allowInputGate, trustProxy },
+    { inputGate: allowInputGate },
+  );
   app.get('/whoami', (request) => ({ ip: request.ip }));
   const response = await app.inject({
     method: 'GET',

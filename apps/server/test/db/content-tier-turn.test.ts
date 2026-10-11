@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -297,7 +298,11 @@ const promptTierOf = (calls: LlmRequest[]) =>
   JSON.stringify(calls[0]).match(/contentTier\\":\\"(\w+)\\"/)?.[1];
 
 async function hostCap(sessionId: string, accountId: string, tier: unknown) {
-  const app = createApp(db, { cookieSecret: 'test-secret' });
+  const app = createApp(
+    db,
+    { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+    { inputGate: allowInputGate },
+  );
   try {
     const token = await createSession(db, accountId, 'Host device');
     return await app.inject({

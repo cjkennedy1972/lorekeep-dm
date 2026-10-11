@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 // Not a test: Playwright's webServer runs this file through vitest to host the real
 // server (real Room, Postgres, recorded/scripted DM, no network) for the browser e2e.
 // It seeds one adult account and a pre-combat table, writes {token, table} to
@@ -43,7 +44,11 @@ it('serves the recorded combat stack for browser e2e', async () => {
     runner,
   );
   const connections = new ConnectionRegistry(db);
-  const app = createApp(db, { rooms, connections });
+  const app = createApp(
+    db,
+    { inputGate: allowInputGate, rooms, connections },
+    { inputGate: allowInputGate },
+  );
   installGateway(app, db, rooms, connections, 300);
 
   const accountId = randomUUID();

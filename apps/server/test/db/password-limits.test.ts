@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -24,7 +25,11 @@ describe('password-check abuse limits', () => {
   it('throttles wrong current-password guesses on password change across IPs', async () => {
     const id = await account();
     const token = await createSession(db, id, 'Test device');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const change = (ip: string, currentPassword: string) =>
       app.inject({
         method: 'POST',
@@ -53,7 +58,11 @@ describe('password-check abuse limits', () => {
   it('throttles wrong passwords on account deletion and keeps the account active', async () => {
     const id = await account();
     const token = await createSession(db, id, 'Test device');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const remove = (ip: string, password: string) =>
       app.inject({
         method: 'DELETE',

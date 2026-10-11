@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
@@ -61,7 +62,11 @@ class Stack {
       runner,
     );
     const connections = new ConnectionRegistry(db);
-    const app = createApp(db, { rooms, connections });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, rooms, connections },
+      { inputGate: allowInputGate },
+    );
     installGateway(app, db, rooms, connections, 300);
     const base = await app.listen({ host: '127.0.0.1', port: 0 });
     return new Stack(rooms, app, base, requests);
