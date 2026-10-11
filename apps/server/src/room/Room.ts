@@ -180,7 +180,7 @@ export class Room {
   }
 
   /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */
-  private clientState(): RoomState {
+  clientState(): RoomState {
     if (!this.state.gameState) return this.state;
     const gameState = { ...(this.state.gameState as Record<string, unknown>) };
     delete gameState.lastNarration;
