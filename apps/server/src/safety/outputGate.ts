@@ -1,6 +1,7 @@
 import type { ContentTier } from './tier.js';
 import {
   failClosedVerdict,
+  MAX_RULE_SPAN_CHARS,
   type Category,
   type Moderator,
   type Verdict,
@@ -18,11 +19,13 @@ export const DEFAULT_SOURCE_IDLE_MS = 15_000;
 export const DEFAULT_VERDICT_TIMEOUT_MS = 10_000;
 // ponytail: carry must be >= the longest deterministic rule span; raise if a rule can exceed 400 chars.
 const CONTEXT_CHARS = 400;
+const HOLD_BACK_CHARS = MAX_RULE_SPAN_CHARS;
 const FIRST_CHUNK_TOKENS = 12;
 const SENTENCE_END = /[.!?…]+["'”’)\]]*(?=\s)|[。！？]+["'”’」』)\]]*/g;
 const TRAILING_BOUNDARY = /[.!?…。！？"'”’」』)\]]/;
 const SPACE = /\s/;
 const STOPPED = Symbol('stopped');
+const IDLE = Symbol('idle');
 
 export interface ChunkMetric {
   attempt: number;
@@ -76,9 +79,26 @@ export interface OutputGateOptions {
 type Chunk = { text: string; verdict: Promise<Verdict>; cutAtMs: number };
 type Item = Chunk | 'end' | { error: unknown };
 
-export async function* runOutputGate(
+export function runOutputGate(
   opts: OutputGateOptions,
 ): AsyncGenerator<GateEvent> {
+  const maxChunk = opts.maxChunkChars ?? DEFAULT_MAX_CHUNK_CHARS;
+  if (maxChunk < HOLD_BACK_CHARS)
+    throw new Error(
+      `maxChunkChars ${maxChunk} is below the ${HOLD_BACK_CHARS}-char hold-back`,
+    );
+  if (maxChunk > CONTEXT_CHARS)
+    throw new Error(
+      `maxChunkChars ${maxChunk} exceeds the ${CONTEXT_CHARS}-char deterministic carry`,
+    );
+  if (CONTEXT_CHARS < HOLD_BACK_CHARS)
+    throw new Error(
+      `deterministic carry ${CONTEXT_CHARS} is below the ${HOLD_BACK_CHARS}-char hold-back`,
+    );
+  return gate(opts);
+}
+
+async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
   const now = opts.now ?? (() => performance.now());
   const start = now();
   const maxInFlight = opts.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
@@ -156,17 +176,23 @@ export async function* runOutputGate(
 
     const nextDelta = async () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const idle = new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('output source idle timeout')),
-          sourceIdleMs,
-        );
+      const idle = new Promise<typeof IDLE>((resolve) => {
+        timer = setTimeout(() => resolve(IDLE), sourceIdleMs);
       });
       try {
         return await Promise.race([it.next(), idle, stoppedSignal]);
       } finally {
         clearTimeout(timer);
       }
+    };
+
+    const pushFailClosed = () => {
+      const at = now() - start;
+      push({
+        text: '',
+        verdict: Promise.resolve(failClosedVerdict(at)),
+        cutAtMs: at,
+      });
     };
 
     const classify = (text: string): Chunk => {
@@ -227,16 +253,16 @@ export async function* runOutputGate(
         for (;;) {
           const next = await nextDelta();
           if (next === STOPPED) return;
+          if (next === IDLE) {
+            pushFailClosed();
+            return;
+          }
           if (next.done) break;
           read += next.value.length;
           turnRead += next.value.length;
           if (read > maxStream || turnRead > maxTurn) {
             if (turnRead > maxTurn) turnSpent = true;
-            push({
-              text: '',
-              verdict: Promise.resolve(failClosedVerdict(now() - start)),
-              cutAtMs: now() - start,
-            });
+            pushFailClosed();
             return;
           }
           buffer += next.value;
@@ -271,12 +297,24 @@ export async function* runOutputGate(
       }
     })();
 
+    let held = '';
     try {
       for (;;) {
         while (queue.length === 0)
           await new Promise<void>((resolve) => (wakeConsumer = resolve));
         const item = queue.shift()!;
-        if (item === 'end') return 'done';
+        if (item === 'end') {
+          if (held) {
+            approved.push(held);
+            yield {
+              kind: 'chunk',
+              text: held,
+              attempt,
+              index: approved.length - 1,
+            };
+          }
+          return 'done';
+        }
         if ('error' in item) throw item.error;
         const verdict = await item.verdict;
         const decidedAtMs = now() - start;
@@ -292,13 +330,19 @@ export async function* runOutputGate(
         if (verdict.verdict !== 'allow') return 'blocked';
         if (metrics.firstApprovedMs === null)
           metrics.firstApprovedMs = decidedAtMs;
-        approved.push(item.text);
-        yield {
-          kind: 'chunk',
-          text: item.text,
-          attempt,
-          index: approved.length - 1,
-        };
+        const pending = held + item.text;
+        const cut = Math.max(0, pending.length - HOLD_BACK_CHARS);
+        const emit = pending.slice(0, cut);
+        held = pending.slice(cut);
+        if (emit) {
+          approved.push(emit);
+          yield {
+            kind: 'chunk',
+            text: emit,
+            attempt,
+            index: approved.length - 1,
+          };
+        }
         releaseSlot();
       }
     } finally {

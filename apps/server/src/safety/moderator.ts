@@ -23,7 +23,10 @@ interface VerdictBase {
 
 /** `unavailable` is true when the judge could not produce a usable verdict (fail-closed). */
 export type Verdict = VerdictBase &
-  ({ unavailable: false } | { unavailable: true; failClosedRow: FailClosedRow });
+  (
+    | { unavailable: false }
+    | { unavailable: true; failClosedRow: FailClosedRow }
+  );
 
 export function failClosedVerdict(latencyMs: number): Verdict {
   return {
@@ -54,10 +57,18 @@ export interface DeterministicCheckResult {
   category?: Category;
 }
 
+/**
+ * Longest span, in characters, that any deterministic rule can match. The output
+ * gate holds back this many trailing characters of each approved chunk, so a term
+ * that straddles a cut is judged before any of it is shown.
+ */
+export const MAX_RULE_SPAN_CHARS = 64;
+
 /** Rules run before any judge call; a block here is final. */
 export interface DeterministicLayer {
   hardFloorCheck(text: string): DeterministicCheckResult;
   denylistCheck(text: string): DeterministicCheckResult;
+  maxSpanChars: number;
 }
 
 export interface ChatMessage {
@@ -160,9 +171,15 @@ export class JudgeModerator implements Moderator {
   constructor(private readonly options: JudgeModeratorOptions) {
     if (
       typeof options.deterministic?.hardFloorCheck !== 'function' ||
-      typeof options.deterministic?.denylistCheck !== 'function'
+      typeof options.deterministic?.denylistCheck !== 'function' ||
+      typeof options.deterministic?.maxSpanChars !== 'number'
     ) {
       throw new Error('JudgeModerator requires a deterministic layer');
+    }
+    if (options.deterministic.maxSpanChars > MAX_RULE_SPAN_CHARS) {
+      throw new Error(
+        `deterministic rule span ${options.deterministic.maxSpanChars} chars exceeds the ${MAX_RULE_SPAN_CHARS}-char hold-back`,
+      );
     }
     this.timeoutMs = options.timeoutMs ?? DEFAULT_JUDGE_TIMEOUT_MS;
     this.now = options.now ?? (() => performance.now());
