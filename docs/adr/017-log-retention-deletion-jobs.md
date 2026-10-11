@@ -38,3 +38,5 @@ Status: Proposed (human decision 2026-10-06: 30-day log retention) · Date: 2026
 - There is no admin path to clear a legal hold. Clearing is a manual database action until a follow-up card adds one.
 
 **Needs human?** Legal-hold policy and an admin hold-clear path (deferred, architecture §17; follow-up card).
+
+**Addendum (M3-36, 2026-10-11): operator endpoint audit.** `operator_endpoint_audit` rows are operational logs in the 30-day class: `expires_at` defaults to write time plus 30 days and the logs job purges by it. Denied and rejected operator attempts are written with `action='denied'` and a `reason` code (`NOT_OPERATOR`, `UNAUTHENTICATED`, `INVALID_ENDPOINT_URL`, `KEY_REQUIRED`, `INVALID_INPUT`, `CREDENTIAL_UNAVAILABLE`). Each row carries `details` with no secrets: successful saves record host (no path or credentials), a key-changed flag and the key fingerprint; denials record method and route template. Request IP and user agent are not stored. Denied rows are capped at 100 per caller (or the anonymous bucket) per UTC day per process.

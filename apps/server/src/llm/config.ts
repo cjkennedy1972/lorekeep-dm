@@ -276,8 +276,17 @@ export async function saveEndpoint(
       ],
     );
     await client.query(
-      'INSERT INTO operator_endpoint_audit(slot,action,actor_id) VALUES($1,$2,$3)',
-      [slot, prior.rowCount ? 'updated' : 'created', actorId],
+      'INSERT INTO operator_endpoint_audit(slot,action,actor_id,details) VALUES($1,$2,$3,$4::jsonb)',
+      [
+        slot,
+        prior.rowCount ? 'updated' : 'created',
+        actorId,
+        JSON.stringify({
+          host: new URL(config.baseUrl).host,
+          keyChanged: config.apiKey !== undefined,
+          fingerprint,
+        }),
+      ],
     );
     await client.query('COMMIT');
     return {
@@ -292,6 +301,26 @@ export async function saveEndpoint(
     client.release();
   }
 }
+export async function recordDeniedAttempt(
+  db: Pick<Pool, 'query'>,
+  attempt: {
+    actorId: string | null;
+    slot: EndpointSlot | null;
+    reason: string;
+    details: { method: string; route: string };
+  },
+): Promise<void> {
+  await db.query(
+    "INSERT INTO operator_endpoint_audit(slot,action,actor_id,reason,details) VALUES($1,'denied',$2,$3,$4::jsonb)",
+    [
+      attempt.slot,
+      attempt.actorId,
+      attempt.reason,
+      JSON.stringify(attempt.details),
+    ],
+  );
+}
+
 export async function createConfiguredAdapter(
   db: Pick<Pool, 'query'>,
   slot: EndpointSlot,
