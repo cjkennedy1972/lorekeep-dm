@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import type { Pool } from 'pg';
 import type { EgressGuard } from '../llm/egress.js';
 import { authenticateRequest } from '../middleware/auth.js';
+import { validOrigin } from '../middleware/origin.js';
 import {
   createEndpointEgress,
   deleteEndpoint,
@@ -27,6 +28,12 @@ export function registerOperatorRoutes(
   dependencies: { egress?: EgressGuard } = {},
 ) {
   const egress = dependencies.egress ?? createEndpointEgress();
+  app.addHook('onRequest', async (request, reply) => {
+    if (!validOrigin(request))
+      return reply
+        .code(403)
+        .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
+  });
   const authorize = async (
     request: Parameters<typeof authenticateRequest>[1],
     reply: { code: (status: number) => { send: (body: unknown) => unknown } },
