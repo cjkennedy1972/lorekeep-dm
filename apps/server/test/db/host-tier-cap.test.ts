@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -164,7 +165,11 @@ describe('host tier cap', () => {
     const token = await createSession(db, host, 'Host device');
     const sessionId = await table(host);
     await openedBefore(sessionId);
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
 
     const response = await patchCap(app, sessionId, token, 'family');
     expect(response.statusCode).toBe(200);
@@ -215,7 +220,11 @@ describe('host tier cap', () => {
     const room = await rooms.get(sessionId);
     const seen = recorder();
     await room.join(host, seen.connection, 'Host');
-    const app = createApp(db, { cookieSecret: 'test-secret', rooms });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret', rooms },
+      { inputGate: allowInputGate },
+    );
 
     const response = await patchCap(app, sessionId, token, 'family');
     expect(response.statusCode).toBe(200);
@@ -248,7 +257,11 @@ describe('host tier cap', () => {
     );
     const room = await rooms.get(sessionId);
     await room.join(host, recorder().connection, 'Host');
-    const app = createApp(db, { cookieSecret: 'test-secret', rooms });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret', rooms },
+      { inputGate: allowInputGate },
+    );
 
     const [response, accepted] = await Promise.all([
       patchCap(app, sessionId, token, 'family'),
@@ -274,7 +287,11 @@ describe('host tier cap', () => {
     const token = await createSession(db, host, 'Host device');
     const sessionId = await table(host);
     await openedBefore(sessionId);
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
 
     expect((await patchCap(app, sessionId, token, 'family')).statusCode).toBe(
       200,
@@ -309,7 +326,11 @@ describe('host tier cap', () => {
       ],
     );
     await openedBefore(sessionId);
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
 
     expect((await patchCap(app, sessionId, token, 'standard')).statusCode).toBe(
       200,
@@ -333,7 +354,11 @@ describe('host tier cap', () => {
       'other-node',
     );
     if (!held) throw new Error('lease unavailable');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
 
     const response = await patchCap(app, sessionId, token, 'family');
     expect(response.statusCode).toBe(409);

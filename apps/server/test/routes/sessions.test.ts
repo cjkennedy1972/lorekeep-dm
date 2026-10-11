@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { describe, expect, it } from 'vitest';
 import { createApp, scrubUrl } from '../../src/app.js';
 import {
@@ -31,7 +32,11 @@ const rooms = {
   },
 };
 const app = (account: 'none' | 'active' | 'pending') =>
-  createApp(fakeDb(account) as never, { rooms: rooms as never });
+  createApp(
+    fakeDb(account) as never,
+    { inputGate: allowInputGate, rooms: rooms as never },
+    { inputGate: allowInputGate },
+  );
 const cookie = { cookie: `sid=${token}` };
 
 describe('invite codes', () => {
@@ -97,10 +102,11 @@ describe('room routes', () => {
     expect(res.statusCode).toBe(400);
   });
   it('unknown code -> 404 INVITE_INVALID; rate limited per ip+code', async () => {
-    const a = createApp(fakeDb('active') as never, {
-      rooms: rooms as never,
-      joinRateLimit: 2,
-    });
+    const a = createApp(
+      fakeDb('active') as never,
+      { inputGate: allowInputGate, rooms: rooms as never, joinRateLimit: 2 },
+      { inputGate: allowInputGate },
+    );
     const hit = () =>
       a.inject({ method: 'POST', url: '/api/join/nope', headers: cookie });
     expect((await hit()).statusCode).toBe(404);

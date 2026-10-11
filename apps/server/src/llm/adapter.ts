@@ -16,6 +16,7 @@ export interface LlmTool {
 export interface LlmRequest {
   messages: LlmMessage[];
   maxTokens: number;
+  temperature?: number;
   toolMode?: ToolMode;
   tools?: LlmTool[];
   responseSchema?: Record<string, unknown>;

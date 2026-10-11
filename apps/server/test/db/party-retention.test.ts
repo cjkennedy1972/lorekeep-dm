@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,7 +19,11 @@ const rooms = new RoomRegistry(
   new SessionLease(db),
   'party-retention-test',
 );
-const app = createApp(db, { rooms, joinRateLimit: 100 });
+const app = createApp(
+  db,
+  { inputGate: allowInputGate, rooms, joinRateLimit: 100 },
+  { inputGate: allowInputGate },
+);
 const store = new LocalObjectStore(
   await mkdtemp(join(tmpdir(), 'party-sweep-')),
 );

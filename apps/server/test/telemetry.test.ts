@@ -1,3 +1,4 @@
+import { allowInputGate } from './support/allowInputGate.js';
 import { describe, expect, it } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace-base';
 import { createApp } from '../src/app.js';
@@ -24,7 +25,9 @@ describe('telemetry', () => {
       }),
       exporter,
     );
-    const app = createApp({ query: async () => ({ rows: [] }) } as never);
+    const app = createApp({ query: async () => ({ rows: [] }) } as never, {
+      inputGate: allowInputGate,
+    });
     await app.inject('/healthz');
     expect(withRoomCommandSpan('move', () => 42)).toBe(42);
     expect(exporter.getFinishedSpans().map((s) => s.name)).toEqual(

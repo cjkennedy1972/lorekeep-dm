@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -53,7 +54,11 @@ async function finishedWithin<T>(
 describe('account send-path timing', () => {
   it('signup answers before a slow verification send completes', async () => {
     const sender = new GatedEmailSender();
-    const app = createApp(db, { sender, cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, sender, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const email = newEmail();
     const request = app.inject({
       method: 'POST',
@@ -73,7 +78,11 @@ describe('account send-path timing', () => {
 
   it('forgot answers before a slow reset send completes, same body as unknown address', async () => {
     const sender = new GatedEmailSender();
-    const app = createApp(db, { sender, cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, sender, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const unknown = app.inject({
       method: 'POST',
       url: '/api/password/forgot',
@@ -89,7 +98,11 @@ describe('account send-path timing', () => {
 
   it('forgot for a known address answers before the reset send completes', async () => {
     const sender = new GatedEmailSender();
-    const app = createApp(db, { sender, cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, sender, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const email = newEmail();
     await db.query(
       "INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES ($1,$2,'x','Player','active',true,now(),'v1',now())",

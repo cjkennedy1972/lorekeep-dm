@@ -49,16 +49,13 @@ describe('hardFloorBlocked', () => {
 });
 
 describe('signup display-name hard floor', () => {
-  it('rejects a blocked display name privately before any database access', async () => {
-    let calls = 0;
+  it('rejects a blocked display name privately; only the moderation log is written', async () => {
+    const queries: string[] = [];
     const db = {
-      connect: async () => {
-        calls++;
-        throw new Error('database accessed');
-      },
-      query: async () => {
-        calls++;
-        throw new Error('database accessed');
+      connect: async () => undefined,
+      query: async (sql: string) => {
+        queries.push(sql);
+        return { rows: [], rowCount: 1 };
       },
     } as never;
     const app = createApp(db, { cookieSecret: 'test-secret', rateLimit: 100 });
@@ -79,7 +76,10 @@ describe('signup display-name hard floor', () => {
       message: 'That display name cannot be used.',
     });
     expect(res.body).not.toContain('lolicon');
-    expect(calls).toBe(0);
+    expect(queries.every((q) => /moderation_log/.test(q))).toBe(true);
+    expect(queries.some((q) => /INSERT\s+INTO\s+accounts/i.test(q))).toBe(
+      false,
+    );
     await app.close();
   });
 });
@@ -122,7 +122,9 @@ describe('table and room name hard floor (B3)', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ code: 'CONTENT_REJECTED' });
     expect(res.body).not.toContain('porn');
-    expect(queries.some((q) => /INSERT/i.test(q))).toBe(false);
+    expect(
+      queries.some((q) => /INSERT/i.test(q) && !/moderation_log/.test(q)),
+    ).toBe(false);
     await app.close();
   });
 });

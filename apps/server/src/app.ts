@@ -14,6 +14,11 @@ import { registerReportRoutes } from './routes/reports.js';
 import { registerContentSettingsRoutes } from './routes/contentSettings.js';
 import type { RoomRegistry } from './room/registry.js';
 import type { ConnectionRegistry } from './gateway/connections.js';
+import {
+  createEndpointJudge,
+  createInputGate,
+  type InputGate,
+} from './safety/inputGate.js';
 
 /** Invite codes travel in the URL path; never log or trace them. */
 export const scrubUrl = (url: string) =>
@@ -74,6 +79,7 @@ export function createApp(
     isOperator?: (accountId: string) => Promise<boolean>;
     trustProxy?: boolean | number | string[];
     liveDmAllowlistOnly?: boolean;
+    inputGate?: InputGate;
   } = {},
 ) {
   const { trustProxy = false, liveDmAllowlistOnly = true } = options;
@@ -87,6 +93,15 @@ export function createApp(
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
   });
+  app.decorate(
+    'inputGate',
+    options.inputGate ??
+      createInputGate({
+        db,
+        moderator: createEndpointJudge(db),
+        log: app.log,
+      }),
+  );
   const spans = new WeakMap<object, ReturnType<typeof startSpan>>();
   app.addHook('onRequest', (request, _reply, done) => {
     spans.set(

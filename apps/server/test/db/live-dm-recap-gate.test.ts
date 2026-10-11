@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -93,12 +94,17 @@ beforeAll(async () => {
     600_000,
     60_000,
   );
-  app = createApp(db, {
-    rooms,
-    connections: new ConnectionRegistry(db),
-    liveDmAllowlistOnly: true,
-    cookieSecret: 'live-dm-recap-gate-test-secret',
-  });
+  app = createApp(
+    db,
+    {
+      inputGate: allowInputGate,
+      rooms,
+      connections: new ConnectionRegistry(db),
+      liveDmAllowlistOnly: true,
+      cookieSecret: 'live-dm-recap-gate-test-secret',
+    },
+    { inputGate: allowInputGate },
+  );
   base = await app.listen({ host: '127.0.0.1', port: 0 });
 });
 

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { Pool } from 'pg';
 import { afterAll } from 'vitest';
+import { ModerationStub } from './moderation-stub.js';
 
 const baseUrl = process.env.DATABASE_URL;
 if (!baseUrl)
@@ -22,6 +23,10 @@ dbUrl.pathname = `/${schema}`;
 export const proofDb = new Pool({ connectionString: dbUrl.toString() });
 export const proofSchema = 'public';
 export const apiOrigin = 'http://127.0.0.1';
+// Input moderation judges on the operator's `moderate` slot; the e2e servers point it at this stub.
+export const judge = new ModerationStub();
+const operatorEmail = 'e2e-operator@example.test';
+const endpointMasterKey = randomBytes(32).toString('hex');
 
 // Apply every checked-in migration, in order, within this test's isolated schema.
 // (A hardcoded list silently missed new tables, e.g. those the retention sweeper reads.)
@@ -45,6 +50,7 @@ afterAll(async () => {
       await once(child, 'exit');
     }),
   );
+  await judge.stop();
   await proofDb.end();
   // pool.end() resolves once Terminate is sent, not once the backend has exited.
   // DROP ... WITH (FORCE) would kill the still-closing backend and its client
@@ -100,6 +106,9 @@ async function startServerOnce(port: number): Promise<RunningServer> {
       NODE_ENV: 'test',
       AGE_RETRY_SECRET: 'e2e-proof-only-secret',
       SWEEP_INTERVAL_MS: '0',
+      OPERATOR_EMAILS: operatorEmail,
+      OPERATOR_ENDPOINT_MASTER_KEY: endpointMasterKey,
+      LLM_ALLOW_LOCAL_HOSTS: '127.0.0.1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -123,6 +132,7 @@ async function startServerOnce(port: number): Promise<RunningServer> {
   }
   if (Date.now() >= deadline)
     throw new Error(`Server readiness timed out: ${output}`);
+  await ensureModerateEndpoint(url);
   return {
     child,
     url,
@@ -140,6 +150,47 @@ async function startServerOnce(port: number): Promise<RunningServer> {
         );
     },
   };
+}
+
+// Same route production uses: an operator PUTs the moderate slot. Once per schema; the row persists across restarts.
+let moderateEndpoint: Promise<void> | undefined;
+function ensureModerateEndpoint(url: string): Promise<void> {
+  moderateEndpoint ??= configureModerateEndpoint(url);
+  return moderateEndpoint;
+}
+async function configureModerateEndpoint(url: string): Promise<void> {
+  await judge.start();
+  const accountId = randomUUID();
+  await proofDb.query(
+    `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at)
+     VALUES($1,$2,'unused-by-e2e','E2E Operator','active',true,now(),'v1',now())`,
+    [accountId, operatorEmail],
+  );
+  const sid = randomBytes(32).toString('base64url');
+  await proofDb.query(
+    `INSERT INTO auth_sessions(token_hash,account_id,expires_at,absolute_expires_at,last_active_at,ua_label)
+     VALUES($1,$2,now() + interval '1 day',now() + interval '1 day',now(),'e2e-operator')`,
+    [createHash('sha256').update(sid).digest('hex'), accountId],
+  );
+  const put = await fetch(`${url}/api/operator/endpoints/moderate`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      origin: url,
+      cookie: `sid=${sid}`,
+    },
+    body: JSON.stringify({
+      baseUrl: judge.baseUrl,
+      model: 'e2e-moderate',
+      apiStyle: 'openai',
+      apiKey: 'e2e-moderate-key',
+      contextWindow: 32768,
+    }),
+  });
+  if (!put.ok)
+    throw new Error(
+      `moderate endpoint PUT returned ${put.status}: ${await put.text()}`,
+    );
 }
 
 export interface Account {

@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -53,7 +54,11 @@ describe('mature opt-out API', () => {
   it('lets a signed-in player set and clear their opt-out at any time', async () => {
     const player = await account();
     const token = await createSession(db, player, 'Test device');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const patch = (matureOptOut: unknown, cookie?: string) =>
       app.inject({
         method: 'PATCH',
@@ -84,7 +89,11 @@ describe('mature opt-out API', () => {
     const token = await createSession(db, player, 'Test device');
     const sessionId = await room(host);
     const code = await setInvite(db, sessionId, host);
-    const app = createApp(db, { cookieSecret: 'test-secret', rooms });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret', rooms },
+      { inputGate: allowInputGate },
+    );
 
     const response = await app.inject({
       method: 'POST',
@@ -113,7 +122,11 @@ describe('mature opt-out API', () => {
       player,
     ]);
     const sessionId = await room(host, 'standard');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const put = (cookie: string | undefined, payload: unknown) =>
       app.inject({
         method: 'PATCH',
@@ -161,7 +174,11 @@ describe('mature opt-out API', () => {
     const host = await account();
     const hostToken = await createSession(db, host, 'Host device');
     const sessionId = await room(host);
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const cookie = `sid=${hostToken}`;
     const put = (payload: unknown, origin?: string) =>
       app.inject({
@@ -188,7 +205,11 @@ describe('mature opt-out API', () => {
   it('rejects a cross-origin content-settings PATCH', async () => {
     const player = await account();
     const token = await createSession(db, player, 'Test device');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     const response = await app.inject({
       method: 'PATCH',
       url: '/api/me/content-settings',
@@ -219,7 +240,11 @@ describe('mature opt-out API', () => {
     expect(computeContentTier(await tierInput())).toBe('mature');
 
     const token = await createSession(db, player, 'Test device');
-    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const app = createApp(
+      db,
+      { inputGate: allowInputGate, cookieSecret: 'test-secret' },
+      { inputGate: allowInputGate },
+    );
     await app.inject({
       method: 'PATCH',
       url: '/api/me/content-settings',

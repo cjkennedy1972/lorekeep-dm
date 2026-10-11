@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -14,7 +15,11 @@ const rooms = new RoomRegistry(
   new SessionLease(db),
   'rooms-test',
 );
-const app = createApp(db, { rooms, joinRateLimit: 100 });
+const app = createApp(
+  db,
+  { inputGate: allowInputGate, rooms, joinRateLimit: 100 },
+  { inputGate: allowInputGate },
+);
 installGateway(app, db, rooms);
 const created: string[] = [];
 async function account(status = 'active') {

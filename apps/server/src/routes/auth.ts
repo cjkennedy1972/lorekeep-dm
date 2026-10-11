@@ -17,7 +17,6 @@ import {
   tokenFromCookie,
 } from '../accounts/sessions.js';
 import { authenticateRequest } from '../middleware/auth.js';
-import { hardFloorBlocked } from '../safety/hardFloorGate.js';
 import { validOrigin } from '../middleware/origin.js';
 import {
   LoginInputSchema,
@@ -262,7 +261,13 @@ export function registerAuthRoutes(
       return reply
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Enter a display name.' });
-    if (hardFloorBlocked(name, 'display-name', request.log, session.account_id))
+    if (
+      !(await app.inputGate.check({
+        text: name,
+        surface: 'display-name',
+        accountId: session.account_id,
+      }))
+    )
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That display name cannot be used.',
@@ -489,7 +494,12 @@ export function registerAuthRoutes(
     const parsed = signupSchema.safeParse(request.body);
     if (!parsed.success)
       return reply.code(400).send({ message: 'Invalid signup details' });
-    if (hardFloorBlocked(parsed.data.displayName, 'display-name', request.log))
+    if (
+      !(await app.inputGate.check({
+        text: parsed.data.displayName,
+        surface: 'display-name',
+      }))
+    )
       return reply.code(400).send({
         code: 'CONTENT_REJECTED',
         message: 'That display name cannot be used.',

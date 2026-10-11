@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
@@ -11,7 +12,7 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
-const app = createApp(db);
+const app = createApp(db, { inputGate: allowInputGate });
 const rooms = new RoomRegistry(
   new Persistence(db),
   new SessionLease(db),

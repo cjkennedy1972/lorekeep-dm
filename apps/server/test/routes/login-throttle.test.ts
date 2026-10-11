@@ -1,3 +1,4 @@
+import { allowInputGate } from '../support/allowInputGate.js';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { hashPassword } from '../../src/accounts/password.js';
@@ -21,7 +22,7 @@ async function setup() {
       return { rows: [], rowCount: 0 };
     },
   };
-  const app = createApp(db as never);
+  const app = createApp(db as never, { inputGate: allowInputGate });
   const post = (email: string, ip: string, password = 'wrong-password-1') =>
     app.inject({
       method: 'POST',
