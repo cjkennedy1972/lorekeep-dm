@@ -144,7 +144,10 @@ export function createApp(
   app.get('/readyz', async (_request, reply) => {
     try {
       await db.query('SELECT 1');
-      const retention = await retentionHealth(db).catch(() => undefined);
+      const retention = await retentionHealth(db).catch(() => ({
+        lastCompletedAt: null,
+        stale: true,
+      }));
       return { status: 'ready', retention };
     } catch {
       return reply.code(503).send({ status: 'unavailable' });
