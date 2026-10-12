@@ -4,6 +4,7 @@ import type { Seat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
 import { ConnectionStatus } from '../room/ConnectionStatus';
 import { useRoom } from '../room/useRoom';
+import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
 const PRESENCE: Record<Seat['presence'], string> = {
   online: 'online',
@@ -55,6 +56,8 @@ export function Lobby() {
   });
   const seats = live.room?.seats ?? [];
   const announcement = usePresenceAnnouncement(seats);
+  const content = useMatureOptOut();
+  const [contentNote, setContentNote] = useState('');
 
   if (missing) return <p role="alert">That table could not be found.</p>;
   if (!room) return <p role="status">Loading the lobby…</p>;
@@ -67,6 +70,11 @@ export function Lobby() {
     } catch {
       setCopied('Could not copy automatically. Select the link and copy it.');
     }
+  }
+  async function changeOptOut(optOut: boolean) {
+    setContentNote(
+      (await content.save(optOut)) ? 'Content setting saved.' : '',
+    );
   }
   async function regenerate() {
     const r = await api<{ room: RoomInfo }>(`/api/rooms/${id}/invite`, {});
@@ -95,6 +103,18 @@ export function Lobby() {
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
+      <section aria-labelledby="content-heading">
+        <h2 id="content-heading">Content settings</h2>
+        {content.optOut !== undefined && (
+          <MatureOptOutField
+            checked={content.optOut}
+            onChange={(v) => void changeOptOut(v)}
+          />
+        )}
+        <p role={content.error ? 'alert' : 'status'}>
+          {content.error || contentNote}
+        </p>
+      </section>
       {room.isHost && (
         <section aria-labelledby="invite-heading">
           <h2 id="invite-heading">Invite players</h2>

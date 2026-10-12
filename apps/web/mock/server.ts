@@ -81,6 +81,7 @@ export function createMock(
     string,
     { lines: string[]; veils: string[] }
   >();
+  const matureOptOuts = new Set<string>();
   const tickets = new Map<string, { accountId: string; tableId: string }>(); // single use
   type MockRoom = {
     id: string;
@@ -159,6 +160,8 @@ export function createMock(
       expiresAt: new Date(at + exportExpireMs).toISOString(),
     };
   };
+
+  const matureOptOuts = new Set<string>();
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://mock');
@@ -278,16 +281,23 @@ export function createMock(
 
     if (url.pathname.startsWith('/api/operator/'))
       return err(res, 404, 'NOT_FOUND', 'Not found.');
-    if (route === 'GET /api/me') return json(res, 200, { account });
+    if (route === 'GET /api/me')
+      return json(res, 200, {
+        account: { ...account, matureOptOut: matureOptOuts.has(account.id) },
+      });
     if (route === 'GET /api/me/content-settings')
       return json(
         res,
         200,
-        personalContent.get(account.id) ?? { lines: [], veils: [] },
+        {
+          matureOptOut: matureOptOuts.has(account.id),
+          ...(personalContent.get(account.id) ?? { lines: [], veils: [] }),
+        },
       );
     if (route === 'PATCH /api/me/content-settings') {
       const body = await readBody(req);
       const list = (value: unknown): string[] | null => {
+        if (value === undefined) return null;
         if (!Array.isArray(value) || value.length > 20) return null;
         const normalized: string[] = [];
         for (const item of value) {
@@ -305,16 +315,39 @@ export function createMock(
         }
         return normalized;
       };
-      const lines = list(body?.lines);
-      const veils = list(body?.veils);
-      if (lines === null || veils === null)
+      const lines = body?.lines === undefined ? undefined : list(body.lines);
+      const veils = body?.veils === undefined ? undefined : list(body.veils);
+      if (
+        (body?.matureOptOut !== undefined &&
+          typeof body.matureOptOut !== 'boolean') ||
+        (body?.lines !== undefined && lines === null) ||
+        (body?.veils !== undefined && veils === null) ||
+        (body?.matureOptOut === undefined &&
+          body?.lines === undefined &&
+          body?.veils === undefined)
+      )
         return err(res, 400, 'INVALID_INPUT', 'Check your content boundaries.');
+      if (body?.matureOptOut === true) matureOptOuts.add(account.id);
+      else if (body?.matureOptOut === false) matureOptOuts.delete(account.id);
+      const previous = personalContent.get(account.id) ?? {
+        lines: [],
+        veils: [],
+      };
       const result = {
-        lines: [...new Set(lines)],
-        veils: [...new Set(veils)],
+        lines:
+          lines === undefined
+            ? previous.lines
+            : [...new Set(lines ?? [])],
+        veils:
+          veils === undefined
+            ? previous.veils
+            : [...new Set(veils ?? [])],
       };
       personalContent.set(account.id, result);
-      return json(res, 200, result);
+      return json(res, 200, {
+        matureOptOut: matureOptOuts.has(account.id),
+        ...result,
+      });
     }
     if (route === 'PATCH /api/me') {
       const name = (await readBody(req))?.displayName;

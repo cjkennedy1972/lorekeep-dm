@@ -91,9 +91,71 @@ test('invalid invite shows a clear error', async () => {
   useJar();
   await seedAccount('x@example.com', 'X');
   renderApp('/join/NOPE00');
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Join table' }),
+  );
   expect(await screen.findByRole('alert')).toHaveTextContent(
     /no longer valid/i,
   );
+});
+
+test('join shows the mature opt-out before joining; keyboard toggle is saved with the join', async () => {
+  const host = useJar();
+  await seedAccount('h5@example.com', 'Hostess');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Opt Out Hall' }),
+    })
+  ).json();
+  useJar();
+  await seedAccount('p5@example.com', 'Player');
+  renderApp(`/join/${created.room.code}`);
+  const box = await screen.findByRole('checkbox', {
+    name: 'Opt out of mature content',
+  });
+  expect(box).not.toBeChecked();
+  expect(
+    screen.queryByRole('heading', { name: 'Opt Out Hall' }),
+  ).not.toBeInTheDocument();
+  box.focus();
+  await userEvent.keyboard(' ');
+  expect(box).toBeChecked();
+  await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+  expect(
+    await screen.findByRole('heading', { name: 'Opt Out Hall' }),
+  ).toBeInTheDocument();
+  const me = (await (await http.fetch(`${http.base}/api/me`)).json()) as {
+    account: { matureOptOut: boolean };
+  };
+  expect(me.account.matureOptOut).toBe(true);
+});
+
+test('lobby content settings: mature is on by default; opt-out toggles and saves', async () => {
+  useJar();
+  await seedAccount('h6@example.com', 'Lobbyist');
+  const created = await (
+    await http.fetch(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Settings Hall' }),
+    })
+  ).json();
+  renderApp(`/rooms/${created.room.id as string}`);
+  const box = await screen.findByRole('checkbox', {
+    name: 'Opt out of mature content',
+  });
+  expect(box).not.toBeChecked();
+  box.focus();
+  await userEvent.keyboard(' ');
+  expect(await screen.findByText('Content setting saved.')).toBeInTheDocument();
+  expect(box).toBeChecked();
+  const me = (await (await http.fetch(`${http.base}/api/me`)).json()) as {
+    account: { matureOptOut: boolean };
+  };
+  expect(me.account.matureOptOut).toBe(true);
+  expect((await axe(document.body)).violations).toEqual([]);
 });
 
 // ---- M0-24: auth screens ----
@@ -228,6 +290,9 @@ test('logged-out join link: login returns to the join and the lobby opens', asyn
     'correct-horse-battery',
   );
   await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Join table' }),
+  );
   expect(
     await screen.findByRole('heading', { name: 'Return Trip' }),
   ).toBeInTheDocument();

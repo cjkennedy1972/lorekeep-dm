@@ -1,40 +1,74 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type RoomInfo } from '../api';
+import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
 export function Join() {
   const { code } = useParams();
   const navigate = useNavigate();
   const [typed, setTyped] = useState('');
   const [error, setError] = useState('');
+  const [draft, setDraft] = useState<boolean | null>(null);
+  const [joining, setJoining] = useState(false);
+  const content = useMatureOptOut();
+  const checked = draft ?? content.optOut ?? false;
 
-  useEffect(() => {
-    if (!code) return;
-    let live = true;
-    void api<{ room: RoomInfo }>(
-      `/api/invites/${encodeURIComponent(code)}/join`,
+  async function joinTable(e: FormEvent, invite: string) {
+    e.preventDefault();
+    setJoining(true);
+    setError('');
+    if (!(await content.save(checked))) return setJoining(false);
+    const r = await api<{ room: RoomInfo }>(
+      `/api/invites/${encodeURIComponent(invite)}/join`,
       {},
-    ).then((r) => {
-      if (!live) return;
-      if (r.ok) navigate(`/rooms/${r.data.room.id}`, { replace: true });
-      else setError(r.message);
-    });
-    return () => void (live = false);
-  }, [code, navigate]);
+    );
+    if (r.ok) return navigate(`/rooms/${r.data.room.id}`, { replace: true });
+    setError(r.message);
+    setJoining(false);
+  }
 
-  if (code)
+  if (code) {
+    const message = error || content.error;
+    if (content.optOut === undefined)
+      return (
+        <>
+          <h1>Join table</h1>
+          {content.error ? (
+            <p role="alert">
+              {content.error} <Link to="/rooms">Back to My tables</Link>
+            </p>
+          ) : (
+            <p role="status">Loading the table…</p>
+          )}
+        </>
+      );
     return (
       <>
-        <h1>Joining table</h1>
-        {error ? (
-          <p role="alert">
-            {error} <Link to="/rooms">Back to My tables</Link>
-          </p>
-        ) : (
-          <p role="status">Joining the table…</p>
-        )}
+        <h1>Join table</h1>
+        <form
+          onSubmit={(e) => void joinTable(e, code)}
+          noValidate
+          className="form"
+        >
+          <MatureOptOutField
+            checked={checked}
+            disabled={joining}
+            onChange={(v) => setDraft(v)}
+          />
+          {message && (
+            <p role="alert">
+              {message} <Link to="/rooms">Back to My tables</Link>
+            </p>
+          )}
+          <div className="actions">
+            <button type="submit" disabled={joining}>
+              Join table
+            </button>
+          </div>
+        </form>
       </>
     );
+  }
 
   function go(e: FormEvent) {
     e.preventDefault();
