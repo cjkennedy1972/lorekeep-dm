@@ -354,7 +354,9 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           metrics.firstApprovedMs = decidedAtMs;
         const pending = held + item.text;
         // A sexual term already shown can't be revoked by a later minor term, so hold the whole turn.
-        const cut = sensitive ? 0 : Math.max(0, pending.length - HOLD_BACK_CHARS);
+        const cut = sensitive
+          ? 0
+          : Math.max(0, pending.length - HOLD_BACK_CHARS);
         const emit = pending.slice(0, cut);
         held = pending.slice(cut);
         if (emit) {

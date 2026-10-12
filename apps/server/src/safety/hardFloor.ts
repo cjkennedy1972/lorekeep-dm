@@ -1001,9 +1001,7 @@ export function createHardFloorTurn(): HardFloorTurn {
       const n = words.length;
       const lo = atTurnStart ? 0 : Math.min(TURN_LEFT_TOKENS, n);
       const hi = Math.max(lo, n - TURN_TAIL_TOKENS);
-      const old = atTurnStart
-        ? 0
-        : tokenize(normalizeText(prevCarry)).length;
+      const old = atTurnStart ? 0 : tokenize(normalizeText(prevCarry)).length;
       const fixed = scanFlags(
         words,
         Math.max(lo, old - TURN_RESCAN_TOKENS),
