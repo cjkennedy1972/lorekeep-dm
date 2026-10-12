@@ -7,6 +7,7 @@ import {
   PlayerActionSchema,
   ClarificationAnswerSchema,
   WithdrawActionSchema,
+  XCardSchema,
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
@@ -295,6 +296,22 @@ export function installGateway(
                   },
                 }),
               );
+          }
+          if (msg.type === 'XCard') {
+            const xCard = XCardSchema.safeParse(msg);
+            if (!xCard.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'X-card request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room.xCard(identity.accountId);
           }
           if (msg.type === 'WithdrawAction') {
             const withdraw = WithdrawActionSchema.safeParse(msg);

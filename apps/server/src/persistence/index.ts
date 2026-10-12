@@ -125,6 +125,15 @@ export class Persistence {
     );
   }
 
+  /** Host opt-in: an X-card press aborts the in-flight generation. Off unless set. */
+  async xCardAbortEnabled(sessionId: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ enabled: boolean }>(
+      'SELECT xcard_abort_inflight AS enabled FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    return rows[0]?.enabled ?? false;
+  }
+
   /** Cap change for a table with no live Room: takes the session lease for the write, as account deletion does. */
   async setHostTierCap(sessionId: string, cap: HostCap | null): Promise<void> {
     const client = await this.pool.connect();

@@ -478,6 +478,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         session: {
           contentTier: tier,
           safetySettings: {},
+          ...(request.steerAway ? { steerAway: true } : {}),
           partyRoster: Object.values(actors).map((actor) => ({
             id: actor.id,
             name: actor.name,

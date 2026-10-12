@@ -60,6 +60,8 @@ export interface RoomStore {
   ): Promise<StoredEvent[]>;
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
+  /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
+  xCardAbortEnabled?(sessionId: string): Promise<boolean>;
 }
 export interface Connection {
   send(message: ServerMessage): void;
@@ -80,6 +82,7 @@ export class Room {
   private readonly combatRuntime: CombatRuntime;
   private reactionTimer?: NodeJS.Timeout;
   private turnInFlight = false;
+  private turnAbort?: AbortController;
   private matureDelivery: Promise<void> = Promise.resolve();
   private readonly pendingActions = new Set<string>();
   private activeTurn: Promise<void> = Promise.resolve();
@@ -560,6 +563,27 @@ export class Room {
     });
   }
 
+  /** Anonymous: the seat is stored in the log for abuse handling, but the broadcast carries only the kind. */
+  xCard(accountId: string): Promise<void> {
+    return this.enqueuePlayer(async () => {
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat) throw new Error('Account is not seated');
+      await this.persist('SafetyFlag', { seatId: seat.seatId, kind: 'x-card' });
+      this.broadcast({
+        seq: this.seq,
+        type: 'SafetyFlag',
+        payload: { kind: 'x-card' },
+      } as ServerMessage);
+      if (
+        this.turnInFlight &&
+        (await this.store.xCardAbortEnabled?.(this.sessionId))
+      )
+        this.turnAbort?.abort();
+    });
+  }
+
   submit(actionId: string): Promise<boolean> {
     return this.enqueue(async () => {
       if (this.actionIds.has(actionId) || this.pendingActions.has(actionId))
@@ -769,6 +793,9 @@ export class Room {
     // Mature narration reaches only the connections present now, so a joiner never receives a turn it was not present for.
     const audience = new Set(this.connections.values());
     let matureAudience: ReadonlySet<Connection> | undefined;
+    const turnAbort = new AbortController();
+    this.turnAbort = turnAbort;
+    const xCardAtStart = this.state.xCard ?? { requested: 0, steered: 0 };
     const result = await this.turnRunner!.run(
       {
         sessionId: this.sessionId,
@@ -779,7 +806,8 @@ export class Room {
         playerName,
         allowClarification: !clarificationAsked,
         clarificationAsked,
-        signal: this.drainAbort.signal,
+        steerAway: xCardAtStart.requested > xCardAtStart.steered,
+        signal: AbortSignal.any([this.drainAbort.signal, turnAbort.signal]),
       },
       (event) => {
         const type = event.type;
@@ -946,6 +974,15 @@ export class Room {
         const nextState = {
           ...this.state,
           gameState: settleEngine(turnGameState),
+          ...(!clarification && {
+            xCard: {
+              requested: this.state.xCard?.requested ?? 0,
+              steered: Math.max(
+                this.state.xCard?.steered ?? 0,
+                xCardAtStart.requested,
+              ),
+            },
+          }),
           ...(clarification && {
             openClarifications: {
               ...this.state.openClarifications,

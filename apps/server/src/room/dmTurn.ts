@@ -10,6 +10,7 @@ export interface SoloTurnRequest {
   playerName?: string;
   allowClarification?: boolean;
   clarificationAsked?: boolean;
+  steerAway?: boolean;
   signal?: AbortSignal;
 }
 

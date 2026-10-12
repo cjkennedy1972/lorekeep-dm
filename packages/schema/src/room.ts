@@ -14,6 +14,13 @@ export const RoomStateSchema = z.object({
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
   gameState: z.unknown().optional(),
+  /** X-card presses so far, and the count the DM has already steered away from. */
+  xCard: z
+    .object({
+      requested: z.int().nonnegative(),
+      steered: z.int().nonnegative(),
+    })
+    .optional(),
   openClarifications: z
     .record(
       z.string(),
