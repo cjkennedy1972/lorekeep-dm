@@ -896,6 +896,8 @@ const LONG_TOKEN_MARKER = 'ab'.repeat(Math.ceil(MAX_CARRY_TOKEN_CHARS / 2));
 const TURN_TAIL_TOKENS = MAX_JOIN + FILLER_WINDOW + 2;
 /** First tokens of a window cut mid-turn: no left context, so they set no flags. */
 const TURN_LEFT_TOKENS = 3;
+/** Carried tokens re-read each push: covers the previous tail, which was tentative and never settled. Older carried tokens already settled. */
+const TURN_RESCAN_TOKENS = TURN_CARRY_TOKENS + TURN_TAIL_TOKENS;
 
 function compactLongToken(token: string): string {
   if ([...token].length <= MAX_CARRY_TOKEN_CHARS) return token;
@@ -941,7 +943,7 @@ function compactTurnWindow(text: string): string {
 }
 
 export interface HardFloorTurn {
-  push(chunk: string): HardFloorResult;
+  push(chunk: string): HardFloorResult & { sensitive: boolean };
 }
 
 /**
@@ -975,19 +977,23 @@ export function createHardFloorTurn(): HardFloorTurn {
   let total = 0;
   let carry = '';
   let dropped = false;
+  let sensitive = false;
   let blockedResult: HardFloorResult | null = null;
   return {
     push(chunk) {
-      if (blockedResult) return blockedResult;
+      if (blockedResult) return { ...blockedResult, sensitive };
       total += chunk.length;
-      if (total > MAX_INPUT_CHARS)
-        return (blockedResult = {
+      if (total > MAX_INPUT_CHARS) {
+        blockedResult = {
           blocked: true,
           rule: 'input.over-limit',
           version: HARD_FLOOR_VERSION,
-        });
+        };
+        return { ...blockedResult, sensitive };
+      }
       const atTurnStart = !dropped;
-      const window = compactTurnWindow(carry + chunk);
+      const prevCarry = carry;
+      const window = compactTurnWindow(prevCarry + chunk);
       const cut = carryStart(window);
       if (cut > 0) dropped = true;
       carry = window.slice(cut);
@@ -995,18 +1001,26 @@ export function createHardFloorTurn(): HardFloorTurn {
       const n = words.length;
       const lo = atTurnStart ? 0 : Math.min(TURN_LEFT_TOKENS, n);
       const hi = Math.max(lo, n - TURN_TAIL_TOKENS);
-      const fixed = scanFlags(words, lo, hi);
+      const old = atTurnStart
+        ? 0
+        : tokenize(normalizeText(prevCarry)).length;
+      const fixed = scanFlags(
+        words,
+        Math.max(lo, old - TURN_RESCAN_TOKENS),
+        hi,
+      );
       settled.explicit ||= fixed.explicit;
       settled.minor ||= fixed.minor;
       settled.sexual ||= fixed.sexual;
       const tail = scanFlags(words, hi, n);
+      sensitive ||= settled.sexual || tail.sexual;
       const result = verdictOf({
         explicit: settled.explicit || tail.explicit,
         minor: settled.minor || tail.minor,
-        sexual: settled.sexual || tail.sexual,
+        sexual: sensitive,
       });
       if (result.blocked) blockedResult = result;
-      return result;
+      return { ...result, sensitive };
     },
   };
 }

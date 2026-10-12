@@ -149,11 +149,19 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
     let stopped = false;
     const emittedBefore = approved.join('');
     let contextTail = emittedBefore.slice(-CONTEXT_CHARS);
+    let sensitive = false;
     let turn: DeterministicTurn | undefined;
     let it: AsyncIterator<string> | undefined;
     let initializationFailed = false;
     try {
-      turn = opts.moderator.startTurn?.();
+      const scanner = opts.moderator.startTurn?.();
+      turn = scanner && {
+        push: (text) => {
+          const result = scanner.push(text);
+          sensitive ||= result.sensitive === true;
+          return result;
+        },
+      };
       turn?.push(emittedBefore);
       it = source[Symbol.asyncIterator]();
     } catch {
@@ -345,7 +353,8 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         if (metrics.firstApprovedMs === null)
           metrics.firstApprovedMs = decidedAtMs;
         const pending = held + item.text;
-        const cut = Math.max(0, pending.length - HOLD_BACK_CHARS);
+        // A sexual term already shown can't be revoked by a later minor term, so hold the whole turn.
+        const cut = sensitive ? 0 : Math.max(0, pending.length - HOLD_BACK_CHARS);
         const emit = pending.slice(0, cut);
         held = pending.slice(cut);
         if (emit) {

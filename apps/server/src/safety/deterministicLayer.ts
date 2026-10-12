@@ -17,7 +17,12 @@ export const hardFloorLayer: DeterministicLayer = {
   hardFloorCheck: (text) => toCheck(checkHardFloor(text).blocked),
   startTurn: () => {
     const turn = createHardFloorTurn();
-    return { push: (text) => toCheck(turn.push(text).blocked) };
+    return {
+      push: (text) => {
+        const { blocked, sensitive } = turn.push(text);
+        return { ...toCheck(blocked), sensitive };
+      },
+    };
   },
   denylistCheck: () => ({ blocked: false }),
   maxSpanChars: 0,

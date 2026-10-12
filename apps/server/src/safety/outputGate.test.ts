@@ -760,6 +760,31 @@ describe('turn-scoped hard floor across the carry', () => {
   });
 });
 
+describe('message-level taint never leaks emitted text', () => {
+  it('does not emit a sexual term that precedes a later minor by more than the hold-back', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const filler = 'The tavern is quiet and the fire is low. '.repeat(3);
+    const events = await collect(
+      runOutputGate({
+        stream: () =>
+          tokens(...splitTokens(`She is nude. ${filler}A child sleeps.`, 20)),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    expect(chunkTexts(events).join('')).not.toMatch(/nude/);
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
+      expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
+    ]);
+  });
+});
+
 describe('tail hold-back and config guards', () => {
   const ALLOW_JSON = async () => '{"verdict":"allow","category":"none"}';
   const termLayer = (term: string): DeterministicLayer => ({

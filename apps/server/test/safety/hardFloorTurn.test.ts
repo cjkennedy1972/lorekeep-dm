@@ -236,4 +236,21 @@ describe('createHardFloorTurn perf', () => {
       expect(full, 'ceiling').toBeLessThan(ABSOLUTE_CEILING_MS);
     },
   );
+
+  it('scans a 30000-char turn pushed one character at a time in linear time', () => {
+    const text = Array.from({ length: MAX_INPUT_CHARS }, (_, i) =>
+      i % 2 ? '.' : 'a',
+    ).join('');
+    const run = (s: string) => {
+      const turn = createHardFloorTurn();
+      const start = performance.now();
+      for (const c of s) turn.push(c);
+      return performance.now() - start;
+    };
+    const full = run(text);
+    const half = run(text.slice(0, MAX_INPUT_CHARS / 2));
+    expect(full / half, 'scaling').toBeLessThan(3);
+    // ponytail: ~80us per push across 30k pushes; the ceiling is per-call budget, not per-chunk.
+    expect(full, 'ceiling').toBeLessThan(4_000);
+  }, 60_000);
 });

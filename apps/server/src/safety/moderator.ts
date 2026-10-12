@@ -58,6 +58,8 @@ export interface Moderator {
 export interface DeterministicCheckResult {
   blocked: boolean;
   category?: Category;
+  /** Sticky once a sexual term is seen in the turn. Earlier text can't be revoked by a later minor term, so the output gate holds from then on. */
+  sensitive?: boolean;
 }
 
 /** Scans one turn's text in order; `push` returns the verdict for everything pushed so far. */
