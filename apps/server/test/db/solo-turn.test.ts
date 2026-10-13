@@ -43,6 +43,7 @@ const savedFixtureMode = process.env.LLM_FIXTURE_MODE;
 const savedFixturePath = process.env.LLM_FIXTURE_PATH;
 const savedNodeEnv = process.env.NODE_ENV;
 const savedAllowLocalHosts = process.env.LLM_ALLOW_LOCAL_HOSTS;
+const savedEndpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT;
 let fakeEndpoint: FakeOpenAIServer | undefined;
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
@@ -175,7 +176,9 @@ afterAll(async () => {
   for (const id of sessionIds) await db.query('SELECT purge_session($1)', [id]); // events are append-only; this is the sanctioned removal
   for (const id of accountIds)
     await db.query('DELETE FROM accounts WHERE id=$1', [id]);
-  await db.query("DELETE FROM operator_endpoints WHERE slot='moderate'");
+  await db.query(
+    "DELETE FROM operator_endpoints WHERE slot IN ('fast','moderate')",
+  );
   await fakeEndpoint?.close();
   await db.end();
   if (savedFixtureMode === undefined) delete process.env.LLM_FIXTURE_MODE;
@@ -187,6 +190,9 @@ afterAll(async () => {
   if (savedAllowLocalHosts === undefined)
     delete process.env.LLM_ALLOW_LOCAL_HOSTS;
   else process.env.LLM_ALLOW_LOCAL_HOSTS = savedAllowLocalHosts;
+  if (savedEndpointSlot === undefined)
+    delete process.env.SOLO_TURN_ENDPOINT_SLOT;
+  else process.env.SOLO_TURN_ENDPOINT_SLOT = savedEndpointSlot;
 });
 
 describe('solo turn persisted lifecycle', () => {
@@ -269,6 +275,20 @@ describe('solo turn persisted lifecycle', () => {
       createEndpointEgress(),
       owner.id,
     );
+    await saveEndpoint(
+      db,
+      'fast',
+      {
+        baseUrl: fakeEndpoint.baseUrl,
+        model: 'fixture-model',
+        apiStyle: 'openai',
+        apiKey: 'fixture-secret',
+        unsupportedToolSchemaKeywords: [],
+      },
+      createEndpointEgress(),
+      owner.id,
+    );
+    process.env.SOLO_TURN_ENDPOINT_SLOT = 'fast';
     process.env.LLM_FIXTURE_MODE = 'record';
     const fixtureDir = await mkdtemp(join(tmpdir(), 'solo-turn-fixture-'));
     process.env.LLM_FIXTURE_PATH = join(fixtureDir, 'turn.ndjson');
@@ -335,7 +355,7 @@ describe('solo turn persisted lifecycle', () => {
     await rooms.drain();
     await recordedApp.close();
     rooms = priorRooms;
-    expect(fakeEndpoint.requests).toHaveLength(1);
+    expect(fakeEndpoint.requests).toHaveLength(2);
     await db.query("DELETE FROM operator_endpoints WHERE slot='moderate'");
     await rm(fixtureDir, { recursive: true, force: true });
     delete process.env.LLM_FIXTURE_PATH;
