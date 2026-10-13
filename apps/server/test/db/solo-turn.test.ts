@@ -30,7 +30,6 @@ import { join } from 'node:path';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import {
   startFakeOpenAIServer,
-  textStream,
   type FakeOpenAIServer,
 } from '../llm/fakeOpenAIServer.js';
 
@@ -243,7 +242,13 @@ describe('solo turn persisted lifecycle', () => {
 
   it('replays the recorded-LLM fixture through the production runner over websocket', async () => {
     const owner = await createUser();
-    fakeEndpoint = await startFakeOpenAIServer({ chunks: textStream });
+    fakeEndpoint = await startFakeOpenAIServer({
+      chunks: [
+        'data: {"choices":[{"index":0,"delta":{"content":"The child is nude."}}]}\n\n',
+        'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
+        'data: [DONE]\n\n',
+      ],
+    });
     const priorAllowLocalHosts = process.env.LLM_ALLOW_LOCAL_HOSTS;
     onTestFinished(() => {
       if (priorAllowLocalHosts === undefined)
@@ -305,11 +310,27 @@ describe('solo turn persisted lifecycle', () => {
       ws,
       (message) => message.type === 'NarrationCompleted',
     );
+    const narrationChunks: string[] = [];
+    ws.on('message', (data) => {
+      const message = JSON.parse(data.toString()) as WireMessage;
+      if (message.type === 'NarrationChunk')
+        narrationChunks.push(String(message.payload?.text ?? ''));
+    });
     sendAction(ws, randomUUID(), 'Look at the old door.');
     await expect(completed).resolves.toMatchObject({
       type: 'NarrationCompleted',
-      payload: { text: 'hello world' },
+      payload: { text: expect.stringContaining('narrator pauses') },
     });
+    expect(narrationChunks.join('')).not.toContain('child');
+    expect(narrationChunks.join('')).toContain('narrator pauses');
+    const storedNarration = await db.query<{ payload: { narration: string } }>(
+      `SELECT payload FROM events WHERE session_id=$1 AND type='NarrationCompleted' ORDER BY seq DESC LIMIT 1`,
+      [table],
+    );
+    expect(storedNarration.rows[0]?.payload.narration).toContain(
+      'narrator pauses',
+    );
+    expect(storedNarration.rows[0]?.payload.narration).not.toContain('child');
     ws.close();
     await rooms.drain();
     await recordedApp.close();

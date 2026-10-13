@@ -22,6 +22,9 @@ import {
   type BuildPromptInput,
 } from './prompt.js';
 import { formatTurnSeed, createTurnSeed } from './seed.js';
+import { runOutputGate } from '../safety/outputGate.js';
+import type { Moderator } from '../safety/moderator.js';
+import type { ContentTier } from '../safety/tier.js';
 
 export const MAX_TOOL_CALLS = 8;
 export const MAX_RETRIES_PER_CALL_SITE = 2;
@@ -106,6 +109,10 @@ export interface TurnInput {
   signal?: AbortSignal;
   eventSeqStart?: number;
   modelId?: string;
+  /** No narration event or transcript value may bypass this moderator. */
+  outputModerator: Moderator;
+  outputTier?: ContentTier;
+  outputTableLines?: readonly string[];
   allowClarification?: boolean;
   clarificationAsked?: boolean;
 }
@@ -680,25 +687,45 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     });
   }
   if (!finalText) makeFallback(fallback ?? 'no-narration');
-  const finalCount = words(finalText);
+  let finalCount = words(finalText);
   if (endpointFailed) {
     // Endpoint failure invalidates the in-flight turn; state is committed by the caller only on success.
     events.length = 0;
     input.context.state = input.prompt.turn.state;
   }
-  const chunkSize = 24;
-  for (
-    let offset = 0, index = 0;
-    offset < finalText.length;
-    offset += chunkSize, index++
-  ) {
-    stream({
-      type: 'NarrationChunk',
-      turnId: input.turnId,
-      text: finalText.slice(offset, offset + chunkSize),
-      index,
-    });
+  const sourceText = finalText;
+  const gated: string[] = [];
+  const chunks = async function* () {
+    const chunkSize = 24;
+    for (let offset = 0; offset < sourceText.length; offset += chunkSize)
+      yield sourceText.slice(offset, offset + chunkSize);
+  };
+  const gate = runOutputGate({
+    stream: () => chunks(),
+    // This turn has already executed tools. Retrying its model call could repeat side effects;
+    // on any block, stop and use the gate's authored redirect instead.
+    regenerate: async function* () {},
+    moderator: input.outputModerator,
+    tier: input.outputTier ?? 'standard',
+    tableLines: input.outputTableLines,
+    maxRegenerations: 0,
+  });
+  // Never persist the original model text.
+  let index = 0;
+  for await (const event of gate) {
+    if (event.kind === 'chunk' || event.kind === 'redirect') {
+      const text = event.text;
+      gated.push(text);
+      stream({
+        type: 'NarrationChunk',
+        turnId: input.turnId,
+        text,
+        index: index++,
+      });
+    }
   }
+  finalText = gated.join('');
+  finalCount = words(finalText);
   emit({
     type: 'NarrationCompleted',
     turnId: input.turnId,

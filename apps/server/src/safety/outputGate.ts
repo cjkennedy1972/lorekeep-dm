@@ -75,6 +75,8 @@ export interface OutputGateOptions {
   sourceIdleMs?: number;
   /** Max wait for one verdict; a late verdict fails closed (block). */
   verdictTimeoutMs?: number;
+  /** Maximum model regeneration attempts after a block. Set to 0 when retrying could repeat side effects. */
+  maxRegenerations?: number;
 }
 
 type Chunk = { text: string; verdict: Promise<Verdict>; cutAtMs: number };
@@ -113,6 +115,11 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
   const maxChunk = opts.maxChunkChars ?? DEFAULT_MAX_CHUNK_CHARS;
   const maxStream = opts.maxStreamChars ?? DEFAULT_MAX_STREAM_CHARS;
   const maxTurn = opts.maxTurnChars ?? DEFAULT_MAX_TURN_CHARS;
+  const maxRegenerations = opts.maxRegenerations ?? MAX_REGENERATIONS;
+  if (!Number.isSafeInteger(maxRegenerations) || maxRegenerations < 0)
+    throw new Error(
+      `maxRegenerations ${maxRegenerations} must be a non-negative integer`,
+    );
   const sourceIdleMs = opts.sourceIdleMs ?? DEFAULT_SOURCE_IDLE_MS;
   const verdictTimeoutMs = opts.verdictTimeoutMs ?? DEFAULT_VERDICT_TIMEOUT_MS;
   const metrics: GateMetrics = {
@@ -138,7 +145,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
     if (outcome === 'done') {
       return yield { kind: 'end', outcome: 'approved', metrics };
     }
-    if (attempt === MAX_REGENERATIONS || turnSpent) {
+    if (attempt === maxRegenerations || turnSpent) {
       yield { kind: 'redirect', text: SAFE_REDIRECT_TEMPLATE };
       return yield { kind: 'end', outcome: 'redirected', metrics };
     }

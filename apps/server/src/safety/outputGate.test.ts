@@ -72,6 +72,24 @@ const deferred = <T>() => {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('chunking', () => {
+  it('can redirect on a block without invoking model regeneration', async () => {
+    const { moderator } = scripted(() => BLOCK);
+    const regenerate = vi.fn(() => {
+      throw new Error('regeneration must not run');
+    });
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('unsafe output'),
+        regenerate,
+        moderator,
+        tier: 'standard',
+        maxRegenerations: 0,
+      }),
+    );
+    expect(events.map((event) => event.kind)).toEqual(['redirect', 'end']);
+    expect(regenerate).not.toHaveBeenCalled();
+  });
+
   it('splits on sentence boundaries and concatenates back to the exact input', async () => {
     const text =
       'The door creaks open. Inside, a 3.5 foot goblin waves! "Welcome," it says. The end';

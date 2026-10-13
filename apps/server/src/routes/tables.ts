@@ -298,7 +298,7 @@ export function registerTableRoutes(
       const prior = (row.state?.recap ??
         (row.state?.gameState as Record<string, unknown> | undefined)
           ?.recap) as { recap: string; memoryHash: string } | undefined;
-      const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
+      const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'fast';
       const mode = fixtureModeFromEnvironment();
       let adapter;
       if (await liveDmAllowed(db, accountId, liveDmAllowlistOnly, mode)) {

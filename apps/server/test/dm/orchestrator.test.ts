@@ -6,6 +6,8 @@ import type {
   LlmRequest,
 } from '../../src/llm/adapter.js';
 import { LlmEndpointError } from '../../src/llm/adapter.js';
+import type { Moderator } from '../../src/safety/moderator.js';
+import { SAFE_REDIRECT_TEMPLATE } from '../../src/safety/outputGate.js';
 import {
   runTurn,
   runTurnQueued,
@@ -28,6 +30,17 @@ const character = {
   hp: { current: 10, max: 10, temp: 0 },
   conditions: [],
 } as const;
+const allowOutput: Moderator = {
+  async moderate() {
+    return {
+      verdict: 'allow',
+      category: 'other',
+      source: 'judge',
+      latencyMs: 0,
+      unavailable: false,
+    };
+  },
+};
 function scripted(turns: (LlmChunk[] | Error)[]) {
   const requests: LlmRequest[] = [];
   const adapter: LlmAdapter = {
@@ -64,6 +77,8 @@ function setup(
     testMode: true,
     adapter: mock.adapter,
     toolMode: 'native',
+    outputModerator: allowOutput,
+    outputTier: 'standard',
     prompt: {
       catalogVersion: 'srd-5.2.1-r3',
       toolMode: 'native',
@@ -118,6 +133,34 @@ const narration =
   'Ayla studies the old seal and finds a narrow groove beneath the dust. The stone shifts with a quiet click, revealing fresh scratches around its edge. Something beyond the door answers with a low, patient scrape. What do you do?';
 
 describe('DM orchestrator', () => {
+  it('emits and returns only the gate redirect when narration is blocked', async () => {
+    const h = setup([[{ type: 'text', delta: 'The child is nude.' }]]);
+    h.input.outputModerator = {
+      async moderate() {
+        return {
+          verdict: 'block',
+          category: 'minor_sexual',
+          source: 'hardfloor',
+          latencyMs: 0,
+          unavailable: false,
+        };
+      },
+    };
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(SAFE_REDIRECT_TEMPLATE);
+    const streamedText = h.streamed
+      .filter((event) => (event as { type?: string }).type === 'NarrationChunk')
+      .map((event) => (event as { text?: string }).text ?? '')
+      .join('');
+    expect(streamedText).toBe(SAFE_REDIRECT_TEMPLATE);
+    expect(h.events).toContainEqual(
+      expect.objectContaining({
+        type: 'NarrationCompleted',
+        text: SAFE_REDIRECT_TEMPLATE,
+      }),
+    );
+  });
+
   it('runs a clean exploration check and emits engine events before final narration', async () => {
     const h = setup([
       [
@@ -128,18 +171,13 @@ describe('DM orchestrator', () => {
     ]);
     const result = await runTurn(h.input);
     expect(result.narration).toBe(narration);
-    expect(h.streamed.map((event) => event.type)).toEqual([
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-      'NarrationChunk',
-    ]);
+    const chunks = h.streamed.filter(
+      (event) => (event as { type?: string }).type === 'NarrationChunk',
+    );
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(
+      chunks.map((event) => (event as { text?: string }).text ?? '').join(''),
+    ).toBe(narration);
     expect(
       h.events.findIndex(
         (event) => (event as { type?: string }).type === 'RollEvent',
