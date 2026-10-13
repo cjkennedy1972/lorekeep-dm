@@ -323,9 +323,8 @@ describe('createHardFloorTurn perf', () => {
   const scanTurn = (text: string) => {
     const size = Math.ceil(text.length / CHUNKS);
     const turn = createHardFloorTurn();
-    let verdict = { blocked: false, rule: undefined as string | undefined };
     for (let i = 0; i < CHUNKS; i++)
-      verdict = turn.push(text.slice(i * size, (i + 1) * size));
+      turn.push(text.slice(i * size, (i + 1) * size));
     return turn.finish().blocked;
   };
 
