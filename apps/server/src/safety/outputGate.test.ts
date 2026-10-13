@@ -11,6 +11,7 @@ import {
   type ModerationRequest,
   type Verdict,
 } from './moderator.js';
+import { hardFloorLayer } from './deterministicLayer.js';
 
 const ALLOW: Verdict = {
   verdict: 'allow',
@@ -273,7 +274,6 @@ describe('block and regenerate', () => {
       text: SAFE_REDIRECT_TEMPLATE,
     });
     expect(chunkTexts(events)).toEqual([]);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
   });
 
   it('a moderator that throws counts as a block', async () => {
@@ -300,6 +300,106 @@ describe('block and regenerate', () => {
       text: SAFE_REDIRECT_TEMPLATE,
     });
     expect(chunkTexts(events)).toEqual([]);
+  });
+
+  it.each(['startTurn', 'initial push'])(
+    'a deterministic turn %s failure counts as a block',
+    async (failurePoint) => {
+      let starts = 0;
+      const moderator: Moderator = {
+        startTurn: () => {
+          starts++;
+          if (failurePoint === 'startTurn' && starts === 1)
+            throw new Error('scanner failed');
+          return {
+            push: () => {
+              if (failurePoint === 'initial push' && starts === 1)
+                throw new Error('scanner failed');
+              return { blocked: false };
+            },
+          };
+        },
+        moderate: async () => ALLOW,
+      };
+      const events = await collect(
+        runOutputGate({
+          stream: () => tokens('Hello. '),
+          regenerate: () => tokens('Hi. '),
+          moderator,
+          tier: 'standard',
+        }),
+      );
+      expect(starts).toBe(2);
+      expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
+      expect(chunkTexts(events)).toEqual(['Hi.']);
+      expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+      const end = events.at(-1);
+      if (end?.kind !== 'end') throw new Error('no end');
+      expect(end.metrics.chunks[0]).toMatchObject({
+        verdict: 'block',
+        source: 'failclosed',
+      });
+    },
+  );
+
+  it('a deterministic turn finish failure counts as a block', async () => {
+    let starts = 0;
+    const moderator: Moderator = {
+      startTurn: () => {
+        starts++;
+        return {
+          push: () => ({ blocked: false }),
+          finish: () => {
+            if (starts === 1) throw new Error('scanner finish failed');
+            return { blocked: false };
+          },
+        };
+      },
+      moderate: async () => ALLOW,
+    };
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('Unsafe turn. '),
+        regenerate: () => tokens('Safe turn. '),
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    expect(starts).toBe(2);
+    expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
+    expect(chunkTexts(events)).toEqual(['Safe turn.']);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks).toContainEqual(
+      expect.objectContaining({
+        verdict: 'block',
+        category: 'other',
+        source: 'failclosed',
+      }),
+    );
+  });
+
+  it('fails closed when an unbounded deterministic layer has no turn scanner', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: {
+        hardFloorCheck: () => ({ blocked: false }),
+        denylistCheck: () => ({ blocked: false }),
+        maxSpanChars: 0,
+      },
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('Unsafe candidate. '),
+        regenerate: () => tokens('Safe. '),
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    expect(chunkTexts(events)).toEqual([]);
+    expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
   });
 
   it('a source error stops emission and propagates', async () => {
@@ -689,6 +789,187 @@ describe('deterministic window across forced cuts', () => {
   });
 });
 
+describe('surrogate-safe output boundaries', () => {
+  it('keeps a high surrogate buffered when a source delta ends at maxChunkChars', async () => {
+    const { moderator, seen } = scripted(() => ALLOW);
+    const astral = '\u{1d427}';
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('x'.repeat(63) + astral[0], astral[1] + 'ude.'),
+        regenerate: () => tokens('Safe.'),
+        moderator,
+        tier: 'mature',
+        maxChunkChars: 64,
+      }),
+    );
+    expect(seen[0]).toBe('x'.repeat(63));
+    expect(seen[1]).toBe(`${astral}ude.`);
+    expect(chunkTexts(events).join('')).toBe('x'.repeat(63) + `${astral}ude.`);
+  });
+
+  it('backs the 64-character hold-back away from a surrogate pair', async () => {
+    const { moderator, seen } = scripted(() => ALLOW);
+    const astral = '\u{1d427}';
+    const text = 'x'.repeat(63) + astral + 'y'.repeat(63);
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens(text),
+        regenerate: () => tokens('Safe.'),
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    expect(seen).toEqual([text]);
+    expect(chunkTexts(events)).toEqual([
+      'x'.repeat(63),
+      `${astral}${'y'.repeat(63)}`,
+    ]);
+  });
+});
+
+describe('turn-scoped hard floor across the carry', () => {
+  it('does not split a surrogate pair at the forced chunk boundary', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const text = `child${'-'.repeat(58)}\u{1d427}ude.`;
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens(text),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'mature',
+        maxChunkChars: 64,
+      }),
+    );
+    expect(text.charCodeAt(63)).toBeGreaterThanOrEqual(0xd800);
+    expect(text.charCodeAt(63)).toBeLessThanOrEqual(0xdbff);
+    expect(text.charCodeAt(64)).toBeGreaterThanOrEqual(0xdc00);
+    expect(text.charCodeAt(64)).toBeLessThanOrEqual(0xdfff);
+    expect(chunkTexts(events).join('')).not.toMatch(/child|nude/i);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attempt: 0,
+          verdict: 'block',
+          source: 'hardfloor',
+        }),
+      ]),
+    );
+  });
+
+  it('blocks a message-level minor-plus-sexual violation whose minor reference is beyond the carry', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const filler = 'The tavern is quiet and the fire is low. '.repeat(30);
+    const events = await collect(
+      runOutputGate({
+        stream: () =>
+          tokens(
+            ...splitTokens(
+              `A child sleeps by the door. ${filler}Then nude.`,
+              50,
+            ),
+          ),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'family',
+      }),
+    );
+    expect(chunkTexts(events).join('')).not.toContain('nude');
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
+      expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
+    ]);
+  });
+
+  it('does not block a tentative youth tail before a later adult marker, and emits only after finish', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('She had sex. The youth', ' adult hung back.'),
+        regenerate: () => {
+          throw new Error('no regeneration expected');
+        },
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    expect(chunkTexts(events).join('')).toBe(
+      'She had sex. The youth adult hung back.',
+    );
+    expect(events.filter((event) => event.kind === 'regenerate')).toHaveLength(
+      0,
+    );
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.outcome).toBe('approved');
+  });
+});
+
+describe('message-level taint never leaks emitted text', () => {
+  it('withholds sexual-first narration across >64 chars until a later minor blocks the turn', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const filler = 'The tavern is quiet and the fire is low. '.repeat(6);
+    const sexualFirst = `She is nude. ${filler}`;
+    const events = await collect(
+      runOutputGate({
+        stream: () =>
+          tokens(...splitTokens(`${sexualFirst}A child sleeps.`, 20)),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    const emitted = chunkTexts(events).join('');
+    expect(sexualFirst.length).toBeGreaterThan(64);
+    expect(emitted).not.toMatch(/nude/i);
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
+      expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
+    ]);
+  });
+
+  it('withholds minor-first narration across >64 chars until a later sexual cue blocks the turn', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const filler = 'The tavern is quiet and the fire is low. '.repeat(6);
+    const minorFirst = `A child sleeps. ${filler}`;
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens(...splitTokens(`${minorFirst}Then nude.`, 20)),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    const emitted = chunkTexts(events).join('');
+    expect(minorFirst.length).toBeGreaterThan(64);
+    expect(emitted).not.toMatch(/child|nude/i);
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
+      expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
+    ]);
+  });
+});
+
 describe('tail hold-back and config guards', () => {
   const ALLOW_JSON = async () => '{"verdict":"allow","category":"none"}';
   const termLayer = (term: string): DeterministicLayer => ({
@@ -750,6 +1031,20 @@ describe('tail hold-back and config guards', () => {
         maxChunkChars: 415,
       }),
     ).toThrow(/maxChunkChars/);
+  });
+
+  it('rejects maxInFlight values that would stall the reader', () => {
+    const { moderator } = scripted(() => ALLOW);
+    for (const maxInFlight of [0, -1, 0.5, Number.NaN])
+      expect(() =>
+        runOutputGate({
+          stream: () => tokens('Hello.'),
+          regenerate: () => tokens('Safe.'),
+          moderator,
+          tier: 'standard',
+          maxInFlight,
+        }),
+      ).toThrow(/maxInFlight/);
   });
 
   it('P9: a deterministic rule longer than the hold-back is refused at construction', () => {

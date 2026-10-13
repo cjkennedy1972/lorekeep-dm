@@ -538,6 +538,10 @@ export const HARD_FLOOR_POSITIVE: readonly HardFloorFixture[] = [
 ];
 
 export const HARD_FLOOR_NEGATIVE: readonly HardFloorFixture[] = [
+  {
+    id: 'neg-youth-followed-by-adult',
+    text: 'She had sex. The youth adult hung back.',
+  },
   // ordinary tabletop with minor-like words
   {
     id: 'neg-teen-thief',

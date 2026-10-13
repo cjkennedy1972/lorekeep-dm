@@ -39,7 +39,7 @@ jobs:
       - run: pnpm -r typecheck
       - run: pnpm lint
       - run: pnpm format:check
-      - run: pnpm -r test
+      - run: pnpm --workspace-concurrency=1 -r test
       - run: pnpm --filter @game/server migrate:up
       - run: pnpm --filter @game/server test:db
       - run: pnpm --filter e2e test

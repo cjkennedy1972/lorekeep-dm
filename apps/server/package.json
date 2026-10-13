@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --exclude=**/test/db/**",
+    "test": "vitest run --no-file-parallelism --exclude=**/test/db/**",
     "test:db": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required for test:db'); process.exit(1); }\" && vitest run --no-file-parallelism test/db",
     "smoke:prod": "node scripts/smoke-production.mjs",
     "moderation:probe": "pnpm run build && node scripts/moderation-probe.mjs",

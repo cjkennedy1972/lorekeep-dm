@@ -3,6 +3,7 @@ import {
   failClosedVerdict,
   MAX_RULE_SPAN_CHARS,
   type Category,
+  type DeterministicTurn,
   type Moderator,
   type Verdict,
 } from './moderator.js';
@@ -17,7 +18,7 @@ export const DEFAULT_MAX_STREAM_CHARS = 20_000;
 export const DEFAULT_MAX_TURN_CHARS = 30_000;
 export const DEFAULT_SOURCE_IDLE_MS = 15_000;
 export const DEFAULT_VERDICT_TIMEOUT_MS = 10_000;
-// ponytail: carry must be >= the longest deterministic rule span; raise if a rule can exceed 400 chars.
+// ponytail: judge-only carry; deterministic rules use the per-attempt turn scanner.
 const CONTEXT_CHARS = 400;
 const HOLD_BACK_CHARS = MAX_RULE_SPAN_CHARS;
 const FIRST_CHUNK_TOKENS = 12;
@@ -77,11 +78,18 @@ export interface OutputGateOptions {
 }
 
 type Chunk = { text: string; verdict: Promise<Verdict>; cutAtMs: number };
-type Item = Chunk | 'end' | { error: unknown };
+type Item =
+  | Chunk
+  | 'end'
+  | { error: unknown }
+  | { terminalBlock: 'failclosed' | 'hardfloor' };
 
 export function runOutputGate(
   opts: OutputGateOptions,
 ): AsyncGenerator<GateEvent> {
+  const maxInFlight = opts.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
+  if (!Number.isSafeInteger(maxInFlight) || maxInFlight < 1)
+    throw new Error(`maxInFlight ${maxInFlight} must be a positive integer`);
   const maxChunk = opts.maxChunkChars ?? DEFAULT_MAX_CHUNK_CHARS;
   if (maxChunk < HOLD_BACK_CHARS)
     throw new Error(
@@ -146,8 +154,33 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
     let wakeReader: (() => void) | null = null;
     let outstanding = 0;
     let stopped = false;
-    let contextTail = approved.join('').slice(-CONTEXT_CHARS);
-    const it = source[Symbol.asyncIterator]();
+    const emittedBefore = approved.join('');
+    let contextTail = emittedBefore.slice(-CONTEXT_CHARS);
+    let sensitive = false;
+    let turn: DeterministicTurn | undefined;
+    let it: AsyncIterator<string> | undefined;
+    let initializationFailed = false;
+    try {
+      const scanner = opts.moderator.startTurn?.();
+      turn = scanner && {
+        push: (text) => {
+          const result = scanner.push(text);
+          sensitive ||= result.sensitive === true;
+          return result;
+        },
+        finish: scanner.finish
+          ? () => {
+              const result = scanner.finish!();
+              sensitive ||= result.sensitive === true;
+              return result;
+            }
+          : undefined,
+      };
+      turn?.push(emittedBefore);
+      it = source[Symbol.asyncIterator]();
+    } catch {
+      initializationFailed = true;
+    }
     const stoppedSignal = new Promise<typeof STOPPED>((resolve) =>
       abort.signal.addEventListener('abort', () => resolve(STOPPED), {
         once: true,
@@ -180,7 +213,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         timer = setTimeout(() => resolve(IDLE), sourceIdleMs);
       });
       try {
-        return await Promise.race([it.next(), idle, stoppedSignal]);
+        return await Promise.race([it!.next(), idle, stoppedSignal]);
       } finally {
         clearTimeout(timer);
       }
@@ -209,6 +242,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           opts.moderator.moderate({
             text,
             context,
+            turn,
             tier: opts.tier,
             tableLines: opts.tableLines,
             direction: 'output',
@@ -221,7 +255,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
       return { text, verdict, cutAtMs };
     };
 
-    void (async () => {
+    const readSource = async () => {
       let buffer = '';
       let pendingWs = '';
       let scanFrom = 0;
@@ -238,9 +272,19 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           buffer.length >= maxChunk ||
           (cuts === 0 && deltas >= FIRST_CHUNK_TOKENS)
         ) {
-          const limit = Math.min(buffer.length, maxChunk);
+          let limit = Math.min(buffer.length, maxChunk);
           for (let i = limit - 1; i > 0; i--)
             if (SPACE.test(buffer[i]!)) return i;
+          const lastCodeUnit = limit > 0 ? buffer.charCodeAt(limit - 1) : 0;
+          const nextCodeUnit =
+            limit < buffer.length ? buffer.charCodeAt(limit) : undefined;
+          if (
+            lastCodeUnit >= 0xd800 &&
+            lastCodeUnit <= 0xdbff &&
+            (nextCodeUnit === undefined ||
+              (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff))
+          )
+            limit--;
           return limit;
         }
         let from = buffer.length;
@@ -295,7 +339,9 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
       } catch (error) {
         push({ error });
       }
-    })();
+    };
+    if (initializationFailed) pushFailClosed();
+    else void readSource();
 
     let held = '';
     try {
@@ -304,6 +350,16 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           await new Promise<void>((resolve) => (wakeConsumer = resolve));
         const item = queue.shift()!;
         if (item === 'end') {
+          let final:
+            | ReturnType<NonNullable<DeterministicTurn['finish']>>
+            | undefined;
+          try {
+            final = turn?.finish?.();
+          } catch {
+            push({ terminalBlock: 'failclosed' });
+          }
+          if (final?.blocked) push({ terminalBlock: 'hardfloor' });
+          if (final?.blocked || (!final && turn?.finish)) continue;
           if (held) {
             approved.push(held);
             yield {
@@ -316,6 +372,20 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           return 'done';
         }
         if ('error' in item) throw item.error;
+        if ('terminalBlock' in item) {
+          const at = now() - start;
+          const failedClosed = item.terminalBlock === 'failclosed';
+          metrics.chunks.push({
+            attempt,
+            verdict: 'block',
+            category: failedClosed ? 'other' : 'minor_sexual',
+            source: failedClosed ? 'failclosed' : 'hardfloor',
+            judgeLatencyMs: 0,
+            cutAtMs: at,
+            decidedAtMs: at,
+          });
+          return 'blocked';
+        }
         const verdict = await item.verdict;
         const decidedAtMs = now() - start;
         metrics.chunks.push({
@@ -331,7 +401,17 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         if (metrics.firstApprovedMs === null)
           metrics.firstApprovedMs = decidedAtMs;
         const pending = held + item.text;
-        const cut = Math.max(0, pending.length - HOLD_BACK_CHARS);
+        // A sexual term already shown can't be revoked by a later minor term, so hold the whole turn.
+        let cut = sensitive ? 0 : Math.max(0, pending.length - HOLD_BACK_CHARS);
+        if (
+          cut > 0 &&
+          cut < pending.length &&
+          pending.charCodeAt(cut - 1) >= 0xd800 &&
+          pending.charCodeAt(cut - 1) <= 0xdbff &&
+          pending.charCodeAt(cut) >= 0xdc00 &&
+          pending.charCodeAt(cut) <= 0xdfff
+        )
+          cut--;
         const emit = pending.slice(0, cut);
         held = pending.slice(cut);
         if (emit) {
@@ -349,7 +429,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
       stopped = true;
       wakeReaderNow();
       abort.abort();
-      void it.return?.()?.catch(() => undefined);
+      void it?.return?.()?.catch(() => undefined);
     }
   }
 }
