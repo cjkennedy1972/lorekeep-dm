@@ -321,8 +321,8 @@ SLOs apply to a **reference configuration** (a hosted fast-tier endpoint with st
 | Input moderation | ≤ 0.4 s, parallel with round close | Cheap classifier; runs at submit time |
 | Prompt build + registry injection | ≤ 0.05 s | Deterministic, in-memory |
 | LLM first token (incl. tool loop) | ≤ 1.5 s | Fast tier default; max 3 tool iterations; tools return in < 50 ms; **uncached prefill adds latency (about +0.2–0.5 s for ~9k tokens, [unverified])**, so shrink prompts |
-| Output gate hold-back | ≤ 0.5 s | First chunk at ~12 tokens, then sentence chunks |
-| Total first narration token | ≈ 2.4–2.9 s | tight; SLO is 3 s uncached (ADR-023); M3-30 measurement is the gate |
+| Output gate hold-back | ≤ 0.5 s target | Incremental first-chunk/sentence streaming is not active for current tool-bearing turns; they buffer completed narration before moderation |
+| Total first narration token | Not established for current tool-bearing path | Full model generation plus output moderation precedes the first narration event; measure before claiming the 3 s SLO |
 | Full turn (150–300 narration tokens) | ≈ 4–6 s | Narration capped by R-N1 |
 
 Combat with the map: engine work is cheap CPU (A* and LOS on ≤ 60x60 cells, well under 50 ms **[unverified]**); the engine resolves structured commands in ≤ 500 ms with no LLM; movement animates client-side from events; one narration per turn keeps per-action latency within 6 s. Local models can break the first-token target; the probe reports it and the operator chooses the trade.

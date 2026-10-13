@@ -267,7 +267,7 @@ async function main() {
       'ok: two X-Forwarded-For addresses get separate rate-limit buckets',
     );
 
-    // Point the moderate slot at the stub, then play one solo turn.
+    // Point narration and moderation slots at the stub, then play one solo turn.
     const opLogin = await login(
       operatorEmail,
       operatorPassword,
@@ -279,21 +279,23 @@ async function main() {
     if (opLogin.status !== 200)
       throw new Error(`operator login returned ${opLogin.status}`);
     const opCookie = cookieFrom(opLogin.headers.get('set-cookie'));
-    const put = await fetch(`${base}/api/operator/endpoints/moderate`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json', cookie: opCookie },
-      body: JSON.stringify({
-        baseUrl: `http://127.0.0.1:${stub.port}/v1`,
-        model: 'smoke-model',
-        apiStyle: 'openai',
-        apiKey: secrets.llm,
-        contextWindow: 32768,
-      }),
-    });
-    if (put.status !== 200)
-      throw new Error(
-        `operator endpoint PUT returned ${put.status}: ${await put.text()}`,
-      );
+    for (const slot of ['fast', 'moderate']) {
+      const put = await fetch(`${base}/api/operator/endpoints/${slot}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', cookie: opCookie },
+        body: JSON.stringify({
+          baseUrl: `http://127.0.0.1:${stub.port}/v1`,
+          model: 'smoke-model',
+          apiStyle: 'openai',
+          apiKey: secrets.llm,
+          contextWindow: 32768,
+        }),
+      });
+      if (put.status !== 200)
+        throw new Error(
+          `operator ${slot} endpoint PUT returned ${put.status}: ${await put.text()}`,
+        );
+    }
 
     // Live DM turns are operator-allowlisted until M3 moderation lands (LIVE_DM_ALLOWLIST_ONLY).
     const created = await fetch(`${base}/api/tables`, {

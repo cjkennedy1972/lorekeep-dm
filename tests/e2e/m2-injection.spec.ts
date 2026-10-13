@@ -275,6 +275,16 @@ async function drive(c: Case, compromised: boolean) {
     testMode: true,
     adapter: adapter(chunks, seen),
     toolMode: 'native',
+    outputModerator: {
+      moderate: async () => ({
+        verdict: 'allow',
+        category: 'none',
+        source: 'judge',
+        latencyMs: 0,
+        unavailable: false,
+      }),
+    },
+    outputTier: 'standard',
     prompt: {
       catalogVersion: catalog.catalogVersion,
       toolMode: 'native',

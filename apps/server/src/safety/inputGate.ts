@@ -6,9 +6,9 @@ import {
 } from '../llm/config.js';
 import { BoundedCounter } from '../accounts/throttle.js';
 import { checkHardFloor } from './hardFloor.js';
+import { hardFloorLayer } from './deterministicLayer.js';
 import {
   JudgeModerator,
-  MAX_RULE_SPAN_CHARS,
   type Category,
   type JudgeChat,
   type Moderator,
@@ -198,15 +198,7 @@ export function createModerationJudge({
 }): JudgeModerator {
   return new JudgeModerator({
     chat,
-    deterministic: {
-      hardFloorCheck: (text) =>
-        checkHardFloor(text).blocked
-          ? { blocked: true, category: 'minor_sexual' }
-          : { blocked: false },
-      // ponytail: the SRD denylist is output-side (M3-08); input has none yet.
-      denylistCheck: () => ({ blocked: false }),
-      maxSpanChars: MAX_RULE_SPAN_CHARS,
-    },
+    deterministic: hardFloorLayer,
   });
 }
 

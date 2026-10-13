@@ -26,6 +26,7 @@ const saved = {
   LLM_ALLOW_LOCAL_HOSTS: process.env.LLM_ALLOW_LOCAL_HOSTS,
   OPERATOR_ENDPOINT_MASTER_KEY: process.env.OPERATOR_ENDPOINT_MASTER_KEY,
   OPERATOR_EMAILS: process.env.OPERATOR_EMAILS,
+  SOLO_TURN_ENDPOINT_SLOT: process.env.SOLO_TURN_ENDPOINT_SLOT,
 };
 const catalog = loadCatalog();
 let db: Pool;
@@ -69,8 +70,10 @@ beforeAll(async () => {
   delete process.env.LLM_FIXTURE_MODE;
   process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(endpoint.baseUrl).host;
   process.env.OPERATOR_ENDPOINT_MASTER_KEY = `primary:${randomBytes(32).toString('base64')}`;
+  process.env.SOLO_TURN_ENDPOINT_SLOT = 'fast';
   operatorEmail = `operator-${randomUUID()}@example.test`;
   process.env.OPERATOR_EMAILS = operatorEmail;
+  const endpointOwner = await createAccount();
   await db.query(
     `INSERT INTO catalog_snapshots(catalog_version,entries) VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
     [catalog.catalogVersion, JSON.stringify(catalog.entries)],
@@ -86,6 +89,20 @@ beforeAll(async () => {
       unsupportedToolSchemaKeywords: [],
     },
     createEndpointEgress(),
+    endpointOwner.id,
+  );
+  await saveEndpoint(
+    db,
+    'fast',
+    {
+      baseUrl: endpoint.baseUrl,
+      model: 'fixture-model',
+      apiStyle: 'openai',
+      apiKey: 'fixture-secret',
+      unsupportedToolSchemaKeywords: [],
+    },
+    createEndpointEgress(),
+    endpointOwner.id,
   );
   rooms = new RoomRegistry(
     new Persistence(db),
@@ -110,7 +127,9 @@ afterAll(async () => {
   for (const id of sessionIds) await db.query('SELECT purge_session($1)', [id]);
   for (const id of accountIds)
     await db.query('DELETE FROM accounts WHERE id=$1', [id]);
-  await db.query("DELETE FROM operator_endpoints WHERE slot='moderate'");
+  await db.query(
+    "DELETE FROM operator_endpoints WHERE slot IN ('moderate','fast')",
+  );
   await endpoint?.close();
   await db.end();
   for (const [key, value] of Object.entries(saved)) {

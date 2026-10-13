@@ -37,6 +37,8 @@ import {
   createEndpointEgress,
 } from '../llm/config.js';
 import { liveDmAllowed } from '../llm/liveDmGate.js';
+import { createEndpointJudge } from '../safety/inputGate.js';
+import type { Moderator } from '../safety/moderator.js';
 import {
   fixtureModeFromEnvironment,
   RecordedLlmAdapter,
@@ -120,6 +122,19 @@ const asRecord = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {};
 
+// Adapter-injected runner tests deliberately isolate orchestration from endpoint setup.
+const TEST_ALLOW_MODERATOR: Moderator = {
+  async moderate() {
+    return {
+      verdict: 'allow',
+      category: 'other',
+      source: 'judge',
+      latencyMs: 0,
+      unavailable: false,
+    };
+  },
+};
+
 export class ProductionSoloTurnRunner implements SoloTurnRunner {
   private readonly catalog = loadCatalog();
   private readonly egress = createEndpointEgress();
@@ -150,7 +165,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       ))
     )
       throw new LiveDmRestrictedError();
-    const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'moderate';
+    const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'fast';
     if (!['fast', 'frontier', 'moderate'].includes(endpointSlot))
       throw new Error('Solo turn endpoint slot is invalid');
     const endpoint =
@@ -524,6 +539,11 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       context,
       adapter,
       toolMode: 'native',
+      outputModerator:
+        this.adapterOverride && process.env.NODE_ENV === 'test'
+          ? TEST_ALLOW_MODERATOR
+          : createEndpointJudge(this.db),
+      outputTier: tier,
       emit: (event) => {
         const value = event as Record<string, unknown>;
         if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
