@@ -33,6 +33,10 @@ function runTurn(chunks: string[]) {
     verdict = turn.push(c);
     if (verdict.blocked && blockedAt < 0) blockedAt = i;
   });
+  if (blockedAt < 0) {
+    verdict = turn.finish();
+    if (verdict.blocked) blockedAt = chunks.length - 1;
+  }
   return { ...verdict, prefix: chunks.slice(0, blockedAt + 1).join('') };
 }
 
@@ -42,14 +46,15 @@ function runTurn(chunks: string[]) {
  * a streamed prefix can be sexual-looking before its completion ("harvest rapes" + "eed").
  * Rule labels may differ ("childporn" joined in a prefix, "childpornography" in full).
  */
-function expectEquivalent(text: string, chunks: string[]) {
+function expectEquivalent(text: string, chunks: string[], label = '') {
   const want = checkHardFloor(text);
   const got = runTurn(chunks);
-  if (want.blocked) expect(got.blocked, 'under-block').toBe(true);
+  if (want.blocked) expect(got.blocked, `under-block ${label}`).toBe(true);
   if (got.blocked && !want.blocked)
-    expect(checkHardFloor(got.prefix).blocked, 'over-block beyond prefix').toBe(
-      true,
-    );
+    expect(
+      checkHardFloor(got.prefix).blocked,
+      `over-block beyond prefix ${label}: ${JSON.stringify({ text, prefix: got.prefix })}`,
+    ).toBe(true);
 }
 
 function mulberry32(seed: number) {
@@ -94,6 +99,26 @@ describe('createHardFloorTurn equivalence', () => {
     },
   );
 
+  it('defers tentative youth tail until the adult marker is settled, then allows the turn', () => {
+    const turn = createHardFloorTurn();
+    const first = turn.push('She had sex. The youth');
+    expect(first.blocked).toBe(false);
+    expect(first.sensitive).toBe(true);
+
+    const second = turn.push(' adult hung back.');
+    expect(second.blocked).toBe(false);
+    expect(turn.finish().blocked).toBe(false);
+    expect(
+      checkHardFloor('She had sex. The youth adult hung back.').blocked,
+    ).toBe(false);
+  });
+
+  it('still applies a tentative youth tail at end of turn', () => {
+    const turn = createHardFloorTurn();
+    expect(turn.push('She had sex. The youth').blocked).toBe(false);
+    expect(turn.finish().blocked).toBe(true);
+  });
+
   it('blocks when a minor reference and a sexual term are more than the carry apart', () => {
     const filler = 'The caravan crossed the dunes under a pale sky. '.repeat(
       40,
@@ -108,11 +133,79 @@ describe('createHardFloorTurn equivalence', () => {
     expectEquivalent(text, chunks);
   });
 
+  it('uses the shared bounded separator canonicalizer in both full and streamed scans', () => {
+    const text = `The child${'. '.repeat(600)}was nude.`;
+    const full = checkHardFloor(text);
+    const turn = createHardFloorTurn();
+    let streamed = { blocked: false };
+    for (let i = 0; i < text.length; i += 37)
+      streamed = turn.push(text.slice(i, i + 37));
+    streamed = turn.finish();
+    expect(full.blocked).toBe(true);
+    expect(streamed.blocked).toBe(full.blocked);
+  });
+
+  it('records the intentional over-block when separator compaction creates a 3-mark age cue', () => {
+    // NAME_AGE accepts up to three punctuation marks. Compaction shortens this four-mark
+    // run to three, so the shared full/stream canonical form treats it as an age cue.
+    const text = 'Mira....12. She was raped.';
+    expect(checkHardFloor(text).blocked).toBe(true);
+    expectEquivalent(text, chunksOf(text, 1));
+  });
+
+  it('preserves the full-scan verdict across seeded separator and carry boundaries', () => {
+    const separators = [
+      ' ',
+      '. '.repeat(80),
+      '!?,'.repeat(50),
+      '\u200b'.repeat(120),
+      '\t'.repeat(200),
+      '—'.repeat(80),
+      ' _ '.repeat(60),
+    ];
+    const rand = mulberry32(0x08c2026);
+    for (let trial = 0; trial < 24; trial++) {
+      const gap = separators[Math.floor(rand() * separators.length)]!;
+      const text =
+        trial % 2 === 0
+          ? `Mira is a child${gap}She was raped.`
+          : `She was raped${gap}Mira is a child.`;
+      // Separator canonicalization has intentional semantic deltas; the stream must
+      // match the canonical full scan (or only over-block at a blocking prefix).
+      for (const size of [1, 10, 37, 400])
+        expectEquivalent(
+          text,
+          chunksOf(text, size),
+          `trial=${trial},size=${size}`,
+        );
+      expectEquivalent(
+        text,
+        splitAt(text, randomCuts(text, rand)),
+        `trial=${trial},random`,
+      );
+    }
+  });
+
+  it('keeps sensitive visibility sticky without turning a merged token into a verdict', () => {
+    const turn = createHardFloorTurn();
+    const first = turn.push('She was raped');
+    expect(first.sensitive).toBe(true);
+    expect(first.blocked).toBe(false);
+
+    const pushed = turn.push(`${'\u200b'.repeat(120)}Mira is a child.`);
+    const final = turn.finish();
+    expect(pushed.sensitive).toBe(true);
+    expect(final.sensitive).toBe(true);
+    expect(checkHardFloor('She was rapedMira is a child.').blocked).toBe(false);
+    expect(final.blocked).toBe(false);
+  });
+
   it('keeps an early verdict sticky after the turn is blocked', () => {
     const turn = createHardFloorTurn();
     expect(turn.push('Mira is a child. ').blocked).toBe(false);
-    expect(turn.push('She was raped.').blocked).toBe(true);
-    expect(turn.push(' benign tail').blocked).toBe(true);
+    expect(turn.push('She was raped.').blocked).toBe(false);
+    expect(turn.finish().blocked).toBe(true);
+    expect(turn.finish().blocked).toBe(true);
   });
 
   it('blocks a turn longer than MAX_INPUT_CHARS like checkHardFloor does', () => {
@@ -144,6 +237,7 @@ const GAP_CASES: [string, string][] = [
   ['minor, 200 hyphens, sexual', `The child ${'-'.repeat(200)}nude`],
   ['minor, one 450-char token, sexual', `child ${'a'.repeat(450)} nude`],
   ['NAME_AGE, 600 spaces, sexual', `Mira 12${' '.repeat(600)}nude`],
+  ['sexual anchor before NAME_AGE', 'Naked, 12, is.'],
 ];
 
 const GAP_FILLERS = ['-', ' ', '漢', 'the '];
@@ -157,6 +251,22 @@ function orderedGapTexts(gap: number): string[] {
 }
 
 describe('streamed gap under-block (B1)', () => {
+  it('preserves a sexual term used as the NAME_AGE anchor', () => {
+    const text = 'Naked, 12, is.';
+    expect(checkHardFloor(text).blocked).toBe(true);
+    expect(runTurn(chunksOf(text, 1)).blocked).toBe(true);
+  });
+
+  it('folds astral format characters across the one-character fast path boundary', () => {
+    const turn = createHardFloorTurn();
+    expect(turn.push(`se\u{E0001}`).blocked).toBe(false);
+    expect(turn.push('x').blocked).toBe(false);
+    expect(turn.push(' ').blocked).toBe(false);
+    expect(turn.push('child').blocked).toBe(false);
+    expect(turn.finish().blocked).toBe(true);
+    expect(checkHardFloor(`se\u{E0001}x child`).blocked).toBe(true);
+  });
+
   it.each(GAP_CASES)(
     'blocks when a minor term and a sexual term are far apart: %s',
     (_name, text) => {
@@ -216,7 +326,7 @@ describe('createHardFloorTurn perf', () => {
     let verdict = { blocked: false, rule: undefined as string | undefined };
     for (let i = 0; i < CHUNKS; i++)
       verdict = turn.push(text.slice(i * size, (i + 1) * size));
-    return verdict.blocked;
+    return turn.finish().blocked;
   };
 
   it.each([
@@ -236,24 +346,37 @@ describe('createHardFloorTurn perf', () => {
         11,
       );
       expect(full / half, 'scaling').toBeLessThan(3);
-      expect(full, 'ceiling').toBeLessThan(ABSOLUTE_CEILING_MS);
+      expect(full, '100 ms 75-chunk acceptance target').toBeLessThan(100);
+      expect(full, 'absolute safety ceiling').toBeLessThan(ABSOLUTE_CEILING_MS);
     },
   );
 
-  it('scans a 30000-char turn pushed one character at a time in linear time', () => {
-    const text = Array.from({ length: MAX_INPUT_CHARS }, (_, i) =>
-      i % 2 ? '.' : 'a',
-    ).join('');
-    const run = (s: string) => {
+  it('records adversarial 30000-char scan timings at 1/10/400-char chunk sizes', () => {
+    const text = sized(adversarial);
+    const run = (s: string, chunkSize: number) => {
       const turn = createHardFloorTurn();
       const start = performance.now();
-      for (const c of s) turn.push(c);
+      let verdict = { blocked: false };
+      for (let i = 0; i < s.length; i += chunkSize)
+        verdict = turn.push(s.slice(i, i + chunkSize));
+      verdict = turn.finish();
+      expect(verdict.blocked).toBe(false);
       return performance.now() - start;
     };
-    const half = run(text.slice(0, MAX_INPUT_CHARS / 2));
-    const full = run(text);
+    expect(text.length).toBe(MAX_INPUT_CHARS);
+    expect(checkHardFloor(text).blocked).toBe(false);
+    const half = medianMs(() => run(text.slice(0, MAX_INPUT_CHARS / 2), 1));
+    const full = medianMs(() => run(text, 1));
+    const tenChar = medianMs(() => run(text, 10));
+    const fourHundredChar = medianMs(() => run(text, 400));
+    console.info(
+      `30k adversarial push timing: 1-char=${full.toFixed(1)}ms, 10-char=${tenChar.toFixed(1)}ms, 400-char=${fourHundredChar.toFixed(1)}ms`,
+    );
     expect(full / half, 'scaling').toBeLessThan(3);
-    // ponytail: ~80us per push across 30k pushes; CI runners need headroom under full suite load.
-    expect(full, 'ceiling').toBeLessThan(20_000);
+    // Keep the pathological one-character stress case useful without making this
+    // wall-clock assertion flaky when the full suite runs other workers concurrently.
+    expect(full, 'one-character stress ceiling').toBeLessThan(120);
+    expect(tenChar, '100 ms 10-character target').toBeLessThan(100);
+    expect(fourHundredChar, '100 ms 400-character target').toBeLessThan(100);
   }, 60_000);
 });

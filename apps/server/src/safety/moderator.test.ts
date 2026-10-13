@@ -275,6 +275,17 @@ describe('deterministic layer', () => {
     expect(chat).not.toHaveBeenCalled();
   });
 
+  it('requires a turn scanner for unbounded deterministic rules', () => {
+    const deterministic: DeterministicLayer = {
+      hardFloorCheck: () => ({ blocked: false }),
+      denylistCheck: () => ({ blocked: false }),
+      maxSpanChars: 0,
+    };
+    expect(() =>
+      moderatorWith(async () => ALLOW, deterministic).startTurn(),
+    ).toThrow('unbounded deterministic rules require a turn-scoped scanner');
+  });
+
   it('a denylist hit short-circuits: the judge is never called', async () => {
     const { chat } = judgeReplying(ALLOW);
     const deterministic: DeterministicLayer = {
@@ -456,5 +467,31 @@ describe('fail-closed row', () => {
       unavailable: true,
       failClosedRow: 'hard-floor',
     });
+  });
+
+  it('fails closed when the incremental hard-floor turn throws during moderate()', async () => {
+    const chat = vi.fn(async () => ALLOW);
+    const moderator = new JudgeModerator({
+      chat,
+      deterministic: NOOP,
+    });
+    const verdict = await moderator.moderate({
+      text: 'A scene.',
+      tier: 'standard',
+      direction: 'output',
+      turn: {
+        push: () => {
+          throw new Error('scanner failed');
+        },
+      },
+    });
+
+    expect(verdict).toMatchObject({
+      verdict: 'block',
+      source: 'failclosed',
+      unavailable: true,
+      failClosedRow: 'hard-floor',
+    });
+    expect(chat).not.toHaveBeenCalled();
   });
 });

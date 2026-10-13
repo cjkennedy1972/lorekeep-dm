@@ -76,7 +76,7 @@ describe('turn-scoped evaluation', () => {
     const turn = moderator.startTurn()!;
     turn.push(`A child sleeps. ${'x '.repeat(500)}`);
     const verdict = await moderator.moderate({
-      text: 'nude',
+      text: `nude ${'x '.repeat(40)}`,
       context: 'x'.repeat(400),
       turn,
       tier: 'family',

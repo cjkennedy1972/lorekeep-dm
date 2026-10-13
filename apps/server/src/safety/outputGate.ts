@@ -78,7 +78,7 @@ export interface OutputGateOptions {
 }
 
 type Chunk = { text: string; verdict: Promise<Verdict>; cutAtMs: number };
-type Item = Chunk | 'end' | { error: unknown };
+type Item = Chunk | 'end' | { error: unknown } | { terminalBlock: true };
 
 export function runOutputGate(
   opts: OutputGateOptions,
@@ -161,6 +161,13 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           sensitive ||= result.sensitive === true;
           return result;
         },
+        finish: scanner.finish
+          ? () => {
+              const result = scanner.finish!();
+              sensitive ||= result.sensitive === true;
+              return result;
+            }
+          : undefined,
       };
       turn?.push(emittedBefore);
       it = source[Symbol.asyncIterator]();
@@ -326,6 +333,16 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           await new Promise<void>((resolve) => (wakeConsumer = resolve));
         const item = queue.shift()!;
         if (item === 'end') {
+          let final:
+            | ReturnType<NonNullable<DeterministicTurn['finish']>>
+            | undefined;
+          try {
+            final = turn?.finish?.();
+          } catch {
+            push({ terminalBlock: true });
+          }
+          if (final?.blocked) push({ terminalBlock: true });
+          if (final?.blocked || (!final && turn?.finish)) continue;
           if (held) {
             approved.push(held);
             yield {
@@ -338,6 +355,19 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           return 'done';
         }
         if ('error' in item) throw item.error;
+        if ('terminalBlock' in item) {
+          const at = now() - start;
+          metrics.chunks.push({
+            attempt,
+            verdict: 'block',
+            category: 'minor_sexual',
+            source: 'hardfloor',
+            judgeLatencyMs: 0,
+            cutAtMs: at,
+            decidedAtMs: at,
+          });
+          return 'blocked';
+        }
         const verdict = await item.verdict;
         const decidedAtMs = now() - start;
         metrics.chunks.push({

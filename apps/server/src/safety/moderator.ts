@@ -58,13 +58,14 @@ export interface Moderator {
 export interface DeterministicCheckResult {
   blocked: boolean;
   category?: Category;
-  /** Sticky once a sexual term is seen in the turn. Earlier text can't be revoked by a later minor term, so the output gate holds from then on. */
+  /** Sticky once a sexual/explicit cue may affect the completed-turn verdict; the output gate holds from then on. */
   sensitive?: boolean;
 }
 
-/** Scans one turn's text in order; `push` returns the verdict for everything pushed so far. */
+/** Scans one turn's text in order; `finish` includes any unsettled tail. */
 export interface DeterministicTurn {
   push(text: string): DeterministicCheckResult;
+  finish?(): DeterministicCheckResult;
 }
 
 /**
@@ -197,7 +198,13 @@ export class JudgeModerator implements Moderator {
   }
 
   startTurn(): DeterministicTurn | undefined {
-    return this.options.deterministic.startTurn?.();
+    const turn = this.options.deterministic.startTurn?.();
+    if (!turn && this.options.deterministic.maxSpanChars === 0) {
+      throw new Error(
+        'unbounded deterministic rules require a turn-scoped scanner',
+      );
+    }
+    return turn;
   }
 
   async moderate(req: ModerationRequest): Promise<Verdict> {

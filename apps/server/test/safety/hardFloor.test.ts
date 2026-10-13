@@ -69,11 +69,15 @@ describe('checkHardFloor', () => {
     ];
     const sized = (unit: string, n: number) =>
       unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+    const measure = (text: string) =>
+      medianMs(() => {
+        for (let i = 0; i < 5; i++) checkHardFloor(text);
+      }, 11) / 5;
     for (const unit of units) {
       const half = sized(unit, MAX_INPUT_CHARS / 2);
       const full = sized(unit, MAX_INPUT_CHARS);
-      const halfMs = medianMs(() => checkHardFloor(half), 11);
-      const fullMs = medianMs(() => checkHardFloor(full), 11);
+      const halfMs = measure(half);
+      const fullMs = measure(full);
       expect(fullMs / halfMs, `scaling for ${unit}`).toBeLessThan(3);
       expect(fullMs, `ceiling for ${unit}`).toBeLessThan(ABSOLUTE_CEILING_MS);
     }

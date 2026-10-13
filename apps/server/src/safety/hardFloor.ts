@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-10.9';
+export const HARD_FLOOR_VERSION = '2026-10-12.11';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -682,7 +682,12 @@ function foldCharacters(input: string): string {
 }
 
 function normalizeText(input: string): string {
-  let s = foldCharacters(input);
+  return normalizeFoldedText(foldCharacters(input));
+}
+
+/** Apply rule normalization to text already returned by foldCharacters. */
+function normalizeFoldedText(input: string): string {
+  let s = input;
   s = s.replace(/(?<=\p{L})['’‘ʼʻʹꞌ`´′]s(?!\p{L})/gu, '');
   s = s.replace(ONE_COMPOUND, (_m, w: string) =>
     ONE_COMPOUND_AMBIGUOUS.has(w) ? ' minorage ' : ` ${10 + NUMBER_WORDS[w]!} `,
@@ -693,9 +698,12 @@ function normalizeText(input: string): string {
   s = s.replace(NO_OLDER_THAN, (match, a?: string) =>
     ageMatch(match, a, undefined),
   );
-  s = s.replace(NAME_AGE, (match, _l: string, a?: string, b?: string) =>
-    ageMatch(match, a, b),
-  );
+  s = s.replace(NAME_AGE, (match, anchor: string, a?: string, b?: string) => {
+    const normalized = ageMatch(match, a, b);
+    // NAME_AGE consumes the letter anchoring the name/age boundary. Preserve it;
+    // otherwise "Naked, 12" becomes "Nake minorage" and loses the cue.
+    return normalized === match ? match : anchor + normalized;
+  });
   s = s.replace(ROMAN_AGE_PHRASE, ' minorage ');
   s = s.replace(ROMAN_LINKED, ' minorage ');
   s = s.replace(DOT_SPLIT, ' ');
@@ -773,6 +781,11 @@ export interface HardFloorFlags {
   sexual: boolean;
 }
 
+const SCAN_CACHE_MAX = 4096;
+const SCAN_CACHE_MAX_CHARS = 2_000_000;
+const SCAN_CACHE = new Map<string, HardFloorFlags>();
+let scanCacheChars = 0;
+
 /**
  * Message-level verdict. `minor` is set by any minor reference that is not a youth word
  * next to an adult marker; `sexual` by any sexual term. The caller blocks when both hold.
@@ -784,6 +797,13 @@ export function scanFlags(
   from: number,
   to: number,
 ): HardFloorFlags {
+  // Turn scans repeatedly revisit a small, stable carry (especially when chunks are
+  // one character). Memoize bounded windows so the cost is not tokens × pushes.
+  const key = `${from}:${to}:${words.join('\u001f')}`;
+  if (key.length <= 8_192) {
+    const cached = SCAN_CACHE.get(key);
+    if (cached) return cached;
+  }
   const base = words.map((w) => variants(w)[0]!);
   let minor = false;
   let sexual = false;
@@ -800,7 +820,8 @@ export function scanFlags(
       let youth = false;
       let sexualHere = false;
       for (const w of variants(joined)) {
-        if (inIndex(EXPLICIT, w)) return { explicit: true, minor, sexual };
+        if (inIndex(EXPLICIT, w))
+          return remember({ explicit: true, minor, sexual });
         if (inIndex(MINOR, w)) core = true;
         else if (w === 'age' && prev === 'under') core = true;
         else if (inIndex(YOUTH_WORD, w)) youth = true;
@@ -848,10 +869,24 @@ export function scanFlags(
       if (core || (youth && !ADULT_MARKER.has(prev) && !ADULT_MARKER.has(next)))
         minor = true;
       if (sexualHere) sexual = true;
-      if (minor && sexual) return { explicit: false, minor, sexual };
+      if (minor && sexual) return remember({ explicit: false, minor, sexual });
     }
   }
-  return { explicit: false, minor, sexual };
+  return remember({ explicit: false, minor, sexual });
+
+  function remember(flags: HardFloorFlags): HardFloorFlags {
+    if (key.length > 8_192) return flags;
+    if (
+      SCAN_CACHE.size >= SCAN_CACHE_MAX ||
+      scanCacheChars + key.length > SCAN_CACHE_MAX_CHARS
+    ) {
+      SCAN_CACHE.clear();
+      scanCacheChars = 0;
+    }
+    SCAN_CACHE.set(key, flags);
+    scanCacheChars += key.length;
+    return flags;
+  }
 }
 
 function tokenize(text: string): string[] {
@@ -881,14 +916,11 @@ export function checkHardFloor(text: string): HardFloorResult {
       rule: 'input.over-limit',
       version: HARD_FLOOR_VERSION,
     };
-  const words = tokenize(normalizeText(text));
+  const words = tokenize(normalizeText(compactTurnWindow(text)));
   return verdictOf(scanFlags(words, 0, words.length));
 }
 
 /** Raw characters kept between chunks so a term that straddles a cut is re-read whole. */
-const TURN_CARRY_CHARS = 400;
-/** Tokens kept between chunks, whatever the separator length, so a term is still seen when a long run of separators follows it. */
-const TURN_CARRY_TOKENS = 24;
 const TOKEN_RE = /[\p{L}\p{N}]+/gu;
 const MAX_CARRY_TOKEN_CHARS = MAX_TERM_CHARS + MAX_JOIN + 1;
 const LONG_TOKEN_MARKER = 'ab'.repeat(Math.ceil(MAX_CARRY_TOKEN_CHARS / 2));
@@ -896,9 +928,8 @@ const LONG_TOKEN_MARKER = 'ab'.repeat(Math.ceil(MAX_CARRY_TOKEN_CHARS / 2));
 const TURN_TAIL_TOKENS = MAX_JOIN + FILLER_WINDOW + 2;
 /** First tokens of a window cut mid-turn: no left context, so they set no flags. */
 const TURN_LEFT_TOKENS = 3;
-/** Carried tokens re-read each push: covers the previous tail, which was tentative and never settled. Older carried tokens already settled. */
-const TURN_RESCAN_TOKENS = TURN_CARRY_TOKENS + TURN_TAIL_TOKENS;
-
+/** Enough tokens for the unsettled tail, left context and joined-token lookahead. */
+const TURN_CARRY_TOKENS = MAX_JOIN + TURN_TAIL_TOKENS + TURN_LEFT_TOKENS + 2;
 function compactLongToken(token: string): string {
   if ([...token].length <= MAX_CARRY_TOKEN_CHARS) return token;
   const hasLetters = /\p{L}/u.test(token);
@@ -925,48 +956,130 @@ function compactLongToken(token: string): string {
   ].join('');
 }
 
-/** Keep repeated pushes over sparse input bounded while preserving word variants. */
+/**
+ * Bound non-word runs. Hard-floor rules are token-based except NAME_AGE's punctuation
+ * branch, which accepts at most three punctuation marks before an age. Retaining up to
+ * three marks and one space on either side preserves every such match; collapsing mixed
+ * separator runs can add matches, but cannot remove a token sequence or age marker.
+ */
+function compactSeparators(text: string): string {
+  return text.replace(/[^\p{L}\p{N}]+/gu, (run) => {
+    if (/^\s+$/u.test(run)) return ' ';
+    const marks = [...run]
+      .filter((char) => !/\s/u.test(char))
+      .slice(0, 3)
+      .join('');
+    return `${/^\s/u.test(run) ? ' ' : ''}${marks}${/\s$/u.test(run) ? ' ' : ''}`;
+  });
+}
+
+/** Keep repeated pushes bounded while preserving word variants and rule-relevant separators. */
 function compactTurnWindow(text: string): string {
   const trailingFormat = /\p{Cf}+$/u.exec(text)?.[0] ?? '';
   const body = trailingFormat ? text.slice(0, -trailingFormat.length) : text;
   const folded = foldCharacters(body);
-  const compacted = folded
-    .replace(/[\p{L}\p{N}]+/gu, compactLongToken)
-    .replace(/\s+/gu, ' ')
-    .replace(/-{5,}/g, '----')
-    .replace(/['’‘ʼʻʹꞌ`´′]{3,}/gu, (quotes) => [...quotes].slice(0, 2).join(''))
-    .replace(/[@*$]{27,}/g, (leets) => [...leets].slice(0, 26).join(''))
-    .replace(/[^\p{L}\p{N}\s@*$'’‘ʼʻʹꞌ`´′-]{5,}/gu, (separators) =>
-      [...separators].slice(0, 4).join(''),
-    );
+  const compacted = compactSeparators(
+    folded.replace(/[\p{L}\p{N}]+/gu, compactLongToken),
+  );
   return compacted + (trailingFormat ? trailingFormat[0] : '');
+}
+
+/** Fast path for the common one-ASCII-character stream delta. The carry is already
+ * folded/compacted, so only its final token or separator run can have changed. */
+function appendAsciiChar(
+  carry: string,
+  input: string,
+): { window: string; startsWord: boolean } | undefined {
+  if (input.length !== 1 || input.charCodeAt(0) > 0x7f) return undefined;
+  // A preserved trailing format character has cross-boundary folding rules.
+  const lastChar = carry.at(-1) ?? '';
+  if (
+    lastChar &&
+    lastChar.charCodeAt(0) > 0x7f &&
+    /\p{Cf}$/u.test(carry.slice(-2))
+  )
+    return undefined;
+  let code = input.charCodeAt(0);
+  if (code >= 65 && code <= 90) code += 32;
+  if (code === 64) code = 97;
+  else if (code === 36) code = 115;
+  else if (code === 42) code = 101;
+  const char = String.fromCharCode(code);
+  const wordChar = (code >= 97 && code <= 122) || (code >= 48 && code <= 57);
+  const lastCode = lastChar.charCodeAt(0);
+  const lastIsWord =
+    lastCode <= 0x7f
+      ? (lastCode >= 48 && lastCode <= 57) ||
+        (lastCode >= 65 && lastCode <= 90) ||
+        (lastCode >= 97 && lastCode <= 122)
+      : /[\p{L}\p{N}]/u.test(lastChar);
+  if (wordChar) {
+    if (!lastIsWord) return { window: carry + char, startsWord: true };
+    let tokenStart = carry.length;
+    while (tokenStart > 0) {
+      const c = carry.charCodeAt(tokenStart - 1);
+      if (
+        (c >= 48 && c <= 57) ||
+        (c >= 65 && c <= 90) ||
+        (c >= 97 && c <= 122)
+      ) {
+        tokenStart--;
+        continue;
+      }
+      if (c > 0x7f) {
+        tokenStart = carry.search(/[\p{L}\p{N}]+$/u);
+      }
+      break;
+    }
+    const token = carry.slice(tokenStart);
+    return {
+      window: carry.slice(0, tokenStart) + compactLongToken(token + char),
+      startsWord: false,
+    };
+  }
+
+  const whitespace = code === 32 || (code >= 9 && code <= 13) || code === 160;
+  if (whitespace) {
+    const endsWithWhitespace =
+      lastCode === 32 || (lastCode >= 9 && lastCode <= 13) || lastCode === 160;
+    return {
+      window: endsWithWhitespace ? carry : carry + ' ',
+      startsWord: false,
+    };
+  }
+
+  if (!carry || lastIsWord) return { window: carry + char, startsWord: false };
+  const separatorStart = carry.search(/[^\p{L}\p{N}]+$/u);
+  return {
+    window:
+      carry.slice(0, separatorStart) +
+      compactSeparators(carry.slice(separatorStart) + char),
+    startsWord: false,
+  };
 }
 
 export interface HardFloorTurn {
   push(chunk: string): HardFloorResult & { sensitive: boolean };
+  /** Close the turn and include the final unsettled tail in its verdict. */
+  finish(): HardFloorResult & { sensitive: boolean };
 }
 
 /**
- * Start of the carry for `window`: the earlier of the last TURN_CARRY_CHARS characters and
- * the start of the last TURN_CARRY_TOKENS tokens. Either bound keeps the carry at least as
- * long as the other, so neither a long separator run nor a long token run can cut a term
- * off from its neighbours. Returns 0 (keep everything) when there is nothing to drop.
+ * Start of a token-count-bounded carry. `compactTurnWindow` has already bounded each token
+ * and separator run, so a separator-only suffix is bounded too. Returns 0 when nothing drops.
  */
 function carryStart(window: string): number {
-  const charStart = window.length - TURN_CARRY_CHARS;
-  if (charStart <= 0) return 0;
   const tokens = [...window.matchAll(TOKEN_RE)];
-  const tokenStart =
-    tokens.length > TURN_CARRY_TOKENS
-      ? tokens[tokens.length - TURN_CARRY_TOKENS]!.index!
-      : 0;
-  return Math.min(charStart, tokenStart);
+  return tokens.length > TURN_CARRY_TOKENS
+    ? tokens[tokens.length - TURN_CARRY_TOKENS]!.index!
+    : 0;
 }
 
 /**
  * Incremental checkHardFloor over one turn. Each push scans the carry plus the new chunk.
  * Flags from settled tokens are accumulated and never withdrawn; the tail is recomputed
- * on every push and counts toward the verdict without being kept. Once blocked, stays blocked.
+ * on every push and counts toward the verdict without being kept. The sticky `sensitive`
+ * visibility latch is separate from the recomputed sexual flag. Once blocked, stays blocked.
  */
 export function createHardFloorTurn(): HardFloorTurn {
   const settled: HardFloorFlags = {
@@ -976,11 +1089,29 @@ export function createHardFloorTurn(): HardFloorTurn {
   };
   let total = 0;
   let carry = '';
+  let carryWords = 0;
   let dropped = false;
   let sensitive = false;
   let blockedResult: HardFloorResult | null = null;
+  let tailFlags: HardFloorFlags = {
+    explicit: false,
+    minor: false,
+    sexual: false,
+  };
+  let finished = false;
+  let finishResult: HardFloorResult | null = null;
   return {
     push(chunk) {
+      if (finished) {
+        const result: HardFloorResult = {
+          blocked: true,
+          rule: 'input.over-limit',
+          version: HARD_FLOOR_VERSION,
+        };
+        blockedResult = result;
+        finishResult = result;
+        return { ...result, sensitive };
+      }
       if (blockedResult) return { ...blockedResult, sensitive };
       total += chunk.length;
       if (total > MAX_INPUT_CHARS) {
@@ -993,31 +1124,58 @@ export function createHardFloorTurn(): HardFloorTurn {
       }
       const atTurnStart = !dropped;
       const prevCarry = carry;
-      const window = compactTurnWindow(prevCarry + chunk);
-      const cut = carryStart(window);
+      const fast = appendAsciiChar(prevCarry, chunk);
+      const window = fast?.window ?? compactTurnWindow(prevCarry + chunk);
+      let cut = 0;
+      if (fast !== undefined) {
+        if (fast.startsWord) carryWords++;
+        if (carryWords > TURN_CARRY_TOKENS) {
+          cut = carryStart(window);
+          carryWords = tokenize(window.slice(cut)).length;
+        }
+      } else {
+        cut = carryStart(window);
+        carryWords = tokenize(window.slice(cut)).length;
+      }
       if (cut > 0) dropped = true;
       carry = window.slice(cut);
-      const words = tokenize(normalizeText(window));
+      const words = tokenize(normalizeFoldedText(window));
       const n = words.length;
       const lo = atTurnStart ? 0 : Math.min(TURN_LEFT_TOKENS, n);
       const hi = Math.max(lo, n - TURN_TAIL_TOKENS);
-      const old = atTurnStart ? 0 : tokenize(normalizeText(prevCarry)).length;
       const fixed = scanFlags(
         words,
-        Math.max(lo, old - TURN_RESCAN_TOKENS),
+        // The carry is capped at 47 raw tokens and the rescan span is 45.
+        // Normalization can collapse tokens, not add them, so this range always
+        // starts before `lo`; rescanning from `lo` avoids re-tokenizing carry.
+        lo,
         hi,
       );
       settled.explicit ||= fixed.explicit;
       settled.minor ||= fixed.minor;
       settled.sexual ||= fixed.sexual;
       const tail = scanFlags(words, hi, n);
-      sensitive ||= settled.sexual || tail.sexual;
-      const result = verdictOf({
-        explicit: settled.explicit || tail.explicit,
-        minor: settled.minor || tail.minor,
-        sexual: sensitive,
-      });
+      tailFlags = tail;
+      // Hold output as soon as a possible sexual or explicit cue is seen, but do not
+      // block on tentative tail flags until another chunk settles them or finish() closes
+      // the turn. This prevents chunk boundaries from turning "youth adult" into a minor.
+      sensitive ||= settled.sexual || tail.sexual || tail.explicit;
+      const result = verdictOf(settled);
       if (result.blocked) blockedResult = result;
+      return { ...result, sensitive };
+    },
+    finish() {
+      if (finishResult) return { ...finishResult, sensitive };
+      finished = true;
+      const result =
+        blockedResult ??
+        verdictOf({
+          explicit: settled.explicit || tailFlags.explicit,
+          minor: settled.minor || tailFlags.minor,
+          sexual: settled.sexual || tailFlags.sexual,
+        });
+      if (result.blocked) blockedResult = result;
+      finishResult = result;
       return { ...result, sensitive };
     },
   };

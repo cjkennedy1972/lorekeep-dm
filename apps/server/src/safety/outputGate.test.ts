@@ -343,6 +343,28 @@ describe('block and regenerate', () => {
     },
   );
 
+  it('fails closed when an unbounded deterministic layer has no turn scanner', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: {
+        hardFloorCheck: () => ({ blocked: false }),
+        denylistCheck: () => ({ blocked: false }),
+        maxSpanChars: 0,
+      },
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('Unsafe candidate. '),
+        regenerate: () => tokens('Safe. '),
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    expect(chunkTexts(events)).toEqual([]);
+    expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
+  });
+
   it('a source error stops emission and propagates', async () => {
     const { moderator } = scripted(() => ALLOW);
     async function* broken() {
@@ -758,25 +780,54 @@ describe('turn-scoped hard floor across the carry', () => {
       expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
     ]);
   });
-});
 
-describe('message-level taint never leaks emitted text', () => {
-  it('does not emit a sexual term that precedes a later minor by more than the hold-back', async () => {
+  it('does not block a tentative youth tail before a later adult marker, and emits only after finish', async () => {
     const moderator = new JudgeModerator({
       deterministic: hardFloorLayer,
       chat: async () => '{"verdict":"allow","category":"none"}',
     });
-    const filler = 'The tavern is quiet and the fire is low. '.repeat(3);
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('She had sex. The youth', ' adult hung back.'),
+        regenerate: () => {
+          throw new Error('no regeneration expected');
+        },
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    expect(chunkTexts(events).join('')).toBe(
+      'She had sex. The youth adult hung back.',
+    );
+    expect(events.filter((event) => event.kind === 'regenerate')).toHaveLength(
+      0,
+    );
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.outcome).toBe('approved');
+  });
+});
+
+describe('message-level taint never leaks emitted text', () => {
+  it('withholds sexual-first narration across >64 chars until a later minor blocks the turn', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const filler = 'The tavern is quiet and the fire is low. '.repeat(6);
+    const sexualFirst = `She is nude. ${filler}`;
     const events = await collect(
       runOutputGate({
         stream: () =>
-          tokens(...splitTokens(`She is nude. ${filler}A child sleeps.`, 20)),
+          tokens(...splitTokens(`${sexualFirst}A child sleeps.`, 20)),
         regenerate: () => tokens('The narrator pauses.'),
         moderator,
         tier: 'mature',
       }),
     );
-    expect(chunkTexts(events).join('')).not.toMatch(/nude/);
+    const emitted = chunkTexts(events).join('');
+    expect(sexualFirst.length).toBeGreaterThan(64);
+    expect(emitted).not.toMatch(/nude/i);
     const end = events.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
