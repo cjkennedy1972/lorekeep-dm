@@ -1016,6 +1016,38 @@ describe('tail hold-back and config guards', () => {
       }),
     );
 
+  it('fails closed when a deterministic turn finish throws instead of hanging', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: {
+        hardFloorCheck: () => ({ blocked: false }),
+        denylistCheck: () => ({ blocked: false }),
+        maxSpanChars: 0,
+        startTurn: () => ({
+          push: () => ({ blocked: false }),
+          finish: () => {
+            throw new Error('finish unavailable');
+          },
+        }),
+      },
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('Safe narration.'),
+        regenerate: () => tokens('unused'),
+        moderator,
+        tier: 'standard',
+        maxRegenerations: 0,
+      }),
+    );
+
+    expect(chunkTexts(events).join('')).not.toContain('Safe narration');
+    expect(events).toEqual([
+      { kind: 'redirect', text: SAFE_REDIRECT_TEMPLATE },
+      expect.objectContaining({ kind: 'end', outcome: 'redirected' }),
+    ]);
+  });
+
   it('P1: a hard-floor term straddling a 400-char forced cut is never partly emitted', async () => {
     const events = await runTerm('禁词', [
       '中'.repeat(399) + '禁词' + '中'.repeat(50) + '。',

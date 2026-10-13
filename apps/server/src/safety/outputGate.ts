@@ -357,16 +357,23 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           await new Promise<void>((resolve) => (wakeConsumer = resolve));
         const item = queue.shift()!;
         if (item === 'end') {
-          let final:
-            | ReturnType<NonNullable<DeterministicTurn['finish']>>
-            | undefined;
-          try {
-            final = turn?.finish?.();
-          } catch {
-            push({ terminalBlock: 'failclosed' });
+          if (turn?.finish) {
+            let final: ReturnType<NonNullable<DeterministicTurn['finish']>>;
+            try {
+              final = turn.finish();
+            } catch {
+              push({ terminalBlock: 'failclosed' });
+              continue;
+            }
+            if (!final) {
+              push({ terminalBlock: 'failclosed' });
+              continue;
+            }
+            if (final.blocked) {
+              push({ terminalBlock: 'hardfloor' });
+              continue;
+            }
           }
-          if (final?.blocked) push({ terminalBlock: 'hardfloor' });
-          if (final?.blocked || (!final && turn?.finish)) continue;
           if (held) {
             approved.push(held);
             yield {
