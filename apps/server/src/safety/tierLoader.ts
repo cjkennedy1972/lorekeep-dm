@@ -2,7 +2,8 @@ import type { Pool } from 'pg';
 import { computeContentTier, type ContentTier, type HostCap } from './tier.js';
 
 type Queryable = Pick<Pool, 'query'>;
-const MAX_SESSION_BOUNDARIES = 100;
+// One seat may save at most 20 lines and 20 veils; rooms cap at six seats.
+const MAX_SESSION_BOUNDARIES = 6 * (20 + 20);
 
 /**
  * Live tier for the session plus the tier last committed to sessions.content_tier. The host's
@@ -77,12 +78,14 @@ export async function loadSeatedContentBoundaries(
          FROM seated s JOIN accounts a ON a.id = CASE
            WHEN s.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
            THEN s.account_id::uuid ELSE NULL END
+          AND a.status='active'
          CROSS JOIN LATERAL unnest(a.content_lines) AS boundary
        UNION
        SELECT DISTINCT 'veil' AS kind, boundary
          FROM seated s JOIN accounts a ON a.id = CASE
            WHEN s.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
            THEN s.account_id::uuid ELSE NULL END
+          AND a.status='active'
          CROSS JOIN LATERAL unnest(a.content_veils) AS boundary
      )
      SELECT

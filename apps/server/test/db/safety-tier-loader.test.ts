@@ -213,8 +213,21 @@ describe('loadSeatedContentBoundaries', () => {
     );
   });
 
+  it('does not apply boundaries from an account pending deletion', async () => {
+    const deleting = await account(database, false);
+    await database.pool.query(
+      'UPDATE accounts SET status=$2,content_lines=$3,content_veils=$4 WHERE id=$1',
+      [deleting, 'deleting', ['no spiders'], ['fade out at surgery']],
+    );
+    await seatJoined(database, sessionId, 1, deleting, false);
+
+    expect(await loadSeatedContentBoundaries(database.pool, sessionId)).toEqual(
+      { lines: [], veils: [] },
+    );
+  });
+
   it('fails closed when the shared boundary union exceeds the session cap', async () => {
-    for (let seat = 0; seat < 3; seat += 1) {
+    for (let seat = 0; seat < 7; seat += 1) {
       const seated = await account(database, false);
       const lines = Array.from(
         { length: 20 },
