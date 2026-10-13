@@ -69,7 +69,10 @@ describe('checkHardFloor', () => {
     ];
     const sized = (unit: string, n: number) =>
       unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-    const measure = (text: string) => medianMs(() => checkHardFloor(text), 5);
+    const measure = (text: string) =>
+      medianMs(() => {
+        for (let i = 0; i < 3; i++) checkHardFloor(text);
+      }, 5) / 3;
     for (const unit of units) {
       const half = sized(unit, MAX_INPUT_CHARS / 2);
       const full = sized(unit, MAX_INPUT_CHARS);
@@ -108,15 +111,15 @@ describe('checkHardFloor', () => {
   });
 
   it('scales linearly: 10x input costs well under 40x time', () => {
-    const run = (n: number) => {
+    const measure = (n: number) => {
       const text = 'the kid walks home '.repeat(n);
-      const start = performance.now();
-      for (let i = 0; i < 5; i++) checkHardFloor(text);
-      return performance.now() - start;
+      return medianMs(() => {
+        for (let i = 0; i < 5; i++) checkHardFloor(text);
+      }, 5);
     };
-    run(100);
-    const small = run(100);
-    const big = run(1000);
+    measure(100);
+    const small = measure(100);
+    const big = measure(1000);
     expect(big).toBeLessThan(Math.max(small, 1) * 40);
   });
 
