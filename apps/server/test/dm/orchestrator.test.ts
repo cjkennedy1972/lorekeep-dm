@@ -1,5 +1,5 @@
 import { DMTurnEventSchema } from '@game/schema';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   LlmAdapter,
   LlmChunk,
@@ -131,6 +131,8 @@ const validCheck = {
 };
 const narration =
   'Ayla studies the old seal and finds a narrow groove beneath the dust. The stone shifts with a quiet click, revealing fresh scratches around its edge. Something beyond the door answers with a low, patient scrape. What do you do?';
+const moderationHoldingNotice =
+  'The narrator pauses while the scene is checked. Try again shortly.';
 
 describe('DM orchestrator', () => {
   it('emits and returns only the gate redirect when narration is blocked', async () => {
@@ -160,6 +162,70 @@ describe('DM orchestrator', () => {
       }),
     );
   });
+
+  it.each([
+    'throws',
+    'unavailable',
+    'returns no verdict',
+    'times out',
+  ] as const)(
+    'withholds all narration when output moderation %s after approving earlier chunks',
+    async (failure) => {
+      const longNarration = `${'Safe narration continues through the scene. '.repeat(35)}What happens next?`;
+      const h = setup([[{ type: 'text', delta: longNarration }]]);
+      let calls = 0;
+      h.input.outputModerator = {
+        moderate: async () => {
+          calls++;
+          if (calls <= 4)
+            return {
+              verdict: 'allow',
+              category: 'none',
+              source: 'judge',
+              latencyMs: 0,
+              unavailable: false,
+            };
+          if (failure === 'throws') throw new Error('private provider detail');
+          if (failure === 'times out')
+            return await new Promise(() => undefined);
+          if (failure === 'returns no verdict') return undefined as never;
+          return {
+            verdict: 'block',
+            category: 'other',
+            source: 'failclosed',
+            latencyMs: 0,
+            unavailable: true,
+            failClosedRow: 'tier',
+          };
+        },
+      };
+
+      let pending: ReturnType<typeof runTurn>;
+      if (failure === 'times out') vi.useFakeTimers();
+      try {
+        pending = runTurn(h.input);
+        if (failure === 'times out') await vi.advanceTimersByTimeAsync(10_001);
+        const result = await pending;
+        expect(result.narration).toBe(moderationHoldingNotice);
+        const streamedText = h.streamed
+          .filter(
+            (event) => (event as { type?: string }).type === 'NarrationChunk',
+          )
+          .map((event) => (event as { text?: string }).text ?? '')
+          .join('');
+        expect(streamedText).toBe(moderationHoldingNotice);
+        expect(h.events).toContainEqual(
+          expect.objectContaining({
+            type: 'NarrationCompleted',
+            text: moderationHoldingNotice,
+          }),
+        );
+        expect(streamedText).not.toContain('Safe narration');
+      } finally {
+        if (failure === 'times out') vi.useRealTimers();
+      }
+    },
+  );
 
   it('runs a clean exploration check and emits engine events before final narration', async () => {
     const h = setup([

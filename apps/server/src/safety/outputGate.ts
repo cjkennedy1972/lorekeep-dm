@@ -245,16 +245,29 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         timer = setTimeout(() => resolve(timedOut()), verdictTimeoutMs);
       });
       const verdict = Promise.race([
-        Promise.resolve().then(() =>
-          opts.moderator.moderate({
+        Promise.resolve().then(async () => {
+          const result = await opts.moderator.moderate({
             text,
             context,
             turn,
             tier: opts.tier,
             tableLines: opts.tableLines,
             direction: 'output',
-          }),
-        ),
+          });
+          // A missing or malformed runtime response is an outage, even if a
+          // caller's static type claims every request returns a Verdict.
+          if (
+            !result ||
+            (result.verdict !== 'allow' && result.verdict !== 'block') ||
+            typeof result.unavailable !== 'boolean' ||
+            (result.unavailable &&
+              (result.verdict !== 'block' ||
+                (result.failClosedRow !== 'hard-floor' &&
+                  result.failClosedRow !== 'tier')))
+          )
+            return failClosedVerdict(now() - start - cutAtMs);
+          return result;
+        }),
         bound,
       ])
         .catch(timedOut)

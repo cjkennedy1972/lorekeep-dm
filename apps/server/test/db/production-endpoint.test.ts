@@ -3,7 +3,6 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
-import { SAFE_REDIRECT_TEMPLATE } from '../../src/safety/outputGate.js';
 import {
   startFakeOpenAIServer,
   textStream,
@@ -22,6 +21,8 @@ const saved = {
   OPERATOR_EMAILS: process.env.OPERATOR_EMAILS,
   SOLO_TURN_ENDPOINT_SLOT: process.env.SOLO_TURN_ENDPOINT_SLOT,
 };
+const MODERATION_HOLDING_NOTICE =
+  'The narrator pauses while the scene is checked. Try again shortly.';
 let db: Pool;
 let endpoint: FakeOpenAIServer;
 let ownerId: string;
@@ -103,6 +104,6 @@ describe('ProductionSoloTurnRunner under default production env', () => {
       () => undefined,
     );
     expect(endpoint.requests).toHaveLength(2);
-    expect(result.narration).toBe(SAFE_REDIRECT_TEMPLATE);
+    expect(result.narration).toBe(MODERATION_HOLDING_NOTICE);
   });
 });
