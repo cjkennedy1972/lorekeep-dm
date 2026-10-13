@@ -78,14 +78,12 @@ export async function loadSeatedContentBoundaries(
          FROM seated s JOIN accounts a ON a.id = CASE
            WHEN s.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
            THEN s.account_id::uuid ELSE NULL END
-          AND a.status='active'
          CROSS JOIN LATERAL unnest(a.content_lines) AS boundary
        UNION
        SELECT DISTINCT 'veil' AS kind, boundary
          FROM seated s JOIN accounts a ON a.id = CASE
            WHEN s.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
            THEN s.account_id::uuid ELSE NULL END
-          AND a.status='active'
          CROSS JOIN LATERAL unnest(a.content_veils) AS boundary
      )
      SELECT

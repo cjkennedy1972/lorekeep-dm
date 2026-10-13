@@ -213,16 +213,30 @@ describe('loadSeatedContentBoundaries', () => {
     );
   });
 
-  it('does not apply boundaries from an account pending deletion', async () => {
-    const deleting = await account(database, false);
-    await database.pool.query(
-      'UPDATE accounts SET status=$2,content_lines=$3,content_veils=$4 WHERE id=$1',
-      [deleting, 'deleting', ['no spiders'], ['fade out at surgery']],
-    );
-    await seatJoined(database, sessionId, 1, deleting, false);
+  it('keeps boundaries of seated accounts in any non-active status, but not missing accounts', async () => {
+    for (const [seat, status] of [
+      [1, 'pending_email'],
+      [2, 'suspended'],
+      [3, 'deleting'],
+    ] as const) {
+      const seated = await account(database, false);
+      await database.pool.query(
+        'UPDATE accounts SET status=$2,content_lines=$3,content_veils=$4 WHERE id=$1',
+        [seated, status, [`no ${status}`], [`fade out ${status}`]],
+      );
+      await seatJoined(database, sessionId, seat, seated, false);
+    }
+    await seatJoined(database, sessionId, 4, randomUUID(), false);
 
     expect(await loadSeatedContentBoundaries(database.pool, sessionId)).toEqual(
-      { lines: [], veils: [] },
+      {
+        lines: ['no deleting', 'no pending_email', 'no suspended'],
+        veils: [
+          'fade out deleting',
+          'fade out pending_email',
+          'fade out suspended',
+        ],
+      },
     );
   });
 
