@@ -16,6 +16,13 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     const payload = event.payload as { gameState: unknown };
     return RoomStateSchema.parse({ ...state, gameState: payload.gameState });
   }
+  if (event.type === 'SafetyFlag') {
+    const xCard = state.xCard ?? { requested: 0, steered: 0 };
+    return RoomStateSchema.parse({
+      ...state,
+      xCard: { ...xCard, requested: xCard.requested + 1 },
+    });
+  }
   if (event.type === 'ClarificationClosed') {
     const { actionId } = event.payload as { actionId: string };
     const openClarifications = { ...state.openClarifications };

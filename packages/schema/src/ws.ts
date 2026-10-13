@@ -83,6 +83,14 @@ export const CombatCommandSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const XCardSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('XCard'),
+    payload: z.object({}).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const StateSyncSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('StateSync'),
@@ -115,6 +123,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'NarrationCompleted',
       'ToolRejected',
       'ContentTierChanged',
+      'SafetyFlag',
       'DeathSaveRequired',
       'TpkChoiceRequired',
     ]),

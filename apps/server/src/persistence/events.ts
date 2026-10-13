@@ -38,7 +38,9 @@ export async function appendEvents(
       payload: unknown;
       ts: Date;
     }>(
-      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      `INSERT INTO events(session_id,seq,turn_id,type,payload,expires_at)
+       VALUES ($1,$2,$3,$4,$5,CASE WHEN $4='SafetyFlag' THEN now() + interval '30 days' END)
+       RETURNING *`,
       [
         sessionId,
         next,

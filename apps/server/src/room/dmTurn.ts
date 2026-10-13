@@ -10,6 +10,7 @@ export interface SoloTurnRequest {
   playerName?: string;
   allowClarification?: boolean;
   clarificationAsked?: boolean;
+  steerAway?: boolean;
   signal?: AbortSignal;
 }
 
@@ -17,6 +18,14 @@ export class LiveDmRestrictedError extends Error {
   constructor() {
     super('LIVE_DM_RESTRICTED');
     this.name = 'LiveDmRestrictedError';
+  }
+}
+
+/** The host-enabled X-card path stopped this turn intentionally. */
+export class XCardAbortError extends Error {
+  constructor() {
+    super('X_CARD_ABORTED');
+    this.name = 'XCardAbortError';
   }
 }
 
