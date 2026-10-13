@@ -57,6 +57,7 @@ test('keyboard-only: create a table, copy the invite, two players see each other
   await expect(tab).toHaveURL(/\/login$/); // login screen arrives with M0-24; redirect is what matters here
   await signedIn(guest, 'Nia');
   await tab.goto(link);
+  await tab.getByRole('button', { name: 'Join table' }).click();
   await tab.getByRole('heading', { name: 'Keyboard Keep' }).waitFor();
 
   const seats = page.getByRole('list', { name: /players/i });

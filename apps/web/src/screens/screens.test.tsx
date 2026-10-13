@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -87,6 +87,97 @@ test('host reloading the lobby gets no stale/blank link and can create a new one
   expect(input.value).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
 });
 
+test('host can choose a lower table tier, which is visible to all players', async () => {
+  const host = useJar();
+  await seedAccount('tier-host@example.com', 'Tier Host');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Tier Hall' }),
+    })
+  ).json();
+  const roomId = created.room.id as string;
+  renderApp(`/rooms/${roomId}`);
+  const selector = await screen.findByRole('combobox', {
+    name: 'Table content tier',
+  });
+  expect(selector).toHaveValue('mature');
+  expect(
+    within(screen.getByRole('group', { name: 'Mature content' })).getByText(
+      /Mature is on by default/,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/You can opt out of Mature content below/),
+  ).toBeInTheDocument();
+  await userEvent.selectOptions(selector, 'standard');
+  await waitFor(() =>
+    expect(screen.getByText('Table setting saved.')).toBeInTheDocument(),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByText('Standard', { selector: 'strong' }),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.queryByText(/Mature is on by default/)).not.toBeInTheDocument();
+  expect(
+    within(screen.getByRole('group', { name: 'Mature content' })).getByText(
+      /Mature-tier content is unavailable under this cap/,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('group', { name: 'Mature content' })).getByText(
+      /personal Mature opt-out preference is saved separately/,
+    ),
+  ).toBeInTheDocument();
+  const details = await (await host(`${http.base}/api/rooms/${roomId}`)).json();
+  expect(details.room.tierCap).toBe('standard');
+
+  const playerJar = useJar();
+  await seedAccount('tier-player@example.com', 'Tier Player');
+  const joined = await playerJar(
+    `${http.base}/api/invites/${created.room.code}/join`,
+    { method: 'POST' },
+  );
+  expect(joined.status).toBe(200);
+  const playerRoom = await playerJar(`${http.base}/api/rooms/${roomId}`);
+  expect((await playerRoom.json()).room.tierCap).toBe('standard');
+});
+
+test('host lobby restores the saved content tier after loading room details', async () => {
+  const host = useJar();
+  await seedAccount('tier-reload@example.com', 'Tier Reloader');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Saved Tier Hall' }),
+    })
+  ).json();
+  const roomId = created.room.id as string;
+  await host(`${http.base}/api/sessions/${roomId}/content-tier`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tier: 'family' }),
+  });
+
+  renderApp(`/rooms/${roomId}`);
+  const selector = await screen.findByRole('combobox', {
+    name: 'Table content tier',
+  });
+  await waitFor(() => expect(selector).toHaveValue('family'));
+  expect(
+    screen.getByText('Family', { selector: 'strong' }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/Mature is on by default/)).not.toBeInTheDocument();
+  expect(
+    within(screen.getByRole('group', { name: 'Mature content' })).getByText(
+      /Mature-tier content is unavailable under this cap/,
+    ),
+  ).toBeInTheDocument();
+});
+
 test('invalid invite shows a clear error', async () => {
   useJar();
   await seedAccount('x@example.com', 'X');
@@ -94,6 +185,103 @@ test('invalid invite shows a clear error', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent(
     /no longer valid/i,
   );
+});
+
+test('join shows the mature opt-out before joining; keyboard toggle is saved with the join', async () => {
+  const host = useJar();
+  await seedAccount('h5@example.com', 'Hostess');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Opt Out Hall' }),
+    })
+  ).json();
+  useJar();
+  await seedAccount('p5@example.com', 'Player');
+  renderApp(`/join/${created.room.code}`);
+  const box = await screen.findByRole('checkbox', {
+    name: 'Opt out of mature content',
+  });
+  expect(box).not.toBeChecked();
+  expect(
+    screen.queryByRole('heading', { name: 'Opt Out Hall' }),
+  ).not.toBeInTheDocument();
+  box.focus();
+  await userEvent.keyboard(' ');
+  expect(box).toBeChecked();
+  await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+  expect(
+    await screen.findByRole('heading', { name: 'Opt Out Hall' }),
+  ).toBeInTheDocument();
+  const me = (await (await http.fetch(`${http.base}/api/me`)).json()) as {
+    account: { matureOptOut: boolean };
+  };
+  expect(me.account.matureOptOut).toBe(true);
+});
+
+test('failed join does not save a changed mature opt-out preference', async () => {
+  const host = useJar();
+  await seedAccount('full-host@example.com', 'Full Host');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Full Hall' }),
+    })
+  ).json();
+
+  for (let i = 0; i < 5; i += 1) {
+    const player = useJar();
+    await seedAccount(`full-player-${i}@example.com`, `Player ${i}`);
+    const joined = await player(
+      `${http.base}/api/invites/${created.room.code}/join`,
+      { method: 'POST' },
+    );
+    expect(joined.status).toBe(200);
+  }
+
+  const joiningPlayer = useJar();
+  await seedAccount('full-player-final@example.com', 'Final Player');
+  renderApp(`/join/${created.room.code}`);
+  const box = await screen.findByRole('checkbox', {
+    name: 'Opt out of mature content',
+  });
+  expect(box).not.toBeChecked();
+  await userEvent.click(box);
+  await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/table is full/i);
+
+  const me = (await (await joiningPlayer(`${http.base}/api/me`)).json()) as {
+    account: { matureOptOut: boolean };
+  };
+  expect(me.account.matureOptOut).toBe(false);
+});
+
+test('lobby content settings: mature is on by default; opt-out toggles and saves', async () => {
+  useJar();
+  await seedAccount('h6@example.com', 'Lobbyist');
+  const created = await (
+    await http.fetch(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Settings Hall' }),
+    })
+  ).json();
+  renderApp(`/rooms/${created.room.id as string}`);
+  const box = await screen.findByRole('checkbox', {
+    name: 'Opt out of mature content',
+  });
+  expect(box).not.toBeChecked();
+  box.focus();
+  await userEvent.keyboard(' ');
+  expect(await screen.findByText('Content setting saved.')).toBeInTheDocument();
+  expect(box).toBeChecked();
+  const me = (await (await http.fetch(`${http.base}/api/me`)).json()) as {
+    account: { matureOptOut: boolean };
+  };
+  expect(me.account.matureOptOut).toBe(true);
+  expect((await axe(document.body)).violations).toEqual([]);
 });
 
 // ---- M0-24: auth screens ----
@@ -228,6 +416,9 @@ test('logged-out join link: login returns to the join and the lobby opens', asyn
     'correct-horse-battery',
   );
   await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Join table' }),
+  );
   expect(
     await screen.findByRole('heading', { name: 'Return Trip' }),
   ).toBeInTheDocument();

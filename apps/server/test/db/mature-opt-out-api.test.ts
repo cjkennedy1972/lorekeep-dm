@@ -41,6 +41,20 @@ async function room(owner: string, tier?: string) {
   return id;
 }
 
+async function reportedOptOut(
+  app: ReturnType<typeof createApp>,
+  token: string,
+) {
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/me',
+    remoteAddress: '10.9.0.3',
+    headers: { cookie: `sid=${token}` },
+  });
+  return (res.json() as { account: { matureOptOut: boolean } }).account
+    .matureOptOut;
+}
+
 async function optOut(id: string) {
   return (
     await db.query<{ mature_opt_out: boolean }>(
@@ -131,6 +145,9 @@ describe('mature opt-out API', () => {
       matureOptOut: false,
     });
     expect(await optOut(player)).toBe(false);
+    expect(await reportedOptOut(app, token)).toBe(false);
+    await patch(true, `sid=${token}`);
+    expect(await reportedOptOut(app, token)).toBe(true);
     await app.close();
   });
 

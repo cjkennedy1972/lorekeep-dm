@@ -238,7 +238,7 @@ export function registerAuthRoutes(
     const session = await authed(request, reply);
     if (!session) return reply;
     const result = await db.query(
-      'SELECT id,email,display_name,is_adult,age_checked_at FROM accounts WHERE id=$1',
+      'SELECT id,email,display_name,is_adult,age_checked_at,mature_opt_out FROM accounts WHERE id=$1',
       [session.account_id],
     );
     const a = result.rows[0];
@@ -249,6 +249,7 @@ export function registerAuthRoutes(
         displayName: a.display_name,
         isAdult: a.is_adult,
         ageCheckedAt: new Date(a.age_checked_at).toISOString(),
+        matureOptOut: a.mature_opt_out === true,
       },
     };
   });

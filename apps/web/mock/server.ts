@@ -81,6 +81,7 @@ export function createMock(
     string,
     { lines: string[]; veils: string[] }
   >();
+  const matureOptOuts = new Set<string>();
   const tickets = new Map<string, { accountId: string; tableId: string }>(); // single use
   type MockRoom = {
     id: string;
@@ -89,6 +90,7 @@ export function createMock(
     code: string;
     members: Set<string>;
     solo?: boolean;
+    tierCap?: 'family' | 'standard' | null;
   };
   const rooms = new Map<string, MockRoom>();
   const newCode = () => randomBytes(16).toString('base64url');
@@ -98,6 +100,7 @@ export function createMock(
     name: r.name,
     isHost: r.hostId === accountId,
     ...(minted && r.hostId === accountId ? { code: r.code } : {}),
+    tierCap: r.tierCap ?? null,
   });
   const byId = (id: string) =>
     [...users.values()].find((u) => u.account.id === id)?.account;
@@ -278,16 +281,19 @@ export function createMock(
 
     if (url.pathname.startsWith('/api/operator/'))
       return err(res, 404, 'NOT_FOUND', 'Not found.');
-    if (route === 'GET /api/me') return json(res, 200, { account });
+    if (route === 'GET /api/me')
+      return json(res, 200, {
+        account: { ...account, matureOptOut: matureOptOuts.has(account.id) },
+      });
     if (route === 'GET /api/me/content-settings')
-      return json(
-        res,
-        200,
-        personalContent.get(account.id) ?? { lines: [], veils: [] },
-      );
+      return json(res, 200, {
+        matureOptOut: matureOptOuts.has(account.id),
+        ...(personalContent.get(account.id) ?? { lines: [], veils: [] }),
+      });
     if (route === 'PATCH /api/me/content-settings') {
       const body = await readBody(req);
       const list = (value: unknown): string[] | null => {
+        if (value === undefined) return null;
         if (!Array.isArray(value) || value.length > 20) return null;
         const normalized: string[] = [];
         for (const item of value) {
@@ -305,16 +311,33 @@ export function createMock(
         }
         return normalized;
       };
-      const lines = list(body?.lines);
-      const veils = list(body?.veils);
-      if (lines === null || veils === null)
+      const lines = body?.lines === undefined ? undefined : list(body.lines);
+      const veils = body?.veils === undefined ? undefined : list(body.veils);
+      if (
+        (body?.matureOptOut !== undefined &&
+          typeof body.matureOptOut !== 'boolean') ||
+        (body?.lines !== undefined && lines === null) ||
+        (body?.veils !== undefined && veils === null) ||
+        (body?.matureOptOut === undefined &&
+          body?.lines === undefined &&
+          body?.veils === undefined)
+      )
         return err(res, 400, 'INVALID_INPUT', 'Check your content boundaries.');
+      if (body?.matureOptOut === true) matureOptOuts.add(account.id);
+      else if (body?.matureOptOut === false) matureOptOuts.delete(account.id);
+      const previous = personalContent.get(account.id) ?? {
+        lines: [],
+        veils: [],
+      };
       const result = {
-        lines: [...new Set(lines)],
-        veils: [...new Set(veils)],
+        lines: lines === undefined ? previous.lines : [...new Set(lines ?? [])],
+        veils: veils === undefined ? previous.veils : [...new Set(veils ?? [])],
       };
       personalContent.set(account.id, result);
-      return json(res, 200, result);
+      return json(res, 200, {
+        matureOptOut: matureOptOuts.has(account.id),
+        ...result,
+      });
     }
     if (route === 'PATCH /api/me') {
       const name = (await readBody(req))?.displayName;
@@ -492,6 +515,45 @@ export function createMock(
         return json(res, 200, { room: roomView(r, account.id, true) });
       }
     }
+    const tierRoute = /^\/api\/sessions\/([^/]+)\/content-tier$/.exec(
+      url.pathname,
+    );
+    if (req.method === 'PATCH' && tierRoute) {
+      const r = rooms.get(tierRoute[1]!);
+      if (!r || !r.members.has(account.id))
+        return err(res, 404, 'NOT_FOUND', 'Not found.');
+      if (r.hostId !== account.id)
+        return err(
+          res,
+          403,
+          'FORBIDDEN',
+          'Only the host can change the table content tier.',
+        );
+      const tier = (await readBody(req))?.tier;
+      if (tier !== null && tier !== 'family' && tier !== 'standard')
+        return err(
+          res,
+          400,
+          'INVALID_INPUT',
+          'Choose Mature, Standard, or Family.',
+        );
+      r.tierCap = tier;
+      return json(res, 200, { tier });
+    }
+    const invitePreviewRoute = /^\/api\/invites\/([^/]+)$/.exec(url.pathname);
+    if (req.method === 'GET' && invitePreviewRoute) {
+      const r = [...rooms.values()].find(
+        (room) => room.code === invitePreviewRoute[1],
+      );
+      if (!r)
+        return err(
+          res,
+          404,
+          'INVITE_INVALID',
+          'This invite link is no longer valid.',
+        );
+      return json(res, 200, { room: roomView(r, account.id) });
+    }
     const joinRoute = /^\/api\/invites\/([^/]+)\/join$/.exec(url.pathname);
     if (req.method === 'POST' && joinRoute) {
       const r = [...rooms.values()].find((x) => x.code === joinRoute[1]);
@@ -505,6 +567,11 @@ export function createMock(
       if (!r.members.has(account.id) && r.members.size >= 6)
         return err(res, 409, 'ROOM_FULL', 'This table is full.');
       r.members.add(account.id);
+      const matureOptOut = (await readBody(req))?.matureOptOut;
+      if (typeof matureOptOut === 'boolean') {
+        if (matureOptOut) matureOptOuts.add(account.id);
+        else matureOptOuts.delete(account.id);
+      }
       return json(res, 200, { room: roomView(r, account.id) });
     }
     if (route === 'POST /api/ws-ticket') {

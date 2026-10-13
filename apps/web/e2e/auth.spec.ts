@@ -123,6 +123,7 @@ test('login: same error for unknown email and wrong password; keyboard login ret
   await page.keyboard.press('Tab');
   await page.keyboard.type('correct-horse-battery');
   await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Join table' }).click();
   await page.getByRole('heading', { name: 'Return Trip' }).waitFor();
   expect(new URL(page.url()).pathname).toMatch(/^\/rooms\//);
 });

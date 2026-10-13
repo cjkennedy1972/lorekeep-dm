@@ -4,6 +4,7 @@ import type { Seat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
 import { ConnectionStatus } from '../room/ConnectionStatus';
 import { useRoom } from '../room/useRoom';
+import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
 const PRESENCE: Record<Seat['presence'], string> = {
   online: 'online',
@@ -55,6 +56,16 @@ export function Lobby() {
   });
   const seats = live.room?.seats ?? [];
   const announcement = usePresenceAnnouncement(seats);
+  const content = useMatureOptOut();
+  const [contentNote, setContentNote] = useState('');
+  const [tierCap, setTierCap] = useState<'family' | 'standard' | null>(
+    room?.tierCap ?? null,
+  );
+  const [tierNote, setTierNote] = useState('');
+
+  useEffect(() => {
+    setTierCap(room?.tierCap ?? null);
+  }, [room?.id, room?.tierCap]);
 
   if (missing) return <p role="alert">That table could not be found.</p>;
   if (!room) return <p role="status">Loading the lobby…</p>;
@@ -67,6 +78,23 @@ export function Lobby() {
     } catch {
       setCopied('Could not copy automatically. Select the link and copy it.');
     }
+  }
+  async function changeOptOut(optOut: boolean) {
+    setContentNote(
+      (await content.save(optOut)) ? 'Content setting saved.' : '',
+    );
+  }
+  async function changeTierCap(value: string) {
+    const next = value === 'mature' ? null : (value as 'family' | 'standard');
+    const r = await api<{ tier: 'family' | 'standard' | null }>(
+      `/api/sessions/${id}/content-tier`,
+      { tier: next },
+      'PATCH',
+    );
+    if (r.ok) {
+      setTierCap(r.data.tier);
+      setTierNote('Table setting saved.');
+    } else setTierNote(r.message);
   }
   async function regenerate() {
     const r = await api<{ room: RoomInfo }>(`/api/rooms/${id}/invite`, {});
@@ -95,6 +123,63 @@ export function Lobby() {
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
+      <section aria-labelledby="content-heading">
+        <h2 id="content-heading">Content settings</h2>
+        <p>
+          Table setting:{' '}
+          <strong>
+            {tierCap === null
+              ? 'Mature (default)'
+              : tierCap === 'standard'
+                ? 'Standard'
+                : 'Family'}
+          </strong>
+          .
+        </p>
+        {tierCap === null ? (
+          <p>
+            Mature is on by default. It includes graphic violence, dark themes,
+            strong language, and innuendo or allusion. You can opt out of Mature
+            content below. Explicit sexual content is out of scope, and the hard
+            safety floor is fixed.
+          </p>
+        ) : (
+          <p>
+            The {tierCap === 'standard' ? 'Standard' : 'Family'} cap is in
+            effect; Mature-tier content is unavailable under this cap. Your
+            personal Mature opt-out preference is saved separately and remains
+            in effect if the table cap later changes. Explicit sexual content is
+            out of scope, and the hard safety floor is fixed.
+          </p>
+        )}
+        {room.isHost && (
+          <div>
+            <label htmlFor="host-tier-cap">Table content tier</label>
+            <select
+              id="host-tier-cap"
+              value={tierCap ?? 'mature'}
+              onChange={(e) => void changeTierCap(e.target.value)}
+            >
+              <option value="mature">Mature (default)</option>
+              <option value="standard">Standard</option>
+              <option value="family">Family</option>
+            </select>
+            <p role="status" aria-live="polite">
+              {tierNote}
+            </p>
+          </div>
+        )}
+        {content.optOut !== undefined && (
+          <MatureOptOutField
+            checked={content.optOut}
+            tierCap={tierCap}
+            onChange={(v) => void changeOptOut(v)}
+          />
+        )}
+        <p role={content.error ? 'alert' : 'status'}>
+          {content.error || contentNote}
+        </p>
+      </section>
       {room.isHost && (
         <section aria-labelledby="invite-heading">
           <h2 id="invite-heading">Invite players</h2>

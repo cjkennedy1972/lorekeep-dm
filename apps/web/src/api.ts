@@ -17,6 +17,8 @@ export interface RoomInfo {
   isHost: boolean;
   /** Present for the host only. */
   code?: string;
+  /** Table's host-selected lower tier; null means no cap (Mature default). */
+  tierCap?: 'family' | 'standard' | null;
 }
 
 export type ApiResult<T> =
