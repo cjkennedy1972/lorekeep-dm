@@ -1,6 +1,8 @@
 import { RegistryMemory, type RegistryDiff } from './memory.js';
 import type { Pool } from 'pg';
 import type { LlmAdapter, LlmRequest } from '../llm/adapter.js';
+import type { Moderator } from '../safety/moderator.js';
+import type { ContentTier } from '../safety/tier.js';
 
 export const MAX_SCENE_SUMMARY_WORDS = 120;
 export const MAX_SCENE_SUMMARY_CHARS = 1_200;
@@ -224,6 +226,9 @@ export async function summarizeScene(
 export interface CloseSceneInput extends SceneSummaryInput {
   sessionId: string;
   db: Pick<Pool, 'query' | 'connect'>;
+  moderator: Moderator;
+  tier: ContentTier;
+  tableLines: readonly string[];
 }
 
 /** Persist a summary exactly once, then apply validated registry updates. */
@@ -231,13 +236,45 @@ export async function closeScene(
   input: CloseSceneInput,
 ): Promise<SceneSummaryResult & { persisted: boolean }> {
   const result = await summarizeScene(input);
+  let summary = result.summary;
+  let registryDiffs = result.registryDiffs;
+  let fallback = result.fallback;
+  const allowed = async (text: string) => {
+    try {
+      return (
+        (
+          await input.moderator.moderate({
+            text,
+            tier: input.tier,
+            tableLines: input.tableLines,
+            direction: 'output',
+          })
+        ).verdict === 'allow'
+      );
+    } catch {
+      return false;
+    }
+  };
+  if (!(await allowed(summary))) {
+    summary = 'The scene has ended.';
+    registryDiffs = [];
+    fallback = true;
+  } else if (
+    registryDiffs.length > 0 &&
+    !(await allowed(
+      registryDiffs.map((diff) => JSON.stringify(diff.after)).join('\n'),
+    ))
+  ) {
+    registryDiffs = [];
+    fallback = true;
+  }
   input.signal?.throwIfAborted();
   const memory = new RegistryMemory(input.db);
   const persisted = await memory.closeScene(
     input.sessionId,
     input.sceneId,
-    result.summary,
-    result.registryDiffs,
+    summary,
+    registryDiffs,
   );
-  return { ...result, persisted };
+  return { summary, registryDiffs, fallback, persisted };
 }

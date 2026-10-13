@@ -7,6 +7,7 @@ import { createApp } from '../../src/app.js';
 import { COOKIE_NAME, createSession } from '../../src/accounts/sessions.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
+import { SAFE_RECAP_FALLBACK } from '../../src/dm/recap.js';
 import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
@@ -139,7 +140,7 @@ afterAll(async () => {
 });
 
 describe('resume recap and the live DM allowlist', () => {
-  it('builds a deterministic recap without calling the endpoint for a non-allowlisted owner', async () => {
+  it('gates deterministic recap for a non-allowlisted owner before returning it', async () => {
     const player = await createAccount();
     const table = await createResumableTable(player.id);
     const calls = endpoint.requests.length;
@@ -147,10 +148,9 @@ describe('resume recap and the live DM allowlist', () => {
       headers: { cookie: `${COOKIE_NAME}=${player.token}` },
     });
     expect(response.status).toBe(200);
-    expect((await response.json()).game.recap).toContain(
-      'followed the lantern light',
-    );
-    expect(endpoint.requests.length).toBe(calls);
+    expect((await response.json()).game.recap).toBe(SAFE_RECAP_FALLBACK);
+    // The narrator endpoint remains unused; the separate moderation endpoint fails closed.
+    expect(endpoint.requests.length).toBe(calls + 1);
   });
 
   it('still calls the endpoint for an allowlisted operator owner', async () => {
@@ -162,6 +162,24 @@ describe('resume recap and the live DM allowlist', () => {
     });
     expect(response.status).toBe(200);
     expect(endpoint.requests.length).toBeGreaterThan(calls);
+  });
+
+  it('screens historical snapshot recaps before returning the games list', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id);
+    const room = await rooms.get(table);
+    await room.persistRecap({
+      recap: 'Unsafe historical recap that must not reach the client.',
+      memoryHash: 'stale',
+    });
+
+    const response = await fetch(`${base}/api/tables`, {
+      headers: { cookie: `${COOKIE_NAME}=${player.token}` },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).not.toContain('Unsafe historical recap');
+    expect(body).toContain(SAFE_RECAP_FALLBACK);
   });
 });
 

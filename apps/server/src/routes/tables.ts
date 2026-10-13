@@ -13,13 +13,18 @@ import { CREATE_PER_HOUR } from './sessions.js';
 import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import { RegistryMemory } from '../dm/memory.js';
 import { authenticateRequest } from '../middleware/auth.js';
-import { buildResumeRecap } from '../dm/recap.js';
+import { buildResumeRecap, gateRecap } from '../dm/recap.js';
 import {
   createConfiguredAdapter,
   createEndpointEgress,
 } from '../llm/config.js';
 import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
 import { liveDmAllowed } from '../llm/liveDmGate.js';
+import { createEndpointJudge } from '../safety/inputGate.js';
+import {
+  loadContentTierState,
+  loadSeatedContentBoundaries,
+} from '../safety/tierLoader.js';
 import {
   RecordedLlmAdapter,
   fixtureModeFromEnvironment,
@@ -77,6 +82,31 @@ export function registerTableRoutes(
       return undefined;
     }
     return auth.account_id;
+  }
+  const recapModerator = createEndpointJudge(db);
+  async function recapSafety(sessionId: string) {
+    const [{ tier }, boundaries] = await Promise.all([
+      loadContentTierState(db, sessionId, false),
+      loadSeatedContentBoundaries(db, sessionId),
+    ]);
+    return {
+      tier,
+      tableLines: [
+        ...boundaries.lines.map((line) => `line: ${line}`),
+        ...boundaries.veils.map((veil) => `veil: ${veil}`),
+      ],
+    };
+  }
+  async function screenStoredRecap(sessionId: string, recap: string) {
+    if (!recap) return '';
+    const { tier, tableLines } = await recapSafety(sessionId);
+    const result = await gateRecap(
+      { recap, memoryHash: '', cached: true, fallback: false },
+      recapModerator,
+      tier,
+      tableLines,
+    );
+    return result.recap;
   }
   const createHits = new BoundedCounter(3_600_000);
   app.post('/api/tables', async (request, reply) => {
@@ -229,7 +259,16 @@ export function registerTableRoutes(
       WHERE s.owner_account_id=$1 AND s.mode='solo' ORDER BY s.last_active_at DESC`,
       [accountId],
     );
-    return { games: result.rows.map(gameView) };
+    const games = await Promise.all(
+      result.rows.map(async (row: Record<string, unknown>) => {
+        const recap = (row.recap as { recap?: string } | null)?.recap ?? '';
+        return gameView({
+          ...row,
+          recap: { recap: await screenStoredRecap(String(row.id), recap) },
+        });
+      }),
+    );
+    return { games };
   });
   app.get<{ Params: { id: string } }>(
     '/api/tables/:id',
@@ -281,6 +320,8 @@ export function registerTableRoutes(
           message:
             'This game needs its pinned rules catalog, which is not available on this server.',
         });
+      const { tier: recapTier, tableLines: recapTableLines } =
+        await recapSafety(request.params.id);
       const latestEvents = await db.query<{
         type: string;
         payload: Record<string, unknown>;
@@ -331,13 +372,19 @@ export function registerTableRoutes(
           /* deterministic recap remains available offline */
         }
       }
-      const recap = await buildResumeRecap({
+      const generatedRecap = await buildResumeRecap({
         db,
         sessionId: request.params.id,
         lastEvents: recent,
         previousSnapshotRecap: prior,
         adapter,
       });
+      const recap = await gateRecap(
+        generatedRecap,
+        recapModerator,
+        recapTier,
+        recapTableLines,
+      );
       await db.query(
         "UPDATE sessions SET last_active_at=now(),status='active' WHERE id=$1 AND owner_account_id=$2",
         [request.params.id, accountId],

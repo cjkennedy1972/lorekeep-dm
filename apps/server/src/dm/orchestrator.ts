@@ -72,7 +72,7 @@ export interface DmToolContext {
   closeScene?: (args: {
     summary: string;
     nextSceneId?: string;
-  }) => ToolExecution;
+  }) => Promise<ToolExecution> | ToolExecution;
   commitState?: (previous: unknown, output: EngineToolOutput) => unknown;
   seed: number;
   rollIndex: number;
@@ -86,7 +86,7 @@ export interface DmToolContext {
     state: unknown,
     call: unknown,
     seed: number,
-  ) => ToolEngineResult;
+  ) => Promise<ToolEngineResult> | ToolEngineResult;
   rulesLookup?: (
     topic: string,
   ) => Promise<
@@ -208,7 +208,7 @@ async function executeTool(
         error: 'unknown-tool',
         hint: 'Scene closing is unavailable outside an active solo adventure.',
       };
-    return context.closeScene(
+    return await context.closeScene(
       args as { summary: string; nextSceneId?: string },
     );
   }
@@ -265,7 +265,7 @@ async function executeTool(
       error: 'unknown-tool',
       hint: 'Engine tool executor is unavailable.',
     };
-  const raw = context.engineExecute(
+  const raw = await context.engineExecute(
     context.engineState,
     { name, args },
     context.seed,

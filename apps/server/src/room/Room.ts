@@ -193,6 +193,17 @@ export class Room {
     const gameState = { ...(this.state.gameState as Record<string, unknown>) };
     delete gameState.lastNarration;
     delete gameState.lastPlayerText;
+    // Registry prose and persisted recaps may predate output moderation. They are
+    // server-side model context; recap is returned separately after route gating.
+    delete gameState.world;
+    delete gameState.recap;
+    if (gameState.gameEngine && typeof gameState.gameEngine === 'object') {
+      const gameEngine = {
+        ...(gameState.gameEngine as Record<string, unknown>),
+      };
+      delete gameEngine.world;
+      gameState.gameEngine = gameEngine;
+    }
     return { ...this.state, gameState };
   }
 
