@@ -248,4 +248,30 @@ describe('loadSeatedContentBoundaries', () => {
       loadSeatedContentBoundaries(database.pool, sessionId),
     ).rejects.toThrow('Session content boundary limit exceeded');
   });
+
+  it('accepts the complete six-seat boundary union at the session cap', async () => {
+    for (let seat = 0; seat < 6; seat += 1) {
+      const seated = await account(database, false);
+      const lines = Array.from(
+        { length: 20 },
+        (_, index) => `line-${seat}-${index}`,
+      );
+      const veils = Array.from(
+        { length: 20 },
+        (_, index) => `veil-${seat}-${index}`,
+      );
+      await database.pool.query(
+        'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+        [seated, lines, veils],
+      );
+      await seatJoined(database, sessionId, seat + 1, seated, false);
+    }
+
+    const boundaries = await loadSeatedContentBoundaries(
+      database.pool,
+      sessionId,
+    );
+    expect(boundaries.lines).toHaveLength(120);
+    expect(boundaries.veils).toHaveLength(120);
+  });
 });
