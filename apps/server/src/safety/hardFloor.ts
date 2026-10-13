@@ -803,10 +803,7 @@ export function scanFlags(
   // Three tokens cover prev3/minorBefore; one more preserves a youth-prefix
   // immediately before the earliest minor-before candidate.
   const keyFrom = Math.max(0, from - 4);
-  const keyTo = Math.min(
-    words.length,
-    to + MAX_JOIN + FILLER_WINDOW + 3,
-  );
+  const keyTo = Math.min(words.length, to + MAX_JOIN + FILLER_WINDOW + 3);
   const key = `${from - keyFrom}:${to - keyFrom}:${words
     .slice(keyFrom, keyTo)
     .join('\u001f')}`;
@@ -975,11 +972,14 @@ function compactLongToken(token: string): string {
 function compactSeparators(text: string): string {
   return text.replace(/[^\p{L}\p{N}]+/gu, (run) => {
     if (/^\s+$/u.test(run)) return ' ';
-    const marks = [...run]
+    // Preserve a dangling high surrogate at the edge of a chunk: a low
+    // surrogate in the next push may complete an astral letter after folding.
+    const trailingHigh = /[\uD800-\uDBFF]$/u.test(run) ? run.slice(-1) : '';
+    const marks = [...(trailingHigh ? run.slice(0, -1) : run)]
       .filter((char) => !/\s/u.test(char))
       .slice(0, 3)
       .join('');
-    return `${/^\s/u.test(run) ? ' ' : ''}${marks}${/\s$/u.test(run) ? ' ' : ''}`;
+    return `${/^\s/u.test(run) ? ' ' : ''}${marks}${trailingHigh}${/\s$/u.test(run) ? ' ' : ''}`;
   });
 }
 
@@ -1155,7 +1155,7 @@ export function createHardFloorTurn(): HardFloorTurn {
       const hi = Math.max(lo, n - TURN_TAIL_TOKENS);
       const fixed = scanFlags(
         words,
-        // The carry is capped at 47 raw tokens and the rescan span is 45.
+        // The carry includes left context, the unsettled tail and join lookahead.
         // Normalization can collapse tokens, not add them, so this range always
         // starts before `lo`; rescanning from `lo` avoids re-tokenizing carry.
         lo,

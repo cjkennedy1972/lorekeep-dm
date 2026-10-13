@@ -265,9 +265,15 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           buffer.length >= maxChunk ||
           (cuts === 0 && deltas >= FIRST_CHUNK_TOKENS)
         ) {
-          const limit = Math.min(buffer.length, maxChunk);
+          let limit = Math.min(buffer.length, maxChunk);
           for (let i = limit - 1; i > 0; i--)
             if (SPACE.test(buffer[i]!)) return i;
+          if (
+            limit < buffer.length &&
+            /[\uD800-\uDBFF]/u.test(buffer[limit - 1]!) &&
+            /[\uDC00-\uDFFF]/u.test(buffer[limit]!)
+          )
+            limit--;
           return limit;
         }
         let from = buffer.length;

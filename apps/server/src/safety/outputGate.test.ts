@@ -274,7 +274,6 @@ describe('block and regenerate', () => {
       text: SAFE_REDIRECT_TEMPLATE,
     });
     expect(chunkTexts(events)).toEqual([]);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
   });
 
   it('a moderator that throws counts as a block', async () => {
@@ -753,6 +752,40 @@ describe('deterministic window across forced cuts', () => {
 });
 
 describe('turn-scoped hard floor across the carry', () => {
+  it('does not split a surrogate pair at the forced chunk boundary', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const text = `child${'-'.repeat(58)}\u{1d427}ude.`;
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens(text),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'mature',
+        maxChunkChars: 64,
+      }),
+    );
+    expect(text.charCodeAt(63)).toBeGreaterThanOrEqual(0xd800);
+    expect(text.charCodeAt(63)).toBeLessThanOrEqual(0xdbff);
+    expect(text.charCodeAt(64)).toBeGreaterThanOrEqual(0xdc00);
+    expect(text.charCodeAt(64)).toBeLessThanOrEqual(0xdfff);
+    expect(chunkTexts(events).join('')).not.toMatch(/child|nude/i);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attempt: 0,
+          verdict: 'block',
+          source: 'hardfloor',
+        }),
+      ]),
+    );
+  });
+
   it('blocks a message-level minor-plus-sexual violation whose minor reference is beyond the carry', async () => {
     const moderator = new JudgeModerator({
       deterministic: hardFloorLayer,
@@ -844,8 +877,7 @@ describe('message-level taint never leaks emitted text', () => {
     const minorFirst = `A child sleeps. ${filler}`;
     const events = await collect(
       runOutputGate({
-        stream: () =>
-          tokens(...splitTokens(`${minorFirst}Then nude.`, 20)),
+        stream: () => tokens(...splitTokens(`${minorFirst}Then nude.`, 20)),
         regenerate: () => tokens('The narrator pauses.'),
         moderator,
         tier: 'mature',

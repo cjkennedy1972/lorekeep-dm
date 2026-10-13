@@ -251,6 +251,14 @@ function orderedGapTexts(gap: number): string[] {
 }
 
 describe('streamed gap under-block (B1)', () => {
+  it('preserves an astral letter split inside a compacted separator run', () => {
+    const text = `The child ---\u{1d427}ude`;
+    const cut = text.indexOf('\u{1d427}') + 1;
+    expect(checkHardFloor(text).blocked).toBe(true);
+    expect(isLowSurrogate(text, cut)).toBe(true);
+    expectEquivalent(text, splitAt(text, [cut]), 'astral separator seam');
+  });
+
   it('preserves a sexual term used as the NAME_AGE anchor', () => {
     const text = 'Naked, 12, is.';
     expect(checkHardFloor(text).blocked).toBe(true);
