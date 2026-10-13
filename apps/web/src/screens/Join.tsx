@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type RoomInfo } from '../api';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
@@ -10,8 +10,23 @@ export function Join() {
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<boolean | null>(null);
   const [joining, setJoining] = useState(false);
+  const [preview, setPreview] = useState<RoomInfo>();
+  const [previewError, setPreviewError] = useState('');
   const content = useMatureOptOut();
   const checked = draft ?? content.optOut ?? false;
+
+  useEffect(() => {
+    if (!code) return;
+    let live = true;
+    void api<{ room: RoomInfo }>(
+      `/api/invites/${encodeURIComponent(code)}`,
+    ).then((r) => {
+      if (!live) return;
+      if (r.ok) setPreview(r.data.room);
+      else setPreviewError(r.message);
+    });
+    return () => void (live = false);
+  }, [code]);
 
   async function joinTable(e: FormEvent, invite: string) {
     e.preventDefault();
@@ -29,16 +44,17 @@ export function Join() {
 
   if (code) {
     const message = error || content.error;
-    if (content.optOut === undefined)
+    if (content.optOut === undefined || !preview)
       return (
         <>
           <h1>Join table</h1>
-          {content.error ? (
+          {previewError || content.error ? (
             <p role="alert">
-              {content.error} <Link to="/rooms">Back to My tables</Link>
+              {previewError || content.error}{' '}
+              <Link to="/rooms">Back to My tables</Link>
             </p>
           ) : (
-            <p role="status">Loading the table…</p>
+            <p role="status">Loading table settings…</p>
           )}
         </>
       );
@@ -50,8 +66,22 @@ export function Join() {
           noValidate
           className="form"
         >
+          <p>
+            Table: <strong>{preview.name}</strong>
+          </p>
+          <p>
+            Table setting:{' '}
+            <strong>
+              {preview.tierCap == null
+                ? 'Mature (default)'
+                : preview.tierCap === 'standard'
+                  ? 'Standard'
+                  : 'Family'}
+            </strong>
+          </p>
           <MatureOptOutField
             checked={checked}
+            tierCap={preview.tierCap ?? null}
             disabled={joining}
             onChange={(v) => setDraft(v)}
           />

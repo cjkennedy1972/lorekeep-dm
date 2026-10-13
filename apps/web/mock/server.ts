@@ -163,8 +163,6 @@ export function createMock(
     };
   };
 
-  const matureOptOuts = new Set<string>();
-
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://mock');
     const route = `${req.method} ${url.pathname}`;
@@ -551,6 +549,22 @@ export function createMock(
         );
       r.tierCap = tier;
       return json(res, 200, { tier });
+    }
+    const invitePreviewRoute = /^\/api\/invites\/([^/]+)$/.exec(
+      url.pathname,
+    );
+    if (req.method === 'GET' && invitePreviewRoute) {
+      const r = [...rooms.values()].find(
+        (room) => room.code === invitePreviewRoute[1],
+      );
+      if (!r)
+        return err(
+          res,
+          404,
+          'INVITE_INVALID',
+          'This invite link is no longer valid.',
+        );
+      return json(res, 200, { room: roomView(r, account.id) });
     }
     const joinRoute = /^\/api\/invites\/([^/]+)\/join$/.exec(url.pathname);
     if (req.method === 'POST' && joinRoute) {

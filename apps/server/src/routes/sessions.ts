@@ -271,6 +271,34 @@ export function registerSessionRoutes(
     }
     return { room: view(found.id, found.name, found.owner === accountId) };
   };
+  app.get<{ Params: { code: string } }>(
+    '/api/invites/:code',
+    async (request, reply) => {
+      const accountId = await member(request, reply);
+      if (!accountId) return reply;
+      const { code } = request.params;
+      if (throttled(`${request.ip}:${code}`))
+        return reply.code(429).send({
+          code: 'RATE_LIMITED',
+          message: 'Too many attempts. Wait a minute.',
+        });
+      const found = await sessionForCode(db, code);
+      if (!found)
+        return reply.code(404).send({
+          code: 'INVITE_INVALID',
+          message: 'This invite link is no longer valid.',
+        });
+      return {
+        room: view(
+          found.id,
+          found.name,
+          found.owner === accountId,
+          undefined,
+          found.hostTierCap,
+        ),
+      };
+    },
+  );
   app.post<{ Params: { code: string } }>('/api/invites/:code/join', join);
   app.post<{ Params: { code: string } }>('/api/join/:code', join);
 }

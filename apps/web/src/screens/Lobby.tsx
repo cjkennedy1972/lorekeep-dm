@@ -172,6 +172,7 @@ export function Lobby() {
         {content.optOut !== undefined && (
           <MatureOptOutField
             checked={content.optOut}
+            tierCap={tierCap}
             onChange={(v) => void changeOptOut(v)}
           />
         )}

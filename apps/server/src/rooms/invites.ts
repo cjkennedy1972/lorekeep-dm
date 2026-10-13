@@ -37,7 +37,13 @@ export async function sessionForCode(
   db: Pick<Pool, 'query'>,
   code: string,
 ): Promise<
-  { id: string; name: string; owner: string; status: string } | undefined
+  {
+    id: string;
+    name: string;
+    owner: string;
+    status: string;
+    hostTierCap: 'family' | 'standard' | null;
+  } | undefined
 > {
   if (!plausibleCode(code)) return undefined;
   const r = await db.query<{
@@ -45,11 +51,21 @@ export async function sessionForCode(
     name: string;
     owner: string;
     status: string;
+    host_tier_cap: 'family' | 'standard' | null;
   }>(
-    `SELECT id,name,owner_account_id AS owner,status FROM sessions WHERE invite_hash=$1 AND status IN ('active','archived')`,
+    `SELECT id,name,owner_account_id AS owner,status,host_tier_cap FROM sessions WHERE invite_hash=$1 AND status IN ('active','archived')`,
     [hashInvite(code)],
   );
-  return r.rows[0];
+  const row = r.rows[0];
+  return row
+    ? {
+        id: row.id,
+        name: row.name,
+        owner: row.owner,
+        status: row.status,
+        hostTierCap: row.host_tier_cap,
+      }
+    : undefined;
 }
 /** A table archived for inactivity comes back when one of its members (or the host) rejoins. */
 export async function restoreForMember(
