@@ -751,6 +751,44 @@ describe('deterministic window across forced cuts', () => {
   });
 });
 
+describe('surrogate-safe output boundaries', () => {
+  it('keeps a high surrogate buffered when a source delta ends at maxChunkChars', async () => {
+    const { moderator, seen } = scripted(() => ALLOW);
+    const astral = '\u{1d427}';
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('x'.repeat(63) + astral[0], astral[1] + 'ude.'),
+        regenerate: () => tokens('Safe.'),
+        moderator,
+        tier: 'mature',
+        maxChunkChars: 64,
+      }),
+    );
+    expect(seen[0]).toBe('x'.repeat(63));
+    expect(seen[1]).toBe(`${astral}ude.`);
+    expect(chunkTexts(events).join('')).toBe('x'.repeat(63) + `${astral}ude.`);
+  });
+
+  it('backs the 64-character hold-back away from a surrogate pair', async () => {
+    const { moderator, seen } = scripted(() => ALLOW);
+    const astral = '\u{1d427}';
+    const text = 'x'.repeat(63) + astral + 'y'.repeat(63);
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens(text),
+        regenerate: () => tokens('Safe.'),
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    expect(seen).toEqual([text]);
+    expect(chunkTexts(events)).toEqual([
+      'x'.repeat(63),
+      `${astral}${'y'.repeat(63)}`,
+    ]);
+  });
+});
+
 describe('turn-scoped hard floor across the carry', () => {
   it('does not split a surrogate pair at the forced chunk boundary', async () => {
     const moderator = new JudgeModerator({
@@ -955,6 +993,20 @@ describe('tail hold-back and config guards', () => {
         maxChunkChars: 415,
       }),
     ).toThrow(/maxChunkChars/);
+  });
+
+  it('rejects maxInFlight values that would stall the reader', () => {
+    const { moderator } = scripted(() => ALLOW);
+    for (const maxInFlight of [0, -1, 0.5, Number.NaN])
+      expect(() =>
+        runOutputGate({
+          stream: () => tokens('Hello.'),
+          regenerate: () => tokens('Safe.'),
+          moderator,
+          tier: 'standard',
+          maxInFlight,
+        }),
+      ).toThrow(/maxInFlight/);
   });
 
   it('P9: a deterministic rule longer than the hold-back is refused at construction', () => {

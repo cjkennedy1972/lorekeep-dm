@@ -83,6 +83,9 @@ type Item = Chunk | 'end' | { error: unknown } | { terminalBlock: true };
 export function runOutputGate(
   opts: OutputGateOptions,
 ): AsyncGenerator<GateEvent> {
+  const maxInFlight = opts.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
+  if (!Number.isSafeInteger(maxInFlight) || maxInFlight < 1)
+    throw new Error(`maxInFlight ${maxInFlight} must be a positive integer`);
   const maxChunk = opts.maxChunkChars ?? DEFAULT_MAX_CHUNK_CHARS;
   if (maxChunk < HOLD_BACK_CHARS)
     throw new Error(
@@ -268,10 +271,14 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           let limit = Math.min(buffer.length, maxChunk);
           for (let i = limit - 1; i > 0; i--)
             if (SPACE.test(buffer[i]!)) return i;
+          const lastCodeUnit = limit > 0 ? buffer.charCodeAt(limit - 1) : 0;
+          const nextCodeUnit =
+            limit < buffer.length ? buffer.charCodeAt(limit) : undefined;
           if (
-            limit < buffer.length &&
-            /[\uD800-\uDBFF]/u.test(buffer[limit - 1]!) &&
-            /[\uDC00-\uDFFF]/u.test(buffer[limit]!)
+            lastCodeUnit >= 0xd800 &&
+            lastCodeUnit <= 0xdbff &&
+            (nextCodeUnit === undefined ||
+              (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff))
           )
             limit--;
           return limit;
@@ -390,9 +397,16 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           metrics.firstApprovedMs = decidedAtMs;
         const pending = held + item.text;
         // A sexual term already shown can't be revoked by a later minor term, so hold the whole turn.
-        const cut = sensitive
-          ? 0
-          : Math.max(0, pending.length - HOLD_BACK_CHARS);
+        let cut = sensitive ? 0 : Math.max(0, pending.length - HOLD_BACK_CHARS);
+        if (
+          cut > 0 &&
+          cut < pending.length &&
+          pending.charCodeAt(cut - 1) >= 0xd800 &&
+          pending.charCodeAt(cut - 1) <= 0xdbff &&
+          pending.charCodeAt(cut) >= 0xdc00 &&
+          pending.charCodeAt(cut) <= 0xdfff
+        )
+          cut--;
         const emit = pending.slice(0, cut);
         held = pending.slice(cut);
         if (emit) {
