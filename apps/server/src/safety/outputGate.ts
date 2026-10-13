@@ -78,7 +78,11 @@ export interface OutputGateOptions {
 }
 
 type Chunk = { text: string; verdict: Promise<Verdict>; cutAtMs: number };
-type Item = Chunk | 'end' | { error: unknown } | { terminalBlock: true };
+type Item =
+  | Chunk
+  | 'end'
+  | { error: unknown }
+  | { terminalBlock: 'failclosed' | 'hardfloor' };
 
 export function runOutputGate(
   opts: OutputGateOptions,
@@ -352,9 +356,9 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           try {
             final = turn?.finish?.();
           } catch {
-            push({ terminalBlock: true });
+            push({ terminalBlock: 'failclosed' });
           }
-          if (final?.blocked) push({ terminalBlock: true });
+          if (final?.blocked) push({ terminalBlock: 'hardfloor' });
           if (final?.blocked || (!final && turn?.finish)) continue;
           if (held) {
             approved.push(held);
@@ -370,11 +374,12 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         if ('error' in item) throw item.error;
         if ('terminalBlock' in item) {
           const at = now() - start;
+          const failedClosed = item.terminalBlock === 'failclosed';
           metrics.chunks.push({
             attempt,
             verdict: 'block',
-            category: 'minor_sexual',
-            source: 'hardfloor',
+            category: failedClosed ? 'other' : 'minor_sexual',
+            source: failedClosed ? 'failclosed' : 'hardfloor',
             judgeLatencyMs: 0,
             cutAtMs: at,
             decidedAtMs: at,

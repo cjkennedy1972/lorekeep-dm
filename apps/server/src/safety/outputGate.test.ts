@@ -374,7 +374,8 @@ describe('block and regenerate', () => {
     expect(end.metrics.chunks).toContainEqual(
       expect.objectContaining({
         verdict: 'block',
-        source: 'hardfloor',
+        category: 'other',
+        source: 'failclosed',
       }),
     );
   });
