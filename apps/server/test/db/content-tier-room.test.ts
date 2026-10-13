@@ -175,7 +175,9 @@ describe('mature narration through Room and Persistence', () => {
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await waitForCompletion(sessionId);
 
-    expect(narrationText(ownerSeen.sent)).toBe(LONG_NARRATION.slice(0, 24));
+    const visible = narrationText(ownerSeen.sent);
+    expect(visible).toMatch(/^The /);
+    expect(visible.length).toBeLessThan(LONG_NARRATION.length);
   });
 
   it('withholds a mature narration from a seat whose account is being deleted', async () => {

@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { SAFE_REDIRECT_TEMPLATE } from '../../src/safety/outputGate.js';
 import {
   startFakeOpenAIServer,
   textStream,
@@ -19,6 +20,7 @@ const saved = {
   LLM_ALLOW_LOCAL_HOSTS: process.env.LLM_ALLOW_LOCAL_HOSTS,
   OPERATOR_ENDPOINT_MASTER_KEY: process.env.OPERATOR_ENDPOINT_MASTER_KEY,
   OPERATOR_EMAILS: process.env.OPERATOR_EMAILS,
+  SOLO_TURN_ENDPOINT_SLOT: process.env.SOLO_TURN_ENDPOINT_SLOT,
 };
 let db: Pool;
 let endpoint: FakeOpenAIServer;
@@ -29,6 +31,7 @@ beforeAll(async () => {
   db = new Pool({ connectionString: databaseUrl });
   endpoint = await startFakeOpenAIServer({ chunks: textStream });
   process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(endpoint.baseUrl).host;
+  process.env.SOLO_TURN_ENDPOINT_SLOT = 'fast';
   process.env.OPERATOR_ENDPOINT_MASTER_KEY = `primary:${randomBytes(32).toString('base64')}`;
   ownerId = randomUUID();
   sessionId = randomUUID();
@@ -53,11 +56,26 @@ beforeAll(async () => {
     createEndpointEgress(),
     ownerId,
   );
+  await saveEndpoint(
+    db,
+    'fast',
+    {
+      baseUrl: endpoint.baseUrl,
+      model: 'fixture-model',
+      apiStyle: 'openai',
+      apiKey: 'fixture-secret',
+      unsupportedToolSchemaKeywords: [],
+    },
+    createEndpointEgress(),
+    ownerId,
+  );
 });
 
 afterAll(async () => {
   await endpoint?.close();
-  await db.query("DELETE FROM operator_endpoints WHERE slot='moderate'");
+  await db.query(
+    "DELETE FROM operator_endpoints WHERE slot IN ('moderate','fast')",
+  );
   await db.query('SELECT purge_session($1)', [sessionId]);
   await db.query('DELETE FROM accounts WHERE id=$1', [ownerId]);
   await db.end();
@@ -84,7 +102,7 @@ describe('ProductionSoloTurnRunner under default production env', () => {
       },
       () => undefined,
     );
-    expect(endpoint.requests).toHaveLength(1);
-    expect(result.narration).toContain('hello world');
+    expect(endpoint.requests).toHaveLength(2);
+    expect(result.narration).toBe(SAFE_REDIRECT_TEMPLATE);
   });
 });
