@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 export const up = (pgm) =>
   pgm.sql(
     readFileSync(
-      new URL('./0024_operator_audit_denied.sql', import.meta.url),
+      new URL('./0029_operator_audit_denied.sql', import.meta.url),
       'utf8',
     ),
   );
