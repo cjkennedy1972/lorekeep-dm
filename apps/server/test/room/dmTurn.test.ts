@@ -572,6 +572,22 @@ describe('Room solo DM turn lifecycle', () => {
 });
 
 describe('Room commit safety', () => {
+  it('redacts private opt-outs from StateSync in a lobby without game state', async () => {
+    const { room } = setup({
+      async run() {
+        return result as never;
+      },
+    });
+    await room.seat(randomUUID(), 'Opted out', true);
+    await room.seat(randomUUID(), 'Opted in', false);
+
+    const state = room.clientState();
+    expect(state.gameState).toBeUndefined();
+    expect(state.seats).toHaveLength(2);
+    expect(state.seats.every((seat) => !('matureOptOut' in seat))).toBe(true);
+    expect(JSON.stringify(state)).not.toContain('matureOptOut');
+  });
+
   it('keeps private opt-outs and historical prose out of client StateSync state', async () => {
     const { room } = setup({
       async run() {

@@ -189,7 +189,12 @@ export class Room {
 
   /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */
   clientState(): RoomState {
-    if (!this.state.gameState) return this.state;
+    const seats = this.state.seats.map((seat) => {
+      const clientSeat = { ...seat };
+      delete clientSeat.matureOptOut;
+      return clientSeat;
+    });
+    if (!this.state.gameState) return { ...this.state, seats };
     const gameState = { ...(this.state.gameState as Record<string, unknown>) };
     delete gameState.lastNarration;
     delete gameState.lastPlayerText;
@@ -205,11 +210,6 @@ export class Room {
       delete gameEngine.world;
       gameState.gameEngine = gameEngine;
     }
-    const seats = this.state.seats.map((seat) => {
-      const clientSeat = { ...seat };
-      delete clientSeat.matureOptOut;
-      return clientSeat;
-    });
     return { ...this.state, seats, gameState };
   }
 
