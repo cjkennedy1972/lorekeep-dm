@@ -26,6 +26,10 @@ export async function purgeLogs(ctx: JobContext) {
     'DELETE FROM moderation_log WHERE expires_at < $1',
     [now],
   );
+  const xCards = await db.query(
+    'DELETE FROM x_card_log WHERE expires_at < $1',
+    [now],
+  );
   const counts = {
     events: Number(events),
     emailTokens: tokens.rowCount ?? 0,
@@ -33,6 +37,7 @@ export async function purgeLogs(ctx: JobContext) {
     wsTickets: tickets.rowCount ?? 0,
     operatorEndpointAudit: endpointAudit.rowCount ?? 0,
     moderationLog: moderation.rowCount ?? 0,
+    xCardLog: xCards.rowCount ?? 0,
   };
   ctx.log({ job: 'logs', ...counts });
   return counts;

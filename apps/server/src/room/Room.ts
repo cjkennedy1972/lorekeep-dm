@@ -15,7 +15,11 @@ import type { HostCap } from '../safety/tier.js';
 import type { Lease } from './lease.js';
 import { recoverRoom } from './recovery.js';
 import { reduceRoom } from './reducer.js';
-import { LiveDmRestrictedError, type SoloTurnRunner } from './dmTurn.js';
+import {
+  LiveDmRestrictedError,
+  XCardAbortError,
+  type SoloTurnRunner,
+} from './dmTurn.js';
 import type { CombatCommand } from '@game/schema';
 import {
   createCombatRuntime,
@@ -62,6 +66,7 @@ export interface RoomStore {
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
   /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
   xCardAbortEnabled?(sessionId: string): Promise<boolean>;
+  setXCardAbortEnabled?(sessionId: string, enabled: boolean): Promise<void>;
 }
 export interface Connection {
   send(message: ServerMessage): void;
@@ -563,6 +568,16 @@ export class Room {
     });
   }
 
+  /** Host setting: control whether a safety flag aborts the active generation. */
+  setXCardAbortEnabled(enabled: boolean): Promise<void> {
+    if (!this.accepting) throw new LeaseConflictError('Room is draining');
+    if (!this.store.setXCardAbortEnabled)
+      throw new Error('X-card abort setting is unavailable');
+    return this.enqueue(async () => {
+      await this.store.setXCardAbortEnabled!(this.sessionId, enabled);
+    });
+  }
+
   /** Anonymous: the seat is stored in the log for abuse handling, but the broadcast carries only the kind. */
   xCard(accountId: string): Promise<void> {
     return this.enqueuePlayer(async () => {
@@ -745,6 +760,7 @@ export class Room {
         // leave the player waiting forever. Nothing was committed, so the same action can be
         // resubmitted. The message is deliberately generic: no error text, prompt or secret.
         this.pendingActions.delete(action.actionId);
+        if (error instanceof XCardAbortError) continue;
         const restricted = error instanceof LiveDmRestrictedError;
         const failure = {
           seq: this.seq,
@@ -796,49 +812,61 @@ export class Room {
     const turnAbort = new AbortController();
     this.turnAbort = turnAbort;
     const xCardAtStart = this.state.xCard ?? { requested: 0, steered: 0 };
-    const result = await this.turnRunner!.run(
-      {
-        sessionId: this.sessionId,
-        accountId,
-        actionId,
-        text,
-        state: this.state.gameState ?? this.state,
-        playerName,
-        allowClarification: !clarificationAsked,
-        clarificationAsked,
-        steerAway: xCardAtStart.requested > xCardAtStart.steered,
-        signal: AbortSignal.any([this.drainAbort.signal, turnAbort.signal]),
-      },
-      (event) => {
-        const type = event.type;
-        if (type === 'NarrationTier') {
-          matureAudience =
-            (event as { tier?: unknown }).tier === 'mature'
-              ? audience
-              : undefined;
-        } else if (type === 'RollEvent') {
-          this.broadcast({
-            seq: this.seq,
-            type: 'RollEvent',
-            payload: event,
-          } as ServerMessage);
-        } else if (type === 'NarrationChunk' || type === 'NarrationCompleted') {
-          const message = {
-            seq: this.seq,
-            type,
-            payload: event,
-          } as ServerMessage;
-          if (matureAudience) this.deliverMature(message, matureAudience);
-          else this.broadcast(message);
-        } else if (type === 'ToolCallRejected') {
-          this.broadcast({
-            seq: this.seq,
-            type: 'ToolRejected',
-            payload: { turnId: event.turnId },
-          } as ServerMessage);
-        }
-      },
-    );
+    let result;
+    try {
+      result = await this.turnRunner!.run(
+        {
+          sessionId: this.sessionId,
+          accountId,
+          actionId,
+          text,
+          state: this.state.gameState ?? this.state,
+          playerName,
+          allowClarification: !clarificationAsked,
+          clarificationAsked,
+          steerAway: xCardAtStart.requested > xCardAtStart.steered,
+          signal: AbortSignal.any([this.drainAbort.signal, turnAbort.signal]),
+        },
+        (event) => {
+          const type = event.type;
+          if (type === 'NarrationTier') {
+            matureAudience =
+              (event as { tier?: unknown }).tier === 'mature'
+                ? audience
+                : undefined;
+          } else if (type === 'RollEvent') {
+            this.broadcast({
+              seq: this.seq,
+              type: 'RollEvent',
+              payload: event,
+            } as ServerMessage);
+          } else if (
+            type === 'NarrationChunk' ||
+            type === 'NarrationCompleted'
+          ) {
+            const message = {
+              seq: this.seq,
+              type,
+              payload: event,
+            } as ServerMessage;
+            if (matureAudience) this.deliverMature(message, matureAudience);
+            else this.broadcast(message);
+          } else if (type === 'ToolCallRejected') {
+            this.broadcast({
+              seq: this.seq,
+              type: 'ToolRejected',
+              payload: { turnId: event.turnId },
+            } as ServerMessage);
+          }
+        },
+      );
+    } catch (error) {
+      this.turnAbort = undefined;
+      if (turnAbort.signal.aborted) throw new XCardAbortError();
+      throw error;
+    }
+    this.turnAbort = undefined;
+    if (turnAbort.signal.aborted) throw new XCardAbortError();
     await this.matureDelivery;
     // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
     await this.enqueue(async () => {

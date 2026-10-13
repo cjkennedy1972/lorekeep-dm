@@ -21,6 +21,14 @@ export class LiveDmRestrictedError extends Error {
   }
 }
 
+/** The host-enabled X-card path stopped this turn intentionally. */
+export class XCardAbortError extends Error {
+  constructor() {
+    super('X_CARD_ABORTED');
+    this.name = 'XCardAbortError';
+  }
+}
+
 /** Runtime-specific prompt, endpoint, and engine bindings stay outside the Room actor. */
 export interface SoloTurnRunner {
   run(

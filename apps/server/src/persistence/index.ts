@@ -134,6 +134,18 @@ export class Persistence {
     return rows[0]?.enabled ?? false;
   }
 
+  /** Host opt-in for aborting in-flight generation when an X-card is pressed. */
+  async setXCardAbortEnabled(
+    sessionId: string,
+    enabled: boolean,
+  ): Promise<void> {
+    const { rowCount } = await this.pool.query(
+      'UPDATE sessions SET xcard_abort_inflight=$2 WHERE id=$1',
+      [sessionId, enabled],
+    );
+    if (rowCount !== 1) throw new Error(`Session not found: ${sessionId}`);
+  }
+
   /** Cap change for a table with no live Room: takes the session lease for the write, as account deletion does. */
   async setHostTierCap(sessionId: string, cap: HostCap | null): Promise<void> {
     const client = await this.pool.connect();
@@ -196,7 +208,24 @@ export class Persistence {
           sessionId,
           registryEvents,
         );
-      const inserted = await appendEvents(client, sessionId, events);
+      const safetyFlags = events.filter((event) => event.type === 'SafetyFlag');
+      for (const event of safetyFlags) {
+        const payload = event.payload as { seatId?: unknown; kind?: unknown };
+        if (payload.kind === 'x-card' && typeof payload.seatId === 'string')
+          await client.query(
+            `INSERT INTO x_card_log(session_id,seat_id,written_at,expires_at)
+             VALUES ($1,$2,now(),now() + interval '30 days')`,
+            [sessionId, payload.seatId],
+          );
+      }
+      // Seat-linked data lives only in the expiring operational log. The immutable
+      // replay event and snapshots retain the anonymous safety signal only.
+      const replayEvents = events.map((event) =>
+        event.type === 'SafetyFlag'
+          ? { ...event, payload: { kind: 'x-card' } }
+          : event,
+      );
+      const inserted = await appendEvents(client, sessionId, replayEvents);
       const last = inserted.at(-1);
       if (!last) throw new Error('A turn needs at least one event');
       await client.query(

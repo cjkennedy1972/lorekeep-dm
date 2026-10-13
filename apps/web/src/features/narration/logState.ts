@@ -171,6 +171,7 @@ export function narrationLogReducer(
     case 'ToolRejected':
     case 'ClarificationRequested':
     case 'ContentTierChanged':
+    case 'SafetyFlag':
     case 'CombatTracker':
     case 'ReactionPrompt':
     case 'CombatOptions':
