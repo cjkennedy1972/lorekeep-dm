@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 export const up = (pgm) => {
   pgm.sql(
     readFileSync(
-      new URL('./0025_xcard_abort_inflight.sql', import.meta.url),
+      new URL('./0027_xcard_abort_inflight.sql', import.meta.url),
       'utf8',
     ),
   );
