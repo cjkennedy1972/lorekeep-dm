@@ -15,6 +15,7 @@ import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
+import { SAFE_RECAP_FALLBACK } from '../../src/dm/recap.js';
 import { loadCatalog, catalogVersionOf } from '@game/rules-engine/catalog-node';
 import type { TurnResult } from '../../src/dm/orchestrator.js';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -651,7 +652,7 @@ describe('solo turn persisted lifecycle', () => {
     });
     expect(beforeRestart.status).toBe(200);
     const priorGame = (await beforeRestart.json()).game;
-    expect(priorGame.recap).toContain('followed the lantern light');
+    expect(priorGame.recap).toBe(SAFE_RECAP_FALLBACK);
     const priorCharacter = priorGame.character;
     const priorGameState = priorGame.state.gameState;
 
@@ -690,7 +691,7 @@ describe('solo turn persisted lifecycle', () => {
     delete priorStateWithoutRecap.recap;
     delete resumedStateWithoutRecap.recap;
     expect(resumedStateWithoutRecap).toEqual(priorStateWithoutRecap);
-    expect(resumedGame.recap).toContain('followed the lantern light');
+    expect(resumedGame.recap).toBe(SAFE_RECAP_FALLBACK);
 
     const outsider = await createUser();
     const forbidden = await fetch(`${base}/api/tables/${gameId}`, {

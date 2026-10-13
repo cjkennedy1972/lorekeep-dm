@@ -13,7 +13,7 @@ describe('export and delete Postgres flow', () => {
       const id = randomUUID();
       const password_hash = await hashPassword('correct-password');
       await pool.query(
-        'CREATE TABLE accounts(id uuid PRIMARY KEY,email text,password_hash text,display_name text,status text,is_adult bool,age_checked_at timestamptz,terms_version text,terms_accepted_at timestamptz,mature_opt_out bool,created_at timestamptz,deletion_requested_at timestamptz)',
+        "CREATE TABLE accounts(id uuid PRIMARY KEY,email text,password_hash text,display_name text,status text,is_adult bool,age_checked_at timestamptz,terms_version text,terms_accepted_at timestamptz,mature_opt_out bool,content_lines text[] NOT NULL DEFAULT '{}',content_veils text[] NOT NULL DEFAULT '{}',created_at timestamptz,deletion_requested_at timestamptz)",
       );
       await pool.query(
         'CREATE TABLE auth_sessions(token_hash text PRIMARY KEY,account_id uuid,expires_at timestamptz,absolute_expires_at timestamptz,last_active_at timestamptz,ua_label text)',
@@ -33,7 +33,7 @@ describe('export and delete Postgres flow', () => {
       await pool.query('CREATE TABLE ws_tickets(account_id uuid)');
       await pool.query('CREATE TABLE deletion_jobs(id uuid,account_id uuid)');
       await pool.query(
-        "INSERT INTO accounts VALUES($1,'person@example.test',$2,'Player','active',true,now(),'v1',now(),false,now(),null)",
+        "INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at,mature_opt_out,created_at,deletion_requested_at) VALUES($1,'person@example.test',$2,'Player','active',true,now(),'v1',now(),false,now(),null)",
         [id, password_hash],
       );
       const token = await createSession(pool, id, 'Test device');

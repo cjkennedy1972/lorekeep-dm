@@ -48,6 +48,31 @@ test('has no axe violations and lists this device', async () => {
   expect((await axe(document.body)).violations).toEqual([]);
 });
 
+test('saves private lines and veils from account settings', async () => {
+  const fetcher = useJar();
+  await signup('content-boundaries@example.com');
+  renderApp('/settings');
+  await userEvent.type(
+    await screen.findByLabelText('Lines — do not include'),
+    'no spiders\nno gore',
+  );
+  await userEvent.type(
+    screen.getByLabelText('Veils — fade out'),
+    'fade out at surgery',
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Save content boundaries' }),
+  );
+  expect(
+    await screen.findByText('Personal content boundaries saved.'),
+  ).toBeInTheDocument();
+  const response = await fetcher(`${http.base}/api/me/content-settings`);
+  expect(await response.json()).toMatchObject({
+    lines: ['no spiders', 'no gore'],
+    veils: ['fade out at surgery'],
+  });
+});
+
 test('revoking another device updates the list; sign out all other devices', async () => {
   useJar();
   await signup('s2@example.com');

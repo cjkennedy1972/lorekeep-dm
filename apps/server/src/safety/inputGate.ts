@@ -7,6 +7,7 @@ import {
 import { BoundedCounter } from '../accounts/throttle.js';
 import { checkHardFloor } from './hardFloor.js';
 import { hardFloorLayer } from './deterministicLayer.js';
+import { loadSeatedContentBoundaries } from './tierLoader.js';
 import {
   JudgeModerator,
   type Category,
@@ -99,7 +100,7 @@ export function createInputGate({
     input: InputCheck,
     category: Category,
     source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed',
-    failClosedRow?: 'hard-floor' | 'tier',
+    failClosedRow?: 'hard-floor' | 'tier' | 'boundaries',
   ) {
     const key = input.accountId ?? input.ip ?? 'anonymous';
     const rows = rowsByKey.hit(key);
@@ -158,9 +159,30 @@ export function createInputGate({
         );
         return 'block';
       }
+      let boundaries:
+        | Awaited<ReturnType<typeof loadSeatedContentBoundaries>>
+        | undefined;
+      if (input.sessionId) {
+        try {
+          boundaries = await loadSeatedContentBoundaries(db, input.sessionId);
+        } catch {
+          log.warn(
+            { event: 'content_boundaries_unavailable', surface: input.surface },
+            'content boundaries unavailable; input blocked',
+          );
+          await record(input, 'other', 'failclosed', 'boundaries');
+          return 'block';
+        }
+      }
       const verdict = await moderator.moderate({
         text: input.text,
         tier: await tierFor(input.sessionId),
+        tableLines: boundaries
+          ? [
+              ...boundaries.lines.map((line) => `line: ${line}`),
+              ...boundaries.veils.map((veil) => `veil: ${veil}`),
+            ]
+          : undefined,
         direction: 'input',
       });
       if (verdict.verdict === 'allow') return 'allow';

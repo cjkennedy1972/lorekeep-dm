@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadSeatedMatureOptOuts } from '../../src/safety/tierLoader.js';
+import {
+  loadSeatedContentBoundaries,
+  loadSeatedMatureOptOuts,
+} from '../../src/safety/tierLoader.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
 
 async function applyMigrations(database: TestDatabase) {
@@ -109,6 +112,24 @@ describe('loadSeatedMatureOptOuts', () => {
     ]);
   });
 
+  it('fails safe for a malformed historical account id instead of throwing a UUID cast error', async () => {
+    await database.pool.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
+      [
+        sessionId,
+        {
+          seatId: randomUUID(),
+          accountId: 'not-a-uuid',
+          displayName: 'Malformed historical seat',
+        },
+      ],
+    );
+
+    expect(await loadSeatedMatureOptOuts(database.pool, sessionId)).toEqual([
+      true,
+    ]);
+  });
+
   it('returns one entry per distinct seated account and none for an empty table', async () => {
     const seated = await account(database, false);
     await seatJoined(database, sessionId, 1, seated, false);
@@ -120,5 +141,152 @@ describe('loadSeatedMatureOptOuts', () => {
     expect(await loadSeatedMatureOptOuts(database.pool, randomUUID())).toEqual(
       [],
     );
+  });
+});
+
+describe('loadSeatedContentBoundaries', () => {
+  let database: TestDatabase;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    database = await createTestDatabase({ extraSearchPath: ['public'] });
+    await applyMigrations(database);
+    sessionId = randomUUID();
+    const owner = await account(database, false);
+    await database.pool.query(
+      'INSERT INTO sessions(id,owner_account_id) VALUES ($1,$2)',
+      [sessionId, owner],
+    );
+  });
+
+  afterEach(async () => {
+    await database.close();
+  });
+
+  it('unions and deduplicates private lines and veils across seated players', async () => {
+    const first = await account(database, false);
+    const second = await account(database, false);
+    await database.pool.query(
+      'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+      [first, ['no spiders', 'no gore'], ['fade out at surgery']],
+    );
+    await database.pool.query(
+      'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+      [second, ['no spiders'], ['fade out at surgery', 'fade out at drowning']],
+    );
+    await seatJoined(database, sessionId, 1, first, false);
+    await seatJoined(database, sessionId, 2, second, false);
+    await seatJoined(database, sessionId, 3, first, false);
+
+    expect(await loadSeatedContentBoundaries(database.pool, sessionId)).toEqual(
+      {
+        lines: ['no gore', 'no spiders'],
+        veils: ['fade out at drowning', 'fade out at surgery'],
+      },
+    );
+    expect(
+      await loadSeatedContentBoundaries(database.pool, randomUUID()),
+    ).toEqual({ lines: [], veils: [] });
+  });
+
+  it('ignores malformed historical account ids without exposing or losing valid boundaries', async () => {
+    const seated = await account(database, false);
+    await database.pool.query(
+      'UPDATE accounts SET content_lines=$2 WHERE id=$1',
+      [seated, ['no spiders']],
+    );
+    await seatJoined(database, sessionId, 1, seated, false);
+    await database.pool.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,2,$1,'SeatJoined',$2)`,
+      [
+        sessionId,
+        {
+          seatId: randomUUID(),
+          accountId: 'not-a-uuid',
+          displayName: 'Malformed historical seat',
+        },
+      ],
+    );
+
+    expect(await loadSeatedContentBoundaries(database.pool, sessionId)).toEqual(
+      { lines: ['no spiders'], veils: [] },
+    );
+  });
+
+  it('keeps boundaries of seated accounts in any non-active status, but not missing accounts', async () => {
+    for (const [seat, status] of [
+      [1, 'pending_email'],
+      [2, 'suspended'],
+      [3, 'deleting'],
+    ] as const) {
+      const seated = await account(database, false);
+      await database.pool.query(
+        'UPDATE accounts SET status=$2,content_lines=$3,content_veils=$4 WHERE id=$1',
+        [seated, status, [`no ${status}`], [`fade out ${status}`]],
+      );
+      await seatJoined(database, sessionId, seat, seated, false);
+    }
+    await seatJoined(database, sessionId, 4, randomUUID(), false);
+
+    expect(await loadSeatedContentBoundaries(database.pool, sessionId)).toEqual(
+      {
+        lines: ['no deleting', 'no pending_email', 'no suspended'],
+        veils: [
+          'fade out deleting',
+          'fade out pending_email',
+          'fade out suspended',
+        ],
+      },
+    );
+  });
+
+  it('fails closed when the shared boundary union exceeds the session cap', async () => {
+    for (let seat = 0; seat < 7; seat += 1) {
+      const seated = await account(database, false);
+      const lines = Array.from(
+        { length: 20 },
+        (_, index) => `line-${seat}-${index}`,
+      );
+      const veils = Array.from(
+        { length: 20 },
+        (_, index) => `veil-${seat}-${index}`,
+      );
+      await database.pool.query(
+        'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+        [seated, lines, veils],
+      );
+      await seatJoined(database, sessionId, seat + 1, seated, false);
+    }
+
+    await expect(
+      loadSeatedContentBoundaries(database.pool, sessionId),
+    ).rejects.toThrow('Session content boundary limit exceeded');
+  });
+
+  it('accepts the complete six-seat boundary union at the session cap', async () => {
+    for (let seat = 0; seat < 6; seat += 1) {
+      const seated = await account(database, false);
+      const lines = Array.from(
+        { length: 20 },
+        (_, index) => `line-${seat}-${index}`,
+      );
+      const veils = Array.from(
+        { length: 20 },
+        (_, index) => `veil-${seat}-${index}`,
+      );
+      await database.pool.query(
+        'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+        [seated, lines, veils],
+      );
+      await seatJoined(database, sessionId, seat + 1, seated, false);
+    }
+
+    const boundaries = await loadSeatedContentBoundaries(
+      database.pool,
+      sessionId,
+    );
+    expect(boundaries.lines.length + boundaries.veils.length).toBe(240);
+    expect(boundaries.lines).toHaveLength(120);
+    expect(boundaries.veils).toHaveLength(120);
   });
 });

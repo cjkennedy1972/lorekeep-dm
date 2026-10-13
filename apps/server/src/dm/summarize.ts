@@ -1,6 +1,8 @@
 import { RegistryMemory, type RegistryDiff } from './memory.js';
 import type { Pool } from 'pg';
 import type { LlmAdapter, LlmRequest } from '../llm/adapter.js';
+import type { Moderator } from '../safety/moderator.js';
+import type { ContentTier } from '../safety/tier.js';
 
 export const MAX_SCENE_SUMMARY_WORDS = 120;
 export const MAX_SCENE_SUMMARY_CHARS = 1_200;
@@ -73,6 +75,30 @@ function isValidRegistryDiff(item: unknown): item is RegistryDiff {
     Array.isArray(after.facts) &&
     after.facts.length <= 8 &&
     after.facts.every((fact) => typeof fact === 'string' && fact.length <= 160);
+  const aliasesOk =
+    diff.aliases === undefined ||
+    (Array.isArray(diff.aliases) &&
+      diff.aliases.length <= 16 &&
+      diff.aliases.every(
+        (alias) =>
+          typeof alias === 'string' &&
+          alias.trim().length >= 2 &&
+          alias.length <= 60,
+      ));
+  const supersedesFactsOk =
+    diff.supersedesFacts === undefined ||
+    (diff.supersedesFacts !== null &&
+      typeof diff.supersedesFacts === 'object' &&
+      !Array.isArray(diff.supersedesFacts) &&
+      Object.entries(diff.supersedesFacts).length <= 8 &&
+      Object.entries(diff.supersedesFacts).every(
+        ([prior, replacement]) =>
+          prior.trim().length > 0 &&
+          prior.length <= 160 &&
+          typeof replacement === 'string' &&
+          replacement.trim().length > 0 &&
+          replacement.length <= 160,
+      ));
   const exactKeys = (value: Record<string, unknown>, keys: string[]) =>
     Object.keys(value).every((key) => keys.includes(key));
   if (after.id !== diff.id) return false;
@@ -80,6 +106,8 @@ function isValidRegistryDiff(item: unknown): item is RegistryDiff {
     return (
       ref('npc') &&
       exactKeys(diff, ['kind', 'id', 'after', 'aliases', 'supersedesFacts']) &&
+      aliasesOk &&
+      supersedesFactsOk &&
       exactKeys(after, ['id', 'name', 'role', 'disposition', 'facts']) &&
       typeof after.name === 'string' &&
       after.name.length >= 2 &&
@@ -95,6 +123,8 @@ function isValidRegistryDiff(item: unknown): item is RegistryDiff {
     return (
       ref('loc') &&
       exactKeys(diff, ['kind', 'id', 'after', 'aliases', 'supersedesFacts']) &&
+      aliasesOk &&
+      supersedesFactsOk &&
       exactKeys(after, ['id', 'name', 'role', 'facts']) &&
       typeof after.name === 'string' &&
       after.name.length >= 2 &&
@@ -224,6 +254,9 @@ export async function summarizeScene(
 export interface CloseSceneInput extends SceneSummaryInput {
   sessionId: string;
   db: Pick<Pool, 'query' | 'connect'>;
+  moderator: Moderator;
+  tier: ContentTier;
+  tableLines: readonly string[];
 }
 
 /** Persist a summary exactly once, then apply validated registry updates. */
@@ -231,13 +264,45 @@ export async function closeScene(
   input: CloseSceneInput,
 ): Promise<SceneSummaryResult & { persisted: boolean }> {
   const result = await summarizeScene(input);
+  let summary = result.summary;
+  let registryDiffs = result.registryDiffs;
+  let fallback = result.fallback;
+  const allowed = async (text: string) => {
+    try {
+      return (
+        (
+          await input.moderator.moderate({
+            text,
+            tier: input.tier,
+            tableLines: input.tableLines,
+            direction: 'output',
+          })
+        ).verdict === 'allow'
+      );
+    } catch {
+      return false;
+    }
+  };
+  if (!(await allowed(summary))) {
+    summary = 'The scene has ended.';
+    registryDiffs = [];
+    fallback = true;
+  } else if (
+    registryDiffs.length > 0 &&
+    !(await allowed(
+      registryDiffs.map((diff) => JSON.stringify(diff)).join('\n'),
+    ))
+  ) {
+    registryDiffs = [];
+    fallback = true;
+  }
   input.signal?.throwIfAborted();
   const memory = new RegistryMemory(input.db);
   const persisted = await memory.closeScene(
     input.sessionId,
     input.sceneId,
-    result.summary,
-    result.registryDiffs,
+    summary,
+    registryDiffs,
   );
-  return { ...result, persisted };
+  return { summary, registryDiffs, fallback, persisted };
 }

@@ -89,6 +89,89 @@ describe('createInputGate', () => {
     expect(queries).toHaveLength(0);
   });
 
+  it('passes the session-wide union of lines and veils to the input judge', async () => {
+    const queries: string[] = [];
+    const db: InputGateDb = {
+      async query(sql: string) {
+        queries.push(sql);
+        if (sql.includes('SELECT content_tier'))
+          return {
+            rows: [
+              {
+                content_tier: 'standard',
+                moderation_verified: true,
+                host_tier_cap: null,
+              },
+            ],
+            rowCount: 1,
+          } as never;
+        if (sql.includes('WITH seated'))
+          return {
+            rows: [{ lines: ['no spiders'], veils: ['fade out at surgery'] }],
+            rowCount: 1,
+          } as never;
+        return { rows: [], rowCount: 1 } as never;
+      },
+    };
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    expect(
+      await gate.check({
+        text: innocent,
+        surface: 'player-action',
+        accountId: 'a1',
+        sessionId: 'session-1',
+      }),
+    ).toBe('allow');
+    expect(calls[0]?.tableLines).toEqual([
+      'line: no spiders',
+      'veil: fade out at surgery',
+    ]);
+    expect(queries.some((sql) => sql.includes('WITH seated'))).toBe(true);
+  });
+
+  it('fails closed when the session boundary union cannot be loaded', async () => {
+    const queries: string[] = [];
+    const db: InputGateDb = {
+      async query(sql: string) {
+        queries.push(sql);
+        if (sql.includes('SELECT content_tier'))
+          return {
+            rows: [
+              {
+                content_tier: 'standard',
+                moderation_verified: true,
+                host_tier_cap: null,
+              },
+            ],
+            rowCount: 1,
+          } as never;
+        if (sql.includes('WITH seated'))
+          throw new Error('database unavailable');
+        if (sql.includes('INSERT INTO moderation_log'))
+          return { rows: [], rowCount: 1 } as never;
+        return { rows: [], rowCount: 1 } as never;
+      },
+    };
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const { log } = recordingLog();
+    const gate = createInputGate({ db, moderator, log });
+
+    expect(
+      await gate.check({
+        text: innocent,
+        surface: 'player-action',
+        accountId: 'a1',
+        sessionId: 'session-1',
+      }),
+    ).toBe('block');
+    expect(calls).toHaveLength(0);
+    expect(
+      queries.some((sql) => sql.includes('INSERT INTO moderation_log')),
+    ).toBe(true);
+  });
+
   it('hard floor blocks before the judge is called and logs the row', async () => {
     const { db, queries } = fakeDb();
     const { moderator, calls } = stubModerator(allowVerdict());

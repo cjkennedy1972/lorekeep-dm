@@ -572,6 +572,48 @@ describe('Room solo DM turn lifecycle', () => {
 });
 
 describe('Room commit safety', () => {
+  it('redacts private opt-outs from StateSync in a lobby without game state', async () => {
+    const { room } = setup({
+      async run() {
+        return result as never;
+      },
+    });
+    await room.seat(randomUUID(), 'Opted out', true);
+    await room.seat(randomUUID(), 'Opted in', false);
+
+    const state = room.clientState();
+    expect(state.gameState).toBeUndefined();
+    expect(state.seats).toHaveLength(2);
+    expect(state.seats.every((seat) => !('matureOptOut' in seat))).toBe(true);
+    expect(JSON.stringify(state)).not.toContain('matureOptOut');
+  });
+
+  it('keeps private opt-outs and historical prose out of client StateSync state', async () => {
+    const { room } = setup({
+      async run() {
+        return result as never;
+      },
+    });
+    await room.persistGameState({
+      recap: { recap: 'unsafe historical recap', memoryHash: 'h1' },
+      sceneSummary: 'unsafe historical scene summary',
+      world: { npcs: { npc_a: { name: 'unsafe registry prose' } } },
+      gameEngine: {
+        world: { rulings: [{ ruling: 'unsafe ruling text' }] },
+        turn: 3,
+      },
+    });
+    await room.seat(randomUUID(), 'Private Player', true);
+
+    const state = room.clientState().gameState as Record<string, unknown>;
+    expect(state).not.toHaveProperty('recap');
+    expect(state).not.toHaveProperty('sceneSummary');
+    expect(state).not.toHaveProperty('world');
+    expect(room.clientState().seats[0]).not.toHaveProperty('matureOptOut');
+    expect(state.gameEngine).toEqual({ turn: 3 });
+    expect(JSON.stringify(room.clientState())).not.toContain('unsafe');
+  });
+
   it('does not nest the previous checkpoint inside a new one', async () => {
     const { room, latestSnapshot } = setup({
       async run() {

@@ -8,8 +8,9 @@ Status: draft for M3-39. Covers only the AI endpoint and log retention parts of 
 
 - Player-written text (messages and actions) is sent to the operator-configured AI endpoint so that the game master can narrate. <!-- OWNER: confirm wording -->
 - The game master's narration and the session's content settings (content tier, table lines and veils) are part of the request to the endpoint. <!-- OWNER: confirm wording -->
-- When the moderation classifier is enabled, player text and each output chunk are also sent to the endpoint configured for moderation. Its verdict decides whether text is shown. Classifier traffic goes to the operator's `moderate` endpoint, so player text is processed on operator infrastructure. <!-- OWNER: confirm wording -->
-- Nothing is sent to a moderation provider by default. A third-party moderation adapter, if ever enabled by an operator, would be named here, and player text would be sent to it. <!-- OWNER: confirm wording -->
+- Personal lines and veils are stored in the account's settings and are not shown with the account holder's name to other players. Their unattributed union is sent with relevant player-text and output-moderation requests and is included in the shared game-master prompt so the boundaries can be applied to the table. <!-- OWNER: confirm wording -->
+- When moderation is required, player text or generated output, together with applicable table lines and veils, is sent to the operator-configured `moderate` endpoint. Its verdict helps decide whether text is shown; the moderation endpoint may be hosted by a third party or self-hosted, as described below. <!-- OWNER: confirm wording -->
+- The product does not use a separate provider moderation API by default; moderation uses the operator-configured model endpoint. If an operator enables a separate third-party moderation adapter in the future, this notice must be updated to name it and describe what text it receives. <!-- OWNER: confirm wording -->
 
 ## 2. Which class of endpoint your operator uses
 

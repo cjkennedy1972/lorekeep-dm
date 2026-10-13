@@ -3,10 +3,13 @@ import type { Pool } from 'pg';
 import type { LlmAdapter } from '../llm/adapter.js';
 import { RegistryMemory } from './memory.js';
 import { boundSummary } from './summarize.js';
+import type { Moderator } from '../safety/moderator.js';
+import type { ContentTier } from '../safety/tier.js';
 
 export const MAX_RECAP_WORDS = 150;
 export const MAX_RECAP_CHARS = 1_200;
 export const MAX_RECAP_INPUT_CHARS = 4_000;
+export const SAFE_RECAP_FALLBACK = 'Your adventure is ready to continue.';
 
 export interface RecapInput {
   memories: readonly string[];
@@ -21,6 +24,34 @@ export interface RecapResult {
   memoryHash: string;
   cached: boolean;
   fallback: boolean;
+}
+
+/** Judge generated, cached, and deterministic recaps before any client exposure. */
+export async function gateRecap(
+  result: RecapResult,
+  moderator: Moderator,
+  tier: ContentTier,
+  tableLines: readonly string[],
+): Promise<RecapResult> {
+  if (!result.recap) return result;
+  try {
+    const verdict = await moderator.moderate({
+      text: result.recap,
+      tier,
+      tableLines,
+      direction: 'output',
+    });
+    if (verdict.verdict === 'allow') return result;
+  } catch {
+    // A recap is not core game state; omit its derived detail on judge failure.
+  }
+  return {
+    ...result,
+    recap: SAFE_RECAP_FALLBACK,
+    memoryHash: `moderated:${result.memoryHash}`,
+    cached: false,
+    fallback: true,
+  };
 }
 
 export function assembleDeterministicRecap(

@@ -4,9 +4,39 @@ import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
 import { LeaseConflictError, Persistence } from '../persistence/index.js';
 import type { RoomRegistry } from '../room/registry.js';
+import { z } from 'zod';
 
 type App = Parameters<typeof registerAuthRoutes>[0];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const boundary = z
+  .string()
+  .trim()
+  .min(1)
+  .max(160)
+  .refine((value) =>
+    [...value].every((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7f;
+    }),
+  );
+const personalContentSettings = z
+  .object({
+    matureOptOut: z.boolean().optional(),
+    lines: z.array(boundary).max(20).optional(),
+    veils: z.array(boundary).max(20).optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.matureOptOut !== undefined ||
+      value.lines !== undefined ||
+      value.veils !== undefined,
+  );
+
+const uniqueBoundaries = (values: string[] | undefined) =>
+  values === undefined
+    ? undefined
+    : [...new Set(values.map((value) => value.trim()))];
 
 export function registerContentSettingsRoutes(
   app: App,
@@ -14,6 +44,35 @@ export function registerContentSettingsRoutes(
   rooms?: Pick<RoomRegistry, 'peek'>,
 ) {
   const persistence = new Persistence(db);
+  app.get('/api/me/content-settings', async (request, reply) => {
+    if (!validOrigin(request))
+      return reply
+        .code(403)
+        .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
+    const auth = await authenticateRequest(db, request);
+    if (!auth)
+      return reply.code(401).send({
+        code: 'UNAUTHENTICATED',
+        message: 'Sign in required.',
+        loginRequired: true,
+      });
+    const result = await db.query<{
+      mature_opt_out: boolean;
+      content_lines: string[];
+      content_veils: string[];
+    }>(
+      'SELECT mature_opt_out,content_lines,content_veils FROM accounts WHERE id=$1',
+      [auth.account_id],
+    );
+    const row = result.rows[0];
+    if (!row) return reply.code(404).send({ code: 'NOT_FOUND' });
+    return {
+      matureOptOut: row.mature_opt_out,
+      lines: row.content_lines,
+      veils: row.content_veils,
+    };
+  });
+
   app.patch('/api/me/content-settings', async (request, reply) => {
     if (!validOrigin(request))
       return reply
@@ -26,18 +85,28 @@ export function registerContentSettingsRoutes(
         message: 'Sign in required.',
         loginRequired: true,
       });
-    const matureOptOut = (request.body as { matureOptOut?: unknown } | null)
-      ?.matureOptOut;
-    if (typeof matureOptOut !== 'boolean')
+    const parsed = personalContentSettings.safeParse(request.body);
+    if (!parsed.success)
       return reply.code(400).send({
         code: 'INVALID_INPUT',
-        message: 'Choose whether to opt out of mature content.',
+        message: 'Check your content settings and boundary text.',
       });
-    await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
-      auth.account_id,
-      matureOptOut,
-    ]);
-    return { matureOptOut };
+    const matureOptOut = parsed.data.matureOptOut ?? null;
+    const lines = uniqueBoundaries(parsed.data.lines) ?? null;
+    const veils = uniqueBoundaries(parsed.data.veils) ?? null;
+    await db.query(
+      `UPDATE accounts
+          SET mature_opt_out=COALESCE($2,mature_opt_out),
+              content_lines=COALESCE($3,content_lines),
+              content_veils=COALESCE($4,content_veils)
+        WHERE id=$1`,
+      [auth.account_id, matureOptOut, lines, veils],
+    );
+    return {
+      ...(parsed.data.matureOptOut === undefined ? {} : { matureOptOut }),
+      ...(lines === null ? {} : { lines }),
+      ...(veils === null ? {} : { veils }),
+    };
   });
 
   app.patch<{ Params: { id: string } }>(

@@ -51,6 +51,58 @@ async function optOut(id: string) {
 }
 
 describe('mature opt-out API', () => {
+  it('lets players save and read private personal content boundaries', async () => {
+    const player = await account();
+    const token = await createSession(db, player, 'Test device');
+    const app = createApp(db, {
+      inputGate: allowInputGate,
+      cookieSecret: 'test-secret',
+    });
+    const headers = { cookie: `sid=${token}` };
+    const read = () =>
+      app.inject({
+        method: 'GET',
+        url: '/api/me/content-settings',
+        remoteAddress: '10.9.0.3',
+        headers,
+      });
+    const patch = (payload: unknown) =>
+      app.inject({
+        method: 'PATCH',
+        url: '/api/me/content-settings',
+        remoteAddress: '10.9.0.3',
+        headers,
+        payload,
+      });
+
+    expect((await read()).json()).toEqual({
+      matureOptOut: false,
+      lines: [],
+      veils: [],
+    });
+    expect(
+      (
+        await patch({
+          lines: ['  no spiders  ', 'no gore'],
+          veils: ['fade out at surgery'],
+        })
+      ).json(),
+    ).toEqual({
+      lines: ['no spiders', 'no gore'],
+      veils: ['fade out at surgery'],
+    });
+    expect((await read()).json()).toEqual({
+      matureOptOut: false,
+      lines: ['no spiders', 'no gore'],
+      veils: ['fade out at surgery'],
+    });
+    expect((await patch({ lines: ['bad\nentry'] })).statusCode).toBe(400);
+    expect((await patch({ lines: Array(21).fill('topic') })).statusCode).toBe(
+      400,
+    );
+    await app.close();
+  });
+
   it('lets a signed-in player set and clear their opt-out at any time', async () => {
     const player = await account();
     const token = await createSession(db, player, 'Test device');

@@ -9,6 +9,7 @@ import type {
   LlmChunk,
   LlmRequest,
 } from '../../src/llm/adapter.js';
+import type { Moderator } from '../../src/safety/moderator.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -19,10 +20,11 @@ let dir: string;
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
 
-/** Scripted DM: calls close_scene once per args entry; summary requests (no tools) get plain text. */
+/** Scripted DM: calls close_scene once per args entry and returns a scene summary. */
 function closingDm(
   args: Record<string, unknown> | Record<string, unknown>[],
   calls: LlmRequest[],
+  generatedSummary = 'The party moves on.',
 ) {
   const batch = Array.isArray(args) ? args : [args];
   const adapter: LlmAdapter = {
@@ -44,7 +46,17 @@ function closingDm(
               name: 'close_scene',
               arguments: closeArgs,
             }))
-          : [{ type: 'text', delta: 'The party moves on.' }];
+          : request.toolMode === 'json-schema'
+            ? [
+                {
+                  type: 'text',
+                  delta: JSON.stringify({
+                    summary: generatedSummary,
+                    registryDiffs: [],
+                  }),
+                },
+              ]
+            : [{ type: 'text', delta: 'The party moves on.' }];
       for (const chunk of chunks) yield chunk;
     },
   };
@@ -70,6 +82,8 @@ async function table() {
 async function turn(
   sceneId: string,
   args: Record<string, unknown> | Record<string, unknown>[],
+  moderator?: Moderator,
+  generatedSummary?: string,
 ) {
   const { accountId, sessionId } = await table();
   const calls: LlmRequest[] = [];
@@ -79,7 +93,10 @@ async function turn(
     undefined,
     'record',
     join(dir, `${sessionId}.ndjson`),
-    closingDm(args, calls),
+    closingDm(args, calls, generatedSummary),
+    true,
+    false,
+    moderator,
   );
   const result = await runner.run(
     {
@@ -96,7 +113,7 @@ async function turn(
   const closed = result.events.filter(
     (e) => (e as { type?: string }).type === 'SceneClosed',
   );
-  return { result, closed, calls };
+  return { result, closed, calls, sessionId };
 }
 
 beforeAll(async () => {
@@ -113,6 +130,147 @@ afterAll(async () => {
 });
 
 describe('close_scene through ProductionSoloTurnRunner', () => {
+  it('rejects unsafe registry prose before it enters world state or the event result', async () => {
+    const { accountId, sessionId } = await table();
+    const calls: LlmRequest[] = [];
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete(request) {
+        calls.push(request);
+        if (request.messages.some((message) => message.role === 'tool')) {
+          yield { type: 'text', delta: 'The adventure continues.' };
+          return;
+        }
+        yield {
+          type: 'tool-call',
+          id: 'upsert-unsafe-npc',
+          name: 'upsert_npc',
+          arguments: {
+            id: 'npc_bad',
+            name: 'Unsafe NPC',
+            role: 'villain',
+            disposition: 'hostile',
+            facts: ['Graphic gore description.'],
+          },
+        };
+      },
+    };
+    const runner = new ProductionSoloTurnRunner(
+      db,
+      undefined,
+      'record',
+      join(dir, `${sessionId}.ndjson`),
+      adapter,
+      true,
+      false,
+      {
+        async moderate() {
+          return {
+            verdict: 'block',
+            category: 'violence',
+            source: 'judge',
+            latencyMs: 1,
+            unavailable: false,
+          };
+        },
+      },
+    );
+
+    const result = await runner.run(
+      {
+        sessionId,
+        accountId,
+        actionId: randomUUID(),
+        text: 'Continue.',
+        state: { sceneId: 'scene-marowfell-well', adventureId: ADVENTURE },
+      },
+      () => undefined,
+    );
+    const world = (result.state as { world?: { npcs?: object } }).world;
+    const stored = await db.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM registry_entries WHERE session_id=$1',
+      [sessionId],
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(result.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'NpcUpserted' }),
+      ]),
+    );
+    expect(world?.npcs).toEqual({});
+    expect(stored.rows[0]?.count).toBe(0);
+  });
+
+  it('does not emit a blocked model-authored SceneClosed summary', async () => {
+    const { result, closed } = await turn(
+      'scene-marowfell-well',
+      {
+        summary: 'Unsafe gore summary.',
+      },
+      {
+        async moderate() {
+          return {
+            verdict: 'block',
+            category: 'violence',
+            source: 'judge',
+            latencyMs: 1,
+            unavailable: false,
+          };
+        },
+      },
+    );
+
+    expect(closed).toHaveLength(0);
+    expect(result.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'SceneClosed' }),
+      ]),
+    );
+  });
+
+  it('persists only the authored fallback when the generated scene summary is blocked', async () => {
+    const unsafeGeneratedSummary = 'Unsafe gore summary from the summarizer.';
+    const moderationTexts: string[] = [];
+    const { result, sessionId } = await turn(
+      'scene-marowfell-well',
+      { summary: 'The party leaves the well.' },
+      {
+        async moderate(request) {
+          moderationTexts.push(request.text);
+          return {
+            verdict:
+              request.text === unsafeGeneratedSummary ? 'block' : 'allow',
+            category:
+              request.text === unsafeGeneratedSummary ? 'violence' : 'none',
+            source: 'judge',
+            latencyMs: 1,
+            unavailable: false,
+          };
+        },
+      },
+      unsafeGeneratedSummary,
+    );
+    const stored = await db.query<{ summary: string }>(
+      'SELECT summary FROM scene_summaries WHERE session_id=$1',
+      [sessionId],
+    );
+
+    expect(moderationTexts).toContain('The party leaves the well.');
+    expect(moderationTexts).toContain(unsafeGeneratedSummary);
+    expect(
+      moderationTexts.filter((text) => text === unsafeGeneratedSummary),
+    ).toHaveLength(1);
+    expect(JSON.stringify(result.events)).not.toContain(unsafeGeneratedSummary);
+    expect(stored.rows[0]?.summary).toBe('The scene has ended.');
+    expect(stored.rows[0]?.summary).not.toContain(unsafeGeneratedSummary);
+  });
+
   it('advances to the authored next scene with exactly one SceneClosed and one summary call', async () => {
     const { result, closed, calls } = await turn('scene-marowfell-well', {
       summary: 'The party leaves the well.',
