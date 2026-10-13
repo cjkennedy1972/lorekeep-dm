@@ -670,7 +670,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         question,
       });
     } else {
-      question = 'The narrator pauses, and the scene turns to the next thing the party notices.';
+      question =
+        'The narrator pauses, and the scene turns to the next thing the party notices.';
       emit({
         type: 'NarrationChunk',
         turnId: input.turnId,

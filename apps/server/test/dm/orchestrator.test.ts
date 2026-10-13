@@ -407,7 +407,10 @@ describe('DM orchestrator', () => {
       expect.objectContaining({ question: 'Was the child naked?' }),
     );
     expect(h.events).toContainEqual(
-      expect.objectContaining({ type: 'NarrationCompleted', text: result.narration }),
+      expect.objectContaining({
+        type: 'NarrationCompleted',
+        text: result.narration,
+      }),
     );
   });
   it('refuses a second clarifying question for the same action', async () => {
