@@ -254,7 +254,7 @@ export function registerTableRoutes(
     const accountId = await account(request, reply);
     if (!accountId) return reply;
     const result = await db.query(
-      `SELECT s.id,s.name,s.status,s.adventure_id,s.difficulty,s.catalog_version,s.last_active_at,s.character,snap.state->'recap' AS recap
+      `SELECT s.id,s.name,s.status,s.adventure_id,s.difficulty,s.catalog_version,s.last_active_at,s.character,snap.state->'gameState'->'recap' AS recap
       FROM sessions s LEFT JOIN LATERAL (SELECT state FROM snapshots WHERE session_id=s.id ORDER BY seq DESC LIMIT 1) snap ON true
       WHERE s.owner_account_id=$1 AND s.mode='solo' ORDER BY s.last_active_at DESC`,
       [accountId],

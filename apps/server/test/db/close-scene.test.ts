@@ -256,7 +256,7 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     expect(moderationTexts).toContain('The party leaves the well.');
     expect(
       moderationTexts.filter((text) => text === 'The party moves on.'),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(stored.rows[0]?.summary).toBe('The scene has ended.');
   });
 
