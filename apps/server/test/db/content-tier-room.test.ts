@@ -150,7 +150,7 @@ describe('mature narration through Room and Persistence', () => {
     );
   });
 
-  it('stops the remainder of a mature narration for a seat that opts out mid-stream', async () => {
+  it('withholds a held mature narration from a seat that opts out before delivery', async () => {
     const owner = await account(false);
     const sessionId = await session(owner);
     const store = new Persistence(db);
@@ -158,7 +158,7 @@ describe('mature narration through Room and Persistence', () => {
     let lookups = 0;
     store.matureEligibleAccounts = async (ids) => {
       lookups += 1;
-      if (lookups === 2)
+      if (lookups === 1)
         await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
           owner,
         ]);
@@ -176,8 +176,7 @@ describe('mature narration through Room and Persistence', () => {
     await waitForCompletion(sessionId);
 
     const visible = narrationText(ownerSeen.sent);
-    expect(visible).toMatch(/^The /);
-    expect(visible.length).toBeLessThan(LONG_NARRATION.length);
+    expect(visible).toBe('');
   });
 
   it('withholds a mature narration from a seat whose account is being deleted', async () => {
