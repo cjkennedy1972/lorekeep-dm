@@ -267,6 +267,17 @@ async function deleteAccount(
     );
   }
 
+  // Capture X-card seat ids before event redaction replaces account linkage.
+  const xCardSeatIds = (
+    await client.query<{ seat_id: string }>(
+      `SELECT DISTINCT payload->>'seatId' AS seat_id
+         FROM events
+        WHERE type='SeatJoined' AND payload->>'accountId'=$1
+          AND payload->>'seatId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+      [accountId],
+    )
+  ).rows.map(({ seat_id }) => seat_id);
+
   const placeholders = new Map<string, string>();
   const placeholderFor = async (sessionId: string) => {
     let placeholder = placeholders.get(sessionId);
@@ -355,6 +366,13 @@ async function deleteAccount(
     'UPDATE moderation_log SET account_id=NULL WHERE account_id=$1',
     [accountId],
   );
+  // X-card history is keyed by the player's seat rather than account id. Once
+  // that account is erased, remove those rows so the safety log cannot retain
+  // a link back to its former seat.
+  if (xCardSeatIds.length)
+    await client.query('DELETE FROM x_card_log WHERE seat_id = ANY($1)', [
+      xCardSeatIds,
+    ]);
   await client.query(
     "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1) AND node_id=$2",
     [[...fenced], FENCE_NODE],

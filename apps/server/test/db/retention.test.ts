@@ -266,6 +266,10 @@ describe('retention sweeper (Postgres)', () => {
     await seatEvent(solo, 1, gone, 'SecretName');
     const seatId = await seatEvent(shared, 1, gone, 'SecretName');
     await seatEvent(shared, 2, friend, 'Friend');
+    await q(
+      "INSERT INTO x_card_log(session_id,seat_id,written_at,expires_at) VALUES($1,$2,now(),now()+interval '30 days')",
+      [shared, seatId],
+    );
     await q('INSERT INTO snapshots(session_id,seq,state) VALUES($1,2,$2)', [
       shared,
       { seats: [{ seatId, accountId: gone, displayName: 'SecretName' }] },
@@ -339,6 +343,11 @@ describe('retention sweeper (Postgres)', () => {
         await q('SELECT state FROM snapshots WHERE session_id=$1', [shared]),
       ),
     ).not.toContain('SecretName');
+    expect(
+      await count('SELECT count(*)::int n FROM x_card_log WHERE seat_id=$1', [
+        seatId,
+      ]),
+    ).toBe(0);
     expect(JSON.stringify(logs)).not.toContain('@example.test');
     expect(JSON.stringify(logs)).not.toContain('SecretName');
 

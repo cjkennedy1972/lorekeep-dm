@@ -760,7 +760,14 @@ export class Room {
         // leave the player waiting forever. Nothing was committed, so the same action can be
         // resubmitted. The message is deliberately generic: no error text, prompt or secret.
         this.pendingActions.delete(action.actionId);
-        if (error instanceof XCardAbortError) continue;
+        if (error instanceof XCardAbortError) {
+          this.broadcast({
+            seq: this.seq,
+            type: 'ActionWithdrawn',
+            payload: { actionId: action.actionId },
+          } as ServerMessage);
+          continue;
+        }
         const restricted = error instanceof LiveDmRestrictedError;
         const failure = {
           seq: this.seq,
