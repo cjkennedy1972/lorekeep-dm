@@ -834,6 +834,32 @@ describe('message-level taint never leaks emitted text', () => {
       expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
     ]);
   });
+
+  it('withholds minor-first narration across >64 chars until a later sexual cue blocks the turn', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const filler = 'The tavern is quiet and the fire is low. '.repeat(6);
+    const minorFirst = `A child sleeps. ${filler}`;
+    const events = await collect(
+      runOutputGate({
+        stream: () =>
+          tokens(...splitTokens(`${minorFirst}Then nude.`, 20)),
+        regenerate: () => tokens('The narrator pauses.'),
+        moderator,
+        tier: 'mature',
+      }),
+    );
+    const emitted = chunkTexts(events).join('');
+    expect(minorFirst.length).toBeGreaterThan(64);
+    expect(emitted).not.toMatch(/child|nude/i);
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
+      expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
+    ]);
+  });
 });
 
 describe('tail hold-back and config guards', () => {

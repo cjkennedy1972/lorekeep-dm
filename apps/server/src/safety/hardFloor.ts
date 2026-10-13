@@ -797,9 +797,19 @@ export function scanFlags(
   from: number,
   to: number,
 ): HardFloorFlags {
-  // Turn scans repeatedly revisit a small, stable carry (especially when chunks are
-  // one character). Memoize bounded windows so the cost is not tokens × pushes.
-  const key = `${from}:${to}:${words.join('\u001f')}`;
+  // Results only depend on the scanned starts plus bounded left/right context.
+  // Key that slice, not the whole carry: when a one-character chunk extends the
+  // still-tentative tail, settled starts are unchanged and should hit this cache.
+  // Three tokens cover prev3/minorBefore; one more preserves a youth-prefix
+  // immediately before the earliest minor-before candidate.
+  const keyFrom = Math.max(0, from - 4);
+  const keyTo = Math.min(
+    words.length,
+    to + MAX_JOIN + FILLER_WINDOW + 3,
+  );
+  const key = `${from - keyFrom}:${to - keyFrom}:${words
+    .slice(keyFrom, keyTo)
+    .join('\u001f')}`;
   if (key.length <= 8_192) {
     const cached = SCAN_CACHE.get(key);
     if (cached) return cached;
@@ -1159,7 +1169,15 @@ export function createHardFloorTurn(): HardFloorTurn {
       // Hold output as soon as a possible sexual or explicit cue is seen, but do not
       // block on tentative tail flags until another chunk settles them or finish() closes
       // the turn. This prevents chunk boundaries from turning "youth adult" into a minor.
-      sensitive ||= settled.sexual || tail.sexual || tail.explicit;
+      // Either half can arrive first. Hold visibility after a minor cue too,
+      // because a sexual cue later in the turn can complete the message-level rule.
+      sensitive ||=
+        settled.minor ||
+        tail.minor ||
+        settled.sexual ||
+        tail.sexual ||
+        settled.explicit ||
+        tail.explicit;
       const result = verdictOf(settled);
       if (result.blocked) blockedResult = result;
       return { ...result, sensitive };
