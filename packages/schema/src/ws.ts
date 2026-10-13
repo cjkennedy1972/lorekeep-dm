@@ -91,6 +91,14 @@ export const XCardSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const PauseTableSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('PauseTable'),
+    payload: z.object({ paused: z.boolean() }).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const StateSyncSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('StateSync'),

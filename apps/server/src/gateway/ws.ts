@@ -8,6 +8,7 @@ import {
   ClarificationAnswerSchema,
   WithdrawActionSchema,
   XCardSchema,
+  PauseTableSchema,
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
@@ -312,6 +313,25 @@ export function installGateway(
               return;
             }
             return room.xCard(identity.accountId);
+          }
+          if (msg.type === 'PauseTable') {
+            const pause = PauseTableSchema.safeParse(msg);
+            if (!pause.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Pause request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room.setPaused(
+              identity.accountId,
+              pause.data.payload.paused,
+            );
           }
           if (msg.type === 'WithdrawAction') {
             const withdraw = WithdrawActionSchema.safeParse(msg);

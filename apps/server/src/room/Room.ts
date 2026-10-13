@@ -585,6 +585,22 @@ export class Room {
     });
   }
 
+  /** Any seated player may pause; resuming restarts any queued turns. A pause only blocks narrations that have not started. */
+  setPaused(accountId: string, paused: boolean): Promise<void> {
+    return this.enqueuePlayer(async () => {
+      if (!this.state.seats.some((seat) => seat.accountId === accountId))
+        throw new Error('Account is not seated');
+      if ((this.state.paused ?? false) === paused) return;
+      await this.persist('TablePaused', { paused });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+      if (!paused) this.kickQueue();
+    });
+  }
+
   /** Host setting: control whether a safety flag aborts the active generation. */
   setXCardAbortEnabled(enabled: boolean): Promise<void> {
     if (!this.accepting) throw new LeaseConflictError('Room is draining');
@@ -756,7 +772,11 @@ export class Room {
   }
 
   private async resolveQueuedTurns(): Promise<void> {
-    while (!this.draining && this.queuedActions.length > 0) {
+    while (
+      !this.draining &&
+      !this.state.paused &&
+      this.queuedActions.length > 0
+    ) {
       const action = this.queuedActions.shift();
       if (!action) continue;
       this.broadcast({
@@ -807,14 +827,15 @@ export class Room {
         else this.broadcast(failure);
       }
     }
-    for (const action of this.queuedActions.splice(0)) {
-      this.pendingActions.delete(action.actionId);
-      this.broadcast({
-        seq: this.seq,
-        type: 'ActionWithdrawn',
-        payload: { actionId: action.actionId },
-      } as ServerMessage);
-    }
+    if (this.draining)
+      for (const action of this.queuedActions.splice(0)) {
+        this.pendingActions.delete(action.actionId);
+        this.broadcast({
+          seq: this.seq,
+          type: 'ActionWithdrawn',
+          payload: { actionId: action.actionId },
+        } as ServerMessage);
+      }
     this.turnInFlight = false;
   }
 

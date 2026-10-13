@@ -22,6 +22,8 @@ export const RoomStateSchema = z.object({
       steered: z.int().nonnegative(),
     })
     .optional(),
+  /** Table pause: no new narration starts while set. Shared, so every seat sees it. */
+  paused: z.boolean().optional(),
   openClarifications: z
     .record(
       z.string(),
