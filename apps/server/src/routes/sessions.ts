@@ -73,7 +73,15 @@ export function registerSessionRoutes(
     name: string,
     isHost: boolean,
     code?: string,
-  ): RoomInfo => ({ id, name, isHost, ...(code ? { code } : {}) }) as RoomInfo;
+    tierCap?: 'family' | 'standard' | null,
+  ): RoomInfo =>
+    ({
+      id,
+      name,
+      isHost,
+      ...(code ? { code } : {}),
+      ...(tierCap !== undefined ? { tierCap } : {}),
+    }) as RoomInfo;
   const seatProfile = async (accountId: string) => {
     const row = (
       await db.query<{ display_name: string; mature_opt_out: boolean }>(
@@ -157,8 +165,15 @@ export function registerSessionRoutes(
       if (!accountId) return reply;
       const { id } = request.params as { id: string };
       const r = UUID.test(id)
-        ? await db.query<{ id: string; name: string; is_host: boolean }>(
-            `${ROOM_LIST_SQL} AND s.id=$2`,
+        ? await db.query<{
+            id: string;
+            name: string;
+            is_host: boolean;
+            host_tier_cap: 'family' | 'standard' | null;
+          }>(
+            `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host,s.host_tier_cap FROM sessions s
+             WHERE s.status='active' AND s.id=$2 AND (s.owner_account_id=$1 OR EXISTS (
+               SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$1::text))`,
             [accountId, id],
           )
         : undefined;
@@ -167,7 +182,9 @@ export function registerSessionRoutes(
         return reply
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });
-      return { room: view(row.id, row.name, row.is_host) };
+      return {
+        room: view(row.id, row.name, row.is_host, undefined, row.host_tier_cap),
+      };
     });
     // Owner-only: create or regenerate (POST) / revoke (DELETE). Regenerating invalidates the old code.
     for (const method of ['POST', 'DELETE'] as const)

@@ -90,6 +90,7 @@ export function createMock(
     code: string;
     members: Set<string>;
     solo?: boolean;
+    tierCap?: 'family' | 'standard' | null;
   };
   const rooms = new Map<string, MockRoom>();
   const newCode = () => randomBytes(16).toString('base64url');
@@ -99,6 +100,7 @@ export function createMock(
     name: r.name,
     isHost: r.hostId === accountId,
     ...(minted && r.hostId === accountId ? { code: r.code } : {}),
+    tierCap: r.tierCap ?? null,
   });
   const byId = (id: string) =>
     [...users.values()].find((u) => u.account.id === id)?.account;
@@ -524,6 +526,31 @@ export function createMock(
         r.code = newCode(); // old link stops working immediately
         return json(res, 200, { room: roomView(r, account.id, true) });
       }
+    }
+    const tierRoute = /^\/api\/sessions\/([^/]+)\/content-tier$/.exec(
+      url.pathname,
+    );
+    if (req.method === 'PATCH' && tierRoute) {
+      const r = rooms.get(tierRoute[1]!);
+      if (!r || !r.members.has(account.id))
+        return err(res, 404, 'NOT_FOUND', 'Not found.');
+      if (r.hostId !== account.id)
+        return err(
+          res,
+          403,
+          'FORBIDDEN',
+          'Only the host can change the table content tier.',
+        );
+      const tier = (await readBody(req))?.tier;
+      if (tier !== null && tier !== 'family' && tier !== 'standard')
+        return err(
+          res,
+          400,
+          'INVALID_INPUT',
+          'Choose Mature, Standard, or Family.',
+        );
+      r.tierCap = tier;
+      return json(res, 200, { tier });
     }
     const joinRoute = /^\/api\/invites\/([^/]+)\/join$/.exec(url.pathname);
     if (req.method === 'POST' && joinRoute) {

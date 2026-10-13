@@ -48,6 +48,8 @@ export const RoomInfoSchema = z.object({
   name: z.string().min(1),
   isHost: z.boolean(),
   code: z.string().optional(),
+  /** Host's nullable lower-tier cap; omitted outside lobby detail views. */
+  tierCap: z.enum(['family', 'standard']).nullable().optional(),
 });
 export const RoomOutputSchema = z.object({ room: RoomInfoSchema });
 export const RoomsOutputSchema = z.object({ rooms: z.array(RoomInfoSchema) });

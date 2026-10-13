@@ -87,6 +87,86 @@ test('host reloading the lobby gets no stale/blank link and can create a new one
   expect(input.value).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
 });
 
+test('host can choose a lower table tier, which is visible to all players', async () => {
+  const host = useJar();
+  await seedAccount('tier-host@example.com', 'Tier Host');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Tier Hall' }),
+    })
+  ).json();
+  const roomId = created.room.id as string;
+  renderApp(`/rooms/${roomId}`);
+  const selector = await screen.findByRole('combobox', {
+    name: 'Table content tier',
+  });
+  expect(selector).toHaveValue('mature');
+  expect(screen.getByText(/Mature is on by default/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/You can opt out of Mature content below/),
+  ).toBeInTheDocument();
+  await userEvent.selectOptions(selector, 'standard');
+  await waitFor(() =>
+    expect(screen.getByText('Table setting saved.')).toBeInTheDocument(),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByText('Standard', { selector: 'strong' }),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.queryByText(/Mature is on by default/)).not.toBeInTheDocument();
+  expect(
+    screen.getByText(/Mature-tier content is unavailable under this cap/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/personal Mature opt-out preference is saved separately/),
+  ).toBeInTheDocument();
+  const details = await (await host(`${http.base}/api/rooms/${roomId}`)).json();
+  expect(details.room.tierCap).toBe('standard');
+
+  const playerJar = useJar();
+  await seedAccount('tier-player@example.com', 'Tier Player');
+  const joined = await playerJar(
+    `${http.base}/api/invites/${created.room.code}/join`,
+    { method: 'POST' },
+  );
+  expect(joined.status).toBe(200);
+  const playerRoom = await playerJar(`${http.base}/api/rooms/${roomId}`);
+  expect((await playerRoom.json()).room.tierCap).toBe('standard');
+});
+
+test('host lobby restores the saved content tier after loading room details', async () => {
+  const host = useJar();
+  await seedAccount('tier-reload@example.com', 'Tier Reloader');
+  const created = await (
+    await host(`${http.base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Saved Tier Hall' }),
+    })
+  ).json();
+  const roomId = created.room.id as string;
+  await host(`${http.base}/api/sessions/${roomId}/content-tier`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tier: 'family' }),
+  });
+
+  renderApp(`/rooms/${roomId}`);
+  expect(
+    await screen.findByRole('combobox', { name: 'Table content tier' }),
+  ).toHaveValue('family');
+  expect(
+    screen.getByText('Family', { selector: 'strong' }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/Mature is on by default/)).not.toBeInTheDocument();
+  expect(
+    screen.getByText(/Mature-tier content is unavailable under this cap/),
+  ).toBeInTheDocument();
+});
+
 test('invalid invite shows a clear error', async () => {
   useJar();
   await seedAccount('x@example.com', 'X');
