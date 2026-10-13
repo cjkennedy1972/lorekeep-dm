@@ -12,6 +12,8 @@ export interface PromptSession {
   sceneSummary: string;
   currentScene?: { id: string; title: string; summary: string };
   nextScenes?: readonly { id: string; title: string; summary: string }[];
+  /** Set after an X-card press the narration has not yet steered away from. */
+  steerAway?: boolean;
 }
 export interface PromptTurn {
   state: Parameters<typeof projectState>[0];
@@ -60,6 +62,8 @@ const STATIC_PERSONA = [
   'Call close_scene when the scene objective is resolved, the party leaves its location, or combat ends and the story moves on.',
   'When a player action is ambiguous in a way that changes its outcome, call ask_clarification once for that action with one short question; otherwise resolve it.',
 ].join('\n');
+const STEER_AWAY_NOTICE =
+  'A player pressed the X-card. Do not depict or reference the content they objected to. Steer the narration to a neutral, unrelated beat and continue without describing the objected content.';
 const RULES_CHEATSHEET = [
   'Core rules: the engine is authoritative for rolls, legality, positions, and state.',
   'Use rules_lookup for rules questions. Do not invent mechanics or dice results.',
@@ -164,6 +168,7 @@ function makeSession(input: BuildPromptInput): string {
     currentScene: input.session.currentScene,
     nextScenes: input.session.nextScenes,
     settingsHash: input.settingsHash,
+    ...(input.session.steerAway ? { steerAway: STEER_AWAY_NOTICE } : {}),
   });
 }
 function makeDynamic(

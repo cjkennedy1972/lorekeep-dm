@@ -64,6 +64,42 @@ describe('persistence', () => {
       expect(latest.events.map((item) => item.seq)).toEqual([4, 5]);
     }));
 
+  it('stores X-card seat identity only in the expiring operational log', async () =>
+    fixture(async (pool, id) => {
+      const persistence = new Persistence(pool);
+      const seatId = randomUUID();
+      const written = await persistence.writeTurn(
+        id,
+        [
+          {
+            turnId: randomUUID(),
+            type: 'SafetyFlag',
+            payload: { seatId, kind: 'x-card' },
+          },
+        ],
+        {},
+      );
+
+      expect(written.events[0]?.payload).toEqual({ kind: 'x-card' });
+      expect(
+        (
+          await pool.query(
+            'SELECT payload FROM events WHERE session_id=$1 AND type=$2',
+            [id, 'SafetyFlag'],
+          )
+        ).rows[0]?.payload,
+      ).toEqual({ kind: 'x-card' });
+      expect(
+        (
+          await pool.query(
+            `SELECT seat_id, expires_at > now() AS live
+               FROM x_card_log WHERE session_id=$1`,
+            [id],
+          )
+        ).rows,
+      ).toEqual([{ seat_id: seatId, live: true }]);
+    }));
+
   it('rolls back events when snapshot insertion fails', async () =>
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);

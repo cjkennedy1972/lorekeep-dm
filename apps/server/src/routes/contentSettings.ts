@@ -160,4 +160,55 @@ export function registerContentSettingsRoutes(
       return { tier };
     },
   );
+
+  app.patch<{ Params: { id: string } }>(
+    '/api/sessions/:id/x-card-abort',
+    async (request, reply) => {
+      if (!validOrigin(request))
+        return reply
+          .code(403)
+          .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
+      const auth = await authenticateRequest(db, request);
+      if (!auth)
+        return reply.code(401).send({
+          code: 'UNAUTHENTICATED',
+          message: 'Sign in required.',
+          loginRequired: true,
+        });
+      const { id } = request.params;
+      if (!UUID.test(id)) return reply.code(404).send({ code: 'NOT_FOUND' });
+      const enabled = (request.body as { enabled?: unknown } | null)?.enabled;
+      if (typeof enabled !== 'boolean')
+        return reply.code(400).send({
+          code: 'INVALID_INPUT',
+          message: 'Choose whether X-cards abort in-flight narration.',
+        });
+      const owner = (
+        await db.query<{ owner_account_id: string }>(
+          'SELECT owner_account_id FROM sessions WHERE id=$1',
+          [id],
+        )
+      ).rows[0]?.owner_account_id;
+      if (!owner) return reply.code(404).send({ code: 'NOT_FOUND' });
+      if (owner !== auth.account_id)
+        return reply.code(403).send({
+          code: 'FORBIDDEN',
+          message: 'Only the host can change X-card abort behavior.',
+        });
+      try {
+        const room = rooms?.peek(id);
+        if (room) await room.setXCardAbortEnabled(enabled);
+        else await persistence.setXCardAbortEnabled(id, enabled);
+      } catch (error) {
+        if (error instanceof LeaseConflictError)
+          return reply.code(409).send({
+            code: 'SESSION_BUSY',
+            message: 'The table is busy. Try the setting change again.',
+            retryable: true,
+          });
+        throw error;
+      }
+      return { enabled };
+    },
+  );
 }
