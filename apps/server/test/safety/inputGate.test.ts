@@ -124,7 +124,10 @@ describe('createInputGate', () => {
         sessionId: 'session-1',
       }),
     ).toBe('allow');
-    expect(calls[0]?.tableLines).toEqual(['no spiders', 'fade out at surgery']);
+    expect(calls[0]?.tableLines).toEqual([
+      'line: no spiders',
+      'veil: fade out at surgery',
+    ]);
     expect(queries.some((sql) => sql.includes('WITH seated'))).toBe(true);
   });
 

@@ -178,7 +178,10 @@ export function createInputGate({
         text: input.text,
         tier: await tierFor(input.sessionId),
         tableLines: boundaries
-          ? [...boundaries.lines, ...boundaries.veils]
+          ? [
+              ...boundaries.lines.map((line) => `line: ${line}`),
+              ...boundaries.veils.map((veil) => `veil: ${veil}`),
+            ]
           : undefined,
         direction: 'input',
       });

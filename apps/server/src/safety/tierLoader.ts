@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { computeContentTier, type ContentTier, type HostCap } from './tier.js';
 
 type Queryable = Pick<Pool, 'query'>;
+const MAX_SESSION_BOUNDARIES = 100;
 
 /**
  * Live tier for the session plus the tier last committed to sessions.content_tier. The host's
@@ -44,7 +45,9 @@ export async function loadSeatedMatureOptOuts(
     `SELECT (a.id IS NULL OR a.status <> 'active' OR a.mature_opt_out IS NOT FALSE) AS opted_out
        FROM (SELECT DISTINCT payload->>'accountId' AS account_id FROM events
               WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId' IS NOT NULL) seated
-       LEFT JOIN accounts a ON a.id = seated.account_id::uuid`,
+       LEFT JOIN accounts a ON a.id = CASE
+         WHEN seated.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+         THEN seated.account_id::uuid ELSE NULL END`,
     [sessionId],
   );
   return rows.map((row) => row.opted_out);
@@ -59,25 +62,47 @@ export async function loadSeatedContentBoundaries(
   db: Queryable,
   sessionId: string,
 ): Promise<{ lines: string[]; veils: string[] }> {
-  const { rows } = await db.query<{ lines: string[]; veils: string[] }>(
+  const { rows } = await db.query<{
+    lines: string[];
+    veils: string[];
+    boundary_count: number;
+  }>(
     `WITH seated AS (
        SELECT DISTINCT payload->>'accountId' AS account_id
          FROM events
         WHERE session_id=$1 AND type='SeatJoined'
           AND payload->>'accountId' IS NOT NULL
+     ), boundary_rows AS (
+       SELECT DISTINCT 'line' AS kind, boundary
+         FROM seated s JOIN accounts a ON a.id = CASE
+           WHEN s.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+           THEN s.account_id::uuid ELSE NULL END
+         CROSS JOIN LATERAL unnest(a.content_lines) AS boundary
+       UNION
+       SELECT DISTINCT 'veil' AS kind, boundary
+         FROM seated s JOIN accounts a ON a.id = CASE
+           WHEN s.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+           THEN s.account_id::uuid ELSE NULL END
+         CROSS JOIN LATERAL unnest(a.content_veils) AS boundary
      )
      SELECT
        COALESCE((
-         SELECT array_agg(DISTINCT boundary ORDER BY boundary)
-           FROM seated s JOIN accounts a ON a.id=s.account_id::uuid
-           CROSS JOIN LATERAL unnest(a.content_lines) AS boundary
+         SELECT array_agg(boundary ORDER BY boundary) FROM (
+           SELECT boundary FROM boundary_rows WHERE kind='line'
+           ORDER BY boundary LIMIT ${MAX_SESSION_BOUNDARIES + 1}
+         ) bounded_lines
        ), ARRAY[]::text[]) AS lines,
        COALESCE((
-         SELECT array_agg(DISTINCT boundary ORDER BY boundary)
-           FROM seated s JOIN accounts a ON a.id=s.account_id::uuid
-           CROSS JOIN LATERAL unnest(a.content_veils) AS boundary
-       ), ARRAY[]::text[]) AS veils`,
+         SELECT array_agg(boundary ORDER BY boundary) FROM (
+           SELECT boundary FROM boundary_rows WHERE kind='veil'
+           ORDER BY boundary LIMIT ${MAX_SESSION_BOUNDARIES + 1}
+         ) bounded_veils
+       ), ARRAY[]::text[]) AS veils,
+       (SELECT COUNT(*)::int FROM boundary_rows) AS boundary_count`,
     [sessionId],
   );
-  return rows[0] ?? { lines: [], veils: [] };
+  const result = rows[0] ?? { lines: [], veils: [], boundary_count: 0 };
+  if (result.boundary_count > MAX_SESSION_BOUNDARIES)
+    throw new Error('Session content boundary limit exceeded');
+  return { lines: result.lines, veils: result.veils };
 }
