@@ -330,13 +330,17 @@ describe('solo turn persisted lifecycle', () => {
         if (message.type === 'NarrationChunk')
           narrationChunks.push(String(message.payload?.text ?? ''));
       });
-      sendAction(ws, randomUUID(), 'Look at the old door.');
+      const actionId = randomUUID();
+      sendAction(ws, actionId, 'Look at the old door.');
       await expect(completed).resolves.toMatchObject({
         type: 'NarrationCompleted',
         payload: { text: expect.stringContaining('narrator pauses') },
       });
       expect(narrationChunks.join('')).not.toContain('child');
       expect(narrationChunks.join('')).toContain('narrator pauses');
+      await committedState(table, (state) =>
+        ((state.actionIds as string[] | undefined) ?? []).includes(actionId),
+      );
       const storedNarration = await db.query<{
         payload: { narration: string };
       }>(
