@@ -2,14 +2,7 @@ import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  onTestFinished,
-} from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { installGateway } from '../../src/gateway/ws.js';
@@ -256,11 +249,9 @@ describe('solo turn persisted lifecycle', () => {
       ],
     });
     const priorAllowLocalHosts = process.env.LLM_ALLOW_LOCAL_HOSTS;
-    onTestFinished(() => {
-      if (priorAllowLocalHosts === undefined)
-        delete process.env.LLM_ALLOW_LOCAL_HOSTS;
-      else process.env.LLM_ALLOW_LOCAL_HOSTS = priorAllowLocalHosts;
-    });
+    const priorFixtureMode = process.env.LLM_FIXTURE_MODE;
+    const priorFixturePath = process.env.LLM_FIXTURE_PATH;
+    const priorEndpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT;
     process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(fakeEndpoint.baseUrl).host;
     await saveEndpoint(
       db,
@@ -293,6 +284,7 @@ describe('solo turn persisted lifecycle', () => {
     const fixtureDir = await mkdtemp(join(tmpdir(), 'solo-turn-fixture-'));
     process.env.LLM_FIXTURE_PATH = join(fixtureDir, 'turn.ndjson');
     const production = new ProductionSoloTurnRunner(db);
+    const priorRooms = rooms;
     const tableRoomRegistry = new RoomRegistry(
       new Persistence(db),
       new SessionLease(db),
@@ -301,64 +293,81 @@ describe('solo turn persisted lifecycle', () => {
       60_000,
       production,
     );
-    const priorRooms = rooms;
     // The table must be created through the registry the websocket uses: it holds the session lease.
     rooms = tableRoomRegistry;
-    const table = await createTable(owner.id);
-    const connections = new ConnectionRegistry(db);
-    const recordedApp = createApp(db, {
-      inputGate: allowInputGate,
-      rooms,
-      connections,
-    });
-    installGateway(recordedApp, db, rooms, connections, 300);
-    const recordedBase = await recordedApp.listen({
-      host: '127.0.0.1',
-      port: 0,
-    });
-    const token = await createSession(db, owner.id, 'recorded-solo');
-    const ticket = await issueTicket(db, owner.id, table, hashToken(token));
-    const ws = new WebSocket(
-      `${recordedBase.replace('http', 'ws')}/ws?ticket=${ticket}`,
-      { origin: recordedBase },
-    );
-    await new Promise<void>((resolve, reject) => {
-      ws.once('message', () => resolve());
-      ws.once('error', reject);
-    });
-    const completed = receive(
-      ws,
-      (message) => message.type === 'NarrationCompleted',
-    );
-    const narrationChunks: string[] = [];
-    ws.on('message', (data) => {
-      const message = JSON.parse(data.toString()) as WireMessage;
-      if (message.type === 'NarrationChunk')
-        narrationChunks.push(String(message.payload?.text ?? ''));
-    });
-    sendAction(ws, randomUUID(), 'Look at the old door.');
-    await expect(completed).resolves.toMatchObject({
-      type: 'NarrationCompleted',
-      payload: { text: expect.stringContaining('narrator pauses') },
-    });
-    expect(narrationChunks.join('')).not.toContain('child');
-    expect(narrationChunks.join('')).toContain('narrator pauses');
-    const storedNarration = await db.query<{ payload: { narration: string } }>(
-      `SELECT payload FROM events WHERE session_id=$1 AND type='NarrationCompleted' ORDER BY seq DESC LIMIT 1`,
-      [table],
-    );
-    expect(storedNarration.rows[0]?.payload.narration).toContain(
-      'narrator pauses',
-    );
-    expect(storedNarration.rows[0]?.payload.narration).not.toContain('child');
-    ws.close();
-    await rooms.drain();
-    await recordedApp.close();
-    rooms = priorRooms;
-    expect(fakeEndpoint.requests).toHaveLength(2);
-    await db.query("DELETE FROM operator_endpoints WHERE slot='moderate'");
-    await rm(fixtureDir, { recursive: true, force: true });
-    delete process.env.LLM_FIXTURE_PATH;
+    let recordedApp: ReturnType<typeof createApp> | undefined;
+    let ws: WebSocket | undefined;
+    try {
+      const table = await createTable(owner.id);
+      const connections = new ConnectionRegistry(db);
+      recordedApp = createApp(db, {
+        inputGate: allowInputGate,
+        rooms,
+        connections,
+      });
+      installGateway(recordedApp, db, rooms, connections, 300);
+      const recordedBase = await recordedApp.listen({
+        host: '127.0.0.1',
+        port: 0,
+      });
+      const token = await createSession(db, owner.id, 'recorded-solo');
+      const ticket = await issueTicket(db, owner.id, table, hashToken(token));
+      ws = new WebSocket(
+        `${recordedBase.replace('http', 'ws')}/ws?ticket=${ticket}`,
+        { origin: recordedBase },
+      );
+      await new Promise<void>((resolve, reject) => {
+        ws!.once('message', () => resolve());
+        ws!.once('error', reject);
+      });
+      const completed = receive(
+        ws,
+        (message) => message.type === 'NarrationCompleted',
+      );
+      const narrationChunks: string[] = [];
+      ws.on('message', (data) => {
+        const message = JSON.parse(data.toString()) as WireMessage;
+        if (message.type === 'NarrationChunk')
+          narrationChunks.push(String(message.payload?.text ?? ''));
+      });
+      sendAction(ws, randomUUID(), 'Look at the old door.');
+      await expect(completed).resolves.toMatchObject({
+        type: 'NarrationCompleted',
+        payload: { text: expect.stringContaining('narrator pauses') },
+      });
+      expect(narrationChunks.join('')).not.toContain('child');
+      expect(narrationChunks.join('')).toContain('narrator pauses');
+      const storedNarration = await db.query<{
+        payload: { narration: string };
+      }>(
+        `SELECT payload FROM events WHERE session_id=$1 AND type='NarrationCompleted' ORDER BY seq DESC LIMIT 1`,
+        [table],
+      );
+      expect(storedNarration.rows[0]?.payload.narration).toContain(
+        'narrator pauses',
+      );
+      expect(storedNarration.rows[0]?.payload.narration).not.toContain('child');
+      expect(fakeEndpoint.requests).toHaveLength(2);
+    } finally {
+      ws?.close();
+      await rooms.drain();
+      await recordedApp?.close();
+      rooms = priorRooms;
+      await db.query(
+        "DELETE FROM operator_endpoints WHERE slot IN ('fast','moderate')",
+      );
+      await rm(fixtureDir, { recursive: true, force: true });
+      if (priorAllowLocalHosts === undefined)
+        delete process.env.LLM_ALLOW_LOCAL_HOSTS;
+      else process.env.LLM_ALLOW_LOCAL_HOSTS = priorAllowLocalHosts;
+      if (priorFixtureMode === undefined) delete process.env.LLM_FIXTURE_MODE;
+      else process.env.LLM_FIXTURE_MODE = priorFixtureMode;
+      if (priorFixturePath === undefined) delete process.env.LLM_FIXTURE_PATH;
+      else process.env.LLM_FIXTURE_PATH = priorFixturePath;
+      if (priorEndpointSlot === undefined)
+        delete process.env.SOLO_TURN_ENDPOINT_SLOT;
+      else process.env.SOLO_TURN_ENDPOINT_SLOT = priorEndpointSlot;
+    }
   });
 
   it('persists scene transitions in events and snapshot across room restart', async () => {
