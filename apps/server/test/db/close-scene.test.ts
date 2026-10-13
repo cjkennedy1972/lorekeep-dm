@@ -20,10 +20,11 @@ let dir: string;
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
 
-/** Scripted DM: calls close_scene once per args entry; summary requests (no tools) get plain text. */
+/** Scripted DM: calls close_scene once per args entry and returns a scene summary. */
 function closingDm(
   args: Record<string, unknown> | Record<string, unknown>[],
   calls: LlmRequest[],
+  generatedSummary = 'The party moves on.',
 ) {
   const batch = Array.isArray(args) ? args : [args];
   const adapter: LlmAdapter = {
@@ -45,7 +46,17 @@ function closingDm(
               name: 'close_scene',
               arguments: closeArgs,
             }))
-          : [{ type: 'text', delta: 'The party moves on.' }];
+          : request.toolMode === 'json-schema'
+            ? [
+                {
+                  type: 'text',
+                  delta: JSON.stringify({
+                    summary: generatedSummary,
+                    registryDiffs: [],
+                  }),
+                },
+              ]
+            : [{ type: 'text', delta: 'The party moves on.' }];
       for (const chunk of chunks) yield chunk;
     },
   };
@@ -72,6 +83,7 @@ async function turn(
   sceneId: string,
   args: Record<string, unknown> | Record<string, unknown>[],
   moderator?: Moderator,
+  generatedSummary?: string,
 ) {
   const { accountId, sessionId } = await table();
   const calls: LlmRequest[] = [];
@@ -81,7 +93,7 @@ async function turn(
     undefined,
     'record',
     join(dir, `${sessionId}.ndjson`),
-    closingDm(args, calls),
+    closingDm(args, calls, generatedSummary),
     true,
     false,
     moderator,
@@ -223,30 +235,26 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
   });
 
   it('persists only the authored fallback when the generated scene summary is blocked', async () => {
+    const unsafeGeneratedSummary = 'Unsafe gore summary from the summarizer.';
     const moderationTexts: string[] = [];
-    const { sessionId } = await turn(
+    const { result, sessionId } = await turn(
       'scene-marowfell-well',
       { summary: 'The party leaves the well.' },
       {
         async moderate(request) {
           moderationTexts.push(request.text);
-          return request.text === 'The party leaves the well.'
-            ? {
-                verdict: 'allow',
-                category: 'none',
-                source: 'judge',
-                latencyMs: 1,
-                unavailable: false,
-              }
-            : {
-                verdict: 'block',
-                category: 'violence',
-                source: 'judge',
-                latencyMs: 1,
-                unavailable: false,
-              };
+          return {
+            verdict:
+              request.text === unsafeGeneratedSummary ? 'block' : 'allow',
+            category:
+              request.text === unsafeGeneratedSummary ? 'violence' : 'none',
+            source: 'judge',
+            latencyMs: 1,
+            unavailable: false,
+          };
         },
       },
+      unsafeGeneratedSummary,
     );
     const stored = await db.query<{ summary: string }>(
       'SELECT summary FROM scene_summaries WHERE session_id=$1',
@@ -254,10 +262,13 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     );
 
     expect(moderationTexts).toContain('The party leaves the well.');
+    expect(moderationTexts).toContain(unsafeGeneratedSummary);
     expect(
-      moderationTexts.filter((text) => text === 'The party moves on.'),
+      moderationTexts.filter((text) => text === unsafeGeneratedSummary),
     ).toHaveLength(1);
+    expect(JSON.stringify(result.events)).not.toContain(unsafeGeneratedSummary);
     expect(stored.rows[0]?.summary).toBe('The scene has ended.');
+    expect(stored.rows[0]?.summary).not.toContain(unsafeGeneratedSummary);
   });
 
   it('advances to the authored next scene with exactly one SceneClosed and one summary call', async () => {
