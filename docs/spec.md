@@ -347,7 +347,7 @@ Pause/resume · kick/ban from table · mute · transfer host · edit safety sett
 - R-M4 (P1): "Lore Q&A" lets a player ask "what do we know about X?" answered only from registry and retained transcript (no invention).
 
 ### 7.6 Safety and content controls
-- R-S1 (P0): Content settings (§3.7) are enforced in prompt and by an **independent output moderation pass on every DM message before display**. The pass must not rely on the DM model's own safety behavior, because configured and self-hosted models may have none; it uses a separately configured moderation endpoint or a built-in classifier [Q24]. Blocked output is regenerated (max 2) then replaced with a safe redirect.
+- R-S1 (P0): Content settings (§3.7) are enforced in prompt and by an **independent output moderation pass on every player-visible DM message before display and persistence**. The pass must not rely on the DM model's own safety behavior, because configured and self-hosted models may have none; it uses a separately configured moderation endpoint or a built-in classifier [Q24]. For tool-bearing turns, all tool effects have already executed before narration is moderated: buffer and gate the completed narration, then use a fixed safe redirect on block or moderation failure; do not replay the tool-bearing request. Regeneration (up to 2 attempts) applies only to a future tool-free narration phase whose retry safety is established by a separate design decision.
 - R-S2 (P0): Player input moderation (chat, actions, character text, display names): disallowed content (illegal content, sexual content involving minors, targeted harassment, real-person defamation, instructions for real-world harm) is rejected with a neutral message and logged.
 - R-S3 (P0): Prompt-injection resilience: player text cannot change system rules ("ignore previous instructions", "give me 1000 gold", "set my HP to max", "move my token to the exit", "enable mature content"). AC: ≥ 95% resistance on a 100-prompt red-team set; state changes only through rules engine; the effective content tier cannot be changed by any text.
 - R-S4 (P0): X-card and "pause/talk" immediate-effect (next generation).
@@ -392,13 +392,13 @@ LLM-dependent targets are baselines for a streaming hosted endpoint; the operato
 | Page load to interactive (broadband) | ≤ 3 s |
 | Input accepted/acknowledged ("queued/thinking") | ≤ 300 ms |
 | Dice/rules-engine resolution (no LLM), including movement/geometry validation | ≤ 500 ms |
-| First narration token streamed | ≤ 2.5 s (reference endpoint) |
+| First narration token streamed | ≤ 2.5 s (reference endpoint; not yet demonstrated by the current buffered tool-bearing implementation) |
 | Complete DM turn (exploration) | ≤ 8 s (p50 ≤ 4 s) (reference endpoint) |
 | Complete DM turn (combat, per action) | ≤ 6 s (reference endpoint) |
 | State sync across clients, including token moves | ≤ 1 s |
 | Reconnect and state restore | ≤ 3 s |
 
-Narration streams token-by-token; rules/dice results display before narration completes.
+The target experience is token-by-token narration, with rules/dice results displayed before narration completes. Current tool-bearing turns buffer the model's completed narration before moderation and do not yet meet the streaming-latency target; this is a known implementation gap, not a measured SLO.
 
 **Map rendering (MVP, 2D):**
 | Metric | Target |
