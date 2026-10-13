@@ -105,6 +105,88 @@ function Password() {
   );
 }
 
+function PersonalContent() {
+  const [lines, setLines] = useState('');
+  const [veils, setVeils] = useState('');
+  const [msg, setMsg] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let live = true;
+    void api<{ lines: string[]; veils: string[] }>(
+      '/api/me/content-settings',
+    ).then((result) => {
+      if (!live) return;
+      if (!result.ok) return setError(result.message);
+      setLines(result.data.lines.join('\n'));
+      setVeils(result.data.veils.join('\n'));
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setMsg('');
+    setError('');
+    const toList = (value: string) =>
+      value
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    const result = await api<{ lines: string[]; veils: string[] }>(
+      '/api/me/content-settings',
+      { lines: toList(lines), veils: toList(veils) },
+      'PATCH',
+    );
+    if (!result.ok) return setError(result.message);
+    setLines(result.data.lines.join('\n'));
+    setVeils(result.data.veils.join('\n'));
+    setMsg('Personal content boundaries saved.');
+  }
+
+  return (
+    <section aria-labelledby="personal-content-h">
+      <h2 id="personal-content-h">Personal content boundaries</h2>
+      <p>
+        Add one topic per line. Lines are avoided; veils fade out without
+        detail. Your entries are private to you and are combined without names
+        to guide shared narration for every table you join.
+      </p>
+      <form onSubmit={save} className="form">
+        <div className="field">
+          <label htmlFor="content-lines">Lines — do not include</label>
+          <textarea
+            id="content-lines"
+            rows={4}
+            maxLength={3219}
+            value={lines}
+            onChange={(event) => setLines(event.target.value)}
+          />
+          <small>Up to 20 entries, 160 characters each.</small>
+        </div>
+        <div className="field">
+          <label htmlFor="content-veils">Veils — fade out</label>
+          <textarea
+            id="content-veils"
+            rows={4}
+            maxLength={3219}
+            value={veils}
+            onChange={(event) => setVeils(event.target.value)}
+          />
+          <small>Up to 20 entries, 160 characters each.</small>
+        </div>
+        <div className="actions">
+          <button type="submit">Save content boundaries</button>
+        </div>
+        <p role="status" aria-live="polite">
+          {error || msg}
+        </p>
+      </form>
+    </section>
+  );
+}
+
 function Sessions() {
   const { setAccount } = useAuth();
   const navigate = useNavigate();
@@ -282,6 +364,7 @@ export function Settings() {
       {account && (
         <>
           <Profile account={account} />
+          <PersonalContent />
           <Password />
           <Sessions />
           <Export />

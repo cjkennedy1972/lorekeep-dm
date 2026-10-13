@@ -32,7 +32,7 @@ export async function processExport(
   try {
     const profile = (
       await db.query(
-        'SELECT id,email,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at,mature_opt_out,created_at FROM accounts WHERE id=$1',
+        'SELECT id,email,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at,mature_opt_out,content_lines,content_veils,created_at FROM accounts WHERE id=$1',
         [accountId],
       )
     ).rows[0];

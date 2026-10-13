@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadSeatedMatureOptOuts } from '../../src/safety/tierLoader.js';
+import {
+  loadSeatedContentBoundaries,
+  loadSeatedMatureOptOuts,
+} from '../../src/safety/tierLoader.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
 
 async function applyMigrations(database: TestDatabase) {
@@ -120,5 +123,51 @@ describe('loadSeatedMatureOptOuts', () => {
     expect(await loadSeatedMatureOptOuts(database.pool, randomUUID())).toEqual(
       [],
     );
+  });
+});
+
+describe('loadSeatedContentBoundaries', () => {
+  let database: TestDatabase;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    database = await createTestDatabase({ extraSearchPath: ['public'] });
+    await applyMigrations(database);
+    sessionId = randomUUID();
+    const owner = await account(database, false);
+    await database.pool.query(
+      'INSERT INTO sessions(id,owner_account_id) VALUES ($1,$2)',
+      [sessionId, owner],
+    );
+  });
+
+  afterEach(async () => {
+    await database.close();
+  });
+
+  it('unions and deduplicates private lines and veils across seated players', async () => {
+    const first = await account(database, false);
+    const second = await account(database, false);
+    await database.pool.query(
+      'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+      [first, ['no spiders', 'no gore'], ['fade out at surgery']],
+    );
+    await database.pool.query(
+      'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+      [second, ['no spiders'], ['fade out at surgery', 'fade out at drowning']],
+    );
+    await seatJoined(database, sessionId, 1, first, false);
+    await seatJoined(database, sessionId, 2, second, false);
+    await seatJoined(database, sessionId, 3, first, false);
+
+    expect(await loadSeatedContentBoundaries(database.pool, sessionId)).toEqual(
+      {
+        lines: ['no gore', 'no spiders'],
+        veils: ['fade out at drowning', 'fade out at surgery'],
+      },
+    );
+    expect(
+      await loadSeatedContentBoundaries(database.pool, randomUUID()),
+    ).toEqual({ lines: [], veils: [] });
   });
 });

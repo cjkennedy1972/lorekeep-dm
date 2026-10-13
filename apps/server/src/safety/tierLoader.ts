@@ -49,3 +49,35 @@ export async function loadSeatedMatureOptOuts(
   );
   return rows.map((row) => row.opted_out);
 }
+
+/**
+ * Union personal lines and veils for every account ever seated at this shared table.
+ * The lists stay account-private in storage; only the unattributed union is used by
+ * narration and moderation. Missing/deleted accounts contribute no free-text data.
+ */
+export async function loadSeatedContentBoundaries(
+  db: Queryable,
+  sessionId: string,
+): Promise<{ lines: string[]; veils: string[] }> {
+  const { rows } = await db.query<{ lines: string[]; veils: string[] }>(
+    `WITH seated AS (
+       SELECT DISTINCT payload->>'accountId' AS account_id
+         FROM events
+        WHERE session_id=$1 AND type='SeatJoined'
+          AND payload->>'accountId' IS NOT NULL
+     )
+     SELECT
+       COALESCE((
+         SELECT array_agg(DISTINCT boundary ORDER BY boundary)
+           FROM seated s JOIN accounts a ON a.id=s.account_id::uuid
+           CROSS JOIN LATERAL unnest(a.content_lines) AS boundary
+       ), ARRAY[]::text[]) AS lines,
+       COALESCE((
+         SELECT array_agg(DISTINCT boundary ORDER BY boundary)
+           FROM seated s JOIN accounts a ON a.id=s.account_id::uuid
+           CROSS JOIN LATERAL unnest(a.content_veils) AS boundary
+       ), ARRAY[]::text[]) AS veils`,
+    [sessionId],
+  );
+  return rows[0] ?? { lines: [], veils: [] };
+}

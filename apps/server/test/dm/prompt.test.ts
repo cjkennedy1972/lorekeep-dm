@@ -47,6 +47,43 @@ function input(playerText = 'I look around') {
   };
 }
 describe('DM prompt builder', () => {
+  it('includes mature guidance only at mature tier and quotes the table boundary union', () => {
+    const mature = buildPrompt({
+      ...input(),
+      session: {
+        ...input().session,
+        contentTier: 'mature',
+        safetySettings: {
+          matureClause: 'Mature clause text.',
+          lines: ['no spiders'],
+          veils: ['fade out at surgery'],
+        },
+      },
+    });
+    expect(mature.blocks[1]).toContain('Mature clause text.');
+    const encoded = mature.blocks[1].match(
+      /PERSONAL_BOUNDARIES_DATA encoding=base64>>>\\n([A-Za-z0-9+/=]+)/,
+    )?.[1];
+    expect(encoded).toBeDefined();
+    const boundaries = Buffer.from(encoded!, 'base64').toString('utf8');
+    expect(boundaries).toContain('no spiders');
+    expect(boundaries).toContain('fade out at surgery');
+
+    const standard = buildPrompt({
+      ...input(),
+      session: {
+        ...input().session,
+        contentTier: 'standard',
+        safetySettings: {
+          matureClause: 'Mature clause text.',
+          lines: [],
+          veils: [],
+        },
+      },
+    });
+    expect(standard.blocks[1]).not.toContain('Mature clause text.');
+  });
+
   it('keeps the static prefix byte-identical across turns and sessions', () => {
     const first = buildPrompt(input());
     const other = buildPrompt({

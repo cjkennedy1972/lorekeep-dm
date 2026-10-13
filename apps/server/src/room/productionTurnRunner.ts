@@ -2,7 +2,10 @@ import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { closeScene } from '../dm/summarize.js';
-import { loadContentTierState } from '../safety/tierLoader.js';
+import {
+  loadContentTierState,
+  loadSeatedContentBoundaries,
+} from '../safety/tierLoader.js';
 import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
 // Node-only subpath: it pulls in the catalog loader (node:fs), so it must never be reachable
 // from the browser-safe engine index (see test/purity.test.ts).
@@ -38,6 +41,7 @@ import {
 } from '../llm/config.js';
 import { liveDmAllowed } from '../llm/liveDmGate.js';
 import { createEndpointJudge } from '../safety/inputGate.js';
+import { MODERATION_SECTIONS } from '../safety/moderationRubric.generated.js';
 import type { Moderator } from '../safety/moderator.js';
 import {
   fixtureModeFromEnvironment,
@@ -472,6 +476,14 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       request.sessionId,
       this.endpointAllowsMature,
     );
+    const boundaries = await loadSeatedContentBoundaries(
+      this.db,
+      request.sessionId,
+    );
+    const tableLines = [
+      ...boundaries.lines.map((line) => `line: ${line}`),
+      ...boundaries.veils.map((veil) => `veil: ${veil}`),
+    ];
     const tierEvents =
       tier === stored
         ? []
@@ -492,7 +504,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         settingsHash: 'default',
         session: {
           contentTier: tier,
-          safetySettings: {},
+          safetySettings: {
+            lines: boundaries.lines,
+            veils: boundaries.veils,
+            ...(tier === 'mature'
+              ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
+              : {}),
+          },
           partyRoster: Object.values(actors).map((actor) => ({
             id: actor.id,
             name: actor.name,
@@ -543,6 +561,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ? TEST_ALLOW_MODERATOR
           : createEndpointJudge(this.db),
       outputTier: tier,
+      outputTableLines: tableLines,
       emit: (event) => {
         const value = event as Record<string, unknown>;
         if (value.type === 'SceneClosed') emittedSceneEvents.push(value);

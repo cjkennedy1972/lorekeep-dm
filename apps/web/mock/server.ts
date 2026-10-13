@@ -77,6 +77,10 @@ export function createMock(
   const sessions = new Map<string, string>(); // token -> accountId
   const meta = new Map<string, { id: string; label: string; at: number }>(); // token -> device info
   const exports = new Map<string, number>(); // accountId -> requestedAt ms
+  const personalContent = new Map<
+    string,
+    { lines: string[]; veils: string[] }
+  >();
   const tickets = new Map<string, { accountId: string; tableId: string }>(); // single use
   type MockRoom = {
     id: string;
@@ -275,6 +279,43 @@ export function createMock(
     if (url.pathname.startsWith('/api/operator/'))
       return err(res, 404, 'NOT_FOUND', 'Not found.');
     if (route === 'GET /api/me') return json(res, 200, { account });
+    if (route === 'GET /api/me/content-settings')
+      return json(
+        res,
+        200,
+        personalContent.get(account.id) ?? { lines: [], veils: [] },
+      );
+    if (route === 'PATCH /api/me/content-settings') {
+      const body = await readBody(req);
+      const list = (value: unknown): string[] | null => {
+        if (!Array.isArray(value) || value.length > 20) return null;
+        const normalized: string[] = [];
+        for (const item of value) {
+          if (
+            typeof item !== 'string' ||
+            !item.trim() ||
+            item.trim().length > 160 ||
+            ![...item].every((char) => {
+              const code = char.charCodeAt(0);
+              return code >= 0x20 && code !== 0x7f;
+            })
+          )
+            return null;
+          normalized.push(item.trim());
+        }
+        return normalized;
+      };
+      const lines = list(body?.lines);
+      const veils = list(body?.veils);
+      if (lines === null || veils === null)
+        return err(res, 400, 'INVALID_INPUT', 'Check your content boundaries.');
+      const result = {
+        lines: [...new Set(lines)],
+        veils: [...new Set(veils)],
+      };
+      personalContent.set(account.id, result);
+      return json(res, 200, result);
+    }
     if (route === 'PATCH /api/me') {
       const name = (await readBody(req))?.displayName;
       if (typeof name !== 'string' || !name.trim() || name.trim().length > 80)
