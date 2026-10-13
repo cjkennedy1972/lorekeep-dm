@@ -7,7 +7,8 @@ export const SeatSchema = z.object({
   accountId: AccountIdSchema,
   displayName: z.string().min(1),
   presence: PresenceSchema,
-  matureOptOut: z.boolean().default(false),
+  // Private account preference; omitted from the shared room-state wire view.
+  matureOptOut: z.boolean().optional(),
 });
 export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,

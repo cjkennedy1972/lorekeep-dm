@@ -572,7 +572,7 @@ describe('Room solo DM turn lifecycle', () => {
 });
 
 describe('Room commit safety', () => {
-  it('keeps historical recap and registry prose out of client StateSync state', async () => {
+  it('keeps private opt-outs and historical prose out of client StateSync state', async () => {
     const { room } = setup({
       async run() {
         return result as never;
@@ -580,16 +580,20 @@ describe('Room commit safety', () => {
     });
     await room.persistGameState({
       recap: { recap: 'unsafe historical recap', memoryHash: 'h1' },
+      sceneSummary: 'unsafe historical scene summary',
       world: { npcs: { npc_a: { name: 'unsafe registry prose' } } },
       gameEngine: {
         world: { rulings: [{ ruling: 'unsafe ruling text' }] },
         turn: 3,
       },
     });
+    await room.seat(randomUUID(), 'Private Player', true);
 
     const state = room.clientState().gameState as Record<string, unknown>;
     expect(state).not.toHaveProperty('recap');
+    expect(state).not.toHaveProperty('sceneSummary');
     expect(state).not.toHaveProperty('world');
+    expect(room.clientState().seats[0]).not.toHaveProperty('matureOptOut');
     expect(state.gameEngine).toEqual({ turn: 3 });
     expect(JSON.stringify(room.clientState())).not.toContain('unsafe');
   });

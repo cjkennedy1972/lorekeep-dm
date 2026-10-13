@@ -193,6 +193,7 @@ export class Room {
     const gameState = { ...(this.state.gameState as Record<string, unknown>) };
     delete gameState.lastNarration;
     delete gameState.lastPlayerText;
+    delete gameState.sceneSummary;
     // Registry prose and persisted recaps may predate output moderation. They are
     // server-side model context; recap is returned separately after route gating.
     delete gameState.world;
@@ -204,7 +205,10 @@ export class Room {
       delete gameEngine.world;
       gameState.gameEngine = gameEngine;
     }
-    return { ...this.state, gameState };
+    const seats = this.state.seats.map(
+      ({ matureOptOut: _privatePreference, ...seat }) => seat,
+    );
+    return { ...this.state, seats, gameState };
   }
 
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */

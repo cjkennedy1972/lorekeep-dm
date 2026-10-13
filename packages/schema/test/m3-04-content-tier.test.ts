@@ -34,7 +34,7 @@ describe('seat matureOptOut', () => {
   };
 
   test('legacy SeatJoined payloads without the field parse as opted-in', () => {
-    expect(SeatSchema.parse(seat).matureOptOut).toBe(false);
+    expect(SeatSchema.parse(seat).matureOptOut).toBeUndefined();
   });
 
   test('a join-time opt-out is carried on the seat', () => {
