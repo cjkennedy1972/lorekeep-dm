@@ -271,6 +271,7 @@ describe('loadSeatedContentBoundaries', () => {
       database.pool,
       sessionId,
     );
+    expect(boundaries.lines.length + boundaries.veils.length).toBe(240);
     expect(boundaries.lines).toHaveLength(120);
     expect(boundaries.veils).toHaveLength(120);
   });

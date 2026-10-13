@@ -4,6 +4,7 @@ import {
   DMToolErrorCodeSchema,
   DMTurnEventSchema,
   EndpointConfigSchema,
+  QuestSchema,
 } from '../src/index.js';
 
 const valid = {
@@ -113,6 +114,26 @@ test.each(Object.entries(valid))(
 test('error enum is closed', () => {
   expect(DMToolErrorCodeSchema.safeParse('out-of-range').success).toBe(true);
   expect(DMToolErrorCodeSchema.safeParse('made-up-error').success).toBe(false);
+});
+
+test('quest note length boundary is consistent in registry and DM tool schemas', () => {
+  const registryNote = (note: string) =>
+    QuestSchema.safeParse({
+      id: 'quest_length',
+      status: 'active',
+      note,
+    }).success;
+  const toolNote = (note: string) =>
+    DMToolArgsSchema.update_quest.safeParse({
+      questId: 'quest_length',
+      status: 'active',
+      note,
+    }).success;
+
+  for (const accepts of [registryNote, toolNote]) {
+    expect(accepts('x'.repeat(240))).toBe(true);
+    expect(accepts('x'.repeat(241))).toBe(false);
+  }
 });
 
 test.each([
