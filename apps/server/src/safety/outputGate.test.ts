@@ -342,6 +342,43 @@ describe('block and regenerate', () => {
     },
   );
 
+  it('a deterministic turn finish failure counts as a block', async () => {
+    let starts = 0;
+    const moderator: Moderator = {
+      startTurn: () => {
+        starts++;
+        return {
+          push: () => ({ blocked: false }),
+          finish: () => {
+            if (starts === 1) throw new Error('scanner finish failed');
+            return { blocked: false };
+          },
+        };
+      },
+      moderate: async () => ALLOW,
+    };
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('Unsafe turn. '),
+        regenerate: () => tokens('Safe turn. '),
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    expect(starts).toBe(2);
+    expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
+    expect(chunkTexts(events)).toEqual(['Safe turn.']);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks).toContainEqual(
+      expect.objectContaining({
+        verdict: 'block',
+        source: 'hardfloor',
+      }),
+    );
+  });
+
   it('fails closed when an unbounded deterministic layer has no turn scanner', async () => {
     const moderator = new JudgeModerator({
       deterministic: {
