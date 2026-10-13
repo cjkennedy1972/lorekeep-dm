@@ -22,7 +22,7 @@ import {
   type BuildPromptInput,
 } from './prompt.js';
 import { formatTurnSeed, createTurnSeed } from './seed.js';
-import { runOutputGate } from '../safety/outputGate.js';
+import { runOutputGate, SAFE_REDIRECT_TEMPLATE } from '../safety/outputGate.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
 
@@ -30,6 +30,8 @@ export const MAX_TOOL_CALLS = 8;
 export const MAX_RETRIES_PER_CALL_SITE = 2;
 export const MAX_RETRIES_PER_TURN = 5;
 export const MAX_RULES_LOOKUPS = 2;
+const MODERATION_HOLDING_NOTICE =
+  'The narrator pauses while the scene is checked. Try again shortly.';
 const POLICY_ERRORS = new Set<DMToolErrorCode>([
   'condition-engine-owned',
   'loot-budget-exceeded',
@@ -148,6 +150,44 @@ function truncateAtSentence(text: string, limit: number): string {
   const sentenceEnds = [...prefix.matchAll(/[.!?](?:["'”’)]*)?(?=\s|$)/g)];
   const end = sentenceEnds.at(-1)?.index;
   return (end === undefined ? prefix : prefix.slice(0, end + 1)).trim();
+}
+async function gateOneShotOutput(
+  text: string,
+  moderator: Moderator,
+  tier: ContentTier,
+  tableLines?: readonly string[],
+): Promise<{ text: string; unavailable: boolean; approved: boolean }> {
+  const gate = runOutputGate({
+    stream: async function* () {
+      yield text;
+    },
+    regenerate: async function* () {},
+    moderator,
+    tier,
+    tableLines,
+    maxRegenerations: 0,
+  });
+  let approvedText = '';
+  let redirected = false;
+  let unavailable = false;
+  for await (const event of gate) {
+    if (event.kind === 'chunk') approvedText += event.text;
+    if (event.kind === 'end') {
+      redirected = event.outcome === 'redirected';
+      unavailable = event.metrics.chunks.some(
+        (chunk) => chunk.source === 'failclosed',
+      );
+    }
+  }
+  return {
+    text: redirected
+      ? unavailable
+        ? MODERATION_HOLDING_NOTICE
+        : SAFE_REDIRECT_TEMPLATE
+      : approvedText,
+    unavailable,
+    approved: !redirected,
+  };
 }
 function toolSchemas(input: TurnInput): LlmTool[] {
   return DMToolCallSchema.options.flatMap((option) => {
@@ -655,38 +695,34 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     } else throw error;
   }
   if (clarification) {
-    let question: string | undefined;
-    const outputVerdict = await input.outputModerator.moderate({
-      text: clarification.question,
-      tier: input.outputTier,
-      tableLines: input.outputTableLines,
-      direction: 'output',
-    });
-    if (outputVerdict.verdict === 'allow') {
-      question = clarification.question;
+    const gatedQuestion = await gateOneShotOutput(
+      clarification.question,
+      input.outputModerator,
+      input.outputTier,
+      input.outputTableLines,
+    );
+    if (gatedQuestion.approved) {
       emit({
         type: 'ClarificationRequested',
         actionId: clarification.actionId,
-        question,
+        question: gatedQuestion.text,
       });
     } else {
-      question =
-        'The narrator pauses, and the scene turns to the next thing the party notices.';
       emit({
         type: 'NarrationChunk',
         turnId: input.turnId,
-        text: question,
+        text: gatedQuestion.text,
         index: 0,
       });
       emit({
         type: 'NarrationCompleted',
         turnId: input.turnId,
-        text: question,
-        words: words(question),
+        text: gatedQuestion.text,
+        words: words(gatedQuestion.text),
       });
     }
     return {
-      narration: question ?? '',
+      narration: gatedQuestion.text,
       events: [],
       state: input.prompt.turn.state,
       turnSeed: seedText,
@@ -695,7 +731,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         out: totalOut,
         ...(cacheRead ? { cacheRead } : {}),
       },
-      ...(outputVerdict.verdict === 'allow' ? { clarification } : {}),
+      ...(gatedQuestion.approved ? { clarification } : {}),
     };
   }
   const finalWords = words(finalText);
@@ -737,19 +773,34 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   });
   // Never persist the original model text.
   let index = 0;
+  let gateOutcome: 'approved' | 'redirected' | undefined;
+  let gateHadUnavailableVerdict = false;
   for await (const event of gate) {
-    if (event.kind === 'chunk' || event.kind === 'redirect') {
-      const text = event.text;
-      gated.push(text);
-      stream({
-        type: 'NarrationChunk',
-        turnId: input.turnId,
-        text,
-        index: index++,
-      });
+    if (event.kind === 'chunk') {
+      // Hold the entire narration until every chunk has a verdict. Otherwise a later
+      // classifier outage could leave already-approved partial text in the transcript.
+      gated.push(event.text);
+    } else if (event.kind === 'end') {
+      gateOutcome = event.outcome;
+      gateHadUnavailableVerdict = event.metrics.chunks.some(
+        (chunk) => chunk.source === 'failclosed',
+      );
     }
   }
-  finalText = gated.join('');
+  finalText =
+    gateOutcome === 'redirected'
+      ? gateHadUnavailableVerdict
+        ? MODERATION_HOLDING_NOTICE
+        : SAFE_REDIRECT_TEMPLATE
+      : gated.join('');
+  if (finalText) {
+    stream({
+      type: 'NarrationChunk',
+      turnId: input.turnId,
+      text: finalText,
+      index: index++,
+    });
+  }
   finalCount = words(finalText);
   emit({
     type: 'NarrationCompleted',
