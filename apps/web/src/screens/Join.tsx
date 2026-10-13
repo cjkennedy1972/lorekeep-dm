@@ -32,10 +32,9 @@ export function Join() {
     e.preventDefault();
     setJoining(true);
     setError('');
-    if (!(await content.save(checked))) return setJoining(false);
     const r = await api<{ room: RoomInfo }>(
       `/api/invites/${encodeURIComponent(invite)}/join`,
-      {},
+      { matureOptOut: checked },
     );
     if (r.ok) return navigate(`/rooms/${r.data.room.id}`, { replace: true });
     setError(r.message);

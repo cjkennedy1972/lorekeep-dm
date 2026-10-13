@@ -112,4 +112,65 @@ describe('room routes', () => {
     expect((await hit()).statusCode).toBe(404);
     expect((await hit()).statusCode).toBe(429);
   });
+
+  it('does not persist a changed opt-out when invite seating fails', async () => {
+    const code = newInviteCode();
+    const updates: unknown[][] = [];
+    const db = {
+      connect: async () => undefined,
+      query: async (sql: string, values: unknown[] = []) => {
+        if (/UPDATE auth_sessions/.test(sql))
+          return {
+            rows: [{ account_id: 'acc', token_hash: 'h' }],
+            rowCount: 1,
+          };
+        if (/FROM sessions WHERE invite_hash/.test(sql))
+          return {
+            rows: [
+              {
+                id: 'room',
+                name: 'Room',
+                owner: 'host',
+                status: 'active',
+                host_tier_cap: null,
+              },
+            ],
+            rowCount: 1,
+          };
+        if (/SELECT display_name, mature_opt_out FROM accounts/.test(sql))
+          return {
+            rows: [{ display_name: 'Player', mature_opt_out: false }],
+            rowCount: 1,
+          };
+        if (/UPDATE accounts SET mature_opt_out/.test(sql)) {
+          updates.push(values);
+          return { rows: [], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    let attemptedOptOut: boolean | undefined;
+    const app = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({
+          seat: async (_id: string, _name: string, matureOptOut: boolean) => {
+            attemptedOptOut = matureOptOut;
+            throw new Error('Room is full');
+          },
+        }),
+      } as never,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/invites/${code}/join`,
+      headers: cookie,
+      payload: { matureOptOut: true },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(attemptedOptOut).toBe(true);
+    expect(updates).toHaveLength(0);
+    await app.close();
+  });
 });

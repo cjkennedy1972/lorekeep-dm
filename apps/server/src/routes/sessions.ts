@@ -252,16 +252,15 @@ export function registerSessionRoutes(
       });
     const optOut = (request.body as { matureOptOut?: unknown } | null)
       ?.matureOptOut;
-    if (typeof optOut === 'boolean')
-      await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
-        accountId,
-        optOut,
-      ]);
     try {
       const profile = await seatProfile(accountId);
       await (
         await rooms.get(found.id)
-      ).seat(accountId, profile.displayName, profile.matureOptOut);
+      ).seat(
+        accountId,
+        profile.displayName,
+        typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+      );
     } catch (error) {
       if (error instanceof Error && error.message === 'Room is full')
         return reply
@@ -269,6 +268,11 @@ export function registerSessionRoutes(
           .send({ code: 'ROOM_FULL', message: 'This table is full.' });
       throw error;
     }
+    if (typeof optOut === 'boolean')
+      await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
+        accountId,
+        optOut,
+      ]);
     return { room: view(found.id, found.name, found.owner === accountId) };
   };
   app.get<{ Params: { code: string } }>(

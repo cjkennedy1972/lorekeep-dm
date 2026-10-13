@@ -37,13 +37,14 @@ export async function sessionForCode(
   db: Pick<Pool, 'query'>,
   code: string,
 ): Promise<
-  {
-    id: string;
-    name: string;
-    owner: string;
-    status: string;
-    hostTierCap: 'family' | 'standard' | null;
-  } | undefined
+  | {
+      id: string;
+      name: string;
+      owner: string;
+      status: string;
+      hostTierCap: 'family' | 'standard' | null;
+    }
+  | undefined
 > {
   if (!plausibleCode(code)) return undefined;
   const r = await db.query<{

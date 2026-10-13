@@ -286,14 +286,10 @@ export function createMock(
         account: { ...account, matureOptOut: matureOptOuts.has(account.id) },
       });
     if (route === 'GET /api/me/content-settings')
-      return json(
-        res,
-        200,
-        {
-          matureOptOut: matureOptOuts.has(account.id),
-          ...(personalContent.get(account.id) ?? { lines: [], veils: [] }),
-        },
-      );
+      return json(res, 200, {
+        matureOptOut: matureOptOuts.has(account.id),
+        ...(personalContent.get(account.id) ?? { lines: [], veils: [] }),
+      });
     if (route === 'PATCH /api/me/content-settings') {
       const body = await readBody(req);
       const list = (value: unknown): string[] | null => {
@@ -334,14 +330,8 @@ export function createMock(
         veils: [],
       };
       const result = {
-        lines:
-          lines === undefined
-            ? previous.lines
-            : [...new Set(lines ?? [])],
-        veils:
-          veils === undefined
-            ? previous.veils
-            : [...new Set(veils ?? [])],
+        lines: lines === undefined ? previous.lines : [...new Set(lines ?? [])],
+        veils: veils === undefined ? previous.veils : [...new Set(veils ?? [])],
       };
       personalContent.set(account.id, result);
       return json(res, 200, {
@@ -550,9 +540,7 @@ export function createMock(
       r.tierCap = tier;
       return json(res, 200, { tier });
     }
-    const invitePreviewRoute = /^\/api\/invites\/([^/]+)$/.exec(
-      url.pathname,
-    );
+    const invitePreviewRoute = /^\/api\/invites\/([^/]+)$/.exec(url.pathname);
     if (req.method === 'GET' && invitePreviewRoute) {
       const r = [...rooms.values()].find(
         (room) => room.code === invitePreviewRoute[1],
@@ -579,6 +567,11 @@ export function createMock(
       if (!r.members.has(account.id) && r.members.size >= 6)
         return err(res, 409, 'ROOM_FULL', 'This table is full.');
       r.members.add(account.id);
+      const matureOptOut = (await readBody(req))?.matureOptOut;
+      if (typeof matureOptOut === 'boolean') {
+        if (matureOptOut) matureOptOuts.add(account.id);
+        else matureOptOuts.delete(account.id);
+      }
       return json(res, 200, { room: roomView(r, account.id) });
     }
     if (route === 'POST /api/ws-ticket') {
