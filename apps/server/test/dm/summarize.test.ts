@@ -209,6 +209,120 @@ describe('scene summaries and recap', () => {
     });
   });
 
+  it('drops registry diffs with malformed alias or supersession metadata', async () => {
+    const adapter = new FixtureAdapter(
+      JSON.stringify({
+        summary: 'The party meets Lyra.',
+        registryDiffs: [
+          {
+            kind: 'npc',
+            id: 'npc_unsafe_alias',
+            aliases: [42],
+            after: {
+              id: 'npc_unsafe_alias',
+              name: 'Lyra Vale',
+              role: 'archivist',
+              disposition: 'friendly',
+              facts: [],
+            },
+          },
+          {
+            kind: 'npc',
+            id: 'npc_unsafe_supersession',
+            supersedesFacts: null,
+            after: {
+              id: 'npc_unsafe_supersession',
+              name: 'Mira Vale',
+              role: 'archivist',
+              disposition: 'friendly',
+              facts: [],
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await summarizeScene({
+      sceneId: 's1',
+      events: [],
+      adapter,
+    });
+
+    expect(result.summary).toBe('The party meets Lyra.');
+    expect(result.registryDiffs).toEqual([]);
+    expect(result.fallback).toBe(false);
+  });
+
+  it('moderates registry aliases and supersession text before persisting diffs', async () => {
+    let persistedRegistryEntries = 0;
+    const db = {
+      async query() {
+        return { rows: [], rowCount: 0 };
+      },
+      async connect() {
+        return {
+          async query(sql: string) {
+            if (sql.includes('INSERT INTO scene_summaries'))
+              return { rows: [], rowCount: 1 };
+            if (sql.includes('INSERT INTO registry_entries'))
+              persistedRegistryEntries++;
+            return { rows: [], rowCount: 0 };
+          },
+          release() {},
+        };
+      },
+    } as never;
+    const moderated: string[] = [];
+    const moderator: Moderator = {
+      async moderate(request) {
+        moderated.push(request.text);
+        return {
+          verdict: request.text.includes('Veiled Alias') ? 'block' : 'allow',
+          category: request.text.includes('Veiled Alias') ? 'violence' : 'none',
+          source: 'judge',
+          latencyMs: 1,
+          unavailable: false,
+        };
+      },
+    };
+    const result = await closeScene({
+      sessionId: 'session-1',
+      sceneId: 'scene-1',
+      events: [],
+      db,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+      adapter: new FixtureAdapter(
+        JSON.stringify({
+          summary: 'The party meets Lyra.',
+          registryDiffs: [
+            {
+              kind: 'npc',
+              id: 'npc_lyra',
+              aliases: ['Veiled Alias'],
+              after: {
+                id: 'npc_lyra',
+                name: 'Lyra Vale',
+                role: 'archivist',
+                disposition: 'friendly',
+                facts: [],
+              },
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(moderated).toEqual([
+      'The party meets Lyra.',
+      expect.stringContaining('Veiled Alias'),
+    ]);
+    expect(result.registryDiffs).toEqual([]);
+    expect(result.fallback).toBe(true);
+    expect(persistedRegistryEntries).toBe(0);
+  });
+
   it('falls back deterministically when the endpoint fails, without mutating event input', async () => {
     const events = [
       { type: 'LocationChanged', payload: { name: 'Silver Archive' } },
