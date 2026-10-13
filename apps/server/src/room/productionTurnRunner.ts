@@ -511,7 +511,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
               : {}),
           },
-          safetySettings: {},
           ...(request.steerAway ? { steerAway: true } : {}),
           partyRoster: Object.values(actors).map((actor) => ({
             id: actor.id,
