@@ -111,7 +111,7 @@ export interface TurnInput {
   modelId?: string;
   /** No narration event or transcript value may bypass this moderator. */
   outputModerator: Moderator;
-  outputTier?: ContentTier;
+  outputTier: ContentTier;
   outputTableLines?: readonly string[];
   allowClarification?: boolean;
   clarificationAsked?: boolean;
@@ -546,11 +546,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
             continue;
           }
           clarification = { actionId: input.turnId, question: args.question };
-          emit({
-            type: 'ClarificationRequested',
-            actionId: input.turnId,
-            question: args.question,
-          });
           done = true;
           break;
         }
@@ -660,8 +655,37 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     } else throw error;
   }
   if (clarification) {
+    let question: string | undefined;
+    const outputVerdict = await input.outputModerator.moderate({
+      text: clarification.question,
+      tier: input.outputTier,
+      tableLines: input.outputTableLines,
+      direction: 'output',
+    });
+    if (outputVerdict.verdict === 'allow') {
+      question = clarification.question;
+      emit({
+        type: 'ClarificationRequested',
+        actionId: clarification.actionId,
+        question,
+      });
+    } else {
+      question = 'The narrator pauses, and the scene turns to the next thing the party notices.';
+      emit({
+        type: 'NarrationChunk',
+        turnId: input.turnId,
+        text: question,
+        index: 0,
+      });
+      emit({
+        type: 'NarrationCompleted',
+        turnId: input.turnId,
+        text: question,
+        words: words(question),
+      });
+    }
     return {
-      narration: '',
+      narration: question ?? '',
       events: [],
       state: input.prompt.turn.state,
       turnSeed: seedText,
@@ -670,7 +694,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         out: totalOut,
         ...(cacheRead ? { cacheRead } : {}),
       },
-      clarification,
+      ...(outputVerdict.verdict === 'allow' ? { clarification } : {}),
     };
   }
   const finalWords = words(finalText);
@@ -706,7 +730,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     // on any block, stop and use the gate's authored redirect instead.
     regenerate: async function* () {},
     moderator: input.outputModerator,
-    tier: input.outputTier ?? 'standard',
+    tier: input.outputTier,
     tableLines: input.outputTableLines,
     maxRegenerations: 0,
   });

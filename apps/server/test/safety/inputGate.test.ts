@@ -225,6 +225,18 @@ describe('createModerationJudge', () => {
     });
     expect(seen?.temperature).toBe(0);
   });
+
+  it('uses the turn-scoped hard floor through the production judge factory', async () => {
+    const moderator = createModerationJudge({
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const turn = moderator.startTurn?.();
+    expect(turn).toBeDefined();
+    const prefix = 'A child is nude. ';
+    const gap = 'The tavern is quiet. '.repeat(30);
+    expect(prefix.length + gap.length).toBeGreaterThan(400);
+    expect(turn!.push(prefix + gap).blocked).toBe(true);
+  });
 });
 
 describe('moderation call budget', () => {

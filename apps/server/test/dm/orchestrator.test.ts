@@ -379,6 +379,37 @@ describe('DM orchestrator', () => {
       ),
     ).toBe(false);
   });
+  it('replaces a blocked clarification question before emitting it', async () => {
+    const h = setup([
+      [
+        call('q1', 'ask_clarification', {
+          actionId: 'turn-1',
+          question: 'Was the child naked?',
+        }),
+      ],
+    ]);
+    h.input.allowClarification = true;
+    h.input.outputModerator = {
+      moderate: async ({ text }) => ({
+        verdict: text.includes('child') ? 'block' : 'allow',
+        category: text.includes('child') ? 'minor_sexual' : 'none',
+        source: text.includes('child') ? 'hardfloor' : 'judge',
+        latencyMs: 0,
+        unavailable: false,
+      }),
+    };
+    const result = await runTurn(h.input);
+    expect(result.clarification).toBeUndefined();
+    expect(result.narration).toBe(
+      'The narrator pauses, and the scene turns to the next thing the party notices.',
+    );
+    expect(h.events).not.toContainEqual(
+      expect.objectContaining({ question: 'Was the child naked?' }),
+    );
+    expect(h.events).toContainEqual(
+      expect.objectContaining({ type: 'NarrationCompleted', text: result.narration }),
+    );
+  });
   it('refuses a second clarifying question for the same action', async () => {
     const h = setup([
       [
