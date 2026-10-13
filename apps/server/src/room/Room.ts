@@ -205,9 +205,11 @@ export class Room {
       delete gameEngine.world;
       gameState.gameEngine = gameEngine;
     }
-    const seats = this.state.seats.map(
-      ({ matureOptOut: _privatePreference, ...seat }) => seat,
-    );
+    const seats = this.state.seats.map((seat) => {
+      const clientSeat = { ...seat };
+      delete clientSeat.matureOptOut;
+      return clientSeat;
+    });
     return { ...this.state, seats, gameState };
   }
 
