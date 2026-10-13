@@ -197,11 +197,28 @@ export class Room {
 
   /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */
   clientState(): RoomState {
-    if (!this.state.gameState) return this.state;
+    const seats = this.state.seats.map((seat) => {
+      const clientSeat = { ...seat };
+      delete clientSeat.matureOptOut;
+      return clientSeat;
+    });
+    if (!this.state.gameState) return { ...this.state, seats };
     const gameState = { ...(this.state.gameState as Record<string, unknown>) };
     delete gameState.lastNarration;
     delete gameState.lastPlayerText;
-    return { ...this.state, gameState };
+    delete gameState.sceneSummary;
+    // Registry prose and persisted recaps may predate output moderation. They are
+    // server-side model context; recap is returned separately after route gating.
+    delete gameState.world;
+    delete gameState.recap;
+    if (gameState.gameEngine && typeof gameState.gameEngine === 'object') {
+      const gameEngine = {
+        ...(gameState.gameEngine as Record<string, unknown>),
+      };
+      delete gameEngine.world;
+      gameState.gameEngine = gameEngine;
+    }
+    return { ...this.state, seats, gameState };
   }
 
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */

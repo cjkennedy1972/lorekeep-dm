@@ -220,9 +220,11 @@ test('keyboard-only Adventure #1 starts through the solo flow, restarts mid-scen
       await submitAdvance(page, `ADVANCE-${index + 1}`);
       await expectScene(tableId, sceneIds[index + 1]!);
     }
-    expect(await gameState(tableId)).toMatchObject({
+    const beforeRestart = await gameState(tableId);
+    expect(beforeRestart).toMatchObject({
       sceneId: 'scene-warren-gallery',
     });
+    expect(beforeRestart.lastNarration).toContain('ADVANCE-3');
     await context.close();
     context = undefined;
     await stopServer();
@@ -243,7 +245,11 @@ test('keyboard-only Adventure #1 starts through the solo flow, restarts mid-scen
     });
     await expect(
       resumed.getByRole('region', { name: 'Previously on' }),
-    ).toContainText('ADVANCE-3');
+    ).toContainText('Your adventure is ready to continue.');
+    expect(await gameState(tableId)).toMatchObject({
+      lastNarration: expect.stringContaining('ADVANCE-3'),
+      recap: { recap: 'Your adventure is ready to continue.' },
+    });
     await expectScene(tableId, 'scene-warren-gallery');
 
     for (let index = 3; index < sceneIds.length; index++) {

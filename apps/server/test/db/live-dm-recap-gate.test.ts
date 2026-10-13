@@ -7,6 +7,7 @@ import { createApp } from '../../src/app.js';
 import { COOKIE_NAME, createSession } from '../../src/accounts/sessions.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
+import { SAFE_RECAP_FALLBACK } from '../../src/dm/recap.js';
 import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
@@ -31,6 +32,7 @@ const saved = {
 const catalog = loadCatalog();
 let db: Pool;
 let endpoint: FakeOpenAIServer;
+let moderationEndpoint: FakeOpenAIServer;
 let rooms: RoomRegistry;
 let app: ReturnType<typeof createApp>;
 let base = '';
@@ -66,9 +68,19 @@ async function createResumableTable(ownerId: string) {
 beforeAll(async () => {
   db = new Pool({ connectionString: databaseUrl });
   endpoint = await startFakeOpenAIServer({ chunks: textStream });
+  moderationEndpoint = await startFakeOpenAIServer({
+    chunks: [
+      'data: {"choices":[{"index":0,"delta":{"content":"{\\"verdict\\":\\"block\\",\\"category\\":\\"violence\\"}"}}]}\n\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
+      'data: [DONE]\n\n',
+    ],
+  });
   process.env.NODE_ENV = 'production';
   delete process.env.LLM_FIXTURE_MODE;
-  process.env.LLM_ALLOW_LOCAL_HOSTS = new URL(endpoint.baseUrl).host;
+  process.env.LLM_ALLOW_LOCAL_HOSTS = [
+    new URL(endpoint.baseUrl).host,
+    new URL(moderationEndpoint.baseUrl).host,
+  ].join(',');
   process.env.OPERATOR_ENDPOINT_MASTER_KEY = `primary:${randomBytes(32).toString('base64')}`;
   process.env.SOLO_TURN_ENDPOINT_SLOT = 'fast';
   operatorEmail = `operator-${randomUUID()}@example.test`;
@@ -82,7 +94,7 @@ beforeAll(async () => {
     db,
     'moderate',
     {
-      baseUrl: endpoint.baseUrl,
+      baseUrl: moderationEndpoint.baseUrl,
       model: 'fixture-model',
       apiStyle: 'openai',
       apiKey: 'fixture-secret',
@@ -131,6 +143,7 @@ afterAll(async () => {
     "DELETE FROM operator_endpoints WHERE slot IN ('moderate','fast')",
   );
   await endpoint?.close();
+  await moderationEndpoint?.close();
   await db.end();
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key];
@@ -139,18 +152,19 @@ afterAll(async () => {
 });
 
 describe('resume recap and the live DM allowlist', () => {
-  it('builds a deterministic recap without calling the endpoint for a non-allowlisted owner', async () => {
+  it('gates deterministic recap for a non-allowlisted owner before returning it', async () => {
     const player = await createAccount();
     const table = await createResumableTable(player.id);
-    const calls = endpoint.requests.length;
+    const moderationCalls = moderationEndpoint.requests.length;
+    const generationCalls = endpoint.requests.length;
     const response = await fetch(`${base}/api/tables/${table}`, {
       headers: { cookie: `${COOKIE_NAME}=${player.token}` },
     });
     expect(response.status).toBe(200);
-    expect((await response.json()).game.recap).toContain(
-      'followed the lantern light',
-    );
-    expect(endpoint.requests.length).toBe(calls);
+    expect((await response.json()).game.recap).toBe(SAFE_RECAP_FALLBACK);
+    // The authored block verdict is exercised; recap generation does not call the narrator.
+    expect(moderationEndpoint.requests.length).toBe(moderationCalls + 1);
+    expect(endpoint.requests.length).toBe(generationCalls);
   });
 
   it('still calls the endpoint for an allowlisted operator owner', async () => {
@@ -162,6 +176,24 @@ describe('resume recap and the live DM allowlist', () => {
     });
     expect(response.status).toBe(200);
     expect(endpoint.requests.length).toBeGreaterThan(calls);
+  });
+
+  it('screens historical snapshot recaps before returning the games list', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id);
+    const room = await rooms.get(table);
+    await room.persistRecap({
+      recap: 'Unsafe historical recap that must not reach the client.',
+      memoryHash: 'stale',
+    });
+
+    const response = await fetch(`${base}/api/tables`, {
+      headers: { cookie: `${COOKIE_NAME}=${player.token}` },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).not.toContain('Unsafe historical recap');
+    expect(body).toContain(SAFE_RECAP_FALLBACK);
   });
 });
 

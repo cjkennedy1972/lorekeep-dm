@@ -3,13 +3,21 @@ import type { LlmAdapter, LlmChunk } from '../../src/llm/adapter.js';
 import {
   buildRecap,
   assembleDeterministicRecap,
+  gateRecap,
   MAX_RECAP_WORDS,
+  SAFE_RECAP_FALLBACK,
 } from '../../src/dm/recap.js';
 import {
   boundSummary,
+  closeScene,
   summarizeScene,
   MAX_SCENE_SUMMARY_WORDS,
 } from '../../src/dm/summarize.js';
+import type {
+  Moderator,
+  ModerationRequest,
+} from '../../src/safety/moderator.js';
+import type { Verdict } from '../../src/safety/moderator.js';
 
 class FixtureAdapter implements LlmAdapter {
   calls = 0;
@@ -28,6 +36,130 @@ class FixtureAdapter implements LlmAdapter {
 }
 
 describe('scene summaries and recap', () => {
+  it('replaces a blocked or unavailable recap with authored safe text', async () => {
+    const requests: ModerationRequest[] = [];
+    const moderator: Moderator = {
+      async moderate(request) {
+        requests.push(request);
+        return {
+          verdict: 'block',
+          category: 'other',
+          source: 'failclosed',
+          failClosedRow: 'hard-floor',
+          latencyMs: 0,
+          unavailable: true,
+        };
+      },
+    };
+    const result = await gateRecap(
+      {
+        recap: 'unsafe generated recap',
+        memoryHash: 'hash',
+        cached: true,
+        fallback: false,
+      },
+      moderator,
+      'standard',
+      ['line: no spiders'],
+    );
+
+    expect(result.recap).toBe(SAFE_RECAP_FALLBACK);
+    expect(result.fallback).toBe(true);
+    expect(result.cached).toBe(false);
+    expect(requests[0]).toMatchObject({
+      text: 'unsafe generated recap',
+      tier: 'standard',
+      tableLines: ['line: no spiders'],
+      direction: 'output',
+    });
+
+    const safeRecap = {
+      recap: 'The lantern leads toward the old bridge.',
+      memoryHash: 'safe-hash',
+      cached: false,
+      fallback: false,
+    };
+    expect(
+      await gateRecap(
+        safeRecap,
+        {
+          async moderate() {
+            return {
+              verdict: 'allow',
+              category: 'none',
+              source: 'judge',
+              latencyMs: 0,
+              unavailable: false,
+            };
+          },
+        },
+        'standard',
+        [],
+      ),
+    ).toEqual(safeRecap);
+  });
+
+  it('does not persist a blocked model-authored scene summary or registry diff', async () => {
+    let persistedSummary = '';
+    let calls = 0;
+    const db = {
+      async query() {
+        return { rows: [], rowCount: 0 };
+      },
+      async connect() {
+        return {
+          async query(sql: string, params: unknown[] = []) {
+            calls++;
+            if (sql.includes('INSERT INTO scene_summaries')) {
+              persistedSummary = String(params[2]);
+              return { rows: [], rowCount: 1 };
+            }
+            return { rows: [], rowCount: 0 };
+          },
+          release() {},
+        };
+      },
+    } as never;
+    const moderator: Moderator = {
+      async moderate(): Promise<Verdict> {
+        return {
+          verdict: 'block',
+          category: 'violence',
+          source: 'judge',
+          latencyMs: 1,
+          unavailable: false,
+        };
+      },
+    };
+    const result = await closeScene({
+      sessionId: 'session-1',
+      sceneId: 'scene-1',
+      events: [],
+      db,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+      adapter: new FixtureAdapter(
+        JSON.stringify({
+          summary: 'Unsafe graphic gore.',
+          registryDiffs: [
+            {
+              kind: 'ruling',
+              id: 'ruling_x',
+              after: { id: 'ruling_x', topic: 'x', ruling: 'Unsafe detail.' },
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.summary).toBe('The scene has ended.');
+    expect(result.registryDiffs).toEqual([]);
+    expect(result.fallback).toBe(true);
+    expect(persistedSummary).toBe('The scene has ended.');
+    expect(calls).toBe(3); // BEGIN, INSERT safe summary, COMMIT
+  });
+
   it('bounds a summary by both word and character limits', () => {
     const value = boundSummary(
       Array.from({ length: 200 }, (_, i) => `w${i}`).join(' '),
@@ -75,6 +207,120 @@ describe('scene summaries and recap', () => {
       ],
       fallback: false,
     });
+  });
+
+  it('drops registry diffs with malformed alias or supersession metadata', async () => {
+    const adapter = new FixtureAdapter(
+      JSON.stringify({
+        summary: 'The party meets Lyra.',
+        registryDiffs: [
+          {
+            kind: 'npc',
+            id: 'npc_unsafe_alias',
+            aliases: [42],
+            after: {
+              id: 'npc_unsafe_alias',
+              name: 'Lyra Vale',
+              role: 'archivist',
+              disposition: 'friendly',
+              facts: [],
+            },
+          },
+          {
+            kind: 'npc',
+            id: 'npc_unsafe_supersession',
+            supersedesFacts: null,
+            after: {
+              id: 'npc_unsafe_supersession',
+              name: 'Mira Vale',
+              role: 'archivist',
+              disposition: 'friendly',
+              facts: [],
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await summarizeScene({
+      sceneId: 's1',
+      events: [],
+      adapter,
+    });
+
+    expect(result.summary).toBe('The party meets Lyra.');
+    expect(result.registryDiffs).toEqual([]);
+    expect(result.fallback).toBe(false);
+  });
+
+  it('moderates registry aliases and supersession text before persisting diffs', async () => {
+    let persistedRegistryEntries = 0;
+    const db = {
+      async query() {
+        return { rows: [], rowCount: 0 };
+      },
+      async connect() {
+        return {
+          async query(sql: string) {
+            if (sql.includes('INSERT INTO scene_summaries'))
+              return { rows: [], rowCount: 1 };
+            if (sql.includes('INSERT INTO registry_entries'))
+              persistedRegistryEntries++;
+            return { rows: [], rowCount: 0 };
+          },
+          release() {},
+        };
+      },
+    } as never;
+    const moderated: string[] = [];
+    const moderator: Moderator = {
+      async moderate(request) {
+        moderated.push(request.text);
+        return {
+          verdict: request.text.includes('Veiled Alias') ? 'block' : 'allow',
+          category: request.text.includes('Veiled Alias') ? 'violence' : 'none',
+          source: 'judge',
+          latencyMs: 1,
+          unavailable: false,
+        };
+      },
+    };
+    const result = await closeScene({
+      sessionId: 'session-1',
+      sceneId: 'scene-1',
+      events: [],
+      db,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+      adapter: new FixtureAdapter(
+        JSON.stringify({
+          summary: 'The party meets Lyra.',
+          registryDiffs: [
+            {
+              kind: 'npc',
+              id: 'npc_lyra',
+              aliases: ['Veiled Alias'],
+              after: {
+                id: 'npc_lyra',
+                name: 'Lyra Vale',
+                role: 'archivist',
+                disposition: 'friendly',
+                facts: [],
+              },
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(moderated).toEqual([
+      'The party meets Lyra.',
+      expect.stringContaining('Veiled Alias'),
+    ]);
+    expect(result.registryDiffs).toEqual([]);
+    expect(result.fallback).toBe(true);
+    expect(persistedRegistryEntries).toBe(0);
   });
 
   it('falls back deterministically when the endpoint fails, without mutating event input', async () => {

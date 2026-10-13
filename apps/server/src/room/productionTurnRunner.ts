@@ -154,6 +154,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly liveDmAllowlistOnly = true,
     // ponytail: false until the M3-19 endpoint probe sets it, so mature stays unreachable.
     private readonly endpointAllowsMature = false,
+    private readonly moderatorOverride?: Moderator,
   ) {}
 
   async run(
@@ -242,6 +243,40 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     if (Object.keys(actors).length && !actors[request.accountId])
       throw new Error('Player character is not configured for this table');
 
+    // Snapshot the tier and boundary union once for this turn. Free-text tool outputs
+    // are screened before they enter the world state or the persisted event stream.
+    const { tier, stored } = await loadContentTierState(
+      this.db,
+      request.sessionId,
+      this.endpointAllowsMature,
+    );
+    const boundaries = await loadSeatedContentBoundaries(
+      this.db,
+      request.sessionId,
+    );
+    const tableLines = [
+      ...boundaries.lines.map((line) => `line: ${line}`),
+      ...boundaries.veils.map((veil) => `veil: ${veil}`),
+    ];
+    const outputModerator =
+      this.moderatorOverride ??
+      (this.adapterOverride && process.env.NODE_ENV === 'test'
+        ? TEST_ALLOW_MODERATOR
+        : createEndpointJudge(this.db));
+    const allowPlayerVisibleText = async (text: string): Promise<boolean> => {
+      try {
+        const verdict = await outputModerator.moderate({
+          text,
+          tier,
+          tableLines,
+          direction: 'output',
+        });
+        return verdict.verdict === 'allow';
+      } catch {
+        return false;
+      }
+    };
+
     const llm = this.fixtureMode
       ? new RecordedLlmAdapter({
           mode: this.fixtureMode,
@@ -309,7 +344,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       turnId: request.actionId,
       state,
       engineState,
-      closeScene: ({ summary, nextSceneId }) => {
+      closeScene: async ({ summary, nextSceneId }) => {
         if (!adventure?.ok || !initialSceneId)
           return {
             ok: false,
@@ -321,6 +356,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             ok: false,
             error: 'invalid-scene-transition',
             hint: 'Choose one of the authored next scenes listed in the context, or omit nextSceneId.',
+          };
+        if (!(await allowPlayerVisibleText(summary)))
+          return {
+            ok: false,
+            error: 'schema-violation',
+            hint: 'The scene summary was rejected by the table safety settings. Use a safer summary.',
           };
         const event = {
           type: 'SceneClosed',
@@ -353,7 +394,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             (previous as GameState).world,
         };
       },
-      engineExecute(prior, call, seed) {
+      async engineExecute(prior, call, seed) {
         const current = prior as ToolExecutorState & { world: WorldRegistry };
         const request = call as { name?: string; args?: unknown };
         const serializedArgs = JSON.stringify(request.args ?? {});
@@ -385,6 +426,32 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         const value = result.value as
           | { events?: readonly unknown[] }
           | undefined;
+        const authoredRegistryEvents = (value?.events ?? []).filter(
+          (event) =>
+            !!event &&
+            typeof event === 'object' &&
+            [
+              'NpcUpserted',
+              'LocationUpserted',
+              'QuestUpdated',
+              'FlagSet',
+              'RulingLogged',
+            ].includes(String((event as { type?: unknown }).type)),
+        );
+        if (
+          authoredRegistryEvents.length > 0 &&
+          !(await allowPlayerVisibleText(
+            authoredRegistryEvents
+              .map((event) => JSON.stringify(event))
+              .join('\n'),
+          ))
+        )
+          return {
+            ok: false,
+            error: 'schema-violation',
+            hint: 'The registry text was rejected by the table safety settings. Use safer wording.',
+            events: [],
+          };
         for (const event of value?.events ?? []) {
           if (
             event &&
@@ -470,20 +537,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       rulesLookup: (topic) => rulesLookup(this.db as Pool, topic),
     };
 
-    // Snapshotted once here, before narration: an opt-out flipped during this narration lands on the next one.
-    const { tier, stored } = await loadContentTierState(
-      this.db,
-      request.sessionId,
-      this.endpointAllowsMature,
-    );
-    const boundaries = await loadSeatedContentBoundaries(
-      this.db,
-      request.sessionId,
-    );
-    const tableLines = [
-      ...boundaries.lines.map((line) => `line: ${line}`),
-      ...boundaries.veils.map((veil) => `veil: ${veil}`),
-    ];
     const tierEvents =
       tier === stored
         ? []
@@ -557,10 +610,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       context,
       adapter,
       toolMode: 'native',
-      outputModerator:
-        this.adapterOverride && process.env.NODE_ENV === 'test'
-          ? TEST_ALLOW_MODERATOR
-          : createEndpointJudge(this.db),
+      outputModerator,
       outputTier: tier,
       outputTableLines: tableLines,
       emit: (event) => {
@@ -637,6 +687,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           })),
           adapter: summaryAdapter,
           db: this.db as Pool,
+          moderator: outputModerator,
+          tier,
+          tableLines,
         });
       }
     }

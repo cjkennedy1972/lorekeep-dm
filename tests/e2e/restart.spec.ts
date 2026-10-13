@@ -36,13 +36,24 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
   try {
     const sync = await recovered.waitFor((m) => m.type === 'StateSync', 3_000);
     expect(sync.seq).toBe(Number(expected.seq));
-    expect((sync.payload as { state: unknown }).state).toEqual(
+    const clientSeat = (seat: Record<string, unknown>) =>
       Object.fromEntries(
-        Object.entries(expected.state as Record<string, unknown>).filter(
-          ([key]) => key !== 'actionIds',
-        ),
-      ),
+        Object.entries(seat).filter(([key]) => key !== 'matureOptOut'),
+      );
+    const expectedState = Object.fromEntries(
+      Object.entries(expected.state as Record<string, unknown>)
+        .filter(([key]) => key !== 'actionIds')
+        .map(([key, value]) => [
+          key,
+          key === 'seats' && Array.isArray(value)
+            ? value.map(clientSeat)
+            : value,
+        ]),
     );
+    const syncState = (sync.payload as { state: { seats?: unknown[] } }).state;
+    expect(syncState).toEqual(expectedState);
+    for (const seat of syncState.seats ?? [])
+      expect(seat).not.toHaveProperty('matureOptOut');
     expect(Date.now() - startedAt).toBeLessThanOrEqual(3_000);
   } finally {
     await Promise.all([first.close(), recovered.close()]);
