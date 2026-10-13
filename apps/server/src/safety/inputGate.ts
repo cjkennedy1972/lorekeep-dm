@@ -9,7 +9,6 @@ import { checkHardFloor } from './hardFloor.js';
 import { hardFloorLayer } from './deterministicLayer.js';
 import {
   JudgeModerator,
-  MAX_RULE_SPAN_CHARS,
   type Category,
   type JudgeChat,
   type Moderator,
