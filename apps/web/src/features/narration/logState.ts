@@ -146,6 +146,16 @@ export function narrationLogReducer(
       );
       return { ...next, announced: [...next.announced, turnId] };
     }
+    case 'TurnReverted': {
+      const turnId = String(payload.revertedTurnId ?? '');
+      return {
+        ...state,
+        entries: state.entries.filter(
+          (entry) => !(entry.kind === 'turn' && entry.turn.turnId === turnId),
+        ),
+        announced: state.announced.filter((id) => id !== turnId),
+      };
+    }
     case 'Error': {
       const code = String(payload.code ?? 'ERROR');
       const actionId =

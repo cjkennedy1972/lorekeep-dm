@@ -41,6 +41,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RollEvent':
     case 'NarrationChunk':
     case 'NarrationCompleted':
+    case 'TurnReverted':
     case 'ToolRejected':
     case 'ClarificationRequested':
     case 'ContentTierChanged':

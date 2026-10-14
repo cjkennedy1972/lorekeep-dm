@@ -129,6 +129,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RollEvent',
       'NarrationChunk',
       'NarrationCompleted',
+      'TurnReverted',
       'ToolRejected',
       'ContentTierChanged',
       'SafetyFlag',
