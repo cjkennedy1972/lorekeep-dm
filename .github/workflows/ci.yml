@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16 # Docker Official Image mirror; Docker Hub rate-limits unauthenticated runner pulls
+        image: quay.io/sclorg/postgresql-16-c9s
         env:
-          POSTGRES_DB: lorekeep
-          POSTGRES_USER: lorekeep
-          POSTGRES_PASSWORD: lorekeep
+          POSTGRESQL_DATABASE: lorekeep
+          POSTGRESQL_USER: lorekeep
+          POSTGRESQL_PASSWORD: lorekeep
         ports:
           - 5432:5432
         options: >-
