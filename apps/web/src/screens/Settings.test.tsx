@@ -50,8 +50,27 @@ test('has no axe violations and lists this device', async () => {
 
 test('saves private lines and veils from account settings', async () => {
   const fetcher = useJar();
+  let releaseInitialLoad!: () => void;
+  let signalInitialLoad!: () => void;
+  const initialLoadStarted = new Promise<void>((resolve) => {
+    signalInitialLoad = resolve;
+  });
+  const initialLoadReleased = new Promise<void>((resolve) => {
+    releaseInitialLoad = resolve;
+  });
+  http.fetch = async (input, init) => {
+    if (
+      String(input).endsWith('/api/me/content-settings') &&
+      (init?.method ?? 'GET') === 'GET'
+    ) {
+      signalInitialLoad();
+      await initialLoadReleased;
+    }
+    return fetcher(input, init);
+  };
   await signup('content-boundaries@example.com');
   renderApp('/settings');
+  await initialLoadStarted;
   await userEvent.type(
     await screen.findByLabelText('Lines — do not include'),
     'no spiders\nno gore',
@@ -59,6 +78,12 @@ test('saves private lines and veils from account settings', async () => {
   await userEvent.type(
     screen.getByLabelText('Veils — fade out'),
     'fade out at surgery',
+  );
+  releaseInitialLoad();
+  await waitFor(() =>
+    expect(screen.getByLabelText('Lines — do not include')).toHaveValue(
+      'no spiders\nno gore',
+    ),
   );
   await userEvent.click(
     screen.getByRole('button', { name: 'Save content boundaries' }),
