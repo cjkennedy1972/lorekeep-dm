@@ -585,7 +585,7 @@ export class Room {
     });
   }
 
-  /** Any seated player may pause; only the table host (campaign creator) may resume. Resuming restarts any queued turns. */
+  /** Any seated player may pause; only the table host (campaign creator) may resume. A pause only blocks narrations that have not started; resuming restarts any queued turns. */
   setPaused(
     accountId: string,
     paused: boolean,
