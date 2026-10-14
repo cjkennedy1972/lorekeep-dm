@@ -35,8 +35,13 @@ test('under-18 signup is refused and database-wide birthdate scan is empty', asy
     const hits: string[] = [];
     for (const { name } of relation.rows) {
       const [schema, table] = name.split('.');
+      // Randomized ciphertext can coincidentally contain short tokens like "dob".
+      const rowJson =
+        table === 'operator_endpoints'
+          ? `to_jsonb(${table}) - 'encrypted_key'`
+          : `to_jsonb(${table})`;
       const result = await proofDb.query(
-        `SELECT 1 FROM ${schema}.${table} WHERE to_jsonb(${table})::text ~* '(birthdate|dob|birth_date)' LIMIT 1`,
+        `SELECT 1 FROM ${schema}.${table} WHERE (${rowJson})::text ~* '(birthdate|dob|birth_date)' LIMIT 1`,
       );
       if (result.rowCount) hits.push(name);
     }

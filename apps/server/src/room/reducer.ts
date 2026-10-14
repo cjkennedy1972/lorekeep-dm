@@ -29,6 +29,10 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     delete openClarifications[actionId];
     return RoomStateSchema.parse({ ...state, openClarifications });
   }
+  if (event.type === 'TablePaused') {
+    const { paused } = event.payload as { paused: boolean };
+    return RoomStateSchema.parse({ ...state, paused });
+  }
   if (event.type === 'PresenceChanged') {
     const payload = event.payload as {
       seatId: string;

@@ -8,10 +8,12 @@ import {
   ClarificationAnswerSchema,
   WithdrawActionSchema,
   XCardSchema,
+  PauseTableSchema,
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import type { RoomRegistry } from '../room/registry.js';
+import { NotTableHostError } from '../room/Room.js';
 import {
   consumeTicket,
   eligibleSession,
@@ -312,6 +314,60 @@ export function installGateway(
               return;
             }
             return room.xCard(identity.accountId);
+          }
+          if (msg.type === 'PauseTable') {
+            const pause = PauseTableSchema.safeParse(msg);
+            if (!pause.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Pause request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return db
+              .query<{ host: boolean }>(
+                'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
+                [identity.sessionId, identity.accountId],
+              )
+              .then((result) =>
+                room.setPaused(
+                  identity.accountId,
+                  pause.data.payload.paused,
+                  result.rows[0]?.host === true,
+                ),
+              )
+              .catch((error: unknown) => {
+                if (!(error instanceof NotTableHostError)) {
+                  app.log.error(
+                    { err: error, sessionId: identity.sessionId },
+                    'Pause request failed',
+                  );
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'ACTION_REJECTED',
+                      message: 'Pause request could not be accepted.',
+                      actionId: msg.actionId,
+                    },
+                  });
+                  return;
+                }
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'NOT_HOST',
+                    message: 'Only the table host can resume.',
+                    actionId: msg.actionId,
+                  },
+                });
+              });
           }
           if (msg.type === 'WithdrawAction') {
             const withdraw = WithdrawActionSchema.safeParse(msg);
