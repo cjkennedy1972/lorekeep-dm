@@ -3,6 +3,7 @@ import type { registerAuthRoutes } from './auth.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
 import { LeaseConflictError, Persistence } from '../persistence/index.js';
+import { matureAllowed } from '../safety/tierLoader.js';
 import type { RoomRegistry } from '../room/registry.js';
 import { z } from 'zod';
 
@@ -41,7 +42,8 @@ const uniqueBoundaries = (values: string[] | undefined) =>
 export function registerContentSettingsRoutes(
   app: App,
   db: Pool,
-  rooms?: Pick<RoomRegistry, 'peek'>,
+  rooms: Pick<RoomRegistry, 'peek'> | undefined,
+  mature: { endpointAllowsMature: boolean; liveDmAllowlistOnly: boolean },
 ) {
   const persistence = new Persistence(db);
   app.get('/api/me/content-settings', async (request, reply) => {
@@ -126,11 +128,16 @@ export function registerContentSettingsRoutes(
       const { id } = request.params;
       if (!UUID.test(id)) return reply.code(404).send({ code: 'NOT_FOUND' });
       const tier = (request.body as { tier?: unknown } | null)?.tier;
-      if (tier !== null && tier !== 'family' && tier !== 'standard')
+      if (
+        tier !== null &&
+        tier !== 'family' &&
+        tier !== 'standard' &&
+        tier !== 'mature'
+      )
         return reply.code(400).send({
           code: 'INVALID_INPUT',
           message:
-            'The host can only lower the table to family or standard, or clear the cap with null.',
+            'The host can set the table to family, standard, or mature, or clear the cap with null.',
         });
       const owner = (
         await db.query<{ owner_account_id: string }>(
@@ -144,10 +151,26 @@ export function registerContentSettingsRoutes(
           code: 'FORBIDDEN',
           message: 'Only the host can change the table content tier.',
         });
+      // Raising to mature clears the cap; the derived tier then depends on the gate (ADR-016).
+      const cap = tier === 'mature' ? null : tier;
+      if (
+        tier === 'mature' &&
+        !(await matureAllowed(
+          db,
+          id,
+          mature.endpointAllowsMature,
+          mature.liveDmAllowlistOnly,
+        ))
+      )
+        return reply.code(409).send({
+          code: 'MATURE_NOT_ALLOWED',
+          message:
+            'Mature is not available at this table: the endpoint or moderation does not allow it, or a seated player is under 18, has opted out, or cannot take live turns.',
+        });
       try {
         const room = rooms?.peek(id);
-        if (room) await room.setHostTierCap(tier);
-        else await persistence.setHostTierCap(id, tier);
+        if (room) await room.setHostTierCap(cap);
+        else await persistence.setHostTierCap(id, cap);
       } catch (error) {
         if (error instanceof LeaseConflictError)
           return reply.code(409).send({
