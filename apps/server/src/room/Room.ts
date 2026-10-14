@@ -68,6 +68,7 @@ export interface RoomStore {
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
   loadRewindPlan?(sessionId: string): Promise<RewindPlan | null>;
+  isTableHost?(sessionId: string, accountId: string): Promise<boolean>;
   /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
   xCardAbortEnabled?(sessionId: string): Promise<boolean>;
   setXCardAbortEnabled?(sessionId: string, enabled: boolean): Promise<void>;
@@ -625,15 +626,16 @@ export class Room {
   }
 
   /** Host-only. Restores state, map and transcript to just before the last resolved DM turn; once per resolved turn. */
-  rewindLastTurn(accountId: string, isHost: boolean): Promise<void> {
+  rewindLastTurn(accountId: string): Promise<void> {
     return this.enqueuePlayer(async () => {
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
-      if (!isHost)
+      if (!this.store.loadRewindPlan || !this.store.isTableHost)
+        throw new Error('Rewind is unavailable');
+      if (!(await this.store.isTableHost(this.sessionId, accountId)))
         throw new NotTableHostError('Only the table host can rewind');
       if (this.turnInFlight)
         throw new RewindRefusedError('The DM is still narrating.');
-      if (!this.store.loadRewindPlan) throw new Error('Rewind is unavailable');
       const plan = await this.store.loadRewindPlan(this.sessionId);
       if (!plan)
         throw new RewindRefusedError('There is no resolved turn to rewind.');
@@ -645,7 +647,10 @@ export class Room {
       let restoredState = restored.state;
       for (const event of plan.retained)
         restoredState = reduceRoom(restoredState, event);
-      const actionIds = [...restored.actionIds];
+      const actionIds = new Set(restored.actionIds);
+      for (const event of plan.retained)
+        if (event.type === 'ActionAccepted')
+          actionIds.add((event.payload as { actionId: string }).actionId);
       const reverted = TurnRevertedSchema.parse({
         type: 'TurnReverted',
         turnId: randomUUID(),
@@ -654,7 +659,7 @@ export class Room {
       const stored = await this.store.writeTurn(
         this.sessionId,
         [{ turnId: reverted.turnId, type: reverted.type, payload: reverted }],
-        { ...restoredState, actionIds },
+        { ...restoredState, actionIds: [...actionIds] },
         this.lease,
         [],
         plan.headSeq,

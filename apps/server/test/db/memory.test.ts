@@ -8,6 +8,7 @@ import { buildPrompt } from '../../src/dm/prompt.js';
 import { Room } from '../../src/room/Room.js';
 import { RecordedLlmAdapter } from '../../src/llm/recorded.js';
 import { Persistence } from '../../src/persistence/index.js';
+import { SessionLease } from '../../src/room/lease.js';
 import {
   upsertLocation,
   upsertNpc,
@@ -29,7 +30,8 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
     await database.pool.query(
       `CREATE TABLE sessions (id uuid PRIMARY KEY, owner_account_id uuid, last_active_at timestamptz NOT NULL DEFAULT now());
        CREATE TABLE events (session_id uuid NOT NULL REFERENCES sessions(id), seq bigint NOT NULL, turn_id uuid NOT NULL, type text NOT NULL, payload jsonb NOT NULL, ts timestamptz NOT NULL DEFAULT now(), expires_at timestamptz, PRIMARY KEY(session_id,seq));
-       CREATE TABLE snapshots (session_id uuid NOT NULL REFERENCES sessions(id), seq bigint NOT NULL, state jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(session_id,seq))`,
+       CREATE TABLE snapshots (session_id uuid NOT NULL REFERENCES sessions(id), seq bigint NOT NULL, state jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(session_id,seq));
+       CREATE TABLE session_lease (session_id uuid PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, node_id text NOT NULL, expires_at timestamptz NOT NULL, epoch bigint NOT NULL DEFAULT 1)`,
     );
     await database.pool.query('INSERT INTO sessions(id) VALUES ($1)', [gameA]);
     await database.pool.query('INSERT INTO sessions(id) VALUES ($1)', [gameB]);
@@ -112,12 +114,11 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
       [sessionId, accountId],
     );
     const persistence = new Persistence(database!.pool);
-    const lease = {
+    const lease = await new SessionLease(database!.pool).acquire(
       sessionId,
-      nodeId: 'fixture',
-      epoch: 1,
-      expiresAt: new Date(Date.now() + 60_000),
-    };
+      'fixture',
+    );
+    if (!lease) throw new Error('lease unavailable');
     const world: WorldRegistry = {
       npcs: {},
       locations: {},

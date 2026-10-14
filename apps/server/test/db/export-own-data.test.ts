@@ -65,6 +65,47 @@ async function exportArchive(accountId: string) {
   return archive;
 }
 
+describe('account export skips snapshots of reverted turns', () => {
+  it('omits the snapshot a rewind retracted and keeps the live one', async () => {
+    const owner = await account(`reverted-${randomUUID()}@example.test`);
+    const sessionId = randomUUID();
+    const liveTurn = randomUUID();
+    const revertedTurn = randomUUID();
+    const rewindTurn = randomUUID();
+    await db.query(
+      'INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)',
+      [sessionId, owner],
+    );
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES
+         ($1,1,$2,'NarrationCompleted','{}'),
+         ($1,2,$3,'NarrationCompleted','{}'),
+         ($1,3,$4,'TurnReverted',$5::jsonb)`,
+      [
+        sessionId,
+        liveTurn,
+        revertedTurn,
+        rewindTurn,
+        JSON.stringify({ revertedTurnId: revertedTurn }),
+      ],
+    );
+    await insertSnapshot(sessionId, 1, roomState([owner], { sceneId: 'live' }));
+    await insertSnapshot(
+      sessionId,
+      2,
+      roomState([owner], { sceneId: 'reverted' }),
+    );
+
+    const parsed = JSON.parse(await exportArchive(owner));
+
+    expect(
+      parsed.snapshots
+        .filter((row: { sessionId: string }) => row.sessionId === sessionId)
+        .map((row: { state: { gameState: { sceneId: string } } }) => row.state.gameState.sceneId),
+    ).toEqual(['live']);
+  });
+});
+
 describe('account export carries the player’s own gameplay data', () => {
   it('includes owned characters, latest snapshots and scene summaries, and nothing of another account', async () => {
     const me = await account(`me-${randomUUID()}@example.test`);

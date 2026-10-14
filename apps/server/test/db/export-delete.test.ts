@@ -25,6 +25,9 @@ describe('export and delete Postgres flow', () => {
         'CREATE TABLE snapshots(session_id uuid,seq bigint,state jsonb)',
       );
       await pool.query(
+        'CREATE TABLE events(session_id uuid,seq bigint,turn_id uuid,type text,payload jsonb)',
+      );
+      await pool.query(
         'CREATE TABLE scene_summaries(id bigserial PRIMARY KEY,session_id uuid,scene_id text,summary text)',
       );
       await pool.query(

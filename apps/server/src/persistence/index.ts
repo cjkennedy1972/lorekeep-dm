@@ -4,7 +4,11 @@ import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
 import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
-import { findRewindTarget, ROOM_STATE_EVENT_TYPES } from './rewind.js';
+import {
+  findRewindTarget,
+  REVERTED_TURN_EXCLUSION,
+  ROOM_STATE_EVENT_TYPES,
+} from './rewind.js';
 
 export type { EventInput, StoredEvent } from './events.js';
 export type { Snapshot } from './snapshots.js';
@@ -89,13 +93,13 @@ export class Persistence {
         [sessionId],
       );
       const current = fence.rows[0];
-      if (
-        current &&
-        (!lease ||
+      const stale = lease
+        ? !current ||
           !current.live ||
           current.node_id !== lease.nodeId ||
-          Number(current.epoch) !== lease.epoch)
-      ) {
+          Number(current.epoch) !== lease.epoch
+        : current !== undefined;
+      if (stale) {
         throw new LeaseConflictError('Lease fencing check failed');
       }
       const result = await work(client);
@@ -132,6 +136,14 @@ export class Persistence {
     return this.transaction(sessionId, lease, (client) =>
       appendEvents(client, sessionId, events),
     );
+  }
+
+  async isTableHost(sessionId: string, accountId: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ host: boolean }>(
+      'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
+      [sessionId, accountId],
+    );
+    return rows[0]?.host === true;
   }
 
   /** Host opt-in: an X-card press aborts the in-flight generation. Off unless set. */
@@ -335,6 +347,7 @@ export class Persistence {
       }>(
         `SELECT seq,turn_id,type,payload,ts FROM events
           WHERE session_id = $1 AND seq > $2 AND turn_id::text <> $3 AND type = ANY($4::text[])
+            AND ${REVERTED_TURN_EXCLUSION}
           ORDER BY seq`,
         [sessionId, target.firstSeq, target.turnId, ROOM_STATE_EVENT_TYPES],
       );

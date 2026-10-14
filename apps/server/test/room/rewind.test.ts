@@ -35,6 +35,7 @@ const settle = async () => {
 function setup() {
   const events: StoredEvent[] = [];
   const snapshots: { seq: number; state: unknown }[] = [];
+  const host = randomUUID();
   const latestSnapshot = (before: number) => {
     const snap = snapshots.filter((item) => item.seq < before).at(-1);
     return snap
@@ -66,6 +67,9 @@ function setup() {
       events.push(...stored);
       snapshots.push({ seq: events.length, state: structuredClone(state) });
       return { events: stored };
+    },
+    async isTableHost(_id: string, accountId: string) {
+      return accountId === host;
     },
     async loadRewindPlan(): Promise<RewindPlan | null> {
       const target = findRewindTarget(events);
@@ -114,13 +118,12 @@ function setup() {
   };
   let turns = 0;
   const room = new Room(store, lease, { snapshot: null, events: [] }, runner);
-  return { room, events };
+  return { room, events, host };
 }
 
 describe('rewind last resolved turn', () => {
   it('restores state, map and transcript, and emits TurnReverted', async () => {
-    const { room, events } = setup();
-    const owner = randomUUID();
+    const { room, events, host: owner } = setup();
     await room.join(owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
@@ -131,7 +134,7 @@ describe('rewind last resolved turn', () => {
     await settle();
     expect(room.state.gameState).toMatchObject({ map: { revision: 2 } });
 
-    await room.rewindLastTurn(owner, true);
+    await room.rewindLastTurn(owner);
 
     expect(room.state.gameState).toEqual(afterFirst);
     expect(room.seq).toBeGreaterThan(firstSeq);
@@ -147,8 +150,7 @@ describe('rewind last resolved turn', () => {
   });
 
   it('keeps a seat joined after the reverted turn began', async () => {
-    const { room } = setup();
-    const owner = randomUUID();
+    const { room, host: owner } = setup();
     const guest = randomUUID();
     await room.join(owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
@@ -157,15 +159,35 @@ describe('rewind last resolved turn', () => {
     await settle();
     await room.join(guest, recorder(), 'Guest');
 
-    await room.rewindLastTurn(owner, true);
+    await room.rewindLastTurn(owner);
 
     expect(room.state.seats.map((seat) => seat.accountId)).toContain(guest);
     expect(room.state.gameState).toMatchObject({ map: { revision: 1 } });
   });
 
+  it('keeps refusing an action id accepted after the reverted turn began', async () => {
+    const { room, events, host: owner } = setup();
+    await room.join(owner, recorder(), 'Owner');
+    await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
+    await settle();
+    await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
+    await settle();
+    events.push({
+      sessionId,
+      seq: events.length + 1,
+      turnId: randomUUID(),
+      type: 'ActionAccepted',
+      payload: { actionId: 'queued-action' },
+      ts: new Date(),
+    });
+
+    await room.rewindLastTurn(owner);
+
+    expect(await room.submit('queued-action')).toBe(false);
+  });
+
   it('tells connected clients to retract the reverted turn', async () => {
-    const { room } = setup();
-    const owner = randomUUID();
+    const { room, host: owner } = setup();
     const sent: ServerMessage[] = [];
     await room.join(owner, { send: (message) => sent.push(message) }, 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
@@ -173,7 +195,7 @@ describe('rewind last resolved turn', () => {
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
     await settle();
 
-    await room.rewindLastTurn(owner, true);
+    await room.rewindLastTurn(owner);
 
     expect(sent.filter((message) => message.type === 'TurnReverted')).toEqual([
       expect.objectContaining({
@@ -184,36 +206,34 @@ describe('rewind last resolved turn', () => {
   });
 
   it('refuses a second rewind of the same turn', async () => {
-    const { room, events } = setup();
-    const owner = randomUUID();
+    const { room, events, host: owner } = setup();
     await room.join(owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
     await settle();
 
-    await room.rewindLastTurn(owner, true);
+    await room.rewindLastTurn(owner);
     const count = events.length;
 
-    await expect(room.rewindLastTurn(owner, true)).rejects.toThrow(
+    await expect(room.rewindLastTurn(owner)).rejects.toThrow(
       RewindRefusedError,
     );
     expect(events).toHaveLength(count);
   });
 
   it('allows a rewind again after a new turn resolves', async () => {
-    const { room, events } = setup();
-    const owner = randomUUID();
+    const { room, events, host: owner } = setup();
     await room.join(owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
     await settle();
-    await room.rewindLastTurn(owner, true);
+    await room.rewindLastTurn(owner);
 
     await room.submitAction(owner, randomUUID(), 'Climb the wall.', 'Owner');
     await settle();
-    await room.rewindLastTurn(owner, true);
+    await room.rewindLastTurn(owner);
 
     expect(
       events
@@ -226,15 +246,14 @@ describe('rewind last resolved turn', () => {
   });
 
   it('refuses rewind from anyone but the table host', async () => {
-    const { room, events } = setup();
-    const owner = randomUUID();
+    const { room, events, host: owner } = setup();
     const guest = randomUUID();
     await room.join(owner, recorder(), 'Owner');
     await room.join(guest, recorder(), 'Guest');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
 
-    await expect(room.rewindLastTurn(guest, false)).rejects.toThrow(
+    await expect(room.rewindLastTurn(guest)).rejects.toThrow(
       NotTableHostError,
     );
     expect(events.some((event) => event.type === 'TurnReverted')).toBe(false);

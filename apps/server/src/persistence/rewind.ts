@@ -13,6 +13,7 @@ export interface RewindTarget {
 
 /** Room-level events a rewind keeps even when logged after the reverted turn began. */
 export const ROOM_STATE_EVENT_TYPES = [
+  'ActionAccepted',
   'SeatJoined',
   'PresenceChanged',
   'TablePaused',
