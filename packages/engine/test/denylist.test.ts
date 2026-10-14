@@ -124,9 +124,8 @@ describe('denylist bypass resistance', () => {
   });
 
   it('does not treat single letters separated by punctuation in prose as a spelled-out term', () => {
-    expect(findDenylistedTerms('a-b, c; d')).toEqual([]);
-    expect(findDenylistedTerms('x: y')).toEqual([]);
-    expect(findDenylistedTerms('a+b, c!d, e#f')).toEqual([]);
+    expect(findDenylistedTerms('a+b, c; d ~ e!f#g')).toEqual([]);
+    expect(findDenylistedTerms('I saw d+ etc r; o ~ w!')).toEqual([]);
   });
 
   it('matches a single word spelled out with letters split by space, dot or bullet', () => {
