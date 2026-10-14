@@ -585,11 +585,16 @@ export class Room {
     });
   }
 
-  /** Any seated player may pause; resuming restarts any queued turns. A pause only blocks narrations that have not started. */
-  setPaused(accountId: string, paused: boolean): Promise<void> {
+  /** Any seated player may pause; only the table host (campaign creator) may resume. Resuming restarts any queued turns. */
+  setPaused(
+    accountId: string,
+    paused: boolean,
+    isHost: boolean,
+  ): Promise<void> {
     return this.enqueuePlayer(async () => {
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
+      if (!paused && !isHost) throw new Error('Only the table host can resume');
       if ((this.state.paused ?? false) === paused) return;
       await this.persist('TablePaused', { paused });
       this.broadcast({

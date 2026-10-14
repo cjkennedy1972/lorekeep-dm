@@ -110,6 +110,11 @@ export function installGateway(
           reject();
           return;
         }
+        const hostRow = await db.query<{ host: boolean }>(
+          'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
+          [identity.sessionId, identity.accountId],
+        );
+        const isHost = hostRow.rows[0]?.host === true;
         connections.add(ws, identity.authTokenHash);
         ws.on('close', () => connections.remove(ws));
         // Close the consume->register race: revocation may have landed in between.
@@ -331,6 +336,7 @@ export function installGateway(
             return room.setPaused(
               identity.accountId,
               pause.data.payload.paused,
+              isHost,
             );
           }
           if (msg.type === 'WithdrawAction') {

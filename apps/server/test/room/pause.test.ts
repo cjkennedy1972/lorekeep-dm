@@ -64,12 +64,32 @@ describe('table pause', () => {
     const owner = randomUUID();
     await room.join(owner, recorder(), 'Owner');
 
-    await room.setPaused(owner, true);
+    await room.setPaused(owner, true, true);
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
 
     expect(requests).toHaveLength(0);
     expect(room.clientState().paused).toBe(true);
+  });
+
+  it('lets a non-host seated player pause but not resume', async () => {
+    const requests: SoloTurnRequest[] = [];
+    const { room } = setup(requests);
+    const owner = randomUUID();
+    const guest = randomUUID();
+    await room.join(owner, recorder(), 'Owner');
+    await room.join(guest, recorder(), 'Guest');
+
+    await room.setPaused(guest, true, false);
+    expect(room.clientState().paused).toBe(true);
+
+    await expect(room.setPaused(guest, false, false)).rejects.toThrow(
+      'Only the table host can resume',
+    );
+    expect(room.clientState().paused).toBe(true);
+
+    await room.setPaused(owner, false, true);
+    expect(room.clientState().paused).toBe(false);
   });
 
   it('resumes the held turn on clear without losing it', async () => {
@@ -78,12 +98,12 @@ describe('table pause', () => {
     const owner = randomUUID();
     await room.join(owner, recorder(), 'Owner');
 
-    await room.setPaused(owner, true);
+    await room.setPaused(owner, true, true);
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     expect(requests).toHaveLength(0);
 
-    await room.setPaused(owner, false);
+    await room.setPaused(owner, false, true);
     await settle();
 
     expect(requests).toHaveLength(1);
