@@ -93,9 +93,9 @@ describe('host raise to mature (ADR-016 gate)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ tier: 'mature' });
     expect(await storedCap(sessionId)).toBeNull();
-    expect(
-      (await loadContentTierState(db, sessionId, true)).tier,
-    ).toBe('mature');
+    expect((await loadContentTierState(db, sessionId, true)).tier).toBe(
+      'mature',
+    );
     await app.close();
   });
 
@@ -159,9 +159,9 @@ describe('host raise to mature (ADR-016 gate)', () => {
     const playerToken = await createSession(db, player, 'Player device');
     const app = appFor(true);
 
-    expect((await hostPut(app, hostToken, sessionId, 'mature')).statusCode).toBe(
-      200,
-    );
+    expect(
+      (await hostPut(app, hostToken, sessionId, 'mature')).statusCode,
+    ).toBe(200);
     expect((await loadContentTierState(db, sessionId, true)).tier).toBe(
       'mature',
     );
