@@ -79,8 +79,44 @@ describe('denylist bypass resistance', () => {
     expect(findDenylistedTerms('Drоw')).toEqual(['Drow']);
   });
 
-  it('treats underscores as separators in multi-word terms', () => {
-    expect(findDenylistedTerms('Forgotten_Realms')).toEqual([
+  it('does not treat underscores as separators, so identifiers stay whole words', () => {
+    expect(findDenylistedTerms('Forgotten_Realms')).toEqual([]);
+    expect(findDenylistedTerms('drow_id')).toEqual([]);
+  });
+
+  it('folds apostrophes out of multi-word terms', () => {
+    expect(findDenylistedTerms('Baldurs Gate')).toEqual(["Baldur's Gate"]);
+    expect(findDenylistedTerms('Dungeon Masters Guide')).toEqual([
+      "Dungeon Master's Guide",
+    ]);
+  });
+
+  it('matches separator punctuation inside a single word', () => {
+    expect(findDenylistedTerms('Dr**ow**')).toEqual(['Drow']);
+    expect(findDenylistedTerms('Stra*h*d')).toEqual(['Strahd']);
+    expect(findDenylistedTerms('Dr`ow')).toEqual(['Drow']);
+    expect(findDenylistedTerms('Dr-ow')).toEqual(['Drow']);
+  });
+
+  it('folds the added homoglyphs for v, w and i', () => {
+    expect(findDenylistedTerms('Ѵecna')).toEqual(['Vecna']);
+    expect(findDenylistedTerms('ωaterdeep')).toEqual(['Waterdeep']);
+    expect(findDenylistedTerms('Ωaterdeep')).toEqual(['Waterdeep']);
+    expect(findDenylistedTerms('ԝaterdeep')).toEqual(['Waterdeep']);
+    expect(findDenylistedTerms('Illɪthid')).toEqual(['Illithid']);
+  });
+
+  it('does not let a comma bridge two words', () => {
+    expect(findDenylistedTerms('Forgotten, Realms')).toEqual([]);
+    expect(findDenylistedTerms('Forgotten,Realms')).toEqual([]);
+  });
+
+  it('does not let a dot and space bridge two words', () => {
+    expect(findDenylistedTerms('Forgotten . Realms')).toEqual([]);
+  });
+
+  it('matches a term split by an en dash', () => {
+    expect(findDenylistedTerms('Forgotten – Realms')).toEqual([
       'Forgotten Realms',
     ]);
   });
@@ -149,7 +185,6 @@ describe('denylist bypass resistance', () => {
     'Forgotten—Realms',
     'Forgotten‒Realms',
     'Forgotten−Realms',
-    'Forgotten,Realms',
     'Forgotten:Realms',
     'Forgotten|Realms',
     'Forgotten·Realms',

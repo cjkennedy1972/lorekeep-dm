@@ -35,10 +35,14 @@ const confusables: Record<string, string> = {
   '\u03ba': 'k',
   '\u04bb': 'h',
   '\u0501': 'd',
+  '\u051d': 'w',
+  '\u0475': 'v',
+  '\u03c9': 'w',
   '\u0261': 'g',
   '\u0131': 'i',
   '\u0251': 'a',
   '\u0269': 'i',
+  '\u026a': 'i',
   '\u0585': 'o',
   '\u0578': 'n',
 };
@@ -65,12 +69,19 @@ assertDenylistWellFormed(denylist);
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const separatorPunctuation = "_'*/\\-\\u2010-\\u2015\\u2212,:|\\u00b7\\u2026&";
+const separatorPunctuation = "'*/\\-\\u2010-\\u2015\\u2212:|\\u00b7\\u2026&";
+const boundary = '[^\\p{L}\\p{N}_]';
+const letterGap = `[${separatorPunctuation}]*`;
+const wordGap = `[\\s${separatorPunctuation}]*(?:\\.+[${separatorPunctuation}]*)?`;
 
 const patterns = denylist.map((term) => ({
   term,
   pattern: new RegExp(
-    `(^|[^\\p{L}\\p{N}])${normalize(term).split(' ').map(escape).join(`[\\s${separatorPunctuation}]*(?:\\.+[${separatorPunctuation}]*)?`)}(?:'s|es|ish|s)?($|[^\\p{L}\\p{N}])`,
+    `(^|${boundary})${normalize(term)
+      .replace(/'/g, '')
+      .split(' ')
+      .map((word) => Array.from(word, escape).join(letterGap))
+      .join(wordGap)}(?:'s|es|ish|s)?($|${boundary})`,
     'u',
   ),
 }));
