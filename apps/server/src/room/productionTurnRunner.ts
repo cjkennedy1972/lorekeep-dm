@@ -690,6 +690,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           moderator: outputModerator,
           tier,
           tableLines,
+          turnId: request.actionId,
         });
       }
     }
