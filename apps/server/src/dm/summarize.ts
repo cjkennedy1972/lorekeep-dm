@@ -257,6 +257,7 @@ export interface CloseSceneInput extends SceneSummaryInput {
   moderator: Moderator;
   tier: ContentTier;
   tableLines: readonly string[];
+  turnId?: string;
 }
 
 /** Persist a summary exactly once, then apply validated registry updates. */
@@ -303,6 +304,7 @@ export async function closeScene(
     input.sceneId,
     summary,
     registryDiffs,
+    input.turnId ?? null,
   );
   return { summary, registryDiffs, fallback, persisted };
 }

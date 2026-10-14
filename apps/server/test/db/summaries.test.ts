@@ -41,6 +41,15 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
         'utf8',
       ),
     );
+    await database.pool.query(
+      await readFile(
+        new URL(
+          '../../migrations/0030_scene_summary_turn_link.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
     memory = new RegistryMemory(database.pool);
   }, 30_000);
   afterAll(async () => database?.close());

@@ -6,6 +6,7 @@ import {
   Persistence,
 } from '../../src/persistence/index.js';
 import { REVERTED_TURN_EXCLUSION } from '../../src/persistence/rewind.js';
+import { RegistryMemory } from '../../src/dm/memory.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl)
@@ -84,6 +85,37 @@ describe('rewind plan', () => {
         turnId: ids.a,
         rewindUsed: true,
       });
+    }));
+
+  it('drops scene summaries written by the reverted turn only', () =>
+    fixture(async (pool, id) => {
+      const persistence = new Persistence(pool);
+      const memory = new RegistryMemory(pool);
+      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], {
+        turn: 1,
+      });
+      await memory.closeScene(id, 'scene-a', 'Kept scene.', [], ids.a);
+      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], {
+        turn: 2,
+      });
+      await memory.closeScene(id, 'scene-b', 'Reverted scene.', [], ids.b);
+
+      await persistence.writeTurn(
+        id,
+        [
+          row('r', 'TurnReverted', {
+            type: 'TurnReverted',
+            turnId: ids.r,
+            revertedTurnId: ids.b,
+          }),
+        ],
+        { turn: 1 },
+      );
+      const { rows } = await pool.query<{ scene_id: string }>(
+        'SELECT scene_id FROM scene_summaries WHERE session_id=$1 ORDER BY scene_id',
+        [id],
+      );
+      expect(rows.map((item) => item.scene_id)).toEqual(['scene-a']);
     }));
 
   it('retains room-level events logged after the reverted turn began', () =>

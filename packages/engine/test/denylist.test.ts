@@ -52,6 +52,45 @@ describe('denylist matching', () => {
   });
 });
 
+describe('denylist bypass resistance', () => {
+  it('ignores format characters inside a multi-word term', () => {
+    expect(findDenylistedTerms('Forgotten​Realms')).toEqual([
+      'Forgotten Realms',
+    ]);
+  });
+
+  it('ignores soft hyphens inside a term', () => {
+    expect(findDenylistedTerms('Dri­zzt')).toEqual(['Drizzt']);
+  });
+
+  it('ignores combining marks inside a term', () => {
+    expect(findDenylistedTerms('D́rizzt')).toEqual(['Drizzt']);
+  });
+
+  it('ignores variation selectors inside a term', () => {
+    expect(findDenylistedTerms('Dri️zzt')).toEqual(['Drizzt']);
+  });
+
+  it('folds a Cyrillic i lookalike', () => {
+    expect(findDenylistedTerms('Drіzzt')).toEqual(['Drizzt']);
+  });
+
+  it('folds a Cyrillic o lookalike', () => {
+    expect(findDenylistedTerms('Drоw')).toEqual(['Drow']);
+  });
+
+  it('treats underscores as separators in multi-word terms', () => {
+    expect(findDenylistedTerms('Forgotten_Realms')).toEqual([
+      'Forgotten Realms',
+    ]);
+  });
+
+  it('accepts -es and -ish suffixes', () => {
+    expect(findDenylistedTerms('Drowes near')).toEqual(['Drow']);
+    expect(findDenylistedTerms('Drowish mood')).toEqual(['Drow']);
+  });
+});
+
 describe('denylist well-formedness', () => {
   it('accepts the checked-in list', () => {
     expect(() => assertDenylistWellFormed(denylist)).not.toThrow();

@@ -151,6 +151,7 @@ export class RegistryMemory {
     sceneId: string,
     summary: string,
     diffs: readonly RegistryDiff[] = [],
+    turnId: string | null = null,
   ): Promise<boolean> {
     const normalized = summary.trim();
     if (!sceneId.trim()) throw new Error('Scene id is required');
@@ -162,9 +163,9 @@ export class RegistryMemory {
     try {
       await client.query('BEGIN');
       const inserted = await client.query(
-        `INSERT INTO scene_summaries(session_id, scene_id, summary)
-         VALUES ($1, $2, $3) ON CONFLICT (session_id, scene_id) DO NOTHING`,
-        [sessionId, sceneId, normalized],
+        `INSERT INTO scene_summaries(session_id, scene_id, summary, turn_id)
+         VALUES ($1, $2, $3, $4) ON CONFLICT (session_id, scene_id) DO NOTHING`,
+        [sessionId, sceneId, normalized, turnId],
       );
       if (inserted.rowCount !== 1) {
         await client.query('ROLLBACK');
