@@ -4,7 +4,11 @@ import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
 import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
-import { findRewindTarget } from './rewind.js';
+import {
+  findRewindTarget,
+  REVERTED_TURN_EXCLUSION,
+  ROOM_STATE_EVENT_TYPES,
+} from './rewind.js';
 
 export type { EventInput, StoredEvent } from './events.js';
 export type { Snapshot } from './snapshots.js';
@@ -13,6 +17,8 @@ export interface RewindPlan {
   turnId: string;
   rewindUsed: boolean;
   before: LatestState;
+  retained: StoredEvent[];
+  headSeq: number;
 }
 
 export interface LeaseFence {
@@ -87,13 +93,13 @@ export class Persistence {
         [sessionId],
       );
       const current = fence.rows[0];
-      if (
-        current &&
-        (!lease ||
+      const stale = lease
+        ? !current ||
           !current.live ||
           current.node_id !== lease.nodeId ||
-          Number(current.epoch) !== lease.epoch)
-      ) {
+          Number(current.epoch) !== lease.epoch
+        : current !== undefined;
+      if (stale) {
         throw new LeaseConflictError('Lease fencing check failed');
       }
       const result = await work(client);
@@ -130,6 +136,14 @@ export class Persistence {
     return this.transaction(sessionId, lease, (client) =>
       appendEvents(client, sessionId, events),
     );
+  }
+
+  async isTableHost(sessionId: string, accountId: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ host: boolean }>(
+      'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
+      [sessionId, accountId],
+    );
+    return rows[0]?.host === true;
   }
 
   /** Host opt-in: an X-card press aborts the in-flight generation. Off unless set. */
@@ -206,9 +220,20 @@ export class Persistence {
     state: unknown,
     lease?: LeaseFence,
     registryEvents: readonly RegistryEvent[] = [],
+    expectedHeadSeq?: number,
   ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
+      if (expectedHeadSeq !== undefined) {
+        const head = await client.query<{ seq: string }>(
+          'SELECT COALESCE(MAX(seq), 0)::text AS seq FROM events WHERE session_id = $1',
+          [sessionId],
+        );
+        if (Number(head.rows[0]!.seq) !== expectedHeadSeq)
+          throw new LeaseConflictError(
+            'The room log changed while the rewind was planned; retry.',
+          );
+      }
       if (registryEvents.length)
         await new RegistryMemory(this.pool).persistEventsInTransaction(
           client,
@@ -313,21 +338,34 @@ export class Persistence {
         'SELECT seq,turn_id,type,payload,ts FROM events WHERE session_id = $1 AND seq > $2 AND seq < $3 ORDER BY seq',
         [sessionId, snapshot?.seq ?? 0, target.firstSeq],
       );
+      const retained = await client.query<{
+        seq: string;
+        turn_id: string;
+        type: string;
+        payload: unknown;
+        ts: Date;
+      }>(
+        `SELECT seq,turn_id,type,payload,ts FROM events
+          WHERE session_id = $1 AND seq > $2 AND turn_id::text <> $3 AND type = ANY($4::text[])
+            AND ${REVERTED_TURN_EXCLUSION}
+          ORDER BY seq`,
+        [sessionId, target.firstSeq, target.turnId, ROOM_STATE_EVENT_TYPES],
+      );
       await client.query('COMMIT');
+      const toStored = (row: (typeof tail.rows)[number]): StoredEvent => ({
+        sessionId,
+        seq: Number(row.seq),
+        turnId: row.turn_id,
+        type: row.type,
+        payload: row.payload,
+        ts: row.ts,
+      });
       return {
         turnId: target.turnId,
         rewindUsed: target.rewindUsed,
-        before: {
-          snapshot,
-          events: tail.rows.map((event) => ({
-            sessionId,
-            seq: Number(event.seq),
-            turnId: event.turn_id,
-            type: event.type,
-            payload: event.payload,
-            ts: event.ts,
-          })),
-        },
+        before: { snapshot, events: tail.rows.map(toStored) },
+        retained: retained.rows.map(toStored),
+        headSeq: Number(log.rows.at(-1)?.seq ?? 0),
       };
     } catch (error) {
       await client.query('ROLLBACK');

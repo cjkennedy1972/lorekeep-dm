@@ -12,6 +12,7 @@ import { adventure01RegistrySeed } from '@game/rules-engine/adventure-node';
 import { CREATE_PER_HOUR } from './sessions.js';
 import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import { RegistryMemory } from '../dm/memory.js';
+import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { buildResumeRecap, gateRecap } from '../dm/recap.js';
 import {
@@ -326,7 +327,7 @@ export function registerTableRoutes(
         type: string;
         payload: Record<string, unknown>;
       }>(
-        `SELECT type,payload FROM events WHERE session_id=$1 ORDER BY seq DESC LIMIT 4`,
+        `SELECT type,payload FROM events WHERE session_id=$1 AND ${REVERTED_TURN_EXCLUSION} ORDER BY seq DESC LIMIT 4`,
         [request.params.id],
       );
       const recent = latestEvents.rows.reverse().map((event) => ({

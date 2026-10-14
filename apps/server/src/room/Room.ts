@@ -57,6 +57,7 @@ export interface RoomStore {
     state: unknown,
     lease: Lease,
     registryEvents?: readonly RegistryEvent[],
+    expectedHeadSeq?: number,
   ): Promise<{ events: StoredEvent[] }>;
   writeHostTierCap(
     sessionId: string,
@@ -67,6 +68,7 @@ export interface RoomStore {
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
   loadRewindPlan?(sessionId: string): Promise<RewindPlan | null>;
+  isTableHost?(sessionId: string, accountId: string): Promise<boolean>;
   /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
   xCardAbortEnabled?(sessionId: string): Promise<boolean>;
   setXCardAbortEnabled?(sessionId: string, enabled: boolean): Promise<void>;
@@ -624,15 +626,16 @@ export class Room {
   }
 
   /** Host-only. Restores state, map and transcript to just before the last resolved DM turn; once per resolved turn. */
-  rewindLastTurn(accountId: string, isHost: boolean): Promise<void> {
+  rewindLastTurn(accountId: string): Promise<void> {
     return this.enqueuePlayer(async () => {
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
-      if (!isHost)
+      if (!this.store.loadRewindPlan || !this.store.isTableHost)
+        throw new Error('Rewind is unavailable');
+      if (!(await this.store.isTableHost(this.sessionId, accountId)))
         throw new NotTableHostError('Only the table host can rewind');
       if (this.turnInFlight)
         throw new RewindRefusedError('The DM is still narrating.');
-      if (!this.store.loadRewindPlan) throw new Error('Rewind is unavailable');
       const plan = await this.store.loadRewindPlan(this.sessionId);
       if (!plan)
         throw new RewindRefusedError('There is no resolved turn to rewind.');
@@ -641,7 +644,13 @@ export class Room {
           'Only one rewind per resolved turn; let the next turn resolve first.',
         );
       const restored = recoverRoom(this.sessionId, plan.before);
-      const actionIds = [...restored.actionIds];
+      let restoredState = restored.state;
+      for (const event of plan.retained)
+        restoredState = reduceRoom(restoredState, event);
+      const actionIds = new Set(restored.actionIds);
+      for (const event of plan.retained)
+        if (event.type === 'ActionAccepted')
+          actionIds.add((event.payload as { actionId: string }).actionId);
       const reverted = TurnRevertedSchema.parse({
         type: 'TurnReverted',
         turnId: randomUUID(),
@@ -650,15 +659,24 @@ export class Room {
       const stored = await this.store.writeTurn(
         this.sessionId,
         [{ turnId: reverted.turnId, type: reverted.type, payload: reverted }],
-        { ...restored.state, actionIds },
+        { ...restoredState, actionIds: [...actionIds] },
         this.lease,
+        [],
+        plan.headSeq,
       );
       const committed = stored.events.at(-1);
       if (!committed) throw new Error('Persistence returned no event');
       this.seq = committed.seq;
-      this.state = restored.state;
+      this.state = restoredState;
       this.actionIds.clear();
       for (const id of actionIds) this.actionIds.add(id);
+      this.reconcileClarifications();
+      this.scheduleReaction();
+      this.broadcast({
+        seq: this.seq,
+        type: 'TurnReverted',
+        payload: { revertedTurnId: plan.turnId },
+      });
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -782,6 +800,22 @@ export class Room {
     clearTimeout(this.clarificationTimers.get(actionId));
     this.clarificationTimers.delete(actionId);
     return this.persist('ClarificationClosed', { actionId, outcome });
+  }
+
+  private reconcileClarifications(): void {
+    const open = this.state.openClarifications ?? {};
+    for (const actionId of [...this.clarificationTimers.keys()]) {
+      if (open[actionId]) continue;
+      clearTimeout(this.clarificationTimers.get(actionId));
+      this.clarificationTimers.delete(actionId);
+      if (!this.queuedActions.some((item) => item.actionId === actionId))
+        this.pendingActions.delete(actionId);
+    }
+    for (const [actionId, clarification] of Object.entries(open)) {
+      if (this.clarificationTimers.has(actionId)) continue;
+      this.pendingActions.add(actionId);
+      this.scheduleClarificationTimer(actionId, clarification.deadlineAt);
+    }
   }
 
   private scheduleClarificationTimer(

@@ -55,16 +55,20 @@ export async function processExport(
       )
     ).rows;
     // solo: no snapshot of the room has ever seated anyone but the exporter.
+    const liveSnapshot = `NOT EXISTS (
+              SELECT 1 FROM events ev
+               WHERE ev.session_id=x.session_id AND ev.seq=x.seq
+                 AND ev.turn_id::text IN (SELECT payload->>'revertedTurnId' FROM events WHERE session_id=x.session_id AND type='TurnReverted'))`;
     const snapshots = (
       await db.query(
         `SELECT s.id AS "sessionId", snap.seq, snap.state,
             NOT EXISTS (
               SELECT 1 FROM snapshots x
                 CROSS JOIN LATERAL jsonb_array_elements(COALESCE(x.state->'seats', '[]'::jsonb)) seat
-               WHERE x.session_id=s.id AND seat->>'accountId' IS DISTINCT FROM $1::uuid::text
+               WHERE x.session_id=s.id AND ${liveSnapshot} AND seat->>'accountId' IS DISTINCT FROM $1::uuid::text
             ) AS solo
           FROM sessions s
-          CROSS JOIN LATERAL (SELECT seq, state FROM snapshots WHERE session_id=s.id ORDER BY seq DESC LIMIT 1) snap
+          CROSS JOIN LATERAL (SELECT x.seq, x.state FROM snapshots x WHERE x.session_id=s.id AND ${liveSnapshot} ORDER BY x.seq DESC LIMIT 1) snap
           WHERE s.owner_account_id=$1`,
         [accountId],
       )

@@ -29,6 +29,35 @@ async function fixture(run: (pool: Pool, id: string) => Promise<void>) {
 const event = () => ({ turnId: randomUUID(), type: 'Turn', payload: {} });
 
 describe('session lease', () => {
+  it('fails a fenced append closed when the lease row is gone', async () =>
+    fixture(async (pool, id) => {
+      const leases = new SessionLease(pool, {
+        ttlMs: 1000,
+        heartbeatIntervalMs: 100,
+      });
+      const lease = await leases.acquire(id, 'a');
+      expect(lease).not.toBeNull();
+      if (!lease) return;
+      await pool.query('DELETE FROM session_lease WHERE session_id=$1', [id]);
+      const persistence = new Persistence(pool);
+      await expect(
+        persistence.append(id, [event()], {
+          sessionId: id,
+          nodeId: 'a',
+          epoch: lease.epoch,
+          expiresAt: lease.expiresAt,
+        }),
+      ).rejects.toThrow('Lease fencing check failed');
+      expect(
+        (
+          await pool.query(
+            'SELECT count(*)::int AS n FROM events WHERE session_id=$1',
+            [id],
+          )
+        ).rows[0].n,
+      ).toBe(0);
+    }));
+
   it('excludes a second node and rejects non-holder renewals', async () =>
     fixture(async (pool, id) => {
       const leases = new SessionLease(pool, {
