@@ -69,8 +69,8 @@ assertDenylistWellFormed(denylist);
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const separatorPunctuation = "'*/\\-\\u2010-\\u2015\\u2212:|\\u00b7\\u2026&";
-const boundary = '[^\\p{L}\\p{N}_]';
+const separatorPunctuation = "_'*/\\-\\u2010-\\u2015\\u2212:|\\u00b7\\u2026&";
+const boundary = '[^\\p{L}\\p{N}]';
 const letterGap = `[${separatorPunctuation}]*`;
 const wordGap = `[\\s${separatorPunctuation}]*(?:\\.+[${separatorPunctuation}]*)?`;
 

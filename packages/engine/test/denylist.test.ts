@@ -79,9 +79,9 @@ describe('denylist bypass resistance', () => {
     expect(findDenylistedTerms('Drоw')).toEqual(['Drow']);
   });
 
-  it('does not treat underscores as separators, so identifiers stay whole words', () => {
-    expect(findDenylistedTerms('Forgotten_Realms')).toEqual([]);
-    expect(findDenylistedTerms('drow_id')).toEqual([]);
+  it('treats underscores as separators, so identifiers cannot hide a term', () => {
+    expect(findDenylistedTerms('Forgotten_Realms')).toEqual(['Forgotten Realms']);
+    expect(findDenylistedTerms('drow_id')).toEqual(['Drow']);
   });
 
   it('folds apostrophes out of multi-word terms', () => {
