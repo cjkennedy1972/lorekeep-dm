@@ -137,9 +137,25 @@ describe('denylist bypass resistance', () => {
     'Forgotten -Realms',
     'Forgotten* Realms',
     'Forgotten .Realms',
+    'Forgotten *Realms',
     'Forgotten *Realms*',
     '**Forgotten** **Realms**',
   ])('matches the term split by separator punctuation: %s', (text) => {
+    expect(findDenylistedTerms(text)).toEqual(['Forgotten Realms']);
+  });
+
+  it.each([
+    'Forgotten–Realms',
+    'Forgotten—Realms',
+    'Forgotten‒Realms',
+    'Forgotten−Realms',
+    'Forgotten,Realms',
+    'Forgotten:Realms',
+    'Forgotten|Realms',
+    'Forgotten·Realms',
+    'Forgotten…Realms',
+    'Forgotten&Realms',
+  ])('matches the term split by dashes and other punctuation: %s', (text) => {
     expect(findDenylistedTerms(text)).toEqual(['Forgotten Realms']);
   });
 
@@ -148,6 +164,30 @@ describe('denylist bypass resistance', () => {
     expect(
       findDenylistedTerms('The memory was forgotten. Realms beyond'),
     ).toEqual([]);
+  });
+
+  it('matches a precomposed accented letter inside a term', () => {
+    expect(findDenylistedTerms('Stráhd')).toEqual(['Strahd']);
+  });
+
+  it('matches a decomposed accented letter inside a term', () => {
+    expect(findDenylistedTerms('Stráhd')).toEqual(['Strahd']);
+  });
+
+  it('folds a Latin alpha lookalike', () => {
+    expect(findDenylistedTerms('Vecnɑ')).toEqual(['Vecna']);
+  });
+
+  it('folds a Latin iota lookalike', () => {
+    expect(findDenylistedTerms('Illɩthid')).toEqual(['Illithid']);
+  });
+
+  it('folds an Armenian oh lookalike', () => {
+    expect(findDenylistedTerms('Drօw')).toEqual(['Drow']);
+  });
+
+  it('folds an Armenian vo lookalike', () => {
+    expect(findDenylistedTerms('Vecոa')).toEqual(['Vecna']);
   });
 });
 

@@ -37,11 +37,15 @@ const confusables: Record<string, string> = {
   '\u0501': 'd',
   '\u0261': 'g',
   '\u0131': 'i',
+  '\u0251': 'a',
+  '\u0269': 'i',
+  '\u0585': 'o',
+  '\u0578': 'n',
 };
 
 const normalize = (text: string): string =>
   text
-    .normalize('NFKC')
+    .normalize('NFKD')
     .toLocaleLowerCase('en-US')
     .replace(/[\p{Cf}\p{M}]/gu, '')
     .replace(/[\u2018\u2019\u02bc\u2032`]/g, "'")
@@ -61,10 +65,12 @@ assertDenylistWellFormed(denylist);
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const separatorPunctuation = "_'*/\\-\\u2010-\\u2015\\u2212,:|\\u00b7\\u2026&";
+
 const patterns = denylist.map((term) => ({
   term,
   pattern: new RegExp(
-    `(^|[^\\p{L}\\p{N}])${normalize(term).split(' ').map(escape).join("[\\s_'*/-]*(?:\\.[_'*/-]*)?")}(?:'s|es|ish|s)?($|[^\\p{L}\\p{N}])`,
+    `(^|[^\\p{L}\\p{N}])${normalize(term).split(' ').map(escape).join(`[\\s${separatorPunctuation}]*(?:\\.+[${separatorPunctuation}]*)?`)}(?:'s|es|ish|s)?($|[^\\p{L}\\p{N}])`,
     'u',
   ),
 }));
