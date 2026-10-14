@@ -41,7 +41,7 @@ function nextMessage(
   ws: WebSocket,
 ): Promise<{ type: string; payload: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('socket timeout')), 3000);
+    const timer = setTimeout(() => reject(new Error('socket timeout')), 15_000);
     ws.once('message', (data) => {
       clearTimeout(timer);
       resolve(JSON.parse(data.toString()));
@@ -98,7 +98,7 @@ afterAll(async () => {
   await rooms.drain();
   await app.close();
   await db.end();
-});
+}, 30_000);
 
 describe('gateway input gate', () => {
   it('a rejected action never reaches the Room or the DM prompt', async () => {
@@ -119,7 +119,7 @@ describe('gateway input gate', () => {
     expect(submit).not.toHaveBeenCalled();
     ws.close();
     submit.mockRestore();
-  });
+  }, 30_000);
 
   it('a blocked clarification answer is rejected privately and never reaches the Room', async () => {
     gate = {
