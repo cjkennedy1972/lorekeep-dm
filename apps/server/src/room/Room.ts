@@ -1190,6 +1190,19 @@ export class Room {
         );
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;
+        const narrationEvent = stored.events.find(
+          (event) => event.type === 'NarrationCompleted',
+        );
+        if (narrationEvent && !clarification) {
+          const reportableNarration = {
+            seq: narrationEvent.seq,
+            type: 'NarrationCompleted',
+            payload: { turnId: id, text: result.narration },
+          } as ServerMessage;
+          if (matureAudience)
+            this.deliverMature(reportableNarration, matureAudience);
+          else this.broadcast(reportableNarration);
+        }
         for (const event of stored.events)
           if (event.type === 'ContentTierChanged')
             this.broadcast({

@@ -629,6 +629,14 @@ export function Game() {
       {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
       <NarrationLog
         messages={messages}
+        onReport={async (messageRef, category, reason) => {
+          const result = await api(`/api/rooms/${id}/reports`, {
+            messageRef,
+            category,
+            reason,
+          });
+          return result.ok ? null : result.message;
+        }}
         combatantNames={Object.fromEntries(
           entities.map((entity) => [
             entity.id,
