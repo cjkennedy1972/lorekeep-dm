@@ -120,6 +120,8 @@ describe('denylist bypass resistance', () => {
     expect(findDenylistedTerms('D.r.o.w')).toEqual(['Drow']);
     expect(findDenylistedTerms('D•r•o•w')).toEqual(['Drow']);
     expect(findDenylistedTerms('d r o w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('Dr o w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('D r-o-w')).toEqual(['Drow']);
   });
 
   it('does not flag ordinary sentences with single-letter words', () => {

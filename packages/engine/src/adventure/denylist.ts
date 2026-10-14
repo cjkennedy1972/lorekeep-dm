@@ -73,6 +73,7 @@ const separatorPunctuation = "_'*/\\-\\u2010-\\u2015\\u2212:|\\u00b7\\u2026&";
 const boundary = '[^\\p{L}\\p{N}]';
 const letterGap = `[${separatorPunctuation}]*`;
 const wordGap = `[\\s${separatorPunctuation}]*(?:\\.+[${separatorPunctuation}]*)?`;
+const spelledGap = `[\\s.\\u2022${separatorPunctuation}]*`;
 
 const compile = (body: string) =>
   new RegExp(`(^|${boundary})${body}(?:'s|es|ish|s)?($|${boundary})`, 'u');
@@ -91,7 +92,7 @@ const patterns = denylist.flatMap((term) => {
   if (word.includes(' ')) return [main];
   const spelledOut = {
     term,
-    pattern: compile(Array.from(word, escape).join('[\\s.•]+')),
+    pattern: compile(Array.from(word, escape).join(spelledGap)),
   };
   return [main, spelledOut];
 });
