@@ -1,3 +1,4 @@
+import { findDenylistedTerms } from '@game/rules-engine/denylist-node';
 import { checkHardFloor, createHardFloorTurn } from './hardFloor.js';
 import type {
   DeterministicCheckResult,
@@ -6,6 +7,10 @@ import type {
 
 const toCheck = (blocked: boolean): DeterministicCheckResult =>
   blocked ? { blocked: true, category: 'minor_sexual' } : { blocked: false };
+
+const denylistCheck = (text: string): DeterministicCheckResult => ({
+  blocked: findDenylistedTerms(text).length > 0,
+});
 
 /**
  * Hard floor as the moderator's deterministic layer. Its rules are message-level (a minor
@@ -28,6 +33,6 @@ export const hardFloorLayer: DeterministicLayer = {
       },
     };
   },
-  denylistCheck: () => ({ blocked: false }),
+  denylistCheck,
   maxSpanChars: 0,
 };

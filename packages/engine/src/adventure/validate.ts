@@ -4,7 +4,7 @@ export const ADVENTURE_MAX_MONSTER_CR = 5;
 import { loadAuthoredMap } from '../map/load.js';
 export { nextSceneAfterClose } from './transition.js';
 import { rleDecode, type Battlemap } from '@game/schema';
-import denylistData from './denylist.js';
+import { findDenylistedTerms } from './denylist.js';
 
 export type AdventureErrorCode =
   | 'SCHEMA_INVALID'
@@ -34,21 +34,11 @@ function scanText(
   errors: AdventureError[],
 ): void {
   if (typeof value === 'string') {
-    const normalized = value.toLocaleLowerCase('en-US');
-    for (const term of denylistData) {
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (
-        new RegExp(
-          `(^|[^\\p{L}\\p{N}])${escaped.toLocaleLowerCase('en-US')}($|[^\\p{L}\\p{N}])`,
-          'u',
-        ).test(normalized)
-      ) {
-        errors.push({
-          code: 'DENYLISTED_TERM',
-          message: `${path} contains denylisted term "${term}"`,
-        });
-      }
-    }
+    for (const term of findDenylistedTerms(value))
+      errors.push({
+        code: 'DENYLISTED_TERM',
+        message: `${path} contains denylisted term "${term}"`,
+      });
   } else if (Array.isArray(value)) {
     value.forEach((item, i) => scanText(item, `${path}[${i}]`, errors));
   } else if (value && typeof value === 'object') {

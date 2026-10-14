@@ -1,5 +1,11 @@
 import * as Switch from '@radix-ui/react-switch';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { DeviceSession, ExportJob } from '@game/schema';
 import { usePrefs, type TextSize, type Theme } from '../a11y/prefs';
@@ -110,6 +116,8 @@ function PersonalContent() {
   const [veils, setVeils] = useState('');
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
+  const linesEdited = useRef(false);
+  const veilsEdited = useRef(false);
   useEffect(() => {
     let live = true;
     void api<{ lines: string[]; veils: string[] }>(
@@ -117,8 +125,8 @@ function PersonalContent() {
     ).then((result) => {
       if (!live) return;
       if (!result.ok) return setError(result.message);
-      setLines(result.data.lines.join('\n'));
-      setVeils(result.data.veils.join('\n'));
+      if (!linesEdited.current) setLines(result.data.lines.join('\n'));
+      if (!veilsEdited.current) setVeils(result.data.veils.join('\n'));
     });
     return () => {
       live = false;
@@ -161,7 +169,10 @@ function PersonalContent() {
             rows={4}
             maxLength={3219}
             value={lines}
-            onChange={(event) => setLines(event.target.value)}
+            onChange={(event) => {
+              linesEdited.current = true;
+              setLines(event.target.value);
+            }}
           />
           <small>Up to 20 entries, 160 characters each.</small>
         </div>
@@ -172,7 +183,10 @@ function PersonalContent() {
             rows={4}
             maxLength={3219}
             value={veils}
-            onChange={(event) => setVeils(event.target.value)}
+            onChange={(event) => {
+              veilsEdited.current = true;
+              setVeils(event.target.value);
+            }}
           />
           <small>Up to 20 entries, 160 characters each.</small>
         </div>
