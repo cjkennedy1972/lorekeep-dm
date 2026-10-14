@@ -51,3 +51,4 @@ export * from './tools/combat.js';
 export * from './tools/movement.js';
 
 export * from './encounter/budget.js';
+export { denylist } from './adventure/denylist.js';

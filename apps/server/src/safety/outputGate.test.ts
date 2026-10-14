@@ -807,6 +807,30 @@ describe('deterministic window across forced cuts', () => {
   });
 });
 
+describe('denylist across the 400-char carry', () => {
+  it('blocks a denylisted name that straddles the forced 400-char cut', async () => {
+    const moderator = new JudgeModerator({
+      deterministic: hardFloorLayer,
+      chat: async () => '{"verdict":"allow","category":"none"}',
+    });
+    const events = await collect(
+      runOutputGate({
+        stream: () => tokens('x'.repeat(395) + '(Strahd rest.'),
+        regenerate: () => tokens('Safe.'),
+        moderator,
+        tier: 'standard',
+      }),
+    );
+    expect(chunkTexts(events).join('')).not.toContain('Strahd');
+    const end = events.at(-1);
+    if (end?.kind !== 'end') throw new Error('no end');
+    expect(end.metrics.chunks[1]).toMatchObject({
+      verdict: 'block',
+      source: 'denylist',
+    });
+  });
+});
+
 describe('surrogate-safe output boundaries', () => {
   it('keeps a high surrogate buffered when a source delta ends at maxChunkChars', async () => {
     const { moderator, seen } = scripted(() => ALLOW);
