@@ -57,6 +57,7 @@ export interface RoomStore {
     state: unknown,
     lease: Lease,
     registryEvents?: readonly RegistryEvent[],
+    expectedHeadSeq?: number,
   ): Promise<{ events: StoredEvent[] }>;
   writeHostTierCap(
     sessionId: string,
@@ -641,6 +642,9 @@ export class Room {
           'Only one rewind per resolved turn; let the next turn resolve first.',
         );
       const restored = recoverRoom(this.sessionId, plan.before);
+      let restoredState = restored.state;
+      for (const event of plan.retained)
+        restoredState = reduceRoom(restoredState, event);
       const actionIds = [...restored.actionIds];
       const reverted = TurnRevertedSchema.parse({
         type: 'TurnReverted',
@@ -650,15 +654,24 @@ export class Room {
       const stored = await this.store.writeTurn(
         this.sessionId,
         [{ turnId: reverted.turnId, type: reverted.type, payload: reverted }],
-        { ...restored.state, actionIds },
+        { ...restoredState, actionIds },
         this.lease,
+        [],
+        plan.headSeq,
       );
       const committed = stored.events.at(-1);
       if (!committed) throw new Error('Persistence returned no event');
       this.seq = committed.seq;
-      this.state = restored.state;
+      this.state = restoredState;
       this.actionIds.clear();
       for (const id of actionIds) this.actionIds.add(id);
+      this.reconcileClarifications();
+      this.scheduleReaction();
+      this.broadcast({
+        seq: this.seq,
+        type: 'TurnReverted',
+        payload: { revertedTurnId: plan.turnId },
+      });
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -782,6 +795,22 @@ export class Room {
     clearTimeout(this.clarificationTimers.get(actionId));
     this.clarificationTimers.delete(actionId);
     return this.persist('ClarificationClosed', { actionId, outcome });
+  }
+
+  private reconcileClarifications(): void {
+    const open = this.state.openClarifications ?? {};
+    for (const actionId of [...this.clarificationTimers.keys()]) {
+      if (open[actionId]) continue;
+      clearTimeout(this.clarificationTimers.get(actionId));
+      this.clarificationTimers.delete(actionId);
+      if (!this.queuedActions.some((item) => item.actionId === actionId))
+        this.pendingActions.delete(actionId);
+    }
+    for (const [actionId, clarification] of Object.entries(open)) {
+      if (this.clarificationTimers.has(actionId)) continue;
+      this.pendingActions.add(actionId);
+      this.scheduleClarificationTimer(actionId, clarification.deadlineAt);
+    }
   }
 
   private scheduleClarificationTimer(

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { TurnRevertedSchema } from '@game/schema';
+import { TurnRevertedSchema, type ServerMessage } from '@game/schema';
 import {
   NotTableHostError,
   Room,
@@ -14,7 +14,10 @@ import type {
   RewindPlan,
   StoredEvent,
 } from '../../src/persistence/index.js';
-import { findRewindTarget } from '../../src/persistence/rewind.js';
+import {
+  findRewindTarget,
+  ROOM_STATE_EVENT_TYPES,
+} from '../../src/persistence/rewind.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -78,6 +81,13 @@ function setup() {
               event.seq > (snapshot?.seq ?? 0) && event.seq < target.firstSeq,
           ),
         },
+        retained: events.filter(
+          (event) =>
+            event.seq > target.firstSeq &&
+            event.turnId !== target.turnId &&
+            (ROOM_STATE_EVENT_TYPES as readonly string[]).includes(event.type),
+        ),
+        headSeq: events.length,
       };
     },
     async matureEligibleAccounts(accountIds: string[]) {
@@ -134,6 +144,43 @@ describe('rewind last resolved turn', () => {
       events.filter((event) => event.turnId === 'turn-2'),
     ).not.toHaveLength(0);
     expect(findRewindTarget(events)?.turnId).toBe('turn-1');
+  });
+
+  it('keeps a seat joined after the reverted turn began', async () => {
+    const { room } = setup();
+    const owner = randomUUID();
+    const guest = randomUUID();
+    await room.join(owner, recorder(), 'Owner');
+    await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
+    await settle();
+    await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
+    await settle();
+    await room.join(guest, recorder(), 'Guest');
+
+    await room.rewindLastTurn(owner, true);
+
+    expect(room.state.seats.map((seat) => seat.accountId)).toContain(guest);
+    expect(room.state.gameState).toMatchObject({ map: { revision: 1 } });
+  });
+
+  it('tells connected clients to retract the reverted turn', async () => {
+    const { room } = setup();
+    const owner = randomUUID();
+    const sent: ServerMessage[] = [];
+    await room.join(owner, { send: (message) => sent.push(message) }, 'Owner');
+    await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
+    await settle();
+    await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
+    await settle();
+
+    await room.rewindLastTurn(owner, true);
+
+    expect(sent.filter((message) => message.type === 'TurnReverted')).toEqual([
+      expect.objectContaining({
+        type: 'TurnReverted',
+        payload: { revertedTurnId: 'turn-2' },
+      }),
+    ]);
   });
 
   it('refuses a second rewind of the same turn', async () => {
