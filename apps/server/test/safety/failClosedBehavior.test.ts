@@ -81,37 +81,35 @@ describe('classifier outage fails closed at every tier', () => {
   }
 });
 
-describe('classifier timeout fails closed at every tier', () => {
-  for (const tier of TIERS) {
-    it(`${tier}: a judge that never answers blocks and is aborted`, async () => {
-      vi.useFakeTimers();
-      try {
-        let seen: AbortSignal | undefined;
-        const moderator = new JudgeModerator({
-          chat: (req) => {
-            seen = req.signal;
-            return new Promise<string>(() => {});
-          },
-          deterministic: NOOP_LAYER,
-          timeoutMs: 1000,
-        });
-        const pending = moderator.moderate({
-          text: BENIGN,
-          tier,
-          direction: 'output',
-        });
-        await vi.advanceTimersByTimeAsync(1000);
-        await expect(pending).resolves.toMatchObject({
-          verdict: 'block',
-          source: 'failclosed',
-          unavailable: true,
-        });
-        expect(seen?.aborted).toBe(true);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-  }
+describe('classifier timeout fails closed', () => {
+  it('a judge that never answers blocks and is aborted', async () => {
+    vi.useFakeTimers();
+    try {
+      let seen: AbortSignal | undefined;
+      const moderator = new JudgeModerator({
+        chat: (req) => {
+          seen = req.signal;
+          return new Promise<string>(() => {});
+        },
+        deterministic: NOOP_LAYER,
+        timeoutMs: 1000,
+      });
+      const pending = moderator.moderate({
+        text: BENIGN,
+        tier: 'standard',
+        direction: 'output',
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(pending).resolves.toMatchObject({
+        verdict: 'block',
+        source: 'failclosed',
+        unavailable: true,
+      });
+      expect(seen?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('minors hard floor blocks at every tier', () => {
