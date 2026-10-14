@@ -76,6 +76,13 @@ export interface Connection {
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 const DRAIN_DEADLINE_MS = 30_000;
 
+export class NotTableHostError extends Error {
+  constructor() {
+    super('Only the table host can resume');
+    this.name = 'NotTableHostError';
+  }
+}
+
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
@@ -594,7 +601,7 @@ export class Room {
     return this.enqueuePlayer(async () => {
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
-      if (!paused && !isHost) throw new Error('Only the table host can resume');
+      if (!paused && !isHost) throw new NotTableHostError();
       if ((this.state.paused ?? false) === paused) return;
       await this.persist('TablePaused', { paused });
       this.broadcast({

@@ -13,6 +13,7 @@ import {
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import type { RoomRegistry } from '../room/registry.js';
+import { NotTableHostError } from '../room/Room.js';
 import {
   consumeTicket,
   eligibleSession,
@@ -341,11 +342,22 @@ export function installGateway(
                 ),
               )
               .catch((error: unknown) => {
-                if (
-                  !(error instanceof Error) ||
-                  error.message !== 'Only the table host can resume'
-                )
+                if (!(error instanceof NotTableHostError)) {
+                  app.log.error(
+                    { err: error, sessionId: identity.sessionId },
+                    'Pause request failed',
+                  );
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'ACTION_REJECTED',
+                      message: 'Pause request could not be accepted.',
+                      actionId: msg.actionId,
+                    },
+                  });
                   return;
+                }
                 send({
                   seq: room.seq,
                   type: 'Error',
