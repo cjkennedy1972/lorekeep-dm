@@ -4,9 +4,16 @@ import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
 import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
+import { findRewindTarget } from './rewind.js';
 
 export type { EventInput, StoredEvent } from './events.js';
 export type { Snapshot } from './snapshots.js';
+
+export interface RewindPlan {
+  turnId: string;
+  rewindUsed: boolean;
+  before: LatestState;
+}
 
 export interface LeaseFence {
   nodeId: string;
@@ -250,6 +257,84 @@ export class Persistence {
       [accountIds],
     );
     return rows.map((row) => row.id);
+  }
+
+  /** Log window that restores the room to just before its last resolved DM turn. */
+  async loadRewindPlan(sessionId: string): Promise<RewindPlan | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const log = await client.query<{
+        seq: string;
+        turn_id: string;
+        type: string;
+        payload: unknown;
+      }>(
+        `SELECT seq, turn_id, type, CASE WHEN type = 'TurnReverted' THEN payload END AS payload
+           FROM events WHERE session_id = $1 ORDER BY seq`,
+        [sessionId],
+      );
+      const target = findRewindTarget(
+        log.rows.map((row) => ({
+          seq: Number(row.seq),
+          turnId: row.turn_id,
+          type: row.type,
+          payload: row.payload,
+        })),
+      );
+      if (!target) {
+        await client.query('COMMIT');
+        return null;
+      }
+      const snapshots = await client.query<{
+        seq: string;
+        state: unknown;
+        created_at: Date;
+      }>(
+        'SELECT seq, state, created_at FROM snapshots WHERE session_id = $1 AND seq < $2 ORDER BY seq DESC LIMIT 1',
+        [sessionId, target.firstSeq],
+      );
+      const row = snapshots.rows[0];
+      const snapshot = row
+        ? {
+            sessionId,
+            seq: Number(row.seq),
+            state: row.state,
+            createdAt: row.created_at,
+          }
+        : null;
+      const tail = await client.query<{
+        seq: string;
+        turn_id: string;
+        type: string;
+        payload: unknown;
+        ts: Date;
+      }>(
+        'SELECT seq,turn_id,type,payload,ts FROM events WHERE session_id = $1 AND seq > $2 AND seq < $3 ORDER BY seq',
+        [sessionId, snapshot?.seq ?? 0, target.firstSeq],
+      );
+      await client.query('COMMIT');
+      return {
+        turnId: target.turnId,
+        rewindUsed: target.rewindUsed,
+        before: {
+          snapshot,
+          events: tail.rows.map((event) => ({
+            sessionId,
+            seq: Number(event.seq),
+            turnId: event.turn_id,
+            type: event.type,
+            payload: event.payload,
+            ts: event.ts,
+          })),
+        },
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async loadLatest(sessionId: string): Promise<LatestState> {

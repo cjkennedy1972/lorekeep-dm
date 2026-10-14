@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   RoomStateSchema,
+  TurnRevertedSchema,
   type RoomState,
   type ServerMessage,
 } from '@game/schema';
@@ -9,6 +10,7 @@ import {
   LeaseConflictError,
   type EventInput,
   type LatestState,
+  type RewindPlan,
   type StoredEvent,
 } from '../persistence/index.js';
 import type { HostCap } from '../safety/tier.js';
@@ -64,6 +66,7 @@ export interface RoomStore {
   ): Promise<StoredEvent[]>;
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
+  loadRewindPlan?(sessionId: string): Promise<RewindPlan | null>;
   /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
   xCardAbortEnabled?(sessionId: string): Promise<boolean>;
   setXCardAbortEnabled?(sessionId: string, enabled: boolean): Promise<void>;
@@ -77,9 +80,16 @@ export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 const DRAIN_DEADLINE_MS = 30_000;
 
 export class NotTableHostError extends Error {
-  constructor() {
-    super('Only the table host can resume');
+  constructor(message = 'Only the table host can resume') {
+    super(message);
     this.name = 'NotTableHostError';
+  }
+}
+
+export class RewindRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RewindRefusedError';
   }
 }
 
@@ -610,6 +620,50 @@ export class Room {
         payload: { state: this.clientState() },
       });
       if (!paused) this.kickQueue();
+    });
+  }
+
+  /** Host-only. Restores state, map and transcript to just before the last resolved DM turn; once per resolved turn. */
+  rewindLastTurn(accountId: string, isHost: boolean): Promise<void> {
+    return this.enqueuePlayer(async () => {
+      if (!this.state.seats.some((seat) => seat.accountId === accountId))
+        throw new Error('Account is not seated');
+      if (!isHost)
+        throw new NotTableHostError('Only the table host can rewind');
+      if (this.turnInFlight)
+        throw new RewindRefusedError('The DM is still narrating.');
+      if (!this.store.loadRewindPlan) throw new Error('Rewind is unavailable');
+      const plan = await this.store.loadRewindPlan(this.sessionId);
+      if (!plan)
+        throw new RewindRefusedError('There is no resolved turn to rewind.');
+      if (plan.rewindUsed)
+        throw new RewindRefusedError(
+          'Only one rewind per resolved turn; let the next turn resolve first.',
+        );
+      const restored = recoverRoom(this.sessionId, plan.before);
+      const actionIds = [...restored.actionIds];
+      const reverted = TurnRevertedSchema.parse({
+        type: 'TurnReverted',
+        turnId: randomUUID(),
+        revertedTurnId: plan.turnId,
+      });
+      const stored = await this.store.writeTurn(
+        this.sessionId,
+        [{ turnId: reverted.turnId, type: reverted.type, payload: reverted }],
+        { ...restored.state, actionIds },
+        this.lease,
+      );
+      const committed = stored.events.at(-1);
+      if (!committed) throw new Error('Persistence returned no event');
+      this.seq = committed.seq;
+      this.state = restored.state;
+      this.actionIds.clear();
+      for (const id of actionIds) this.actionIds.add(id);
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
     });
   }
 
