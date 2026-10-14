@@ -141,3 +141,20 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: node --test scripts/moderation-rubric.test.mjs
+
+  redteam-recorded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @game/schema build
+      - run: pnpm --filter @game/evals exec vitest run test/redteam.test.ts
+      - run: pnpm --filter @game/server exec vitest run test/safety/hardFloorRedteam.test.ts
