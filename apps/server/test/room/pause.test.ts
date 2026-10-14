@@ -19,7 +19,7 @@ const settle = async () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
 };
 
-function setup(requests: SoloTurnRequest[]) {
+function setup(requests: SoloTurnRequest[], firstTurnGate?: Promise<void>) {
   const events: StoredEvent[] = [];
   const store: RoomStore = {
     async loadLatest(): Promise<LatestState> {
@@ -42,6 +42,7 @@ function setup(requests: SoloTurnRequest[]) {
   const runner: SoloTurnRunner = {
     async run(request, onEvent) {
       requests.push(request);
+      if (requests.length === 1 && firstTurnGate) await firstTurnGate;
       onEvent({ type: 'NarrationTier', tier: 'standard' });
       onEvent({ type: 'NarrationCompleted', narration: 'ok' });
       return {
@@ -108,6 +109,32 @@ describe('table pause', () => {
 
     expect(requests).toHaveLength(1);
     expect(requests[0]!.text).toBe('Open the door.');
+    expect(room.clientState().paused).toBe(false);
+  });
+
+  it('drains a queued turn when resumed while a narration is in flight', async () => {
+    const requests: SoloTurnRequest[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const { room } = setup(requests, gate);
+    const owner = randomUUID();
+    await room.join(owner, recorder(), 'Owner');
+
+    await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
+    await settle();
+    expect(requests).toHaveLength(1);
+
+    await room.setPaused(owner, true, true);
+    await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
+    await room.setPaused(owner, false, true);
+
+    release();
+    await settle();
+
+    expect(requests.map((request) => request.text)).toEqual([
+      'Open the door.',
+      'Search the room.',
+    ]);
     expect(room.clientState().paused).toBe(false);
   });
 });
