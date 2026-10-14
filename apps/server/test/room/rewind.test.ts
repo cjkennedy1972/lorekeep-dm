@@ -253,9 +253,7 @@ describe('rewind last resolved turn', () => {
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
 
-    await expect(room.rewindLastTurn(guest)).rejects.toThrow(
-      NotTableHostError,
-    );
+    await expect(room.rewindLastTurn(guest)).rejects.toThrow(NotTableHostError);
     expect(events.some((event) => event.type === 'TurnReverted')).toBe(false);
   });
 });

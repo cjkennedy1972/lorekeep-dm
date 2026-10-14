@@ -49,7 +49,12 @@ describe('session lease', () => {
         }),
       ).rejects.toThrow('Lease fencing check failed');
       expect(
-        (await pool.query('SELECT count(*)::int AS n FROM events WHERE session_id=$1', [id])).rows[0].n,
+        (
+          await pool.query(
+            'SELECT count(*)::int AS n FROM events WHERE session_id=$1',
+            [id],
+          )
+        ).rows[0].n,
       ).toBe(0);
     }));
 

@@ -72,10 +72,10 @@ describe('account export skips snapshots of reverted turns', () => {
     const liveTurn = randomUUID();
     const revertedTurn = randomUUID();
     const rewindTurn = randomUUID();
-    await db.query(
-      'INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)',
-      [sessionId, owner],
-    );
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      sessionId,
+      owner,
+    ]);
     await db.query(
       `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES
          ($1,1,$2,'NarrationCompleted','{}'),
@@ -101,7 +101,10 @@ describe('account export skips snapshots of reverted turns', () => {
     expect(
       parsed.snapshots
         .filter((row: { sessionId: string }) => row.sessionId === sessionId)
-        .map((row: { state: { gameState: { sceneId: string } } }) => row.state.gameState.sceneId),
+        .map(
+          (row: { state: { gameState: { sceneId: string } } }) =>
+            row.state.gameState.sceneId,
+        ),
     ).toEqual(['live']);
   });
 });
