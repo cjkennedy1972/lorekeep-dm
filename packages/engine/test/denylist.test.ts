@@ -115,6 +115,20 @@ describe('denylist bypass resistance', () => {
     expect(findDenylistedTerms('Forgotten . Realms')).toEqual([]);
   });
 
+  it('matches a single word spelled out with letters split by + , ; ~ ! #', () => {
+    expect(findDenylistedTerms('D+r+o+w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('D,r,o,w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('D;r;o;w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('D~r~o~w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('D#r#o#w')).toEqual(['Drow']);
+  });
+
+  it('does not treat single letters separated by punctuation in prose as a spelled-out term', () => {
+    expect(findDenylistedTerms('a-b, c; d')).toEqual([]);
+    expect(findDenylistedTerms('x: y')).toEqual([]);
+    expect(findDenylistedTerms('a+b, c!d, e#f')).toEqual([]);
+  });
+
   it('matches a single word spelled out with letters split by space, dot or bullet', () => {
     expect(findDenylistedTerms('D r o w')).toEqual(['Drow']);
     expect(findDenylistedTerms('D.r.o.w')).toEqual(['Drow']);
