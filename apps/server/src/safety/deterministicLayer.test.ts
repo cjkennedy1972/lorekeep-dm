@@ -51,6 +51,31 @@ describe('hard-floor adapter', () => {
   });
 });
 
+describe('denylist adapter normalization and forms', () => {
+  const blocked = (text: string) => hardFloorLayer.denylistCheck(text).blocked;
+
+  it.each([
+    ['plural suffix', 'The Drows wait below'],
+    ['plural suffix on beholders', 'Beholders float in the dark'],
+    ['plural suffix on illithids', 'Illithids whisper'],
+    ['plural suffix on vecnas', 'Vecnas laughs'],
+    ['possessive on strahd', "Strahd's keep looms"],
+    ['double space in a multi-word term', 'Forgotten  Realms'],
+    ['newline in a multi-word term', 'Forgotten\nRealms'],
+    ['NBSP in a multi-word term', 'Forgotten Realms'],
+    ['curly apostrophe in a multi-word term', 'Baldur’s Gate'],
+    ['fullwidth letters', 'ＤＲＯＷ'],
+    ['long-s', 'ſtrahd'],
+    ['zero-width inside a term', 'Dro​w'],
+  ])('blocks %s', (_name, text) => {
+    expect(blocked(text)).toBe(true);
+  });
+
+  it('does not block words that merely contain a term', () => {
+    expect(blocked('Drowsy and drowning')).toBe(false);
+  });
+});
+
 describe('turn-scoped evaluation', () => {
   const ALLOW = async () => '{"verdict":"allow","category":"none"}';
 
