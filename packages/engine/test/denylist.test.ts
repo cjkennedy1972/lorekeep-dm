@@ -53,7 +53,7 @@ describe('denylist matching', () => {
 });
 
 describe('denylist bypass resistance', () => {
-  it('ignores format characters inside a multi-word term', () => {
+  it('ignores zero-width format characters inside a multi-word term', () => {
     expect(findDenylistedTerms('Forgotten​Realms')).toEqual([
       'Forgotten Realms',
     ]);
@@ -130,6 +130,12 @@ describe('denylist bypass resistance', () => {
     expect(findDenylistedTerms('Forgotten*Realms')).toEqual([
       'Forgotten Realms',
     ]);
+  });
+
+  it('does not let punctuation plus a space bridge two words', () => {
+    expect(
+      findDenylistedTerms('The memory was forgotten. Realms beyond'),
+    ).toEqual([]);
   });
 });
 

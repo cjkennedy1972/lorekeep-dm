@@ -64,7 +64,7 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const patterns = denylist.map((term) => ({
   term,
   pattern: new RegExp(
-    `(^|[^\\p{L}\\p{N}])${normalize(term).split(' ').map(escape).join("[\\s'_./*-]*")}(?:'s|es|ish|s)?($|[^\\p{L}\\p{N}])`,
+    `(^|[^\\p{L}\\p{N}])${normalize(term).split(' ').map(escape).join("(?:\\s+|[_'./*-]+)?")}(?:'s|es|ish|s)?($|[^\\p{L}\\p{N}])`,
     'u',
   ),
 }));
