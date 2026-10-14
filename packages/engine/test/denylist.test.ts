@@ -80,7 +80,9 @@ describe('denylist bypass resistance', () => {
   });
 
   it('treats underscores as separators, so identifiers cannot hide a term', () => {
-    expect(findDenylistedTerms('Forgotten_Realms')).toEqual(['Forgotten Realms']);
+    expect(findDenylistedTerms('Forgotten_Realms')).toEqual([
+      'Forgotten Realms',
+    ]);
     expect(findDenylistedTerms('drow_id')).toEqual(['Drow']);
   });
 
