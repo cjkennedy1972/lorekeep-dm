@@ -33,14 +33,18 @@ const confusables: Record<string, string> = {
   '\u03c1': 'p',
   '\u03c4': 't',
   '\u03ba': 'k',
+  '\u04bb': 'h',
+  '\u0501': 'd',
+  '\u0261': 'g',
+  '\u0131': 'i',
 };
 
 const normalize = (text: string): string =>
   text
     .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
     .replace(/[\p{Cf}\p{M}]/gu, '')
     .replace(/[\u2018\u2019\u02bc\u2032`]/g, "'")
-    .toLocaleLowerCase('en-US')
     .replace(/./gu, (char) => confusables[char] ?? char)
     .replace(/\s+/gu, ' ');
 
@@ -60,7 +64,7 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const patterns = denylist.map((term) => ({
   term,
   pattern: new RegExp(
-    `(^|[^\\p{L}\\p{N}])${normalize(term).split(' ').map(escape).join("[\\s'_-]*")}(?:'s|es|ish|s)?($|[^\\p{L}\\p{N}])`,
+    `(^|[^\\p{L}\\p{N}])${normalize(term).split(' ').map(escape).join("[\\s'_./*-]*")}(?:'s|es|ish|s)?($|[^\\p{L}\\p{N}])`,
     'u',
   ),
 }));

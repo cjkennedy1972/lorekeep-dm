@@ -89,6 +89,48 @@ describe('denylist bypass resistance', () => {
     expect(findDenylistedTerms('Drowes near')).toEqual(['Drow']);
     expect(findDenylistedTerms('Drowish mood')).toEqual(['Drow']);
   });
+
+  it('strips marks introduced by locale lowercasing of a dotted capital I', () => {
+    expect(findDenylistedTerms('DRİZZT')).toEqual(['Drizzt']);
+  });
+
+  it('folds a Cyrillic h lookalike in Githyanki', () => {
+    expect(findDenylistedTerms('Gitһyanki')).toEqual(['Githyanki']);
+  });
+
+  it('folds a Cyrillic h lookalike in Illithid', () => {
+    expect(findDenylistedTerms('Illitһid')).toEqual(['Illithid']);
+  });
+
+  it('folds a dotless i lookalike in Illithid', () => {
+    expect(findDenylistedTerms('Illıthid')).toEqual(['Illithid']);
+  });
+
+  it('folds a Cyrillic d lookalike in Drizzt', () => {
+    expect(findDenylistedTerms('ԁrizzt')).toEqual(['Drizzt']);
+  });
+
+  it('folds a Latin script g lookalike in Baldur’s Gate', () => {
+    expect(findDenylistedTerms("Baldur's ɡate")).toEqual(["Baldur's Gate"]);
+  });
+
+  it('treats dots as separators in multi-word terms', () => {
+    expect(findDenylistedTerms('Forgotten.Realms')).toEqual([
+      'Forgotten Realms',
+    ]);
+  });
+
+  it('treats slashes as separators in multi-word terms', () => {
+    expect(findDenylistedTerms('Forgotten/Realms')).toEqual([
+      'Forgotten Realms',
+    ]);
+  });
+
+  it('treats asterisks as separators in multi-word terms', () => {
+    expect(findDenylistedTerms('Forgotten*Realms')).toEqual([
+      'Forgotten Realms',
+    ]);
+  });
 });
 
 describe('denylist well-formedness', () => {
