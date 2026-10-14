@@ -79,10 +79,15 @@ export function createApp(
     isOperator?: (accountId: string) => Promise<boolean>;
     trustProxy?: boolean | number | string[];
     liveDmAllowlistOnly?: boolean;
+    endpointAllowsMature?: boolean;
     inputGate?: InputGate;
   } = {},
 ) {
-  const { trustProxy = false, liveDmAllowlistOnly = true } = options;
+  const {
+    trustProxy = false,
+    liveDmAllowlistOnly = true,
+    endpointAllowsMature = false,
+  } = options;
   // ponytail: Fastify 5 ignores numeric trustProxy (fails closed), so count hops here; hop 0 is the socket peer.
   const app = Fastify({
     loggerInstance: createLogger(),
@@ -140,7 +145,10 @@ export function createApp(
     registerUsageRoutes(app, db as Pool, options.isOperator);
     registerOperatorRoutes(app, db as Pool, options.isOperator);
     registerReportRoutes(app, db as Pool);
-    registerContentSettingsRoutes(app, db as Pool, options.rooms);
+    registerContentSettingsRoutes(app, db as Pool, options.rooms, {
+      endpointAllowsMature,
+      liveDmAllowlistOnly,
+    });
     if (options.rooms) {
       registerSessionRoutes(
         app,
