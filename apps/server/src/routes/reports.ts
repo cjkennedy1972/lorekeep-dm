@@ -5,6 +5,7 @@ import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin } from '../middleware/origin.js';
 import type { registerAuthRoutes } from './auth.js';
 import { ROOM_LIST_SQL } from './sessions.js';
+import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
 
 export const REPORT_CATEGORIES = [
   'harassment',
@@ -198,7 +199,7 @@ export function registerReportRoutes(
             type: string;
             payload: Record<string, unknown>;
           }>(
-            'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq=$2',
+            `SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq=$2 AND ${REVERTED_TURN_EXCLUSION}`,
             [id, messageRef],
           )
         ).rows[0];
@@ -235,7 +236,7 @@ export function registerReportRoutes(
             type: string;
             payload: Record<string, unknown>;
           }>(
-            'SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT $3',
+            `SELECT seq,type,payload FROM events WHERE session_id=$1 AND seq<=$2 AND ${REVERTED_TURN_EXCLUSION} ORDER BY seq DESC LIMIT $3`,
             [id, messageRef, CONTEXT_BEFORE + 1],
           )
         ).rows.reverse();
