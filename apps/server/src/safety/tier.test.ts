@@ -9,7 +9,7 @@ const eligible: TierInput = {
 
 function* allCombinations(): Generator<TierInput> {
   const patterns: boolean[][] = [];
-  for (let n = 0; n <= 3; n++)
+  for (let n = 0; n <= 4; n++)
     for (let bits = 0; bits < 1 << n; bits++)
       patterns.push(
         Array.from({ length: n }, (_, i) => Boolean(bits & (1 << i))),
@@ -196,8 +196,8 @@ describe('tier predicate inputs', () => {
 describe('tier predicate properties', () => {
   const cases = [...allCombinations()];
 
-  it('covers at least 64 input combinations', () => {
-    expect(cases.length).toBeGreaterThanOrEqual(64);
+  it('covers at least 200 input combinations', () => {
+    expect(cases.length).toBeGreaterThanOrEqual(200);
   });
 
   it.each(cases.map((c, i) => [i, c] as const))(
