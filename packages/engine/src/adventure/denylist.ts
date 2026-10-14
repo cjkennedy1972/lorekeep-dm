@@ -74,21 +74,35 @@ const boundary = '[^\\p{L}\\p{N}]';
 const letterGap = `[${separatorPunctuation}]*`;
 const wordGap = `[\\s${separatorPunctuation}]*(?:\\.+[${separatorPunctuation}]*)?`;
 
-const patterns = denylist.map((term) => ({
-  term,
-  pattern: new RegExp(
-    `(^|${boundary})${normalize(term)
-      .replace(/'/g, '')
-      .split(' ')
-      .map((word) => Array.from(word, escape).join(letterGap))
-      .join(wordGap)}(?:'s|es|ish|s)?($|${boundary})`,
-    'u',
-  ),
-}));
+const compile = (body: string) =>
+  new RegExp(`(^|${boundary})${body}(?:'s|es|ish|s)?($|${boundary})`, 'u');
+
+const patterns = denylist.flatMap((term) => {
+  const word = normalize(term).replace(/'/g, '');
+  const main = {
+    term,
+    pattern: compile(
+      word
+        .split(' ')
+        .map((part) => Array.from(part, escape).join(letterGap))
+        .join(wordGap),
+    ),
+  };
+  if (word.includes(' ')) return [main];
+  const spelledOut = {
+    term,
+    pattern: compile(Array.from(word, escape).join('[\\s.•]+')),
+  };
+  return [main, spelledOut];
+});
 
 export function findDenylistedTerms(text: string): string[] {
   const normalized = normalize(text);
-  return patterns
-    .filter(({ pattern }) => pattern.test(normalized))
-    .map(({ term }) => term);
+  return [
+    ...new Set(
+      patterns
+        .filter(({ pattern }) => pattern.test(normalized))
+        .map(({ term }) => term),
+    ),
+  ];
 }

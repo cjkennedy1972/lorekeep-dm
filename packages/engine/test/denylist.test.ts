@@ -115,6 +115,17 @@ describe('denylist bypass resistance', () => {
     expect(findDenylistedTerms('Forgotten . Realms')).toEqual([]);
   });
 
+  it('matches a single word spelled out with letters split by space, dot or bullet', () => {
+    expect(findDenylistedTerms('D r o w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('D.r.o.w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('D•r•o•w')).toEqual(['Drow']);
+    expect(findDenylistedTerms('d r o w')).toEqual(['Drow']);
+  });
+
+  it('does not flag ordinary sentences with single-letter words', () => {
+    expect(findDenylistedTerms('a I want a dog')).toEqual([]);
+  });
+
   it('matches a term split by an en dash', () => {
     expect(findDenylistedTerms('Forgotten – Realms')).toEqual([
       'Forgotten Realms',
