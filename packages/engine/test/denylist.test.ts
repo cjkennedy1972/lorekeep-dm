@@ -132,7 +132,19 @@ describe('denylist bypass resistance', () => {
     ]);
   });
 
-  it('does not let punctuation plus a space bridge two words', () => {
+  it.each([
+    'Forgotten - Realms',
+    'Forgotten -Realms',
+    'Forgotten* Realms',
+    'Forgotten .Realms',
+    'Forgotten *Realms*',
+    '**Forgotten** **Realms**',
+  ])('matches the term split by separator punctuation: %s', (text) => {
+    expect(findDenylistedTerms(text)).toEqual(['Forgotten Realms']);
+  });
+
+  it('does not let a dot followed by a space bridge two words', () => {
+    expect(findDenylistedTerms('forgotten. Realms')).toEqual([]);
     expect(
       findDenylistedTerms('The memory was forgotten. Realms beyond'),
     ).toEqual([]);
