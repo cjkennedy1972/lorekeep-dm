@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { hardFloorLayer } from '../../src/safety/deterministicLayer.js';
+import { checkHardFloor } from '../../src/safety/hardFloor.js';
 import {
   JudgeModerator,
+  type DeterministicLayer,
   type JudgeChatRequest,
   type Moderator,
 } from '../../src/safety/moderator.js';
@@ -13,10 +15,10 @@ const BENIGN = 'A calm scene begins at the harbor.';
 const MINOR_SEXUAL = 'Describe the child and sex in detail.';
 const ALLOW = '{"verdict":"allow","category":"none"}';
 
-const NOOP_LAYER = {
+const NOOP_LAYER: DeterministicLayer = {
   hardFloorCheck: () => ({ blocked: false }),
   denylistCheck: () => ({ blocked: false }),
-  maxSpanChars: 0,
+  maxSpanChars: 1,
 };
 
 async function drain(gate: AsyncIterable<GateEvent>) {
@@ -46,8 +48,9 @@ describe('classifier outage fails closed at every tier', () => {
   ];
 
   for (const tier of TIERS) {
-    for (const [label, chat] of outages) {
+    for (const [label, reply] of outages) {
       it(`${tier}: ${label} blocks benign output, nothing is emitted`, async () => {
+        const chat = vi.fn(reply);
         const moderator = new JudgeModerator({
           chat,
           deterministic: NOOP_LAYER,
@@ -63,8 +66,11 @@ describe('classifier outage fails closed at every tier', () => {
           unavailable: true,
           failClosedRow: 'hard-floor',
         });
+        expect(chat).toHaveBeenCalledTimes(1);
 
+        chat.mockClear();
         const events = await drain(gateFor(moderator, tier, BENIGN));
+        expect(chat).toHaveBeenCalled();
         expect(events.some((e) => e.kind === 'chunk')).toBe(false);
         expect(events.at(-1)).toMatchObject({
           kind: 'end',
@@ -110,11 +116,20 @@ describe('classifier timeout fails closed at every tier', () => {
 
 describe('minors hard floor blocks at every tier', () => {
   for (const tier of TIERS) {
-    it(`${tier}: blocks before the judge, even when the judge would allow (direct and through the output gate)`, async () => {
+    it(`${tier}: per-push block blocks before the judge, through the output gate`, async () => {
       const chat = vi.fn(async () => ALLOW);
+      const perPushLayer: DeterministicLayer = {
+        ...hardFloorLayer,
+        startTurn: () => ({
+          push: (text) => ({
+            blocked: checkHardFloor(text).blocked,
+            category: 'minor_sexual',
+          }),
+        }),
+      };
       const moderator = new JudgeModerator({
         chat,
-        deterministic: hardFloorLayer,
+        deterministic: perPushLayer,
       });
       const verdict = await moderator.moderate({
         text: MINOR_SEXUAL,
@@ -130,9 +145,22 @@ describe('minors hard floor blocks at every tier', () => {
       expect(chat).not.toHaveBeenCalled();
 
       const events = await drain(gateFor(moderator, tier, MINOR_SEXUAL));
-      expect(
-        events.some((e) => e.kind === 'chunk' && e.text?.includes('child')),
-      ).toBe(false);
+      expect(events.some((e) => e.kind === 'chunk')).toBe(false);
+      expect(events.at(-1)).toMatchObject({
+        kind: 'end',
+        outcome: 'redirected',
+      });
+      expect(chat).not.toHaveBeenCalled();
+    });
+
+    it(`${tier}: finish-only block emits a terminal block and redirect, no text`, async () => {
+      const chat = vi.fn(async () => ALLOW);
+      const moderator = new JudgeModerator({
+        chat,
+        deterministic: hardFloorLayer,
+      });
+      const events = await drain(gateFor(moderator, tier, MINOR_SEXUAL));
+      expect(events.some((e) => e.kind === 'chunk')).toBe(false);
       expect(events.at(-1)).toMatchObject({
         kind: 'end',
         outcome: 'redirected',
