@@ -217,7 +217,7 @@ describe('message reports', () => {
     expect(
       (
         await pool().query(
-          "SELECT expires_at - reviewed_at = interval '30 days' AS ok FROM message_reports WHERE id=$1",
+          "SELECT expires_at = reviewed_at + interval '30 days' AS ok FROM message_reports WHERE id=$1",
           [id],
         )
       ).rows[0].ok,
