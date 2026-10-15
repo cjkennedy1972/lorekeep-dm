@@ -225,6 +225,69 @@ describe('endpoint refusal of a mature prompt', () => {
     ).toEqual([]);
   });
 
+  it('persists no scene, registry, or tier writes from a successful tool round whose next endpoint call fails', async () => {
+    const owner = await account();
+    const sessionId = await session(owner);
+    await db.query(
+      "UPDATE sessions SET adventure_id='adventure:01-hollow-under-marrowfell', content_tier='mature' WHERE id=$1",
+      [sessionId],
+    );
+    let requests = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        requests += 1;
+        if (requests > 1)
+          throw new LlmEndpointError('endpoint-error', 'refused', 500);
+        yield {
+          type: 'tool-call',
+          id: 'c1',
+          name: 'close_scene',
+          arguments: { summary: 'The seal is opened.' },
+        } as LlmChunk;
+        yield {
+          type: 'tool-call',
+          id: 'c2',
+          name: 'upsert_npc',
+          arguments: {
+            id: 'npc_mira',
+            name: 'Mira',
+            role: 'Guide',
+            disposition: 'friendly',
+            facts: ['Lives in town'],
+          },
+        } as LlmChunk;
+      },
+    };
+    const room = await openRoom(sessionId, adapter);
+    const seen = recorder();
+    await room.join(owner, seen.connection, 'Owner');
+    await room.persistGameState({
+      sceneId: 'scene-marowfell-well',
+      adventureId: 'adventure:01-hollow-under-marrowfell',
+    });
+
+    await room.submitAction(owner, randomUUID(), 'We open the seal.', 'Owner');
+    await waitForNarrationSent(seen.sent, 1);
+
+    expect(requests).toBe(2);
+    const { rows: events } = await db.query(
+      "SELECT type FROM events WHERE session_id=$1 AND type IN ('SceneClosed','ContentTierChanged','NpcUpserted')",
+      [sessionId],
+    );
+    expect(events).toHaveLength(0);
+    const { rows: registry } = await db.query(
+      'SELECT 1 FROM registry_entries WHERE session_id=$1',
+      [sessionId],
+    );
+    expect(registry).toHaveLength(0);
+  });
+
   it('emits no ContentTierChanged for a standard turn at standard', async () => {
     const owner = await account();
     const sessionId = await session(owner);

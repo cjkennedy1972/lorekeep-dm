@@ -613,6 +613,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       emit: (event) => {
         const value = event as Record<string, unknown>;
         if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
+        // Narration* events reach here only after the output gate, so they stream live.
         if (String(value.type).startsWith('Narration'))
           onEvent(event as DMTurnEvent);
         else attemptEvents.push(event as DMTurnEvent);
@@ -626,6 +627,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     }
     attemptEvents.length = 0;
     if (failed) {
+      result.events = [];
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
     }
