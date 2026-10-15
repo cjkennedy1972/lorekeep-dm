@@ -62,7 +62,8 @@ test('keyboard X-card is anonymous and pause is visible to every seat', async ({
     await guestPage.keyboard.press('Enter');
     await expect(
       guestPage.getByRole('status').filter({
-        hasText: /X-card (sent anonymously|was used)\. The DM will steer away next turn\./,
+        hasText:
+          /X-card (sent anonymously|was used)\. The DM will steer away next turn\./,
       }),
     ).toBeVisible();
     const sentFlag = guestBroadcasts.find(
