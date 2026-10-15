@@ -80,7 +80,8 @@ export async function matureAllowed(
   const tier = computeContentTier({
     seatedMatureOptOuts: await loadSeatedMatureOptOuts(db, sessionId),
     moderationVerified: session.moderation_verified,
-    endpointAllowsMature: endpointAllowsMature && session.endpoint_allows_mature,
+    endpointAllowsMature:
+      endpointAllowsMature && session.endpoint_allows_mature,
   });
   if (tier !== 'mature') return false;
   if (!liveDmAllowlistOnly) return true;

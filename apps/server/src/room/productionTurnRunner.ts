@@ -571,7 +571,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         allowClarification: request.allowClarification,
         clarificationAsked: request.clarificationAsked,
         testMode: process.env.NODE_ENV === 'test',
-        ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
+        ...(process.env.LLM_FIXTURE_MODE
+          ? { turnSeed: 0, testMode: true }
+          : {}),
         prompt: {
           catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
           toolMode: 'native',
