@@ -50,8 +50,8 @@ async function account() {
 async function session(owner: string) {
   const id = randomUUID();
   await db.query(
-    `INSERT INTO sessions(id,owner_account_id,name,moderation_verified)
-     VALUES($1,$2,$3,true)`,
+    `INSERT INTO sessions(id,owner_account_id,name,moderation_verified,endpoint_allows_mature)
+     VALUES($1,$2,$3,true,true)`,
     [id, owner, 'Refusal degrade'],
   );
   return id;
