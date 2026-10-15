@@ -214,16 +214,6 @@ export function NarrationLog({
             message.type !== 'TurnReverted'
           )
             return null;
-          if (
-            message.type !== 'ActionQueued' &&
-            message.type !== 'ActionWithdrawn' &&
-            message.type !== 'TurnThinking' &&
-            message.type !== 'RollEvent' &&
-            message.type !== 'NarrationChunk' &&
-            message.type !== 'NarrationCompleted' &&
-            message.type !== 'TurnReverted'
-          )
-            return null;
           if (message.type === 'TurnReverted')
             return (
               <li

@@ -95,7 +95,7 @@ test('does not put non-narration server payloads in the shared story log', () =>
             narration: 'Should not appear',
             playerName: 'Should not appear',
           },
-        } as ServerMessage,
+        } as unknown as ServerMessage,
         {
           seq: 21,
           type: 'CombatEvents',
