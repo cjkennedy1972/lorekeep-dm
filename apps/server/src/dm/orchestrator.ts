@@ -124,6 +124,8 @@ export interface TurnResult {
   state: unknown;
   turnSeed: string;
   usage: { in: number; out: number; cacheRead?: number };
+  /** Number of successfully executed tools; callers must not replay after side effects. */
+  toolCalls: number;
   fallback?: 'no-narration' | 'endpoint-error' | 'budget-exhausted';
   clarification?: { actionId: string; question: string };
 }
@@ -424,21 +426,24 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     sceneClosed = false;
   const callCapHits = new Set<string>();
   let endpointFailed = false;
+  let successfulToolCalls = 0;
   let clarification: TurnResult['clarification'];
   const makeFallback = (reason: NonNullable<TurnResult['fallback']>) => {
     fallback = reason;
     emit({ type: 'TurnFallback', turnId: input.turnId, reason });
     finalText =
-      reason === 'endpoint-error'
+      reason === 'endpoint-error' && successfulToolCalls === 0
         ? 'The tale pauses — the storyteller has lost the thread. Your action was not resolved; try again.'
-        : events.some(
-              (event) =>
-                (event as { type?: string }).type === 'RollEvent' ||
-                (event as { type?: string }).type === 'HpChanged' ||
-                (event as { type?: string }).type === 'EntityMoved',
-            )
-          ? 'The dice have spoken — the results stand above. The scene holds for a moment. What do you do?'
-          : 'Nothing comes of the attempt. What do you do?';
+        : reason === 'endpoint-error'
+          ? 'The tale pauses — the storyteller has lost the thread. The results above stand; continue when ready.'
+          : events.some(
+                (event) =>
+                  (event as { type?: string }).type === 'RollEvent' ||
+                  (event as { type?: string }).type === 'HpChanged' ||
+                  (event as { type?: string }).type === 'EntityMoved',
+              )
+            ? 'The dice have spoken — the results stand above. The scene holds for a moment. What do you do?'
+            : 'Nothing comes of the attempt. What do you do?';
   };
   let done = false;
   try {
@@ -647,6 +652,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           }
           continue;
         }
+        successfulToolCalls++;
         if (call.name === 'close_scene') sceneClosed = true;
         const toolResult = {
           ok: true,
@@ -731,6 +737,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         out: totalOut,
         ...(cacheRead ? { cacheRead } : {}),
       },
+      toolCalls: successfulToolCalls,
       ...(gatedQuestion.approved ? { clarification } : {}),
     };
   }
@@ -749,7 +756,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   }
   if (!finalText) makeFallback(fallback ?? 'no-narration');
   let finalCount = words(finalText);
-  if (endpointFailed) {
+  if (endpointFailed && successfulToolCalls === 0) {
     // Endpoint failure invalidates the in-flight turn; state is committed by the caller only on success.
     events.length = 0;
     input.context.state = input.prompt.turn.state;
@@ -822,6 +829,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     state: input.context.state,
     turnSeed: seedText,
     usage: { in: totalIn, out: totalOut, ...(cacheRead ? { cacheRead } : {}) },
+    toolCalls: successfulToolCalls,
     ...(fallback ? { fallback } : {}),
   };
 }

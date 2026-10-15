@@ -707,16 +707,39 @@ describe('DM orchestrator', () => {
       fallback: 'no-narration',
     });
   });
-  it('uses the engine template when the endpoint fails and does not commit partial engine state', async () => {
+  it('preserves successful tool effects when endpoint failure follows them', async () => {
     const h = setup([
       [call('c1', 'request_check', validCheck)],
       new LlmEndpointError('endpoint-timeout', 'timeout'),
     ]);
     const result = await runTurn(h.input);
     expect(result.fallback).toBe('endpoint-error');
-    expect(result.narration).toContain('storyteller has lost the thread');
-    expect(result.events).toHaveLength(0);
-    expect(result.state).toEqual({ characters: [character] });
+    expect(result.narration).toContain('results above stand');
+    expect(result.events).toContainEqual({ type: 'RollEvent', total: 16 });
+    expect(result.toolCalls).toBe(1);
+  });
+  it('preserves one successful tool execution when the following endpoint request fails', async () => {
+    const h = setup(
+      [
+        [call('c1', 'request_check', validCheck)],
+        new LlmEndpointError('endpoint-timeout', 'timeout'),
+      ],
+      () => ({
+        ok: true,
+        summary: 'The check resolves.',
+        events: ['RollEvent'],
+        output: {
+          events: [{ type: 'RollEvent', total: 16 }],
+          rollCount: 1,
+        },
+      }),
+    );
+    const result = await runTurn(h.input);
+    expect(result.fallback).toBe('endpoint-error');
+    expect(result.toolCalls).toBe(1);
+    expect(result.events).toContainEqual({ type: 'RollEvent', total: 16 });
+    expect(result.narration).toContain('results above stand');
+    expect(result.state).toEqual(h.input.context.state);
   });
 
   it('queues same-table turns instead of interleaving model requests', async () => {

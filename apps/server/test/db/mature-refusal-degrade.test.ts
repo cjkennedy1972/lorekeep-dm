@@ -15,6 +15,7 @@ import { SessionLease } from '../../src/room/lease.js';
 import { Room, type Connection } from '../../src/room/Room.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import { MODERATION_SECTIONS } from '../../src/safety/moderationRubric.generated.js';
+import type { Moderator } from '../../src/safety/moderator.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -49,7 +50,8 @@ async function account() {
 async function session(owner: string) {
   const id = randomUUID();
   await db.query(
-    'INSERT INTO sessions(id,owner_account_id,name,moderation_verified) VALUES($1,$2,$3,true)',
+    `INSERT INTO sessions(id,owner_account_id,name,moderation_verified)
+     VALUES($1,$2,$3,true)`,
     [id, owner, 'Refusal degrade'],
   );
   return id;
@@ -79,6 +81,17 @@ function matureRefusingNarrator(calls: { mature: number; standard: number }) {
 }
 
 const STANDARD_TEXT = 'The torch gutters low over the stone.';
+const allowOutput: Moderator = {
+  async moderate() {
+    return {
+      verdict: 'allow',
+      category: 'other',
+      source: 'judge',
+      latencyMs: 0,
+      unavailable: false,
+    };
+  },
+};
 
 async function openRoom(sessionId: string, adapter: LlmAdapter) {
   const store = new Persistence(db);
@@ -92,6 +105,7 @@ async function openRoom(sessionId: string, adapter: LlmAdapter) {
     adapter,
     false,
     true,
+    allowOutput,
   );
   return new Room(store, lease, await store.loadLatest(sessionId), runner);
 }
@@ -125,6 +139,9 @@ describe('endpoint refusal of a mature prompt', () => {
     const room = await openRoom(sessionId, matureRefusingNarrator(calls));
     const seen = recorder();
     await room.join(owner, seen.connection, 'Owner');
+    await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
+      sessionId,
+    ]);
 
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await waitForCompletions(sessionId, 1);

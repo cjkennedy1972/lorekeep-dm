@@ -643,7 +643,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     if (
       tier === 'mature' &&
       matureRefused &&
-      result.fallback === 'endpoint-error'
+      result.fallback === 'endpoint-error' &&
+      result.toolCalls === 0
     ) {
       this.endpointAllowsMature = false;
       tier = 'standard';
@@ -652,8 +653,14 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       onEvent({ type: 'NarrationTier', tier });
       result = await runAttempt();
     }
+    if (result.fallback === 'endpoint-error' && result.toolCalls > 0) {
+      matureRefused = false;
+      result.fallback = 'budget-exhausted';
+      result.narration =
+        'The tale pauses — the storyteller has lost the thread. The results above stand; continue when ready.';
+    }
     const tierEvents =
-      degraded || tier !== stored
+      tier !== stored
         ? [{ type: 'ContentTierChanged', from: stored, to: tier }]
         : [];
 
