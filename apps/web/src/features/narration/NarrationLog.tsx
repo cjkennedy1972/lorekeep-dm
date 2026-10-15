@@ -204,6 +204,26 @@ export function NarrationLog({
         aria-label="Story entries; use arrow keys or page keys to scroll"
       >
         {messages.map((message) => {
+          if (
+            message.type !== 'ActionQueued' &&
+            message.type !== 'ActionWithdrawn' &&
+            message.type !== 'TurnThinking' &&
+            message.type !== 'RollEvent' &&
+            message.type !== 'NarrationChunk' &&
+            message.type !== 'NarrationCompleted' &&
+            message.type !== 'TurnReverted'
+          )
+            return null;
+          if (
+            message.type !== 'ActionQueued' &&
+            message.type !== 'ActionWithdrawn' &&
+            message.type !== 'TurnThinking' &&
+            message.type !== 'RollEvent' &&
+            message.type !== 'NarrationChunk' &&
+            message.type !== 'NarrationCompleted' &&
+            message.type !== 'TurnReverted'
+          )
+            return null;
           if (message.type === 'TurnReverted')
             return (
               <li

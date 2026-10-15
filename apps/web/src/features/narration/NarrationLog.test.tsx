@@ -31,27 +31,6 @@ test('a player can report a narration with category and optional reason', async 
   ).toBeInTheDocument();
 });
 
-test('a player can report a text-bearing non-narration message', async () => {
-  const onReport = vi.fn().mockResolvedValue(null);
-  render(
-    <NarrationLog
-      messages={[
-        {
-          seq: 14,
-          type: 'ToolRejected',
-          payload: { text: 'That action was rejected.' },
-        } as ServerMessage,
-      ]}
-      onReport={onReport}
-    />,
-  );
-
-  fireEvent.click(screen.getByRole('button', { name: 'Report this message' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
-
-  await waitFor(() => expect(onReport).toHaveBeenCalledWith(14, 'other', ''));
-});
-
 test('a rewind is announced in the story log', () => {
   render(
     <NarrationLog
@@ -88,12 +67,12 @@ test('renders one report status for multiple reportable narrations', async () =>
   await waitFor(() => expect(onReport).toHaveBeenCalledOnce());
   expect(
     await screen.findByText('Report received. Thank you.', {
-      selector: '[role=\"status\"]',
+      selector: '[role=status]',
     }),
   ).toBeInTheDocument();
   expect(
     screen.getAllByText('Report received. Thank you.', {
-      selector: '[role=\"status\"]',
+      selector: '[role=status]',
     }),
   ).toHaveLength(1);
 });
@@ -106,6 +85,16 @@ test('does not put non-narration server payloads in the shared story log', () =>
           seq: 20,
           type: 'Error',
           payload: { code: 'PRIVATE', message: 'Private per-seat detail' },
+        } as ServerMessage,
+        {
+          seq: 22,
+          type: 'PrivateNarrationLikePayload',
+          payload: {
+            text: 'Should not appear',
+            narrative: 'Should not appear',
+            narration: 'Should not appear',
+            playerName: 'Should not appear',
+          },
         } as ServerMessage,
         {
           seq: 21,
@@ -121,5 +110,6 @@ test('does not put non-narration server payloads in the shared story log', () =>
 
   expect(screen.getByText('The door opens.')).toBeInTheDocument();
   expect(screen.queryByText('Private per-seat detail')).not.toBeInTheDocument();
+  expect(screen.queryByText('Should not appear')).not.toBeInTheDocument();
   expect(screen.queryByText('Hidden detail')).not.toBeInTheDocument();
 });
