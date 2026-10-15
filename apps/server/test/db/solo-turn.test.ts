@@ -66,7 +66,6 @@ const runner: SoloTurnRunner = {
       },
       turnSeed: '0x0000000000000000',
       usage: { in: 1, out: 1 },
-      toolCalls: 0,
     } satisfies TurnResult;
   },
 };
@@ -401,7 +400,6 @@ describe('solo turn persisted lifecycle', () => {
           },
           turnSeed: '0x0000000000000000',
           usage: { in: 0, out: 0 },
-          toolCalls: 0,
         } satisfies TurnResult;
       },
     });

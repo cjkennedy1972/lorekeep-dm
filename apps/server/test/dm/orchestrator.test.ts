@@ -717,7 +717,6 @@ describe('DM orchestrator', () => {
     expect(result.narration).toContain('not resolved');
     expect(result.events).toHaveLength(0);
     expect(result.state).toEqual({ characters: [character] });
-    expect(result.toolCalls).toBe(1);
   });
   it('applies a tool once and does not retry when the following endpoint request fails', async () => {
     const applied: string[] = [];
@@ -743,7 +742,6 @@ describe('DM orchestrator', () => {
     expect(applied).toEqual(['request_check']);
     expect(h.requests).toHaveLength(2);
     expect(result.fallback).toBe('endpoint-error');
-    expect(result.toolCalls).toBe(1);
     expect(result.events).toHaveLength(0);
   });
   it('maps a thrown endpoint error to the endpoint-error fallback', async () => {

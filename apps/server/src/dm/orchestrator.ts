@@ -124,8 +124,6 @@ export interface TurnResult {
   state: unknown;
   turnSeed: string;
   usage: { in: number; out: number; cacheRead?: number };
-  /** Number of successfully executed tools; callers must not replay after side effects. */
-  toolCalls: number;
   fallback?: 'no-narration' | 'endpoint-error' | 'budget-exhausted';
   clarification?: { actionId: string; question: string };
 }
@@ -426,7 +424,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     sceneClosed = false;
   const callCapHits = new Set<string>();
   let endpointFailed = false;
-  let successfulToolCalls = 0;
   let clarification: TurnResult['clarification'];
   const makeFallback = (reason: NonNullable<TurnResult['fallback']>) => {
     fallback = reason;
@@ -650,7 +647,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           }
           continue;
         }
-        successfulToolCalls++;
         if (call.name === 'close_scene') sceneClosed = true;
         const toolResult = {
           ok: true,
@@ -735,7 +731,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         out: totalOut,
         ...(cacheRead ? { cacheRead } : {}),
       },
-      toolCalls: successfulToolCalls,
       ...(gatedQuestion.approved ? { clarification } : {}),
     };
   }
@@ -827,7 +822,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     state: input.context.state,
     turnSeed: seedText,
     usage: { in: totalIn, out: totalOut, ...(cacheRead ? { cacheRead } : {}) },
-    toolCalls: successfulToolCalls,
     ...(fallback ? { fallback } : {}),
   };
 }
