@@ -75,7 +75,7 @@ describe('operator endpoint audit: denied attempts', () => {
   const audit = async () =>
     (
       await database.pool.query<Record<string, unknown>>(
-        'SELECT slot,action,actor_id,reason,details,extract(epoch FROM expires_at - created_at) AS lifetime_s FROM operator_endpoint_audit ORDER BY id',
+        "SELECT slot,action,actor_id,reason,details,expires_at = created_at + interval '30 days' AS thirty_days FROM operator_endpoint_audit ORDER BY id",
       )
     ).rows;
 
@@ -116,8 +116,7 @@ describe('operator endpoint audit: denied attempts', () => {
       reason: 'UNAUTHENTICATED',
       details: { method: 'GET', route: '/api/operator/endpoints' },
     });
-    for (const row of rows)
-      expect(Number(row.lifetime_s)).toBe(30 * 24 * 60 * 60);
+    for (const row of rows) expect(row.thirty_days).toBe(true);
   });
 
   it('records rejected saves with a reason code and no URL credentials or key material', async () => {

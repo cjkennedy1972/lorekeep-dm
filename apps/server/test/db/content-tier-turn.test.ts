@@ -270,7 +270,7 @@ describe('content tier through the DM turn path', () => {
     expect(promptTier(calls)).toBe('standard');
   });
 
-  it('defaults endpoint_allows_mature to false, so mature stays unreachable', async () => {
+  it('keeps mature unreachable when the endpoint flag is false', async () => {
     const { accountId, sessionId } = await table();
     const calls: LlmRequest[] = [];
     const { changes } = await turn(

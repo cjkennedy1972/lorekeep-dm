@@ -203,17 +203,15 @@ describe('moderation_log row', () => {
     ).toBe('block');
     const row = (
       await db.query<{
-        written_at: Date;
         expires_at: Date;
+        thirty_days: boolean;
         raw: string;
       }>(
-        `SELECT written_at, expires_at, to_jsonb(m)::text AS raw FROM moderation_log m WHERE account_id=$1`,
+        `SELECT expires_at, expires_at = written_at + interval '30 days' AS thirty_days, to_jsonb(m)::text AS raw FROM moderation_log m WHERE account_id=$1`,
         [accountId],
       )
     ).rows[0]!;
-    expect((row.expires_at.getTime() - row.written_at.getTime()) / 1000).toBe(
-      30 * 86_400,
-    );
+    expect(row.thirty_days).toBe(true);
     expect(row.raw).not.toContain('14yo');
     expect(row.raw).not.toContain('guard');
 
