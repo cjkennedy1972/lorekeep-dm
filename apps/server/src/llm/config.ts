@@ -365,7 +365,7 @@ export async function testEndpoint(
   master?: string,
 ): Promise<EndpointProfile> {
   const result = await db.query(
-    'SELECT base_url,model,api_style,encrypted_key,context_window,unsupported_tool_schema_keywords FROM operator_endpoints WHERE slot=$1',
+    'SELECT base_url,model,api_style,encrypted_key,context_window,unsupported_tool_schema_keywords,updated_at::text AS revision FROM operator_endpoints WHERE slot=$1',
     [slot],
   );
   const row = result.rows[0];
@@ -403,14 +403,17 @@ export async function testEndpoint(
     contextWindow:
       row.context_window === null ? undefined : Number(row.context_window),
   });
-  await db.query(
-    'UPDATE operator_endpoints SET probe=$2::jsonb, key_fingerprint=$3 WHERE slot=$1',
+  const persisted = await db.query(
+    'UPDATE operator_endpoints SET probe=$2::jsonb, key_fingerprint=$3 WHERE slot=$1 AND updated_at=$4::timestamptz',
     [
       slot,
       JSON.stringify(probe),
       keyValue === undefined ? null : endpointKeyFingerprint(keyValue, master),
+      row.revision,
     ],
   );
+  if (!persisted.rowCount)
+    throw new Error('Endpoint configuration changed during probe; retest');
   return probe;
 }
 export async function deleteEndpoint(

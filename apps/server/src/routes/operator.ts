@@ -24,6 +24,10 @@ import {
   testEndpoint,
   type EndpointSlot,
 } from '../llm/config.js';
+import {
+  configuredSoloEndpointSlot,
+  verifiedMatureEndpointGrant,
+} from '../llm/matureEndpoint.js';
 
 export function registerOperatorRoutes(
   app: FastifyInstance<
@@ -164,6 +168,93 @@ export function registerOperatorRoutes(
       return reply.code(503).send({ code: 'PROBE_FAILED' });
     }
   });
+  app.patch<{ Params: { id: string } }>(
+    '/api/operator/sessions/:id/mature-endpoint',
+    async (request, reply) => {
+      const session = await authorize(request, reply);
+      if (!session) return;
+      const { id } = request.params;
+      if (!z.uuid().safeParse(id).success)
+        return reply.code(404).send({ code: 'NOT_FOUND' });
+      const body = z
+        .object({
+          enabled: z.boolean(),
+          policyAcknowledgement: z
+            .literal(
+              'I_CONFIRM_NARRATION_AND_MODERATION_ENDPOINT_POLICIES_ALLOW_MATURE',
+            )
+            .optional(),
+        })
+        .strict()
+        .safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ code: 'INVALID_INPUT' });
+      const slot = configuredSoloEndpointSlot();
+      let fingerprint: string | null = null;
+      let moderationFingerprint: string | null = null;
+      if (body.data.enabled) {
+        if (
+          body.data.policyAcknowledgement !==
+          'I_CONFIRM_NARRATION_AND_MODERATION_ENDPOINT_POLICIES_ALLOW_MATURE'
+        )
+          return reply.code(400).send({
+            code: 'POLICY_ACKNOWLEDGEMENT_REQUIRED',
+            message:
+              'An operator must explicitly confirm that both configured narration and moderation endpoint policies permit this product’s mature tier.',
+          });
+        const endpointGrant = await verifiedMatureEndpointGrant(db, slot);
+        if (!endpointGrant)
+          return reply.code(409).send({
+            code: 'ENDPOINT_PROBE_REQUIRED',
+            message:
+              'The narration endpoint probe must show reachability, streaming, and a supported structured-call mode; the moderation endpoint probe must show reachability and streaming. The selected narration mode already enforces its 95% valid-call threshold. This technical check does not establish policy permission.',
+          });
+        fingerprint = endpointGrant.narrationFingerprint;
+        moderationFingerprint = endpointGrant.moderationFingerprint;
+      }
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const updated = await client.query(
+          `UPDATE sessions
+              SET endpoint_allows_mature=$2,
+                  endpoint_mature_fingerprint=$3,
+                  moderation_mature_fingerprint=$4
+            WHERE id=$1`,
+          [id, body.data.enabled, fingerprint, moderationFingerprint],
+        );
+        if (!updated.rowCount) {
+          await client.query('ROLLBACK');
+          return reply.code(404).send({ code: 'NOT_FOUND' });
+        }
+        await client.query(
+          'INSERT INTO operator_endpoint_audit(slot,action,actor_id,details) VALUES($1,$2,$3,$4::jsonb)',
+          [
+            slot,
+            body.data.enabled ? 'mature_enabled' : 'mature_disabled',
+            session.account_id,
+            JSON.stringify({
+              sessionId: id,
+              narrationEndpointSlot: slot,
+              moderationEndpointSlot: 'moderate',
+              narrationEndpointFingerprint: fingerprint,
+              moderationEndpointFingerprint: moderationFingerprint,
+            }),
+          ],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      return {
+        enabled: body.data.enabled,
+        narrationEndpointSlot: slot,
+        moderationEndpointSlot: 'moderate',
+      };
+    },
+  );
   app.delete('/api/operator/endpoints/:slot', async (request, reply) => {
     const session = await authorize(request, reply);
     if (!session) return;

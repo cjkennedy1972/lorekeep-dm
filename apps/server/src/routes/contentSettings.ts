@@ -43,7 +43,12 @@ export function registerContentSettingsRoutes(
   app: App,
   db: Pool,
   rooms: Pick<RoomRegistry, 'peek'> | undefined,
-  mature: { endpointAllowsMature: boolean; liveDmAllowlistOnly: boolean },
+  mature: {
+    endpointAllowsMature:
+      | boolean
+      | ((sessionId: string) => boolean | Promise<boolean>);
+    liveDmAllowlistOnly: boolean;
+  },
 ) {
   const persistence = new Persistence(db);
   app.get('/api/me/content-settings', async (request, reply) => {
@@ -158,7 +163,9 @@ export function registerContentSettingsRoutes(
         !(await matureAllowed(
           db,
           id,
-          mature.endpointAllowsMature,
+          typeof mature.endpointAllowsMature === 'function'
+            ? await mature.endpointAllowsMature(id)
+            : mature.endpointAllowsMature,
           mature.liveDmAllowlistOnly,
         ))
       )

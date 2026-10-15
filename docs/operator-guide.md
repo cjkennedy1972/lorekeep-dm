@@ -57,10 +57,36 @@ Endpoints live in three slots: `fast`, `frontier`, `moderate`. All calls need a 
 | `PUT /api/operator/endpoints/:slot` | Save the config; returns it with `"probe": null`. Saving does not call the endpoint: run the test route next. |
 | `POST /api/operator/endpoints/:slot/test` | Run the probe on the saved config and store the result (shown as `probe` by `GET`). |
 | `DELETE /api/operator/endpoints/:slot` | Remove the slot: `200 {"deleted":true}`, or `404 NOT_FOUND` if the slot is empty. A slot other than `fast`, `frontier`, `moderate` returns `400 INVALID_SLOT`. |
+| `PATCH /api/operator/sessions/:id/mature-endpoint` | Enable or revoke the per-session mature endpoint grant. Requires technical probes and explicit policy attestation for both the narration and moderation endpoints. |
 
 Body for `PUT` (unknown fields are rejected): `baseUrl`, `model`, `apiStyle` (`openai` or `anthropic`), optional `apiKey` (write-only), `contextWindow`, `unsupportedToolSchemaKeywords` (default `[]`; metadata only today, see the egress runbook).
 
 Config changes apply from the next DM turn; a turn already running finishes on the old config.
+
+### Enable mature content for one session
+
+Mature content stays disabled by default. This operator grant is separate from setting a table's content tier, and the technical probe does **not** establish policy permission. Mature narration is also sent to the moderation classifier, so attest both endpoints:
+
+1. Save and `POST /api/operator/endpoints/:slot/test` the endpoint used for narration (`SOLO_TURN_ENDPOINT_SLOT`, default `fast`).
+2. Save and test the `moderate` endpoint used by the content classifier.
+3. Review each endpoint's applicable terms/AUP and confirm they permit this product's defined mature tier. Do not grant if either endpoint's policy is unknown or disallows it. The narration endpoint probe must show reachability, streaming, and a supported structured-call mode (the selected mode's capability already encodes its own 95% valid-call threshold). The moderation endpoint probe must show reachability and streaming; its plain-text JSON judge does not need tool-call support.
+4. For a session UUID, enable the grant with this exact acknowledgement:
+
+```sh
+curl -sS -b cookies.txt -X PATCH "http://localhost:3000/api/operator/sessions/<session-id>/mature-endpoint" \
+  -H 'content-type: application/json' \
+  -d '{"enabled":true,"policyAcknowledgement":"I_CONFIRM_NARRATION_AND_MODERATION_ENDPOINT_POLICIES_ALLOW_MATURE"}'
+```
+
+The API returns `{"enabled":true,"narrationEndpointSlot":"fast","moderationEndpointSlot":"moderate"}` (the narration slot reflects `SOLO_TURN_ENDPOINT_SLOT`). The session grant is bound to the current narration and moderation endpoint configurations; saving or changing either endpoint invalidates that grant, so review both policies and grant it again after changes. It does not raise the table tier. The host must separately select mature, and the usual moderation, age, player opt-out, live-play, and hard-floor checks still apply.
+
+Revoke at any time:
+
+```sh
+curl -sS -b cookies.txt -X PATCH "http://localhost:3000/api/operator/sessions/<session-id>/mature-endpoint" \
+  -H 'content-type: application/json' \
+  -d '{"enabled":false}'
+```
 
 ### Hosted OpenAI-compatible endpoint
 
@@ -91,7 +117,7 @@ then save the slot with `"baseUrl":"http://localhost:11434/v1"`, `"apiStyle":"op
 | --- | --- |
 | `capabilities.reachability` / `streaming` / `nativeTools` / `jsonSchema` / `contextWindow32k` | Each `{ supported, detail? }`. |
 | `toolMode` | `native` (provider tool calls), `json-schema` (fallback), or `unsupported`. |
-| `validCallRate`, `schemaViolations` | Share of synthetic tool calls that were valid, and count that were not. |
+| `validCallRate`, `schemaViolations` | Aggregate share of synthetic tool calls that were valid across both tool modes, and count that were not. Mature eligibility checks the selected mode's capability flag (which reflects that mode's own 95% threshold), not this aggregate rate. |
 | `ttftMs` | Time to first token or tool call. |
 | `contextWindow` | Value used for the 32k check. |
 | `qualified` | Always `false` from the probe: passing it does not qualify a model. Qualification needs the eval results. |

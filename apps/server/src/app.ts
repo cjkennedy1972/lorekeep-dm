@@ -10,6 +10,7 @@ import { registerTableRoutes } from './routes/tables.js';
 import { retentionHealth } from './retention/sweeper.js';
 import { registerUsageRoutes } from './llm/usageRoutes.js';
 import { registerOperatorRoutes } from './routes/operator.js';
+import { sessionMatureEndpointAllowed } from './llm/matureEndpoint.js';
 import { registerReportRoutes } from './routes/reports.js';
 import { registerContentSettingsRoutes } from './routes/contentSettings.js';
 import type { RoomRegistry } from './room/registry.js';
@@ -146,7 +147,9 @@ export function createApp(
     registerOperatorRoutes(app, db as Pool, options.isOperator);
     registerReportRoutes(app, db as Pool);
     registerContentSettingsRoutes(app, db as Pool, options.rooms, {
-      endpointAllowsMature,
+      endpointAllowsMature: async (sessionId) =>
+        endpointAllowsMature ||
+        (await sessionMatureEndpointAllowed(db, sessionId)),
       liveDmAllowlistOnly,
     });
     if (options.rooms) {
