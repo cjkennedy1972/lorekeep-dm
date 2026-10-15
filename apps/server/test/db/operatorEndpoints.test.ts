@@ -453,4 +453,41 @@ describe('operator endpoint configuration', () => {
       'secret',
     );
   });
+
+  it('does not persist a probe after the endpoint config changes mid-probe', async () => {
+    const db = await createTestDatabase();
+    try {
+      await db.pool.query(
+        `CREATE TABLE operator_endpoints(slot text PRIMARY KEY,base_url text NOT NULL,model text NOT NULL,api_style text NOT NULL,encrypted_key text,key_fingerprint text,context_window integer,unsupported_tool_schema_keywords jsonb NOT NULL DEFAULT '[]'::jsonb,probe jsonb,updated_at timestamptz NOT NULL DEFAULT now())`,
+      );
+      await db.pool.query(
+        `CREATE TABLE operator_endpoint_audit(id bigserial PRIMARY KEY,slot text,action text,actor_id uuid,reason text,details jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz DEFAULT now(),expires_at timestamptz DEFAULT now()+interval '30 days')`,
+      );
+      await db.pool.query(
+        "INSERT INTO operator_endpoints(slot,base_url,model,api_style,updated_at) VALUES('fast','https://api.example.test/v1','m','openai','2020-01-01 00:00:00.123456+00')",
+      );
+      const egress = createEgressGuard({
+        resolver: async () => [{ address: '93.184.216.34', family: 4 }],
+        transport: async () => {
+          await db.pool.query(
+            "UPDATE operator_endpoints SET model='changed', updated_at=now() WHERE slot='fast'",
+          );
+          return { status: 200, headers: {}, body: null };
+        },
+      });
+
+      await expect(
+        testEndpoint(db.pool, 'fast', egress, randomUUID()),
+      ).rejects.toThrow('changed during probe');
+      expect(
+        (
+          await db.pool.query<{ probe: unknown }>(
+            "SELECT probe FROM operator_endpoints WHERE slot='fast'",
+          )
+        ).rows[0]!.probe,
+      ).toBeNull();
+    } finally {
+      await db.close();
+    }
+  });
 });
