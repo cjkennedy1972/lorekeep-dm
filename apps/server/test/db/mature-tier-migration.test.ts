@@ -2,6 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
+import {
+  loadContentTierState,
+  matureAllowed,
+} from '../../src/safety/tierLoader.js';
 
 const migrationSql = (name: string) =>
   readFile(new URL(`../../migrations/${name}.sql`, import.meta.url), 'utf8');
@@ -103,6 +107,35 @@ describe('mature tier migration', () => {
       [database.schema],
     );
     expect(remaining.rowCount).toBe(0);
+  });
+
+  it('defaults a fresh table to endpoint_allows_mature=false, which keeps mature unreachable', async () => {
+    const names = await listMigrations();
+    for (const name of names)
+      await database.pool.query(await migrationSql(name));
+
+    const owner = randomUUID();
+    await database.pool.query(
+      `INSERT INTO accounts(id,email,password_hash,display_name,is_adult,age_checked_at,terms_version,terms_accepted_at)
+       VALUES ($1,$2,'hash','Player',true,now(),'v1',now())`,
+      [owner, `${owner}@example.test`],
+    );
+    const sessionId = randomUUID();
+    await database.pool.query(
+      'INSERT INTO sessions(id,owner_account_id,moderation_verified) VALUES ($1,$2,true)',
+      [sessionId, owner],
+    );
+
+    const flag = await database.pool.query<{ endpoint_allows_mature: boolean }>(
+      'SELECT endpoint_allows_mature FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    expect(flag.rows[0].endpoint_allows_mature).toBe(false);
+    expect(await matureAllowed(database.pool, sessionId, true, false)).toBe(
+      false,
+    );
+    const { tier } = await loadContentTierState(database.pool, sessionId, true);
+    expect(tier).not.toBe('mature');
   });
 });
 

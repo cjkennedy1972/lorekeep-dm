@@ -25,8 +25,8 @@ async function account() {
 async function room(owner: string) {
   const id = randomUUID();
   await db.query(
-    `INSERT INTO sessions(id,owner_account_id,name,content_tier,moderation_verified)
-     VALUES($1,$2,'Table','standard',true)`,
+    `INSERT INTO sessions(id,owner_account_id,name,content_tier,moderation_verified,endpoint_allows_mature)
+     VALUES($1,$2,'Table','standard',true,true)`,
     [id, owner],
   );
   return id;
