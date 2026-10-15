@@ -322,6 +322,59 @@ describe('rewind plan', () => {
       expect(entries.rowCount).toBe(2);
     }));
 
+  it('removes registry rows written by a clarification turn inside the rewound window', () =>
+    fixture(async (pool, id) => {
+      const persistence = new Persistence(pool);
+      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 }, undefined, [npc('Innkeeper')], undefined, ids.a);
+      await persistence.writeTurn(id, [row('b', 'ToolCall')], { turn: 1 });
+      await persistence.writeTurn(id, [row('c', 'ClarificationRequested')], { turn: 1 }, undefined, [npc('Mayor')], undefined, ids.c);
+      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 }, undefined, [npc('Guard')], undefined, ids.b);
+
+      const plan = await persistence.loadRewindPlan(id);
+      expect(plan!.turnId).toBe(ids.b);
+      expect(plan!.droppedTurnIds).toEqual(expect.arrayContaining([ids.b, ids.c]));
+      expect(plan!.droppedTurnIds).not.toContain(ids.a);
+      await persistence.writeTurn(
+        id,
+        [revert(ids.b)],
+        { turn: 1 },
+        undefined,
+        [],
+        plan!.headSeq,
+        undefined,
+        plan!.droppedTurnIds,
+      );
+
+      const { rows } = await pool.query<{ version: number; role: string; superseded_by: string | null }>(
+        `SELECT version, payload->>'role' AS role, superseded_by FROM registry_entries
+          WHERE session_id=$1 ORDER BY version`,
+        [id],
+      );
+      expect(rows).toEqual([{ version: 1, role: 'Innkeeper', superseded_by: null }]);
+    }));
+
+  it('fails the rewind closed when a surviving registry row supersedes a removed one', () =>
+    fixture(async (pool, id) => {
+      const persistence = new Persistence(pool);
+      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 }, undefined, [npc('Innkeeper')], undefined, ids.a);
+      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 }, undefined, [npc('Mayor')], undefined, ids.b);
+      await pool.query(
+        `UPDATE registry_entries SET version = 3,
+            supersedes_id = (SELECT id FROM registry_entries WHERE session_id=$1 AND turn_id=$2)
+          WHERE session_id=$1 AND turn_id=$3`,
+        [id, ids.b, ids.a],
+      );
+      const plan = await persistence.loadRewindPlan(id);
+
+      await expect(
+        persistence.writeTurn(id, [revert(ids.b)], { turn: 1 }, undefined, [], plan!.headSeq, undefined, plan!.droppedTurnIds),
+      ).rejects.toThrow(/foreign key|violates/i);
+      const reverted = await pool.query('SELECT 1 FROM events WHERE session_id=$1 AND type=$2', [id, 'TurnReverted']);
+      const entries = await pool.query('SELECT 1 FROM registry_entries WHERE session_id=$1', [id]);
+      expect(reverted.rowCount).toBe(0);
+      expect(entries.rowCount).toBe(2);
+    }));
+
   it('reports no plan when no turn has resolved', () =>
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);

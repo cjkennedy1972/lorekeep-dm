@@ -59,6 +59,7 @@ export interface RoomStore {
     registryEvents?: readonly RegistryEvent[],
     expectedHeadSeq?: number,
     registryTurnId?: string,
+    rewoundTurnIds?: readonly string[],
   ): Promise<{ events: StoredEvent[] }>;
   writeHostTierCap(
     sessionId: string,
@@ -664,6 +665,8 @@ export class Room {
         this.lease,
         [],
         plan.headSeq,
+        undefined,
+        plan.droppedTurnIds,
       );
       const committed = stored.events.at(-1);
       if (!committed) throw new Error('Persistence returned no event');

@@ -19,6 +19,7 @@ export interface RewindPlan {
   before: LatestState;
   retained: StoredEvent[];
   headSeq: number;
+  droppedTurnIds: string[];
 }
 
 export interface LeaseFence {
@@ -222,6 +223,7 @@ export class Persistence {
     registryEvents: readonly RegistryEvent[] = [],
     expectedHeadSeq?: number,
     registryTurnId?: string,
+    rewoundTurnIds: readonly string[] = [],
   ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
@@ -281,9 +283,14 @@ export class Persistence {
               (event.payload as { revertedTurnId: string }).revertedTurnId,
             ],
           );
-      const revertedTurnIds = events
-        .filter((event) => event.type === 'TurnReverted')
-        .map((event) => (event.payload as { revertedTurnId: string }).revertedTurnId);
+      const revertedTurnIds = [
+        ...new Set([
+          ...events
+            .filter((event) => event.type === 'TurnReverted')
+            .map((event) => (event.payload as { revertedTurnId: string }).revertedTurnId),
+          ...rewoundTurnIds,
+        ]),
+      ];
       if (revertedTurnIds.length)
         await new RegistryMemory(this.pool).removeTurnsInTransaction(
           client,
@@ -372,6 +379,18 @@ export class Persistence {
         [sessionId, target.firstSeq, target.turnId, ROOM_STATE_EVENT_TYPES],
       );
       await client.query('COMMIT');
+      const retainedSeqs = new Set(retained.rows.map((row) => Number(row.seq)));
+      const droppedTurnIds = [
+        ...new Set(
+          log.rows
+            .filter((row) => Number(row.seq) >= target.firstSeq && !retainedSeqs.has(Number(row.seq)))
+            .flatMap((row) =>
+              row.type === 'TurnReverted'
+                ? [row.turn_id, (row.payload as { revertedTurnId: string }).revertedTurnId]
+                : [row.turn_id],
+            ),
+        ),
+      ];
       const toStored = (row: (typeof tail.rows)[number]): StoredEvent => ({
         sessionId,
         seq: Number(row.seq),
@@ -386,6 +405,7 @@ export class Persistence {
         before: { snapshot, events: tail.rows.map(toStored) },
         retained: retained.rows.map(toStored),
         headSeq: Number(log.rows.at(-1)?.seq ?? 0),
+        droppedTurnIds,
       };
     } catch (error) {
       await client.query('ROLLBACK');
