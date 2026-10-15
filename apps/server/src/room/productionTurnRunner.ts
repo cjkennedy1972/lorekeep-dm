@@ -613,15 +613,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       emit: (event) => {
         const value = event as Record<string, unknown>;
         if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
-        attemptEvents.push(event as DMTurnEvent);
+        if (String(value.type).startsWith('Narration'))
+          onEvent(event as DMTurnEvent);
+        else attemptEvents.push(event as DMTurnEvent);
       },
     });
     // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
     const failed = result.fallback === 'endpoint-error';
     for (const event of attemptEvents) {
       const type = String((event as { type?: string }).type);
-      if (!failed || type.startsWith('Narration') || type === 'TurnFallback')
-        onEvent(event);
+      if (!failed || type === 'TurnFallback') onEvent(event);
     }
     attemptEvents.length = 0;
     if (failed) {
@@ -629,7 +630,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       registryEvents.length = 0;
     }
     const tierEvents =
-      tier !== stored
+      !failed && tier !== stored
         ? [{ type: 'ContentTierChanged', from: stored, to: tier }]
         : [];
 

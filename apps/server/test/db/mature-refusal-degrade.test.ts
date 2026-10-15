@@ -178,6 +178,53 @@ describe('endpoint refusal of a mature prompt', () => {
     },
   );
 
+  it('returns no ContentTierChanged from a failed turn whose tier differs from the stored tier', async () => {
+    const owner = await account();
+    const sessionId = await session(owner);
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
+      [
+        sessionId,
+        {
+          seatId: randomUUID(),
+          accountId: owner,
+          displayName: 'Owner',
+          presence: 'offline',
+          matureOptOut: false,
+        },
+      ],
+    );
+    const calls = { mature: 0, standard: 0 };
+    const runner = new ProductionSoloTurnRunner(
+      db,
+      undefined,
+      'record',
+      join(dir, `${randomUUID()}.ndjson`),
+      matureRefusingNarrator(calls, 403),
+      false,
+      true,
+      allowOutput,
+    );
+    const result = await runner.run(
+      {
+        sessionId,
+        accountId: owner,
+        actionId: randomUUID(),
+        text: 'We look around.',
+        state: {},
+      },
+      () => undefined,
+    );
+
+    expect(calls).toEqual({ mature: 1, standard: 0 });
+    expect(result.fallback).toBe('endpoint-error');
+    expect(
+      result.events.filter(
+        (e) => (e as { type?: string }).type === 'ContentTierChanged',
+      ),
+    ).toEqual([]);
+  });
+
   it('emits no ContentTierChanged for a standard turn at standard', async () => {
     const owner = await account();
     const sessionId = await session(owner);
