@@ -8,6 +8,7 @@ import {
 import type { RegistryEvent } from '../dm/memory.js';
 import {
   LeaseConflictError,
+  RewindRefusedError,
   type EventInput,
   type LatestState,
   type RewindPlan,
@@ -83,17 +84,12 @@ export interface Connection {
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 const DRAIN_DEADLINE_MS = 30_000;
 
+export { RewindRefusedError };
+
 export class NotTableHostError extends Error {
   constructor(message = 'Only the table host can resume') {
     super(message);
     this.name = 'NotTableHostError';
-  }
-}
-
-export class RewindRefusedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'RewindRefusedError';
   }
 }
 
