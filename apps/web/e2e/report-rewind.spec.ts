@@ -23,9 +23,9 @@ test('report and rewind banner are reachable with the keyboard', async ({
     });
   });
   const report = page.getByRole('button', { name: 'Report this message' });
-  const nonNarrationReport = report.first();
-  await nonNarrationReport.focus();
-  await expect(nonNarrationReport).toBeFocused();
+  const narrationReport = report.first();
+  await narrationReport.focus();
+  await expect(narrationReport).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(
     page.getByRole('form', { name: 'Report message' }),
@@ -38,10 +38,11 @@ test('report and rewind banner are reachable with the keyboard', async ({
     page.getByRole('status').filter({ hasText: 'Report received. Thank you.' }),
   ).toHaveText('Report received. Thank you.');
   await expect(
-    page.getByRole('listitem').filter({ hasText: 'Your action was rejected.' }),
+    page.getByText('A sealed door opens.', { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText('rejected-turn')).toHaveCount(0);
   expect(reported).toEqual({
-    messageRef: 43,
+    messageRef: 44,
     category: 'harassment',
     reason: 'Needs review',
   });

@@ -31,26 +31,23 @@ test('a player can report a narration with category and optional reason', async 
   ).toBeInTheDocument();
 });
 
-test('a player can report a text-bearing ToolRejected message', async () => {
-  const onReport = vi.fn().mockResolvedValue(null);
+test('ToolRejected with the wire payload is not rendered as narration', () => {
   render(
     <NarrationLog
       messages={[
         {
           seq: 14,
           type: 'ToolRejected',
-          payload: { text: 'That action was rejected.' },
+          payload: { turnId: 'turn-rejected' },
         },
       ]}
-      onReport={onReport}
     />,
   );
 
-  fireEvent.click(screen.getByRole('button', { name: 'Report this message' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
-
-  await waitFor(() => expect(onReport).toHaveBeenCalledWith(14, 'other', ''));
-  expect(screen.getByText('That action was rejected.')).toBeInTheDocument();
+  expect(screen.queryByText('turn-rejected')).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Report this message' }),
+  ).not.toBeInTheDocument();
 });
 
 test('a rewind is announced in the story log', () => {
