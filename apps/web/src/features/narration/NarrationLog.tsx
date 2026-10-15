@@ -105,7 +105,6 @@ export function NarrationLog({
             </button>
           </form>
         )}
-        {reportMessage && <p role="status">{reportMessage}</p>}
       </div>
     );
   };
@@ -144,6 +143,16 @@ export function NarrationLog({
 
   useEffect(() => {
     for (const message of messages) {
+      if (
+        message.type !== 'ActionQueued' &&
+        message.type !== 'ActionWithdrawn' &&
+        message.type !== 'TurnThinking' &&
+        message.type !== 'RollEvent' &&
+        message.type !== 'NarrationChunk' &&
+        message.type !== 'NarrationCompleted' &&
+        message.type !== 'TurnReverted'
+      )
+        continue;
       const key = `${message.seq}:${message.type}:${JSON.stringify(message.payload)}`;
       if (seen.current.has(key)) continue;
       seen.current.add(key);
@@ -376,6 +385,7 @@ export function NarrationLog({
             });
           })}
       </ol>
+      {reportMessage && <p role="status">{reportMessage}</p>}
       {state.entries.some((entry) => entry.kind === 'pending') && (
         <p className="sr-only" role="status" aria-live="polite">
           The DM is thinking.

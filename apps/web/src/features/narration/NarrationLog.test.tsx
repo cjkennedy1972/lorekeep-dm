@@ -70,3 +70,56 @@ test('a rewind is announced in the story log', () => {
     'The host rewound the last DM turn. Its narration and game state were restored; the next attempt uses a new dice roll.',
   );
 });
+
+test('renders one report status for multiple reportable narrations', async () => {
+  const onReport = vi.fn().mockResolvedValue(null);
+  const second = {
+    seq: 13,
+    type: 'NarrationCompleted',
+    payload: { turnId: 'turn-2', text: 'The chest opens.' },
+  } as ServerMessage;
+  render(<NarrationLog messages={[narration, second]} onReport={onReport} />);
+
+  fireEvent.click(
+    screen.getAllByRole('button', { name: 'Report this message' })[0]!,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
+
+  await waitFor(() => expect(onReport).toHaveBeenCalledOnce());
+  expect(
+    await screen.findByText('Report received. Thank you.', {
+      selector: '[role=\"status\"]',
+    }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getAllByText('Report received. Thank you.', {
+      selector: '[role=\"status\"]',
+    }),
+  ).toHaveLength(1);
+});
+
+test('does not put non-narration server payloads in the shared story log', () => {
+  render(
+    <NarrationLog
+      messages={[
+        {
+          seq: 20,
+          type: 'Error',
+          payload: { code: 'PRIVATE', message: 'Private per-seat detail' },
+        } as ServerMessage,
+        {
+          seq: 21,
+          type: 'CombatEvents',
+          payload: {
+            events: [{ type: 'PrivateEvent', text: 'Hidden detail' }],
+          },
+        } as ServerMessage,
+        narration,
+      ]}
+    />,
+  );
+
+  expect(screen.getByText('The door opens.')).toBeInTheDocument();
+  expect(screen.queryByText('Private per-seat detail')).not.toBeInTheDocument();
+  expect(screen.queryByText('Hidden detail')).not.toBeInTheDocument();
+});
