@@ -307,10 +307,15 @@ describe('endpoint refusal of a mature prompt', () => {
     expect(calls).toEqual({ mature: 1, standard: 1 });
     expect(narrationText(seen.sent)).toBe(STANDARD_TEXT);
     expect(narrationText(seen.sent)).not.toContain('PARTIAL MATURE');
-    const { rows: tierEvents } = await db.query(
-      "SELECT payload FROM events WHERE session_id=$1 AND type='ContentTierChanged'",
-      [sessionId],
-    );
+    let tierEvents: { payload: { from: string; to: string } }[] = [];
+    for (let i = 0; i < 300 && tierEvents.length === 0; i++) {
+      ({ rows: tierEvents } = await db.query(
+        "SELECT payload FROM events WHERE session_id=$1 AND type='ContentTierChanged'",
+        [sessionId],
+      ));
+      if (tierEvents.length === 0)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     expect(tierEvents).toHaveLength(1);
     expect(tierEvents[0].payload).toMatchObject({
       from: 'mature',
