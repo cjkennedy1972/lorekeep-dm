@@ -58,6 +58,7 @@ export interface RoomStore {
     lease: Lease,
     registryEvents?: readonly RegistryEvent[],
     expectedHeadSeq?: number,
+    registryTurnId?: string,
   ): Promise<{ events: StoredEvent[] }>;
   writeHostTierCap(
     sessionId: string,
@@ -1187,6 +1188,8 @@ export class Room {
           snapshotState,
           this.lease,
           registryEvents,
+          undefined,
+          id,
         );
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;

@@ -50,9 +50,53 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
         'utf8',
       ),
     );
+    await database.pool.query(
+      await readFile(
+        new URL('../../migrations/0031_registry_turn_link.sql', import.meta.url),
+        'utf8',
+      ),
+    );
     memory = new RegistryMemory(database.pool);
   }, 30_000);
   afterAll(async () => database?.close());
+
+  it('stamps the closing turn on scene summaries and their registry versions, NULL when untagged', async () => {
+    await memory.closeScene(
+      sessionId,
+      'scene-tagged',
+      'Tagged scene.',
+      [
+        {
+          kind: 'npc',
+          id: 'npc_tagged',
+          after: { id: 'npc_tagged', name: 'Tagged Npc', role: 'Clerk', disposition: 'neutral', facts: [] },
+        },
+      ],
+      'turn-close',
+    );
+    await memory.closeScene(sessionId, 'scene-untagged', 'Untagged scene.');
+    const summaries = await database!.pool.query<{ scene_id: string; turn_id: string | null }>(
+      'SELECT scene_id, turn_id FROM scene_summaries WHERE session_id=$1 ORDER BY scene_id',
+      [sessionId],
+    );
+    expect(summaries.rows).toEqual([
+      { scene_id: 'scene-tagged', turn_id: 'turn-close' },
+      { scene_id: 'scene-untagged', turn_id: null },
+    ]);
+    const entries = await database!.pool.query<{ turn_id: string | null }>(
+      "SELECT turn_id FROM registry_entries WHERE session_id=$1 AND entity_id='npc_tagged'",
+      [sessionId],
+    );
+    expect(entries.rows).toEqual([{ turn_id: 'turn-close' }]);
+    await database!.pool.query(
+      "DELETE FROM scene_summaries WHERE session_id=$1 AND scene_id IN ('scene-tagged','scene-untagged')",
+      [sessionId],
+    );
+    await database!.pool.query(
+      "DELETE FROM registry_entries WHERE session_id=$1 AND entity_id='npc_tagged'",
+      [sessionId],
+    );
+  });
 
   it('is append-only/idempotent, bounded, and builds recap inputs after raw events are deleted', async () => {
     expect(

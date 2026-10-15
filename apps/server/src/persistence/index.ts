@@ -221,6 +221,7 @@ export class Persistence {
     lease?: LeaseFence,
     registryEvents: readonly RegistryEvent[] = [],
     expectedHeadSeq?: number,
+    registryTurnId?: string,
   ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
@@ -239,6 +240,7 @@ export class Persistence {
           client,
           sessionId,
           registryEvents,
+          registryTurnId ?? null,
         );
       const safetyFlags = events.filter((event) => event.type === 'SafetyFlag');
       for (const event of safetyFlags) {
@@ -279,6 +281,15 @@ export class Persistence {
               (event.payload as { revertedTurnId: string }).revertedTurnId,
             ],
           );
+      const revertedTurnIds = events
+        .filter((event) => event.type === 'TurnReverted')
+        .map((event) => (event.payload as { revertedTurnId: string }).revertedTurnId);
+      if (revertedTurnIds.length)
+        await new RegistryMemory(this.pool).removeTurnsInTransaction(
+          client,
+          sessionId,
+          revertedTurnIds,
+        );
       const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
       return { events: inserted, snapshot };
     });
