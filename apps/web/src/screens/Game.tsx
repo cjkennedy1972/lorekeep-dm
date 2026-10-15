@@ -465,6 +465,32 @@ export function Game() {
       <p role="status" aria-live="polite">
         {error}
       </p>
+      <section aria-label="Table safety controls">
+        <h2>Table safety</h2>
+        <button type="button" onClick={() => live.send('XCard')}>
+          X-card: steer away
+        </button>
+        <button
+          type="button"
+          onClick={() => live.send('PauseTable', { paused: !room.paused })}
+          aria-label={room.paused ? 'Resume table' : 'Pause table'}
+        >
+          {room.paused ? 'Resume table' : 'Pause table'}
+        </button>
+        {room.paused && (
+          <p role="status" aria-live="polite">
+            Table paused. No new narration will start.
+          </p>
+        )}
+        {messages.some(
+          (message) =>
+            message.type === 'SafetyFlag' && message.payload.kind === 'x-card',
+        ) && (
+          <p role="status" aria-live="polite">
+            X-card received. The scene is steering away.
+          </p>
+        )}
+      </section>
       <ActionInput
         onSubmit={submitAction}
         pending={Boolean(pendingAction)}

@@ -179,6 +179,32 @@ describe('Game screen (live Room)', () => {
     });
   });
 
+  it('sends anonymous X-card and pause commands and displays shared pause state', async () => {
+    const user = userEvent.setup();
+    mount();
+    expect(
+      screen.getByRole('button', { name: 'X-card: steer away' }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'X-card: steer away' }),
+    );
+    expect(hoisted.send).toHaveBeenLastCalledWith('XCard');
+    push('SafetyFlag', { kind: 'x-card' });
+    expect(
+      screen.getByText('X-card received. The scene is steering away.'),
+    ).toBeInTheDocument();
+    expect(JSON.stringify({ kind: 'x-card' })).not.toMatch(/Sam|Aria|acct-1/);
+    await user.click(screen.getByRole('button', { name: 'Pause table' }));
+    expect(hoisted.send).toHaveBeenLastCalledWith('PauseTable', {
+      paused: true,
+    });
+    (hoisted.room as { paused?: boolean }).paused = true;
+    push('SafetyFlag', { kind: 'x-card' });
+    expect(
+      screen.getByText('Table paused. No new narration will start.'),
+    ).toBeInTheDocument();
+  });
+
   it('shows pending immediately on submit and clears it on the matching narration', async () => {
     const user = userEvent.setup();
     mount();
