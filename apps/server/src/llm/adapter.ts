@@ -43,6 +43,7 @@ export type LlmChunk =
 export type LlmErrorCode =
   | 'endpoint-timeout'
   | 'endpoint-error'
+  | 'endpoint-refusal'
   | 'stream-aborted';
 export class LlmEndpointError extends Error {
   constructor(

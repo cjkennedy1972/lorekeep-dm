@@ -50,6 +50,21 @@ describe('Anthropic Messages adapter', () => {
     for await (const chunk of adapter.complete(request)) chunks.push(chunk);
     return chunks;
   };
+  it('reports a stop_reason refusal as endpoint-refusal and discards the partial text', async () => {
+    server = await startFakeAnthropicServer({
+      chunks: [
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"refusal"},"usage":{"output_tokens":1}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ],
+    });
+    await expect(collect(adapterFor())).rejects.toMatchObject({
+      code: 'endpoint-refusal',
+    });
+  });
+
   it('maps messages, tools, streams text/tool input and maps cache usage', async () => {
     server = await startFakeAnthropicServer({ chunks: anthropicStream });
     const chunks = await collect(adapterFor(true));

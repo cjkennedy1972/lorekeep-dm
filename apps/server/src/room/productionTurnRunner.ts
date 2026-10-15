@@ -7,6 +7,8 @@ import {
   loadSeatedContentBoundaries,
 } from '../safety/tierLoader.js';
 import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
+import { LlmEndpointError } from '../llm/adapter.js';
+import type { ContentTier } from '../safety/tier.js';
 // Node-only subpath: it pulls in the catalog loader (node:fs), so it must never be reachable
 // from the browser-safe engine index (see test/purity.test.ts).
 import type {
@@ -138,6 +140,25 @@ const TEST_ALLOW_MODERATOR: Moderator = {
     };
   },
 };
+
+function refusalWatch(adapter: LlmAdapter, onRefusal: () => void): LlmAdapter {
+  return {
+    capabilities: () => adapter.capabilities(),
+    probe: (signal) => adapter.probe(signal),
+    async *complete(request) {
+      try {
+        yield* adapter.complete(request);
+      } catch (error) {
+        if (
+          error instanceof LlmEndpointError &&
+          error.code === 'endpoint-refusal'
+        )
+          onRefusal();
+        throw error;
+      }
+    },
+  };
+}
 
 export class ProductionSoloTurnRunner implements SoloTurnRunner {
   private readonly catalog = loadCatalog();
@@ -541,84 +562,104 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     onEvent({ type: 'NarrationTier', tier });
     const emittedSceneEvents: unknown[] = [];
     const attemptEvents: DMTurnEvent[] = [];
-    const result = await runTurn({
-      signal: request.signal,
-      turnId: request.actionId,
-      allowClarification: request.allowClarification,
-      clarificationAsked: request.clarificationAsked,
-      testMode: process.env.NODE_ENV === 'test',
-      ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
-      prompt: {
-        catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
-        toolMode: 'native',
-        sceneId: state.sceneId ?? request.sessionId,
-        settingsHash: 'default',
-        session: {
-          contentTier: tier,
-          safetySettings: {
-            lines: boundaries.lines,
-            veils: boundaries.veils,
-            ...(tier === 'mature'
-              ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
+    let refused = false;
+    const attempt = (attemptTier: ContentTier) => {
+      refused = false;
+      return runTurn({
+        signal: request.signal,
+        turnId: request.actionId,
+        allowClarification: request.allowClarification,
+        clarificationAsked: request.clarificationAsked,
+        testMode: process.env.NODE_ENV === 'test',
+        ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
+        prompt: {
+          catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
+          toolMode: 'native',
+          sceneId: state.sceneId ?? request.sessionId,
+          settingsHash: 'default',
+          session: {
+            contentTier: attemptTier,
+            safetySettings: {
+              lines: boundaries.lines,
+              veils: boundaries.veils,
+              ...(attemptTier === 'mature'
+                ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
+                : {}),
+            },
+            ...(request.steerAway ? { steerAway: true } : {}),
+            partyRoster: Object.values(actors).map((actor) => ({
+              id: actor.id,
+              name: actor.name,
+            })),
+            premise: state.premise ?? `A solo adventure at ${tableName}.`,
+            sceneSummary:
+              state.sceneSummary ??
+              'The party is at the beginning of its adventure.',
+            ...(currentScene
+              ? {
+                  currentScene: {
+                    id: currentScene.id,
+                    title: currentScene.title,
+                    summary: currentScene.text.slice(0, 240),
+                  },
+                  nextScenes,
+                }
               : {}),
           },
-          ...(request.steerAway ? { steerAway: true } : {}),
-          partyRoster: Object.values(actors).map((actor) => ({
-            id: actor.id,
-            name: actor.name,
-          })),
-          premise: state.premise ?? `A solo adventure at ${tableName}.`,
-          sceneSummary:
-            state.sceneSummary ??
-            'The party is at the beginning of its adventure.',
-          ...(currentScene
-            ? {
-                currentScene: {
-                  id: currentScene.id,
-                  title: currentScene.title,
-                  summary: currentScene.text.slice(0, 240),
-                },
-                nextScenes,
-              }
-            : {}),
+          activeMode:
+            state &&
+            typeof state === 'object' &&
+            (state as { combatRoom?: unknown }).combatRoom
+              ? 'combat'
+              : 'exploration',
+          turn: {
+            state: { characters: Object.values(actors) },
+            activeActorId: liveTurnActorId(state),
+            registryFacts: memoryContext.registryFacts,
+            retrievedMemory: memoryContext.retrievedMemory,
+            playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
+            turns: state.lastNarration
+              ? [
+                  {
+                    playerText: state.lastPlayerText ?? '',
+                    narration: state.lastNarration,
+                  },
+                ]
+              : [],
+          },
         },
-        activeMode:
-          state &&
-          typeof state === 'object' &&
-          (state as { combatRoom?: unknown }).combatRoom
-            ? 'combat'
-            : 'exploration',
-        turn: {
-          state: { characters: Object.values(actors) },
-          activeActorId: liveTurnActorId(state),
-          registryFacts: memoryContext.registryFacts,
-          retrievedMemory: memoryContext.retrievedMemory,
-          playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
-          turns: state.lastNarration
-            ? [
-                {
-                  playerText: state.lastPlayerText ?? '',
-                  narration: state.lastNarration,
-                },
-              ]
-            : [],
+        context,
+        adapter: refusalWatch(adapter, () => {
+          refused = true;
+        }),
+        toolMode: 'native',
+        outputModerator,
+        outputTier: attemptTier,
+        outputTableLines: tableLines,
+        emit: (event) => {
+          const value = event as Record<string, unknown>;
+          if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
+          // Narration* events reach here only after the output gate, so they stream live.
+          // A refused attempt's narration is never shown or kept.
+          if (String(value.type).startsWith('Narration')) {
+            if (!refused) onEvent(event as DMTurnEvent);
+          } else attemptEvents.push(event as DMTurnEvent);
         },
-      },
-      context,
-      adapter,
-      toolMode: 'native',
-      outputModerator,
-      outputTier: tier,
-      outputTableLines: tableLines,
-      emit: (event) => {
-        const value = event as Record<string, unknown>;
-        if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
-        // Narration* events reach here only after the output gate, so they stream live.
-        if (String(value.type).startsWith('Narration'))
-          onEvent(event as DMTurnEvent);
-        else attemptEvents.push(event as DMTurnEvent);
-      },
-    });
+      });
+    };
+    let attemptTier = tier;
+    let result = await attempt(attemptTier);
+    if (refused) {
+      await this.db.query(
+        'UPDATE sessions SET endpoint_allows_mature=false WHERE id=$1',
+        [request.sessionId],
+      );
+      attemptEvents.length = 0;
+      emittedSceneEvents.length = 0;
+      registryEvents.length = 0;
+      attemptTier = 'standard';
+      result = await attempt(attemptTier);
+    }
     // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
     const failed = result.fallback === 'endpoint-error';
     for (const event of attemptEvents) {
@@ -632,8 +673,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       registryEvents.length = 0;
     }
     const tierEvents =
-      !failed && tier !== stored
-        ? [{ type: 'ContentTierChanged', from: stored, to: tier }]
+      !failed && attemptTier !== stored
+        ? [{ type: 'ContentTierChanged', from: stored, to: attemptTier }]
         : [];
 
     // Tool-emitted events are already in result.events; only add ones that are not.
