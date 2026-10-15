@@ -271,6 +271,108 @@ describe('endpoint refusal of a mature prompt', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('retries a stop_reason refusal once at standard, drops the partial mature text, and retries mature next turn', async () => {
+    const owner = await account();
+    const sessionId = await session(owner);
+    const calls = { mature: 0, standard: 0 };
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete(request: LlmRequest) {
+        if (
+          JSON.stringify(request).includes(MODERATION_SECTIONS['clause:mature'])
+        ) {
+          calls.mature += 1;
+          yield { type: 'text', delta: 'PARTIAL MATURE' } as LlmChunk;
+          throw new LlmEndpointError('endpoint-refusal', 'refused');
+        }
+        calls.standard += 1;
+        yield { type: 'text', delta: STANDARD_TEXT } as LlmChunk;
+      },
+    };
+    const room = await openRoom(sessionId, adapter);
+    const seen = recorder();
+    await room.join(owner, seen.connection, 'Owner');
+    await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
+      sessionId,
+    ]);
+
+    await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+    await waitForNarrationSent(seen.sent, 1);
+
+    expect(calls).toEqual({ mature: 1, standard: 1 });
+    expect(narrationText(seen.sent)).toBe(STANDARD_TEXT);
+    expect(narrationText(seen.sent)).not.toContain('PARTIAL MATURE');
+    let tierEvents: { payload: { from: string; to: string } }[] = [];
+    for (let i = 0; i < 300 && tierEvents.length === 0; i++) {
+      ({ rows: tierEvents } = await db.query(
+        "SELECT payload FROM events WHERE session_id=$1 AND type='ContentTierChanged'",
+        [sessionId],
+      ));
+      if (tierEvents.length === 0)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(tierEvents).toHaveLength(1);
+    expect(tierEvents[0].payload).toMatchObject({
+      from: 'mature',
+      to: 'standard',
+    });
+    const { rows: flag } = await db.query(
+      'SELECT endpoint_allows_mature FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    expect(flag[0].endpoint_allows_mature).toBe(true);
+
+    await room.submitAction(owner, randomUUID(), 'We listen.', 'Owner');
+    for (let i = 0; i < 300; i++) {
+      const turns = new Set(
+        seen.sent
+          .filter((m) => m.type === 'NarrationCompleted')
+          .map((m) => (m.payload as { turnId?: string }).turnId),
+      );
+      if (turns.size >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(calls).toEqual({ mature: 2, standard: 2 });
+  });
+
+  it('fails closed without retrying when a standard attempt is refused', async () => {
+    const owner = await account();
+    const sessionId = await session(owner);
+    const calls = { mature: 0, standard: 0 };
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls.standard += 1;
+        yield { type: 'text', delta: 'PARTIAL STANDARD' } as LlmChunk;
+        throw new LlmEndpointError('endpoint-refusal', 'refused');
+      },
+    };
+    const room = await openRoom(sessionId, adapter);
+    const seen = recorder();
+    await room.join(owner, seen.connection, 'Owner');
+    await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
+      owner,
+    ]);
+
+    await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+    await waitForNarrationSent(seen.sent, 1);
+
+    expect(calls).toEqual({ mature: 0, standard: 1 });
+    expect(narrationText(seen.sent)).toContain('not resolved');
+    expect(narrationText(seen.sent)).not.toContain('PARTIAL STANDARD');
+  });
+
   it('emits no ContentTierChanged for a standard turn at standard', async () => {
     const owner = await account();
     const sessionId = await session(owner);

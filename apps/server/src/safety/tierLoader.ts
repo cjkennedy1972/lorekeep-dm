@@ -19,8 +19,9 @@ export async function loadContentTierState(
     content_tier: ContentTier;
     moderation_verified: boolean;
     host_tier_cap: HostCap | null;
+    endpoint_allows_mature: boolean;
   }>(
-    'SELECT content_tier, moderation_verified, host_tier_cap FROM sessions WHERE id=$1',
+    'SELECT content_tier, moderation_verified, host_tier_cap, endpoint_allows_mature FROM sessions WHERE id=$1',
     [sessionId],
   );
   const session = rows[0];
@@ -28,7 +29,8 @@ export async function loadContentTierState(
   const tier = computeContentTier({
     seatedMatureOptOuts: await loadSeatedMatureOptOuts(db, sessionId),
     moderationVerified: session.moderation_verified,
-    endpointAllowsMature,
+    endpointAllowsMature:
+      endpointAllowsMature && session.endpoint_allows_mature,
     hostCap: session.host_tier_cap ?? undefined,
   });
   return { tier, stored: session.content_tier };
@@ -66,8 +68,11 @@ export async function matureAllowed(
   endpointAllowsMature: boolean,
   liveDmAllowlistOnly: boolean,
 ): Promise<boolean> {
-  const { rows } = await db.query<{ moderation_verified: boolean }>(
-    'SELECT moderation_verified FROM sessions WHERE id=$1',
+  const { rows } = await db.query<{
+    moderation_verified: boolean;
+    endpoint_allows_mature: boolean;
+  }>(
+    'SELECT moderation_verified, endpoint_allows_mature FROM sessions WHERE id=$1',
     [sessionId],
   );
   const session = rows[0];
@@ -75,7 +80,8 @@ export async function matureAllowed(
   const tier = computeContentTier({
     seatedMatureOptOuts: await loadSeatedMatureOptOuts(db, sessionId),
     moderationVerified: session.moderation_verified,
-    endpointAllowsMature,
+    endpointAllowsMature:
+      endpointAllowsMature && session.endpoint_allows_mature,
   });
   if (tier !== 'mature') return false;
   if (!liveDmAllowlistOnly) return true;
