@@ -122,18 +122,6 @@ async function openRoom(sessionId: string, adapter: LlmAdapter) {
   return new Room(store, lease, await store.loadLatest(sessionId), runner);
 }
 
-async function waitForCompletions(sessionId: string, count: number) {
-  for (let i = 0; i < 300; i++) {
-    const { rows } = await db.query(
-      "SELECT 1 FROM events WHERE session_id=$1 AND type='NarrationCompleted'",
-      [sessionId],
-    );
-    if (rows.length >= count) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error('narration did not complete');
-}
-
 beforeAll(async () => {
   db = new Pool({ connectionString: databaseUrl });
   dir = await mkdtemp(join(tmpdir(), 'mature-refusal-'));
