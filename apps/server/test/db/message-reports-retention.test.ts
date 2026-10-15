@@ -10,6 +10,7 @@ import { purgeExpiredReports } from '../../src/retention/jobs/reports.js';
 import { purgeArchivedSessions } from '../../src/retention/jobs/sessions.js';
 import { runAccountDeletions } from '../../src/retention/jobs/accountDeletion.js';
 import { runSweep } from '../../src/retention/sweeper.js';
+import { registerOperatorRoutes } from '../../src/routes/operator.js';
 import { registerReportRoutes } from '../../src/routes/reports.js';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { allowInputGate } from '../support/allowInputGate.js';
@@ -371,5 +372,52 @@ describe('message report retention (Postgres)', () => {
     expect(dump).not.toContain('SECRET WORDS');
     expect(dump).not.toContain(author);
     expect(dump).toContain('[removed]');
+  });
+
+  it('keeps a reopened report past its old window, and skips a row-held report with one audit row', async () => {
+    const operator = await account('Operator Ops');
+    const owner = await account('Keeper');
+    const sid = await session(owner);
+    const reopened = randomUUID();
+    await q(
+      `INSERT INTO message_reports(id,session_id,message_seq,category,context,status,reviewed_by,reviewed_at,expires_at)
+       VALUES($1,$2,1,'other','[]','dismissed',$3,$4,$5)`,
+      [reopened, sid, operator, ago(40), ago(10)],
+    );
+    const held = await insertReport(sid, ago(1));
+    await q('UPDATE message_reports SET legal_hold=true WHERE id=$1', [held]);
+
+    const server = Fastify();
+    server.decorate('inputGate', allowInputGate);
+    registerOperatorRoutes(server, pool, async (id) => id === operator, {
+      egress: {} as never,
+    });
+    const patch = await server.inject({
+      method: 'PATCH',
+      url: `/api/operator/reports/${reopened}`,
+      headers: {
+        cookie: `sid=${await createSession(pool, operator, 'test', new Date(Date.now() + DAY))}`,
+        origin: HOST,
+        host: 'lorekeep.test',
+      },
+      payload: { status: 'open' },
+    });
+    expect(patch.statusCode).toBe(200);
+
+    const first = await purgeExpiredReports(ctx());
+    const second = await purgeExpiredReports(ctx());
+
+    expect(await reportExists(reopened)).toBe(true);
+    expect(await reportExists(held)).toBe(true);
+    expect(first.held).toBeGreaterThanOrEqual(1);
+    expect(second.held).toBeGreaterThanOrEqual(1);
+    expect(
+      (
+        await q(
+          "SELECT count(*)::int AS n FROM retention_audit WHERE job='reports' AND item_kind='report' AND item_id=$1 AND action='skipped_legal_hold'",
+          [held],
+        )
+      )[0].n,
+    ).toBe(1);
   });
 });

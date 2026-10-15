@@ -62,7 +62,7 @@ async function table(options: { seated?: boolean; verified?: boolean } = {}) {
   );
   const sessionId = randomUUID();
   await db.query(
-    'INSERT INTO sessions(id,owner_account_id,name,moderation_verified) VALUES($1,$2,$3,$4)',
+    'INSERT INTO sessions(id,owner_account_id,name,moderation_verified,endpoint_allows_mature) VALUES($1,$2,$3,$4,true)',
     [sessionId, accountId, 'Tier table', options.verified ?? true],
   );
   if (options.seated ?? true)
@@ -270,7 +270,7 @@ describe('content tier through the DM turn path', () => {
     expect(promptTier(calls)).toBe('standard');
   });
 
-  it('defaults endpoint_allows_mature to false, so mature stays unreachable', async () => {
+  it('keeps mature unreachable when the endpoint flag is false', async () => {
     const { accountId, sessionId } = await table();
     const calls: LlmRequest[] = [];
     const { changes } = await turn(

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LeaseConflictError,
   Persistence,
+  RewindRefusedError,
 } from '../../src/persistence/index.js';
 import { REVERTED_TURN_EXCLUSION } from '../../src/persistence/rewind.js';
 import { RegistryMemory, type RegistryEvent } from '../../src/dm/memory.js';
@@ -520,7 +521,7 @@ describe('rewind plan', () => {
           undefined,
           plan!.droppedTurnIds,
         ),
-      ).rejects.toThrow(/foreign key|violates/i);
+      ).rejects.toBeInstanceOf(RewindRefusedError);
       const reverted = await pool.query(
         'SELECT 1 FROM events WHERE session_id=$1 AND type=$2',
         [id, 'TurnReverted'],
@@ -531,6 +532,59 @@ describe('rewind plan', () => {
       );
       expect(reverted.rowCount).toBe(0);
       expect(entries.rowCount).toBe(2);
+    }));
+
+  it('refuses a rewind when an untagged registry row supersedes a version it would remove', () =>
+    fixture(async (pool, id) => {
+      const persistence = new Persistence(pool);
+      await persistence.writeTurn(
+        id,
+        [row('a', 'NarrationCompleted')],
+        { turn: 1 },
+        undefined,
+        [npc('Innkeeper')],
+        undefined,
+        ids.a,
+      );
+      await persistence.writeTurn(
+        id,
+        [row('b', 'NarrationCompleted')],
+        { turn: 2 },
+        undefined,
+        [npc('Mayor')],
+        undefined,
+        ids.b,
+      );
+      await pool.query(
+        `INSERT INTO registry_entries(session_id, entity_type, entity_id, version, name, payload, supersedes_id)
+         VALUES ($1, 'npc', 'npc_ada', 3, 'Ada Vale', $2::jsonb,
+           (SELECT id FROM registry_entries WHERE session_id=$1 AND turn_id=$3))`,
+        [id, JSON.stringify({ role: 'Guard' }), ids.b],
+      );
+      const plan = await persistence.loadRewindPlan(id);
+
+      await expect(
+        persistence.writeTurn(
+          id,
+          [revert(ids.b)],
+          { turn: 1 },
+          undefined,
+          [],
+          plan!.headSeq,
+          undefined,
+          plan!.droppedTurnIds,
+        ),
+      ).rejects.toBeInstanceOf(RewindRefusedError);
+      const reverted = await pool.query(
+        'SELECT 1 FROM events WHERE session_id=$1 AND type=$2',
+        [id, 'TurnReverted'],
+      );
+      const entries = await pool.query(
+        'SELECT 1 FROM registry_entries WHERE session_id=$1',
+        [id],
+      );
+      expect(reverted.rowCount).toBe(0);
+      expect(entries.rowCount).toBe(3);
     }));
 
   it('reports no plan when no turn has resolved', () =>

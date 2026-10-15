@@ -2,7 +2,7 @@ export type ContentTier = 'family' | 'standard' | 'mature';
 export type HostCap = 'family' | 'standard';
 
 export interface TierInput {
-  /** Live accounts.mature_opt_out for each seated account; a missing account counts as opted out. */
+  /** One per seated account: true blocks mature (opted out, not an adult, or missing). */
   readonly seatedMatureOptOuts: readonly boolean[];
   readonly moderationVerified: boolean;
   /** Operator probe flag endpoint_allows_mature (ADR-013). */

@@ -335,6 +335,14 @@ export class AnthropicMessagesAdapter implements LlmAdapter {
             event === 'message_delta' ||
             parsed.type === 'message_delta'
           ) {
+            if (
+              isObject(parsed.delta) &&
+              parsed.delta.stop_reason === 'refusal'
+            )
+              throw new LlmEndpointError(
+                'endpoint-refusal',
+                'LLM endpoint refused the request',
+              );
             if (isObject(parsed.usage)) {
               const deltaUsage = this.usage(parsed.usage);
               const prior = usage?.type === 'usage' ? usage.usage : undefined;

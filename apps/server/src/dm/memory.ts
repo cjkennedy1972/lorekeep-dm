@@ -266,7 +266,8 @@ export class RegistryMemory {
   ): Promise<void> {
     await client.query(
       `UPDATE registry_facts SET superseded_by=NULL
-        WHERE superseded_by IN (SELECT f.id FROM registry_facts f
+        WHERE entry_id IN (SELECT id FROM registry_entries WHERE session_id=$1)
+          AND superseded_by IN (SELECT f.id FROM registry_facts f
           JOIN registry_entries e ON e.id=f.entry_id
          WHERE e.session_id=$1 AND e.turn_id = ANY($2::text[]))`,
       [sessionId, turnIds],

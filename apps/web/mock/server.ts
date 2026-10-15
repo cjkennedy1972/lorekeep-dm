@@ -601,11 +601,26 @@ export function createMock(
       return void socket.destroy();
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const leave = roomFor(issued.tableId).join(
+      const room = roomFor(issued.tableId);
+      const leave = room.join(
         account,
         (m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m)),
       );
       if (!leave) return void ws.close(1008, 'room full');
+      ws.on('message', (raw) => {
+        let message: { type?: string; payload?: { paused?: boolean } };
+        try {
+          message = JSON.parse(String(raw)) as typeof message;
+        } catch {
+          return;
+        }
+        if (message.type === 'XCard') room.xCard();
+        if (
+          message.type === 'PauseTable' &&
+          typeof message.payload?.paused === 'boolean'
+        )
+          room.setPaused(message.payload.paused);
+      });
       ws.on('close', leave);
     });
   });

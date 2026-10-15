@@ -67,6 +67,38 @@ const result = {
 };
 
 describe('Room solo DM turn lifecycle', () => {
+  it('broadcasts only turnId for a rejected tool call', async () => {
+    const runner: SoloTurnRunner = {
+      async run(_request, emit) {
+        emit({
+          type: 'ToolCallRejected',
+          turnId: 'turn-rejected',
+          toolName: 'private_tool_name',
+          error: 'INVALID_ARGUMENTS',
+          attempt: 1,
+          argHash: 'private-argument-hash',
+        });
+        return result as never;
+      },
+    };
+    const { room } = setup(runner);
+    const accountId = randomUUID();
+    const messages: { type: string; payload?: unknown }[] = [];
+    await room.join(accountId, {
+      send: (message) =>
+        messages.push(message as { type: string; payload?: unknown }),
+    });
+
+    await room.submitAction(accountId, randomUUID(), 'use a tool');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(messages.find((message) => message.type === 'ToolRejected')).toEqual(
+      expect.objectContaining({
+        type: 'ToolRejected',
+        payload: { turnId: 'turn-rejected' },
+      }),
+    );
+  });
   it('streams a check before narration, ignores duplicate ids and persists the committed result', async () => {
     let finish!: () => void;
     const gate = new Promise<void>((resolve) => {

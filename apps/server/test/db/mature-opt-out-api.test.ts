@@ -208,7 +208,7 @@ describe('mature opt-out API', () => {
     expect(
       (await put(`sid=${playerToken}`, { tier: 'family' })).statusCode,
     ).toBe(403);
-    expect((await put(`sid=${hostToken}`, { tier: 'mature' })).statusCode).toBe(
+    expect((await put(`sid=${hostToken}`, { tier: 'bogus' })).statusCode).toBe(
       400,
     );
 
