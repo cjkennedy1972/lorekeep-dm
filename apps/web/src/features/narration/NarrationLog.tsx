@@ -233,7 +233,6 @@ export function NarrationLog({
             message.type === 'NarrationCompleted'
           )
             return null;
-          const payload = message.payload as Record<string, unknown>;
           const displayByType: Partial<
             Record<
               'ActionQueued' | 'ActionWithdrawn' | 'TurnThinking' | 'RollEvent',
