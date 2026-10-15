@@ -14,9 +14,7 @@ test('a player can report a narration with category and optional reason', async 
   const onReport = vi.fn().mockResolvedValue(null);
   render(<NarrationLog messages={[narration]} onReport={onReport} />);
 
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Report this narration' }),
-  );
+  fireEvent.click(screen.getByRole('button', { name: 'Report this message' }));
   fireEvent.change(screen.getByLabelText('Category'), {
     target: { value: 'harassment' },
   });
@@ -33,6 +31,28 @@ test('a player can report a narration with category and optional reason', async 
   ).toBeInTheDocument();
 });
 
+test('a player can report a text-bearing ToolRejected message', async () => {
+  const onReport = vi.fn().mockResolvedValue(null);
+  render(
+    <NarrationLog
+      messages={[
+        {
+          seq: 14,
+          type: 'ToolRejected',
+          payload: { text: 'That action was rejected.' },
+        },
+      ]}
+      onReport={onReport}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Report this message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
+
+  await waitFor(() => expect(onReport).toHaveBeenCalledWith(14, 'other', ''));
+  expect(screen.getByText('That action was rejected.')).toBeInTheDocument();
+});
+
 test('a rewind is announced in the story log', () => {
   render(
     <NarrationLog
@@ -45,9 +65,73 @@ test('a rewind is announced in the story log', () => {
       ]}
     />,
   );
-  expect(
-    screen.getByText(/The host rewound the last DM turn/),
-  ).toHaveTextContent(
+  const banner = screen.getByText(/The host rewound the last DM turn/);
+  expect(banner).toHaveAttribute('aria-live', 'polite');
+  expect(banner).toHaveTextContent(
     'The host rewound the last DM turn. Its narration and game state were restored; the next attempt uses a new dice roll.',
   );
+});
+
+test('renders one report status for multiple reportable narrations', async () => {
+  const onReport = vi.fn().mockResolvedValue(null);
+  const second = {
+    seq: 13,
+    type: 'NarrationCompleted',
+    payload: { turnId: 'turn-2', text: 'The chest opens.' },
+  } as ServerMessage;
+  render(<NarrationLog messages={[narration, second]} onReport={onReport} />);
+
+  fireEvent.click(
+    screen.getAllByRole('button', { name: 'Report this message' })[0]!,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
+
+  await waitFor(() => expect(onReport).toHaveBeenCalledOnce());
+  expect(
+    await screen.findByText('Report received. Thank you.', {
+      selector: '[role=status]',
+    }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getAllByText('Report received. Thank you.', {
+      selector: '[role=status]',
+    }),
+  ).toHaveLength(1);
+});
+
+test('does not put non-narration server payloads in the shared story log', () => {
+  render(
+    <NarrationLog
+      messages={[
+        {
+          seq: 20,
+          type: 'Error',
+          payload: { code: 'PRIVATE', message: 'Private per-seat detail' },
+        } as ServerMessage,
+        {
+          seq: 22,
+          type: 'PrivateNarrationLikePayload',
+          payload: {
+            text: 'Should not appear',
+            narrative: 'Should not appear',
+            narration: 'Should not appear',
+            playerName: 'Should not appear',
+          },
+        } as unknown as ServerMessage,
+        {
+          seq: 21,
+          type: 'CombatEvents',
+          payload: {
+            events: [{ type: 'PrivateEvent', text: 'Hidden detail' }],
+          },
+        } as ServerMessage,
+        narration,
+      ]}
+    />,
+  );
+
+  expect(screen.getByText('The door opens.')).toBeInTheDocument();
+  expect(screen.queryByText('Private per-seat detail')).not.toBeInTheDocument();
+  expect(screen.queryByText('Should not appear')).not.toBeInTheDocument();
+  expect(screen.queryByText('Hidden detail')).not.toBeInTheDocument();
 });

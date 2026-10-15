@@ -199,6 +199,26 @@ describe('Game screen (live Room)', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('keeps report action and rewind banner available in the live story log', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('NarrationCompleted', {
+      actionId: 'server-action-1',
+      turnId: 'turn-1',
+      text: 'A sealed door opens.',
+    });
+    const report = screen.getByRole('button', { name: 'Report this message' });
+    report.focus();
+    await user.keyboard('{Enter}');
+    expect(
+      screen.getByRole('form', { name: 'Report message' }),
+    ).toBeInTheDocument();
+    push('TurnReverted', { revertedTurnId: 'turn-1' });
+    const banner = screen.getByText(/The host rewound the last DM turn/i);
+    expect(banner).toHaveAttribute('aria-live', 'polite');
+    expect(banner).toHaveTextContent(/host rewound the last DM turn/i);
+  });
+
   it('displays tool rejection neutrally without exposing internal details', () => {
     mount();
     push('ToolRejected', { turnId: 'turn-1' });

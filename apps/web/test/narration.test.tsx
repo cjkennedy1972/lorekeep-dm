@@ -151,7 +151,7 @@ describe('NarrationLog', () => {
     );
   });
 
-  it('handles duplicate completion, completion without chunks, and errors after partial chunks', async () => {
+  it('handles duplicate completion and completion without chunks without leaking per-seat errors', async () => {
     const complete = messages[5]!;
     const error: ServerMessage = {
       seq: 8,
@@ -196,11 +196,9 @@ describe('NarrationLog', () => {
     render(<NarrationLog messages={sequence} onRetry={retry} />);
     await screen.findByText('No chunks here.');
     expect(screen.getByText('The door opens.')).toBeInTheDocument();
-    expect(screen.getAllByText('TURN_FAILED:')).toHaveLength(2);
-    fireEvent.click(
-      screen.getAllByRole('button', { name: 'Retry this action' })[0]!,
-    );
-    expect(retry).toHaveBeenCalledWith('00000000-0000-4000-8000-0000000000a2');
+    expect(screen.queryByText('TURN_FAILED:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Try again.')).not.toBeInTheDocument();
+    expect(retry).not.toHaveBeenCalled();
   });
 
   it('passes axe in default and reduced-motion contexts', async () => {
