@@ -1020,7 +1020,7 @@ export class Room {
     // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
     await this.enqueue(async () => {
       // Endpoint fallback invalidates all partial engine effects; only successful results are saved.
-      if (result.fallback !== 'endpoint-error' || result.toolCalls > 0) {
+      if (result.fallback !== 'endpoint-error') {
         const turnId = result.events.find(
           (event) => (event as { type?: string }).type === 'TurnStarted',
         ) as { turnId?: string } | undefined;

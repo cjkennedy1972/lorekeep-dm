@@ -432,18 +432,16 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     fallback = reason;
     emit({ type: 'TurnFallback', turnId: input.turnId, reason });
     finalText =
-      reason === 'endpoint-error' && successfulToolCalls === 0
+      reason === 'endpoint-error'
         ? 'The tale pauses — the storyteller has lost the thread. Your action was not resolved; try again.'
-        : reason === 'endpoint-error'
-          ? 'The tale pauses — the storyteller has lost the thread. The results above stand; continue when ready.'
-          : events.some(
-                (event) =>
-                  (event as { type?: string }).type === 'RollEvent' ||
-                  (event as { type?: string }).type === 'HpChanged' ||
-                  (event as { type?: string }).type === 'EntityMoved',
-              )
-            ? 'The dice have spoken — the results stand above. The scene holds for a moment. What do you do?'
-            : 'Nothing comes of the attempt. What do you do?';
+        : events.some(
+              (event) =>
+                (event as { type?: string }).type === 'RollEvent' ||
+                (event as { type?: string }).type === 'HpChanged' ||
+                (event as { type?: string }).type === 'EntityMoved',
+            )
+          ? 'The dice have spoken — the results stand above. The scene holds for a moment. What do you do?'
+          : 'Nothing comes of the attempt. What do you do?';
   };
   let done = false;
   try {
@@ -756,7 +754,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   }
   if (!finalText) makeFallback(fallback ?? 'no-narration');
   let finalCount = words(finalText);
-  if (endpointFailed && successfulToolCalls === 0) {
+  if (endpointFailed) {
     // Endpoint failure invalidates the in-flight turn; state is committed by the caller only on success.
     events.length = 0;
     input.context.state = input.prompt.turn.state;

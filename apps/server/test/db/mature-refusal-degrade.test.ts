@@ -57,8 +57,11 @@ async function session(owner: string) {
   return id;
 }
 
-/** Refuses every mature-tier request with a 403 and answers standard requests with STANDARD_TEXT. */
-function matureRefusingNarrator(calls: { mature: number; standard: number }) {
+/** Fails every mature-tier request with the given status and answers standard requests with STANDARD_TEXT. */
+function matureRefusingNarrator(
+  calls: { mature: number; standard: number },
+  status: number,
+) {
   const adapter: LlmAdapter = {
     capabilities: () => ({
       streaming: true,
@@ -71,7 +74,7 @@ function matureRefusingNarrator(calls: { mature: number; standard: number }) {
         JSON.stringify(request).includes(MODERATION_SECTIONS['clause:mature'])
       ) {
         calls.mature += 1;
-        throw new LlmEndpointError('endpoint-error', 'refused', 403);
+        throw new LlmEndpointError('endpoint-error', 'refused', status);
       }
       calls.standard += 1;
       yield { type: 'text', delta: STANDARD_TEXT } as LlmChunk;
@@ -92,6 +95,15 @@ const allowOutput: Moderator = {
     };
   },
 };
+
+async function waitForNarrationSent(sent: Sent[], count: number) {
+  for (let i = 0; i < 300; i++) {
+    if (sent.filter((m) => m.type === 'NarrationCompleted').length >= count)
+      return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('narration did not complete');
+}
 
 async function openRoom(sessionId: string, adapter: LlmAdapter) {
   const store = new Persistence(db);
@@ -132,31 +144,60 @@ afterAll(async () => {
 });
 
 describe('endpoint refusal of a mature prompt', () => {
-  it('retries the turn at standard, emits ContentTierChanged, and does not repeat mature on later turns', async () => {
+  it.each([400, 401, 403, 429])(
+    'fails closed on a %i without demoting the runner or the session tier',
+    async (status) => {
+      const owner = await account();
+      const sessionId = await session(owner);
+      const calls = { mature: 0, standard: 0 };
+      const room = await openRoom(
+        sessionId,
+        matureRefusingNarrator(calls, status),
+      );
+      const seen = recorder();
+      await room.join(owner, seen.connection, 'Owner');
+      await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
+        sessionId,
+      ]);
+
+      await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+      await waitForNarrationSent(seen.sent, 1);
+
+      expect(calls).toEqual({ mature: 1, standard: 0 });
+      expect(narrationText(seen.sent)).toContain('not resolved');
+      const { rows } = await db.query(
+        "SELECT 1 FROM events WHERE session_id=$1 AND type='ContentTierChanged'",
+        [sessionId],
+      );
+      expect(rows).toHaveLength(0);
+
+      await room.submitAction(owner, randomUUID(), 'We listen.', 'Owner');
+      await waitForNarrationSent(seen.sent, 2);
+
+      expect(calls).toEqual({ mature: 2, standard: 0 });
+    },
+  );
+
+  it('emits no ContentTierChanged for a standard turn at standard', async () => {
     const owner = await account();
     const sessionId = await session(owner);
     const calls = { mature: 0, standard: 0 };
-    const room = await openRoom(sessionId, matureRefusingNarrator(calls));
+    const room = await openRoom(sessionId, matureRefusingNarrator(calls, 403));
     const seen = recorder();
     await room.join(owner, seen.connection, 'Owner');
-    await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
-      sessionId,
+    await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
+      owner,
     ]);
 
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
-    await waitForCompletions(sessionId, 1);
+    await waitForNarrationSent(seen.sent, 1);
 
-    expect(calls).toEqual({ mature: 1, standard: 1 });
+    expect(calls).toEqual({ mature: 0, standard: 1 });
     expect(narrationText(seen.sent)).toBe(STANDARD_TEXT);
     const { rows } = await db.query(
-      "SELECT payload FROM events WHERE session_id=$1 AND type='ContentTierChanged'",
+      "SELECT 1 FROM events WHERE session_id=$1 AND type='ContentTierChanged'",
       [sessionId],
     );
-    expect(rows.at(-1)?.payload).toMatchObject({ to: 'standard' });
-
-    await room.submitAction(owner, randomUUID(), 'We listen.', 'Owner');
-    await waitForCompletions(sessionId, 2);
-
-    expect(calls).toEqual({ mature: 1, standard: 2 });
+    expect(rows).toHaveLength(0);
   });
 });

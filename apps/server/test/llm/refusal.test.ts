@@ -3,11 +3,14 @@ import { LlmEndpointError, type LlmChunk } from '../../src/llm/adapter.js';
 import { isMatureRefusal, watchMatureRefusal } from '../../src/llm/refusal.js';
 
 describe('isMatureRefusal', () => {
-  it.each([400, 403])('matches an endpoint HTTP %i', (status) => {
-    expect(
-      isMatureRefusal(new LlmEndpointError('endpoint-error', 'x', status)),
-    ).toBe(true);
-  });
+  it.each([400, 401, 403])(
+    'does not treat a bodyless endpoint HTTP %i as a refusal',
+    (status) => {
+      expect(
+        isMatureRefusal(new LlmEndpointError('endpoint-error', 'x', status)),
+      ).toBe(false);
+    },
+  );
 
   it.each([
     ['a rate limit', new LlmEndpointError('endpoint-error', 'x', 429)],
@@ -21,7 +24,7 @@ describe('isMatureRefusal', () => {
 });
 
 describe('watchMatureRefusal', () => {
-  it('reports a refusal and rethrows it', async () => {
+  it('rethrows a bodyless 403 without reporting a refusal', async () => {
     let refused = false;
     async function* refusing(): AsyncIterable<LlmChunk> {
       throw new LlmEndpointError('endpoint-error', 'x', 403);
@@ -32,7 +35,7 @@ describe('watchMatureRefusal', () => {
       }));
     };
     await expect(drain()).rejects.toThrow('x');
-    expect(refused).toBe(true);
+    expect(refused).toBe(false);
   });
 
   it('passes chunks through without reporting when nothing fails', async () => {

@@ -551,6 +551,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
 
     onEvent({ type: 'NarrationTier', tier });
     const emittedSceneEvents: unknown[] = [];
+    const attemptEvents: DMTurnEvent[] = [];
     const runAttempt = () =>
       runTurn({
         signal: request.signal,
@@ -634,12 +635,11 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           )
             return;
           if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
-          onEvent(event as DMTurnEvent);
+          attemptEvents.push(event as DMTurnEvent);
         },
       });
 
     let result = await runAttempt();
-    let degraded = false;
     if (
       tier === 'mature' &&
       matureRefused &&
@@ -648,16 +648,24 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     ) {
       this.endpointAllowsMature = false;
       tier = 'standard';
-      degraded = true;
       matureRefused = false;
+      attemptEvents.length = 0;
+      emittedSceneEvents.length = 0;
+      registryEvents.length = 0;
       onEvent({ type: 'NarrationTier', tier });
       result = await runAttempt();
     }
-    if (result.fallback === 'endpoint-error' && result.toolCalls > 0) {
-      matureRefused = false;
-      result.fallback = 'budget-exhausted';
-      result.narration =
-        'The tale pauses — the storyteller has lost the thread. The results above stand; continue when ready.';
+    // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
+    const failed = result.fallback === 'endpoint-error';
+    for (const event of attemptEvents) {
+      const type = String((event as { type?: string }).type);
+      if (!failed || type.startsWith('Narration') || type === 'TurnFallback')
+        onEvent(event);
+    }
+    attemptEvents.length = 0;
+    if (failed) {
+      emittedSceneEvents.length = 0;
+      registryEvents.length = 0;
     }
     const tierEvents =
       tier !== stored

@@ -1,16 +1,12 @@
-import { LlmEndpointError, type LlmChunk } from './adapter.js';
+import type { LlmChunk } from './adapter.js';
 
 /**
- * Provider refusal of a mature-tier prompt. Matches only an HTTP 400/403 from the endpoint;
- * the status is the sole signal, so a 400 that is not a refusal also counts (the caller
- * only consults this for mature turns).
+ * A refusal needs the provider's refusal marker from the response body, which
+ * LlmEndpointError does not carry. Until the body is plumbed through both dialects,
+ * no 400/403 counts as a refusal: the turn fails closed and the runner is not demoted.
  */
-export function isMatureRefusal(error: unknown): boolean {
-  return (
-    error instanceof LlmEndpointError &&
-    error.code === 'endpoint-error' &&
-    (error.status === 400 || error.status === 403)
-  );
+export function isMatureRefusal(_error: unknown): boolean {
+  return false;
 }
 
 export async function* watchMatureRefusal(

@@ -707,39 +707,50 @@ describe('DM orchestrator', () => {
       fallback: 'no-narration',
     });
   });
-  it('preserves successful tool effects when endpoint failure follows them', async () => {
+  it('discards tool effects and fails the turn when the endpoint fails after a tool call', async () => {
     const h = setup([
       [call('c1', 'request_check', validCheck)],
       new LlmEndpointError('endpoint-timeout', 'timeout'),
     ]);
     const result = await runTurn(h.input);
     expect(result.fallback).toBe('endpoint-error');
-    expect(result.narration).toContain('results above stand');
-    expect(result.events).toContainEqual({ type: 'RollEvent', total: 16 });
+    expect(result.narration).toContain('not resolved');
+    expect(result.events).toHaveLength(0);
+    expect(result.state).toEqual({ characters: [character] });
     expect(result.toolCalls).toBe(1);
   });
-  it('preserves one successful tool execution when the following endpoint request fails', async () => {
+  it('applies a tool once and does not retry when the following endpoint request fails', async () => {
+    const applied: string[] = [];
     const h = setup(
       [
         [call('c1', 'request_check', validCheck)],
         new LlmEndpointError('endpoint-timeout', 'timeout'),
       ],
-      () => ({
-        ok: true,
-        summary: 'The check resolves.',
-        events: ['RollEvent'],
-        output: {
-          events: [{ type: 'RollEvent', total: 16 }],
-          rollCount: 1,
-        },
-      }),
+      () => {
+        applied.push('request_check');
+        return {
+          ok: true,
+          summary: 'The check resolves.',
+          events: ['RollEvent'],
+          output: {
+            events: [{ type: 'RollEvent', total: 16 }],
+            rollCount: 1,
+          },
+        };
+      },
     );
     const result = await runTurn(h.input);
+    expect(applied).toEqual(['request_check']);
+    expect(h.requests).toHaveLength(2);
     expect(result.fallback).toBe('endpoint-error');
     expect(result.toolCalls).toBe(1);
-    expect(result.events).toContainEqual({ type: 'RollEvent', total: 16 });
-    expect(result.narration).toContain('results above stand');
-    expect(result.state).toEqual(h.input.context.state);
+    expect(result.events).toHaveLength(0);
+  });
+  it('maps a thrown endpoint error to the endpoint-error fallback', async () => {
+    const h = setup([new LlmEndpointError('endpoint-error', 'refused', 403)]);
+    const result = await runTurn(h.input);
+    expect(result.fallback).toBe('endpoint-error');
+    expect(result.narration).toContain('not resolved');
   });
 
   it('queues same-table turns instead of interleaving model requests', async () => {
