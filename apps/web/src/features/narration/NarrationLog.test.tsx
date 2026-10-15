@@ -14,9 +14,7 @@ test('a player can report a narration with category and optional reason', async 
   const onReport = vi.fn().mockResolvedValue(null);
   render(<NarrationLog messages={[narration]} onReport={onReport} />);
 
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Report this narration' }),
-  );
+  fireEvent.click(screen.getByRole('button', { name: 'Report this message' }));
   fireEvent.change(screen.getByLabelText('Category'), {
     target: { value: 'harassment' },
   });
@@ -45,9 +43,9 @@ test('a rewind is announced in the story log', () => {
       ]}
     />,
   );
-  expect(
-    screen.getByText(/The host rewound the last DM turn/),
-  ).toHaveTextContent(
+  const banner = screen.getByText(/The host rewound the last DM turn/);
+  expect(banner).toHaveAttribute('aria-live', 'polite');
+  expect(banner).toHaveTextContent(
     'The host rewound the last DM turn. Its narration and game state were restored; the next attempt uses a new dice roll.',
   );
 });

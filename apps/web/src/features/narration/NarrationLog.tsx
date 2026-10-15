@@ -147,6 +147,7 @@ export function NarrationLog({
               className="narration-log__rewind"
               key={`rewind-${message.seq}`}
               role="status"
+              aria-live="polite"
             >
               The host rewound the last DM turn. Its narration and game state
               were restored; the next attempt uses a new dice roll.
@@ -241,7 +242,7 @@ export function NarrationLog({
                         );
                       if (completed) setReporting(completed.seq);
                     }}
-                    aria-label="Report this narration"
+                    aria-label="Report this message"
                   >
                     Report this message
                   </button>
@@ -256,6 +257,7 @@ export function NarrationLog({
                         ) === entry.turn.turnId,
                     ) && (
                       <form
+                        aria-label="Report message"
                         onSubmit={(event) => {
                           event.preventDefault();
                           const category = String(
