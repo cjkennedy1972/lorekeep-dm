@@ -235,7 +235,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         })
       : [];
     const savedCharacter = table.rows[0].character as unknown as
-      ToolExecutorState['actors'][string] | null;
+      | ToolExecutorState['actors'][string]
+      | null;
     if (savedCharacter && !state.characters)
       state.characters = { [request.accountId]: savedCharacter };
     if (!state.premise) state.premise = table.rows[0].premise ?? undefined;
@@ -424,7 +425,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             );
         if (!result.ok) return { ...result, events: [] };
         const value = result.value as
-          { events?: readonly unknown[] } | undefined;
+          | { events?: readonly unknown[] }
+          | undefined;
         const authoredRegistryEvents = (value?.events ?? []).filter(
           (event) =>
             !!event &&
