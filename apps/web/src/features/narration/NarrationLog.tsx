@@ -234,24 +234,29 @@ export function NarrationLog({
           )
             return null;
           const payload = message.payload as Record<string, unknown>;
-          const reportable = [
-            'text',
-            'narrative',
-            'narration',
-            'playerName',
-          ].some((key) => typeof payload[key] === 'string');
-          if (!reportable) return null;
+          const displayByType: Partial<
+            Record<
+              'ActionQueued' | 'ActionWithdrawn' | 'TurnThinking' | 'RollEvent',
+              string | null
+            >
+          > = {
+            // Queue and thinking status are represented by the replayable reducer entry below.
+            ActionQueued: null,
+            ActionWithdrawn: 'A queued action was withdrawn.',
+            TurnThinking: null,
+            RollEvent: 'A roll was made.',
+          };
+          const content =
+            message.type === 'ActionQueued' ||
+            message.type === 'ActionWithdrawn' ||
+            message.type === 'TurnThinking' ||
+            message.type === 'RollEvent'
+              ? displayByType[message.type]
+              : undefined;
+          if (typeof content !== 'string') return null;
           return (
             <li className="narration-log__turn" key={`message-${message.seq}`}>
-              <p>
-                {String(
-                  payload.text ??
-                    payload.narrative ??
-                    payload.narration ??
-                    payload.playerName ??
-                    message.type,
-                )}
-              </p>
+              <p>{content}</p>
               {reportAction(message)}
             </li>
           );

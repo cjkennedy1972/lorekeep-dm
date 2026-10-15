@@ -8,7 +8,7 @@ function Fixture() {
     {
       seq: 43,
       type: 'ToolRejected',
-      payload: { text: 'Your action was rejected.' },
+      payload: { turnId: 'rejected-turn' },
     },
     {
       seq: 44,
