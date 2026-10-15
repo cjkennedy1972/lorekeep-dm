@@ -195,6 +195,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       [request.sessionId],
     );
     if (!table.rows[0]) throw new Error('Table state unavailable');
+    const tableName = table.rows[0].name;
     const catalog =
       !table.rows[0].catalog_version ||
       table.rows[0].catalog_version === this.catalog.catalogVersion
@@ -537,12 +538,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       rulesLookup: (topic) => rulesLookup(this.db as Pool, topic),
     };
 
-    const tierEvents =
-      tier === stored
-        ? []
-        : [{ type: 'ContentTierChanged', from: stored, to: tier }];
     onEvent({ type: 'NarrationTier', tier });
     const emittedSceneEvents: unknown[] = [];
+    const attemptEvents: DMTurnEvent[] = [];
     const result = await runTurn({
       signal: request.signal,
       turnId: request.actionId,
@@ -569,8 +567,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             id: actor.id,
             name: actor.name,
           })),
-          premise:
-            state.premise ?? `A solo adventure at ${table.rows[0].name}.`,
+          premise: state.premise ?? `A solo adventure at ${tableName}.`,
           sceneSummary:
             state.sceneSummary ??
             'The party is at the beginning of its adventure.',
@@ -616,9 +613,28 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       emit: (event) => {
         const value = event as Record<string, unknown>;
         if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
-        onEvent(event as DMTurnEvent);
+        // Narration* events reach here only after the output gate, so they stream live.
+        if (String(value.type).startsWith('Narration'))
+          onEvent(event as DMTurnEvent);
+        else attemptEvents.push(event as DMTurnEvent);
       },
     });
+    // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
+    const failed = result.fallback === 'endpoint-error';
+    for (const event of attemptEvents) {
+      const type = String((event as { type?: string }).type);
+      if (!failed || type === 'TurnFallback') onEvent(event);
+    }
+    attemptEvents.length = 0;
+    if (failed) {
+      result.events = [];
+      emittedSceneEvents.length = 0;
+      registryEvents.length = 0;
+    }
+    const tierEvents =
+      !failed && tier !== stored
+        ? [{ type: 'ContentTierChanged', from: stored, to: tier }]
+        : [];
 
     // Tool-emitted events are already in result.events; only add ones that are not.
     const missingSceneEvents = emittedSceneEvents.filter(
