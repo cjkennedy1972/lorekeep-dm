@@ -7,6 +7,7 @@ import {
   loadSeatedContentBoundaries,
 } from '../safety/tierLoader.js';
 import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
+import { watchMatureRefusal } from '../llm/refusal.js';
 // Node-only subpath: it pulls in the catalog loader (node:fs), so it must never be reachable
 // from the browser-safe engine index (see test/purity.test.ts).
 import type {
@@ -153,7 +154,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly adapterOverride?: LlmAdapter,
     private readonly liveDmAllowlistOnly = true,
     // ponytail: false until the M3-19 endpoint probe sets it, so mature stays unreachable.
-    private readonly endpointAllowsMature = false,
+    private endpointAllowsMature = false,
     private readonly moderatorOverride?: Moderator,
   ) {}
 
@@ -195,6 +196,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       [request.sessionId],
     );
     if (!table.rows[0]) throw new Error('Table state unavailable');
+    const tableName = table.rows[0].name;
     const catalog =
       !table.rows[0].catalog_version ||
       table.rows[0].catalog_version === this.catalog.catalogVersion
@@ -245,11 +247,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
 
     // Snapshot the tier and boundary union once for this turn. Free-text tool outputs
     // are screened before they enter the world state or the persisted event stream.
-    const { tier, stored } = await loadContentTierState(
+    const { tier: loadedTier, stored } = await loadContentTierState(
       this.db,
       request.sessionId,
       this.endpointAllowsMature,
     );
+    let tier = loadedTier;
     const boundaries = await loadSeatedContentBoundaries(
       this.db,
       request.sessionId,
@@ -306,6 +309,15 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         purpose: 'narration',
         modelId: endpointSlot,
       });
+    let matureRefused = false;
+    const refusalWatched: LlmAdapter = {
+      capabilities: () => adapter.capabilities(),
+      probe: (signal) => adapter.probe(signal),
+      complete: (req) =>
+        watchMatureRefusal(adapter.complete(req), () => {
+          matureRefused = true;
+        }),
+    };
     const memory = new RegistryMemory(this.db as Pool);
     const registryEvents: RegistryEvent[] = [];
     const memoryContext = await memory.contextFor(
@@ -537,88 +549,113 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       rulesLookup: (topic) => rulesLookup(this.db as Pool, topic),
     };
 
-    const tierEvents =
-      tier === stored
-        ? []
-        : [{ type: 'ContentTierChanged', from: stored, to: tier }];
     onEvent({ type: 'NarrationTier', tier });
     const emittedSceneEvents: unknown[] = [];
-    const result = await runTurn({
-      signal: request.signal,
-      turnId: request.actionId,
-      allowClarification: request.allowClarification,
-      clarificationAsked: request.clarificationAsked,
-      testMode: process.env.NODE_ENV === 'test',
-      ...(process.env.LLM_FIXTURE_MODE ? { turnSeed: 0, testMode: true } : {}),
-      prompt: {
-        catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
-        toolMode: 'native',
-        sceneId: state.sceneId ?? request.sessionId,
-        settingsHash: 'default',
-        session: {
-          contentTier: tier,
-          safetySettings: {
-            lines: boundaries.lines,
-            veils: boundaries.veils,
-            ...(tier === 'mature'
-              ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
+    const runAttempt = () =>
+      runTurn({
+        signal: request.signal,
+        turnId: request.actionId,
+        allowClarification: request.allowClarification,
+        clarificationAsked: request.clarificationAsked,
+        testMode: process.env.NODE_ENV === 'test',
+        ...(process.env.LLM_FIXTURE_MODE
+          ? { turnSeed: 0, testMode: true }
+          : {}),
+        prompt: {
+          catalogVersion: state.catalogVersion ?? catalog.catalogVersion,
+          toolMode: 'native',
+          sceneId: state.sceneId ?? request.sessionId,
+          settingsHash: 'default',
+          session: {
+            contentTier: tier,
+            safetySettings: {
+              lines: boundaries.lines,
+              veils: boundaries.veils,
+              ...(tier === 'mature'
+                ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
+                : {}),
+            },
+            ...(request.steerAway ? { steerAway: true } : {}),
+            partyRoster: Object.values(actors).map((actor) => ({
+              id: actor.id,
+              name: actor.name,
+            })),
+            premise: state.premise ?? `A solo adventure at ${tableName}.`,
+            sceneSummary:
+              state.sceneSummary ??
+              'The party is at the beginning of its adventure.',
+            ...(currentScene
+              ? {
+                  currentScene: {
+                    id: currentScene.id,
+                    title: currentScene.title,
+                    summary: currentScene.text.slice(0, 240),
+                  },
+                  nextScenes,
+                }
               : {}),
           },
-          ...(request.steerAway ? { steerAway: true } : {}),
-          partyRoster: Object.values(actors).map((actor) => ({
-            id: actor.id,
-            name: actor.name,
-          })),
-          premise:
-            state.premise ?? `A solo adventure at ${table.rows[0].name}.`,
-          sceneSummary:
-            state.sceneSummary ??
-            'The party is at the beginning of its adventure.',
-          ...(currentScene
-            ? {
-                currentScene: {
-                  id: currentScene.id,
-                  title: currentScene.title,
-                  summary: currentScene.text.slice(0, 240),
-                },
-                nextScenes,
-              }
-            : {}),
+          activeMode:
+            state &&
+            typeof state === 'object' &&
+            (state as { combatRoom?: unknown }).combatRoom
+              ? 'combat'
+              : 'exploration',
+          turn: {
+            state: { characters: Object.values(actors) },
+            activeActorId: liveTurnActorId(state),
+            registryFacts: memoryContext.registryFacts,
+            retrievedMemory: memoryContext.retrievedMemory,
+            playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
+            turns: state.lastNarration
+              ? [
+                  {
+                    playerText: state.lastPlayerText ?? '',
+                    narration: state.lastNarration,
+                  },
+                ]
+              : [],
+          },
         },
-        activeMode:
-          state &&
-          typeof state === 'object' &&
-          (state as { combatRoom?: unknown }).combatRoom
-            ? 'combat'
-            : 'exploration',
-        turn: {
-          state: { characters: Object.values(actors) },
-          activeActorId: liveTurnActorId(state),
-          registryFacts: memoryContext.registryFacts,
-          retrievedMemory: memoryContext.retrievedMemory,
-          playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
-          turns: state.lastNarration
-            ? [
-                {
-                  playerText: state.lastPlayerText ?? '',
-                  narration: state.lastNarration,
-                },
-              ]
-            : [],
+        context,
+        adapter: refusalWatched,
+        toolMode: 'native',
+        outputModerator,
+        outputTier: tier,
+        outputTableLines: tableLines,
+        emit: (event) => {
+          const value = event as Record<string, unknown>;
+          if (
+            matureRefused &&
+            tier === 'mature' &&
+            ['TurnFallback', 'NarrationChunk', 'NarrationCompleted'].includes(
+              String(value.type),
+            )
+          )
+            return;
+          if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
+          onEvent(event as DMTurnEvent);
         },
-      },
-      context,
-      adapter,
-      toolMode: 'native',
-      outputModerator,
-      outputTier: tier,
-      outputTableLines: tableLines,
-      emit: (event) => {
-        const value = event as Record<string, unknown>;
-        if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
-        onEvent(event as DMTurnEvent);
-      },
-    });
+      });
+
+    let result = await runAttempt();
+    let degraded = false;
+    if (
+      tier === 'mature' &&
+      matureRefused &&
+      result.fallback === 'endpoint-error'
+    ) {
+      this.endpointAllowsMature = false;
+      tier = 'standard';
+      degraded = true;
+      matureRefused = false;
+      onEvent({ type: 'NarrationTier', tier });
+      result = await runAttempt();
+    }
+    const tierEvents =
+      degraded || tier !== stored
+        ? [{ type: 'ContentTierChanged', from: stored, to: tier }]
+        : [];
 
     // Tool-emitted events are already in result.events; only add ones that are not.
     const missingSceneEvents = emittedSceneEvents.filter(
