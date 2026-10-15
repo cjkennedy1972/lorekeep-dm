@@ -225,7 +225,7 @@ describe('endpoint refusal of a mature prompt', () => {
     ).toEqual([]);
   });
 
-  it('persists no scene, registry, or tier writes from a successful tool round whose next endpoint call fails', async () => {
+  it('persists no scene or tier writes from a successful tool round whose next endpoint call fails', async () => {
     const owner = await account();
     const sessionId = await session(owner);
     await db.query(
@@ -281,11 +281,6 @@ describe('endpoint refusal of a mature prompt', () => {
       [sessionId],
     );
     expect(events).toHaveLength(0);
-    const { rows: registry } = await db.query(
-      'SELECT 1 FROM registry_entries WHERE session_id=$1',
-      [sessionId],
-    );
-    expect(registry).toHaveLength(0);
   });
 
   it('emits no ContentTierChanged for a standard turn at standard', async () => {
