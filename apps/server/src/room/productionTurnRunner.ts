@@ -42,6 +42,10 @@ import {
   createEndpointEgress,
 } from '../llm/config.js';
 import { liveDmAllowed } from '../llm/liveDmGate.js';
+import {
+  configuredSoloEndpointSlot,
+  sessionMatureEndpointAllowed,
+} from '../llm/matureEndpoint.js';
 import { createEndpointJudge } from '../safety/inputGate.js';
 import { MODERATION_SECTIONS } from '../safety/moderationRubric.generated.js';
 import type { Moderator } from '../safety/moderator.js';
@@ -191,9 +195,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       ))
     )
       throw new LiveDmRestrictedError();
-    const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'fast';
-    if (!['fast', 'frontier', 'moderate'].includes(endpointSlot))
-      throw new Error('Solo turn endpoint slot is invalid');
+    const endpointSlot = configuredSoloEndpointSlot();
     const endpoint =
       this.adapterOverride ??
       (await createConfiguredAdapter(
@@ -270,7 +272,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const { tier, stored } = await loadContentTierState(
       this.db,
       request.sessionId,
-      this.endpointAllowsMature,
+      this.endpointAllowsMature ||
+        (await sessionMatureEndpointAllowed(
+          this.db,
+          request.sessionId,
+          endpointSlot,
+        )),
     );
     const boundaries = await loadSeatedContentBoundaries(
       this.db,
