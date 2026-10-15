@@ -652,10 +652,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     let attemptTier = tier;
     let result = await attempt(attemptTier);
     if (refused) {
-      await this.db.query(
-        'UPDATE sessions SET endpoint_allows_mature=false WHERE id=$1',
-        [request.sessionId],
-      );
       attemptEvents.length = 0;
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;

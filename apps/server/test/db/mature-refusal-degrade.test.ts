@@ -271,7 +271,7 @@ describe('endpoint refusal of a mature prompt', () => {
     expect(events).toHaveLength(0);
   });
 
-  it('retries a stop_reason refusal once at standard, drops the partial mature text, and records the degrade', async () => {
+  it('retries a stop_reason refusal once at standard, drops the partial mature text, and retries mature next turn', async () => {
     const owner = await account();
     const sessionId = await session(owner);
     const calls = { mature: 0, standard: 0 };
@@ -325,7 +325,7 @@ describe('endpoint refusal of a mature prompt', () => {
       'SELECT endpoint_allows_mature FROM sessions WHERE id=$1',
       [sessionId],
     );
-    expect(flag[0].endpoint_allows_mature).toBe(false);
+    expect(flag[0].endpoint_allows_mature).toBe(true);
 
     await room.submitAction(owner, randomUUID(), 'We listen.', 'Owner');
     for (let i = 0; i < 300; i++) {
@@ -338,7 +338,7 @@ describe('endpoint refusal of a mature prompt', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    expect(calls).toEqual({ mature: 1, standard: 2 });
+    expect(calls).toEqual({ mature: 2, standard: 2 });
   });
 
   it('emits no ContentTierChanged for a standard turn at standard', async () => {
