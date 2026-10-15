@@ -42,7 +42,10 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
     await database.pool.query(migration);
     await database.pool.query(
       await readFile(
-        new URL('../../migrations/0031_registry_turn_link.sql', import.meta.url),
+        new URL(
+          '../../migrations/0031_registry_turn_link.sql',
+          import.meta.url,
+        ),
         'utf8',
       ),
     );

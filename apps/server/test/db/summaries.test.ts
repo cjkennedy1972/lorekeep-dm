@@ -52,7 +52,10 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
     );
     await database.pool.query(
       await readFile(
-        new URL('../../migrations/0031_registry_turn_link.sql', import.meta.url),
+        new URL(
+          '../../migrations/0031_registry_turn_link.sql',
+          import.meta.url,
+        ),
         'utf8',
       ),
     );
@@ -69,13 +72,22 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
         {
           kind: 'npc',
           id: 'npc_tagged',
-          after: { id: 'npc_tagged', name: 'Tagged Npc', role: 'Clerk', disposition: 'neutral', facts: [] },
+          after: {
+            id: 'npc_tagged',
+            name: 'Tagged Npc',
+            role: 'Clerk',
+            disposition: 'neutral',
+            facts: [],
+          },
         },
       ],
       'turn-close',
     );
     await memory.closeScene(sessionId, 'scene-untagged', 'Untagged scene.');
-    const summaries = await database!.pool.query<{ scene_id: string; turn_id: string | null }>(
+    const summaries = await database!.pool.query<{
+      scene_id: string;
+      turn_id: string | null;
+    }>(
       'SELECT scene_id, turn_id FROM scene_summaries WHERE session_id=$1 ORDER BY scene_id',
       [sessionId],
     );

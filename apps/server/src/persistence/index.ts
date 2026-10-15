@@ -287,7 +287,10 @@ export class Persistence {
         ...new Set([
           ...events
             .filter((event) => event.type === 'TurnReverted')
-            .map((event) => (event.payload as { revertedTurnId: string }).revertedTurnId),
+            .map(
+              (event) =>
+                (event.payload as { revertedTurnId: string }).revertedTurnId,
+            ),
           ...rewoundTurnIds,
         ]),
       ];
@@ -383,10 +386,17 @@ export class Persistence {
       const droppedTurnIds = [
         ...new Set(
           log.rows
-            .filter((row) => Number(row.seq) >= target.firstSeq && !retainedSeqs.has(Number(row.seq)))
+            .filter(
+              (row) =>
+                Number(row.seq) >= target.firstSeq &&
+                !retainedSeqs.has(Number(row.seq)),
+            )
             .flatMap((row) =>
               row.type === 'TurnReverted'
-                ? [row.turn_id, (row.payload as { revertedTurnId: string }).revertedTurnId]
+                ? [
+                    row.turn_id,
+                    (row.payload as { revertedTurnId: string }).revertedTurnId,
+                  ]
                 : [row.turn_id],
             ),
         ),

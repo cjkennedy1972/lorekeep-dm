@@ -39,10 +39,20 @@ const ids = {
 } as const;
 const npc = (role: string): RegistryEvent => ({
   type: 'NpcUpserted',
-  npc: { id: 'npc_ada', name: 'Ada Vale', role, disposition: 'neutral', facts: [] },
+  npc: {
+    id: 'npc_ada',
+    name: 'Ada Vale',
+    role,
+    disposition: 'neutral',
+    facts: [],
+  },
 });
 const revert = (revertedTurnId: string) =>
-  row('r', 'TurnReverted', { type: 'TurnReverted', turnId: ids.r, revertedTurnId });
+  row('r', 'TurnReverted', {
+    type: 'TurnReverted',
+    turnId: ids.r,
+    revertedTurnId,
+  });
 const row = (
   turnId: keyof typeof ids,
   type: string,
@@ -244,48 +254,104 @@ describe('rewind plan', () => {
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);
       const memory = new RegistryMemory(pool);
-      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 });
-      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 });
+      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], {
+        turn: 1,
+      });
+      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], {
+        turn: 2,
+      });
       await memory.closeScene(id, 'scene-b', 'First telling.', [], ids.b);
       await persistence.writeTurn(id, [revert(ids.b)], { turn: 1 });
 
-      expect(await memory.closeScene(id, 'scene-b', 'Regenerated telling.', [], ids.c)).toBe(true);
+      expect(
+        await memory.closeScene(
+          id,
+          'scene-b',
+          'Regenerated telling.',
+          [],
+          ids.c,
+        ),
+      ).toBe(true);
       const { rows } = await pool.query<{ summary: string }>(
         'SELECT summary FROM scene_summaries WHERE session_id=$1',
         [id],
       );
-      expect(rows.map((item) => item.summary)).toEqual(['Regenerated telling.']);
+      expect(rows.map((item) => item.summary)).toEqual([
+        'Regenerated telling.',
+      ]);
     }));
 
   it('restores the superseded registry version when the turn that wrote the newer one is rewound', () =>
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);
-      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 }, undefined, [npc('Innkeeper')], undefined, ids.a);
-      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 }, undefined, [npc('Mayor')], undefined, ids.b);
+      await persistence.writeTurn(
+        id,
+        [row('a', 'NarrationCompleted')],
+        { turn: 1 },
+        undefined,
+        [npc('Innkeeper')],
+        undefined,
+        ids.a,
+      );
+      await persistence.writeTurn(
+        id,
+        [row('b', 'NarrationCompleted')],
+        { turn: 2 },
+        undefined,
+        [npc('Mayor')],
+        undefined,
+        ids.b,
+      );
       await persistence.writeTurn(id, [revert(ids.b)], { turn: 1 });
 
-      const { rows } = await pool.query<{ version: number; role: string; superseded_by: string | null }>(
+      const { rows } = await pool.query<{
+        version: number;
+        role: string;
+        superseded_by: string | null;
+      }>(
         `SELECT version, payload->>'role' AS role, superseded_by FROM registry_entries
           WHERE session_id=$1 ORDER BY version`,
         [id],
       );
-      expect(rows).toEqual([{ version: 1, role: 'Innkeeper', superseded_by: null }]);
+      expect(rows).toEqual([
+        { version: 1, role: 'Innkeeper', superseded_by: null },
+      ]);
     }));
 
   it('keeps derived rows with no recorded source turn when rewinding', () =>
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);
       const memory = new RegistryMemory(pool);
-      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 });
+      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], {
+        turn: 1,
+      });
       await memory.closeScene(id, 'scene-seed', 'Seeded scene.');
       await memory.upsertMany(id, [
-        { kind: 'npc', id: 'npc_seed', after: { id: 'npc_seed', name: 'Seed Keeper', role: 'Guard', disposition: 'neutral', facts: [] } },
+        {
+          kind: 'npc',
+          id: 'npc_seed',
+          after: {
+            id: 'npc_seed',
+            name: 'Seed Keeper',
+            role: 'Guard',
+            disposition: 'neutral',
+            facts: [],
+          },
+        },
       ]);
-      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 });
+      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], {
+        turn: 2,
+      });
       await persistence.writeTurn(id, [revert(ids.b)], { turn: 1 });
 
-      const summaries = await pool.query('SELECT 1 FROM scene_summaries WHERE session_id=$1', [id]);
-      const entries = await pool.query('SELECT 1 FROM registry_entries WHERE session_id=$1', [id]);
+      const summaries = await pool.query(
+        'SELECT 1 FROM scene_summaries WHERE session_id=$1',
+        [id],
+      );
+      const entries = await pool.query(
+        'SELECT 1 FROM registry_entries WHERE session_id=$1',
+        [id],
+      );
       expect(summaries.rowCount).toBe(1);
       expect(entries.rowCount).toBe(1);
     }));
@@ -294,8 +360,24 @@ describe('rewind plan', () => {
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);
       const memory = new RegistryMemory(pool);
-      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 }, undefined, [npc('Innkeeper')], undefined, ids.a);
-      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 }, undefined, [npc('Mayor')], undefined, ids.b);
+      await persistence.writeTurn(
+        id,
+        [row('a', 'NarrationCompleted')],
+        { turn: 1 },
+        undefined,
+        [npc('Innkeeper')],
+        undefined,
+        ids.a,
+      );
+      await persistence.writeTurn(
+        id,
+        [row('b', 'NarrationCompleted')],
+        { turn: 2 },
+        undefined,
+        [npc('Mayor')],
+        undefined,
+        ids.b,
+      );
       await memory.closeScene(id, 'scene-b', 'Mayor scene.', [], ids.b);
 
       await pool.query(
@@ -306,33 +388,72 @@ describe('rewind plan', () => {
            WHEN (OLD.session_id = '${id}'::uuid) EXECUTE FUNCTION fail_registry_delete()`,
       );
       try {
-        await expect(persistence.writeTurn(id, [revert(ids.b)], { turn: 1 })).rejects.toThrow(
-          /injected delete failure/,
-        );
+        await expect(
+          persistence.writeTurn(id, [revert(ids.b)], { turn: 1 }),
+        ).rejects.toThrow(/injected delete failure/);
       } finally {
-        await pool.query('DROP TRIGGER fail_registry_delete ON registry_entries');
+        await pool.query(
+          'DROP TRIGGER fail_registry_delete ON registry_entries',
+        );
         await pool.query('DROP FUNCTION fail_registry_delete()');
       }
 
-      const reverted = await pool.query('SELECT 1 FROM events WHERE session_id=$1 AND type=$2', [id, 'TurnReverted']);
-      const summaries = await pool.query<{ summary: string }>('SELECT summary FROM scene_summaries WHERE session_id=$1', [id]);
-      const entries = await pool.query('SELECT 1 FROM registry_entries WHERE session_id=$1', [id]);
+      const reverted = await pool.query(
+        'SELECT 1 FROM events WHERE session_id=$1 AND type=$2',
+        [id, 'TurnReverted'],
+      );
+      const summaries = await pool.query<{ summary: string }>(
+        'SELECT summary FROM scene_summaries WHERE session_id=$1',
+        [id],
+      );
+      const entries = await pool.query(
+        'SELECT 1 FROM registry_entries WHERE session_id=$1',
+        [id],
+      );
       expect(reverted.rowCount).toBe(0);
-      expect(summaries.rows.map((item) => item.summary)).toEqual(['Mayor scene.']);
+      expect(summaries.rows.map((item) => item.summary)).toEqual([
+        'Mayor scene.',
+      ]);
       expect(entries.rowCount).toBe(2);
     }));
 
   it('removes registry rows written by a clarification turn inside the rewound window', () =>
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);
-      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 }, undefined, [npc('Innkeeper')], undefined, ids.a);
+      await persistence.writeTurn(
+        id,
+        [row('a', 'NarrationCompleted')],
+        { turn: 1 },
+        undefined,
+        [npc('Innkeeper')],
+        undefined,
+        ids.a,
+      );
       await persistence.writeTurn(id, [row('b', 'ToolCall')], { turn: 1 });
-      await persistence.writeTurn(id, [row('c', 'ClarificationRequested')], { turn: 1 }, undefined, [npc('Mayor')], undefined, ids.c);
-      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 }, undefined, [npc('Guard')], undefined, ids.b);
+      await persistence.writeTurn(
+        id,
+        [row('c', 'ClarificationRequested')],
+        { turn: 1 },
+        undefined,
+        [npc('Mayor')],
+        undefined,
+        ids.c,
+      );
+      await persistence.writeTurn(
+        id,
+        [row('b', 'NarrationCompleted')],
+        { turn: 2 },
+        undefined,
+        [npc('Guard')],
+        undefined,
+        ids.b,
+      );
 
       const plan = await persistence.loadRewindPlan(id);
       expect(plan!.turnId).toBe(ids.b);
-      expect(plan!.droppedTurnIds).toEqual(expect.arrayContaining([ids.b, ids.c]));
+      expect(plan!.droppedTurnIds).toEqual(
+        expect.arrayContaining([ids.b, ids.c]),
+      );
       expect(plan!.droppedTurnIds).not.toContain(ids.a);
       await persistence.writeTurn(
         id,
@@ -345,19 +466,41 @@ describe('rewind plan', () => {
         plan!.droppedTurnIds,
       );
 
-      const { rows } = await pool.query<{ version: number; role: string; superseded_by: string | null }>(
+      const { rows } = await pool.query<{
+        version: number;
+        role: string;
+        superseded_by: string | null;
+      }>(
         `SELECT version, payload->>'role' AS role, superseded_by FROM registry_entries
           WHERE session_id=$1 ORDER BY version`,
         [id],
       );
-      expect(rows).toEqual([{ version: 1, role: 'Innkeeper', superseded_by: null }]);
+      expect(rows).toEqual([
+        { version: 1, role: 'Innkeeper', superseded_by: null },
+      ]);
     }));
 
   it('fails the rewind closed when a surviving registry row supersedes a removed one', () =>
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);
-      await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], { turn: 1 }, undefined, [npc('Innkeeper')], undefined, ids.a);
-      await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], { turn: 2 }, undefined, [npc('Mayor')], undefined, ids.b);
+      await persistence.writeTurn(
+        id,
+        [row('a', 'NarrationCompleted')],
+        { turn: 1 },
+        undefined,
+        [npc('Innkeeper')],
+        undefined,
+        ids.a,
+      );
+      await persistence.writeTurn(
+        id,
+        [row('b', 'NarrationCompleted')],
+        { turn: 2 },
+        undefined,
+        [npc('Mayor')],
+        undefined,
+        ids.b,
+      );
       await pool.query(
         `UPDATE registry_entries SET version = 3,
             supersedes_id = (SELECT id FROM registry_entries WHERE session_id=$1 AND turn_id=$2)
@@ -367,10 +510,25 @@ describe('rewind plan', () => {
       const plan = await persistence.loadRewindPlan(id);
 
       await expect(
-        persistence.writeTurn(id, [revert(ids.b)], { turn: 1 }, undefined, [], plan!.headSeq, undefined, plan!.droppedTurnIds),
+        persistence.writeTurn(
+          id,
+          [revert(ids.b)],
+          { turn: 1 },
+          undefined,
+          [],
+          plan!.headSeq,
+          undefined,
+          plan!.droppedTurnIds,
+        ),
       ).rejects.toThrow(/foreign key|violates/i);
-      const reverted = await pool.query('SELECT 1 FROM events WHERE session_id=$1 AND type=$2', [id, 'TurnReverted']);
-      const entries = await pool.query('SELECT 1 FROM registry_entries WHERE session_id=$1', [id]);
+      const reverted = await pool.query(
+        'SELECT 1 FROM events WHERE session_id=$1 AND type=$2',
+        [id, 'TurnReverted'],
+      );
+      const entries = await pool.query(
+        'SELECT 1 FROM registry_entries WHERE session_id=$1',
+        [id],
+      );
       expect(reverted.rowCount).toBe(0);
       expect(entries.rowCount).toBe(2);
     }));
