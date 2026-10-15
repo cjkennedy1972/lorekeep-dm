@@ -150,7 +150,8 @@ export function NarrationLog({
         message.type !== 'RollEvent' &&
         message.type !== 'NarrationChunk' &&
         message.type !== 'NarrationCompleted' &&
-        message.type !== 'TurnReverted'
+        message.type !== 'TurnReverted' &&
+        message.type !== 'ToolRejected'
       )
         continue;
       const key = `${message.seq}:${message.type}:${JSON.stringify(message.payload)}`;
@@ -211,7 +212,8 @@ export function NarrationLog({
             message.type !== 'RollEvent' &&
             message.type !== 'NarrationChunk' &&
             message.type !== 'NarrationCompleted' &&
-            message.type !== 'TurnReverted'
+            message.type !== 'TurnReverted' &&
+            message.type !== 'ToolRejected'
           )
             return null;
           if (message.type === 'TurnReverted')

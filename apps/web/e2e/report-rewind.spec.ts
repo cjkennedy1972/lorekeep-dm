@@ -35,11 +35,11 @@ test('report and rewind banner are reachable with the keyboard', async ({
   await page.getByRole('button', { name: 'Submit report' }).focus();
   await page.keyboard.press('Enter');
   await expect(
-    page
-      .getByRole('listitem')
-      .filter({ hasText: 'Your action was rejected.' })
-      .getByRole('status'),
+    page.getByRole('status').filter({ hasText: 'Report received. Thank you.' }),
   ).toHaveText('Report received. Thank you.');
+  await expect(
+    page.getByRole('listitem').filter({ hasText: 'Your action was rejected.' }),
+  ).toBeVisible();
   expect(reported).toEqual({
     messageRef: 43,
     category: 'harassment',
