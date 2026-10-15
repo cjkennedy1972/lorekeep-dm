@@ -32,6 +32,13 @@ export class LeaseConflictError extends Error {
   readonly retryable = true;
 }
 
+export class RewindRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RewindRefusedError';
+  }
+}
+
 export interface LatestState {
   snapshot: Snapshot | null;
   events: StoredEvent[];
@@ -294,12 +301,25 @@ export class Persistence {
           ...rewoundTurnIds,
         ]),
       ];
-      if (revertedTurnIds.length)
+      if (revertedTurnIds.length) {
+        const blocked = await client.query(
+          `SELECT 1 FROM registry_entries s
+             JOIN registry_entries d ON d.id = s.supersedes_id
+            WHERE d.session_id = $1 AND d.turn_id = ANY($2::text[])
+              AND (s.turn_id IS NULL OR s.turn_id <> ALL($2::text[]))
+            LIMIT 1`,
+          [sessionId, revertedTurnIds],
+        );
+        if (blocked.rowCount)
+          throw new RewindRefusedError(
+            'Rewind refused: a registry entry outside the rewound turns supersedes a version this rewind would remove.',
+          );
         await new RegistryMemory(this.pool).removeTurnsInTransaction(
           client,
           sessionId,
           revertedTurnIds,
         );
+      }
       const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
       return { events: inserted, snapshot };
     });
