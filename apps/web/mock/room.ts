@@ -24,6 +24,7 @@ export class Room {
   private seats = new Map<string, Seat>();
   private conns = new Map<string, Set<Send>>();
   private timer: NodeJS.Timeout | undefined;
+  private paused = false;
   readonly sessionId = SessionIdSchema.parse(
     '00000000-0000-4000-8000-0000000000c1',
   );
@@ -45,6 +46,7 @@ export class Room {
       sessionId: this.sessionId,
       phase: 'lobby',
       seats: [...this.seats.values()],
+      paused: this.paused,
     };
   }
 
@@ -79,6 +81,27 @@ export class Room {
       set.delete(send);
       if (set.size === 0) this.setPresence(seat, 'offline');
     };
+  }
+
+  /** Broadcasts an anonymous X-card signal to every connected seat. */
+  xCard() {
+    const msg: ServerMessage = {
+      seq: ++this.seq,
+      type: 'SafetyFlag',
+      payload: { kind: 'x-card' },
+    };
+    for (const set of this.conns.values()) for (const send of set) send(msg);
+  }
+
+  /** Pauses the table and broadcasts the updated state to every connected seat. */
+  setPaused(paused: boolean) {
+    this.paused = paused;
+    const msg: ServerMessage = {
+      seq: ++this.seq,
+      type: 'StateSync',
+      payload: { state: this.state() },
+    };
+    for (const set of this.conns.values()) for (const send of set) send(msg);
   }
 
   /** Removes a deleted account's seat. */
