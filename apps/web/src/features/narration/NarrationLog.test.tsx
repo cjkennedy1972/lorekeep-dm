@@ -31,6 +31,27 @@ test('a player can report a narration with category and optional reason', async 
   ).toBeInTheDocument();
 });
 
+test('a player can report a text-bearing non-narration message', async () => {
+  const onReport = vi.fn().mockResolvedValue(null);
+  render(
+    <NarrationLog
+      messages={[
+        {
+          seq: 14,
+          type: 'ToolRejected',
+          payload: { text: 'That action was rejected.' },
+        } as ServerMessage,
+      ]}
+      onReport={onReport}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Report this message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
+
+  await waitFor(() => expect(onReport).toHaveBeenCalledWith(14, 'other', ''));
+});
+
 test('a rewind is announced in the story log', () => {
   render(
     <NarrationLog

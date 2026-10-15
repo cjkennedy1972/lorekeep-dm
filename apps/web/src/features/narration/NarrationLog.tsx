@@ -56,6 +56,60 @@ export function NarrationLog({
   const announcedRolls = useRef(new Set<string>());
   const announcedCombatEvents = useRef(new Set<string>());
 
+  const reportAction = (message: ServerMessage) => {
+    if (!onReport) return null;
+    return (
+      <div className="narration-log__report">
+        <button
+          type="button"
+          onClick={() => {
+            setReportMessage('');
+            setReporting(message.seq);
+          }}
+          aria-label="Report this message"
+        >
+          Report this message
+        </button>
+        {reporting === message.seq && (
+          <form
+            aria-label="Report message"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const formData = new FormData(event.currentTarget);
+              const category = String(formData.get('category') ?? 'other');
+              const reason = String(formData.get('reason') ?? '');
+              void onReport(message.seq, category, reason).then((error) => {
+                setReportMessage(error ?? 'Report received. Thank you.');
+                if (!error) setReporting(null);
+              });
+            }}
+          >
+            <label>
+              Category
+              <select name="category" defaultValue="other">
+                <option value="harassment">Harassment</option>
+                <option value="hate">Hate</option>
+                <option value="sexual">Sexual content</option>
+                <option value="threat_or_self_harm">Threat or self-harm</option>
+                <option value="underage">Underage user</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Optional details
+              <textarea name="reason" maxLength={500} />
+            </label>
+            <button type="submit">Submit report</button>
+            <button type="button" onClick={() => setReporting(null)}>
+              Cancel
+            </button>
+          </form>
+        )}
+        {reportMessage && <p role="status">{reportMessage}</p>}
+      </div>
+    );
+  };
+
   useEffect(() => {
     for (const message of messages) {
       if (message.type !== 'CombatEvents') continue;
@@ -140,19 +194,47 @@ export function NarrationLog({
         tabIndex={0}
         aria-label="Story entries; use arrow keys or page keys to scroll"
       >
-        {messages
-          .filter((message) => message.type === 'TurnReverted')
-          .map((message) => (
-            <li
-              className="narration-log__rewind"
-              key={`rewind-${message.seq}`}
-              role="status"
-              aria-live="polite"
-            >
-              The host rewound the last DM turn. Its narration and game state
-              were restored; the next attempt uses a new dice roll.
+        {messages.map((message) => {
+          if (message.type === 'TurnReverted')
+            return (
+              <li
+                className="narration-log__rewind"
+                key={`rewind-${message.seq}`}
+                role="status"
+                aria-live="polite"
+              >
+                The host rewound the last DM turn. Its narration and game state
+                were restored; the next attempt uses a new dice roll.
+              </li>
+            );
+          if (
+            message.type === 'NarrationChunk' ||
+            message.type === 'NarrationCompleted'
+          )
+            return null;
+          const payload = message.payload as Record<string, unknown>;
+          const reportable = [
+            'text',
+            'narrative',
+            'narration',
+            'playerName',
+          ].some((key) => typeof payload[key] === 'string');
+          if (!reportable) return null;
+          return (
+            <li className="narration-log__turn" key={`message-${message.seq}`}>
+              <p>
+                {String(
+                  payload.text ??
+                    payload.narrative ??
+                    payload.narration ??
+                    payload.playerName ??
+                    message.type,
+                )}
+              </p>
+              {reportAction(message)}
             </li>
-          ))}
+          );
+        })}
         {state.entries.map((entry, index) => {
           if (entry.kind === 'pending') {
             return (
@@ -224,89 +306,18 @@ export function NarrationLog({
                     ? 'Narration unavailable.'
                     : 'Waiting for narration…')}
               </p>
-              {entry.turn.complete && onReport && (
-                <div className="narration-log__report">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReportMessage('');
-                      const completed = [...messages]
-                        .reverse()
-                        .find(
-                          (message) =>
-                            message.type === 'NarrationCompleted' &&
-                            String(
-                              (message.payload as Record<string, unknown>)
-                                .turnId ?? '',
-                            ) === entry.turn.turnId,
-                        );
-                      if (completed) setReporting(completed.seq);
-                    }}
-                    aria-label="Report this message"
-                  >
-                    Report this message
-                  </button>
-                  {reporting !== null &&
-                    messages.some(
-                      (message) =>
-                        message.type === 'NarrationCompleted' &&
-                        message.seq === reporting &&
-                        String(
-                          (message.payload as Record<string, unknown>).turnId ??
-                            '',
-                        ) === entry.turn.turnId,
-                    ) && (
-                      <form
-                        aria-label="Report message"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const category = String(
-                            new FormData(event.currentTarget).get('category') ??
-                              'other',
-                          );
-                          const reason = String(
-                            new FormData(event.currentTarget).get('reason') ??
-                              '',
-                          );
-                          void onReport(reporting, category, reason).then(
-                            (error) => {
-                              setReportMessage(
-                                error ?? 'Report received. Thank you.',
-                              );
-                              if (!error) setReporting(null);
-                            },
-                          );
-                        }}
-                      >
-                        <label>
-                          Category
-                          <select name="category" defaultValue="other">
-                            <option value="harassment">Harassment</option>
-                            <option value="hate">Hate</option>
-                            <option value="sexual">Sexual content</option>
-                            <option value="threat_or_self_harm">
-                              Threat or self-harm
-                            </option>
-                            <option value="underage">Underage user</option>
-                            <option value="other">Other</option>
-                          </select>
-                        </label>
-                        <label>
-                          Optional details
-                          <textarea name="reason" maxLength={500} />
-                        </label>
-                        <button type="submit">Submit report</button>
-                        <button
-                          type="button"
-                          onClick={() => setReporting(null)}
-                        >
-                          Cancel
-                        </button>
-                      </form>
-                    )}
-                  {reportMessage && <p role="status">{reportMessage}</p>}
-                </div>
-              )}
+              {entry.turn.complete &&
+                (() => {
+                  const completed = messages.find(
+                    (message) =>
+                      message.type === 'NarrationCompleted' &&
+                      String(
+                        (message.payload as Record<string, unknown>).turnId ??
+                          '',
+                      ) === entry.turn.turnId,
+                  );
+                  return completed ? reportAction(completed) : null;
+                })()}
               {entry.turn.complete && entry.turn.rollEvents.length > 0 && (
                 <div className="narration-log__rolls">
                   {entry.turn.rollEvents.map((roll, rollIndex) => {

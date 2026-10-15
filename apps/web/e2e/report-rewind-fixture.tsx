@@ -6,6 +6,11 @@ import { NarrationLog } from '../src/features/narration/NarrationLog.js';
 function Fixture() {
   const [messages, setMessages] = useState<ServerMessage[]>([
     {
+      seq: 43,
+      type: 'ToolRejected',
+      payload: { text: 'Your action was rejected.' },
+    },
+    {
       seq: 44,
       type: 'NarrationCompleted',
       payload: {
