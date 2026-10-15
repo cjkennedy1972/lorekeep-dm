@@ -40,6 +40,15 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
       'utf8',
     );
     await database.pool.query(migration);
+    await database.pool.query(
+      await readFile(
+        new URL(
+          '../../migrations/0031_registry_turn_link.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
     memory = new RegistryMemory(database.pool);
   }, 30_000);
   afterAll(async () => {

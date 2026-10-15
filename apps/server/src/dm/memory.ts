@@ -171,7 +171,7 @@ export class RegistryMemory {
         await client.query('ROLLBACK');
         return false;
       }
-      await this.upsertManyInTransaction(client, sessionId, diffs);
+      await this.upsertManyInTransaction(client, sessionId, diffs, turnId);
       await client.query('COMMIT');
       return true;
     } catch (error) {
@@ -253,14 +253,41 @@ export class RegistryMemory {
     client: PoolClient,
     sessionId: string,
     events: readonly RegistryEvent[],
+    turnId: string | null = null,
   ): Promise<void> {
-    await this.upsertManyInTransaction(client, sessionId, events);
+    await this.upsertManyInTransaction(client, sessionId, events, turnId);
+  }
+
+  /** Remove registry versions written by reverted turns and restore the versions they superseded. */
+  async removeTurnsInTransaction(
+    client: PoolClient,
+    sessionId: string,
+    turnIds: readonly string[],
+  ): Promise<void> {
+    await client.query(
+      `UPDATE registry_facts SET superseded_by=NULL
+        WHERE superseded_by IN (SELECT f.id FROM registry_facts f
+          JOIN registry_entries e ON e.id=f.entry_id
+         WHERE e.session_id=$1 AND e.turn_id = ANY($2::text[]))`,
+      [sessionId, turnIds],
+    );
+    await client.query(
+      `UPDATE registry_entries SET superseded_by=NULL
+        WHERE session_id=$1 AND superseded_by IN (
+          SELECT id FROM registry_entries WHERE session_id=$1 AND turn_id = ANY($2::text[]))`,
+      [sessionId, turnIds],
+    );
+    await client.query(
+      'DELETE FROM registry_entries WHERE session_id=$1 AND turn_id = ANY($2::text[])',
+      [sessionId, turnIds],
+    );
   }
 
   private async upsertManyInTransaction(
     client: PoolClient,
     sessionId: string,
     diffs: readonly (RegistryDiff | RegistryEvent)[],
+    turnId: string | null = null,
   ): Promise<void> {
     for (const diff of diffs) {
       const normalized = this.fromDiff(diff);
@@ -272,6 +299,7 @@ export class RegistryMemory {
         normalized.after,
         normalized.aliases,
         normalized.supersedesFacts,
+        turnId,
       );
     }
   }
@@ -308,6 +336,7 @@ export class RegistryMemory {
     payload: Record<string, unknown>,
     aliases: string[] | undefined = undefined,
     supersedesFacts: Record<string, string> = {},
+    turnId: string | null = null,
   ): Promise<void> {
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
@@ -348,8 +377,8 @@ export class RegistryMemory {
       return;
 
     const inserted = await client.query<{ id: string }>(
-      `INSERT INTO registry_entries(session_id, entity_type, entity_id, version, name, aliases, payload, supersedes_id, mentioned_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      `INSERT INTO registry_entries(session_id, entity_type, entity_id, version, name, aliases, payload, supersedes_id, mentioned_at, turn_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [
         sessionId,
         kind,
@@ -360,6 +389,7 @@ export class RegistryMemory {
         payload,
         prior?.id ?? null,
         Number(prior?.mentioned_at ?? 0) + 1,
+        turnId,
       ],
     );
     const nextId = inserted.rows[0]!.id;
