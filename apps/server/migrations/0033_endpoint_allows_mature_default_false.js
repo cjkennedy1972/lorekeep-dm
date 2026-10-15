@@ -10,8 +10,9 @@ export const up = (pgm) => {
     ),
   );
 };
+// Rollback keeps the default false: reverting to true would silently re-open mature. Reverting to true is unsupported.
 export const down = (pgm) => {
   pgm.sql(
-    'ALTER TABLE sessions ALTER COLUMN endpoint_allows_mature SET DEFAULT true;',
+    'ALTER TABLE sessions ALTER COLUMN endpoint_allows_mature SET DEFAULT false;',
   );
 };
