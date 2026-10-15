@@ -563,9 +563,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const emittedSceneEvents: unknown[] = [];
     const attemptEvents: DMTurnEvent[] = [];
     let refused = false;
-    const attempt = (attemptTier: ContentTier) => {
+    const attempt = async (attemptTier: ContentTier) => {
       refused = false;
-      return runTurn({
+      const narration: DMTurnEvent[] = [];
+      const result = await runTurn({
         signal: request.signal,
         turnId: request.actionId,
         allowClarification: request.allowClarification,
@@ -641,23 +642,25 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         emit: (event) => {
           const value = event as Record<string, unknown>;
           if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
-          // Narration* events reach here only after the output gate, so they stream live.
-          // A refused attempt's narration is never shown or kept.
-          if (String(value.type).startsWith('Narration')) {
-            if (!refused) onEvent(event as DMTurnEvent);
-          } else attemptEvents.push(event as DMTurnEvent);
+          // Narration is held until this attempt settles, so a refused attempt's text is discarded whole.
+          if (String(value.type).startsWith('Narration'))
+            narration.push(event as DMTurnEvent);
+          else attemptEvents.push(event as DMTurnEvent);
         },
       });
+      return { result, narration, refused };
     };
     let attemptTier = tier;
-    let result = await attempt(attemptTier);
-    if (refused) {
+    let settled = await attempt(attemptTier);
+    if (settled.refused && attemptTier !== 'standard') {
       attemptEvents.length = 0;
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
       attemptTier = 'standard';
-      result = await attempt(attemptTier);
+      settled = await attempt(attemptTier);
     }
+    const { result, narration } = settled;
+    for (const event of narration) onEvent(event);
     // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
     const failed = result.fallback === 'endpoint-error';
     for (const event of attemptEvents) {

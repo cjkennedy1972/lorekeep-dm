@@ -341,6 +341,38 @@ describe('endpoint refusal of a mature prompt', () => {
     expect(calls).toEqual({ mature: 2, standard: 2 });
   });
 
+  it('fails closed without retrying when a standard attempt is refused', async () => {
+    const owner = await account();
+    const sessionId = await session(owner);
+    const calls = { mature: 0, standard: 0 };
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls.standard += 1;
+        yield { type: 'text', delta: 'PARTIAL STANDARD' } as LlmChunk;
+        throw new LlmEndpointError('endpoint-refusal', 'refused');
+      },
+    };
+    const room = await openRoom(sessionId, adapter);
+    const seen = recorder();
+    await room.join(owner, seen.connection, 'Owner');
+    await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
+      owner,
+    ]);
+
+    await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+    await waitForNarrationSent(seen.sent, 1);
+
+    expect(calls).toEqual({ mature: 0, standard: 1 });
+    expect(narrationText(seen.sent)).toContain('not resolved');
+    expect(narrationText(seen.sent)).not.toContain('PARTIAL STANDARD');
+  });
+
   it('emits no ContentTierChanged for a standard turn at standard', async () => {
     const owner = await account();
     const sessionId = await session(owner);
