@@ -4,6 +4,7 @@
 // read-only synthetic narration request; no session, tool execution, DB writes, or fixture
 // recording. Endpoint values and credentials are deliberately never printed.
 // Set FIRST_TOKEN_PROBE_CONFIRM=1 to acknowledge outbound synthetic prompts.
+// Set FIRST_TOKEN_PROBE_CACHE_DISABLED=1 only after verifying the endpoint cache is off.
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { Pool } from 'pg';
@@ -28,6 +29,12 @@ if (env.FIRST_TOKEN_PROBE_CONFIRM !== '1') {
   );
   process.exit(2);
 }
+if (env.FIRST_TOKEN_PROBE_CACHE_DISABLED !== '1') {
+  console.error(
+    'Disable and verify provider-side prompt caching; set FIRST_TOKEN_PROBE_CACHE_DISABLED=1 only afterward.',
+  );
+  process.exit(2);
+}
 if (!env.DATABASE_URL || !env.OPERATOR_ENDPOINT_MASTER_KEY) {
   console.error('DATABASE_URL and OPERATOR_ENDPOINT_MASTER_KEY are required.');
   process.exit(2);
@@ -45,6 +52,7 @@ const summarize = (values) => ({
 const digest = (text) =>
   `sha256:${createHash('sha256').update(text).digest('hex')}`;
 const pool = new Pool({ connectionString: env.DATABASE_URL, max: 1 });
+let phase = 'adapter-setup';
 
 try {
   const egress = createEndpointEgress();
@@ -53,19 +61,25 @@ try {
     createConfiguredAdapter(pool, 'fast', egress),
   ]);
 
+  const chat = async ({ messages, temperature, max_tokens, signal }) => {
+    let text = '';
+    for await (const chunk of moderate.complete({
+      messages,
+      temperature,
+      maxTokens: max_tokens,
+      signal,
+    }))
+      if (chunk.type === 'text') text += chunk.delta;
+    return text;
+  };
   const judge = new JudgeModerator({
-    chat: async ({ messages, temperature, max_tokens, signal }) => {
-      let text = '';
-      for await (const chunk of moderate.complete({
-        messages,
-        temperature,
-        maxTokens: max_tokens,
-        signal,
-      }))
-        if (chunk.type === 'text') text += chunk.delta;
-      return text;
-    },
+    chat,
     deterministic: hardFloorLayer,
+  });
+  const warmupJudge = new JudgeModerator({
+    chat,
+    deterministic: hardFloorLayer,
+    timeoutMs: 20_000,
   });
 
   const prompt = buildPrompt({
@@ -94,12 +108,43 @@ try {
   const moderationText = 'I inspect the weathered stone arch for markings.';
   const tableLines = [];
   const tier = 'standard';
+  const request = {
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    maxTokens: 512,
+    toolMode: 'native',
+    cacheHints: { stablePrefixMessages: 1 },
+  };
 
   const inputMs = [];
   const gateMs = [];
   const visibleMs = [];
 
+  // Warm up model execution before measuring. The operator must separately
+  // disable and verify provider-side prompt caching before setting the guard.
+  phase = 'warmup-moderation';
+  const warmVerdict = await warmupJudge.moderate({
+    text: moderationText,
+    tier,
+    tableLines,
+    direction: 'input',
+  });
+  if (
+    !warmVerdict ||
+    warmVerdict.verdict !== 'allow' ||
+    warmVerdict.unavailable
+  ) {
+    throw new Error('moderation warmup failed');
+  }
+  phase = 'warmup-narration';
+  for await (const _chunk of fast.complete({ ...request, maxTokens: 8 })) {
+    // Drain once to warm the configured model before timed runs.
+  }
+
   for (let i = 0; i < count; i++) {
+    phase = 'input-moderation';
     const inputStart = performance.now();
     const inputVerdict = await judge.moderate({
       text: moderationText,
@@ -111,14 +156,7 @@ try {
     if (inputVerdict.verdict !== 'allow' || inputVerdict.unavailable)
       throw new Error(`input classifier did not allow run ${i + 1}`);
 
-    const request = {
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      maxTokens: 512,
-      toolMode: 'native',
-    };
+    phase = 'narration-model';
     const outputStart = performance.now();
     let modelText = '';
     for await (const chunk of fast.complete(request))
@@ -126,10 +164,9 @@ try {
     const modelDone = performance.now();
     if (!modelText.trim()) throw new Error(`empty narration on run ${i + 1}`);
 
-    // Match runTurn's post-generation output gate behavior: 24-char chunks,
-    // sensitive-text withholding, then one player-visible NarrationChunk after
-    // all moderation is complete. This measures full first visible narration
-    // from before the narration request through approval, not adapter TTFT.
+    // Production runTurn buffers the complete model response before running
+    // runOutputGate, then emits one player-visible narration after the gate.
+    phase = 'output-gate';
     const gate = runOutputGate({
       stream: async function* () {
         for (let offset = 0; offset < modelText.length; offset += 24)
@@ -156,7 +193,8 @@ try {
     if (i === 0) console.log(`prompt_sha256=${digest(system + '\n\n' + user)}`);
   }
 
-  console.log(`runs=${count} prompt_cache=not_requested_no_cache_hints`);
+  phase = 'complete';
+  console.log(`runs=${count} prompt_cache=operator_attested_disabled`);
   console.log(`input_judge=${JSON.stringify(summarize(inputMs))}`);
   console.log(
     `output_gate_after_model_complete=${JSON.stringify(summarize(gateMs))}`,
@@ -174,7 +212,7 @@ try {
     error && typeof error === 'object' && 'code' in error
       ? String(error.code)
       : 'probe-failed';
-  console.error(`probe failed (${code}); endpoint details omitted`);
+  console.error(`probe failed at ${phase} (${code}); endpoint details omitted`);
   process.exitCode = 1;
 } finally {
   await pool.end();
