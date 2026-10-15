@@ -161,15 +161,29 @@ function makeSession(input: BuildPromptInput): string {
         stableJson(boundaries),
       ),
     },
-    partyRoster: input.session.partyRoster,
-    premise: input.session.premise,
+    partyRoster: quoteData(
+      'PARTY_ROSTER',
+      stableJson(input.session.partyRoster),
+    ),
+    premise: quoteData('PREMISE', input.session.premise),
     sceneId: input.sceneId,
-    sceneSummary: input.session.sceneSummary,
-    currentScene: input.session.currentScene,
-    nextScenes: input.session.nextScenes,
+    sceneSummary: quoteData('SCENE_SUMMARY', input.session.sceneSummary),
+    currentScene: quoteScene(input.session.currentScene),
+    nextScenes: input.session.nextScenes?.map(quoteScene),
     settingsHash: input.settingsHash,
     ...(input.session.steerAway ? { steerAway: STEER_AWAY_NOTICE } : {}),
   });
+}
+function quoteScene(scene: PromptSession['currentScene']) {
+  return (
+    scene && {
+      id: scene.id,
+      data: quoteData(
+        'SCENE',
+        stableJson({ title: scene.title, summary: scene.summary }),
+      ),
+    }
+  );
 }
 function makeDynamic(
   input: BuildPromptInput,
