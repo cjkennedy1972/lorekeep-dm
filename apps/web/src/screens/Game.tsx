@@ -66,6 +66,8 @@ export function Game() {
   const [resume, setResume] = useState<{ recap: string; name: string } | null>(
     null,
   );
+  const [isHost, setIsHost] = useState(false);
+  const [safetyNotice, setSafetyNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLoading, setResumeLoading] = useState(false);
   const loadGame = () => {
@@ -80,7 +82,14 @@ export function Game() {
     });
   };
   useEffect(() => {
-    if (id) loadGame();
+    if (id) {
+      loadGame();
+      void api<{ room: { isHost: boolean } }>(`/api/rooms/${id}`).then(
+        (result) => {
+          if (result.ok) setIsHost(result.data.room.isHost);
+        },
+      );
+    }
   }, [id]);
   const live = useRoom({
     baseUrl: http.base,
@@ -96,6 +105,20 @@ export function Game() {
       if (!isRepeat) {
         messagesRef.current = [...messagesRef.current, message];
         setMessages(messagesRef.current);
+      }
+      if (message.type === 'SafetyFlag' && message.payload.kind === 'x-card')
+        setSafetyNotice(
+          'An X-card was used. The DM will steer away next turn.',
+        );
+      if (message.type === 'StateSync') {
+        const state = asRecord(message.payload.state);
+        setSafetyNotice((current) =>
+          state.paused === true
+            ? 'The table is paused.'
+            : current === 'The table is paused.'
+              ? ''
+              : current,
+        );
       }
       if (message.type === 'CombatTracker') {
         // Combat can start after we joined, so the join-time state has no map yet.
@@ -465,6 +488,60 @@ export function Game() {
       <p role="status" aria-live="polite">
         {error}
       </p>
+      <section aria-label="Safety controls" className="game-safety-controls">
+        <h2>Safety controls</h2>
+        <p role="status" aria-live="polite">
+          {safetyNotice ||
+            (room.paused ? 'The table is paused.' : 'The table is active.')}
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (live.send('XCard'))
+              setSafetyNotice(
+                'X-card sent anonymously. The DM will steer away next turn.',
+              );
+            else
+              setError('Not connected, so the X-card was not sent. Try again.');
+          }}
+          disabled={live.status !== 'connected'}
+        >
+          X-card (anonymous)
+        </button>
+        {!room.paused ? (
+          <button
+            type="button"
+            disabled={live.status !== 'connected'}
+            onClick={() => {
+              if (!live.send('PauseTable', { paused: true }))
+                setError(
+                  'Not connected, so the table was not paused. Try again.',
+                );
+            }}
+          >
+            Pause table
+          </button>
+        ) : isHost ? (
+          <button
+            type="button"
+            disabled={live.status !== 'connected'}
+            onClick={() => {
+              if (!live.send('PauseTable', { paused: false }))
+                setError(
+                  'Not connected, so the table was not resumed. Try again.',
+                );
+            }}
+          >
+            Resume table
+          </button>
+        ) : (
+          <p>Only the host can resume the table.</p>
+        )}
+        <p>
+          Pause stops new narration after the current turn. No explanation is
+          needed.
+        </p>
+      </section>
       <ActionInput
         onSubmit={submitAction}
         pending={Boolean(pendingAction)}

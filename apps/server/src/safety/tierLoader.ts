@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { liveDmAllowed } from '../llm/liveDmGate.js';
 import { computeContentTier, type ContentTier, type HostCap } from './tier.js';
 
 type Queryable = Pick<Pool, 'query'>;
@@ -34,16 +35,16 @@ export async function loadContentTierState(
 }
 
 /**
- * Live mature opt-out for every account that has ever been seated in the session. The seat's
- * join-time snapshot is not used; a seated account with no row, or a status other than active
- * (e.g. deleting), counts as opted out.
+ * Live mature block for every account that has ever been seated in the session: true when the
+ * account opted out, is not an adult, or is missing or not active (e.g. deleting). The seat's
+ * join-time snapshot is not used.
  */
 export async function loadSeatedMatureOptOuts(
   db: Queryable,
   sessionId: string,
 ): Promise<boolean[]> {
   const { rows } = await db.query<{ opted_out: boolean }>(
-    `SELECT (a.id IS NULL OR a.status <> 'active' OR a.mature_opt_out IS NOT FALSE) AS opted_out
+    `SELECT (a.id IS NULL OR a.status <> 'active' OR a.is_adult IS NOT TRUE OR a.mature_opt_out IS NOT FALSE) AS opted_out
        FROM (SELECT DISTINCT payload->>'accountId' AS account_id FROM events
               WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId' IS NOT NULL) seated
        LEFT JOIN accounts a ON a.id = CASE
@@ -52,6 +53,40 @@ export async function loadSeatedMatureOptOuts(
     [sessionId],
   );
   return rows.map((row) => row.opted_out);
+}
+
+/**
+ * Whether a host may raise the table to mature now: the endpoint allows it, moderation is verified,
+ * every seated account is an adult without an opt-out (ADR-016), and, while the live DM allowlist
+ * is on, every seated account may take live turns.
+ */
+export async function matureAllowed(
+  db: Queryable,
+  sessionId: string,
+  endpointAllowsMature: boolean,
+  liveDmAllowlistOnly: boolean,
+): Promise<boolean> {
+  const { rows } = await db.query<{ moderation_verified: boolean }>(
+    'SELECT moderation_verified FROM sessions WHERE id=$1',
+    [sessionId],
+  );
+  const session = rows[0];
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+  const tier = computeContentTier({
+    seatedMatureOptOuts: await loadSeatedMatureOptOuts(db, sessionId),
+    moderationVerified: session.moderation_verified,
+    endpointAllowsMature,
+  });
+  if (tier !== 'mature') return false;
+  if (!liveDmAllowlistOnly) return true;
+  const seated = await db.query<{ account_id: string }>(
+    `SELECT DISTINCT payload->>'accountId' AS account_id FROM events
+      WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId' IS NOT NULL`,
+    [sessionId],
+  );
+  for (const { account_id } of seated.rows)
+    if (!(await liveDmAllowed(db, account_id, true, undefined))) return false;
+  return true;
 }
 
 /**
