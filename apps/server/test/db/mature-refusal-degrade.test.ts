@@ -314,6 +314,12 @@ describe('endpoint refusal of a mature prompt', () => {
       [sessionId],
     );
     expect(rows).toHaveLength(1);
+    expect(JSON.stringify(seen.sent)).not.toContain('PARTIAL MATURE');
+    const { rows: allEvents } = await db.query(
+      'SELECT payload FROM events WHERE session_id=$1',
+      [sessionId],
+    );
+    expect(JSON.stringify(allEvents)).not.toContain('PARTIAL MATURE');
   });
 
   it('retries a stop_reason refusal once at standard, drops the partial mature text, and retries mature next turn', async () => {
