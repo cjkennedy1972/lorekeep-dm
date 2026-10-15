@@ -124,7 +124,6 @@ describe('mature narration delivery', () => {
       'NarrationChunk',
       'NarrationChunk',
       'NarrationCompleted',
-      'NarrationCompleted',
     ]);
     expect(narrationOf(ownerConn).at(-1)).toMatchObject({
       payload: {
@@ -212,7 +211,6 @@ describe('mature narration delivery', () => {
 
     expect(narrationOf(joinerConn).map((m) => m.type)).toEqual([
       'NarrationChunk',
-      'NarrationCompleted',
       'NarrationCompleted',
     ]);
   });

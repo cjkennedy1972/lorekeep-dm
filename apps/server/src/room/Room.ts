@@ -954,6 +954,8 @@ export class Room {
     // Mature narration reaches only the connections present now, so a joiner never receives a turn it was not present for.
     const audience = new Set(this.connections.values());
     let matureAudience: ReadonlySet<Connection> | undefined;
+    let liveCompletion: unknown;
+    let committedCompletion = false;
     const turnAbort = new AbortController();
     this.turnAbort = turnAbort;
     const xCardAtStart = this.state.xCard ?? { requested: 0, steered: 0 };
@@ -985,10 +987,10 @@ export class Room {
               type: 'RollEvent',
               payload: event,
             } as ServerMessage);
-          } else if (
-            type === 'NarrationChunk' ||
-            type === 'NarrationCompleted'
-          ) {
+          } else if (type === 'NarrationCompleted') {
+            // The committed completion below carries the persisted seq; this copy only covers turns that commit none.
+            liveCompletion = event;
+          } else if (type === 'NarrationChunk') {
             const message = {
               seq: this.seq,
               type,
@@ -1196,6 +1198,7 @@ export class Room {
           (event) => event.type === 'NarrationCompleted',
         );
         if (narrationEvent && !clarification) {
+          committedCompletion = true;
           const reportableNarration = {
             seq: narrationEvent.seq,
             type: 'NarrationCompleted',
@@ -1223,6 +1226,15 @@ export class Room {
         const room = roomGameState(nextState);
         if (room && combatEvents.length)
           this.announceCombat(room, combatEvents, accountId);
+      }
+      if (liveCompletion && !committedCompletion) {
+        const message = {
+          seq: this.seq,
+          type: 'NarrationCompleted',
+          payload: liveCompletion,
+        } as ServerMessage;
+        if (matureAudience) this.deliverMature(message, matureAudience);
+        else this.broadcast(message);
       }
       if (!result.clarification) this.pendingActions.delete(actionId);
     });

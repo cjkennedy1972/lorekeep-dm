@@ -271,6 +271,57 @@ describe('endpoint refusal of a mature prompt', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('sends and persists exactly one NarrationCompleted per refusal-degraded turn', async () => {
+    const owner = await account();
+    const sessionId = await session(owner);
+    const calls = { mature: 0, standard: 0 };
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete(request: LlmRequest) {
+        if (
+          JSON.stringify(request).includes(MODERATION_SECTIONS['clause:mature'])
+        ) {
+          calls.mature += 1;
+          yield { type: 'text', delta: 'PARTIAL MATURE' } as LlmChunk;
+          throw new LlmEndpointError('endpoint-refusal', 'refused');
+        }
+        calls.standard += 1;
+        yield { type: 'text', delta: STANDARD_TEXT } as LlmChunk;
+      },
+    };
+    const room = await openRoom(sessionId, adapter);
+    const seen = recorder();
+    await room.join(owner, seen.connection, 'Owner');
+    await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
+      sessionId,
+    ]);
+
+    await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+    await waitForNarrationSent(seen.sent, 1);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(calls).toEqual({ mature: 1, standard: 1 });
+    expect(
+      seen.sent.filter((m) => m.type === 'NarrationCompleted'),
+    ).toHaveLength(1);
+    const { rows } = await db.query(
+      "SELECT payload FROM events WHERE session_id=$1 AND type='NarrationCompleted'",
+      [sessionId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(seen.sent)).not.toContain('PARTIAL MATURE');
+    const { rows: allEvents } = await db.query(
+      'SELECT payload FROM events WHERE session_id=$1',
+      [sessionId],
+    );
+    expect(JSON.stringify(allEvents)).not.toContain('PARTIAL MATURE');
+  });
+
   it('retries a stop_reason refusal once at standard, drops the partial mature text, and retries mature next turn', async () => {
     const owner = await account();
     const sessionId = await session(owner);
