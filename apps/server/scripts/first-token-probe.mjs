@@ -139,9 +139,10 @@ try {
     throw new Error('moderation warmup failed');
   }
   phase = 'warmup-narration';
-  for await (const _chunk of fast.complete({ ...request, maxTokens: 8 })) {
-    // Drain once to warm the configured model before timed runs.
-  }
+  let warmupNarration = '';
+  for await (const chunk of fast.complete({ ...request, maxTokens: 8 }))
+    if (chunk.type === 'text') warmupNarration += chunk.delta;
+  if (!warmupNarration.trim()) throw new Error('narration warmup failed');
 
   for (let i = 0; i < count; i++) {
     phase = 'input-moderation';
