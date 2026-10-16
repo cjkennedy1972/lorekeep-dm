@@ -86,6 +86,13 @@ describe('operator mature endpoint attestation', () => {
     );
   }
 
+  async function moderationVerified() {
+    const { rows } = await database.pool.query<{
+      moderation_verified: boolean;
+    }>('SELECT moderation_verified FROM sessions WHERE id=$1', [sessionId]);
+    return rows[0]?.moderation_verified;
+  }
+
   const patch = (payload: unknown) =>
     app.inject({
       method: 'PATCH',
@@ -103,6 +110,7 @@ describe('operator mature endpoint attestation', () => {
     });
     expect(noProbe.statusCode).toBe(409);
     expect(noProbe.json()).toMatchObject({ code: 'ENDPOINT_PROBE_REQUIRED' });
+    expect(await moderationVerified()).toBe(false);
 
     await database.pool.query('DELETE FROM operator_endpoints');
     await saveEndpointProbe('fast', true);
@@ -112,6 +120,7 @@ describe('operator mature endpoint attestation', () => {
     expect(noAck.json()).toMatchObject({
       code: 'POLICY_ACKNOWLEDGEMENT_REQUIRED',
     });
+    expect(await moderationVerified()).toBe(false);
 
     const enabled = await patch({ enabled: true, policyAcknowledgement: ack });
     expect(enabled.statusCode).toBe(200);
@@ -123,6 +132,7 @@ describe('operator mature endpoint attestation', () => {
     expect(await sessionMatureEndpointAllowed(database.pool, sessionId)).toBe(
       true,
     );
+    expect(await moderationVerified()).toBe(true);
   });
 
   it('fails closed after endpoint config changes and supports operator revocation', async () => {
@@ -161,6 +171,7 @@ describe('operator mature endpoint attestation', () => {
     expect(await sessionMatureEndpointAllowed(database.pool, sessionId)).toBe(
       false,
     );
+    expect(await moderationVerified()).toBe(false);
   });
 
   it('disables mature flags before migration rollback drops endpoint bindings', async () => {
@@ -184,8 +195,15 @@ describe('operator mature endpoint attestation', () => {
 
     const session = await database.pool.query<{
       endpoint_allows_mature: boolean;
-    }>('SELECT endpoint_allows_mature FROM sessions WHERE id=$1', [sessionId]);
-    expect(session.rows[0]?.endpoint_allows_mature).toBe(false);
+      moderation_verified: boolean;
+    }>(
+      'SELECT endpoint_allows_mature, moderation_verified FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    expect(session.rows[0]).toMatchObject({
+      endpoint_allows_mature: false,
+      moderation_verified: false,
+    });
     const columns = await database.pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
         WHERE table_schema=current_schema() AND table_name='sessions'

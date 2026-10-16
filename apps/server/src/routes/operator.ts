@@ -217,6 +217,7 @@ export function registerOperatorRoutes(
         const updated = await client.query(
           `UPDATE sessions
               SET endpoint_allows_mature=$2,
+                  moderation_verified=$2,
                   endpoint_mature_fingerprint=$3,
                   moderation_mature_fingerprint=$4
             WHERE id=$1`,

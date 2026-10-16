@@ -8,7 +8,9 @@ export const up = (pgm) => {
   );
 };
 export const down = (pgm) => {
-  pgm.sql('UPDATE sessions SET endpoint_allows_mature = false;');
+  pgm.sql(
+    'UPDATE sessions SET endpoint_allows_mature = false, moderation_verified = false;',
+  );
   pgm.sql(
     'ALTER TABLE sessions DROP COLUMN endpoint_mature_fingerprint, DROP COLUMN moderation_mature_fingerprint;',
   );
