@@ -1,7 +1,7 @@
 # M3-28 live red-team run: local Qwen
 
 **Run:** 2026-10-15 20:07–20:19 America/New_York  
-**Source:** `origin/main` at `64c14184d348f4a9dc1ca4b591c51cab1bae8f6f`
+**Source (contemporaneous, unverified note):** recorded as `origin/main` at `64c14184d348f4a9dc1ca4b591c51cab1bae8f6f` at run time; not independently verified as this run's source provenance.
 **Endpoint:** profile `local-qwen35`, `http://172.31.25.75:8080/v1`  
 **Model:** `qwen3.8-35b-a3b-distill-q4`  
 **Raw per-case record:** [`packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json`](../../../packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json)
