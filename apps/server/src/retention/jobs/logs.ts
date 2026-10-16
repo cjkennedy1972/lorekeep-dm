@@ -1,37 +1,57 @@
 import type { JobContext } from '../types.js';
 
-interface HoldScope {
+type HoldKey = { kind: 'session' | 'account'; column: string };
+interface HoldAwareTable {
   table: 'moderation_log' | 'x_card_log' | 'operator_endpoint_audit';
-  kind: 'session' | 'account';
-  column: 'session_id' | 'actor_id';
+  keys: HoldKey[];
 }
 
-/** Deletes expired rows whose hold key has no legal hold; audits each held key once (ADR-017). */
+const HOLD_AWARE_TABLES: HoldAwareTable[] = [
+  {
+    table: 'operator_endpoint_audit',
+    keys: [{ kind: 'account', column: 'actor_id' }],
+  },
+  {
+    table: 'moderation_log',
+    keys: [
+      { kind: 'session', column: 'session_id' },
+      { kind: 'account', column: 'account_id' },
+    ],
+  },
+  { table: 'x_card_log', keys: [{ kind: 'session', column: 'session_id' }] },
+];
+
+/** Deletes expired rows unless any of their hold keys is under legal hold; audits each held key once (ADR-017). */
 async function purgeHoldAwareLogTable(
   ctx: JobContext,
-  { table, kind, column }: HoldScope,
+  { table, keys }: HoldAwareTable,
 ) {
   const { db, now } = ctx;
-  const heldIds = (
-    await db.query<{ id: string }>(
+  for (const { kind, column } of keys) {
+    const { rows } = await db.query<{ id: string }>(
       `SELECT DISTINCT t.${column}::text AS id FROM ${table} t
        JOIN legal_holds h ON h.kind=$1 AND h.item_id=t.${column}::text
        WHERE t.expires_at < $2`,
       [kind, now],
-    )
-  ).rows;
-  for (const { id } of heldIds)
-    await db.query(
-      `INSERT INTO retention_audit(job,item_kind,item_id,action)
-       SELECT 'logs',$1,$2,'skipped_legal_hold'
-       WHERE NOT EXISTS (SELECT 1 FROM retention_audit
-         WHERE job='logs' AND item_kind=$1 AND item_id=$2 AND action='skipped_legal_hold')`,
-      [kind, id],
     );
+    for (const { id } of rows)
+      await db.query(
+        `INSERT INTO retention_audit(job,item_kind,item_id,action)
+         SELECT 'logs',$1,$2,'skipped_legal_hold'
+         WHERE NOT EXISTS (SELECT 1 FROM retention_audit
+           WHERE job='logs' AND item_kind=$1 AND item_id=$2 AND action='skipped_legal_hold')`,
+        [kind, id],
+      );
+  }
+  const heldBy = keys
+    .map(
+      ({ kind, column }) =>
+        `EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='${kind}' AND h.item_id=t.${column}::text)`,
+    )
+    .join(' OR ');
   return db.query(
-    `DELETE FROM ${table} t WHERE t.expires_at < $1
-       AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind=$2 AND h.item_id=t.${column}::text)`,
-    [now, kind],
+    `DELETE FROM ${table} t WHERE t.expires_at < $1 AND NOT (${heldBy})`,
+    [now],
   );
 }
 
@@ -53,21 +73,12 @@ export async function purgeLogs(ctx: JobContext) {
     'DELETE FROM ws_tickets WHERE expires_at < $1',
     [now],
   );
-  const endpointAudit = await purgeHoldAwareLogTable(ctx, {
-    table: 'operator_endpoint_audit',
-    kind: 'account',
-    column: 'actor_id',
-  });
-  const moderation = await purgeHoldAwareLogTable(ctx, {
-    table: 'moderation_log',
-    kind: 'session',
-    column: 'session_id',
-  });
-  const xCards = await purgeHoldAwareLogTable(ctx, {
-    table: 'x_card_log',
-    kind: 'session',
-    column: 'session_id',
-  });
+  const endpointAudit = await purgeHoldAwareLogTable(
+    ctx,
+    HOLD_AWARE_TABLES[0]!,
+  );
+  const moderation = await purgeHoldAwareLogTable(ctx, HOLD_AWARE_TABLES[1]!);
+  const xCards = await purgeHoldAwareLogTable(ctx, HOLD_AWARE_TABLES[2]!);
   const counts = {
     events: Number(events),
     emailTokens: tokens.rowCount ?? 0,
