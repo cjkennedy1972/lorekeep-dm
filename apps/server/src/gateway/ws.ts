@@ -20,7 +20,6 @@ import {
   consumeTicket,
   eligibleSession,
   issueTicket,
-  originAllowlisted,
   validOrigin,
 } from './tickets.js';
 import { ConnectionRegistry } from './connections.js';
@@ -53,12 +52,7 @@ export function installGateway(
     '/api/ws-ticket',
     {
       onRequest: async (request, reply) => {
-        const origin = request.headers.origin;
-        if (
-          origin &&
-          (validRequestOrigin(request) || originAllowlisted(origin))
-        )
-          return;
+        if (request.headers.origin && validRequestOrigin(request)) return;
         return reply.code(403).send({ error: 'origin' });
       },
     },
