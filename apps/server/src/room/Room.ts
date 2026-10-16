@@ -326,8 +326,28 @@ export class Room {
     return this.connections.size;
   }
 
+  /** Explicit leave revokes the seat; a dropped socket is only `disconnect`. */
   leave(accountId: string): Promise<void> {
-    return this.disconnect(accountId);
+    return this.enqueue(async () => {
+      const connection = this.connections.get(accountId);
+      this.connections.delete(accountId);
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat) return;
+      if (this.turnInFlight) this.turnAbort?.abort();
+      await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
+      this.state = {
+        ...this.state,
+        seats: this.state.seats.filter((item) => item.seatId !== seat.seatId),
+      };
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+      connection?.close?.(1000, 'Left the table');
+    });
   }
   disconnect(accountId: string): Promise<void> {
     return this.enqueue(async () => {

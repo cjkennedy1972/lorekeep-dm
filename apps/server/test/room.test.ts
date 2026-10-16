@@ -69,6 +69,29 @@ describe('room actor', () => {
     ).toHaveLength(1);
     expect(room.state.seats).toHaveLength(2);
   });
+  it('leave revokes the seat and closes the socket; disconnect only marks offline', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const stayer = randomUUID();
+    const leaver = randomUUID();
+    const closes: unknown[] = [];
+    await room.join(stayer, { send: () => {} });
+    await room.join(leaver, {
+      send: () => {},
+      close: (...args: unknown[]) => closes.push(args),
+    });
+    await room.disconnect(stayer);
+    expect(events.at(-1)?.type).toBe('PresenceChanged');
+    expect(room.state.seats).toHaveLength(2);
+
+    await room.leave(leaver);
+    expect(events.at(-1)?.type).toBe('SeatRevoked');
+    expect(room.state.seats.map((seat) => seat.accountId)).toEqual([stayer]);
+    expect(closes).toEqual([[1000, 'Left the table']]);
+
+    await room.join(leaver, { send: () => {} });
+    expect(room.state.seats.map((seat) => seat.accountId)).toContain(leaver);
+  });
   it('persists validated registry events through the room mailbox', async () => {
     const { store, registryWrites } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id));

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Pool } from 'pg';
+import { currentMemberSql } from '../room/membership.js';
 
 export const MAX_SEATS = 6;
 const CODE_RE = /^[A-Za-z0-9_-]{22}$/;
@@ -36,6 +37,7 @@ export async function revokeInvite(
 export async function sessionForCode(
   db: Pick<Pool, 'query'>,
   code: string,
+  accountId: string,
 ): Promise<
   | {
       id: string;
@@ -53,12 +55,15 @@ export async function sessionForCode(
     owner: string;
     status: string;
     host_tier_cap: 'family' | 'standard' | null;
+    is_member: boolean;
   }>(
-    `SELECT id,name,owner_account_id AS owner,status,host_tier_cap FROM sessions WHERE invite_hash=$1 AND status IN ('active','archived')`,
-    [hashInvite(code)],
+    `SELECT s.id,s.name,s.owner_account_id AS owner,s.status,s.host_tier_cap,
+       COALESCE(${currentMemberSql('$2')},FALSE) AS is_member FROM sessions s
+       WHERE s.invite_hash=$1 AND s.status IN ('active','archived')`,
+    [hashInvite(code), accountId],
   );
   const row = r.rows[0];
-  return row
+  return row && (row.owner === accountId || row.is_member)
     ? {
         id: row.id,
         name: row.name,
@@ -76,8 +81,7 @@ export async function restoreForMember(
 ): Promise<boolean> {
   const r = await db.query(
     `UPDATE sessions s SET status='active', archived_at=NULL, last_active_at=now()
-      WHERE s.id=$1 AND s.status='archived' AND (s.owner_account_id=$2 OR EXISTS (
-        SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$2::text))`,
+      WHERE s.id=$1 AND s.status='archived' AND (s.owner_account_id=$2 OR ${currentMemberSql('$2')})`,
     [sessionId, accountId],
   );
   return !!r.rowCount;

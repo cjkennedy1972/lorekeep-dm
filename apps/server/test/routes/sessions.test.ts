@@ -124,15 +124,16 @@ describe('room routes', () => {
             rows: [{ account_id: 'acc', token_hash: 'h' }],
             rowCount: 1,
           };
-        if (/FROM sessions WHERE invite_hash/.test(sql))
+        if (/FROM sessions s[\s\S]*invite_hash/.test(sql))
           return {
             rows: [
               {
                 id: 'room',
                 name: 'Room',
-                owner: 'host',
+                owner: 'acc',
                 status: 'active',
                 host_tier_cap: null,
+                is_member: false,
               },
             ],
             rowCount: 1,

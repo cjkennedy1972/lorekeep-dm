@@ -6,6 +6,7 @@ import { CreateRoomInputSchema, type RoomInfo } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import { tokenFromCookie } from '../accounts/sessions.js';
 import { hashToken } from '../accounts/signup.js';
+import { currentMemberSql } from '../room/membership.js';
 import {
   restoreForMember,
   revokeInvite,
@@ -20,8 +21,7 @@ const JOIN_LIMIT = 10;
 export const MAX_ACTIVE_ROOMS = 20;
 export const CREATE_PER_HOUR = 10;
 export const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host FROM sessions s
-  WHERE s.status='active' AND (s.owner_account_id=$1 OR EXISTS (
-    SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$1::text))`;
+  WHERE s.status='active' AND (s.owner_account_id=$1 OR ${currentMemberSql('$1')})`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Room endpoints. `/api/rooms` is what the web calls; `/api/sessions` and `/api/join/:code` are the ticket's names. */
@@ -172,8 +172,7 @@ export function registerSessionRoutes(
             host_tier_cap: 'family' | 'standard' | null;
           }>(
             `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host,s.host_tier_cap FROM sessions s
-             WHERE s.status='active' AND s.id=$2 AND (s.owner_account_id=$1 OR EXISTS (
-               SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$1::text))`,
+             WHERE s.status='active' AND s.id=$2 AND (s.owner_account_id=$1 OR ${currentMemberSql('$1')})`,
             [accountId, id],
           )
         : undefined;
@@ -228,6 +227,31 @@ export function registerSessionRoutes(
       });
   }
 
+  app.post('/api/rooms/:id/leave', async (request, reply) => {
+    const accountId = await member(request, reply);
+    if (!accountId) return reply;
+    const { id } = request.params as { id: string };
+    const seated = UUID.test(id)
+      ? (await db.query(`${ROOM_LIST_SQL} AND s.id=$2`, [accountId, id]))
+          .rowCount
+      : 0;
+    if (!seated)
+      return reply.code(404).send({ code: 'NOT_FOUND', message: 'Not found.' });
+    const owner = (
+      await db.query<{ owner: string }>(
+        `SELECT owner_account_id AS owner FROM sessions WHERE id=$1`,
+        [id],
+      )
+    ).rows[0]?.owner;
+    if (owner === accountId)
+      return reply.code(403).send({
+        code: 'FORBIDDEN',
+        message: 'The host cannot leave their own table.',
+      });
+    await (await rooms.get(id)).leave(accountId);
+    return { ok: true };
+  });
+
   const join = async (
     request: FastifyRequest<{ Params: { code: string } }>,
     reply: import('fastify').FastifyReply,
@@ -240,7 +264,7 @@ export function registerSessionRoutes(
         code: 'RATE_LIMITED',
         message: 'Too many attempts. Wait a minute.',
       });
-    const found = await sessionForCode(db, code);
+    const found = await sessionForCode(db, code, accountId);
     if (
       !found ||
       (found.status === 'archived' &&
@@ -286,7 +310,7 @@ export function registerSessionRoutes(
           code: 'RATE_LIMITED',
           message: 'Too many attempts. Wait a minute.',
         });
-      const found = await sessionForCode(db, code);
+      const found = await sessionForCode(db, code, accountId);
       if (!found)
         return reply.code(404).send({
           code: 'INVITE_INVALID',
