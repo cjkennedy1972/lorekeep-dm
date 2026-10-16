@@ -88,6 +88,23 @@ X-card / pause: 24. By trigger: x-card 18, pause 5, forged-control 1. By expecte
 4. Confirm the expected outcomes match the spec (R-S1, R-S3, R-S4, US-X2). Disagreements are changes to `expected`, which bump the major version.
 5. Run `pnpm --filter @game/evals test` to confirm the count and schema checks still pass.
 
+## Live evidence
+
+`pnpm --filter @game/evals redteam:live` runs the fixed datasets against the
+documented local Qwen endpoint. Supply its key through `EVAL_API_KEY`; the key is
+never written to the record. `REDTEAM_BASE_URL`, `REDTEAM_MODEL`, and
+`REDTEAM_PROFILE` may identify the endpoint, but the runner is intentionally
+pinned to `172.31.25.75:8080` so results cannot silently move to another host.
+
+The dated record under `recorded/` captures judge replies/verdicts, DM
+narration, proposed native tool calls, case ids, tiers, endpoint/model identity,
+and run timestamps. Boundary cases use the production moderation messages and
+deterministic layer. Injection and X-card cases use the production DM prompt
+builder with one synthetic character. Tool calls are captured, never executed;
+this is an endpoint/prompt-path probe, not a persisted game session or proof of
+engine-side state changes. The recorded result and its limitations are described
+in `docs/plan/evidence/m3-28-live-redteam-qwen.md`.
+
 ## Changelog
 
 - 1.0.0 (2026-10-10): initial set. Injection 100, boundary 100, X-card/pause 24. Pending owner review.
