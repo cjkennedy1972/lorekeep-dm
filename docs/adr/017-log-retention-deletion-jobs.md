@@ -40,3 +40,10 @@ Status: Proposed (human decision 2026-10-06: 30-day log retention) · Date: 2026
 **Needs human?** Legal-hold policy and an admin hold-clear path (deferred, architecture §17; follow-up card).
 
 **Addendum (M3-36, 2026-10-11): operator endpoint audit.** `operator_endpoint_audit` rows are operational logs in the 30-day class: `expires_at` defaults to write time plus 30 days and the logs job purges by it. Denied and rejected operator attempts are written with `action='denied'` and a `reason` code (`NOT_OPERATOR`, `UNAUTHENTICATED`, `INVALID_ENDPOINT_URL`, `KEY_REQUIRED`, `INVALID_INPUT`, `CREDENTIAL_UNAVAILABLE`). Each row carries `details` with no secrets: successful saves record host (no path or credentials), a key-changed flag and the key fingerprint; denials record method and route template. Request IP and user agent are not stored. Denied rows are capped at 100 per caller (or the anonymous bucket) per UTC day per process.
+
+**Owner decision (2026-10-15): log legal-hold scope (M3-40).** The logs job matches every hold key available on each table. A row is retained if any of its keys has an active hold; otherwise it follows normal `expires_at` expiry.
+- `moderation_log`: `session` hold on `session_id`, or `account` hold on `account_id`.
+- `operator_endpoint_audit`: `account` hold on `actor_id`.
+- `x_card_log`: `session` hold on `session_id` only. No account key is matched.
+- NULL keys never match. A row whose supported keys are all NULL, or whose keys have no hold, is purged at expiry.
+- Each held (kind, id) is audited once as `skipped_legal_hold`, as before.
