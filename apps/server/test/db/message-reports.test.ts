@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSession } from '../../src/accounts/sessions.js';
+import { originScope } from '../../src/middleware/origin.js';
 import { registerOperatorRoutes } from '../../src/routes/operator.js';
 import { registerReportRoutes } from '../../src/routes/reports.js';
 import { allowInputGate } from '../support/allowInputGate.js';
@@ -101,10 +102,12 @@ describe('message reports', () => {
   function app() {
     const server = Fastify();
     server.decorate('inputGate', allowInputGate);
-    registerReportRoutes(server, pool());
-    registerOperatorRoutes(server, pool(), async (id) => id === operator, {
-      egress: {} as never,
-    });
+    originScope(server, (scope) => registerReportRoutes(scope, pool()));
+    originScope(server, (scope) =>
+      registerOperatorRoutes(scope, pool(), async (id) => id === operator, {
+        egress: {} as never,
+      }),
+    );
     return server;
   }
 

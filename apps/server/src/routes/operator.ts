@@ -12,7 +12,6 @@ import {
   type ReportStatus,
 } from './reports.js';
 import { authenticateRequest } from '../middleware/auth.js';
-import { validOrigin } from '../middleware/origin.js';
 import {
   createEndpointEgress,
   deleteEndpoint,
@@ -76,12 +75,6 @@ export function registerOperatorRoutes(
       request.log.warn({ err: error }, 'operator denial audit write failed');
     }
   };
-  app.addHook('onRequest', async (request, reply) => {
-    if (!validOrigin(request))
-      return reply
-        .code(403)
-        .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
-  });
   const authorize = async (
     request: Parameters<typeof authenticateRequest>[1],
     reply: { code: (status: number) => { send: (body: unknown) => unknown } },

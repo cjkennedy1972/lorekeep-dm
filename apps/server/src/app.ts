@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import pino, { type DestinationStream } from 'pino';
 import { startSpan } from './telemetry.js';
+import { originScope } from './middleware/origin.js';
 import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { isDevelopmentOrTest } from './accounts/sessions.js';
@@ -135,36 +136,49 @@ export function createApp(
     const cookieSecret = options.cookieSecret ?? process.env.AGE_RETRY_SECRET;
     if (!cookieSecret && !isDevelopmentOrTest())
       throw new Error('AGE_RETRY_SECRET is required');
-    registerAuthRoutes(
-      app,
-      db as Pool,
-      options.sender ?? new ConsoleEmailSender(),
-      cookieSecret ?? 'development-only-secret',
-      options.rateLimit,
-      options.connections,
+    originScope(app, (scope) =>
+      registerAuthRoutes(
+        scope,
+        db as Pool,
+        options.sender ?? new ConsoleEmailSender(),
+        cookieSecret ?? 'development-only-secret',
+        options.rateLimit,
+        options.connections,
+      ),
     );
-    registerUsageRoutes(app, db as Pool, options.isOperator);
-    registerOperatorRoutes(app, db as Pool, options.isOperator);
-    registerReportRoutes(app, db as Pool);
-    registerContentSettingsRoutes(app, db as Pool, options.rooms, {
-      endpointAllowsMature: async (sessionId) =>
-        endpointAllowsMature ||
-        (await sessionMatureEndpointAllowed(db, sessionId)),
-      liveDmAllowlistOnly,
-    });
-    if (options.rooms) {
-      registerSessionRoutes(
-        app,
-        db as Pool,
-        options.rooms,
-        options.joinRateLimit,
-        options.roomLimits,
-      );
-      registerTableRoutes(
-        app as unknown as FastifyInstance,
-        db as Pool,
-        options.rooms as Pick<RoomRegistry, 'get'>,
+    originScope(app, (scope) =>
+      registerUsageRoutes(scope, db as Pool, options.isOperator),
+    );
+    originScope(app, (scope) =>
+      registerOperatorRoutes(scope, db as Pool, options.isOperator),
+    );
+    originScope(app, (scope) => registerReportRoutes(scope, db as Pool));
+    originScope(app, (scope) =>
+      registerContentSettingsRoutes(scope, db as Pool, options.rooms, {
+        endpointAllowsMature: async (sessionId) =>
+          endpointAllowsMature ||
+          (await sessionMatureEndpointAllowed(db, sessionId)),
         liveDmAllowlistOnly,
+      }),
+    );
+    const rooms = options.rooms;
+    if (rooms) {
+      originScope(app, (scope) =>
+        registerSessionRoutes(
+          scope,
+          db as Pool,
+          rooms,
+          options.joinRateLimit,
+          options.roomLimits,
+        ),
+      );
+      originScope(app, (scope) =>
+        registerTableRoutes(
+          scope as unknown as FastifyInstance,
+          db as Pool,
+          rooms as Pick<RoomRegistry, 'get'>,
+          liveDmAllowlistOnly,
+        ),
       );
     }
   }
