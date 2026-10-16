@@ -244,6 +244,45 @@ afterAll(async () => {
 }, 60_000);
 
 describe('Room combat over the websocket (real Room, Postgres, scripted DM)', () => {
+  it('rejects a second RewindTurn over the real websocket for the same resolved turn', async () => {
+    stack = await Stack.boot('rewind-command');
+    const user = await newUser();
+    const table = await seedTable(stack, user, preCombat);
+    const client = await Client.open(stack, user, table);
+
+    const firstTurn = client.log.length;
+    client.say('START-COMBAT');
+    await client.until((m) => m.type === 'NarrationCompleted', firstTurn);
+
+    const sendRewind = (from: number) => {
+      const actionId = randomUUID();
+      client.ws.send(
+        JSON.stringify({
+          type: 'RewindTurn',
+          actionId,
+          lastSeq: 0,
+          payload: {},
+        }),
+      );
+      return { actionId, from };
+    };
+
+    const first = sendRewind(client.log.length);
+    await client.until((m) => m.type === 'TurnReverted', first.from);
+
+    const second = sendRewind(client.log.length);
+    const rejected = await client.until(
+      (m) => m.type === 'Error' && m.payload?.actionId === second.actionId,
+      second.from,
+    );
+    expect(rejected.payload).toMatchObject({
+      code: 'REWIND_REFUSED',
+      message:
+        'Only one rewind per resolved turn; let the next turn resolve first.',
+    });
+    client.close();
+  }, 30_000);
+
   it('start_combat populates the Room, monsters act, and the fight ends in CombatEnded with an accepted opportunity attack', async () => {
     stack = await Stack.boot('combat-full');
     const user = await newUser();
