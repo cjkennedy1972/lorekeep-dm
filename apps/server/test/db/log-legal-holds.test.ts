@@ -199,4 +199,21 @@ describe('log retention honors legal holds (Postgres)', () => {
 
     await q('DELETE FROM legal_holds WHERE item_id=$1', [heldActor]);
   });
+
+  it('purges expired operator endpoint audit rows with no actor, since no account hold can match them', async () => {
+    const nullActorRow = (
+      await q(
+        "INSERT INTO operator_endpoint_audit(slot,action,actor_id,expires_at) VALUES('fast','tested',NULL,'2020-01-01') RETURNING id",
+      )
+    )[0].id;
+
+    await purgeLogs(await ctx());
+
+    expect(
+      await count(
+        'SELECT count(*)::int n FROM operator_endpoint_audit WHERE id=$1',
+        [nullActorRow],
+      ),
+    ).toBe(0);
+  });
 });
