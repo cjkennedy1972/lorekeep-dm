@@ -21,7 +21,9 @@ describe('route modules are registered only inside originScope', () => {
 
   it('passes every route module the scope handed to an originScope callback', () => {
     const scopedCalls = [
-      ...appSource.matchAll(/originScope\(app,\s*\(scope\)\s*=>\s*register\w+Routes\(\s*scope\b/g),
+      ...appSource.matchAll(
+        /originScope\(app,\s*\(scope\)\s*=>\s*register\w+Routes\(\s*scope\b/g,
+      ),
     ];
     expect(scopedCalls.length).toBe(routeCalls.length);
   });
