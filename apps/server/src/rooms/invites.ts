@@ -37,7 +37,6 @@ export async function revokeInvite(
 export async function sessionForCode(
   db: Pick<Pool, 'query'>,
   code: string,
-  accountId: string,
 ): Promise<
   | {
       id: string;
@@ -55,15 +54,13 @@ export async function sessionForCode(
     owner: string;
     status: string;
     host_tier_cap: 'family' | 'standard' | null;
-    is_member: boolean;
   }>(
-    `SELECT s.id,s.name,s.owner_account_id AS owner,s.status,s.host_tier_cap,
-       COALESCE(${currentMemberSql('$2')},FALSE) AS is_member FROM sessions s
+    `SELECT s.id,s.name,s.owner_account_id AS owner,s.status,s.host_tier_cap FROM sessions s
        WHERE s.invite_hash=$1 AND s.status IN ('active','archived')`,
-    [hashInvite(code), accountId],
+    [hashInvite(code)],
   );
   const row = r.rows[0];
-  return row && (row.owner === accountId || row.is_member)
+  return row
     ? {
         id: row.id,
         name: row.name,

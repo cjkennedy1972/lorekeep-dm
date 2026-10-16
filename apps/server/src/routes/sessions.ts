@@ -264,7 +264,7 @@ export function registerSessionRoutes(
         code: 'RATE_LIMITED',
         message: 'Too many attempts. Wait a minute.',
       });
-    const found = await sessionForCode(db, code, accountId);
+    const found = await sessionForCode(db, code);
     if (
       !found ||
       (found.status === 'archived' &&
@@ -310,7 +310,7 @@ export function registerSessionRoutes(
           code: 'RATE_LIMITED',
           message: 'Too many attempts. Wait a minute.',
         });
-      const found = await sessionForCode(db, code, accountId);
+      const found = await sessionForCode(db, code);
       if (!found)
         return reply.code(404).send({
           code: 'INVITE_INVALID',
