@@ -13,6 +13,7 @@ import {
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
+import { validOrigin as validHttpOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
 import { NotTableHostError, RewindRefusedError } from '../room/Room.js';
 import {
@@ -49,9 +50,13 @@ export function installGateway(
 ): () => Promise<void> {
   app.post<{ Body?: { sessionId?: string } }>(
     '/api/ws-ticket',
-    async (request, reply) => {
-      if (!validOrigin(request.headers.origin, request.headers.host))
+    {
+      onRequest: async (request, reply) => {
+        if (request.headers.origin && validHttpOrigin(request)) return;
         return reply.code(403).send({ error: 'origin' });
+      },
+    },
+    async (request, reply) => {
       const auth = await authenticateRequest(db, request);
       if (!auth) return reply.code(401).send({ error: 'unauthorized' });
       const sessionId = request.body?.sessionId;
