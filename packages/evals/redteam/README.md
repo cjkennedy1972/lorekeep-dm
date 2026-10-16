@@ -99,7 +99,8 @@ The runner also applies the shared live-URL allowlist checks. For this LAN
 endpoint, allow only its exact host and port with
 `LLM_ALLOW_LOCAL_HOSTS=172.31.25.75:8080`. Set `REDTEAM_SOURCE_COMMIT` to the
 full tested product-code SHA (for example, `$(git rev-parse HEAD)`) so the
-output is tied to the code version measured.
+output is tied to the code version measured. The runner requires that SHA to
+match `HEAD` and refuses to run from a dirty working tree.
 
 The dated record under `recorded/` captures judge replies/verdicts, DM
 narration, proposed native tool calls, case ids, tiers, endpoint/model identity,

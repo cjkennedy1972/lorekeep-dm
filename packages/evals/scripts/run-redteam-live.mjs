@@ -25,10 +25,15 @@ if (!/^[0-9a-f]{40}$/i.test(sourceCommit ?? ''))
 const checkoutCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
   encoding: 'utf8',
 }).trim();
+const checkoutChanges = execFileSync('git', ['status', '--porcelain'], {
+  encoding: 'utf8',
+}).trim();
 if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
   throw new Error(
     'REDTEAM_SOURCE_COMMIT must match the checked-out source SHA',
   );
+if (checkoutChanges)
+  throw new Error('The live runner requires a clean Git working tree');
 const endpointUrl = checkLiveUrl(baseUrl);
 if (endpointUrl.host !== '172.31.25.75:8080')
   throw new Error('This run is pinned to the documented local Qwen endpoint');
