@@ -51,6 +51,8 @@ export function NarrationLog({
   const [reporting, setReporting] = useState<number | null>(null);
   const [reportMessage, setReportMessage] = useState('');
   const listRef = useRef<HTMLOListElement>(null);
+  const reportTriggerRef = useRef<HTMLButtonElement>(null);
+  const reportCategoryRef = useRef<HTMLSelectElement>(null);
   const seen = useRef(new Set<string>());
   const announcedTurns = useRef(new Set<string>());
   const announcedRolls = useRef(new Set<string>());
@@ -61,10 +63,12 @@ export function NarrationLog({
     return (
       <div className="narration-log__report">
         <button
+          ref={reportTriggerRef}
           type="button"
           onClick={() => {
             setReportMessage('');
             setReporting(message.seq);
+            requestAnimationFrame(() => reportCategoryRef.current?.focus());
           }}
           aria-label="Report this message"
         >
@@ -80,13 +84,22 @@ export function NarrationLog({
               const reason = String(formData.get('reason') ?? '');
               void onReport(message.seq, category, reason).then((error) => {
                 setReportMessage(error ?? 'Report received. Thank you.');
-                if (!error) setReporting(null);
+                if (!error) {
+                  setReporting(null);
+                  requestAnimationFrame(() =>
+                    reportTriggerRef.current?.focus(),
+                  );
+                }
               });
             }}
           >
             <label>
               Category
-              <select name="category" defaultValue="other">
+              <select
+                ref={reportCategoryRef}
+                name="category"
+                defaultValue="other"
+              >
                 <option value="harassment">Harassment</option>
                 <option value="hate">Hate</option>
                 <option value="sexual">Sexual content</option>
@@ -100,7 +113,13 @@ export function NarrationLog({
               <textarea name="reason" maxLength={500} />
             </label>
             <button type="submit">Submit report</button>
-            <button type="button" onClick={() => setReporting(null)}>
+            <button
+              type="button"
+              onClick={() => {
+                setReporting(null);
+                requestAnimationFrame(() => reportTriggerRef.current?.focus());
+              }}
+            >
               Cancel
             </button>
           </form>
