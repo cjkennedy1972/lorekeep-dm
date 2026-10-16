@@ -2,11 +2,17 @@
 
 For the person running a Lorekeep-DM server. Endpoint setup (`fast`, `frontier`, `moderate` slots, probes) is in the [operator guide](../operator-guide.md). This page covers what the moderation endpoint does, how the content tier is computed, the player opt-out, and how long data is kept.
 
-Source of truth: [ADR-016](../adr/016-mature-content-gating.md) (tiers, opt-out), [ADR-017](../adr/017-log-retention-deletion-jobs.md) (retention), [ADR-026](../adr/026-mature-default-false-addendum.md) and [ADR-027](../adr/027-mature-endpoint-attestation.md) (mature endpoint gate). Where the code differs from an ADR, this page says so.
+Governing documents:
+
+- [ADR-026](../adr/026-mature-default-false-addendum.md) (Accepted) makes mature opt-in at the endpoint layer: `endpoint_allows_mature` defaults to `false`, and the operator must grant it explicitly.
+- [ADR-016](../adr/016-mature-content-gating.md) (Proposed) defines table-layer eligibility only: the tier predicate and the per-player opt-out. It is not the source of truth for the endpoint gate, which ADR-026 and [ADR-027](../adr/027-mature-endpoint-attestation.md) govern.
+- [ADR-017](../adr/017-log-retention-deletion-jobs.md) (Proposed) governs retention.
+
+Where the code differs from an ADR, this page says so.
 
 ## Status: mature content is not reachable on a fresh install
 
-ADR-016 sets the product default to mature-eligible unless a player opts out. The code does not yet deliver that, for two independent reasons:
+ADR-016 (Proposed) sets the intended default to mature-eligible unless a player opts out. The code does not yet deliver that, for two independent reasons:
 
 - `sessions.endpoint_allows_mature` defaults to `false` (`apps/server/migrations/0033_endpoint_allows_mature_default_false.sql:1`). Only an operator grant through `PATCH /api/operator/sessions/:id/mature-endpoint` sets it to `true` (`apps/server/src/routes/operator.ts:172`).
 - `sessions.moderation_verified` defaults to `false` (`apps/server/migrations/0020_mature_tier.sql:2`). No production code path sets it to `true`; only tests do. Until a verification path exists, the table tier cannot become `mature`.
@@ -33,8 +39,8 @@ Seated accounts are read live from `SeatJoined` events (`apps/server/src/safety/
 
 There is no dedicated tier endpoint. The table's current tier is visible through two things:
 
-- The host's cap, returned as `tierCap` on room data (`apps/web/src/api.ts:20`). `null` means no cap.
-- `ContentTierChanged` events in the event log, emitted when the computed tier changes at a narration (`apps/server/src/room/productionTurnRunner.ts:685`). The web client handles it in `apps/web/src/room/reducer.ts:47`.
+- The host's cap, returned as `tierCap` on room data (`apps/web/src/api.ts:21`). `null` means no cap.
+- `ContentTierChanged` events in the event log, emitted when the computed tier changes at a narration (`apps/server/src/room/productionTurnRunner.ts:685`). The web reducer leaves room state unchanged for it (`apps/web/src/room/reducer.ts:47`); the client surfaces it separately.
 
 The tier is recomputed before each narration. It is not pushed live when a player changes an opt-out. The change takes effect at the next narration.
 
@@ -71,7 +77,7 @@ Moderation and the hard floor apply at every tier. The hard floor is not configu
 
 ## Retention
 
-Times below are from the code, not the ADR table where they differ.
+The windows below are what the code enforces. ADR-017 is the design target; the differences are listed after the table.
 
 | Data | Window | Enforced by |
 | --- | --- | --- |
@@ -86,7 +92,14 @@ Times below are from the code, not the ADR table where they differ.
 
 The sweeper runs every hour by default (`SWEEP_INTERVAL_MS`, `apps/server/src/config.ts:33`). `0` disables it. A sweep that has not completed within 26 hours is reported as stale by the readiness endpoint (`apps/server/src/retention/sweeper.ts:10`).
 
-Deleting an account runs the account-deletion pipeline. PII is removed, solo sessions are deleted, and shared sessions are redacted rather than purged (ADR-017).
+Deleting an account runs the account-deletion pipeline. PII is removed, solo sessions are deleted, and shared sessions are redacted rather than purged. ADR-017 sets the target that PII is hard-deleted within 30 days of the deletion request. ADR-017 also sets rolling 30-day Postgres backups, so full erasure from backups lags deletion by at most 30 days. This repository does not configure backups; the operator's backup setup must enforce that window.
+
+### Differences from ADR-017
+
+- **Sweep cadence:** ADR-017 says nightly. The code runs hourly by default.
+- **Reverted turns:** ADR-017 keeps the hidden transcript from rewind for 30 days. No retention job purges reverted turns in `apps/server/src/retention/jobs/`, so that class is not enforced.
+- **LLM request/response logs:** ADR-017 lists them in the 30-day class. They are not covered by a table or purge job in this guide.
+- **Legal holds on log tables:** ADR-017 says an operator-set hold suspends deletion for the held item. The 30-day log tables ignore holds (see Legal hold below).
 
 ### Legal hold
 
