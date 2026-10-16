@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { CharacterSchema, AdventureSchema } from '@game/schema';
@@ -22,6 +22,7 @@ import {
 import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
 import { liveDmAllowed } from '../llm/liveDmGate.js';
 import { createEndpointJudge } from '../safety/inputGate.js';
+import { HARD_FLOOR_VERSION } from '../safety/hardFloor.js';
 import {
   loadContentTierState,
   loadSeatedContentBoundaries,
@@ -98,15 +99,47 @@ export function registerTableRoutes(
       ],
     };
   }
+  // ponytail: per-process cache, cap 500 entries; move to a shared store if multiple API instances matter.
+  // Only non-fallback verdicts are cached; the key includes the moderate endpoint revision and hard-floor version.
+  const screenedRecaps = new Map<string, { recap: string; expires: number }>();
+  const SCREENED_RECAP_CACHE_MAX = 500;
+  const SCREENED_RECAP_TTL_MS = 10 * 60_000;
   async function screenStoredRecap(sessionId: string, recap: string) {
     if (!recap) return '';
-    const { tier, tableLines } = await recapSafety(sessionId);
+    const [{ tier, tableLines }, endpoint] = await Promise.all([
+      recapSafety(sessionId),
+      db.query<{ revision: string }>(
+        "SELECT updated_at::text AS revision FROM operator_endpoints WHERE slot='moderate'",
+      ),
+    ]);
+    const key = createHash('sha256')
+      .update(
+        JSON.stringify([
+          sessionId,
+          recap,
+          tier,
+          tableLines,
+          endpoint.rows[0]?.revision ?? null,
+          HARD_FLOOR_VERSION,
+        ]),
+      )
+      .digest('hex');
+    const hit = screenedRecaps.get(key);
+    if (hit && hit.expires > Date.now()) return hit.recap;
     const result = await gateRecap(
       { recap, memoryHash: '', cached: true, fallback: false },
       recapModerator,
       tier,
       tableLines,
     );
+    if (!result.fallback) {
+      screenedRecaps.set(key, {
+        recap: result.recap,
+        expires: Date.now() + SCREENED_RECAP_TTL_MS,
+      });
+      if (screenedRecaps.size > SCREENED_RECAP_CACHE_MAX)
+        screenedRecaps.delete(screenedRecaps.keys().next().value!);
+    }
     return result.recap;
   }
   const createHits = new BoundedCounter(3_600_000);
