@@ -17,7 +17,6 @@ import {
   tokenFromCookie,
 } from '../accounts/sessions.js';
 import { authenticateRequest } from '../middleware/auth.js';
-import { validOrigin } from '../middleware/origin.js';
 import {
   LoginInputSchema,
   ChangePasswordInputSchema,
@@ -81,12 +80,6 @@ export function registerAuthRoutes(
     ipFailures.hit(ip);
   };
   const EXPORTS_PER_WEEK = 10;
-  app.addHook('onRequest', async (request, reply) => {
-    if (!validOrigin(request))
-      return reply
-        .code(403)
-        .send({ code: 'BAD_ORIGIN', message: 'Origin not allowed.' });
-  });
   const forgotSchema = z.object({ email: z.email() }).strict();
   const resetSchema = z
     .object({ token: z.string(), password: z.string() })

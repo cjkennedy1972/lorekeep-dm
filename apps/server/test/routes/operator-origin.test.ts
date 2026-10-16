@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import { createApp, createLogger } from '../../src/app.js';
 import { registerOperatorRoutes } from '../../src/routes/operator.js';
+import { originScope } from '../../src/middleware/origin.js';
 
 const operatorRoutes = [
   ['PUT', '/api/operator/endpoints/chat'],
@@ -14,9 +15,11 @@ const noop = {} as never;
 
 function bareOperatorApp() {
   const app = Fastify({ loggerInstance: createLogger() });
-  registerOperatorRoutes(app, noop, async () => false, {
-    egress: noop,
-  });
+  originScope(app, (scope) =>
+    registerOperatorRoutes(scope, noop, async () => false, {
+      egress: noop,
+    }),
+  );
   return app;
 }
 
