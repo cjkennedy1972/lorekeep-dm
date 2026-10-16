@@ -1,5 +1,6 @@
 import { randomBytes, createHash } from 'node:crypto';
 import type { Pool } from 'pg';
+import { originHostMatches } from '../middleware/origin.js';
 
 const hash = (ticket: string) =>
   createHash('sha256').update(ticket).digest('hex');
@@ -13,7 +14,7 @@ export function validOrigin(
     const url = new URL(origin);
     return (
       (url.protocol === 'http:' || url.protocol === 'https:') &&
-      (url.host === host ||
+      (originHostMatches(url, host) ||
         (allowed
           ?.split(',')
           .map((v) => v.trim())
