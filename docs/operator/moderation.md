@@ -5,7 +5,7 @@ For the person running a Lorekeep-DM server. Endpoint setup (`fast`, `frontier`,
 Governing documents:
 
 - [ADR-026](../adr/026-mature-default-false-addendum.md) (Accepted) makes mature opt-in at the endpoint layer: `endpoint_allows_mature` defaults to `false`, and the operator must grant it explicitly.
-- [ADR-016](../adr/016-mature-content-gating.md) (Proposed) defines the table tier predicate, the per-player opt-out, live re-evaluation, and runtime refusal handling. Its endpoint-probe default is superseded by ADR-026 (ADR-016's text is unchanged). The endpoint gate is governed by ADR-026 and [ADR-027](../adr/027-mature-endpoint-attestation.md).
+- [ADR-016](../adr/016-mature-content-gating.md) (Proposed) defines the table tier predicate, the per-player opt-out, live re-evaluation, and runtime refusal handling. Its endpoint-probe default is superseded by ADR-026 (ADR-016's text is unchanged). The endpoint gate is governed by ADR-026 (Accepted) and [ADR-027](../adr/027-mature-endpoint-attestation.md) (accepted by implementation policy, not formally marked Accepted).
 - [ADR-017](../adr/017-log-retention-deletion-jobs.md) (Proposed) governs retention.
 
 Where the code differs from an ADR, this page says so. Facts are from `main` at `64c1418`. Items marked **pending** are in draft PRs that are not merged: [#212](https://github.com/cjkennedy1972/lorekeep-dm/pull/212) (sets `moderation_verified`) and [#213](https://github.com/cjkennedy1972/lorekeep-dm/pull/213) (honors legal holds in log purge).
@@ -43,6 +43,8 @@ There is no dedicated tier endpoint. The table's current tier is visible through
 - `ContentTierChanged` events in the event log, emitted when the computed tier changes at a narration (`apps/server/src/room/productionTurnRunner.ts:685`). The web reducer leaves room state unchanged for it (`apps/web/src/room/reducer.ts:47`); the client surfaces it separately.
 
 The stored tier (`sessions.content_tier`) and the `ContentTierChanged` event are produced only at narration (computed at `productionTurnRunner.ts:272`, emitted at `:685`, persisted at `persistence/index.ts:279`). A player's opt-out, a join, a leave, or a seat change does not recompute or broadcast the tier on its own; the change takes effect at the next narration. The input gate (`apps/server/src/safety/inputGate.ts:76`) and the stored-recap safety path (`recapSafety` in `apps/server/src/routes/tables.ts`, around line 90) both call `loadContentTierState(db, sessionId, false)`. The third argument is `endpointAllowsMature`, so `false` forces it to `false` when computing tier; it is not a no-store switch. The helper is read-only and does not persist `sessions.content_tier`. Delivery of mature chunks re-checks opt-outs live (see Opt-out below).
+
+Input and recap screening deliberately use the `standard` moderation rubric, even when a session is otherwise mature-eligible. This preserves standard-tier restrictions for those screening decisions—for example, standard blocks innuendo and graphic violence, while mature permits them. This is a targeted screening policy, not a claim that `standard` is stricter in every moderation category.
 
 ## Settings and defaults
 
