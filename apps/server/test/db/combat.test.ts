@@ -244,6 +244,105 @@ afterAll(async () => {
 }, 60_000);
 
 describe('Room combat over the websocket (real Room, Postgres, scripted DM)', () => {
+  it('covers X-card, pause/resume, report, and double rewind in one recorded room session', async () => {
+    stack = await Stack.boot('safety-controls-and-rewind');
+    const host = await newUser();
+    const guest = await newUser();
+    const table = await seedTable(stack, host, preCombat);
+    await (await stack.rooms.get(table)).seat(guest.id, 'Guest');
+    const h = await Client.open(stack, host, table);
+    const g = await Client.open(stack, guest, table);
+
+    const send = (client: Client, type: string, payload: object) => {
+      const actionId = randomUUID();
+      client.ws.send(JSON.stringify({ type, actionId, lastSeq: 0, payload }));
+      return actionId;
+    };
+    try {
+      const hostBeforeFlag = h.log.length;
+      const guestBeforeFlag = g.log.length;
+      send(g, 'XCard', {});
+      const [hostFlag, guestFlag] = await Promise.all([
+        h.until((m) => m.type === 'SafetyFlag', hostBeforeFlag),
+        g.until((m) => m.type === 'SafetyFlag', guestBeforeFlag),
+      ]);
+      expect(hostFlag.payload).toEqual({ kind: 'x-card' });
+      expect(guestFlag.payload).toEqual({ kind: 'x-card' });
+      expect(
+        JSON.stringify([hostFlag.payload, guestFlag.payload]),
+      ).not.toContain(guest.id);
+
+      const pausedFrom = h.log.length;
+      send(g, 'PauseTable', { paused: true });
+      await h.until(
+        (m) =>
+          m.type === 'StateSync' &&
+          (m.payload?.state as { paused?: boolean }).paused === true,
+        pausedFrom,
+      );
+      const guestResumeFrom = g.log.length;
+      const guestResumeId = send(g, 'PauseTable', { paused: false });
+      const guestResumeError = await g.until(
+        (m) => m.type === 'Error' && m.payload?.actionId === guestResumeId,
+        guestResumeFrom,
+      );
+      expect(guestResumeError.payload?.code).toBe('NOT_HOST');
+      const resumedFrom = h.log.length;
+      send(h, 'PauseTable', { paused: false });
+      await h.until(
+        (m) =>
+          m.type === 'StateSync' &&
+          (m.payload?.state as { paused?: boolean }).paused !== true,
+        resumedFrom,
+      );
+
+      const narrationFrom = h.log.length;
+      h.say('START-COMBAT');
+      const narration = await h.until(
+        (m) => m.type === 'NarrationCompleted',
+        narrationFrom,
+      );
+      const report = await fetch(`${stack.base}/api/rooms/${table}/reports`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: stack.base,
+          cookie: `sid=${guest.token}`,
+        },
+        body: JSON.stringify({
+          messageRef: narration.seq,
+          category: 'other',
+          reason: 'Scripted safety acceptance report',
+        }),
+      });
+      expect(report.status).toBe(202);
+      expect(await report.json()).toEqual({ received: true });
+      const storedReport = await db.query(
+        'SELECT 1 FROM message_reports WHERE session_id=$1 AND message_seq=$2 AND reporter_account_id=$3',
+        [table, narration.seq, guest.id],
+      );
+      expect(storedReport.rowCount).toBe(1);
+
+      const firstRewindFrom = h.log.length;
+      send(h, 'RewindTurn', {});
+      await h.until((m) => m.type === 'TurnReverted', firstRewindFrom);
+      const secondRewindFrom = h.log.length;
+      const secondRewindId = send(h, 'RewindTurn', {});
+      const rejected = await h.until(
+        (m) => m.type === 'Error' && m.payload?.actionId === secondRewindId,
+        secondRewindFrom,
+      );
+      expect(rejected.payload).toMatchObject({
+        code: 'REWIND_REFUSED',
+        message:
+          'Only one rewind per resolved turn; let the next turn resolve first.',
+      });
+    } finally {
+      h.close();
+      g.close();
+    }
+  }, 30_000);
+
   it('start_combat populates the Room, monsters act, and the fight ends in CombatEnded with an accepted opportunity attack', async () => {
     stack = await Stack.boot('combat-full');
     const user = await newUser();

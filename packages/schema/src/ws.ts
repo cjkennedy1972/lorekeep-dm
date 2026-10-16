@@ -99,6 +99,14 @@ export const PauseTableSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const RewindTurnSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('RewindTurn'),
+    payload: z.object({}).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const StateSyncSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('StateSync'),

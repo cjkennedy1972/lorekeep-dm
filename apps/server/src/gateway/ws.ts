@@ -9,11 +9,12 @@ import {
   WithdrawActionSchema,
   XCardSchema,
   PauseTableSchema,
+  RewindTurnSchema,
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import type { RoomRegistry } from '../room/registry.js';
-import { NotTableHostError } from '../room/Room.js';
+import { NotTableHostError, RewindRefusedError } from '../room/Room.js';
 import {
   consumeTicket,
   eligibleSession,
@@ -314,6 +315,58 @@ export function installGateway(
               return;
             }
             return room.xCard(identity.accountId);
+          }
+          if (msg.type === 'RewindTurn') {
+            const rewind = RewindTurnSchema.safeParse(msg);
+            if (!rewind.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Rewind request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .rewindLastTurn(identity.accountId)
+              .catch((error: unknown) => {
+                if (error instanceof NotTableHostError)
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'NOT_HOST',
+                      message: 'Only the table host can rewind.',
+                      actionId: msg.actionId,
+                    },
+                  });
+                if (error instanceof RewindRefusedError)
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'REWIND_REFUSED',
+                      message: error.message,
+                      actionId: msg.actionId,
+                    },
+                  });
+                app.log.error(
+                  { err: error, sessionId: identity.sessionId },
+                  'Rewind request failed',
+                );
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ACTION_REJECTED',
+                    message: 'Rewind request could not be accepted.',
+                    actionId: msg.actionId,
+                  },
+                });
+              });
           }
           if (msg.type === 'PauseTable') {
             const pause = PauseTableSchema.safeParse(msg);
