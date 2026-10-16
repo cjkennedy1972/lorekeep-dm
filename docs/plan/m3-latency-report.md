@@ -10,7 +10,7 @@ Base: origin/main at c422514 (feat(memory): registry turn linkage for rewind, #1
 - Prior docs identify the same URL with `qwen3.8-35b-a3b-distill-q4` as an earlier local diagnostic. That older model/config was not used for the new run.
 - A five-case local moderation diagnostic authenticated using the existing local credential and reached the prior Qwen endpoint. Two cases timed out, one expected line/veil block was allowed, and only two cases matched. This is inadequate for mature-content authorization; it was not used to enable mature or qualify the endpoint.
 - ADR-013 left endpoint selection open; the owner has now selected the endpoint above for this sample. The target itself is not open: ADR-023 and architecture §9.1 set **<= 3 s uncached p95**.
-- LocalAI's selected model config initially had `prompt_cache_all: true` and `cache_reuse:256`. A temporary cache-off configuration (`prompt_cache_all: false`, `cache_ram:0`, `cache_reuse:0`) was accepted and verified, then restored. **The endpoint is currently back on its original cache-on configuration; no uncached measurement was collected.** LocalAI documents `cache_ram:0` as disabling server-side prompt caching ([cache configuration](https://localai.io/docs/advanced/index.print.html)).
+- LocalAI's selected model config initially had `prompt_cache_all: true` and `cache_reuse:256`. A temporary cache-off configuration (`prompt_cache_all: false`, `cache_ram:0`, `cache_reuse:0`) was accepted and verified, then restored. **The endpoint is currently back on its original cache-on configuration; no uncached measurement was collected.** The claim that `cache_ram:0` disables server-side prompt caching is an operator assumption, not verified against LocalAI documentation in this run.
 - After the config update, the selected model returned HTTP 503 and failed to load. LocalAI placed `serenity-26b-a4b` in load cooldown; system resources showed the existing Qwen model loaded with 1.19 GB free of 32.06 GB GPU memory. No Qwen backend was shut down.
 
 ## What is needed to run M3-30
@@ -23,7 +23,7 @@ Base: origin/main at c422514 (feat(memory): registry turn linkage for rewind, #1
 ## Harness and measurement plan
 
 - Harness: `pnpm --filter @game/server first-token:probe`. It runs 30–100 iterations (default 30), applies input moderation to a synthetic action, generates a production-shaped narration, buffers the complete response, then runs `runOutputGate` over 24-character chunks before recording first-visible time. It executes no tools, creates no session, writes no DB data, records no fixtures, and outputs aggregate timing plus a prompt hash only.
-- The harness matches production ordering: the model response is buffered before gating, and one visible narration is emitted only after the gate. It reports nearest-rank p50/p95 for input moderation, gate duration after model completion, and first-visible narration from the start of the narration model request. One unmeasured model warmup per slot is excluded from measured runs.
+- The harness matches production ordering: the model response is buffered before gating, and one visible narration is emitted only after the gate. It reports nearest-rank p50/p95 for input moderation, gate duration after model completion, and first-visible narration from `outputStart`, taken immediately before the narration model request. One unmeasured model warmup per slot is excluded from measured runs.
 - The script's `FIRST_TOKEN_PROBE_CACHE_DISABLED=1` is an operator attestation guard, not a technical verification by the harness. The adapter receives a stable-prefix cache hint, but this LocalAI OpenAI-compatible endpoint's server cache state is controlled separately and must be verified from LocalAI configuration before the run.
 - The harness uses a deterministic synthetic single-turn prompt and no tool loop. It exercises the prompt builder, configured adapter, classifier, and output gate, but does not cover DB/session overhead, input-gate DB reads/logging, tool loops, or real user prompt sizes. This is an engineering sample, not proof of every turn's latency.
 - Targets: input moderation <= 0.4 s; first visible narration <= 3 s uncached p95. Gate duration is reported separately and is not an output-chunk-latency target.
@@ -47,7 +47,7 @@ An earlier harness version ran 30 iterations against the prior local Qwen endpoi
 |---|---:|---:|---:|---|
 | Input judge | 560 ms | 576 ms | <= 400 ms | Miss |
 | Output gate after model completion | 3,534 ms | 6,012 ms | informational | Total gate duration across all chunks; not a per-chunk latency measurement |
-| First visible narration from narration-request start | 5,929 ms | 10,039 ms | <= 3,000 ms | Miss |
+| First visible narration from `outputStart` (immediately before narration request) | 5,929 ms | 10,039 ms | <= 3,000 ms | Miss |
 
 Sample: 30 iterations; the legacy harness did not request cache hints, and provider-side caching could not be disabled or observed. No tool loop was exercised. This local result is engineering evidence only and does not establish the hosted-reference SLO.
 
