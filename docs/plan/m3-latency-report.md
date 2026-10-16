@@ -2,7 +2,7 @@
 
 Status: **HARNESS CORRECTED; selected-endpoint measurement BLOCKED by LocalAI model-load failure. No valid uncached result is claimed.**
 
-Base: origin/main at c422514 (feat(memory): registry turn linkage for rewind, #194).
+Base: origin/main at 7df49ea.
 
 ## What was checked
 
