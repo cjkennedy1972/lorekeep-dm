@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkLiveUrl } from '../dist/live.js';
 import { DMToolArgsSchema } from '../../../packages/schema/dist/dm-tools.js';
 import { buildPrompt, zodSchema } from '../../../apps/server/dist/dm/prompt.js';
 import {
@@ -15,9 +16,13 @@ import { hardFloorLayer } from '../../../apps/server/dist/safety/deterministicLa
 const baseUrl = process.env.REDTEAM_BASE_URL ?? 'http://172.31.25.75:8080/v1';
 const model = process.env.REDTEAM_MODEL ?? 'qwen3.8-35b-a3b-distill-q4';
 const profile = process.env.REDTEAM_PROFILE ?? 'local-qwen35';
+const sourceCommit = process.env.REDTEAM_SOURCE_COMMIT;
 const apiKey = process.env.EVAL_API_KEY;
 if (!apiKey) throw new Error('EVAL_API_KEY is required');
-if (new URL(baseUrl).host !== '172.31.25.75:8080')
+if (!/^[0-9a-f]{40}$/i.test(sourceCommit ?? ''))
+  throw new Error('REDTEAM_SOURCE_COMMIT must be a full 40-character Git SHA');
+const endpointUrl = checkLiveUrl(baseUrl);
+if (endpointUrl.host !== '172.31.25.75:8080')
   throw new Error('This run is pinned to the documented local Qwen endpoint');
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -60,7 +65,7 @@ const syntheticCharacter = {
 };
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const output = {
-  schema: 'redteam-live-record/1',
+  schema: 'redteam-live-record/2',
   endpoint: { profile, baseUrl, model },
   startedAt,
   finishedAt: null,
@@ -68,6 +73,7 @@ const output = {
     Object.entries(datasets).map(([name, ds]) => [name, ds.version]),
   ),
   methodology: {
+    sourceCommit,
     boundary:
       'Production JudgeModerator rubric/messages and deterministic hard-floor/denylist are applied. Raw judge replies and parsed verdicts are recorded.',
     injection:

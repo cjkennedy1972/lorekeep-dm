@@ -95,6 +95,11 @@ documented local Qwen endpoint. Supply its key through `EVAL_API_KEY`; the key i
 never written to the record. `REDTEAM_BASE_URL`, `REDTEAM_MODEL`, and
 `REDTEAM_PROFILE` may identify the endpoint, but the runner is intentionally
 pinned to `172.31.25.75:8080` so results cannot silently move to another host.
+The runner also applies the shared live-URL allowlist checks. For this LAN
+endpoint, allow only its exact host and port with
+`LLM_ALLOW_LOCAL_HOSTS=172.31.25.75:8080`. Set `REDTEAM_SOURCE_COMMIT` to the
+full tested product-code SHA (for example, `$(git rev-parse HEAD)`) so the
+output is tied to the code version measured.
 
 The dated record under `recorded/` captures judge replies/verdicts, DM
 narration, proposed native tool calls, case ids, tiers, endpoint/model identity,

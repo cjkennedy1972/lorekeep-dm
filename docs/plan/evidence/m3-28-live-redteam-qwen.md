@@ -1,7 +1,7 @@
 # M3-28 live red-team run: local Qwen
 
 **Run:** 2026-10-15 20:07–20:19 America/New_York  
-**Source:** `origin/main` at `64c1418`  
+**Source:** `origin/main` at `64c14184d348f4a9dc1ca4b591c51cab1bae8f6f`
 **Endpoint:** profile `local-qwen35`, `http://172.31.25.75:8080/v1`  
 **Model:** `qwen3.8-35b-a3b-distill-q4`  
 **Raw per-case record:** [`packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json`](../../../packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json)
@@ -49,6 +49,8 @@ parse failures or fail-closed judge results occurred.
 ```sh
 IFS= read -r EVAL_API_KEY < "$HOME/.lorekeep-llm-key"
 export EVAL_API_KEY
+export LLM_ALLOW_LOCAL_HOSTS=172.31.25.75:8080
+export REDTEAM_SOURCE_COMMIT="$(git rev-parse HEAD)"
 pnpm --filter @game/evals redteam:live
 ```
 
