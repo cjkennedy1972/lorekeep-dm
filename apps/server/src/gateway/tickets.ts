@@ -4,6 +4,21 @@ import { originHostMatches } from '../middleware/origin.js';
 
 const hash = (ticket: string) =>
   createHash('sha256').update(ticket).digest('hex');
+export function originAllowlisted(
+  origin: string,
+  allowed = process.env.WS_ALLOWED_ORIGINS,
+): boolean {
+  try {
+    return (
+      allowed
+        ?.split(',')
+        .map((v) => v.trim())
+        .includes(new URL(origin).origin) ?? false
+    );
+  } catch {
+    return false;
+  }
+}
 export function validOrigin(
   origin: string | undefined,
   host: string | undefined,
@@ -14,12 +29,7 @@ export function validOrigin(
     const url = new URL(origin);
     return (
       (url.protocol === 'http:' || url.protocol === 'https:') &&
-      (originHostMatches(url, host) ||
-        (allowed
-          ?.split(',')
-          .map((v) => v.trim())
-          .includes(url.origin) ??
-          false))
+      (originHostMatches(url, host) || originAllowlisted(origin, allowed))
     );
   } catch {
     return false;
