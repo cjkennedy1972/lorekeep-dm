@@ -120,6 +120,7 @@ describe('operator mature endpoint attestation', () => {
     expect(noAck.json()).toMatchObject({
       code: 'POLICY_ACKNOWLEDGEMENT_REQUIRED',
     });
+    expect(await moderationVerified()).toBe(false);
 
     const enabled = await patch({ enabled: true, policyAcknowledgement: ack });
     expect(enabled.statusCode).toBe(200);
@@ -194,8 +195,15 @@ describe('operator mature endpoint attestation', () => {
 
     const session = await database.pool.query<{
       endpoint_allows_mature: boolean;
-    }>('SELECT endpoint_allows_mature FROM sessions WHERE id=$1', [sessionId]);
-    expect(session.rows[0]?.endpoint_allows_mature).toBe(false);
+      moderation_verified: boolean;
+    }>(
+      'SELECT endpoint_allows_mature, moderation_verified FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    expect(session.rows[0]).toMatchObject({
+      endpoint_allows_mature: false,
+      moderation_verified: false,
+    });
     const columns = await database.pool.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
         WHERE table_schema=current_schema() AND table_name='sessions'
