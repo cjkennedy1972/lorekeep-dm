@@ -18,3 +18,11 @@ Status: Proposed (human decision 2026-10-06: endpoint is operator-configurable) 
 **Consequences.** More test matrix: the recorded-LLM mode (ADR-012) must cover every tool mode. Latency and cost SLOs apply to a *reference configuration*, not to arbitrary endpoints. Weak local models get a degraded but safe experience because the engine, not the model, owns state.
 
 **Needs human?** Yes: which endpoint is the reference configuration for SLOs, and minimum local-model class to support.
+
+## Addendum (2026-10-15): owner decision on moderation verification
+
+Decision 7 above says mature content requires the `moderate` endpoint to have "passed the red-team set (`moderationVerified`)". The owner has resolved this, and it supersedes that phrase, consistent with ADR-023 and ADR-027:
+
+- `moderationVerified` (and therefore `moderation_verified`) is set by a session-scoped operator grant when all of the following hold: successful applicable endpoint probes (narration and `moderate`, per ADR-027), an explicit operator policy attestation, and the operator acknowledgement, bound to the session and to the endpoint configuration fingerprints.
+- Red-team evaluations are not a runtime grant precondition. They remain a separate safety validation of the classifier and rubric, tracked in ADR-023, and their results do not gate the grant.
+- Nothing else in decision 7 changes: `endpoint_allows_mature` still degrades the table to `standard` gracefully when false or refused at runtime.
