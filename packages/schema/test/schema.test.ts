@@ -10,6 +10,7 @@ import {
   PresenceSchema,
   SeatSchema,
   ClientEnvelopeSchema,
+  RewindTurnSchema,
   StateSyncSchema,
   PresenceChangedSchema,
   ErrorMessageSchema,
@@ -52,6 +53,16 @@ const cases = [
     ClientEnvelopeSchema,
     { actionId: uuid, type: 'Join', payload: {}, lastSeq: 0 },
     { actionId: uuid, type: 'Join', payload: {}, lastSeq: -1 },
+  ],
+  [
+    RewindTurnSchema,
+    { actionId: uuid, type: 'RewindTurn', payload: {}, lastSeq: 0 },
+    {
+      actionId: uuid,
+      type: 'RewindTurn',
+      payload: { turnId: uuid },
+      lastSeq: 0,
+    },
   ],
   [
     StateSyncSchema,
