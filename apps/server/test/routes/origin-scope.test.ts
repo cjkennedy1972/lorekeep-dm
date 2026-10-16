@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
 import { createApp, createLogger } from '../../src/app.js';
 import { originScope } from '../../src/middleware/origin.js';
+import { InMemorySpanExporter } from '@opentelemetry/sdk-trace-base';
+import { setupTelemetry } from '../../src/telemetry.js';
+import { loadConfig } from '../../src/config.js';
 
 const foreign = { origin: 'https://evil.example', host: 'game.example.test' };
 
@@ -52,6 +55,7 @@ describe('origin protection is scoped to route groups', () => {
 
   it.each([
     ['POST', '/api/tables'],
+    ['POST', '/api/sessions'],
     ['POST', '/api/login'],
     ['POST', '/api/signup'],
     ['POST', '/api/me/password'],
@@ -81,4 +85,43 @@ describe('origin protection is scoped to route groups', () => {
       expect(res.json().code).toBe('BAD_ORIGIN');
     },
   );
+
+  it('createApp HTTP span records an origin-rejected scoped session request', async () => {
+    const exporter = new InMemorySpanExporter();
+    const provider = setupTelemetry(
+      loadConfig({
+        DATABASE_URL: 'postgres://localhost/test',
+        NODE_ENV: 'test',
+      }),
+      exporter,
+    );
+    const app = createApp(
+      {
+        connect: async () => undefined,
+        query: async () => ({ rows: [] }),
+      } as never,
+      {
+        inputGate: allowInputGate,
+        rooms: { get: async () => undefined } as never,
+        isOperator: async () => false,
+      },
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      headers: foreign,
+      payload: {},
+    });
+    await app.close();
+    const span = exporter
+      .getFinishedSpans()
+      .find(
+        (s) =>
+          s.name === 'http.request' &&
+          s.attributes['url.path'] === '/api/sessions',
+      );
+    expect(res.statusCode).toBe(403);
+    expect(span?.attributes['http.response.status_code']).toBe(403);
+    await provider?.shutdown();
+  });
 });

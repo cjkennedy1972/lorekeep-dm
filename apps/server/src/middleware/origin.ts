@@ -1,3 +1,5 @@
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import type { Logger } from 'pino';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 export function validOrigin(request: FastifyRequest): boolean {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return true;
@@ -22,11 +24,9 @@ export async function originGuard(
 }
 
 /** Routes registered inside `register` are origin-checked; routes on `app` itself are not. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- root logger type varies per createApp/tests
-export function originScope<T extends FastifyInstance<any, any, any, any, any>>(
-  app: T,
-  register: (scope: T) => void,
-) {
+export function originScope<
+  T extends FastifyInstance<Server, IncomingMessage, ServerResponse, Logger>,
+>(app: T, register: (scope: T) => void) {
   app.register(async (scope) => {
     scope.addHook('onRequest', originGuard);
     register(scope as unknown as T);
