@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { CharacterSchema, AdventureSchema } from '@game/schema';
@@ -98,16 +98,28 @@ export function registerTableRoutes(
       ],
     };
   }
+  // ponytail: per-process cache, cap 500 entries; move to a shared store if multiple API instances matter.
+  const screenedRecaps = new Map<string, Promise<string>>();
+  const SCREENED_RECAP_CACHE_MAX = 500;
   async function screenStoredRecap(sessionId: string, recap: string) {
     if (!recap) return '';
     const { tier, tableLines } = await recapSafety(sessionId);
-    const result = await gateRecap(
-      { recap, memoryHash: '', cached: true, fallback: false },
-      recapModerator,
-      tier,
-      tableLines,
-    );
-    return result.recap;
+    const key = createHash('sha256')
+      .update(JSON.stringify([sessionId, recap, tier, tableLines]))
+      .digest('hex');
+    let screened = screenedRecaps.get(key);
+    if (!screened) {
+      screened = gateRecap(
+        { recap, memoryHash: '', cached: true, fallback: false },
+        recapModerator,
+        tier,
+        tableLines,
+      ).then((result) => result.recap);
+      screenedRecaps.set(key, screened);
+      if (screenedRecaps.size > SCREENED_RECAP_CACHE_MAX)
+        screenedRecaps.delete(screenedRecaps.keys().next().value!);
+    }
+    return screened;
   }
   const createHits = new BoundedCounter(3_600_000);
   app.post('/api/tables', async (request, reply) => {
