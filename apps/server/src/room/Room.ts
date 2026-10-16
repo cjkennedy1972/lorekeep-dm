@@ -93,6 +93,13 @@ export class NotTableHostError extends Error {
   }
 }
 
+export class RoomSeatRequiredError extends Error {
+  constructor() {
+    super('Player is not seated at this table');
+    this.name = 'RoomSeatRequiredError';
+  }
+}
+
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
@@ -253,10 +260,12 @@ export class Room {
     displayName = accountId,
     matureOptOut = false,
     lastSeq = -1,
+    options: { requireExistingSeat?: boolean } = {},
   ): Promise<void> {
     return this.enqueue(async () => {
       let seat = this.state.seats.find((item) => item.accountId === accountId);
       if (!seat) {
+        if (options.requireExistingSeat) throw new RoomSeatRequiredError();
         if (this.state.seats.length >= 6) throw new Error('Room is full');
         seat = {
           seatId: randomUUID() as RoomState['seats'][number]['seatId'],
@@ -334,7 +343,10 @@ export class Room {
       const seat = this.state.seats.find(
         (item) => item.accountId === accountId,
       );
-      if (!seat) return;
+      if (!seat) {
+        connection?.close?.(1000, 'Left the table');
+        return;
+      }
       if (this.turnInFlight) this.turnAbort?.abort();
       await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
       this.state = {

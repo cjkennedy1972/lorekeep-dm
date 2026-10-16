@@ -15,7 +15,11 @@ import {
 import { authenticateRequest } from '../middleware/auth.js';
 import { validOrigin as validHttpOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
-import { NotTableHostError, RewindRefusedError } from '../room/Room.js';
+import {
+  NotTableHostError,
+  RewindRefusedError,
+  RoomSeatRequiredError,
+} from '../room/Room.js';
 import {
   consumeTicket,
   eligibleSession,
@@ -196,14 +200,18 @@ export function installGateway(
             connection,
             name.rows[0]?.display_name ?? identity.accountId,
             name.rows[0]?.mature_opt_out ?? false,
+            -1,
+            { requireExistingSeat: true },
           );
           if (!active) {
             await room.disconnect(identity.accountId);
             return;
           }
-        } catch {
+        } catch (error) {
           clearInterval(heartbeat);
-          ws.close(1011, 'Join failed');
+          if (error instanceof RoomSeatRequiredError)
+            ws.close(1008, 'Player is not seated at this table');
+          else ws.close(1011, 'Join failed');
           return;
         }
         // One chain per socket: messages are handled strictly in arrival order, including the

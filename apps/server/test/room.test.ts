@@ -52,9 +52,13 @@ describe('room actor', () => {
     const room = new Room(store, lease, await store.loadLatest(id));
     const a: unknown[] = [];
     const b: unknown[] = [];
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+    await room.seat(accountA, 'A');
+    await room.seat(accountB, 'B');
     await Promise.all([
-      room.join(randomUUID(), { send: (message) => a.push(message) }),
-      room.join(randomUUID(), { send: (message) => b.push(message) }),
+      room.join(accountA, { send: (message) => a.push(message) }),
+      room.join(accountB, { send: (message) => b.push(message) }),
     ]);
     expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4]);
     expect(
@@ -75,6 +79,8 @@ describe('room actor', () => {
     const stayer = randomUUID();
     const leaver = randomUUID();
     const closes: unknown[] = [];
+    await room.seat(stayer, 'Stayer');
+    await room.seat(leaver, 'Leaver');
     await room.join(stayer, { send: () => {} });
     await room.join(leaver, {
       send: () => {},
@@ -89,6 +95,12 @@ describe('room actor', () => {
     expect(room.state.seats.map((seat) => seat.accountId)).toEqual([stayer]);
     expect(closes).toEqual([[1000, 'Left the table']]);
 
+    await expect(
+      room.join(leaver, { send: () => {} }, 'Leaver', false, -1, {
+        requireExistingSeat: true,
+      }),
+    ).rejects.toThrow('Player is not seated at this table');
+    await room.seat(leaver, 'Leaver');
     await room.join(leaver, { send: () => {} });
     expect(room.state.seats.map((seat) => seat.accountId)).toContain(leaver);
   });
