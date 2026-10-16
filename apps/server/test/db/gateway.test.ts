@@ -63,6 +63,7 @@ beforeAll(async () => {
     accounts[0],
   ]);
   const room = await rooms.get(sessionId);
+  await room.seat(accounts[0], 'Player 0');
   await room.join(accounts[1], { send() {} }, 'Player 1');
   await room.disconnect(accounts[1]);
   tokens = await Promise.all(
