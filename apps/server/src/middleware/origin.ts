@@ -22,6 +22,7 @@ export async function originGuard(
 }
 
 /** Routes registered inside `register` are origin-checked; routes on `app` itself are not. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- root logger type varies per createApp/tests
 export function originScope<T extends FastifyInstance<any, any, any, any, any>>(
   app: T,
   register: (scope: T) => void,
