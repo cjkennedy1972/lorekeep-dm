@@ -8,16 +8,18 @@ Governing documents:
 - [ADR-016](../adr/016-mature-content-gating.md) (Proposed) defines the table tier predicate, the per-player opt-out, live re-evaluation, and runtime refusal handling. Its endpoint-probe default is superseded by ADR-026 (ADR-016's text is unchanged). The endpoint gate is governed by ADR-026 (Accepted) and [ADR-027](../adr/027-mature-endpoint-attestation.md) (accepted by implementation policy, not formally marked Accepted).
 - [ADR-017](../adr/017-log-retention-deletion-jobs.md) (Proposed) governs retention.
 
-Where the code differs from an ADR, this page says so. Facts are from `main` at `64c1418`. Items marked **pending** are in draft PRs that are not merged: [#212](https://github.com/cjkennedy1972/lorekeep-dm/pull/212) (sets `moderation_verified`) and [#213](https://github.com/cjkennedy1972/lorekeep-dm/pull/213) (honors legal holds in log purge).
+Where the code differs from an ADR, this page says so. Facts are from `main` at `6c59f9e`, which includes [#212](https://github.com/cjkennedy1972/lorekeep-dm/pull/212) (the mature grant sets `moderation_verified`) and [#213](https://github.com/cjkennedy1972/lorekeep-dm/pull/213) (log purge honors legal holds).
 
-## Status: mature content is not reachable on a fresh install
+## Status: mature content requires an operator grant
 
-ADR-016 (Proposed) sets the intended default to mature-eligible unless a player opts out. The code does not yet deliver that, for two independent reasons:
+ADR-016 (Proposed) sets the intended default to mature-eligible unless a player opts out. The code does not deliver that by default. Mature becomes reachable only when the operator grants it, for two independent reasons:
 
 - `sessions.endpoint_allows_mature` defaults to `false` (`apps/server/migrations/0033_endpoint_allows_mature_default_false.sql:1`). Only an operator grant through `PATCH /api/operator/sessions/:id/mature-endpoint` sets it to `true` (`apps/server/src/routes/operator.ts:172`).
-- `sessions.moderation_verified` defaults to `false` (`apps/server/migrations/0020_mature_tier.sql:2`). No production code path sets it to `true`; only tests do. Until a verification path exists, the table tier cannot become `mature`.
+- `sessions.moderation_verified` defaults to `false` (`apps/server/migrations/0020_mature_tier.sql:2`). The same grant sets it to match `endpoint_allows_mature` (`operator.ts:220`), so it is `true` only after a verified grant and is cleared on revoke.
 
-Treat "mature is default-on" as the intended product decision, not the current behavior. On `main`, nothing writes `moderation_verified`, so every table computes to `standard` or lower. **Pending:** PR #212 would set it only after a verified mature grant.
+The grant fails closed. It requires a passing narration probe and a passing `moderate` probe (`ENDPOINT_PROBE_REQUIRED` otherwise, `apps/server/src/llm/matureEndpoint.ts:132`), and the exact `policyAcknowledgement` string. A passing probe is technical only and does not establish that the endpoint's terms permit mature content.
+
+Treat "mature is default-on" as the intended product decision, not the current behavior. Until an operator grants it, every table computes to `standard` or lower.
 
 ## Content tiers
 
@@ -53,8 +55,8 @@ Input and recap screening deliberately use the `standard` moderation rubric, eve
 | `accounts.mature_opt_out` | `apps/server/migrations/0002_accounts.sql:7` | `false` | Each player, via `PATCH /api/me/content-settings` (`apps/server/src/routes/contentSettings.ts:83`) | `true` blocks `mature` for every table the account is seated at. The host cannot override it. |
 | `sessions.host_tier_cap` | `apps/server/migrations/0022_host_tier_cap.sql:2` | `NULL` (no cap) | Host, via `PATCH /api/sessions/:id/content-tier` with `family`, `standard`, `mature`, or `null` (`contentSettings.ts:119`) | Lowers the table tier. Setting `mature` clears the cap; it does not force mature. |
 | `sessions.content_tier` | `apps/server/migrations/0020_mature_tier.sql:3` | `standard` | Computed each narration | Last committed tier. |
-| `sessions.moderation_verified` | `apps/server/migrations/0020_mature_tier.sql:2` | `false` | No writer on `main`. **Pending:** PR #212 | Required for `mature`. |
-| `sessions.endpoint_allows_mature` | `apps/server/migrations/0033_endpoint_allows_mature_default_false.sql:1` | `false` | Operator, via `PATCH /api/operator/sessions/:id/mature-endpoint` (`apps/server/src/routes/operator.ts:172`) | Required for `mature`. Needs `enabled: true` and the exact `policyAcknowledgement` string. Bound to the narration and moderation endpoint configurations; changing either one invalidates the grant. |
+| `sessions.moderation_verified` | `apps/server/migrations/0020_mature_tier.sql:2` | `false` | Operator grant only, set with `endpoint_allows_mature` (`apps/server/src/routes/operator.ts:220`) | Required for `mature`. Cleared on revoke. |
+| `sessions.endpoint_allows_mature` | `apps/server/migrations/0033_endpoint_allows_mature_default_false.sql:1` | `false` | Operator, via `PATCH /api/operator/sessions/:id/mature-endpoint` (`apps/server/src/routes/operator.ts:172`) | Required for `mature`. Needs `enabled: true`, the exact `policyAcknowledgement` string, and passing narration and `moderate` probes. Stores fingerprints of both endpoint configurations; the grant is enforced only while both still match (`apps/server/src/llm/matureEndpoint.ts:102`). The fingerprint includes the slot, base URL, model, API style, key fingerprint, and last-saved time (`matureEndpoint.ts:86`), so re-saving an endpoint invalidates the grant even if nothing changed. |
 | `SOLO_TURN_ENDPOINT_SLOT` | environment | `fast` (`apps/server/src/routes/tables.ts:343`) | Operator | Endpoint slot used for narration, and the one the mature grant attests. |
 | Moderation endpoint | operator slot `moderate` | not set | Operator, per the [operator guide](../operator-guide.md) | Judges player input (`apps/server/src/safety/inputGate.ts:234`). |
 
@@ -106,13 +108,13 @@ ADR-017 also sets rolling 30-day Postgres backups, so full erasure from backups 
 - **Exports:** ADR-017 says 7 days, and the code matches that value. The code sets the expiry from completion time (`completed_at + 7 days`); ADR-017 does not state an anchor.
 - **Reverted turns:** ADR-017 keeps the hidden transcript from rewind for 30 days. No retention job purges reverted turns in `apps/server/src/retention/jobs/`, so that class is not enforced.
 - **LLM request/response logs:** ADR-017 lists them in the 30-day class. They are not covered by a table or purge job in this guide.
-- **Legal holds on log tables:** ADR-017 says an operator-set hold suspends deletion for the held item. The 30-day log tables ignore holds on `main` (see Legal hold below). **Pending:** PR #213.
+- **Legal holds on log tables:** ADR-017 says an operator-set hold suspends deletion for the held item. The log purge honors holds with the key scope listed under Legal hold below, which the ADR-017 owner decision of 2026-10-15 records. Retained rows still expire once their hold is cleared.
 
 ### Differences from ADR-016 and ADR-026
 
-- **Endpoint-probe default:** ADR-016 says the probe sets `endpoint_allows_mature` to `true`. ADR-026 supersedes this: the column defaults to `false`, and only an operator grant sets it (`apps/server/src/routes/operator.ts:219`). The grant requires a passing probe (`ENDPOINT_PROBE_REQUIRED`) but the probe does not write the flag itself.
+- **Endpoint-probe default:** ADR-016 says the probe sets `endpoint_allows_mature` to `true`. ADR-026 supersedes this: the column defaults to `false`, and only an operator grant sets it (`apps/server/src/routes/operator.ts:220`). The grant requires a passing probe (`ENDPOINT_PROBE_REQUIRED`) but the probe does not write the flag itself.
 - **M3-19 probe:** the endpoint probe (`apps/server/src/llm/probe.ts`, `qualification.ts`) writes no session columns. It does not set `moderation_verified` or `endpoint_allows_mature`.
-- **`moderation_verified`:** ADR-016 requires it for `mature` (ADR-013). No code on `main` writes it. **Pending:** PR #212.
+- **`moderation_verified`:** ADR-016 requires it for `mature` (ADR-013). On `main` only the operator mature grant writes it, together with `endpoint_allows_mature`, after both probes pass (see Status above).
 - **Live re-evaluation:** ADR-016 requires recomputing the predicate at round open and on join, leave, seat change, and opt-out toggles, and broadcasting `ContentTierChanged` live. On `main`, only the narration path recomputes and emits it (`productionTurnRunner.ts:272`, `:685`). Opt-out delivery is re-checked live (`Room.ts:1453`), which covers in-flight chunks only.
 - **Runtime refusal:** ADR-016 says a refusal sets the endpoint flag to `false` and shows a neutral notice. On `main`, a refused attempt re-runs that turn at `standard` (`productionTurnRunner.ts:662-667`). Nothing clears `endpoint_allows_mature`; the only writer is the operator route. A refused endpoint stays eligible for `mature` until an operator revokes the grant.
 
@@ -122,9 +124,13 @@ A legal hold is a row in `legal_holds` with kind `account`, `export`, or `sessio
 
 - account deletion, export purge, and archived-session purge (`apps/server/src/retention/types.ts:16`, `skipIfHeld`), which skip the held item and write a `skipped_legal_hold` audit row;
 - message-report purge, which honors a per-report `legal_hold` flag and a session-level hold (`apps/server/src/retention/jobs/reports.ts:16`);
-- gameplay event purge, which skips events of a session with a session-level hold (`apps/server/migrations/0006_retention.sql`, `purge_expired_events`).
+- gameplay event purge, which skips events of a session with a session-level hold (`apps/server/migrations/0006_retention.sql`, `purge_expired_events`);
+- the 30-day log purge (`purgeLogs`, `apps/server/src/retention/jobs/logs.ts`), which keeps an expired row if any of its hold keys is held. The keys are:
+  - `moderation_log`: a `session` hold on `session_id`, or an `account` hold on `account_id`;
+  - `operator_endpoint_audit`: an `account` hold on `actor_id`;
+  - `x_card_log`: a `session` hold on `session_id` only (no account key).
 
-**Holds do not apply to the 30-day log tables on `main`.** **Pending:** PR #213 would make `purgeLogs` honor holds. `purgeLogs` (`apps/server/src/retention/jobs/logs.ts`) deletes `moderation_log`, `x_card_log`, and `operator_endpoint_audit` rows by `expires_at` with no hold check. An abuse-review item in those tables older than 30 days is deleted even if a hold exists for its session. Do not rely on a hold to preserve moderation or endpoint-audit rows; this is a known gap, to be closed before any hold is set on that data.
+  A row with no matching hold, or with only NULL keys, is purged at `expires_at`. Each held key is audited once as `skipped_legal_hold`.
 
 There is no admin path to set or clear a hold. Holds are managed by direct database action until a follow-up card adds one (ADR-017).
 
@@ -133,7 +139,8 @@ There is no admin path to set or clear a hold. Holds are managed by direct datab
 - Defaults above were read from the migrations and config named in each row.
 - Route paths and the `policyAcknowledgement` string were read from `contentSettings.ts` and `operator.ts`.
 - The moderation endpoint slot was confirmed in `inputGate.ts`.
-- Legal-hold coverage was checked against `purgeLogs` and each `skipIfHeld` call site.
+- Legal-hold coverage was checked against `purgeLogs` (hold keys per table, including the NULL-key rule) and each `skipIfHeld` call site.
+- The mature grant, probe requirements, `moderation_verified` write, and fingerprint enforcement were checked in `operator.ts`, `matureEndpoint.ts`, `tier.ts`, `tierLoader.ts`, and `app.ts`.
 - Account-deletion deferral (`HELD`, `session_lease`), export expiry (`WEEK`), archived-session cutoff, and the absence of claim handling were checked in `accountDeletion.ts`, `exports.ts`, `export.ts`, `sessions.ts`, and the retention and route code.
 - Refusal fallback, the operator-only writer of `endpoint_allows_mature`, and the absence of a `moderation_verified` writer were checked in `productionTurnRunner.ts`, `operator.ts`, and `tierLoader.ts`.
-- Pending items were checked against the titles and draft status of PRs #212 and #213 only. Their code was not read.
+- PRs #212 and #213 are merged; their diffs were read and the affected sections updated.
