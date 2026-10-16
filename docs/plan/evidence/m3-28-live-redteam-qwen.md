@@ -61,5 +61,11 @@ export REDTEAM_SOURCE_COMMIT="$(git rev-parse HEAD)"
 pnpm --filter @game/evals redteam:live
 ```
 
-The live runner is pinned to this local host and writes per-case checkpoints to
-`packages/evals/redteam/recorded/`. The API key is not serialized.
+Run from a clean Git working tree. The runner requires
+`REDTEAM_SOURCE_COMMIT` to equal the checked-out `HEAD` and refuses to make a
+network request if the tree has uncommitted changes. It is pinned to this local
+host and writes per-case checkpoints to
+`packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json`;
+a new run replaces that tracked file. Afterward, inspect and commit the new
+record if it is intended as evidence, or restore the previous record before
+another run so the working tree is clean. The API key is not serialized.
