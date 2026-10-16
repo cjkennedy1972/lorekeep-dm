@@ -47,8 +47,8 @@ An earlier harness version ran 30 iterations against the prior local Qwen endpoi
 |---|---:|---:|---:|---|
 | Input judge | 560 ms | 576 ms | <= 400 ms | Miss |
 | Output gate after model completion | 3,534 ms | 6,012 ms | informational | Total gate duration across all chunks; not a per-chunk latency measurement |
-| First visible narration from `outputStart` (immediately before narration request) | 5,929 ms | 10,039 ms | <= 3,000 ms | Miss |
+| Legacy first-visible narration (timing origin unknown; withdrawn, not an SLO result) | 5,929 ms | 10,039 ms | <= 3,000 ms | Historical diagnostic only |
 
-Sample: 30 iterations; the legacy harness did not request cache hints, and provider-side caching could not be disabled or observed. No tool loop was exercised. This local result is engineering evidence only and does not establish the hosted-reference SLO.
+Sample: 30 iterations; the legacy harness's cache-hint behavior and provider-side cache state are unverified. The timing origin cannot be substantiated from the earlier harness version. No tool loop was exercised. These figures are withdrawn from the SLO result and retained only as historical local diagnostics; they do not establish the hosted-reference SLO.
 
 **Selected endpoint result:** blocked; the corrected 30-run sample is not available. The previous streamed-gate result is invalid for the production-path target. Strict uncached SLO status remains **unverified** until the cache-off configuration is active and the selected model is loadable.
