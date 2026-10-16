@@ -72,7 +72,7 @@ describe('checkHardFloor', () => {
     const measure = (text: string) =>
       medianMs(() => {
         for (let i = 0; i < 3; i++) checkHardFloor(text);
-      }, 5) / 3;
+      }, 11) / 3;
     for (const unit of units) {
       const half = sized(unit, MAX_INPUT_CHARS / 2);
       const full = sized(unit, MAX_INPUT_CHARS);
