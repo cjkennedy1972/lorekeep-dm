@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,13 @@ const apiKey = process.env.EVAL_API_KEY;
 if (!apiKey) throw new Error('EVAL_API_KEY is required');
 if (!/^[0-9a-f]{40}$/i.test(sourceCommit ?? ''))
   throw new Error('REDTEAM_SOURCE_COMMIT must be a full 40-character Git SHA');
+const checkoutCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+  encoding: 'utf8',
+}).trim();
+if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
+  throw new Error(
+    'REDTEAM_SOURCE_COMMIT must match the checked-out source SHA',
+  );
 const endpointUrl = checkLiveUrl(baseUrl);
 if (endpointUrl.host !== '172.31.25.75:8080')
   throw new Error('This run is pinned to the documented local Qwen endpoint');

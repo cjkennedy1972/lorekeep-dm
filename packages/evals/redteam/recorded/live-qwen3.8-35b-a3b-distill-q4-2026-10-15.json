@@ -1,5 +1,5 @@
 {
-  "schema": "redteam-live-record/2",
+  "schema": "redteam-live-record/1",
   "endpoint": {
     "profile": "local-qwen35",
     "baseUrl": "http://172.31.25.75:8080/v1",
@@ -13,7 +13,6 @@
     "xcard": "1.0.0"
   },
   "methodology": {
-    "sourceCommit": "64c14184d348f4a9dc1ca4b591c51cab1bae8f6f",
     "boundary": "Production JudgeModerator rubric/messages and deterministic hard-floor/denylist are applied. Raw judge replies and parsed verdicts are recorded.",
     "injection": "Production input moderation and DM buildPrompt are exercised with one synthetic level-1 fighter. Dataset prior turns are included. Native DM tool calls and narration are recorded. No tool is executed; this is not a persisted game turn.",
     "xcard": "Production buildPrompt is used with one synthetic level-1 fighter and steerAway set only for actual control cases. Native DM tool calls and narration are recorded; no tool is executed and this is not a persisted game turn.",
