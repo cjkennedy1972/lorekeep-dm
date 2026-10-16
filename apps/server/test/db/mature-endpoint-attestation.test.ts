@@ -87,10 +87,9 @@ describe('operator mature endpoint attestation', () => {
   }
 
   async function moderationVerified() {
-    const { rows } = await database.pool.query<{ moderation_verified: boolean }>(
-      'SELECT moderation_verified FROM sessions WHERE id=$1',
-      [sessionId],
-    );
+    const { rows } = await database.pool.query<{
+      moderation_verified: boolean;
+    }>('SELECT moderation_verified FROM sessions WHERE id=$1', [sessionId]);
     return rows[0]?.moderation_verified;
   }
 
