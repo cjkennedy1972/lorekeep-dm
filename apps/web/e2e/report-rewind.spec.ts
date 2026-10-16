@@ -24,13 +24,34 @@ test('report and rewind banner are reachable with the keyboard', async ({
   });
   const report = page.getByRole('button', { name: 'Report this message' });
   const narrationReport = report.first();
+  const rewind = page.getByRole('button', { name: 'Deliver rewind event' });
+  await narrationReport.focus();
+  await expect(narrationReport).toBeFocused();
+  await rewind.focus();
+  await expect(rewind).toBeFocused();
   await narrationReport.focus();
   await expect(narrationReport).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(
     page.getByRole('form', { name: 'Report message' }),
   ).toBeVisible();
-  await page.getByLabel('Category').selectOption('harassment');
+  const category = page.getByLabel('Category');
+  await expect(category).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Optional details')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(
+    page.getByRole('button', { name: 'Submit report' }),
+  ).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(
+    page.getByRole('button', { name: 'Submit report' }),
+  ).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByLabel('Optional details')).toBeFocused();
+  await category.selectOption('harassment');
   await page.getByLabel('Optional details').fill('Needs review');
   await page.getByRole('button', { name: 'Submit report' }).focus();
   await page.keyboard.press('Enter');
@@ -47,7 +68,7 @@ test('report and rewind banner are reachable with the keyboard', async ({
     reason: 'Needs review',
   });
 
-  await page.getByRole('button', { name: 'Deliver rewind event' }).focus();
+  await rewind.focus();
   await page.keyboard.press('Enter');
   const banner = page.locator('.narration-log__rewind');
   await expect(banner).toContainText('The host rewound the last DM turn');

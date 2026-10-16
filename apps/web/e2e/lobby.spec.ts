@@ -42,6 +42,34 @@ test('keyboard-only: create a table, copy the invite, two players see each other
   // A solo game opens on the Game screen; this suite exercises the lobby, one URL up.
   await page.getByRole('heading', { name: 'Keyboard Keep' }).waitFor();
 
+  const contentTier = page.getByRole('combobox', {
+    name: 'Table content tier',
+  });
+  const optOut = page.getByRole('checkbox', {
+    name: 'Opt out of mature content',
+  });
+  const inviteLink = page.getByLabel('Invite link');
+  const copyInvite = page.getByRole('button', { name: 'Copy invite link' });
+  const regenerate = page.getByRole('button', { name: 'Regenerate link' });
+  await contentTier.focus();
+  await expect(contentTier).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(optOut).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(inviteLink).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(copyInvite).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(regenerate).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(copyInvite).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(inviteLink).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(optOut).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(contentTier).toBeFocused();
+
   await page.getByRole('button', { name: 'Copy invite link' }).focus();
   await page.keyboard.press('Enter');
   await expect(

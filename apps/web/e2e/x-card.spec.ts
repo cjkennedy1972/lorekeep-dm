@@ -57,6 +57,25 @@ test('keyboard X-card is anonymous and pause is visible to every seat', async ({
       await expect(page.getByText('Connected')).toBeVisible();
     }
 
+    const hostSafety = hostPage.getByRole('region', {
+      name: 'Safety controls',
+    });
+    const lobbyLink = hostPage.getByRole('link', { name: 'Back to lobby' });
+    await lobbyLink.focus();
+    await expect(lobbyLink).toBeFocused();
+    await hostPage.keyboard.press('Tab');
+    await expect(
+      hostSafety.getByRole('button', { name: 'X-card (anonymous)' }),
+    ).toBeFocused();
+    await hostPage.keyboard.press('Tab');
+    await expect(
+      hostSafety.getByRole('button', { name: 'Pause table' }),
+    ).toBeFocused();
+    await hostPage.keyboard.press('Shift+Tab');
+    await expect(
+      hostSafety.getByRole('button', { name: 'X-card (anonymous)' }),
+    ).toBeFocused();
+
     const xCard = guestPage.getByRole('button', { name: 'X-card (anonymous)' });
     await xCard.focus();
     await guestPage.keyboard.press('Enter');
