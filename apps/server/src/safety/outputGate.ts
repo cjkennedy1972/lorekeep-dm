@@ -11,6 +11,10 @@ import {
 export const SAFE_REDIRECT_TEMPLATE =
   'The narrator pauses, and the scene turns to the next thing the party notices.';
 
+/** Authored narration used when an X-card steer is pending; never asks the LLM to interpret it. */
+export const X_CARD_REDIRECT_TEMPLATE =
+  'The story shifts to a calm, safe scene. What would you like to focus on now?';
+
 export const MAX_REGENERATIONS = 2;
 export const DEFAULT_MAX_IN_FLIGHT = 2;
 export const DEFAULT_MAX_CHUNK_CHARS = 400;
