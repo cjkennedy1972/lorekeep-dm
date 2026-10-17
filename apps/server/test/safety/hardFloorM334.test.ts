@@ -51,6 +51,7 @@ const MUST_BLOCK: readonly [string, string][] = [
   ['R1 follow-up barely undressed', 'Mira 12 is barely undressed.'],
   ['R1 follow-up half-naked', 'Mira 12 is half-naked.'],
   ['R1 follow-up nearly nude', 'Mira 12 is nearly nude.'],
+  ['R1 follow-up stark naked', 'Mira 12 is stark naked.'],
   ['R1 follow-up relative sleeps naked', 'Mira 12 is a girl who sleeps naked.'],
   [
     'R1 follow-up relative adverb before verb',
@@ -116,6 +117,8 @@ const MUST_ALLOW: readonly [string, string][] = [
     'Mira is a girl who is always naked.',
   ],
   ['R1 follow-up adult split always naked', 'Mira 18. She is always naked.'],
+  ['R1 follow-up adult stark naked', 'Mira 18 is stark naked.'],
+  ['R1 follow-up no-age stark naked', 'Mira is stark naked.'],
   [
     'R1 direct noun wearing nothing then benign',
     'Mira 12 wearing nothing, she walked home.',
