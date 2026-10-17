@@ -112,6 +112,7 @@ export class Room {
   private reactionTimer?: NodeJS.Timeout;
   private turnInFlight = false;
   private turnAbort?: AbortController;
+  private turnAccountId?: string;
   private matureDelivery: Promise<void> = Promise.resolve();
   private readonly pendingActions = new Set<string>();
   private activeTurn: Promise<void> = Promise.resolve();
@@ -347,7 +348,9 @@ export class Room {
         connection?.close?.(1000, 'Left the table');
         return;
       }
-      if (this.turnInFlight) this.turnAbort?.abort();
+      if (this.turnInFlight && this.turnAccountId === accountId)
+        this.turnAbort?.abort();
+      this.withdrawQueuedFor(accountId);
       await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
       this.state = {
         ...this.state,
@@ -911,11 +914,21 @@ export class Room {
     ) {
       const action = this.queuedActions.shift();
       if (!action) continue;
+      if (!this.state.seats.some((seat) => seat.accountId === action.accountId)) {
+        this.pendingActions.delete(action.actionId);
+        this.broadcast({
+          seq: this.seq,
+          type: 'ActionWithdrawn',
+          payload: { actionId: action.actionId },
+        } as ServerMessage);
+        continue;
+      }
       this.broadcast({
         seq: this.seq,
         type: 'TurnThinking',
         payload: { actionId: action.actionId },
       } as ServerMessage);
+      this.turnAccountId = action.accountId;
       try {
         await this.resolveTurn(
           action.accountId,
@@ -968,7 +981,22 @@ export class Room {
           payload: { actionId: action.actionId },
         } as ServerMessage);
       }
+    this.turnAccountId = undefined;
     this.turnInFlight = false;
+  }
+
+  private withdrawQueuedFor(accountId: string): void {
+    for (let i = this.queuedActions.length - 1; i >= 0; i--) {
+      const action = this.queuedActions[i]!;
+      if (action.accountId !== accountId) continue;
+      this.queuedActions.splice(i, 1);
+      this.pendingActions.delete(action.actionId);
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionWithdrawn',
+        payload: { actionId: action.actionId },
+      } as ServerMessage);
+    }
   }
 
   private async resolveTurn(

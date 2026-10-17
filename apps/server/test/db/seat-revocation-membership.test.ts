@@ -69,7 +69,7 @@ describe('current membership after voluntary leave', () => {
     expect(await memberOf(stranger)).toBe(false);
   });
 
-  it('a valid invite permits rejoining after revocation; history alone does not', async () => {
+  it('a valid invite code is independent of seat membership across revocation', async () => {
     const code = randomBytes(16).toString('base64url');
     await db.query('UPDATE sessions SET invite_hash=$2 WHERE id=$1', [
       room,
