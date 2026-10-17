@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkLiveUrl } from '../dist/live.js';
 import { generateWithBuiltPrompt } from '../redteam/prompt-messages.mjs';
+import { assertPinnedHost } from '../redteam/endpoint-pin.mjs';
 import { DMToolArgsSchema } from '../../../packages/schema/dist/dm-tools.js';
 import { buildPrompt, zodSchema } from '../../../apps/server/dist/dm/prompt.js';
 import {
@@ -42,8 +43,7 @@ if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
 if (checkoutChanges)
   throw new Error('The live runner requires a clean Git working tree');
 const endpointUrl = checkLiveUrl(baseUrl);
-if (endpointUrl.host !== new URL(baseUrl).host)
-  throw new Error('This run is pinned to the documented local Qwen endpoint');
+assertPinnedHost(endpointUrl.host, process.env.REDTEAM_EXPECTED_HOST);
 const RETRYABLE_HTTP_STATUSES = new Set([400, 429]);
 const HTTP_RETRY_DELAY_MS = 250;
 
