@@ -42,6 +42,8 @@ if (checkoutChanges)
 const endpointUrl = checkLiveUrl(baseUrl);
 if (endpointUrl.host !== '172.31.25.75:8080')
   throw new Error('This run is pinned to the documented local Qwen endpoint');
+const RETRYABLE_HTTP_STATUSES = new Set([400, 429]);
+const HTTP_RETRY_DELAY_MS = 250;
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const load = async (name) =>
@@ -101,29 +103,42 @@ const output = {
       'Authoritative steer-away control cases call the production runTurn orchestrator with an adapter that fails the case if invoked; the authored redirect passes through the production output gate. Text-only control claims remain live-model probes. No game state is persisted.',
     outputModeration:
       'Model-generated narration and authored steer-away redirects are passed through the production moderation rubric in output direction. This harness records verdicts but does not emit narration to a player.',
+    retryPolicy:
+      'At most one retry is made after HTTP 400, 429, or 5xx responses; the case records the total retry count.',
   },
   cases: [],
 };
 
 async function chat(messages, extra = {}) {
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    redirect: 'error',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      max_tokens: 512,
-      messages,
-      ...extra,
-    }),
-    signal: AbortSignal.timeout(120_000),
+  const body = JSON.stringify({
+    model,
+    temperature: 0,
+    max_tokens: 512,
+    messages,
+    ...extra,
   });
-  if (!response.ok)
-    throw new Error(`endpoint returned HTTP ${response.status}`);
+  let retryCount = 0;
+  let response;
+  for (;;) {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body,
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (response.ok) break;
+    const retryable =
+      RETRYABLE_HTTP_STATUSES.has(response.status) || response.status >= 500;
+    if (!retryable || retryCount > 0)
+      throw new Error(`endpoint returned HTTP ${response.status}`);
+    await response.arrayBuffer();
+    retryCount++;
+    await new Promise((resolve) => setTimeout(resolve, HTTP_RETRY_DELAY_MS));
+  }
   const data = await response.json();
   const choice = data.choices?.[0];
   if (!choice?.message) throw new Error('endpoint returned no chat message');
@@ -135,6 +150,7 @@ async function chat(messages, extra = {}) {
     })),
     finishReason: choice.finish_reason ?? null,
     usage: data.usage ?? null,
+    retryCount,
   };
 }
 
@@ -166,6 +182,7 @@ async function moderate({ text, tier, direction, tableLines = [] }) {
     unavailable: !parsed,
     raw: result.content,
     finishReason: result.finishReason,
+    retryCount: result.retryCount,
   };
 }
 
@@ -274,7 +291,11 @@ for (const c of datasets.injection.cases) {
         direction: 'input',
       });
       if (inputVerdict.verdict === 'block')
-        return { inputVerdict, dmSkipped: true };
+        return {
+          inputVerdict,
+          dmSkipped: true,
+          requestRetries: inputVerdict.retryCount ?? 0,
+        };
       const sceneSummary =
         'The party stands at a guarded crossroads outside a small walled town.';
       const prompt = promptFor({
@@ -302,6 +323,10 @@ for (const c of datasets.injection.cases) {
         toolCalls: generation.toolCalls,
         finishReason: generation.finishReason,
         outputVerdict,
+        requestRetries:
+          (inputVerdict.retryCount ?? 0) +
+          generation.retryCount +
+          (outputVerdict?.retryCount ?? 0),
       };
     },
   );
@@ -413,6 +438,10 @@ for (const c of datasets.xcard.cases) {
             unavailable: outputUnavailable,
           },
           outputVerdicts,
+          requestRetries: outputVerdicts.reduce(
+            (total, verdict) => total + (verdict.retryCount ?? 0),
+            0,
+          ),
           engineEvents: result.events,
           redirectTemplateUsed:
             finalNarration === X_CARD_REDIRECT_TEMPLATE ||
@@ -441,6 +470,8 @@ for (const c of datasets.xcard.cases) {
         toolCalls: generation.toolCalls,
         finishReason: generation.finishReason,
         outputVerdict,
+        requestRetries:
+          generation.retryCount + (outputVerdict?.retryCount ?? 0),
       };
     },
   );
