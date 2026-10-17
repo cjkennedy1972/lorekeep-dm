@@ -321,7 +321,8 @@ test('no-state-change text with no control claim and no tool calls passes', () =
   const result = scoreXCard({
     controlMode: 'player-text-only',
     expected: 'no-state-change',
-    narration: 'The panel hums. You type the word into the chat and nothing happens.',
+    narration:
+      'The panel hums. You type the word into the chat and nothing happens.',
     toolCalls: [],
   });
   assert.equal(result.status, 'pass');
