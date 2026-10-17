@@ -56,7 +56,12 @@ export function installGateway(
     '/api/ws-ticket',
     {
       onRequest: async (request, reply) => {
-        if (request.headers.origin && validHttpOrigin(request)) return;
+        const origin = request.headers.origin;
+        const allowed = (process.env.WS_ALLOWED_ORIGINS ?? '')
+          .split(',')
+          .map((item) => item.trim());
+        if (origin && (validHttpOrigin(request) || allowed.includes(origin)))
+          return;
         return reply.code(403).send({ error: 'origin' });
       },
     },

@@ -1079,6 +1079,11 @@ export class Room {
     await this.matureDelivery;
     // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
     await this.enqueue(async () => {
+      if (
+        turnAbort.signal.aborted ||
+        !this.state.seats.some((seat) => seat.accountId === accountId)
+      )
+        throw new XCardAbortError();
       // Endpoint fallback invalidates all partial engine effects; only successful results are saved.
       if (result.fallback !== 'endpoint-error') {
         const turnId = result.events.find(

@@ -20,13 +20,18 @@ const settle = async () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
 };
 
-function setup(requests: SoloTurnRequest[], firstTurnGate?: Promise<void>) {
+function setup(
+  requests: SoloTurnRequest[],
+  firstTurnGate?: Promise<void>,
+  writes: string[] = [],
+) {
   const events: StoredEvent[] = [];
   const store = {
     async loadLatest(): Promise<LatestState> {
       return { snapshot: null, events: [] };
     },
     async writeTurn(_id: string, inputs: StoredEvent[]) {
+      writes.push(...inputs.map((input) => input.type));
       const stored = inputs.map((input, index) => ({
         ...input,
         seq: events.length + index + 1,
@@ -116,5 +121,30 @@ describe('seat revocation and the action queue', () => {
 
     expect(requests).toHaveLength(1);
     expect(requests[0]!.signal.aborted).toBe(true);
+  });
+
+  it('leaving after the pre-commit abort check does not commit the leaver’s turn', async () => {
+    const requests: SoloTurnRequest[] = [];
+    const writes: string[] = [];
+    const room = setup(requests, undefined, writes);
+    const owner = randomUUID();
+    const leaver = randomUUID();
+    await joinSeated(room, owner, recorder(), 'Owner');
+    await joinSeated(room, leaver, recorder(), 'Leaver');
+
+    let releaseMature!: () => void;
+    (room as unknown as { matureDelivery: Promise<void> }).matureDelivery =
+      new Promise<void>((resolve) => (releaseMature = resolve));
+
+    await room.submitAction(leaver, randomUUID(), 'Pick the lock.', 'Leaver');
+    await settle();
+    expect(requests).toHaveLength(1);
+    await room.leave(leaver);
+    releaseMature();
+    await settle();
+
+    expect(writes).not.toContain('ActionAccepted');
+    expect(writes).not.toContain('GameStateCommitted');
+    expect(room.state.seats.map((seat) => seat.accountId)).toEqual([owner]);
   });
 });

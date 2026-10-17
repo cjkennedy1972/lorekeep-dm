@@ -53,10 +53,19 @@ describe('POST /api/ws-ticket origin check', () => {
     expect(await postTicket('http://evil.example.test')).toBe(403);
   });
 
-  it('does not let WS_ALLOWED_ORIGINS bypass the HTTP scheme+host check', async () => {
-    process.env.WS_ALLOWED_ORIGINS = `https://${host},https://web.example.test`;
+  it('accepts an exact WS_ALLOWED_ORIGINS full origin from another host', async () => {
+    process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test';
+    expect(await postTicket('https://web.example.test')).toBe(401);
+  });
+
+  it('keeps the scheme+host check for same-host origins with WS_ALLOWED_ORIGINS set', async () => {
+    process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test';
     expect(await postTicket(`https://${host}`)).toBe(403);
-    expect(await postTicket('https://web.example.test')).toBe(403);
     expect(await postTicket(`http://${host}`)).toBe(401);
+  });
+
+  it('does not match a WS_ALLOWED_ORIGINS entry with a trailing slash', async () => {
+    process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test';
+    expect(await postTicket('https://web.example.test/')).toBe(403);
   });
 });
