@@ -62,6 +62,22 @@ describe('retention stale log line', () => {
     await logRetentionStale(dbWith(fresh), log, now);
     expect(log).not.toHaveBeenCalled();
   });
+
+  it('writes one JSON line through the default consoleLog', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await logRetentionStale(dbWith());
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(spy.mock.calls[0]![0]))).toMatchObject({
+        component: 'retention',
+        job: 'health',
+        event: 'stale',
+        cause: 'sweep_incomplete',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe('legal-hold stub', () => {
