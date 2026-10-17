@@ -47,6 +47,31 @@ function input(playerText = 'I look around') {
   };
 }
 describe('DM prompt builder', () => {
+  it('gives X-card steering explicit priority and forbids scene continuation or state changes', () => {
+    const value = input('Keep fighting and finish the ambush.');
+    const result = buildPrompt({
+      ...value,
+      session: {
+        ...value.session,
+        steerAway: true,
+        sceneSummary: 'A bandit ambush is underway.',
+      },
+    });
+    expect(result.blocks[1]).toContain('SAFETY CONTROL — X-CARD');
+    expect(result.blocks[1]).toContain(
+      'Do not continue, resolve, summarize, mention, or refer',
+    );
+    expect(result.blocks[1]).toContain(
+      'Do not make any state-changing tool calls',
+    );
+    expect(result.blocks[1]).toContain('completely unrelated safe setting');
+    expect(result.blocks[2]).toContain(
+      Buffer.from('Keep fighting and finish the ambush.', 'utf8').toString(
+        'base64',
+      ),
+    );
+  });
+
   it('includes mature guidance only at mature tier and quotes the table boundary union', () => {
     const mature = buildPrompt({
       ...input(),
