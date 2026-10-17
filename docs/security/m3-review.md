@@ -6,12 +6,12 @@
 
 ## Executive result
 
-**M3-34 is not ready to close.** One High finding bypasses both the deterministic hard floor and the downstream judge on user-controlled character text that is rendered to players. A fix task is open and assigned. A second High deterministic hard-floor miss (R1) now has a proposed fix in draft PR #225; CI and Sentinel review are not yet confirmed. Four more hard-floor misses (R2–R5) were reproduced, but this review did **not** establish that the downstream judge accepts them; they are recorded as Medium defense-in-depth gaps, not proven end-to-end bypasses.
+**M3-34 is not ready to close.** One High finding bypasses both the deterministic hard floor and the downstream judge on user-controlled character text that is rendered to players. A fix task is open and assigned. A second deterministic hard-floor miss (R1) now has a proposed fix in draft PR #225; CI and Sentinel review are not yet confirmed. Four more hard-floor misses (R2–R5) were reproduced, but this review did **not** establish that the downstream judge accepts them; they are recorded as Medium defense-in-depth gaps, not proven end-to-end bypasses.
 
 | ID | Severity | Finding | Disposition |
 |---|---|---|---|
-| R7 | High | Custom character condition text is accepted and rendered without either moderation layer seeing it. | Fix task [f344614c-52d6-42cd-9293-b17d90c13844](https://github.com/cjkennedy1972/lorekeep-dm/issues/0) is assigned to Forge; implementation pending. |
-| R1 | High, deterministic-layer gap | `Mira 12 is sexual/naked.` missed the hard floor. | Fix proposed in draft [PR #225](https://github.com/cjkennedy1972/lorekeep-dm/pull/225), head `d4b196520030b0621a78ef8fedf8c55e7c85482b`; Forge reports 908 safety tests passing. Hosted CI and Sentinel exact-head verdict pending; Bastion's static GO has two advisories. |
+| R7 | High | Custom character condition text is accepted and rendered without either moderation layer seeing it. | Fix task Workboard task `f344614c-52d6-42cd-9293-b17d90c13844` is assigned to Forge; implementation pending. |
+| R1 | Medium, deterministic-layer gap | `Mira 12 is sexual/naked.` missed the hard floor. | Fix proposed in draft [PR #225](https://github.com/cjkennedy1972/lorekeep-dm/pull/225), head `d4b196520030b0621a78ef8fedf8c55e7c85482b`; Forge reports 908 safety tests passing. Hosted CI and Sentinel exact-head verdict pending; Bastion's static GO has two advisories. |
 | R2–R5 | Medium, deterministic-layer gaps | Symbol substitution, doubled letters, separated age phrase, and missing `unclothe` term miss the hard floor. | No downstream-judge bypass proven and no independent implementation task opened in this review. Track with red-team threshold evidence; do not claim the hard floor catches these forms. |
 | R8 | Medium, conditional reachability | Nested checkpoint snapshots can retain moderated/private prose in serialized client state. | No production caller of `saveCheckpoint()` was found; reachability remains unproven. Fix projection before adding a production caller. |
 | R6 | Low | Hard-floor security documentation has stale filename, input scope, and size limit. | Documentation correction recommended. |
@@ -52,6 +52,8 @@ The same standalone term is blocked by `checkHardFloor("loli")`. In this route, 
 **Required disposition:** Validate every user-controlled displayed condition field before persistence/rendering (including `source`, not only the ID), and add a malicious-condition rejection plus legitimate-condition control. The assigned fix task is [f344614c-52d6-42cd-9293-b17d90c13844](https://github.com/cjkennedy1972/lorekeep-dm/issues/0). No HTTP/database/browser mutation was performed in this review; route and UI reachability are established by source tracing.
 
 ## Hard-floor findings R1–R5
+
+These are Medium findings because no downstream-judge bypass was proven; this classification reflects defense-in-depth gaps, not demonstrated end-to-end acceptance. The owner may apply a different explicit project severity policy, but it must be stated as such.
 
 Each input was checked with `checkHardFloor(text)`, a turn-scoped scanner using one whole-text push followed by `finish()`, and one-character-at-a-time pushes followed by `finish()`. The following forms missed the deterministic floor:
 
