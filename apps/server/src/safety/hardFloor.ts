@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-17.16';
+export const HARD_FLOOR_VERSION = '2026-10-17.17';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -554,11 +554,11 @@ const MAX_TERM_CHARS = 24;
 
 const PROXIMITY = HARD_FLOOR_RULES['minor-sexual.proximity'];
 const UNIT_AFTER = `(?!\\s*(?:${[...QUANTITY_UNITS].join('|')})${WORD_END})`;
-const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:(?:is|was|are|were|am)[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.adultMarkers.join('|')})[^\\p{L}\\p{N}]+)?(?:and\\s+)?(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
+const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:(?:is|was|are|were|am|get|gets|got|getting)[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.adultMarkers.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.personNouns.join('|')})[^\\p{L}\\p{N}]+(?:who|that)[^\\p{L}\\p{N}]+(?:(?:is|was|are|were|am)[^\\p{L}\\p{N}]+)?)?(?:and\\s+)?(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
 /**
  * "Mira 12, ..." / "Mira; 12 ..." after a letter. Punctuation separators need no tail;
- * a bare space needs a sexual or undress word right after the number (plus optional "and"),
- * so "rolled a 15 to seduce" and "Two girls and 9 goblins" stay allowed.
+ * a bare space needs a bounded sexual/undress predicate after the number, so "rolled a 15
+ * to seduce" and "Two girls and 9 goblins" stay allowed.
  */
 const NAME_AGE = new RegExp(
   `(\\p{L})(?:\\s*[^\\p{L}\\p{N}\\s]{1,3}\\s*${AGE_NUMBER}${WORD_END}${UNIT_AFTER}|\\s+${AGE_NUMBER}${WORD_END}${SEXUAL_AFTER})`,
@@ -812,6 +812,7 @@ export function scanFlags(
   const base = words.map((w) => variants(w)[0]!);
   let minor = false;
   let sexual = false;
+  const hasExplicitMinorCue = base.includes('minorage');
   for (let s = from; s < to; s++) {
     let joined = '';
     for (let e = s; e < Math.min(words.length, s + MAX_JOIN); e++) {
@@ -862,7 +863,7 @@ export function scanFlags(
           sexualHere = true;
         else if (
           inIndex(UNDRESS, w) &&
-          !(next === 'for' && base[e + 2] === 'bed')
+          !(next === 'for' && base[e + 2] === 'bed' && !hasExplicitMinorCue)
         )
           sexualHere = true;
         else if (w === 'love' && inIndex(MAKE, prev)) sexualHere = true;

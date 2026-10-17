@@ -11,8 +11,14 @@ const MUST_BLOCK: readonly [string, string][] = [
     'Mira 12 is an adult and naked.',
   ],
   ['M334 name age article sexual term', 'Mira 12 is a sexy girl.'],
+  [
+    'M334 name age relative-clause sexual predicate',
+    'Mira 12 is a girl who is naked.',
+  ],
   ['M334 name age copula undressed', 'Mira 12 is undressed.'],
   ['M334 name age undresses', 'Mira 12 undresses.'],
+  ['M334 name age gets undressed', 'Mira 12 gets undressed.'],
+  ['M334 explicit age bed undressing', 'Mira 12 is undressed for bed.'],
   ['M334 name age article undressed', 'Mira 12 is an undressed girl.'],
   ['M334 name age was naked', 'Mira 12 was naked.'],
   ['M334 name age are nude', 'Mira 12 are nude.'],
@@ -26,7 +32,6 @@ const MUST_ALLOW: readonly [string, string][] = [
   ['M334 count with adult noun', 'Two girls and 9 goblins attack the inn.'],
   ['M334 aged adult guard is tired', 'The guard, aged 12, is tired.'],
   ['M334 undressed for bed without minor age', 'Mira got undressed for bed.'],
-  ['M334 explicit routine bedtime undressing', 'Mira 12 is undressed for bed.'],
 ];
 
 describe('M3-34 hard-floor copula after bare name age', () => {
