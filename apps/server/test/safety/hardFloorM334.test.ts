@@ -6,6 +6,10 @@ const MUST_BLOCK: readonly [string, string][] = [
   ['M334 name age copula sexual', 'Mira 12 is sexual.'],
   ['M334 name age copula naked', 'Mira 12 is naked.'],
   ['M334 name age adult-marker and naked', 'Mira 12 is grown and naked.'],
+  [
+    'M334 name age article adult-marker and naked',
+    'Mira 12 is an adult and naked.',
+  ],
   ['M334 name age was naked', 'Mira 12 was naked.'],
   ['M334 name age are nude', 'Mira 12 are nude.'],
   ['M334 name age is sexy, lowercase', 'mira 12 is sexy.'],
