@@ -914,7 +914,9 @@ export class Room {
     ) {
       const action = this.queuedActions.shift();
       if (!action) continue;
-      if (!this.state.seats.some((seat) => seat.accountId === action.accountId)) {
+      if (
+        !this.state.seats.some((seat) => seat.accountId === action.accountId)
+      ) {
         this.pendingActions.delete(action.actionId);
         this.broadcast({
           seq: this.seq,

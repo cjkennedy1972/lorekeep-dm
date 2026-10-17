@@ -94,9 +94,7 @@ describe('seat revocation and the action queue', () => {
     release();
     await settle();
 
-    expect(requests.map((request) => request.text)).toEqual([
-      'Open the door.',
-    ]);
+    expect(requests.map((request) => request.text)).toEqual(['Open the door.']);
     expect(requests[0]!.signal.aborted).toBe(false);
   });
 
