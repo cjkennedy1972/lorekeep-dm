@@ -39,6 +39,21 @@ const MUST_BLOCK: readonly [string, string][] = [
   ['R1 relative clause undresses', 'Mira 12 is a girl who undresses.'],
   ['R1 split sentence bed undress', 'Mira 12. She undresses for bed.'],
   ['R1 split sentence copula naked', 'Mira 12 is a girl. She is naked.'],
+  ['R2 generic ly adverb relative', 'Mira 12 is a girl who is always naked.'],
+  ['R2 generic ly adverb split', 'Mira 12 is a girl. She is always naked.'],
+  ['R2 almost naked', 'Mira 12 is almost naked.'],
+  ['R2 barely undressed', 'Mira 12 is barely undressed.'],
+  ['R2 half-naked', 'Mira 12 is half-naked.'],
+  ['R2 nearly nude', 'Mira 12 is nearly nude.'],
+  ['R2 relative sleeps naked', 'Mira 12 is a girl who sleeps naked.'],
+  [
+    'R2 relative adverb before verb',
+    'Mira 12 is a girl who just became naked.',
+  ],
+  ['R2 possessive body subject', 'Mira 12. Her body is naked.'],
+  ['R2 repeated name subject', 'Mira 12 is a girl. Mira is naked.'],
+  ['R2 leading then subject', 'Mira 12 is a girl. Then she is naked.'],
+  ['R2 one intervening sentence', 'Mira 12. The sun rose. She is naked.'],
   [
     'R1 split sentence adjective naked',
     'Mira 12 is a lovely girl. She is naked.',
@@ -58,6 +73,15 @@ const MUST_ALLOW: readonly [string, string][] = [
   ['R1 split sentence adult age numeral', 'Mira 18. She is naked.'],
   ['R1 split sentence adult age word', 'Mira eighteen. She is naked.'],
   ['R1 split sentence no age', 'Mira is a girl. She is naked.'],
+  ['R2 adult possessive body', 'Mira 18. Her body is naked.'],
+  ['R2 adult repeated name', 'Mira 18. Mira is naked.'],
+  ['R2 benign then subject', 'Mira 12 is a girl. Then she walked home.'],
+  ['R2 benign repeated name', 'Mira 12 is a girl. Mira ate lunch.'],
+  [
+    'R2 two intervening sentences bound',
+    'Mira 12 is a girl. The sun rose. The bell rang. She is naked.',
+  ],
+  ['R2 adult intervening sentence', 'Mira 18. The sun rose. She is naked.'],
 ];
 
 describe('M3-34 hard-floor copula after bare name age', () => {
