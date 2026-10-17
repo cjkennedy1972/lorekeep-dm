@@ -15,6 +15,8 @@ const MUST_BLOCK: readonly [string, string][] = [
 const MUST_ALLOW: readonly [string, string][] = [
   ['M334 dice roll then sexy verb', 'Mira rolled a 15 to seduce the guard.'],
   ['M334 count with adult noun', 'Two girls and 9 goblins attack the inn.'],
+  ['M334 grown adult then naked-term', 'Mira 12 is grown and naked.'],
+  ['M334 aged adult guard is tired', 'The guard, aged 12, is tired.'],
 ];
 
 describe('M3-34 hard-floor copula after bare name age', () => {
