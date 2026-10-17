@@ -55,9 +55,24 @@ describe('account deletion redacts seat linkage without reusing seat ids as plac
         [
           session,
           randomUUID(),
-          { seatId: randomUUID(), accountId: heir, displayName: 'Heir', presence: 'offline' },
-          { seatId: currentSeat, accountId: gone, displayName: 'Acct', presence: 'offline' },
-          { seatId: revokedSeat, accountId: gone, displayName: 'Acct', presence: 'offline' },
+          {
+            seatId: randomUUID(),
+            accountId: heir,
+            displayName: 'Heir',
+            presence: 'offline',
+          },
+          {
+            seatId: currentSeat,
+            accountId: gone,
+            displayName: 'Acct',
+            presence: 'offline',
+          },
+          {
+            seatId: revokedSeat,
+            accountId: gone,
+            displayName: 'Acct',
+            presence: 'offline',
+          },
           { seatId: revokedSeat, accountId: gone },
         ],
       );
@@ -71,7 +86,9 @@ describe('account deletion redacts seat linkage without reusing seat ids as plac
         log: () => {},
       });
       expect(result?.accounts.failed).toBe(0);
-      expect(await q('SELECT 1 FROM accounts WHERE id=$1', [gone])).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM accounts WHERE id=$1', [gone]),
+      ).toHaveLength(0);
 
       const [current] = await q(
         "SELECT payload->>'accountId' AS account_id FROM events WHERE session_id=$1 AND seq=2",

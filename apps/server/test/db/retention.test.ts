@@ -333,7 +333,10 @@ describe('retention sweeper (Postgres)', () => {
         shared,
       ])
     )[0].payload;
-    expect(ev).toMatchObject({ displayName: 'Deleted player', anonymized: true });
+    expect(ev).toMatchObject({
+      displayName: 'Deleted player',
+      anonymized: true,
+    });
     expect(ev.accountId).not.toBe(gone);
     expect(ev.accountId).not.toBe(seatId);
     expect(

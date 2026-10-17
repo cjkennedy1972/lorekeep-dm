@@ -285,8 +285,11 @@ async function deleteAccount(
     if (!placeholder) {
       do placeholder = randomUUID();
       while (
-        (await client.query('SELECT 1 FROM accounts WHERE id=$1', [placeholder]))
-          .rowCount
+        (
+          await client.query('SELECT 1 FROM accounts WHERE id=$1', [
+            placeholder,
+          ])
+        ).rowCount
       );
       placeholders.set(sessionId, placeholder);
     }
