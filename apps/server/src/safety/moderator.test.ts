@@ -202,6 +202,35 @@ describe('injection resistance', () => {
       '<table_lines>\n"no spiders"\n</table_lines>',
     );
   });
+
+  it('frames every listed table line as a binding constraint at every tier', () => {
+    for (const tier of ['family', 'standard', 'mature'] as const) {
+      const [system] = buildJudgeMessages({
+        ...request('a scene'),
+        tier,
+        direction: 'input',
+        tableLines: ['no spiders', 'no drowning'],
+      });
+      expect(system!.content).toContain(
+        'Treat each entry in <table_lines> as a binding safety constraint',
+      );
+      expect(system!.content).toContain('regardless of tier');
+    }
+  });
+
+  it('states that table lines apply when depicted without graphic detail, at every tier', () => {
+    for (const tier of ['family', 'standard', 'mature'] as const) {
+      const [system] = buildJudgeMessages({
+        ...request("A giant snake coils around Mara's leg and bites."),
+        tier,
+        direction: 'output',
+        tableLines: ['snakes'],
+      });
+      expect(system!.content).toMatch(
+        /An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail/,
+      );
+    }
+  });
 });
 
 describe('request shape', () => {
