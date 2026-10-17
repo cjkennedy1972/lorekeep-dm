@@ -41,6 +41,12 @@ type Reaction = {
   trigger: string;
   timeoutMs: number;
 };
+type PendingAction = {
+  id: string;
+  text: string;
+  acknowledged: boolean;
+  submittedAt: number;
+};
 /** The server's tracker lists the active combatant first; persisted state keeps a fixed order. */
 const startAtActive = <T extends { entityId: string }>(
   initiative: T[],
@@ -247,25 +253,17 @@ export function Game() {
   }, [reaction?.reactionId, reaction?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
-  const pendingActionRef = useRef<{
-    id: string;
-    text: string;
-    acknowledged: boolean;
-  } | null>(null);
+  const pendingActionRef = useRef<PendingAction | null>(null);
   const updatePendingAction = (
-    update: (
-      current: { id: string; text: string; acknowledged: boolean } | null,
-    ) => { id: string; text: string; acknowledged: boolean } | null,
+    update: (current: PendingAction | null) => PendingAction | null,
   ) => {
     const next = update(pendingActionRef.current);
     pendingActionRef.current = next;
     setPendingAction(next);
   };
-  const [pendingAction, setPendingAction] = useState<{
-    id: string;
-    text: string;
-    acknowledged: boolean;
-  } | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(
+    null,
+  );
   const [actionDraft, setActionDraft] = useState('');
   const [clarification, setClarification] = useState<{
     actionId: string;
@@ -348,7 +346,12 @@ export function Game() {
       return;
     }
     setError('');
-    updatePendingAction(() => ({ id, text, acknowledged: false }));
+    updatePendingAction(() => ({
+      id,
+      text,
+      acknowledged: false,
+      submittedAt: Date.now(),
+    }));
     setMessages((current) => [
       ...current,
       {
@@ -546,6 +549,7 @@ export function Game() {
         onSubmit={submitAction}
         pending={Boolean(pendingAction)}
         pendingText={pendingAction?.text}
+        pendingSince={pendingAction?.submittedAt}
         onEditPending={() => {
           if (!pendingAction) return;
           setActionDraft(pendingAction.text);
@@ -560,6 +564,7 @@ export function Game() {
             id: actionId,
             text: reply,
             acknowledged: true,
+            submittedAt: Date.now(),
           }));
           live.send('ClarificationAnswer', { actionId, answer: reply });
         }}

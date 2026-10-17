@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './action-input.css';
 
 export const QUICK_ACTIONS = [
@@ -14,6 +14,7 @@ type Props = {
   onSubmit: (text: string) => void;
   pending?: boolean;
   pendingText?: string;
+  pendingSince?: number;
   onEditPending?: () => void;
   initialText?: string;
   onDraftChange?: (text: string) => void;
@@ -26,6 +27,7 @@ export function ActionInput({
   onSubmit,
   pending = false,
   pendingText,
+  pendingSince,
   onEditPending,
   initialText = '',
   onDraftChange,
@@ -34,6 +36,18 @@ export function ActionInput({
 }: Props) {
   const [text, setText] = useState(initialText);
   const [reply, setReply] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!pending || pendingSince === undefined) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const update = () =>
+      setElapsedSeconds(Math.floor((Date.now() - pendingSince) / 1000));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [pending, pendingSince]);
   const submit = (value: string) => {
     const action = value.trim();
     if (!action || pending) return;
@@ -48,6 +62,9 @@ export function ActionInput({
           <span>
             {pendingText ? `Queued: ${pendingText}` : 'The DM is thinking…'}
           </span>
+          {pendingSince !== undefined && (
+            <span aria-hidden="true">Waiting {elapsedSeconds}s</span>
+          )}
           {onEditPending && (
             <button type="button" onClick={onEditPending}>
               Edit before resolution
