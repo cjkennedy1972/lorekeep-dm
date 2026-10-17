@@ -392,7 +392,7 @@ LLM-dependent targets are baselines for a streaming hosted endpoint; the operato
 | Page load to interactive (broadband) | ≤ 3 s |
 | Input accepted/acknowledged ("queued/thinking") | ≤ 300 ms |
 | Dice/rules-engine resolution (no LLM), including movement/geometry validation | ≤ 500 ms |
-| First safe narration token | ≤ 3 s (reference hosted streaming endpoint; not yet demonstrated by the current buffered tool-bearing implementation; see ADR-023) |
+| First safe narration token | ≤ 3 s p95 (reference hosted streaming endpoint; not yet demonstrated by the current buffered tool-bearing implementation; see ADR-023) |
 | Complete DM turn (exploration) | ≤ 8 s (p50 ≤ 4 s) (reference endpoint) |
 | Complete DM turn (combat, per action) | ≤ 6 s (reference endpoint) |
 | State sync across clients, including token moves | ≤ 1 s |
