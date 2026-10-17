@@ -71,7 +71,7 @@ Source references include `apps/server/src/safety/hardFloor.ts:245,465,558,564,6
 
 The route sends hard-floor misses onward to moderation (`apps/server/src/safety/inputGate.ts:177`; `apps/server/src/safety/moderator.ts:240`). Rubrics prohibit minor sexualization. In-memory stubs verified allow/block/fail-closed judge control flow, **not actual model performance**. No live judge call or recorded dataset replay was performed. Therefore R2–R5 demonstrate loss of deterministic defense, not that the judge allows the content.
 
-R1's current proposed fix is PR #225. It adds an optional copula in `SEXUAL_AFTER`, bumps `HARD_FLOOR_VERSION` to `2026-10-16.12`, updates the Round9 pin and ADR-023, and adds block/allow regression cases, including two additional benign controls on the current head. Sentinel and Bastion GO are limited to R1; Bastion's GO carries the non-blocking advisories about possible overblocking for numbered inanimate entities and the unverified streaming/chunk-boundary path. These are recorded on the related M3-06b Workboard card; judge-path end-to-end behavior remains unverified.
+R1's current proposed fix is PR #225. It adds an optional copula in `SEXUAL_AFTER`, bumps `HARD_FLOOR_VERSION` to `2026-10-16.12`, updates the Round9 pin and ADR-023, and adds block/allow regression cases, including two additional benign controls on the current head. Sentinel and Bastion GO are limited to R1; Bastion's GO carries the non-blocking advisories about possible overblocking for numbered inanimate entities and the unverified streaming/chunk-boundary path. These are recorded on M3-06b Workboard card `ebcf1212-e2de-48f1-97ff-dc420844f4d3`; judge-path end-to-end behavior remains unverified.
 
 ## Medium finding R8: nested checkpoint data in client state
 
