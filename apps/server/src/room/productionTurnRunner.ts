@@ -32,6 +32,7 @@ import {
 } from '../dm/orchestrator.js';
 import { rulesLookup } from '../dm/rulesLookup.js';
 import { catalogFromSnapshot } from './catalogSnapshot.js';
+import { currentMemberSql } from './membership.js';
 import {
   loadAdventure,
   nextSceneAfterClose,
@@ -236,7 +237,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     );
     if (!table.rows[0]) throw new Error('Table state unavailable');
     const seat = await this.db.query(
-      `SELECT 1 FROM events WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId'=$2 LIMIT 1`,
+      `SELECT 1 FROM sessions s WHERE s.id=$1 AND ${currentMemberSql('$2')} LIMIT 1`,
       [request.sessionId, request.accountId],
     );
     if (!seat.rows[0]) throw new Error('Player is not seated at this table');

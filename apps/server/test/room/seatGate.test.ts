@@ -5,6 +5,8 @@ import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js
 
 function fakeDb(seated: boolean) {
   const query = vi.fn(async (sql: string) => {
+    if (sql.includes("type='SeatJoined'"))
+      return { rows: seated ? [{ '?column?': 1 }] : [] };
     if (sql.includes('FROM sessions'))
       return {
         rows: [
@@ -18,8 +20,6 @@ function fakeDb(seated: boolean) {
           },
         ],
       };
-    if (sql.includes("type='SeatJoined'"))
-      return { rows: seated ? [{ '?column?': 1 }] : [] };
     throw new Error(`unexpected query: ${sql}`);
   });
   return { query };
