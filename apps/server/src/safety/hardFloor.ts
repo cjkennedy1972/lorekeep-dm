@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-17.23';
+export const HARD_FLOOR_VERSION = '2026-10-17.24';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -588,7 +588,7 @@ const MINOR_AGE_NUMBER = `(?:1[0-7]|\\d|${Object.keys(NUMBER_WORDS)
   .filter((w) => NUMBER_WORDS[w]! < 18)
   .join('|')})`;
 const AGE_SENTENCE_PRONOUN = new RegExp(
-  `((?<![\\p{L}\\p{N}])(?<name>\\p{L}+)\\s+${MINOR_AGE_NUMBER}${WORD_END}[^.!?\\n]{0,40}[.!?]+\\s+(?:[^.!?\\n]{0,60}[.!?]+\\s+)?)(?:then\\s+)?(?:(?:she|he|they)|\\k<name>(?:\\s+(?:body|skin|figure|chest|hips|legs|breasts))?|the\\s+(?:girl|boy|child|kid|teen)|(?:her|his|their)\\s+(?:body|skin|figure|chest|hips|legs|breasts))(?:\\s+(?:sleeps?|slept|sleeping))?${WORD_END}${SEXUAL_AFTER}`,
+  `((?<![\\p{L}\\p{N}])(?<name>\\p{L}+)\\s+${MINOR_AGE_NUMBER}${WORD_END}(?:[^.!?\\n]{0,40}[.!?]+\\s+(?:[^.!?\\n]{0,60}[.!?]+\\s+)?|[,;]\\s*|\\s+))(?:then\\s+)?(?:(?:she|he|they)|\\k<name>(?:\\s+(?:body|skin|figure|chest|hips|legs|breasts))?|the\\s+(?:girl|boy|child|kid|teen)|(?:her|his|their)\\s+(?:body|skin|figure|chest|hips|legs|breasts))(?:\\s+(?:sleeps?|slept|sleeping))?${WORD_END}${SEXUAL_AFTER}`,
   'giu',
 );
 const EXPLICIT = termIndex(HARD_FLOOR_RULES['csam.explicit-term'].terms);
