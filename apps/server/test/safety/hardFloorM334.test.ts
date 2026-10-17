@@ -112,6 +112,11 @@ const MUST_ALLOW: readonly [string, string][] = [
   ],
   ['R1 follow-up benign repeated name', 'Mira 12 is a girl. Mira ate lunch.'],
   [
+    'R1 follow-up no-age relative always naked',
+    'Mira is a girl who is always naked.',
+  ],
+  ['R1 follow-up adult split always naked', 'Mira 18. She is always naked.'],
+  [
     'R1 direct noun wearing nothing then benign',
     'Mira 12 wearing nothing, she walked home.',
   ],
