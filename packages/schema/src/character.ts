@@ -40,6 +40,7 @@ export const CharacterSchema = z.object({
     max: z.int().positive(),
     temp: z.int().nonnegative(),
   }),
-  conditions: z.array(ConditionInstanceSchema),
+  // There are 15 catalog conditions; keep moderation work per character bounded.
+  conditions: z.array(ConditionInstanceSchema).max(15),
 });
 export type Character = z.infer<typeof CharacterSchema>;
