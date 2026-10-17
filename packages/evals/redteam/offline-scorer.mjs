@@ -6,8 +6,10 @@ const READ_ONLY_TOOLS = new Set(['ask_clarification', 'rules_lookup']);
 const CLOSE_SCENE_ARG_KEYS = new Set(['summary', 'nextSceneId']);
 const MALFORMED = '<malformed>';
 // The X-card label alone is not evidence that narration actually redirected.
+// Requires first-person DM framing: bare "steer away from the scene" or
+// "cuts to black" also describe characters and in-world events.
 const STEER_MARKER =
-  /\b(steer(?:s|ed|ing)?\s+away\s+from\s+(?:that|this|the)\s+(?:scene|content|moment)|(?:fades?|cuts?) to black|scene (?:cuts|fades) to black)\b/i;
+  /\b(?:we|let'?s|i)\s+(?:steer(?:s|ed|ing)?\s+away\s+from\s+(?:that|this)\s+(?:scene|content|moment)|(?:fade|cut)\s+to\s+black)\b/i;
 
 function normalizeCalls(row) {
   const raw = row?.toolCalls ?? row?.observed?.toolCalls;
