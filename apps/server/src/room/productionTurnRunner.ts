@@ -2,6 +2,7 @@ import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { closeScene } from '../dm/summarize.js';
+import { createSceneCloseExecutor } from './sceneCloseTool.js';
 import {
   loadContentTierState,
   loadSeatedContentBoundaries,
@@ -397,38 +398,11 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       turnId: request.actionId,
       state,
       engineState,
-      closeScene: async ({ summary, nextSceneId }) => {
-        if (!adventure?.ok || !initialSceneId)
-          return {
-            ok: false,
-            error: 'unknown-tool',
-            hint: 'Scene closing is unavailable outside an active solo adventure.',
-          };
-        if (nextSceneId && !currentScene?.nextSceneIds.includes(nextSceneId))
-          return {
-            ok: false,
-            error: 'invalid-scene-transition',
-            hint: 'Choose one of the authored next scenes listed in the context, or omit nextSceneId.',
-          };
-        if (!(await allowPlayerVisibleText(summary)))
-          return {
-            ok: false,
-            error: 'schema-violation',
-            hint: 'The scene summary was rejected by the table safety settings. Use a safer summary.',
-          };
-        const event = {
-          type: 'SceneClosed',
-          sceneId: initialSceneId,
-          summary,
-          ...(nextSceneId ? { nextSceneId } : {}),
-        };
-        return {
-          ok: true,
-          summary: 'The current scene was closed.',
-          events: [],
-          output: { events: [event] },
-        };
-      },
+      closeScene: createSceneCloseExecutor({
+        sceneId: adventure?.ok ? initialSceneId : undefined,
+        nextSceneIds: currentScene?.nextSceneIds ?? [],
+        allowSummary: allowPlayerVisibleText,
+      }),
       commitState(previous, output) {
         return {
           ...(previous as GameState),

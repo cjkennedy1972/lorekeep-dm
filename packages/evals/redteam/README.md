@@ -105,11 +105,20 @@ match `HEAD` and refuses to run from a dirty working tree.
 The dated record under `recorded/` captures judge replies/verdicts, DM
 narration, proposed native tool calls, case ids, tiers, endpoint/model identity,
 and run timestamps. Boundary cases use the production moderation messages and
-deterministic layer. Injection and X-card cases use the production DM prompt
-builder with one synthetic character. Tool calls are captured, never executed;
-this is an endpoint/prompt-path probe, not a persisted game session or proof of
-engine-side state changes. The recorded result and its limitations are described
-in `docs/plan/evidence/m3-28-live-redteam-qwen.md`.
+deterministic layer. Injection cases use the production DM prompt builder with
+one synthetic character; proposed tool calls are captured, not executed, so
+injection results alone do not prove engine-side effects. Actual X-card control
+cases call the production `runTurn` path with an adapter that fails if invoked;
+the authored redirect still passes through the production output gate. Text-only
+control claims remain live-model probes. Nothing is persisted to a game session.
+The recorded result and its limitations are described in
+`docs/plan/evidence/m3-28-live-redteam-qwen.md`.
+
+`apps/server/test/dm/redteam-recorded-engine-replay.test.ts` also replays every
+tool proposal in a hash-pinned historical Qwen record through the production DM
+dispatcher and rules-engine/scene-close policies. It is state-effect evidence
+for those recorded proposals, not a replacement for rerunning against the exact
+candidate source SHA.
 
 ## Changelog
 
