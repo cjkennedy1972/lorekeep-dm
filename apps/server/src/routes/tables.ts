@@ -159,24 +159,32 @@ export function registerTableRoutes(
         code: 'RATE_LIMITED',
         message: 'You are creating tables too quickly. Try again later.',
       });
-    const characterDecision =
-      body.character &&
-      (await app.inputGate.check({
-        text: body.character.name,
+    const characterTexts = body.character
+      ? [
+          body.character.name,
+          ...body.character.conditions.flatMap((condition) =>
+            condition.source ? [condition.source] : [],
+          ),
+        ]
+      : [];
+    for (const text of characterTexts) {
+      const characterDecision = await app.inputGate.check({
+        text,
         surface: 'character',
         accountId,
         ip: request.ip,
-      }));
-    if (characterDecision === 'limited')
-      return reply.code(429).send({
-        code: 'RATE_LIMITED',
-        message: 'Too many requests. Try again later.',
       });
-    if (characterDecision === 'block')
-      return reply.code(400).send({
-        code: 'CONTENT_REJECTED',
-        message: 'That character name cannot be used.',
-      });
+      if (characterDecision === 'limited')
+        return reply.code(429).send({
+          code: 'RATE_LIMITED',
+          message: 'Too many requests. Try again later.',
+        });
+      if (characterDecision === 'block')
+        return reply.code(400).send({
+          code: 'CONTENT_REJECTED',
+          message: 'That character name cannot be used.',
+        });
+    }
     const nameDecision = await app.inputGate.check({
       text: body.name,
       surface: 'table-name',
