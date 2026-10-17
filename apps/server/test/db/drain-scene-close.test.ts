@@ -12,6 +12,7 @@ import type {
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { Room, type RoomStore } from '../../src/room/Room.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { joinSeated } from '../helpers/room.js';
 import { deleteTestSessions } from './testCleanup.js';
 
 const databaseUrl = process.env.DATABASE_URL;
