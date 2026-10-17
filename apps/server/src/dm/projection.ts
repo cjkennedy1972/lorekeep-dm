@@ -9,13 +9,17 @@ export interface ProjectionInput {
   };
 }
 
+export function quoteData(label: string, text: string): string {
+  return `<<<${label}_DATA encoding=base64>>>\n${Buffer.from(text, 'utf8').toString('base64')}\n<<<END_${label}_DATA>>>`;
+}
+
 /** Compact, deterministic character facts plus engine-authored combat description. */
 export function projectState(input: ProjectionInput): string {
   const characters = [...input.characters]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((character) => ({
       id: character.id,
-      name: character.name,
+      name: quoteData('CHARACTER_NAME', character.name),
       hp: character.hp,
       conditions: character.conditions
         .map((condition) => condition.conditionId)

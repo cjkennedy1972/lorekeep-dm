@@ -262,12 +262,13 @@ describe('content tier through the DM turn path', () => {
     expect(promptTier(calls)).toBe(await storedTier(sessionId));
   });
 
-  it('is standard with zero seated accounts even when moderation and endpoint pass', async () => {
+  it('rejects a turn request from an account with no seat', async () => {
     const { accountId, sessionId } = await table({ seated: false });
     const calls: LlmRequest[] = [];
-    const { changes } = await turn(sessionId, accountId, db, calls);
-    expect(changes).toEqual([]);
-    expect(promptTier(calls)).toBe('standard');
+    await expect(turn(sessionId, accountId, db, calls)).rejects.toThrow(
+      'Player is not seated at this table',
+    );
+    expect(calls).toEqual([]);
   });
 
   it('keeps mature unreachable when the endpoint flag is false', async () => {

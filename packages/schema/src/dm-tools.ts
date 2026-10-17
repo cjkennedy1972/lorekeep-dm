@@ -280,6 +280,7 @@ export const DMToolErrorCodeSchema = z.enum([
   'lookup-budget-exhausted',
   'scene-already-closed',
   'clarification-already-asked',
+  'forbidden',
 ]);
 export type DMToolErrorCode = z.infer<typeof DMToolErrorCodeSchema>;
 export const DMToolResultSchema = z.union([

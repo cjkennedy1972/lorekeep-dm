@@ -30,6 +30,17 @@ export default [
       },
     },
   },
+  {
+    files: ['packages/evals/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortSignal: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
   ...tseslint.configs.recommended,
   {
     files: ['packages/**/*.{ts,tsx}'],

@@ -115,7 +115,6 @@ try {
     ],
     maxTokens: 512,
     toolMode: 'native',
-    cacheHints: { stablePrefixMessages: 1 },
   };
 
   const inputMs = [];

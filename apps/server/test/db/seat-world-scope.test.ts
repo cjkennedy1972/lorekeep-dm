@@ -12,6 +12,7 @@ import type {
   LlmRequest,
 } from '../../src/llm/adapter.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { deleteTestSessions } from './testCleanup.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -50,8 +51,7 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'seat-world-'));
 });
 afterAll(async () => {
-  for (const id of sessionIds)
-    await db.query('DELETE FROM sessions WHERE id=$1', [id]);
+  await deleteTestSessions(db, sessionIds);
   for (const id of accountIds)
     await db.query('DELETE FROM accounts WHERE id=$1', [id]);
   await db.end();
@@ -92,6 +92,15 @@ async function seedTwoSeats() {
       catalog.catalogVersion,
       own.id,
       JSON.stringify(own),
+    ],
+  );
+  await db.query(
+    `INSERT INTO events(session_id,seq,turn_id,type,payload)
+     VALUES($1,1,$1,'SeatJoined',$2),($1,2,$1,'SeatJoined',$3)`,
+    [
+      sessionId,
+      JSON.stringify({ accountId, displayName: 'Owner' }),
+      JSON.stringify({ accountId: otherAccountId, displayName: 'Guest' }),
     ],
   );
   sessionIds.push(sessionId);
@@ -139,5 +148,53 @@ describe('world-registry tools stay on the submitting seat', () => {
       error: 'unknown-entity',
       hint: 'Only your own character can be named in this action.',
     });
+  });
+
+  it('rejects shared-world mutations by a seated non-host before producing registry events', async () => {
+    const { accountId, otherAccountId, own, other, sessionId } =
+      await seedTwoSeats();
+    const toolResults: string[] = [];
+    const runner = new ProductionSoloTurnRunner(
+      db,
+      undefined,
+      'record',
+      join(dir, 'non-host-world.ndjson'),
+      scriptedDm(
+        {
+          name: 'upsert_npc',
+          arguments: {
+            id: 'npc_guest',
+            name: 'Guest Sage',
+            role: 'guide',
+            disposition: 'friendly',
+            facts: ['Keeps the old road map.'],
+          },
+        },
+        toolResults,
+      ),
+    );
+    const result = await runner.run(
+      {
+        sessionId,
+        accountId: otherAccountId,
+        actionId: randomUUID(),
+        text: 'I introduce a guide to our shared world.',
+        state: {
+          sceneId: 'scene-marowfell-well',
+          adventureId: ADVENTURE,
+          characters: { [accountId]: own, [otherAccountId]: other },
+        },
+      },
+      () => undefined,
+    );
+
+    expect(JSON.parse(toolResults[0]!)).toMatchObject({
+      ok: false,
+      error: 'forbidden',
+      hint: 'Only the table host can change shared world state.',
+    });
+    expect(result.events).not.toContainEqual(
+      expect.objectContaining({ type: 'NpcUpserted' }),
+    );
   });
 });

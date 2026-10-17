@@ -12,6 +12,7 @@ import type {
   LlmRequest,
 } from '../../src/llm/adapter.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { deleteTestSessions } from './testCleanup.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -61,8 +62,7 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'actor-ref-'));
 });
 afterAll(async () => {
-  for (const id of sessionIds)
-    await db.query('DELETE FROM sessions WHERE id=$1', [id]);
+  await deleteTestSessions(db, sessionIds);
   for (const id of accountIds)
     await db.query('DELETE FROM accounts WHERE id=$1', [id]);
   await db.end();
@@ -98,6 +98,10 @@ describe('actor tools accept the real player character id', () => {
         character.id,
         JSON.stringify(character),
       ],
+    );
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
+      [sessionId, JSON.stringify({ accountId, displayName: 'Actor' })],
     );
     sessionIds.push(sessionId);
     const toolResults: string[] = [];
@@ -164,6 +168,10 @@ describe('model tool calls stay on the submitting seat', () => {
         own.id,
         JSON.stringify(own),
       ],
+    );
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
+      [sessionId, JSON.stringify({ accountId, displayName: 'Seat' })],
     );
     sessionIds.push(sessionId);
     const toolResults: string[] = [];
