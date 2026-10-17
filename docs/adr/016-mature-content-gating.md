@@ -41,9 +41,10 @@ Status: Proposed (human decision 2026-10-06, round 3; supersedes round 2 "off by
 
 **Owner decision (2026-10-16): current seats only.** For future narration-tier
 evaluation, only accounts with a current, non-revoked seat in the session count
-as seated players for the `matureOptOut` predicate. An explicit seat revocation
-therefore stops that account's opt-out from constraining later narration turns;
-the tier remains snapshotted for any narration already in flight. Account
-deletion/redaction remains fail-closed as described above. This decision
-supersedes only the M3-05 implementation note that treated departed players as
-ever-seated; the rest of ADR-016 remains unchanged.
+as seated players for the `matureOptOut` predicate and for per-player
+lines/veils in the session safety block. An explicit seat revocation therefore
+stops that account's opt-out and lines/veils from constraining later narration
+turns; the tier and safety block remain snapshotted for any narration already
+in flight. Account deletion/redaction remains fail-closed as described above.
+This decision supersedes only the M3-05 implementation note that treated
+departed players as ever-seated; the rest of ADR-016 remains unchanged.
