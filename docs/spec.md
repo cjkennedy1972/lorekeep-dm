@@ -400,7 +400,7 @@ LLM-dependent targets are baselines for a streaming hosted endpoint; the operato
 
 The target experience is token-by-token narration, with rules/dice results displayed before narration completes. Current tool-bearing turns buffer the model's completed narration before moderation and do not yet meet the streaming-latency target; this is a known implementation gap, not a measured SLO.
 
-**Latency decision (2026-10-17; ADR-023).** Keep the ≤3 s p95 first-safe-narration target as an unmet product goal. Do not raise it to match the current implementation's latency based only on a 30-run synthetic sample or an individual conversational-model response. The separate ≤300 ms accepted-action acknowledgment remains the immediate-feedback target; the client may show elapsed wait time but must not imply model progress it cannot observe. Evaluate faster guard models and a safety-preserving streaming design before considering any target change.
+**Latency decision (2026-10-17; ADR-023).** Keep the ≤3 s p95 first-safe-narration target as an unmet product goal (corrected from 2.5 s to align with ADR-023). Do not raise it to match the current implementation's latency based only on a 30-run synthetic sample or an individual conversational-model response. The separate ≤300 ms accepted-action acknowledgment remains the immediate-feedback target; the client may show elapsed wait time but must not imply model progress it cannot observe. Evaluate faster guard models and a safety-preserving streaming design before considering any target change.
 
 **Map rendering (MVP, 2D):**
 | Metric | Target |
