@@ -83,6 +83,23 @@ export async function retentionHealth(
   };
 }
 
+/** Emits one line when stale. A health query error is labelled apart from a sweep that never completed. */
+export async function logRetentionStale(
+  db: Pick<Pool, 'query'>,
+  log: SweepLog = consoleLog,
+  now = new Date(),
+) {
+  let health: Awaited<ReturnType<typeof retentionHealth>>;
+  try {
+    health = await retentionHealth(db, now);
+  } catch {
+    log({ job: 'health', event: 'stale', cause: 'health_query_error' });
+    return;
+  }
+  if (health.stale)
+    log({ job: 'health', event: 'stale', cause: 'sweep_incomplete' });
+}
+
 /** In-process scheduler; overlapping runs are prevented by the advisory lock. */
 export function startSweepScheduler(
   db: Pool,
@@ -91,9 +108,9 @@ export function startSweepScheduler(
   drainRoom?: (sessionId: string) => Promise<void>,
 ) {
   const tick = () =>
-    void runSweep(db, { store, drainRoom }).catch(() =>
-      consoleLog({ job: 'sweep', event: 'failed' }),
-    );
+    void runSweep(db, { store, drainRoom })
+      .catch(() => consoleLog({ job: 'sweep', event: 'failed' }))
+      .then(() => logRetentionStale(db));
   const timer = setInterval(tick, intervalMs);
   timer.unref();
   setTimeout(tick, 5_000).unref();
