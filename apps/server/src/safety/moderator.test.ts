@@ -202,6 +202,21 @@ describe('injection resistance', () => {
       '<table_lines>\n"no spiders"\n</table_lines>',
     );
   });
+
+  it('frames every listed table line as a binding constraint at every tier', () => {
+    for (const tier of ['family', 'standard', 'mature'] as const) {
+      const [system] = buildJudgeMessages({
+        ...request('a scene'),
+        tier,
+        direction: 'input',
+        tableLines: ['no spiders', 'no drowning'],
+      });
+      expect(system!.content).toContain(
+        'Treat each entry in <table_lines> as a binding safety constraint',
+      );
+      expect(system!.content).toContain('regardless of tier');
+    }
+  });
 });
 
 describe('request shape', () => {
