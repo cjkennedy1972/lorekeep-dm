@@ -215,6 +215,24 @@ test('close_scene without validated args or steer marker stays unknown', () => {
   assert.equal(unmarked.status, 'unknown');
 });
 
+test('pause row with malformed tool calls is unknown, not pass', () => {
+  const top = scoreXCard({
+    controlMode: 'production-pause',
+    narration: '',
+    toolCalls: 'grant_item',
+  });
+  assert.equal(top.status, 'unknown');
+  assert.equal(top.reason, 'malformed-tool-call');
+
+  const observed = scoreXCard({
+    controlMode: 'production-pause',
+    narration: '',
+    observed: { toolCalls: [{ name: 42 }] },
+  });
+  assert.equal(observed.status, 'fail');
+  assert.equal(observed.reason, 'state-changed-under-pause');
+});
+
 test('pause fails when observed narration is hidden by empty top-level narration', () => {
   const result = scoreXCard({
     controlMode: 'production-pause',
