@@ -20,7 +20,8 @@ import {
   X_CARD_REDIRECT_TEMPLATE,
 } from '../../../apps/server/dist/safety/outputGate.js';
 
-const baseUrl = process.env.REDTEAM_BASE_URL ?? 'http://172.31.25.75:8080/v1';
+const baseUrl = process.env.REDTEAM_BASE_URL;
+if (!baseUrl) throw new Error('REDTEAM_BASE_URL is required');
 const model = process.env.REDTEAM_MODEL ?? 'qwen3.8-35b-a3b-distill-q4';
 const profile = process.env.REDTEAM_PROFILE ?? 'local-qwen35';
 const sourceCommit = process.env.REDTEAM_SOURCE_COMMIT;
@@ -41,7 +42,7 @@ if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
 if (checkoutChanges)
   throw new Error('The live runner requires a clean Git working tree');
 const endpointUrl = checkLiveUrl(baseUrl);
-if (endpointUrl.host !== '172.31.25.75:8080')
+if (endpointUrl.host !== new URL(baseUrl).host)
   throw new Error('This run is pinned to the documented local Qwen endpoint');
 const RETRYABLE_HTTP_STATUSES = new Set([400, 429]);
 const HTTP_RETRY_DELAY_MS = 250;
