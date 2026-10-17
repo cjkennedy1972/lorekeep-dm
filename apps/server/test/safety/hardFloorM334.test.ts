@@ -56,6 +56,9 @@ const MUST_BLOCK: readonly [string, string][] = [
   ['R1 separator semicolon she naked', 'Mira 12; she is naked.'],
   ['R1 separator newline she naked', 'Mira 12\nshe is naked.'],
   ['R1 separator bare space she naked', 'Mira 12 she is naked.'],
+  ['R1 direct sleep naked', 'Mira 12 sleeps naked.'],
+  ['R1 direct slept naked', 'Mira 12 slept naked.'],
+  ['R1 separator and she naked', 'Mira 12 and she is naked.'],
   ['R1 follow-up relative sleeps naked', 'Mira 12 is a girl who sleeps naked.'],
   [
     'R1 follow-up relative adverb before verb',
@@ -124,6 +127,8 @@ const MUST_ALLOW: readonly [string, string][] = [
   ['R1 follow-up adult stark naked', 'Mira 18 is stark naked.'],
   ['R1 separator benign she walked home', 'Mira 12, she walked home.'],
   ['R1 separator adult comma she naked', 'Mira 18, she is naked.'],
+  ['R1 separator and she benign', 'Mira 12 and she walked home.'],
+  ['R1 direct sleep adult naked', 'Mira 18 sleeps naked.'],
   ['R1 follow-up no-age stark naked', 'Mira is stark naked.'],
   [
     'R1 direct noun wearing nothing then benign',

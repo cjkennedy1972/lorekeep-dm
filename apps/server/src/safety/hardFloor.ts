@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-17.24';
+export const HARD_FLOOR_VERSION = '2026-10-17.25';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -568,7 +568,7 @@ const AGE_PREDICATE_NOUNS = [
   'teenagers',
 ];
 const PREDICATE_ADVERBS = `(?:(?:${['now', 'so', 'very', 'too', 'completely', 'totally', 'fully', 'still', 'just', 'already', 'really', 'quite', 'also', 'almost', 'nearly', 'barely', 'half', 'hardly', 'mostly', 'partly', 'partially', 'always', 'never', 'even', 'stark'].join('|')}|\\p{L}{2,}ly)${WORD_END}[^\\p{L}\\p{N}]+)`;
-const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:(?:is|was|are|were|am|get|gets|got|getting|become|becomes|became|turn|turns|turned|turning)[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.adultMarkers.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${AGE_PREDICATE_NOUNS.join('|')})[^\\p{L}\\p{N}]+(?:who|that)[^\\p{L}\\p{N}]+(?:${PREDICATE_ADVERBS})*(?:(?:is|was|are|were|am|get|gets|got|getting|become|becomes|became|turn|turns|turned|turning|sleep|sleeps|slept|sleeping)[^\\p{L}\\p{N}]+)?)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${AGE_PREDICATE_NOUNS.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:wearing|in)\\s+(?:nothing|no\\s+clothes|no\\s+clothing|only\\s+(?:a\\s+)?towel)[^\\p{L}\\p{N}]+(?:and\\s+)?)?(?:${PREDICATE_ADVERBS})*(?:and\\s+)?(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
+const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:(?:is|was|are|were|am|get|gets|got|getting|become|becomes|became|turn|turns|turned|turning)[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.adultMarkers.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${AGE_PREDICATE_NOUNS.join('|')})[^\\p{L}\\p{N}]+(?:who|that)[^\\p{L}\\p{N}]+(?:${PREDICATE_ADVERBS})*(?:(?:is|was|are|were|am|get|gets|got|getting|become|becomes|became|turn|turns|turned|turning|sleep|sleeps|slept|sleeping)[^\\p{L}\\p{N}]+)?)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${AGE_PREDICATE_NOUNS.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:wearing|in)\\s+(?:nothing|no\\s+clothes|no\\s+clothing|only\\s+(?:a\\s+)?towel)[^\\p{L}\\p{N}]+(?:and\\s+)?)?(?:(?:sleeps?|slept|sleeping)[^\\p{L}\\p{N}]+)?(?:${PREDICATE_ADVERBS})*(?:and\\s+)?(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
 /**
  * "Mira 12, ..." / "Mira; 12 ..." after a letter. Punctuation separators need no tail;
  * a bare space needs a bounded sexual/undress predicate after the number, so "rolled a 15
@@ -588,7 +588,7 @@ const MINOR_AGE_NUMBER = `(?:1[0-7]|\\d|${Object.keys(NUMBER_WORDS)
   .filter((w) => NUMBER_WORDS[w]! < 18)
   .join('|')})`;
 const AGE_SENTENCE_PRONOUN = new RegExp(
-  `((?<![\\p{L}\\p{N}])(?<name>\\p{L}+)\\s+${MINOR_AGE_NUMBER}${WORD_END}(?:[^.!?\\n]{0,40}[.!?]+\\s+(?:[^.!?\\n]{0,60}[.!?]+\\s+)?|[,;]\\s*|\\s+))(?:then\\s+)?(?:(?:she|he|they)|\\k<name>(?:\\s+(?:body|skin|figure|chest|hips|legs|breasts))?|the\\s+(?:girl|boy|child|kid|teen)|(?:her|his|their)\\s+(?:body|skin|figure|chest|hips|legs|breasts))(?:\\s+(?:sleeps?|slept|sleeping))?${WORD_END}${SEXUAL_AFTER}`,
+  `((?<![\\p{L}\\p{N}])(?<name>\\p{L}+)\\s+${MINOR_AGE_NUMBER}${WORD_END}(?:[^.!?\\n]{0,40}[.!?]+\\s+(?:[^.!?\\n]{0,60}[.!?]+\\s+)?|[,;]\\s*|\\s+(?:and\\s+)?))(?:then\\s+)?(?:(?:she|he|they)|\\k<name>(?:\\s+(?:body|skin|figure|chest|hips|legs|breasts))?|the\\s+(?:girl|boy|child|kid|teen)|(?:her|his|their)\\s+(?:body|skin|figure|chest|hips|legs|breasts))(?:\\s+(?:sleeps?|slept|sleeping))?${WORD_END}${SEXUAL_AFTER}`,
   'giu',
 );
 const EXPLICIT = termIndex(HARD_FLOOR_RULES['csam.explicit-term'].terms);
