@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-17.17';
+export const HARD_FLOOR_VERSION = '2026-10-17.18';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -554,7 +554,20 @@ const MAX_TERM_CHARS = 24;
 
 const PROXIMITY = HARD_FLOOR_RULES['minor-sexual.proximity'];
 const UNIT_AFTER = `(?!\\s*(?:${[...QUANTITY_UNITS].join('|')})${WORD_END})`;
-const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:(?:is|was|are|were|am|get|gets|got|getting)[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.adultMarkers.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.personNouns.join('|')})[^\\p{L}\\p{N}]+(?:who|that)[^\\p{L}\\p{N}]+(?:(?:is|was|are|were|am)[^\\p{L}\\p{N}]+)?)?(?:and\\s+)?(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
+const AGE_PREDICATE_NOUNS = [
+  ...PROXIMITY.personNouns,
+  'person',
+  'people',
+  'child',
+  'children',
+  'kid',
+  'kids',
+  'teen',
+  'teens',
+  'teenager',
+  'teenagers',
+];
+const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:(?:is|was|are|were|am|get|gets|got|getting|become|becomes|became|turn|turns|turned|turning)[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.adultMarkers.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${AGE_PREDICATE_NOUNS.join('|')})[^\\p{L}\\p{N}]+(?:who|that)[^\\p{L}\\p{N}]+(?:(?:is|was|are|were|am)[^\\p{L}\\p{N}]+)?)?(?:and\\s+)?(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
 /**
  * "Mira 12, ..." / "Mira; 12 ..." after a letter. Punctuation separators need no tail;
  * a bare space needs a bounded sexual/undress predicate after the number, so "rolled a 15
@@ -812,7 +825,20 @@ export function scanFlags(
   const base = words.map((w) => variants(w)[0]!);
   let minor = false;
   let sexual = false;
-  const hasExplicitMinorCue = base.includes('minorage');
+  const hasExplicitMinorCue =
+    base.includes('minorage') ||
+    base.some((w, i) => {
+      if (!bareAge(w) || QUANTITY_UNITS.has(base[i + 1] ?? '')) return false;
+      const prev = i > 0 ? base[i - 1]! : '';
+      const prev2 = i > 1 ? base[i - 2]! : '';
+      const next = base[i + 1] ?? '';
+      return (
+        AGE_LINKS.has(prev) ||
+        (prev === 's' && (prev2 === 'she' || prev2 === 'he')) ||
+        ((inIndex(PERSON_NOUN, prev) || inIndex(PERSON_NOUN, next)) &&
+          nounAge(w))
+      );
+    });
   for (let s = from; s < to; s++) {
     let joined = '';
     for (let e = s; e < Math.min(words.length, s + MAX_JOIN); e++) {
