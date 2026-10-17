@@ -13,6 +13,11 @@ import {
 import { MODERATION_SECTIONS } from '../../../apps/server/dist/safety/moderationRubric.generated.js';
 import { checkHardFloor } from '../../../apps/server/dist/safety/hardFloor.js';
 import { hardFloorLayer } from '../../../apps/server/dist/safety/deterministicLayer.js';
+import { runTurn } from '../../../apps/server/dist/dm/orchestrator.js';
+import {
+  SAFE_REDIRECT_TEMPLATE,
+  X_CARD_REDIRECT_TEMPLATE,
+} from '../../../apps/server/dist/safety/outputGate.js';
 
 const baseUrl = process.env.REDTEAM_BASE_URL ?? 'http://172.31.25.75:8080/v1';
 const model = process.env.REDTEAM_MODEL ?? 'qwen3.8-35b-a3b-distill-q4';
@@ -93,9 +98,9 @@ const output = {
     injection:
       'Production input moderation and DM buildPrompt are exercised with one synthetic level-1 fighter. Dataset prior turns are included. Native DM tool calls and narration are recorded. No tool is executed; this is not a persisted game turn.',
     xcard:
-      'Production buildPrompt is used with one synthetic level-1 fighter and steerAway set only for actual control cases. Native DM tool calls and narration are recorded; no tool is executed and this is not a persisted game turn.',
+      'Authoritative steer-away control cases call the production runTurn orchestrator with an adapter that fails the case if invoked; the authored redirect passes through the production output gate. Text-only control claims remain live-model probes. No game state is persisted.',
     outputModeration:
-      'Model-generated narration is passed through the production moderation rubric in output direction. This harness records the verdict but does not emit narration to a player.',
+      'Model-generated narration and authored steer-away redirects are passed through the production moderation rubric in output direction. This harness records verdicts but does not emit narration to a player.',
   },
   cases: [],
 };
@@ -164,14 +169,14 @@ async function moderate({ text, tier, direction, tableLines = [] }) {
   };
 }
 
-function promptFor({
+function turnInputFor({
   playerText,
   tier,
   sceneSummary,
   steerAway = false,
   priorTurns = [],
 }) {
-  const prompt = buildPrompt({
+  return {
     catalogVersion: 'redteam-live',
     toolMode: 'native',
     sceneId: 'loc_redteam',
@@ -211,7 +216,11 @@ function promptFor({
       retrievedMemory: [],
     },
     activeMode: 'exploration',
-  });
+  };
+}
+
+function promptFor(input) {
+  const prompt = buildPrompt(turnInputFor(input));
   return {
     promptPrefixHash: prompt.promptPrefixHash,
     messages: [
@@ -308,12 +317,110 @@ for (const c of datasets.xcard.cases) {
         return { controlMode: 'production-pause', dmSkipped: true };
       const steerAway = c.trigger === 'x-card' && c.signaledBy !== 'text';
       const playerText = c.playerText ?? 'Continue the scene.';
-      const prompt = promptFor({
+      const promptInput = turnInputFor({
         playerText,
         tier: c.tier,
         sceneSummary: c.context,
         steerAway,
       });
+      const prompt = buildPrompt(promptInput);
+      if (steerAway) {
+        const events = [];
+        const outputVerdicts = [];
+        const stateBefore = { characters: [syntheticCharacter] };
+        const engineState = {};
+        let modelCalls = 0;
+        const noCallAdapter = {
+          capabilities: () => ({
+            streaming: true,
+            nativeTools: true,
+            jsonSchema: true,
+          }),
+          probe: async () => true,
+          async *complete() {
+            modelCalls++;
+            throw new Error(
+              'authoritative X-card steer unexpectedly called the model',
+            );
+          },
+        };
+        const result = await runTurn({
+          turnId: c.id,
+          turnSeed: 0,
+          testMode: true,
+          prompt: promptInput,
+          context: {
+            state: stateBefore,
+            engineState,
+            seed: 0,
+            rollIndex: 0,
+            turnId: c.id,
+          },
+          adapter: noCallAdapter,
+          toolMode: 'native',
+          outputModerator: {
+            async moderate(request) {
+              const verdict = await moderate({
+                text: request.text,
+                tier: request.tier,
+                direction: 'output',
+                tableLines: request.tableLines ?? [],
+              });
+              outputVerdicts.push(verdict);
+              return {
+                verdict: verdict.verdict,
+                category: verdict.category,
+                source:
+                  verdict.source === 'judge'
+                    ? 'judge'
+                    : verdict.source === 'denylist'
+                      ? 'denylist'
+                      : verdict.source === 'hardfloor'
+                        ? 'hardfloor'
+                        : 'failclosed',
+                latencyMs: 0,
+                unavailable: verdict.unavailable,
+                ...(verdict.unavailable ? { failClosedRow: 'tier' } : {}),
+              };
+            },
+          },
+          outputTier: c.tier,
+          emit: (event) => events.push(event),
+        });
+        if (modelCalls !== 0)
+          throw new Error('authoritative X-card steer called the model');
+        const generated = events.find(
+          (event) => event.type === 'NarrationCompleted',
+        );
+        const outputUnavailable = outputVerdicts.some(
+          (verdict) => verdict.unavailable,
+        );
+        const outputAllowed =
+          outputVerdicts.length > 0 &&
+          outputVerdicts.every((verdict) => verdict.verdict === 'allow');
+        const finalNarration = generated?.text ?? result.narration;
+        return {
+          controlMode: 'production-steerAway-runTurn',
+          promptPrefixHash: prompt.promptPrefixHash,
+          narration: finalNarration,
+          toolCalls: [],
+          modelCalls,
+          finishReason: 'deterministic-no-model-call',
+          outputVerdict: {
+            verdict: outputAllowed ? 'allow' : 'block',
+            category: outputVerdicts.at(-1)?.category ?? 'other',
+            source: outputVerdicts.at(-1)?.source ?? 'failclosed',
+            unavailable: outputUnavailable,
+          },
+          outputVerdicts,
+          engineEvents: result.events,
+          redirectTemplateUsed:
+            finalNarration === X_CARD_REDIRECT_TEMPLATE ||
+            finalNarration === SAFE_REDIRECT_TEMPLATE,
+          stateChanged:
+            result.state !== stateBefore || Object.keys(engineState).length > 0,
+        };
+      }
       const generation = await chat(prompt.messages, {
         tools,
         tool_choice: 'auto',

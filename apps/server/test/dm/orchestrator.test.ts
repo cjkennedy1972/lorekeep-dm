@@ -7,7 +7,10 @@ import type {
 } from '../../src/llm/adapter.js';
 import { LlmEndpointError } from '../../src/llm/adapter.js';
 import type { Moderator } from '../../src/safety/moderator.js';
-import { SAFE_REDIRECT_TEMPLATE } from '../../src/safety/outputGate.js';
+import {
+  SAFE_REDIRECT_TEMPLATE,
+  X_CARD_REDIRECT_TEMPLATE,
+} from '../../src/safety/outputGate.js';
 import {
   runTurn,
   runTurnQueued,
@@ -135,6 +138,63 @@ const moderationHoldingNotice =
   'The narrator pauses while the scene is checked. Try again shortly.';
 
 describe('DM orchestrator', () => {
+  it('uses an authored X-card redirect without calling the model or tools', async () => {
+    const execute = vi.fn(() => ({
+      ok: true,
+      summary: 'A scene closed.',
+      events: ['SceneClosed'],
+      output: {
+        events: [{ type: 'SceneClosed' }],
+        nextState: { changed: true },
+      },
+    }));
+    const h = setup(
+      [[call('close', 'close_scene', { summary: 'Continue.' })]],
+      execute,
+    );
+    const originalState = h.input.context.state;
+    h.input.prompt.session = {
+      ...h.input.prompt.session,
+      steerAway: true,
+    };
+
+    const result = await runTurn(h.input);
+
+    expect(h.requests).toHaveLength(0);
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.narration).toBe(X_CARD_REDIRECT_TEMPLATE);
+    expect(result.events).toEqual([]);
+    expect(result.state).toBe(originalState);
+    expect(h.events).toContainEqual(
+      expect.objectContaining({
+        type: 'NarrationCompleted',
+        text: X_CARD_REDIRECT_TEMPLATE,
+      }),
+    );
+  });
+
+  it('does not emit an X-card redirect after the turn has been aborted', async () => {
+    const execute = vi.fn();
+    const h = setup([], execute);
+    h.input.prompt.session = {
+      ...h.input.prompt.session,
+      steerAway: true,
+    };
+    const controller = new AbortController();
+    controller.abort();
+    h.input.signal = controller.signal;
+
+    await expect(runTurn(h.input)).rejects.toMatchObject({
+      code: 'stream-aborted',
+    });
+
+    expect(h.requests).toHaveLength(0);
+    expect(execute).not.toHaveBeenCalled();
+    expect(h.events).not.toContainEqual(
+      expect.objectContaining({ type: 'NarrationCompleted' }),
+    );
+  });
+
   it('emits and returns only the gate redirect when narration is blocked', async () => {
     const h = setup([[{ type: 'text', delta: 'The child is nude.' }]]);
     h.input.outputModerator = {
