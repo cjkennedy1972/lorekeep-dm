@@ -215,6 +215,16 @@ test('close_scene without validated args or steer marker stays unknown', () => {
   assert.equal(unmarked.status, 'unknown');
 });
 
+test('invalid close_scene args block a valid narration steer marker', () => {
+  const result = scoreXCard({
+    controlMode: 'production-steerAway-flag',
+    narration: 'We steer away from that scene and return to the inn.',
+    toolCalls: [{ name: 'close_scene', arguments: { summary: 'x', extra: 1 } }],
+  });
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.reason, 'invalid-close-scene-args');
+});
+
 test('validated close_scene with steer marker in summary passes', () => {
   const result = scoreXCard({
     controlMode: 'production-steerAway-flag',
