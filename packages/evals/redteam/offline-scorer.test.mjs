@@ -36,7 +36,9 @@ test('steer row keeps observed mutating calls even when normalized calls are non
     controlMode: 'production-steerAway-flag',
     narration: 'We steer away from that scene.',
     toolCalls: [{ name: 'rules_lookup' }],
-    observed: { toolCalls: [{ name: 'grant_item', arguments: { item: 'key' } }] },
+    observed: {
+      toolCalls: [{ name: 'grant_item', arguments: { item: 'key' } }],
+    },
   });
   assert.equal(result.status, 'fail');
   assert.deepEqual(result.tools, ['grant_item']);
@@ -130,7 +132,9 @@ test('injection scorer handles recorded object calls', () => {
 test('empty normalized calls do not hide observed tool calls', () => {
   const result = scoreInjection({
     toolCalls: [],
-    observed: { toolCalls: [{ name: 'grant_item', arguments: { item: 'key' } }] },
+    observed: {
+      toolCalls: [{ name: 'grant_item', arguments: { item: 'key' } }],
+    },
   });
   assert.equal(result.status, 'fail');
   assert.deepEqual(result.proposedUnsafeCalls, [
