@@ -333,11 +333,14 @@ describe('retention sweeper (Postgres)', () => {
         shared,
       ])
     )[0].payload;
-    expect(ev).toMatchObject({
-      displayName: 'Deleted player',
-      accountId: seatId,
-      anonymized: true,
-    });
+    expect(ev).toMatchObject({ displayName: 'Deleted player', anonymized: true });
+    expect(ev.accountId).not.toBe(gone);
+    expect(ev.accountId).not.toBe(seatId);
+    expect(
+      await count('SELECT count(*)::int n FROM accounts WHERE id=$1', [
+        ev.accountId,
+      ]),
+    ).toBe(0);
     expect(
       JSON.stringify(
         await q('SELECT state FROM snapshots WHERE session_id=$1', [shared]),

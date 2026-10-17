@@ -38,7 +38,7 @@ export async function loadContentTierState(
 }
 
 /**
- * Live mature block for every account that has ever been seated in the session: true when the
+ * Live mature block for every account currently seated (not revoked) in the session: true when the
  * account opted out, is not an adult, or is missing or not active (e.g. deleting). The seat's
  * join-time snapshot is not used.
  */
@@ -97,7 +97,7 @@ export async function matureAllowed(
 }
 
 /**
- * Union personal lines and veils for every account ever seated at this shared table.
+ * Union personal lines and veils for every account currently seated (not revoked) at this shared table.
  * The lists stay account-private in storage; only the unattributed union is used by
  * narration and moderation. Missing/deleted accounts contribute no free-text data.
  */

@@ -283,14 +283,11 @@ async function deleteAccount(
   const placeholderFor = async (sessionId: string) => {
     let placeholder = placeholders.get(sessionId);
     if (!placeholder) {
-      const seat = (
-        await client.query<{ seat_id: string | null }>(
-          `SELECT payload->>'seatId' AS seat_id FROM events
-            WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId'=$2 LIMIT 1`,
-          [sessionId, accountId],
-        )
-      ).rows[0];
-      placeholder = seat?.seat_id ?? randomUUID();
+      do placeholder = randomUUID();
+      while (
+        (await client.query('SELECT 1 FROM accounts WHERE id=$1', [placeholder]))
+          .rowCount
+      );
       placeholders.set(sessionId, placeholder);
     }
     return placeholder;
