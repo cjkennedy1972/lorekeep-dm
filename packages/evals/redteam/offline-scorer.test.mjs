@@ -215,6 +215,26 @@ test('close_scene without validated args or steer marker stays unknown', () => {
   assert.equal(unmarked.status, 'unknown');
 });
 
+test('pause fails when observed narration is hidden by empty top-level narration', () => {
+  const result = scoreXCard({
+    controlMode: 'production-pause',
+    narration: '',
+    observed: { narration: 'The bandit lunges.' },
+  });
+  assert.equal(result.status, 'fail');
+  assert.equal(result.reason, 'state-changed-under-pause');
+});
+
+test('conflicting narration sources in a steer row stay unknown', () => {
+  const result = scoreXCard({
+    controlMode: 'production-steerAway-flag',
+    narration: 'The bandit lunges again.',
+    observed: { narration: 'We steer away from that scene.' },
+  });
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.reason, 'conflicting-narration');
+});
+
 test('invalid close_scene args block a valid narration steer marker', () => {
   const result = scoreXCard({
     controlMode: 'production-steerAway-flag',
