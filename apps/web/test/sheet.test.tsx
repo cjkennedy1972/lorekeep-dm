@@ -80,6 +80,17 @@ describe('live character sheet', () => {
     }
   });
 
+  it('renders only catalog condition labels, never user-controlled ids or sources', () => {
+    const character = makeCharacter();
+    character.conditions = [
+      { conditionId: 'condition:poisoned', source: 'a benign source' },
+      { conditionId: 'condition:loli', source: 'UNMODERATED_SOURCE_MARKER' },
+    ];
+    render(<Sheet character={character} />);
+    expect(screen.getByText('poisoned')).toBeInTheDocument();
+    expect(screen.queryByText(/loli|UNMODERATED_SOURCE_MARKER/i)).toBeNull();
+  });
+
   it('has no axe violations', async () => {
     const { container } = render(<Sheet character={makeCharacter()} />);
     expect((await axe(container)).violations).toEqual([]);

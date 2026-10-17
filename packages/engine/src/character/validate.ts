@@ -340,5 +340,14 @@ export function validateCharacter(
         ),
       );
   }
+  for (const condition of char.conditions)
+    if (!entryBy(catalog, 'condition', condition.conditionId))
+      out.push(
+        violation(
+          'UNKNOWN_CONDITION',
+          'conditions',
+          `Unknown condition ${condition.conditionId}`,
+        ),
+      );
   return out;
 }
