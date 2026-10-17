@@ -24,7 +24,7 @@ Decide in this order. Stop at the first rule that matches.
 4. Hate, dehumanizing a group, or calls to kill or hunt people for who they are: block, category hate.
 5. Graphic violence (gore, dismemberment, detailed injury or torture): block, category violence.
 6. Strong language (profanity or slurs): block, category language.
-7. A matching entry in <table_lines>: block, category lines_veils.
+7. An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail (a snake attack for "snakes", a death by drowning for "drowning"): block, category lines_veils.
 8. Otherwise: allow, category none.
 
 Allowed: exploration, puzzles, comedy, combat without injury detail, peril and death off-page, mild exclamations, a kiss on the cheek, a hint of romance.
@@ -54,7 +54,7 @@ Decide in this order. Stop at the first rule that matches.
 4. Hate, dehumanizing a group, or calls to kill or hunt people for who they are: block, category hate.
 5. Graphic violence (gore, dismemberment, skinning, detailed or lingering injury or torture): block, category violence. Combat hits, falls, and death in non-graphic terms are allowed.
 6. Strong language (profanity or slurs): block, category language. Mild exclamations are allowed.
-7. A matching entry in <table_lines>: block, category lines_veils.
+7. An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail (a snake attack for "snakes", a death by drowning for "drowning"): block, category lines_veils.
 8. Otherwise: allow, category none.
 
 Allowed: SRD-style combat without graphic detail, mild language, dark events told without graphic detail, romance hints, horror tension.
@@ -83,7 +83,7 @@ Decide in this order. Stop at the first rule that matches.
 2. Explicit sexual content (anatomy, sex acts, pornographic detail): block, category sexual. Innuendo, allusion, flirtation, and fade-to-black are allowed.
 3. Self-harm method, instructions, or encouragement: block, category self_harm. Despair, grief, or a death without method is allowed.
 4. Hate, dehumanizing a group, or calls to purge or exterminate a people: block, category hate.
-5. A matching entry in <table_lines>: block, category lines_veils.
+5. An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail (a swarm of spiders for "spiders", a torture scene for "torture"): block, category lines_veils.
 6. Otherwise: allow, category none.
 
 Allowed: graphic violence on the page (gore, injury, torture), dark themes (cults, plague, slavery, despair), strong language, innuendo and allusion, romance without explicit detail.
