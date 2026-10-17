@@ -217,6 +217,20 @@ describe('injection resistance', () => {
       expect(system!.content).toContain('regardless of tier');
     }
   });
+
+  it('states that table lines apply when depicted without graphic detail, at every tier', () => {
+    for (const tier of ['family', 'standard', 'mature'] as const) {
+      const [system] = buildJudgeMessages({
+        ...request("A giant snake coils around Mara's leg and bites."),
+        tier,
+        direction: 'output',
+        tableLines: ['snakes'],
+      });
+      expect(system!.content).toMatch(
+        /An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail/,
+      );
+    }
+  });
 });
 
 describe('request shape', () => {
