@@ -55,6 +55,7 @@ const MUST_ALLOW: readonly [string, string][] = [
     'Mira is now a grown woman and so naked.',
   ],
   ['R1 split sentence adult age', 'Mira is 18. She is naked.'],
+  ['R1 split sentence adult age numeral', 'Mira 18. She is naked.'],
   ['R1 split sentence adult age word', 'Mira eighteen. She is naked.'],
   ['R1 split sentence no age', 'Mira is a girl. She is naked.'],
 ];
