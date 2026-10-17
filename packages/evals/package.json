@@ -13,7 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "eval:v0": "tsc -p tsconfig.json && node dist/cli.js"
+    "eval:v0": "tsc -p tsconfig.json && node dist/cli.js",
+    "redteam:live": "pnpm --filter @game/evals build && pnpm --filter @game/server build && node scripts/run-redteam-live.mjs"
   },
   "devDependencies": {
     "typescript": "5.9.3",
