@@ -14,7 +14,8 @@ import { MODERATION_SECTIONS } from '../../../apps/server/dist/safety/moderation
 import { checkHardFloor } from '../../../apps/server/dist/safety/hardFloor.js';
 import { hardFloorLayer } from '../../../apps/server/dist/safety/deterministicLayer.js';
 
-const baseUrl = process.env.REDTEAM_BASE_URL ?? 'http://172.31.25.75:8080/v1';
+const baseUrl = process.env.REDTEAM_BASE_URL;
+if (!baseUrl) throw new Error('REDTEAM_BASE_URL is required');
 const model = process.env.REDTEAM_MODEL ?? 'qwen3.8-35b-a3b-distill-q4';
 const profile = process.env.REDTEAM_PROFILE ?? 'local-qwen35';
 const sourceCommit = process.env.REDTEAM_SOURCE_COMMIT;
@@ -35,7 +36,7 @@ if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
 if (checkoutChanges)
   throw new Error('The live runner requires a clean Git working tree');
 const endpointUrl = checkLiveUrl(baseUrl);
-if (endpointUrl.host !== '172.31.25.75:8080')
+if (endpointUrl.host !== new URL(baseUrl).host)
   throw new Error('This run is pinned to the documented local Qwen endpoint');
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -47,9 +48,10 @@ const datasets = {
   xcard: await load('xcard-redirect.json'),
 };
 const startedAt = new Date().toISOString();
+const runStamp = startedAt.replace(/[:.]/g, '-');
 const outputPath = resolve(
   root,
-  'redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json',
+  `redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-${runStamp}.json`,
 );
 const toolNames = Object.keys(DMToolArgsSchema);
 const tools = toolNames.map((name) => ({
