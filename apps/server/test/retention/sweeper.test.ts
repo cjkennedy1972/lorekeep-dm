@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  logRetentionStale,
   retentionHealth,
   STALE_AFTER_MS,
 } from '../../src/retention/sweeper.js';
@@ -23,6 +24,59 @@ describe('retention health (fake clock)', () => {
     expect(
       (await retentionHealth(dbWith(at(STALE_AFTER_MS + 1)), now)).stale,
     ).toBe(true);
+  });
+});
+
+describe('retention stale log line', () => {
+  const now = new Date('2026-10-06T12:00:00Z');
+  const fresh = new Date(now.getTime() - 1000);
+  const dbThrowing = {
+    query: async () => {
+      throw new Error('connection refused');
+    },
+  } as never;
+
+  it('emits sweep_incomplete when the sweep never completed', async () => {
+    const log = vi.fn();
+    await logRetentionStale(dbWith(), log, now);
+    expect(log).toHaveBeenCalledWith({
+      job: 'health',
+      event: 'stale',
+      cause: 'sweep_incomplete',
+    });
+  });
+
+  it('emits health_query_error when the health query throws', async () => {
+    const log = vi.fn();
+    await logRetentionStale(dbThrowing, log, now);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith({
+      job: 'health',
+      event: 'stale',
+      cause: 'health_query_error',
+    });
+  });
+
+  it('stays silent when the sweep is fresh', async () => {
+    const log = vi.fn();
+    await logRetentionStale(dbWith(fresh), log, now);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('writes one JSON line through the default consoleLog', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await logRetentionStale(dbWith());
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(spy.mock.calls[0]![0]))).toMatchObject({
+        component: 'retention',
+        job: 'health',
+        event: 'stale',
+        cause: 'sweep_incomplete',
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
