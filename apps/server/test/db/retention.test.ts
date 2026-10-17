@@ -355,7 +355,7 @@ describe('retention sweeper (Postgres)', () => {
     await runSweep(pool, { store, log });
     expect(
       logs.find((l) => l.job === 'accountDeletion' && 'deleted' in l),
-    ).toMatchObject({ deleted: 0, failed: 0 });
+    ).toMatchObject({ deleted: 0, held: 0, failed: 0 });
   });
 
   it('skips and audits held items', async () => {
