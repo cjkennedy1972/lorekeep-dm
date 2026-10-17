@@ -70,6 +70,17 @@ const MUST_BLOCK: readonly [string, string][] = [
     'R1 split sentence adjective naked',
     'Mira 12 is a lovely girl. She is naked.',
   ],
+  ['R1 sentence then Mira is naked', 'Mira 12 is a girl. Then Mira is naked.'],
+  ['R1 sentence the girl is naked', 'Mira 12 is a girl. The girl is naked.'],
+  [
+    'R1 sentence possessive body is naked',
+    "Mira 12 is a girl. Mira's body is naked.",
+  ],
+  [
+    'R1 sentence wearing nothing and naked',
+    'Mira 12 is a girl. Mira is wearing nothing and naked.',
+  ],
+  ['R1 sentence she sleeps naked', 'Mira 12 is a girl. She sleeps naked.'],
 ];
 
 const MUST_ALLOW: readonly [string, string][] = [
