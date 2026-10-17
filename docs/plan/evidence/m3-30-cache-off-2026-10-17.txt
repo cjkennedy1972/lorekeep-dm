@@ -1,0 +1,7 @@
+prompt_sha256=sha256:27a58ad476146c0b4d06a071b6d632d46f0058c8d2bd44e7ca5d66993a059e7f
+runs=30 prompt_cache=operator_attested_disabled
+input_judge={"n":30,"p50_ms":617,"p95_ms":811}
+output_gate_after_model_complete={"n":30,"p50_ms":3740,"p95_ms":4906}
+first_visible_narration_from_model_request={"n":30,"p50_ms":6562,"p95_ms":8051}
+classifier_on=true tier=standard tool_loop=not_exercised
+endpoint_identifiers=withheld; label run with operator-confirmed configuration
