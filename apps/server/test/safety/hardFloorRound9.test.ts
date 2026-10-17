@@ -65,6 +65,6 @@ describe('hard floor round 9: bastion round-8 blocker (filler gap before bare se
   });
 
   it('bumps the hard-floor version for the new rule', () => {
-    expect(HARD_FLOOR_VERSION).toBe('2026-10-17.21');
+    expect(HARD_FLOOR_VERSION).toBe('2026-10-17.22');
   });
 });

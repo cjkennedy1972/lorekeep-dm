@@ -81,6 +81,14 @@ const MUST_BLOCK: readonly [string, string][] = [
     'Mira 12 is a girl. Mira is wearing nothing and naked.',
   ],
   ['R1 sentence she sleeps naked', 'Mira 12 is a girl. She sleeps naked.'],
+  [
+    'R1 direct noun wearing nothing and naked',
+    'Mira 12 is a girl wearing nothing and naked.',
+  ],
+  [
+    'R1 direct noun in only a towel and naked',
+    'Mira 12 is a girl in only a towel and naked.',
+  ],
 ];
 
 const MUST_ALLOW: readonly [string, string][] = [
@@ -103,6 +111,10 @@ const MUST_ALLOW: readonly [string, string][] = [
     'Mira 12 is a girl. Then she walked home.',
   ],
   ['R1 follow-up benign repeated name', 'Mira 12 is a girl. Mira ate lunch.'],
+  [
+    'R1 direct noun wearing nothing then benign',
+    'Mira 12 wearing nothing, she walked home.',
+  ],
   [
     'R1 follow-up two intervening sentences bound',
     'Mira 12 is a girl. The sun rose. The bell rang. She is naked.',
