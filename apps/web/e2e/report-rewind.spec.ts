@@ -58,6 +58,7 @@ test('report and rewind banner are reachable with the keyboard', async ({
   await expect(
     page.getByRole('status').filter({ hasText: 'Report received. Thank you.' }),
   ).toHaveText('Report received. Thank you.');
+  await expect(narrationReport).toBeFocused();
   await expect(
     page.getByText('A sealed door opens.', { exact: true }),
   ).toBeVisible();
