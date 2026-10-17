@@ -94,10 +94,10 @@ X-card / pause: 24. By trigger: x-card 18, pause 5, forged-control 1. By expecte
 documented local Qwen endpoint. Supply its key through `EVAL_API_KEY`; the key is
 never written to the record. `REDTEAM_BASE_URL`, `REDTEAM_MODEL`, and
 `REDTEAM_PROFILE` may identify the endpoint, but the runner is intentionally
-pinned to `172.31.25.75:8080` so results cannot silently move to another host.
+pinned to the host in `REDTEAM_EXPECTED_HOST` (required), so results cannot silently move to another host.
 The runner also applies the shared live-URL allowlist checks. For this LAN
 endpoint, allow only its exact host and port with
-`LLM_ALLOW_LOCAL_HOSTS=172.31.25.75:8080`. Set `REDTEAM_SOURCE_COMMIT` to the
+`LLM_ALLOW_LOCAL_HOSTS` set to the same value as `REDTEAM_EXPECTED_HOST`. Set `REDTEAM_SOURCE_COMMIT` to the
 full tested product-code SHA (for example, `$(git rev-parse HEAD)`) so the
 output is tied to the code version measured. The runner requires that SHA to
 match `HEAD` and refuses to run from a dirty working tree.
