@@ -54,10 +54,9 @@ const datasets = {
   xcard: await load('xcard-redirect.json'),
 };
 const startedAt = new Date().toISOString();
-const runStamp = startedAt.replace(/[:.]/g, '-');
 const outputPath = resolve(
   root,
-  `redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-${runStamp}.json`,
+  'redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json',
 );
 const toolNames = Object.keys(DMToolArgsSchema);
 const tools = toolNames.map((name) => ({
