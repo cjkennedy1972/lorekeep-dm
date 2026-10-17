@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-17.15';
+export const HARD_FLOOR_VERSION = '2026-10-17.16';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -241,7 +241,7 @@ export const HARD_FLOOR_RULES = {
       'groped',
       'groping',
     ],
-    /** "undress her", "strip the girl": sexual only with an object. "undressed for bed" is not. */
+    /** Undress verbs add a cue under same-message minor taint; routine "for bed" is exempt. */
     undressTerms: [
       'undress',
       'undresses',
@@ -252,7 +252,6 @@ export const HARD_FLOOR_RULES = {
       'stripped',
       'stripping',
     ],
-    undressObjects: ['her', 'him', 'them', 'the', 'his', 'their'],
     /** "sex" counts only in these phrases: "have sex", "in sex", "sex with", "sex scene"; "got laid" likewise. */
     sexPhraseNeighbours: {
       before: ['have', 'has', 'had', 'having', 'in', 'for'],
@@ -576,7 +575,6 @@ const AFTER = termIndex(PROXIMITY.sexPhraseNeighbours.after);
 const NOT_AFTER = termIndex(PROXIMITY.sexPhraseNeighbours.notAfter);
 const LAID_BEFORE = termIndex(PROXIMITY.sexPhraseNeighbours.laidBefore);
 const UNDRESS = termIndex(PROXIMITY.undressTerms);
-const UNDRESS_OBJECT = new Set<string>(PROXIMITY.undressObjects);
 const MAKE = termIndex(['make', 'makes', 'made', 'making']);
 const CLOTHES = termIndex(['clothes', 'clothing', 'garments', 'underwear']);
 const POSSESSIVE = new Set<string>([
@@ -862,7 +860,10 @@ export function scanFlags(
             sexualHere = true;
         } else if (inIndex(LAID, w) && inIndex(LAID_BEFORE, prev))
           sexualHere = true;
-        else if (inIndex(UNDRESS, w) && UNDRESS_OBJECT.has(next))
+        else if (
+          inIndex(UNDRESS, w) &&
+          !(next === 'for' && base[e + 2] === 'bed')
+        )
           sexualHere = true;
         else if (w === 'love' && inIndex(MAKE, prev)) sexualHere = true;
         else if (
