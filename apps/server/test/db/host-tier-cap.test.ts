@@ -14,6 +14,7 @@ import { SessionLease, type Lease } from '../../src/room/lease.js';
 import { Room, type Connection } from '../../src/room/Room.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { joinSeated } from '../helpers/room.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -189,7 +190,7 @@ describe('host tier cap', () => {
       runner(),
     );
     const seen = recorder();
-    await room.join(host, seen.connection, 'Host');
+    await joinSeated(room, host, seen.connection, 'Host');
     expect(await room.submitAction(host, randomUUID(), 'Look.', 'Host')).toBe(
       true,
     );
@@ -218,7 +219,7 @@ describe('host tier cap', () => {
     );
     const room = await rooms.get(sessionId);
     const seen = recorder();
-    await room.join(host, seen.connection, 'Host');
+    await joinSeated(room, host, seen.connection, 'Host');
     const app = createApp(db, {
       inputGate: allowInputGate,
       cookieSecret: 'test-secret',
@@ -255,7 +256,7 @@ describe('host tier cap', () => {
       runner(),
     );
     const room = await rooms.get(sessionId);
-    await room.join(host, recorder().connection, 'Host');
+    await joinSeated(room, host, recorder().connection, 'Host');
     const app = createApp(db, {
       inputGate: allowInputGate,
       cookieSecret: 'test-secret',

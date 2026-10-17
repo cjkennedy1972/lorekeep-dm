@@ -9,6 +9,7 @@ import { Persistence } from '../../src/persistence/index.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { Room, type Connection } from '../../src/room/Room.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { joinSeated } from '../helpers/room.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -132,11 +133,11 @@ describe('mature narration through Room and Persistence', () => {
     const sessionId = await session(owner);
     const joiner = recorder();
     const adapter = twoChunkNarrator(async () => {
-      await room.join(optedOut, joiner.connection, 'Joiner');
+      await joinSeated(room, optedOut, joiner.connection, 'Joiner');
     });
     const room = await openRoom(sessionId, adapter);
     const ownerSeen = recorder();
-    await room.join(owner, ownerSeen.connection, 'Owner');
+    await joinSeated(room, owner, ownerSeen.connection, 'Owner');
 
     expect(
       await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner'),
@@ -170,7 +171,7 @@ describe('mature narration through Room and Persistence', () => {
       store,
     );
     const ownerSeen = recorder();
-    await room.join(owner, ownerSeen.connection, 'Owner');
+    await joinSeated(room, owner, ownerSeen.connection, 'Owner');
 
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await waitForCompletion(sessionId);
@@ -185,11 +186,11 @@ describe('mature narration through Room and Persistence', () => {
     const sessionId = await session(owner);
     const joiner = recorder();
     const adapter = twoChunkNarrator(async () => {
-      await room.join(deleting, joiner.connection, 'Deleting');
+      await joinSeated(room, deleting, joiner.connection, 'Deleting');
     });
     const room = await openRoom(sessionId, adapter);
     const ownerSeen = recorder();
-    await room.join(owner, ownerSeen.connection, 'Owner');
+    await joinSeated(room, owner, ownerSeen.connection, 'Owner');
 
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await waitForCompletion(sessionId);
@@ -202,12 +203,12 @@ describe('mature narration through Room and Persistence', () => {
     const optedOut = await account(true);
     const sessionId = await session(owner);
     const room = await openRoom(sessionId, singleTextNarrator(LONG_NARRATION));
-    await room.join(owner, recorder().connection, 'Owner');
+    await joinSeated(room, owner, recorder().connection, 'Owner');
     await room.submitAction(owner, randomUUID(), 'inspect-the-sconce', 'Owner');
     await waitForCompletion(sessionId);
 
     const late = recorder();
-    await room.join(optedOut, late.connection, 'Late');
+    await joinSeated(room, optedOut, late.connection, 'Late');
 
     const wire = JSON.stringify(late.sent);
     expect(wire).toContain('StateSync');
@@ -220,14 +221,14 @@ describe('mature narration through Room and Persistence', () => {
     const optedOut = await account(true);
     const sessionId = await session(owner);
     const room = await openRoom(sessionId, singleTextNarrator(LONG_NARRATION));
-    await room.join(owner, recorder().connection, 'Owner');
-    await room.join(optedOut, recorder().connection, 'Opted');
+    await joinSeated(room, owner, recorder().connection, 'Owner');
+    await joinSeated(room, optedOut, recorder().connection, 'Opted');
     await room.disconnect(optedOut);
     await room.submitAction(owner, randomUUID(), 'inspect-the-sconce', 'Owner');
     await waitForCompletion(sessionId);
 
     const reconnect = recorder();
-    await room.join(optedOut, reconnect.connection, 'Opted');
+    await joinSeated(room, optedOut, reconnect.connection, 'Opted');
 
     const wire = JSON.stringify(reconnect.sent);
     expect(wire).toContain('StateSync');
@@ -242,8 +243,8 @@ describe('mature narration through Room and Persistence', () => {
     const room = await openRoom(sessionId, singleTextNarrator(LONG_NARRATION));
     const ownerSeen = recorder();
     const deletingSeen = recorder();
-    await room.join(owner, ownerSeen.connection, 'Owner');
-    await room.join(deleting, deletingSeen.connection, 'Deleting');
+    await joinSeated(room, owner, ownerSeen.connection, 'Owner');
+    await joinSeated(room, deleting, deletingSeen.connection, 'Deleting');
 
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await waitForCompletion(sessionId);

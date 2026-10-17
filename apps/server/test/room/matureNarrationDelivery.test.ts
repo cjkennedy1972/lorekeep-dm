@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Room, type Connection, type RoomStore } from '../../src/room/Room.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
+import { joinSeated } from '../helpers/room.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -111,12 +112,12 @@ describe('mature narration delivery', () => {
       eligible,
     );
     const ownerConn = recorder();
-    await room.join(owner, ownerConn, 'Owner');
+    await joinSeated(room, owner, ownerConn, 'Owner');
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await reached.promise;
 
     const joinerConn = recorder();
-    await room.join(joiner, joinerConn, 'Joiner');
+    await joinSeated(room, joiner, joinerConn, 'Joiner');
     release.open();
     await settle();
 
@@ -147,7 +148,7 @@ describe('mature narration delivery', () => {
       eligible,
     );
     const ownerConn = recorder();
-    await room.join(owner, ownerConn, 'Owner');
+    await joinSeated(room, owner, ownerConn, 'Owner');
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await reached.promise;
     await settle();
@@ -174,14 +175,14 @@ describe('mature narration delivery', () => {
       eligible,
     );
     const ownerConn = recorder();
-    await room.join(owner, ownerConn, 'Owner');
+    await joinSeated(room, owner, ownerConn, 'Owner');
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await reached.promise;
 
     await room.disconnect(owner);
     eligible.delete(owner);
     const reconnected = recorder();
-    await room.join(owner, reconnected, 'Owner');
+    await joinSeated(room, owner, reconnected, 'Owner');
     release.open();
     await settle();
 
@@ -200,12 +201,12 @@ describe('mature narration delivery', () => {
       new Set(),
     );
     const ownerConn = recorder();
-    await room.join(owner, ownerConn, 'Owner');
+    await joinSeated(room, owner, ownerConn, 'Owner');
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await reached.promise;
 
     const joinerConn = recorder();
-    await room.join(joiner, joinerConn, 'Joiner');
+    await joinSeated(room, joiner, joinerConn, 'Joiner');
     release.open();
     await settle();
 
@@ -237,12 +238,12 @@ describe('mature narration delivery', () => {
       },
     };
     const room = setup(runner, new Set([owner]));
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
     await settle();
 
     const joinerConn = recorder();
-    await room.join(joiner, joinerConn, 'Joiner');
+    await joinSeated(room, joiner, joinerConn, 'Joiner');
 
     const snapshots = joinerConn.sent.filter((m) => m.type === 'StateSync');
     expect(snapshots.length).toBeGreaterThan(0);

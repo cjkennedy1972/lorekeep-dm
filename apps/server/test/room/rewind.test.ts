@@ -18,6 +18,7 @@ import {
   findRewindTarget,
   ROOM_STATE_EVENT_TYPES,
 } from '../../src/persistence/rewind.js';
+import { joinSeated } from '../helpers/room.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -124,7 +125,7 @@ function setup() {
 describe('rewind last resolved turn', () => {
   it('restores state, map and transcript, and emits TurnReverted', async () => {
     const { room, events, host: owner } = setup();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     const afterFirst = structuredClone(room.state.gameState);
@@ -152,12 +153,12 @@ describe('rewind last resolved turn', () => {
   it('keeps a seat joined after the reverted turn began', async () => {
     const { room, host: owner } = setup();
     const guest = randomUUID();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
     await settle();
-    await room.join(guest, recorder(), 'Guest');
+    await joinSeated(room, guest, recorder(), 'Guest');
 
     await room.rewindLastTurn(owner);
 
@@ -167,7 +168,7 @@ describe('rewind last resolved turn', () => {
 
   it('keeps refusing an action id accepted after the reverted turn began', async () => {
     const { room, events, host: owner } = setup();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
@@ -189,7 +190,12 @@ describe('rewind last resolved turn', () => {
   it('tells connected clients to retract the reverted turn', async () => {
     const { room, host: owner } = setup();
     const sent: ServerMessage[] = [];
-    await room.join(owner, { send: (message) => sent.push(message) }, 'Owner');
+    await joinSeated(
+      room,
+      owner,
+      { send: (message) => sent.push(message) },
+      'Owner',
+    );
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
@@ -207,7 +213,7 @@ describe('rewind last resolved turn', () => {
 
   it('refuses a second rewind of the same turn', async () => {
     const { room, events, host: owner } = setup();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
@@ -224,7 +230,7 @@ describe('rewind last resolved turn', () => {
 
   it('allows a rewind again after a new turn resolves', async () => {
     const { room, events, host: owner } = setup();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
     await room.submitAction(owner, randomUUID(), 'Search the room.', 'Owner');
@@ -248,8 +254,8 @@ describe('rewind last resolved turn', () => {
   it('refuses rewind from anyone but the table host', async () => {
     const { room, events, host: owner } = setup();
     const guest = randomUUID();
-    await room.join(owner, recorder(), 'Owner');
-    await room.join(guest, recorder(), 'Guest');
+    await joinSeated(room, owner, recorder(), 'Owner');
+    await joinSeated(room, guest, recorder(), 'Guest');
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
 

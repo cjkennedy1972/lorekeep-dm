@@ -11,6 +11,7 @@ import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
+import { joinSeated } from '../helpers/room.js';
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = createApp(db, { inputGate: allowInputGate });
 const rooms = new RoomRegistry(
@@ -64,7 +65,7 @@ beforeAll(async () => {
   ]);
   const room = await rooms.get(sessionId);
   await room.seat(accounts[0], 'Player 0');
-  await room.join(accounts[1], { send() {} }, 'Player 1');
+  await joinSeated(room, accounts[1], { send() {} }, 'Player 1');
   await room.disconnect(accounts[1]);
   tokens = await Promise.all(
     accounts.map((id) => createSession(db, id, 'test')),
