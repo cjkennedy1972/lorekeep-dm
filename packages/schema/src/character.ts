@@ -3,7 +3,7 @@ import { AbilitySchema, CatalogIdSchema } from './catalog.js';
 
 export const ConditionInstanceSchema = z.object({
   conditionId: CatalogIdSchema,
-  source: z.string().optional(),
+  source: z.string().max(200).optional(),
   duration: z.int().positive().optional(),
 });
 export type ConditionInstance = z.infer<typeof ConditionInstanceSchema>;
