@@ -362,6 +362,7 @@ for (const c of datasets.xcard.cases) {
             jsonSchema: true,
           }),
           probe: async () => true,
+          // eslint-disable-next-line require-yield -- generator so the throw happens on iteration
           async *complete() {
             modelCalls++;
             throw new Error(
