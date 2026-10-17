@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { Character } from '@game/schema';
 import { gameStore, type GameStore } from '../../state/gameStore';
+import { loadCharacterCatalog } from './catalog';
 
 export interface SheetProps {
   character?: Character | null;
@@ -19,6 +20,11 @@ const modifier = (score: number) => {
   const value = Math.floor((score - 10) / 2);
   return `${value >= 0 ? '+' : ''}${value}`;
 };
+const conditionLabels = new Map(
+  loadCharacterCatalog()
+    .entries.filter((entry) => entry.kind === 'condition')
+    .map((entry) => [entry.id, entry.name.toLowerCase()]),
+);
 
 export function Sheet({
   character: suppliedCharacter,
@@ -41,9 +47,10 @@ export function Sheet({
     );
 
   const ac = 10 + Math.floor((character.abilities.dex - 10) / 2);
-  const conditions = character.conditions.map((condition) =>
-    condition.conditionId.replace(/^condition:/, '').replaceAll('-', ' '),
-  );
+  const conditions = character.conditions.flatMap((condition) => {
+    const label = conditionLabels.get(condition.conditionId);
+    return label ? [label.toLowerCase()] : [];
+  });
   const hpLabel = `Hit points ${character.hp.current} of ${character.hp.max}`;
 
   return (

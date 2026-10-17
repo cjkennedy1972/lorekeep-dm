@@ -7,19 +7,19 @@ import rawEquipment from '../../../../../packages/engine/catalog/equipment.json'
 import rawSpecies from '../../../../../packages/engine/catalog/species.json';
 import rawSpells from '../../../../../packages/engine/catalog/spells.json';
 import rawConditions from '../../../../../packages/engine/catalog/conditions.json';
+const entries = [
+  ...rawBackgrounds,
+  ...rawClassesA,
+  ...rawClassesB,
+  ...rawEquipment,
+  ...rawSpecies,
+  ...rawSpells,
+  ...rawConditions,
+] as CatalogEntry[];
+const byId = new Map(entries.map((entry) => [entry.id, entry]));
 
 /** Browser-safe catalog assembled from checked-in JSON; no node filesystem dependency. */
 export function loadCharacterCatalog(): Catalog {
-  const entries = [
-    ...rawBackgrounds,
-    ...rawClassesA,
-    ...rawClassesB,
-    ...rawEquipment,
-    ...rawSpecies,
-    ...rawSpells,
-    ...rawConditions,
-  ] as CatalogEntry[];
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
   return {
     catalogVersion: 'browser-catalog-v0',
     entries,

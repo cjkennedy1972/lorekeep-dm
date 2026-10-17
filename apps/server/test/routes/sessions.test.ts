@@ -124,15 +124,16 @@ describe('room routes', () => {
             rows: [{ account_id: 'acc', token_hash: 'h' }],
             rowCount: 1,
           };
-        if (/FROM sessions WHERE invite_hash/.test(sql))
+        if (/FROM sessions s[\s\S]*invite_hash/.test(sql))
           return {
             rows: [
               {
                 id: 'room',
                 name: 'Room',
-                owner: 'host',
+                owner: 'acc',
                 status: 'active',
                 host_tier_cap: null,
+                is_member: false,
               },
             ],
             rowCount: 1,
@@ -171,6 +172,72 @@ describe('room routes', () => {
     expect(response.statusCode).toBe(409);
     expect(attemptedOptOut).toBe(true);
     expect(updates).toHaveLength(0);
+    await app.close();
+  });
+});
+
+describe('leave table', () => {
+  const roomId = '11111111-1111-4111-8111-111111111111';
+  function leaveApp(opts: { owner: string; member: boolean }) {
+    const left: string[] = [];
+    const db = {
+      connect: async () => undefined,
+      query: async (sql: string) => {
+        if (/UPDATE auth_sessions/.test(sql))
+          return {
+            rows: [{ account_id: 'acc', token_hash: 'h' }],
+            rowCount: 1,
+          };
+        if (/AND s\.id=\$2/.test(sql))
+          return { rows: [], rowCount: opts.member ? 1 : 0 };
+        if (/SELECT owner_account_id AS owner FROM sessions/.test(sql))
+          return { rows: [{ owner: opts.owner }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    const app = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({ leave: async (id: string) => void left.push(id) }),
+      } as never,
+    });
+    return { app, left };
+  }
+
+  it('non-member gets 404 and the room is not touched', async () => {
+    const { app, left } = leaveApp({ owner: 'host', member: false });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/leave`,
+      headers: cookie,
+    });
+    expect(res.statusCode).toBe(404);
+    expect(left).toEqual([]);
+    await app.close();
+  });
+
+  it('host cannot leave their own table', async () => {
+    const { app, left } = leaveApp({ owner: 'acc', member: true });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/leave`,
+      headers: cookie,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(left).toEqual([]);
+    await app.close();
+  });
+
+  it('seated player leaves and the seat is revoked', async () => {
+    const { app, left } = leaveApp({ owner: 'host', member: true });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/leave`,
+      headers: cookie,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(left).toEqual(['acc']);
     await app.close();
   });
 });

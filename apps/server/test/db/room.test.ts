@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
+import { joinSeated } from '../helpers/room.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -26,7 +27,7 @@ describe('persisted room', () => {
       const first = new RoomRegistry(store, leases, 'first');
       const room = await first.get(sessionId);
       const accountId = randomUUID();
-      await room.join(accountId, { send() {} });
+      await joinSeated(room, accountId, { send() {} });
       const actionId = randomUUID();
       expect(await room.submit(actionId)).toBe(true);
       const original = room.state;

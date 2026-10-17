@@ -37,6 +37,7 @@ export type RuleViolationCode =
   | 'UNKNOWN_SPECIES'
   | 'UNKNOWN_CLASS'
   | 'UNKNOWN_BACKGROUND'
+  | 'UNKNOWN_CONDITION'
   | 'ABILITY_RANGE'
   | 'POINT_BUY_TOTAL'
   | 'POINT_BUY_RANGE'

@@ -15,6 +15,7 @@ export interface RewindTarget {
 export const ROOM_STATE_EVENT_TYPES = [
   'ActionAccepted',
   'SeatJoined',
+  'SeatRevoked',
   'PresenceChanged',
   'TablePaused',
   'SafetyFlag',

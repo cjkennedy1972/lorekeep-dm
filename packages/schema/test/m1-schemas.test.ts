@@ -111,6 +111,14 @@ test('Character parses valid and rejects invalid', () => {
       slots: { '0': { max: 1, used: 0 } },
     }).success,
   ).toBe(false);
+  expect(
+    CharacterSchema.safeParse({
+      ...character,
+      conditions: Array.from({ length: 16 }, () => ({
+        conditionId: 'condition:prone',
+      })),
+    }).success,
+  ).toBe(false);
 });
 
 const combat = {

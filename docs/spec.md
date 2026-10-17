@@ -392,13 +392,15 @@ LLM-dependent targets are baselines for a streaming hosted endpoint; the operato
 | Page load to interactive (broadband) | ≤ 3 s |
 | Input accepted/acknowledged ("queued/thinking") | ≤ 300 ms |
 | Dice/rules-engine resolution (no LLM), including movement/geometry validation | ≤ 500 ms |
-| First narration token streamed | ≤ 2.5 s (reference endpoint; not yet demonstrated by the current buffered tool-bearing implementation) |
+| First safe narration token | ≤ 3 s p95 (reference hosted streaming endpoint; not yet demonstrated by the current buffered tool-bearing implementation; see ADR-023) |
 | Complete DM turn (exploration) | ≤ 8 s (p50 ≤ 4 s) (reference endpoint) |
 | Complete DM turn (combat, per action) | ≤ 6 s (reference endpoint) |
 | State sync across clients, including token moves | ≤ 1 s |
 | Reconnect and state restore | ≤ 3 s |
 
 The target experience is token-by-token narration, with rules/dice results displayed before narration completes. Current tool-bearing turns buffer the model's completed narration before moderation and do not yet meet the streaming-latency target; this is a known implementation gap, not a measured SLO.
+
+**Latency decision (2026-10-17; ADR-023).** Keep the ≤3 s p95 first-safe-narration target as an unmet product goal (corrected from 2.5 s to align with ADR-023). Do not raise it to match the current implementation's latency based only on a 30-run synthetic sample or an individual conversational-model response. The separate ≤300 ms accepted-action acknowledgment remains the immediate-feedback target; the client may show elapsed wait time but must not imply model progress it cannot observe. Evaluate faster guard models and a safety-preserving streaming design before considering any target change.
 
 **Map rendering (MVP, 2D):**
 | Metric | Target |

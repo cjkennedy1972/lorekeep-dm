@@ -25,7 +25,7 @@
  * bare-noun minors, images.
  */
 
-export const HARD_FLOOR_VERSION = '2026-10-12.11';
+export const HARD_FLOOR_VERSION = '2026-10-17.26';
 
 /** Callers cap input far below this (ws text 4000, names 80). Longer input is blocked, never scanned. Equals the output turn cap (DEFAULT_MAX_TURN_CHARS) so a whole turn is scanned. */
 export const MAX_INPUT_CHARS = 30_000;
@@ -241,7 +241,7 @@ export const HARD_FLOOR_RULES = {
       'groped',
       'groping',
     ],
-    /** "undress her", "strip the girl": sexual only with an object. "undressed for bed" is not. */
+    /** Undress verbs add a cue under same-message minor taint; routine "for bed" is exempt. */
     undressTerms: [
       'undress',
       'undresses',
@@ -252,7 +252,6 @@ export const HARD_FLOOR_RULES = {
       'stripped',
       'stripping',
     ],
-    undressObjects: ['her', 'him', 'them', 'the', 'his', 'their'],
     /** "sex" counts only in these phrases: "have sex", "in sex", "sex with", "sex scene"; "got laid" likewise. */
     sexPhraseNeighbours: {
       before: ['have', 'has', 'had', 'having', 'in', 'for'],
@@ -555,15 +554,42 @@ const MAX_TERM_CHARS = 24;
 
 const PROXIMITY = HARD_FLOOR_RULES['minor-sexual.proximity'];
 const UNIT_AFTER = `(?!\\s*(?:${[...QUANTITY_UNITS].join('|')})${WORD_END})`;
-const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:and\\s+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
+const AGE_PREDICATE_NOUNS = [
+  ...PROXIMITY.personNouns,
+  'person',
+  'people',
+  'child',
+  'children',
+  'kid',
+  'kids',
+  'teen',
+  'teens',
+  'teenager',
+  'teenagers',
+];
+const PREDICATE_ADVERBS = `(?:(?:${['now', 'so', 'very', 'too', 'completely', 'totally', 'fully', 'still', 'just', 'already', 'really', 'quite', 'also', 'almost', 'nearly', 'barely', 'half', 'hardly', 'mostly', 'partly', 'partially', 'always', 'never', 'even', 'stark'].join('|')}|\\p{L}{2,}ly)${WORD_END}[^\\p{L}\\p{N}]+)`;
+const SEXUAL_AFTER = `(?=[^\\p{L}\\p{N}]*(?:(?:years?|yrs?)[^\\p{L}\\p{N}]*(?:old[^\\p{L}\\p{N}]*)?)?(?:(?:is|was|are|were|am|get|gets|got|getting|become|becomes|became|turn|turns|turned|turning)[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${PROXIMITY.adultMarkers.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${AGE_PREDICATE_NOUNS.join('|')})[^\\p{L}\\p{N}]+(?:who|that)[^\\p{L}\\p{N}]+(?:${PREDICATE_ADVERBS})*(?:(?:is|was|are|were|am|get|gets|got|getting|become|becomes|became|turn|turns|turned|turning|sleep|sleeps|slept|sleeping)[^\\p{L}\\p{N}]+)?)?(?:(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${AGE_PREDICATE_NOUNS.join('|')})[^\\p{L}\\p{N}]+)?(?:(?:wearing|in)\\s+(?:nothing|no\\s+clothes|no\\s+clothing|only\\s+(?:a\\s+)?towel)[^\\p{L}\\p{N}]+(?:and\\s+)?)?(?:(?:sleeps?|slept|sleeping)[^\\p{L}\\p{N}]+)?(?:${PREDICATE_ADVERBS})*(?:and\\s+)?(?:(?:a|an|the)[^\\p{L}\\p{N}]+)?(?:${[...PROXIMITY.sexualTerms, ...PROXIMITY.undressTerms, 'sex'].join('|')})${WORD_END})`;
 /**
  * "Mira 12, ..." / "Mira; 12 ..." after a letter. Punctuation separators need no tail;
- * a bare space needs a sexual or undress word right after the number (plus optional "and"),
- * so "rolled a 15 to seduce" and "Two girls and 9 goblins" stay allowed.
+ * a bare space needs a bounded sexual/undress predicate after the number, so "rolled a 15
+ * to seduce" and "Two girls and 9 goblins" stay allowed.
  */
 const NAME_AGE = new RegExp(
   `(\\p{L})(?:\\s*[^\\p{L}\\p{N}\\s]{1,3}\\s*${AGE_NUMBER}${WORD_END}${UNIT_AFTER}|\\s+${AGE_NUMBER}${WORD_END}${SEXUAL_AFTER})`,
   'gu',
+);
+/**
+ * "Mira 12. She is naked." : a bare name plus an under-18 age taints the next sentence's
+ * subject (she/he/they, then she, the same name, the girl/boy/child/kid/teen, the name plus
+ * body-part, her/his/their body-part), optionally followed by sleep/sleeps/slept/sleeping, when
+ * a sexual predicate follows. At most one sentence may sit between the age sentence and the subject.
+ */
+const MINOR_AGE_NUMBER = `(?:1[0-7]|\\d|${Object.keys(NUMBER_WORDS)
+  .filter((w) => NUMBER_WORDS[w]! < 18)
+  .join('|')})`;
+const AGE_SENTENCE_PRONOUN = new RegExp(
+  `((?<![\\p{L}\\p{N}])(?<name>\\p{L}+)\\s+${MINOR_AGE_NUMBER}${WORD_END}(?:[^.!?\\n]{0,40}[.!?]+\\s+(?:[^.!?\\n]{0,60}[.!?]+\\s+)?|[,;]\\s*(?:and\\s+)?|\\s+(?:and\\s+)?))(?:then\\s+)?(?:(?:she|he|they)|\\k<name>(?:\\s+(?:body|skin|figure|chest|hips|legs|breasts))?|the\\s+(?:girl|boy|child|kid|teen)|(?:her|his|their)\\s+(?:body|skin|figure|chest|hips|legs|breasts))(?:\\s+(?:sleeps?|slept|sleeping))?${WORD_END}${SEXUAL_AFTER}`,
+  'giu',
 );
 const EXPLICIT = termIndex(HARD_FLOOR_RULES['csam.explicit-term'].terms);
 const MINOR = termIndex(PROXIMITY.minorTerms);
@@ -576,7 +602,6 @@ const AFTER = termIndex(PROXIMITY.sexPhraseNeighbours.after);
 const NOT_AFTER = termIndex(PROXIMITY.sexPhraseNeighbours.notAfter);
 const LAID_BEFORE = termIndex(PROXIMITY.sexPhraseNeighbours.laidBefore);
 const UNDRESS = termIndex(PROXIMITY.undressTerms);
-const UNDRESS_OBJECT = new Set<string>(PROXIMITY.undressObjects);
 const MAKE = termIndex(['make', 'makes', 'made', 'making']);
 const CLOTHES = termIndex(['clothes', 'clothing', 'garments', 'underwear']);
 const POSSESSIVE = new Set<string>([
@@ -704,6 +729,10 @@ function normalizeFoldedText(input: string): string {
     // otherwise "Naked, 12" becomes "Nake minorage" and loses the cue.
     return normalized === match ? match : anchor + normalized;
   });
+  s = s.replace(
+    AGE_SENTENCE_PRONOUN,
+    (_m, head: string) => `${head} minorage `,
+  );
   s = s.replace(ROMAN_AGE_PHRASE, ' minorage ');
   s = s.replace(ROMAN_LINKED, ' minorage ');
   s = s.replace(DOT_SPLIT, ' ');
@@ -814,6 +843,20 @@ export function scanFlags(
   const base = words.map((w) => variants(w)[0]!);
   let minor = false;
   let sexual = false;
+  const hasExplicitMinorCue =
+    base.includes('minorage') ||
+    base.some((w, i) => {
+      if (!bareAge(w) || QUANTITY_UNITS.has(base[i + 1] ?? '')) return false;
+      const prev = i > 0 ? base[i - 1]! : '';
+      const prev2 = i > 1 ? base[i - 2]! : '';
+      const next = base[i + 1] ?? '';
+      return (
+        AGE_LINKS.has(prev) ||
+        (prev === 's' && (prev2 === 'she' || prev2 === 'he')) ||
+        ((inIndex(PERSON_NOUN, prev) || inIndex(PERSON_NOUN, next)) &&
+          nounAge(w))
+      );
+    });
   for (let s = from; s < to; s++) {
     let joined = '';
     for (let e = s; e < Math.min(words.length, s + MAX_JOIN); e++) {
@@ -862,7 +905,10 @@ export function scanFlags(
             sexualHere = true;
         } else if (inIndex(LAID, w) && inIndex(LAID_BEFORE, prev))
           sexualHere = true;
-        else if (inIndex(UNDRESS, w) && UNDRESS_OBJECT.has(next))
+        else if (
+          inIndex(UNDRESS, w) &&
+          !(next === 'for' && base[e + 2] === 'bed' && !hasExplicitMinorCue)
+        )
           sexualHere = true;
         else if (w === 'love' && inIndex(MAKE, prev)) sexualHere = true;
         else if (

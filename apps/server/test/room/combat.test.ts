@@ -7,6 +7,7 @@ import {
   type RoomCombatState,
 } from '../../src/room/combat.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
+import { joinSeated } from '../helpers/room.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -124,8 +125,8 @@ describe('Room combat command seam', () => {
     const { room, events } = setup();
     const owner = randomUUID(),
       intruder = randomUUID();
-    await room.join(owner, { send() {} });
-    await room.join(intruder, { send() {} });
+    await joinSeated(room, owner, { send() {} });
+    await joinSeated(room, intruder, { send() {} });
     // State is restored through a persisted commit, as it would be on room recovery.
     await room.persistRegistry([]).catch(() => undefined);
     const denied = createCombatRuntime().execute(combat, 'ent_goblin', {
@@ -178,8 +179,8 @@ describe('Room combat command seam', () => {
     const { room, events, latestSnapshot } = setup();
     const owner = randomUUID();
     const intruder = randomUUID();
-    await room.join(owner, { send() {} });
-    await room.join(intruder, { send() {} });
+    await joinSeated(room, owner, { send() {} });
+    await joinSeated(room, intruder, { send() {} });
     room.state = {
       ...room.state,
       gameState: { combatRoom: combat, combatActors: { [owner]: 'ent_hero' } },

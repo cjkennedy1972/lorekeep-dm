@@ -12,6 +12,8 @@ import type {
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { Room, type RoomStore } from '../../src/room/Room.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { joinSeated } from '../helpers/room.js';
+import { deleteTestSessions } from './testCleanup.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -73,6 +75,10 @@ async function seedTable() {
   await db.query(
     'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
     [sessionId, accountId, 'Drain scene close', ADVENTURE],
+  );
+  await db.query(
+    `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
+    [sessionId, JSON.stringify({ accountId, displayName: 'Solo' })],
   );
   sessionIds.push(sessionId);
   return { accountId, sessionId };
@@ -152,8 +158,7 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'drain-scene-close-'));
 });
 afterAll(async () => {
-  for (const id of sessionIds)
-    await db.query('DELETE FROM sessions WHERE id=$1', [id]);
+  await deleteTestSessions(db, sessionIds);
   for (const id of accountIds)
     await db.query('DELETE FROM accounts WHERE id=$1', [id]);
   await db.end();
@@ -168,7 +173,7 @@ describe('scene close against the Room commit', () => {
       sessionId,
       dm,
     );
-    await room.join(accountId, { send() {} });
+    await joinSeated(room, accountId, { send() {} });
     expect(
       await room.submitAction(accountId, randomUUID(), 'We finish here.'),
     ).toBe(true);
@@ -188,7 +193,7 @@ describe('scene close against the Room commit', () => {
     const { accountId, sessionId } = await seedTable();
     const dm = slowSummaryDm();
     const { room, writes, turnDone } = await harness(sessionId, dm);
-    await room.join(accountId, { send() {} });
+    await joinSeated(room, accountId, { send() {} });
     expect(
       await room.submitAction(accountId, randomUUID(), 'We finish here.'),
     ).toBe(true);

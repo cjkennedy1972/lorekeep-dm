@@ -16,6 +16,7 @@ import { Room, type Connection } from '../../src/room/Room.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import { MODERATION_SECTIONS } from '../../src/safety/moderationRubric.generated.js';
 import type { Moderator } from '../../src/safety/moderator.js';
+import { joinSeated } from '../helpers/room.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -143,7 +144,7 @@ describe('endpoint refusal of a mature prompt', () => {
         matureRefusingNarrator(calls, status),
       );
       const seen = recorder();
-      await room.join(owner, seen.connection, 'Owner');
+      await joinSeated(room, owner, seen.connection, 'Owner');
       await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
         sessionId,
       ]);
@@ -254,7 +255,7 @@ describe('endpoint refusal of a mature prompt', () => {
     };
     const room = await openRoom(sessionId, adapter);
     const seen = recorder();
-    await room.join(owner, seen.connection, 'Owner');
+    await joinSeated(room, owner, seen.connection, 'Owner');
     await room.persistGameState({
       sceneId: 'scene-marowfell-well',
       adventureId: 'adventure:01-hollow-under-marrowfell',
@@ -296,7 +297,7 @@ describe('endpoint refusal of a mature prompt', () => {
     };
     const room = await openRoom(sessionId, adapter);
     const seen = recorder();
-    await room.join(owner, seen.connection, 'Owner');
+    await joinSeated(room, owner, seen.connection, 'Owner');
     await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
       sessionId,
     ]);
@@ -347,7 +348,7 @@ describe('endpoint refusal of a mature prompt', () => {
     };
     const room = await openRoom(sessionId, adapter);
     const seen = recorder();
-    await room.join(owner, seen.connection, 'Owner');
+    await joinSeated(room, owner, seen.connection, 'Owner');
     await db.query("UPDATE sessions SET content_tier='mature' WHERE id=$1", [
       sessionId,
     ]);
@@ -411,7 +412,7 @@ describe('endpoint refusal of a mature prompt', () => {
     };
     const room = await openRoom(sessionId, adapter);
     const seen = recorder();
-    await room.join(owner, seen.connection, 'Owner');
+    await joinSeated(room, owner, seen.connection, 'Owner');
     await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
       owner,
     ]);
@@ -430,7 +431,7 @@ describe('endpoint refusal of a mature prompt', () => {
     const calls = { mature: 0, standard: 0 };
     const room = await openRoom(sessionId, matureRefusingNarrator(calls, 403));
     const seen = recorder();
-    await room.join(owner, seen.connection, 'Owner');
+    await joinSeated(room, owner, seen.connection, 'Owner');
     await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
       owner,
     ]);

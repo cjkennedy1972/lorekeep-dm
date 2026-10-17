@@ -12,6 +12,7 @@ import { Room } from '../../src/room/Room.js';
 import { createInputGate, type InputGate } from '../../src/safety/inputGate.js';
 import { purgeLogs } from '../../src/retention/jobs/logs.js';
 import type { Moderator } from '../../src/safety/moderator.js';
+import { joinSeated } from '../helpers/room.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const accounts = [randomUUID(), randomUUID()];
@@ -85,7 +86,8 @@ beforeAll(async () => {
     accounts[0],
   ]);
   const room = await rooms.get(sessionId);
-  await room.join(accounts[1], { send() {} }, 'Gate 1');
+  await room.seat(accounts[0]!, 'Gate 0');
+  await joinSeated(room, accounts[1], { send() {} }, 'Gate 1');
   await room.disconnect(accounts[1]);
   tokens = await Promise.all(
     accounts.map((id) => createSession(db, id, 'test')),

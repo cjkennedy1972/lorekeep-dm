@@ -93,6 +93,13 @@ export class NotTableHostError extends Error {
   }
 }
 
+export class RoomSeatRequiredError extends Error {
+  constructor() {
+    super('Player is not seated at this table');
+    this.name = 'RoomSeatRequiredError';
+  }
+}
+
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
@@ -105,6 +112,7 @@ export class Room {
   private reactionTimer?: NodeJS.Timeout;
   private turnInFlight = false;
   private turnAbort?: AbortController;
+  private turnAccountId?: string;
   private matureDelivery: Promise<void> = Promise.resolve();
   private readonly pendingActions = new Set<string>();
   private activeTurn: Promise<void> = Promise.resolve();
@@ -253,10 +261,12 @@ export class Room {
     displayName = accountId,
     matureOptOut = false,
     lastSeq = -1,
+    options: { requireExistingSeat?: boolean } = {},
   ): Promise<void> {
     return this.enqueue(async () => {
       let seat = this.state.seats.find((item) => item.accountId === accountId);
       if (!seat) {
+        if (options.requireExistingSeat) throw new RoomSeatRequiredError();
         if (this.state.seats.length >= 6) throw new Error('Room is full');
         seat = {
           seatId: randomUUID() as RoomState['seats'][number]['seatId'],
@@ -326,8 +336,33 @@ export class Room {
     return this.connections.size;
   }
 
+  /** Explicit leave revokes the seat; a dropped socket is only `disconnect`. */
   leave(accountId: string): Promise<void> {
-    return this.disconnect(accountId);
+    return this.enqueue(async () => {
+      const connection = this.connections.get(accountId);
+      this.connections.delete(accountId);
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat) {
+        connection?.close?.(1000, 'Left the table');
+        return;
+      }
+      if (this.turnInFlight && this.turnAccountId === accountId)
+        this.turnAbort?.abort();
+      this.withdrawQueuedFor(accountId);
+      await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
+      this.state = {
+        ...this.state,
+        seats: this.state.seats.filter((item) => item.seatId !== seat.seatId),
+      };
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+      connection?.close?.(1000, 'Left the table');
+    });
   }
   disconnect(accountId: string): Promise<void> {
     return this.enqueue(async () => {
@@ -879,11 +914,23 @@ export class Room {
     ) {
       const action = this.queuedActions.shift();
       if (!action) continue;
+      if (
+        !this.state.seats.some((seat) => seat.accountId === action.accountId)
+      ) {
+        this.pendingActions.delete(action.actionId);
+        this.broadcast({
+          seq: this.seq,
+          type: 'ActionWithdrawn',
+          payload: { actionId: action.actionId },
+        } as ServerMessage);
+        continue;
+      }
       this.broadcast({
         seq: this.seq,
         type: 'TurnThinking',
         payload: { actionId: action.actionId },
       } as ServerMessage);
+      this.turnAccountId = action.accountId;
       try {
         await this.resolveTurn(
           action.accountId,
@@ -936,7 +983,22 @@ export class Room {
           payload: { actionId: action.actionId },
         } as ServerMessage);
       }
+    this.turnAccountId = undefined;
     this.turnInFlight = false;
+  }
+
+  private withdrawQueuedFor(accountId: string): void {
+    for (let i = this.queuedActions.length - 1; i >= 0; i--) {
+      const action = this.queuedActions[i]!;
+      if (action.accountId !== accountId) continue;
+      this.queuedActions.splice(i, 1);
+      this.pendingActions.delete(action.actionId);
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionWithdrawn',
+        payload: { actionId: action.actionId },
+      } as ServerMessage);
+    }
   }
 
   private async resolveTurn(
@@ -1017,6 +1079,11 @@ export class Room {
     await this.matureDelivery;
     // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
     await this.enqueue(async () => {
+      if (
+        turnAbort.signal.aborted ||
+        !this.state.seats.some((seat) => seat.accountId === accountId)
+      )
+        throw new XCardAbortError();
       // Endpoint fallback invalidates all partial engine effects; only successful results are saved.
       if (result.fallback !== 'endpoint-error') {
         const turnId = result.events.find(

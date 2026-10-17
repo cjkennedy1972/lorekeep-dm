@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Room, type Connection, type RoomStore } from '../../src/room/Room.js';
 import type { SoloTurnRequest, SoloTurnRunner } from '../../src/room/dmTurn.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
+import { joinSeated } from '../helpers/room.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -99,8 +100,8 @@ describe('X-card', () => {
     const other = recorder();
     const { room, events } = setup(completingRunner([]));
     const ownerConn = recorder();
-    await room.join(owner, ownerConn, 'Owner');
-    await room.join(randomUUID(), other, 'Other');
+    await joinSeated(room, owner, ownerConn, 'Owner');
+    await joinSeated(room, randomUUID(), other, 'Other');
     const seatId = seatIdOf(events, owner);
 
     const otherBefore = other.sent.length;
@@ -121,7 +122,7 @@ describe('X-card', () => {
     const owner = randomUUID();
     const requests: SoloTurnRequest[] = [];
     const { room } = setup(completingRunner(requests));
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
 
     await room.xCard(owner);
     await room.submitAction(owner, randomUUID(), 'Next move.', 'Owner');
@@ -162,7 +163,7 @@ describe('X-card', () => {
         },
       };
       const { room } = setup(runner, { abortEnabled });
-      await room.join(owner, recorder(), 'Owner');
+      await joinSeated(room, owner, recorder(), 'Owner');
       const submitted = room.submitAction(
         owner,
         randomUUID(),

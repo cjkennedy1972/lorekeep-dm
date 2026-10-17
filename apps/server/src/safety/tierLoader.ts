@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { liveDmAllowed } from '../llm/liveDmGate.js';
 import { computeContentTier, type ContentTier, type HostCap } from './tier.js';
+import { currentMemberEventsSql } from '../room/membership.js';
 
 type Queryable = Pick<Pool, 'query'>;
 // One seat may save at most 20 lines and 20 veils; rooms cap at six seats.
@@ -37,7 +38,7 @@ export async function loadContentTierState(
 }
 
 /**
- * Live mature block for every account that has ever been seated in the session: true when the
+ * Live mature block for every account currently seated (not revoked) in the session: true when the
  * account opted out, is not an adult, or is missing or not active (e.g. deleting). The seat's
  * join-time snapshot is not used.
  */
@@ -47,8 +48,8 @@ export async function loadSeatedMatureOptOuts(
 ): Promise<boolean[]> {
   const { rows } = await db.query<{ opted_out: boolean }>(
     `SELECT (a.id IS NULL OR a.status <> 'active' OR a.is_adult IS NOT TRUE OR a.mature_opt_out IS NOT FALSE) AS opted_out
-       FROM (SELECT DISTINCT payload->>'accountId' AS account_id FROM events
-              WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId' IS NOT NULL) seated
+       FROM (SELECT DISTINCT payload->>'accountId' AS account_id FROM (${currentMemberEventsSql('$1')}) current_seat
+              WHERE payload->>'accountId' IS NOT NULL) seated
        LEFT JOIN accounts a ON a.id = CASE
          WHEN seated.account_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
          THEN seated.account_id::uuid ELSE NULL END`,
@@ -86,8 +87,8 @@ export async function matureAllowed(
   if (tier !== 'mature') return false;
   if (!liveDmAllowlistOnly) return true;
   const seated = await db.query<{ account_id: string }>(
-    `SELECT DISTINCT payload->>'accountId' AS account_id FROM events
-      WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId' IS NOT NULL`,
+    `SELECT DISTINCT payload->>'accountId' AS account_id FROM (${currentMemberEventsSql('$1')}) current_seat
+      WHERE payload->>'accountId' IS NOT NULL`,
     [sessionId],
   );
   for (const { account_id } of seated.rows)
@@ -96,7 +97,7 @@ export async function matureAllowed(
 }
 
 /**
- * Union personal lines and veils for every account ever seated at this shared table.
+ * Union personal lines and veils for every account currently seated (not revoked) at this shared table.
  * The lists stay account-private in storage; only the unattributed union is used by
  * narration and moderation. Missing/deleted accounts contribute no free-text data.
  */
@@ -111,9 +112,8 @@ export async function loadSeatedContentBoundaries(
   }>(
     `WITH seated AS (
        SELECT DISTINCT payload->>'accountId' AS account_id
-         FROM events
-        WHERE session_id=$1 AND type='SeatJoined'
-          AND payload->>'accountId' IS NOT NULL
+         FROM (${currentMemberEventsSql('$1')}) current_seat
+        WHERE payload->>'accountId' IS NOT NULL
      ), boundary_rows AS (
        SELECT DISTINCT 'line' AS kind, boundary
          FROM seated s JOIN accounts a ON a.id = CASE

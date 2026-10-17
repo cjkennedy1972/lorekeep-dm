@@ -5,6 +5,7 @@ import { skipIfHeld, type JobContext } from '../types.js';
 import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
 import { AUTHOR_KEY, TEXT_KEYS } from '../../routes/reports.js';
+import { currentMemberEventsSql } from '../../room/membership.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
@@ -18,9 +19,9 @@ type Queryable = Pick<Pool, 'query'>;
 async function heirFor(db: Queryable, sessionId: string, accountId: string) {
   return (
     await db.query<{ account_id: string }>(
-      `SELECT DISTINCT e.payload->>'accountId' AS account_id FROM events e
+      `SELECT DISTINCT e.payload->>'accountId' AS account_id FROM (${currentMemberEventsSql('$1')}) e
         JOIN accounts a ON a.id::text = e.payload->>'accountId' AND a.status='active'
-        WHERE e.session_id=$1 AND e.type='SeatJoined' AND e.payload->>'accountId' <> $2 LIMIT 1`,
+        WHERE e.payload->>'accountId' <> $2 LIMIT 1`,
       [sessionId, accountId],
     )
   ).rows[0];
@@ -33,9 +34,8 @@ async function coSeatAccounts(
 ) {
   return (
     await db.query<{ account_id: string }>(
-      `SELECT DISTINCT payload->>'accountId' AS account_id FROM events
-        WHERE session_id=$1 AND type='SeatJoined'
-          AND payload->>'accountId' IS NOT NULL AND payload->>'accountId' <> $2`,
+      `SELECT DISTINCT payload->>'accountId' AS account_id FROM (${currentMemberEventsSql('$1')}) current_seat
+        WHERE payload->>'accountId' IS NOT NULL AND payload->>'accountId' <> $2`,
       [sessionId, accountId],
     )
   ).rows;
@@ -267,12 +267,13 @@ async function deleteAccount(
     );
   }
 
-  // Capture X-card seat ids before event redaction replaces account linkage.
-  const xCardSeatIds = (
+  // Capture all historical seat ids before event redaction replaces account linkage,
+  // including revoked seats whose historic X-card rows still reference their identity.
+  const seatIds = (
     await client.query<{ seat_id: string }>(
       `SELECT DISTINCT payload->>'seatId' AS seat_id
          FROM events
-        WHERE type='SeatJoined' AND payload->>'accountId'=$1
+        WHERE type IN ('SeatJoined','SeatRevoked') AND payload->>'accountId'=$1
           AND payload->>'seatId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
       [accountId],
     )
@@ -282,18 +283,20 @@ async function deleteAccount(
   const placeholderFor = async (sessionId: string) => {
     let placeholder = placeholders.get(sessionId);
     if (!placeholder) {
-      const seat = (
-        await client.query<{ seat_id: string | null }>(
-          `SELECT payload->>'seatId' AS seat_id FROM events
-            WHERE session_id=$1 AND type='SeatJoined' AND payload->>'accountId'=$2 LIMIT 1`,
-          [sessionId, accountId],
-        )
-      ).rows[0];
-      placeholder = seat?.seat_id ?? randomUUID();
+      do placeholder = randomUUID();
+      while (
+        (
+          await client.query('SELECT 1 FROM accounts WHERE id=$1', [
+            placeholder,
+          ])
+        ).rowCount
+      );
       placeholders.set(sessionId, placeholder);
     }
     return placeholder;
   };
+
+  const xCardSeatIds = seatIds;
 
   const charPlaceholder = randomUUID();
   const seenEvents = new Set<string>();
@@ -564,7 +567,8 @@ export async function runAccountDeletions(ctx: JobContext & { db: Pool }) {
     if (ctx.drainRoom) {
       const seen = await ctx.db.query<{ session_id: string }>(
         `SELECT id AS session_id FROM sessions WHERE owner_account_id=$1
-         UNION SELECT session_id FROM events WHERE type='SeatJoined' AND payload->>'accountId'=$2`,
+         UNION SELECT session_id FROM events WHERE type='SeatJoined' AND payload->>'accountId'=$2
+         UNION SELECT session_id FROM events WHERE type='SeatRevoked' AND payload->>'accountId'=$2`,
         [id, id],
       );
       for (const row of seen.rows) await ctx.drainRoom(row.session_id);
