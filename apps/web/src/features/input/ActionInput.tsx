@@ -63,7 +63,7 @@ export function ActionInput({
             {pendingText ? `Queued: ${pendingText}` : 'The DM is thinking…'}
           </span>
           {pendingSince !== undefined && (
-            <span aria-hidden="true">Waiting {elapsedSeconds}s</span>
+            <span aria-live="off">Waiting {elapsedSeconds}s</span>
           )}
           {onEditPending && (
             <button type="button" onClick={onEditPending}>
