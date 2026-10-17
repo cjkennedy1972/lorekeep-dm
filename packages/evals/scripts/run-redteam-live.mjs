@@ -18,6 +18,12 @@ import {
   SAFE_REDIRECT_TEMPLATE,
   X_CARD_REDIRECT_TEMPLATE,
 } from '../../../apps/server/dist/safety/outputGate.js';
+import {
+  sanitizeHttpError,
+  readBoundedErrorBody,
+  selectCases,
+  shouldRetry,
+} from './redteam-live-diagnostics.mjs';
 
 const baseUrl = process.env.REDTEAM_BASE_URL ?? 'http://172.31.25.75:8080/v1';
 const model = process.env.REDTEAM_MODEL ?? 'qwen3.8-35b-a3b-distill-q4';
@@ -42,8 +48,8 @@ if (checkoutChanges)
 const endpointUrl = checkLiveUrl(baseUrl);
 if (endpointUrl.host !== '172.31.25.75:8080')
   throw new Error('This run is pinned to the documented local Qwen endpoint');
-const RETRYABLE_HTTP_STATUSES = new Set([400, 429]);
 const HTTP_RETRY_DELAY_MS = 250;
+const FULL_RUN_CASE_COUNT = 224;
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const load = async (name) =>
@@ -53,6 +59,23 @@ const datasets = {
   boundary: await load('boundary-100.json'),
   xcard: await load('xcard-redirect.json'),
 };
+const onlyCase = process.env.REDTEAM_ONLY_CASE?.trim() || null;
+const selectedCases = Object.fromEntries(
+  Object.entries(datasets).map(([name, ds]) => [
+    name,
+    selectCases(ds.cases, onlyCase),
+  ]),
+);
+const plannedCaseCount = Object.values(selectedCases).reduce(
+  (total, cases) => total + cases.length,
+  0,
+);
+if (onlyCase && plannedCaseCount === 0)
+  throw new Error(`REDTEAM_ONLY_CASE=${onlyCase} matches no dataset case`);
+if (!onlyCase && plannedCaseCount !== FULL_RUN_CASE_COUNT)
+  throw new Error(
+    `full run must plan ${FULL_RUN_CASE_COUNT} cases, found ${plannedCaseCount}`,
+  );
 const startedAt = new Date().toISOString();
 const runStamp = startedAt.replace(/[:.]/g, '-');
 const outputPath = resolve(
@@ -93,6 +116,7 @@ const output = {
   versions: Object.fromEntries(
     Object.entries(datasets).map(([name, ds]) => [name, ds.version]),
   ),
+  selection: { onlyCase, plannedCases: plannedCaseCount },
   methodology: {
     sourceCommit,
     boundary:
@@ -104,10 +128,18 @@ const output = {
     outputModeration:
       'Model-generated narration and authored steer-away redirects are passed through the production moderation rubric in output direction. This harness records verdicts but does not emit narration to a player.',
     retryPolicy:
-      'At most one retry is made after HTTP 400, 429, or 5xx responses; the case records the total retry count.',
+      'At most one retry is made after HTTP 429 or 5xx responses; HTTP 400 is not retried. Failed HTTP cases record a sanitized status/type/code/param/request-id and message SHA-256/length, never the key, headers, prompt, or raw response.',
   },
   cases: [],
 };
+
+class EndpointHttpError extends Error {
+  constructor(diagnostic, retryCount) {
+    super(`endpoint returned HTTP ${diagnostic.status}`);
+    this.diagnostic = diagnostic;
+    this.retryCount = retryCount;
+  }
+}
 
 async function chat(messages, extra = {}) {
   const body = JSON.stringify({
@@ -131,11 +163,16 @@ async function chat(messages, extra = {}) {
       signal: AbortSignal.timeout(120_000),
     });
     if (response.ok) break;
-    const retryable =
-      RETRYABLE_HTTP_STATUSES.has(response.status) || response.status >= 500;
-    if (!retryable || retryCount > 0)
-      throw new Error(`endpoint returned HTTP ${response.status}`);
-    await response.arrayBuffer();
+    if (!shouldRetry({ status: response.status, retryCount })) {
+      const diagnostic = sanitizeHttpError({
+        status: response.status,
+        body: await readBoundedErrorBody(response).catch(() => ''),
+        requestId: response.headers.get('x-request-id'),
+        secrets: [apiKey],
+      });
+      throw new EndpointHttpError(diagnostic, retryCount);
+    }
+    await response.arrayBuffer().catch(() => {});
     retryCount++;
     await new Promise((resolve) => setTimeout(resolve, HTTP_RETRY_DELAY_MS));
   }
@@ -252,17 +289,40 @@ function promptFor(input) {
   };
 }
 
-async function recordCase(suite, id, fields, work) {
-  const requestStartedAt = new Date().toISOString();
-  const result = await work();
-  output.cases.push({ suite, id, requestStartedAt, ...fields, ...result });
+async function persistOutput() {
   output.finishedAt = new Date().toISOString();
   await mkdir(resolve(root, 'redteam/recorded'), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`);
-  process.stdout.write(`${suite} ${id} ${output.cases.length}/${224}\n`);
 }
 
-for (const c of datasets.boundary.cases) {
+async function recordCase(suite, id, fields, work) {
+  const requestStartedAt = new Date().toISOString();
+  let result;
+  try {
+    result = await work();
+  } catch (error) {
+    if (!(error instanceof EndpointHttpError)) throw error;
+    output.cases.push({
+      suite,
+      id,
+      requestStartedAt,
+      ...fields,
+      error: { kind: 'http', ...error.diagnostic },
+      requestRetries: error.retryCount,
+    });
+    await persistOutput();
+    throw new Error(
+      `${suite} ${id} failed: ${error.message}; error record written to ${outputPath}`,
+    );
+  }
+  output.cases.push({ suite, id, requestStartedAt, ...fields, ...result });
+  await persistOutput();
+  process.stdout.write(
+    `${suite} ${id} ${output.cases.length}/${plannedCaseCount}\n`,
+  );
+}
+
+for (const c of selectedCases.boundary) {
   await recordCase(
     'boundary',
     c.id,
@@ -279,7 +339,7 @@ for (const c of datasets.boundary.cases) {
   );
 }
 
-for (const c of datasets.injection.cases) {
+for (const c of selectedCases.injection) {
   await recordCase(
     'injection',
     c.id,
@@ -332,7 +392,7 @@ for (const c of datasets.injection.cases) {
   );
 }
 
-for (const c of datasets.xcard.cases) {
+for (const c of selectedCases.xcard) {
   await recordCase(
     'xcard',
     c.id,
@@ -477,6 +537,5 @@ for (const c of datasets.xcard.cases) {
   );
 }
 
-output.finishedAt = new Date().toISOString();
-await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`);
+await persistOutput();
 process.stdout.write(`record=${outputPath}\n`);
