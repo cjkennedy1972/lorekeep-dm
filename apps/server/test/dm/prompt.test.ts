@@ -286,3 +286,12 @@ describe('DM prompt builder', () => {
     );
   });
 });
+
+describe('state projection names', () => {
+  it('keeps character names only inside the quoted data block', () => {
+    const block = buildPrompt(input()).blocks[2];
+    expect(block).not.toContain('"name":"Ayla"');
+    expect(block).toContain('CHARACTER_NAME_DATA');
+    expect(block).toContain(Buffer.from('Ayla', 'utf8').toString('base64'));
+  });
+});

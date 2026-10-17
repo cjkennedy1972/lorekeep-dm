@@ -44,6 +44,10 @@ beforeAll(async () => {
     'INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)',
     [sessionId, ownerId, 'Production solo table'],
   );
+  await db.query(
+    `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
+    [sessionId, JSON.stringify({ accountId: ownerId, displayName: 'Prod' })],
+  );
   await saveEndpoint(
     db,
     'moderate',

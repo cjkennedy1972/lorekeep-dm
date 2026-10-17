@@ -32,6 +32,7 @@ import {
 } from '../dm/orchestrator.js';
 import { rulesLookup } from '../dm/rulesLookup.js';
 import { catalogFromSnapshot } from './catalogSnapshot.js';
+import { currentMemberSql } from './membership.js';
 import {
   loadAdventure,
   nextSceneAfterClose,
@@ -145,6 +146,22 @@ const TEST_ALLOW_MODERATOR: Moderator = {
   },
 };
 
+const SHARED_WORLD_TOOLS = new Set([
+  'upsert_npc',
+  'upsert_location',
+  'update_quest',
+  'set_flag',
+  'log_ruling',
+]);
+export function worldMutationRejection(name: string, isHost: boolean) {
+  if (!SHARED_WORLD_TOOLS.has(name) || isHost) return undefined;
+  return {
+    ok: false as const,
+    error: 'forbidden' as const,
+    hint: 'Only the table host can change shared world state.',
+  };
+}
+
 function refusalWatch(adapter: LlmAdapter, onRefusal: () => void): LlmAdapter {
   return {
     capabilities: () => adapter.capabilities(),
@@ -211,13 +228,19 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       adventure_id: string | null;
       character: Record<string, unknown> | null;
       catalog_snapshot: unknown;
+      owner_account_id: string;
     }>(
-      `SELECT s.name,s.catalog_version,pinned_catalog.entries AS catalog_snapshot,s.premise,s.adventure_id,s.character
+      `SELECT s.name,s.catalog_version,pinned_catalog.entries AS catalog_snapshot,s.premise,s.adventure_id,s.character,s.owner_account_id
        FROM sessions s LEFT JOIN catalog_snapshots pinned_catalog ON pinned_catalog.catalog_version=s.catalog_version
        WHERE s.id=$1 AND s.status='active'`,
       [request.sessionId],
     );
     if (!table.rows[0]) throw new Error('Table state unavailable');
+    const seat = await this.db.query(
+      `SELECT 1 FROM sessions s WHERE s.id=$1 AND ${currentMemberSql('$2')} LIMIT 1`,
+      [request.sessionId, request.accountId],
+    );
+    if (!seat.rows[0]) throw new Error('Player is not seated at this table');
     const tableName = table.rows[0].name;
     const catalog =
       !table.rows[0].catalog_version ||
@@ -364,6 +387,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             rulings: [],
           },
         }) as unknown as ToolExecutorState & { world: WorldRegistry };
+    const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
       .map(([, character]) => character.id);
@@ -444,6 +468,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         const worldExecute = request.name
           ? worldExecutors[request.name as keyof typeof worldExecutors]
           : undefined;
+        const rejection = worldMutationRejection(request.name ?? '', isHost);
+        if (rejection) return { ...rejection, events: [] };
         const result = worldExecute
           ? worldExecute(current.world, request.args)
           : execute(

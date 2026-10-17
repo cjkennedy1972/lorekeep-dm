@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { DMToolArgsSchema, DMToolCallSchema } from '@game/schema';
 import { z } from 'zod';
-import { projectState, stableJson } from './projection.js';
+import { projectState, quoteData, stableJson } from './projection.js';
 
 export type ToolMode = 'native' | 'json-schema' | 'prompted';
 export interface PromptSession {
@@ -84,9 +84,6 @@ export function estimateTokens(text: string): number {
 export const TOKEN_ESTIMATE_METHOD =
   'UTF-8 bytes / 3, rounded up (conservative English approximation; typically within ±35%, not a model tokenizer)';
 
-function quoteData(label: string, text: string): string {
-  return `<<<${label}_DATA encoding=base64>>>\n${Buffer.from(text, 'utf8').toString('base64')}\n<<<END_${label}_DATA>>>`;
-}
 export const COMBAT_ONLY_TOOLS: readonly string[] = [
   'attack',
   'cast_spell',
