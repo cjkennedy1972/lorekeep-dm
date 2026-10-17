@@ -32,6 +32,17 @@ const MUST_BLOCK: readonly [string, string][] = [
   ['M334 name age is sexy, lowercase', 'mira 12 is sexy.'],
   ['M334 existing forms still block', 'Mira is 12 and naked.'],
   ['M334 existing parenthesis form', 'Mira (12) is naked.'],
+  ['R1 adverb now naked', 'Mira 12 is now naked.'],
+  ['R1 intensifier so naked', 'Mira 12 is so naked.'],
+  ['R1 adverb completely undressed', 'Mira 12 is completely undressed.'],
+  ['R1 relative clause got naked', 'Mira 12 is a girl who got naked.'],
+  ['R1 relative clause undresses', 'Mira 12 is a girl who undresses.'],
+  ['R1 split sentence bed undress', 'Mira 12. She undresses for bed.'],
+  ['R1 split sentence copula naked', 'Mira 12 is a girl. She is naked.'],
+  [
+    'R1 split sentence adjective naked',
+    'Mira 12 is a lovely girl. She is naked.',
+  ],
 ];
 
 const MUST_ALLOW: readonly [string, string][] = [
@@ -39,6 +50,13 @@ const MUST_ALLOW: readonly [string, string][] = [
   ['M334 count with adult noun', 'Two girls and 9 goblins attack the inn.'],
   ['M334 aged adult guard is tired', 'The guard, aged 12, is tired.'],
   ['M334 undressed for bed without minor age', 'Mira got undressed for bed.'],
+  [
+    'R1 adult name then adverb naked',
+    'Mira is now a grown woman and so naked.',
+  ],
+  ['R1 split sentence adult age', 'Mira is 18. She is naked.'],
+  ['R1 split sentence adult age word', 'Mira eighteen. She is naked.'],
+  ['R1 split sentence no age', 'Mira is a girl. She is naked.'],
 ];
 
 describe('M3-34 hard-floor copula after bare name age', () => {
