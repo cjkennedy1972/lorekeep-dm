@@ -12,6 +12,7 @@ import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
+import { joinSeated } from '../helpers/room.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const connections = new ConnectionRegistry(db);
@@ -37,6 +38,9 @@ async function setup() {
     sessionId,
     accountId,
   ]);
+  const room = await rooms.get(sessionId);
+  await joinSeated(room, accountId, { send() {} }, 'P');
+  await room.disconnect(accountId);
   accounts.push(accountId);
   roomIds.push(sessionId);
   const token = await createSession(db, accountId, 'test');

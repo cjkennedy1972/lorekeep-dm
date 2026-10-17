@@ -16,6 +16,7 @@ import {
   bootstrapped,
   hero,
 } from './combatFixtures.js';
+import { joinSeated } from '../helpers/room.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -84,7 +85,7 @@ describe('Room solo DM turn lifecycle', () => {
     const { room } = setup(runner);
     const accountId = randomUUID();
     const messages: { type: string; payload?: unknown }[] = [];
-    await room.join(accountId, {
+    await joinSeated(room, accountId, {
       send: (message) =>
         messages.push(message as { type: string; payload?: unknown }),
     });
@@ -126,7 +127,7 @@ describe('Room solo DM turn lifecycle', () => {
     const { room, events, latestSnapshot } = setup(runner);
     const accountId = randomUUID();
     const messages: { type: string }[] = [];
-    await room.join(accountId, {
+    await joinSeated(room, accountId, {
       send: (message) => messages.push(message as { type: string }),
     });
     const actionId = randomUUID();
@@ -169,10 +170,10 @@ describe('Room solo DM turn lifecycle', () => {
     const accountId = randomUUID();
     const messages: { type: string; payload?: { code?: string } }[] = [];
     const otherMessages: { type: string; payload?: { code?: string } }[] = [];
-    await room.join(accountId, {
+    await joinSeated(room, accountId, {
       send: (message) => messages.push(message as (typeof messages)[number]),
     });
-    await room.join(randomUUID(), {
+    await joinSeated(room, randomUUID(), {
       send: (message) =>
         otherMessages.push(message as (typeof otherMessages)[number]),
     });
@@ -211,7 +212,7 @@ describe('Room solo DM turn lifecycle', () => {
     };
     const { room, latestSnapshot } = setup(runner);
     const owner = randomUUID();
-    await room.join(owner, { send() {} });
+    await joinSeated(room, owner, { send() {} });
     await room.submitAction(owner, randomUUID(), 'look');
     await new Promise((resolve) => setTimeout(resolve, 0));
     await room.submitAction(owner, randomUUID(), 'open it');
@@ -246,11 +247,11 @@ describe('Room solo DM turn lifecycle', () => {
     const owner = randomUUID();
     const other = randomUUID();
     const ownerMessages: { type: string; payload?: unknown }[] = [];
-    await room.join(owner, {
+    await joinSeated(room, owner, {
       send: (message) =>
         ownerMessages.push(message as { type: string; payload?: unknown }),
     });
-    await room.join(other, { send() {} });
+    await joinSeated(room, other, { send() {} });
     const actionId = randomUUID();
     expect(await room.submitAction(owner, actionId, 'open the door')).toBe(
       true,
@@ -302,10 +303,10 @@ describe('Room solo DM turn lifecycle', () => {
     const owner = randomUUID();
     const other = randomUUID();
     const ownerMessages: { type: string }[] = [];
-    await room.join(owner, {
+    await joinSeated(room, owner, {
       send: (message) => ownerMessages.push(message as { type: string }),
     });
-    await room.join(other, { send() {} });
+    await joinSeated(room, other, { send() {} });
     const inFlight = randomUUID();
     const queued = randomUUID();
     expect(await room.submitAction(owner, inFlight, 'first')).toBe(true);
@@ -336,7 +337,7 @@ describe('Room solo DM turn lifecycle', () => {
     };
     const { room, events, latestSnapshot } = setup(runner);
     const accountId = randomUUID();
-    await room.join(accountId, { send() {} });
+    await joinSeated(room, accountId, { send() {} });
     const actionId = randomUUID();
     expect(await room.submitAction(accountId, actionId, 'I look around.')).toBe(
       true,
@@ -366,7 +367,7 @@ describe('Room solo DM turn lifecycle', () => {
     const { room, events } = setup(runner);
     const accountId = randomUUID();
     const messages: { type: string; payload?: Record<string, unknown> }[] = [];
-    await room.join(accountId, {
+    await joinSeated(room, accountId, {
       send: (message) => messages.push(message as (typeof messages)[number]),
     });
     const actionId = randomUUID();
@@ -397,10 +398,10 @@ describe('Room solo DM turn lifecycle', () => {
     const messages: { type: string; payload?: Record<string, unknown> }[] = [];
     const otherMessages: { type: string; payload?: Record<string, unknown> }[] =
       [];
-    await room.join(accountId, {
+    await joinSeated(room, accountId, {
       send: (message) => messages.push(message as (typeof messages)[number]),
     });
-    await room.join(randomUUID(), {
+    await joinSeated(room, randomUUID(), {
       send: (message) =>
         otherMessages.push(message as (typeof otherMessages)[number]),
     });
@@ -441,8 +442,8 @@ describe('Room solo DM turn lifecycle', () => {
     const { room, store, latestSnapshot } = setup(runner);
     const owner = randomUUID();
     const other = randomUUID();
-    await room.join(owner, { send() {} });
-    await room.join(other, { send() {} });
+    await joinSeated(room, owner, { send() {} });
+    await joinSeated(room, other, { send() {} });
     const actionId = randomUUID();
     expect(await room.submitAction(owner, actionId, 'open the door')).toBe(
       true,
@@ -489,7 +490,7 @@ describe('Room solo DM turn lifecycle', () => {
       const { room } = setup(runner);
       const owner = randomUUID();
       const messages: { type: string; payload?: unknown }[] = [];
-      await room.join(owner, {
+      await joinSeated(room, owner, {
         send: (message) =>
           messages.push(message as { type: string; payload?: unknown }),
       });
@@ -537,8 +538,8 @@ describe('Room solo DM turn lifecycle', () => {
     const owner = randomUUID();
     const bystander = randomUUID();
     const bystanderMessages: { type: string; payload?: unknown }[] = [];
-    await room.join(owner, { send() {} });
-    await room.join(bystander, {
+    await joinSeated(room, owner, { send() {} });
+    await joinSeated(room, bystander, {
       send: (message) =>
         bystanderMessages.push(message as { type: string; payload?: unknown }),
     });
@@ -579,8 +580,8 @@ describe('Room solo DM turn lifecycle', () => {
       const owner = randomUUID();
       const bystander = randomUUID();
       const bystanderMessages: { type: string; payload?: unknown }[] = [];
-      await room.join(owner, { send() {} });
-      await room.join(bystander, {
+      await joinSeated(room, owner, { send() {} });
+      await joinSeated(room, bystander, {
         send: (message) =>
           bystanderMessages.push(
             message as { type: string; payload?: unknown },
@@ -680,7 +681,7 @@ describe('Room commit safety', () => {
     const { runner, finish } = gatedRunner();
     const { room, latestSnapshot } = setup(runner);
     const account = randomUUID();
-    await room.join(account, { send() {} });
+    await joinSeated(room, account, { send() {} });
     expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
       true,
     );
@@ -696,7 +697,7 @@ describe('Room commit safety', () => {
     const { runner, finish } = gatedRunner();
     const { room, latestSnapshot } = setup(runner);
     const account = randomUUID();
-    await room.join(account, { send() {} });
+    await joinSeated(room, account, { send() {} });
     await room.submitAction(account, randomUUID(), 'I wait.');
     await expect(room.takeRest(account, 'short')).rejects.toThrow(
       'still narrating',
@@ -720,7 +721,7 @@ describe('Room commit safety', () => {
     const { room, events } = setup(runner);
     const messages: { type: string }[] = [];
     const account = randomUUID();
-    await room.join(account, {
+    await joinSeated(room, account, {
       send: (message) => messages.push(message as { type: string }),
     });
     expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
@@ -737,7 +738,7 @@ describe('Room commit safety', () => {
     const { runner, finish } = gatedRunner();
     const { room, events } = setup(runner);
     const account = randomUUID();
-    await room.join(account, { send() {} });
+    await joinSeated(room, account, { send() {} });
     await room.submitAction(account, randomUUID(), 'I wait.');
     const draining = room.drain();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -751,7 +752,7 @@ describe('Room commit safety', () => {
     const { runner, finish } = gatedRunner();
     const { room } = setup(runner);
     const account = randomUUID();
-    await room.join(account, { send() {} });
+    await joinSeated(room, account, { send() {} });
     expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
       true,
     );
@@ -768,7 +769,7 @@ describe('Room commit safety', () => {
     const { room } = setup(runner);
     const account = randomUUID();
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await room.join(account, { send() {} });
+    await joinSeated(room, account, { send() {} });
     await room.submitAction(account, randomUUID(), 'I wait.');
     await room.drain(20);
     await expect(room.submit(randomUUID())).rejects.toThrow(/draining/);
@@ -819,7 +820,7 @@ describe('Room commit safety', () => {
     const { room, latestSnapshot } = setup(runner);
     fixture.room = room;
     room.state = { ...room.state, gameState: game };
-    await room.join(combatAccount, { send() {} });
+    await joinSeated(room, combatAccount, { send() {} });
     expect(
       await room.submitAction(combatAccount, randomUUID(), 'I charge.'),
     ).toBe(true);
@@ -856,7 +857,7 @@ describe('Room commit safety', () => {
     };
     const { room } = setup(runner);
     const account = randomUUID();
-    await room.join(account, { send() {} });
+    await joinSeated(room, account, { send() {} });
     expect(await room.submitAction(account, randomUUID(), 'one')).toBe(true);
     expect(await room.submitAction(account, randomUUID(), 'two')).toBe(true);
     const draining = room.drain();
@@ -872,7 +873,7 @@ describe('Room commit safety', () => {
     const { room } = setup(runner);
     const messages: { type: string; payload?: unknown }[] = [];
     const account = randomUUID();
-    await room.join(account, {
+    await joinSeated(room, account, {
       send: (message) => messages.push(message as never),
     });
     const queued = randomUUID();
@@ -939,7 +940,7 @@ describe('Room turn HP merge', () => {
         combatRoom,
       } as never,
     };
-    await room.join(combatAccount, { send() {} });
+    await joinSeated(room, combatAccount, { send() {} });
     expect(await room.submitAction(combatAccount, randomUUID(), 'I act.')).toBe(
       true,
     );

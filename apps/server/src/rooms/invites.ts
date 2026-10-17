@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Pool } from 'pg';
+import { currentMemberSql } from '../room/membership.js';
 
 export const MAX_SEATS = 6;
 const CODE_RE = /^[A-Za-z0-9_-]{22}$/;
@@ -54,7 +55,8 @@ export async function sessionForCode(
     status: string;
     host_tier_cap: 'family' | 'standard' | null;
   }>(
-    `SELECT id,name,owner_account_id AS owner,status,host_tier_cap FROM sessions WHERE invite_hash=$1 AND status IN ('active','archived')`,
+    `SELECT s.id,s.name,s.owner_account_id AS owner,s.status,s.host_tier_cap FROM sessions s
+       WHERE s.invite_hash=$1 AND s.status IN ('active','archived')`,
     [hashInvite(code)],
   );
   const row = r.rows[0];
@@ -76,8 +78,7 @@ export async function restoreForMember(
 ): Promise<boolean> {
   const r = await db.query(
     `UPDATE sessions s SET status='active', archived_at=NULL, last_active_at=now()
-      WHERE s.id=$1 AND s.status='archived' AND (s.owner_account_id=$2 OR EXISTS (
-        SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$2::text))`,
+      WHERE s.id=$1 AND s.status='archived' AND (s.owner_account_id=$2 OR ${currentMemberSql('$2')})`,
     [sessionId, accountId],
   );
   return !!r.rowCount;

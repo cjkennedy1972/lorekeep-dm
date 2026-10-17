@@ -12,6 +12,7 @@ import type {
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { Room, type RoomStore } from '../../src/room/Room.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { joinSeated } from '../helpers/room.js';
 import { deleteTestSessions } from './testCleanup.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -172,7 +173,7 @@ describe('scene close against the Room commit', () => {
       sessionId,
       dm,
     );
-    await room.join(accountId, { send() {} });
+    await joinSeated(room, accountId, { send() {} });
     expect(
       await room.submitAction(accountId, randomUUID(), 'We finish here.'),
     ).toBe(true);
@@ -192,7 +193,7 @@ describe('scene close against the Room commit', () => {
     const { accountId, sessionId } = await seedTable();
     const dm = slowSummaryDm();
     const { room, writes, turnDone } = await harness(sessionId, dm);
-    await room.join(accountId, { send() {} });
+    await joinSeated(room, accountId, { send() {} });
     expect(
       await room.submitAction(accountId, randomUUID(), 'We finish here.'),
     ).toBe(true);

@@ -12,6 +12,7 @@ import {
   memoryTable,
   placed,
 } from './combatFixtures.js';
+import { joinSeated } from '../helpers/room.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -502,7 +503,7 @@ describe('Room: reaction deadline survives restarts', () => {
     vi.useFakeTimers();
     const { table, moved } = await stage();
     const room = table.boot();
-    await room.join(account, table.connection);
+    await joinSeated(room, account, table.connection);
     expect(moved.state.pendingReaction).toBeDefined();
     await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS - 1000);
     expect(table.events.some((e) => e.type === 'ReactionResolved')).toBe(false);
@@ -554,7 +555,7 @@ describe('Room: reaction deadline survives restarts', () => {
     vi.useFakeTimers();
     const { table, moved } = await stage();
     const room = table.boot();
-    await room.join(account, table.connection);
+    await joinSeated(room, account, table.connection);
     await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS + 10);
     const count = table.events.length;
     await room.submitCombatCommand(account, crypto.randomUUID(), {

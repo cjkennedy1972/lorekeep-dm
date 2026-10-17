@@ -12,6 +12,13 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       return state;
     return RoomStateSchema.parse({ ...state, seats: [...state.seats, seat] });
   }
+  if (event.type === 'SeatRevoked') {
+    const { seatId } = event.payload as { seatId: string };
+    return RoomStateSchema.parse({
+      ...state,
+      seats: state.seats.filter((seat) => seat.seatId !== seatId),
+    });
+  }
   if (event.type === 'GameStateCommitted') {
     const payload = event.payload as { gameState: unknown };
     return RoomStateSchema.parse({ ...state, gameState: payload.gameState });

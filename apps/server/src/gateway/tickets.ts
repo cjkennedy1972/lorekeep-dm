@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 import { originHostMatches } from '../middleware/origin.js';
+import { currentMemberSql } from '../room/membership.js';
 
 const hash = (ticket: string) =>
   createHash('sha256').update(ticket).digest('hex');
@@ -32,8 +33,7 @@ export async function eligibleSession(
 ): Promise<string | undefined> {
   const result = await db.query<{ id: string }>(
     `SELECT s.id FROM sessions s WHERE s.status='active' AND ($2::uuid IS NULL OR s.id=$2)
-      AND (s.owner_account_id=$1 OR EXISTS (
-        SELECT 1 FROM events e WHERE e.session_id=s.id AND e.type='SeatJoined' AND e.payload->>'accountId'=$1::text))
+      AND (s.owner_account_id=$1 OR ${currentMemberSql('$1')})
       ORDER BY s.last_active_at DESC LIMIT 1`,
     [accountId, sessionId ?? null],
   );
@@ -61,19 +61,20 @@ export async function consumeTicket(
   { accountId: string; sessionId: string; authTokenHash: string } | undefined
 > {
   if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) return undefined;
-  // Consumable only while the originating auth session is valid and the account active.
+  // Consumable only while the originating auth session, account, and table membership remain valid.
   const result = await db.query<{
     account_id: string;
     session_id: string;
     auth_token_hash: string;
   }>(
     `UPDATE ws_tickets t SET used_at=clock_timestamp()
-      FROM auth_sessions s, accounts a
+      FROM auth_sessions s, accounts a, sessions room
       WHERE t.ticket_hash=$1 AND t.used_at IS NULL
       AND t.expires_at>clock_timestamp() AND ($2::uuid IS NULL OR t.session_id=$2)
       AND s.token_hash=t.auth_token_hash AND s.account_id=t.account_id
       AND s.expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp()
       AND a.id=t.account_id AND a.status='active'
+      AND room.id=t.session_id AND (room.owner_account_id=t.account_id OR ${currentMemberSql('t.account_id', 'room')})
       RETURNING t.account_id,t.session_id,t.auth_token_hash`,
     [hash(ticket), sessionId ?? null],
   );

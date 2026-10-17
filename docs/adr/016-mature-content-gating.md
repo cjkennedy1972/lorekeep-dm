@@ -38,3 +38,13 @@ Status: Proposed (human decision 2026-10-06, round 3; supersedes round 2 "off by
 - `PATCH /api/sessions/:id/content-tier` takes `tier: family | standard | null` (null clears the cap). A changed cap appends `HostTierCapChanged {from, to}` to the event log in the same locked transaction (`Persistence.setHostTierCap`). It does not emit `ContentTierChanged`: the tier only changes at the next narration, which emits it through the normal turn path.
 - `loadContentTierState` passes the cap to `computeContentTier`, which fails an invalid value closed to `standard`. A cap only lowers: it never raises the tier, and an opt-out still lowers the table when the cap is cleared.
 - Both content-settings PATCH routes check `validOrigin`.
+
+**Owner decision (2026-10-16): current seats only.** For future narration-tier
+evaluation, only accounts with a current, non-revoked seat in the session count
+as seated players for the `matureOptOut` predicate and for per-player
+lines/veils in the session safety block. An explicit seat revocation therefore
+stops that account's opt-out and lines/veils from constraining later narration
+turns; the tier and safety block remain snapshotted for any narration already
+in flight. Account deletion/redaction remains fail-closed as described above.
+This decision supersedes only the M3-05 implementation note that treated
+departed players as ever-seated; the rest of ADR-016 remains unchanged.

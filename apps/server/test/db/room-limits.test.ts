@@ -7,6 +7,7 @@ import { createSession } from '../../src/accounts/sessions.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
+import { joinSeated } from '../helpers/room.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const store = new Persistence(db);
@@ -99,7 +100,7 @@ describe('room quota, creation throttle and idle eviction', () => {
     const id = await rawRoom(u.id);
     const reg = new RoomRegistry(store, leases, 'busy', 1000, 3_600_000);
     const room = await reg.get(id);
-    await room.join(u.id, { send() {} }, 'P');
+    await joinSeated(room, u.id, { send() {} }, 'P');
     expect(await reg.evictIdle(Date.now() + 5000)).toEqual([]);
     await room.disconnect(u.id);
     expect(await reg.evictIdle(Date.now() + 5000)).toEqual([id]);

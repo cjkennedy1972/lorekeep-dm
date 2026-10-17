@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Room, type Connection, type RoomStore } from '../../src/room/Room.js';
 import type { SoloTurnRequest, SoloTurnRunner } from '../../src/room/dmTurn.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
+import { joinSeated } from '../helpers/room.js';
 
 const sessionId = randomUUID();
 const lease = {
@@ -63,7 +64,7 @@ describe('table pause', () => {
     const requests: SoloTurnRequest[] = [];
     const { room } = setup(requests);
     const owner = randomUUID();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
 
     await room.setPaused(owner, true, true);
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
@@ -78,8 +79,8 @@ describe('table pause', () => {
     const { room } = setup(requests);
     const owner = randomUUID();
     const guest = randomUUID();
-    await room.join(owner, recorder(), 'Owner');
-    await room.join(guest, recorder(), 'Guest');
+    await joinSeated(room, owner, recorder(), 'Owner');
+    await joinSeated(room, guest, recorder(), 'Guest');
 
     await room.setPaused(guest, true, false);
     expect(room.clientState().paused).toBe(true);
@@ -97,7 +98,7 @@ describe('table pause', () => {
     const requests: SoloTurnRequest[] = [];
     const { room } = setup(requests);
     const owner = randomUUID();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
 
     await room.setPaused(owner, true, true);
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
@@ -118,7 +119,7 @@ describe('table pause', () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     const { room } = setup(requests, gate);
     const owner = randomUUID();
-    await room.join(owner, recorder(), 'Owner');
+    await joinSeated(room, owner, recorder(), 'Owner');
 
     await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
     await settle();
