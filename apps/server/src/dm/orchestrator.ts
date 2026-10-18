@@ -22,7 +22,11 @@ import {
   type BuildPromptInput,
 } from './prompt.js';
 import { formatTurnSeed, createTurnSeed } from './seed.js';
-import { runOutputGate, SAFE_REDIRECT_TEMPLATE } from '../safety/outputGate.js';
+import {
+  runOutputGate,
+  SAFE_REDIRECT_TEMPLATE,
+  X_CARD_REDIRECT_TEMPLATE,
+} from '../safety/outputGate.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
 
@@ -442,6 +446,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   };
   let done = false;
   try {
+    if (input.signal?.aborted)
+      throw new LlmEndpointError('stream-aborted', 'LLM request was aborted');
+    if (input.prompt.session.steerAway) {
+      // The control is authoritative: do not expose prior-scene context to the model
+      // or allow a generated tool call to mutate state on the redirect turn.
+      finalText = X_CARD_REDIRECT_TEMPLATE;
+      done = true;
+    }
     for (let requestIndex = 0; requestIndex < 32 && !done; requestIndex++) {
       if (input.signal?.aborted)
         throw new LlmEndpointError('stream-aborted', 'LLM request was aborted');
