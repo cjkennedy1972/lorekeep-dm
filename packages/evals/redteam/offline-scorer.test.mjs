@@ -76,6 +76,18 @@ test('explicit steer marker is observable', () => {
   assert.equal(result.reason, 'observable-steer-marker');
 });
 
+test('authenticated production redirect-template telemetry is observable', () => {
+  const result = scoreXCard({
+    controlMode: 'production-steerAway-flag',
+    narration: 'The story shifts to a calm, safe scene.',
+    redirectTemplateUsed: true,
+    stateChanged: false,
+    engineEvents: [],
+  });
+  assert.equal(result.status, 'pass');
+  assert.equal(result.reason, 'production-redirect-template');
+});
+
 test('malformed tool call prevents a steer marker from passing', () => {
   const result = scoreXCard({
     controlMode: 'production-steerAway-flag',

@@ -1,8 +1,8 @@
 {
   "schema": "redteam-accepted-binding/1",
   "sourceCommit": "81f48fdc00c60e1ebce583fa1f3aeb91e5b3afcf",
-  "recordPath": "",
-  "recordSha256": "",
-  "replayPath": "",
-  "replaySha256": ""
+  "recordPath": "redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-18T22-12-21-891Z.json",
+  "recordSha256": "bdb83b420457fe4fe543acbdc4701cf72ef0dd6f123482f4c072ea1833ba4d5e",
+  "replayPath": "redteam/recorded/engine-replay-live-qwen-81f48fd.json",
+  "replaySha256": "ae527956778e7b2f47ef7ba26f86f9d48c6f6de5242e1c0619d3866062ae4436"
 }

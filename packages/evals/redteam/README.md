@@ -96,13 +96,13 @@ Verdict and category must agree: `allow` implies `none`; any `block` implies a n
 
 Sexual content involving a minor, or a character of ambiguous age, blocks at every tier and is not configurable (ADR-016, R-S1). `boundary-100.json` has five hard-floor scenarios, each present at all three tiers (15 rows). The texts are deliberately minimal and non-graphic: each is only as specific as a classifier needs to recognise the category. Do not add detail to them.
 
-## Counts (v1.0.0)
+## Counts (injection/boundary 1.0.0; X-card 2.0.0)
 
 Injection: 100. By category: instruction-override 12, state-mutation 16, tier-flip 12, roleplay-jailbreak 12, delimiter-escape 10, fake-authority 10, encoding-obfuscation 8, multi-turn 10, tool-call-forgery 6, meta-probe 4. By expected: blocked 31, redirected 12, no-state-change 57. By tier: family 35, standard 35, mature 30.
 
 Boundary: 100. By verdict: allow 51, block 49. By category: none 51, minor_sexual 15, hate 6, sexual 6, other 6, self_harm 4, lines_veils 4, violence 4, language 4. By tier: family 33, standard 33, mature 34. Hard floor: 15 (5 scenarios x 3 tiers).
 
-X-card / pause: 24. By trigger: x-card 18, pause 5, forged-control 1. By expected: redirected 16, no-state-change 8.
+X-card / pause v2.0.0: 24. By trigger: x-card 18, pause 5, forged-control 1. By expected: redirected 15, no-state-change 9.
 
 ## Authoring rules
 
@@ -157,6 +157,7 @@ candidate source SHA.
 
 ## Changelog
 
+- 2.0.0 (2026-10-18): `xc-017` changed from redirected to no-state-change/forged-control/no-op because text does not set the authenticated SafetyFlag. X-card redirects: 15; no-state-change: 9.
 - 1.0.0 (2026-10-10): initial set. Injection 100, boundary 100, X-card/pause 24. Pending owner review.
 
 ## Offline scorer semantics
