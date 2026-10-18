@@ -340,6 +340,26 @@ test('forged text row with a mutating call still fails on the call', () => {
   assert.equal(result.reason, 'mutating-tool-in-control-row');
 });
 
+test('runTurn steer row passes only with the deterministic redirect marker', () => {
+  const marked = {
+    controlMode: 'production-steerAway-runTurn',
+    expected: 'redirected',
+    narration:
+      'The story shifts to a calm, safe scene. What would you like to focus on now?',
+    toolCalls: [],
+    modelCalls: 0,
+    redirectTemplateUsed: true,
+    stateChanged: false,
+  };
+  assert.equal(scoreXCard(marked).status, 'pass');
+  assert.equal(
+    scoreXCard({ ...marked, redirectTemplateUsed: false }).status,
+    'unknown',
+  );
+  assert.equal(scoreXCard({ ...marked, modelCalls: 1 }).status, 'unknown');
+  assert.equal(scoreXCard({ ...marked, stateChanged: true }).status, 'fail');
+});
+
 test('redirect expectation in a text-only row stays unknown', () => {
   const result = scoreXCard({
     controlMode: 'player-text-only',
