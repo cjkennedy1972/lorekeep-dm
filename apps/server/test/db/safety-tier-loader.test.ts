@@ -189,6 +189,43 @@ describe('loadSeatedContentBoundaries', () => {
     ).toEqual({ lines: [], veils: [] });
   });
 
+  it("drops a removed seat's private boundaries from the next turn", async () => {
+    const leaving = await account(database, false);
+    const staying = await account(database, false);
+    await database.pool.query(
+      'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+      [leaving, ['no leaving-player line'], ['no leaving-player veil']],
+    );
+    await database.pool.query(
+      'UPDATE accounts SET content_lines=$2,content_veils=$3 WHERE id=$1',
+      [staying, ['no staying line'], []],
+    );
+    const leavingSeat = randomUUID();
+    await database.pool.query(
+      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,$2,$3)',
+      [
+        sessionId,
+        'SeatJoined',
+        {
+          seatId: leavingSeat,
+          accountId: leaving,
+          displayName: 'Leaving',
+          presence: 'offline',
+          matureOptOut: false,
+        },
+      ],
+    );
+    await seatJoined(database, sessionId, 2, staying, false);
+    await database.pool.query(
+      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,3,$1,$2,$3)',
+      [sessionId, 'SeatRevoked', { seatId: leavingSeat, accountId: leaving }],
+    );
+
+    expect(await loadSeatedContentBoundaries(database.pool, sessionId)).toEqual(
+      { lines: ['no staying line'], veils: [] },
+    );
+  });
+
   it('ignores malformed historical account ids without exposing or losing valid boundaries', async () => {
     const seated = await account(database, false);
     await database.pool.query(
