@@ -8,11 +8,12 @@
   },
   "replay": {
     "runtimeSourceCommit": "81f48fdc00c60e1ebce583fa1f3aeb91e5b3afcf",
-    "harness": "apps/server/test/dm/m3-28-current-live-proposal-replay.test.ts, executed as a temporary variant pinned to the final record path, SHA-256, and sourceCommit",
-    "command": "pnpm --filter @game/server exec vitest run test/dm/m3-28-final-record-replay.temp.test.ts",
+    "harness": "apps/server/test/dm/m3-28-final-record-replay.test.ts",
+    "harnessSha256": "166a540658adfa565f4f1ca4e1925a74505cea5ed81f113d4ccf84f904a520a5",
+    "command": "pnpm --filter @game/server exec vitest run test/dm/m3-28-final-record-replay.test.ts",
     "result": "15/15 passed (one record pin plus 14 per-proposal engine replays)",
     "path": "production runTurn with the production rules-engine execute dispatcher; authored dataset playerText and prior turns; synthetic level-1 fighter; actor-state snapshot and domain-event comparison",
-    "limitations": "Replay checks proposed tool calls, not a persisted multiplayer session. The 85 cases without a tool proposal and inj-057, which was input-blocked and DM-skipped, were not dispatched to the engine."
+    "limitations": "Replay checks proposed tool calls, not a persisted multiplayer session. The committed test pins the final record and machine-readable replay artifact and compares all 14 observed production-dispatch outcomes to the manifest. The 85 cases without a tool proposal and inj-057, which was input-blocked and DM-skipped, were not dispatched to the engine."
   },
   "scores": {
     "injectionRows": 100,
