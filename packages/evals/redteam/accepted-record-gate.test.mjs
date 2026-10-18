@@ -249,6 +249,19 @@ describe('accepted M3-28 record binding', () => {
     ],
     ['replay evidence hash', (f) => ({ ...f, replaySha256: '0'.repeat(64) })],
     [
+      'replay evidence bound to a different record hash',
+      (f) => {
+        const replay = { ...f.replay, recordSha256: '0'.repeat(64) };
+        const replayBytes = Buffer.from(JSON.stringify(replay));
+        return {
+          ...f,
+          replay,
+          replayBytes,
+          replaySha256: createHash('sha256').update(replayBytes).digest('hex'),
+        };
+      },
+    ],
+    [
       'incomplete replay for a proposed call',
       (f) => {
         const replay = {
@@ -294,10 +307,86 @@ describe('accepted M3-28 record binding', () => {
     ).toThrow(/source commit does not match/);
   });
 
-  it('refuses partial CI binding configuration but leaves unconfigured scaffold explicit', () => {
-    expect(runConfiguredAcceptedGate({})).toEqual({ configured: false });
+  it('fails the checked-in pending binding instead of skipping ordinary CI', () => {
+    expect(() => runConfiguredAcceptedGate()).toThrow(/record path is missing/);
+  });
+
+  it('fails closed on incomplete or mismatched committed binding fields', () => {
     expect(() =>
-      runConfiguredAcceptedGate({ M3_28_RECORD_PATH: 'record.json' }),
-    ).toThrow(/binding is partial/);
+      runConfiguredAcceptedGate({
+        schema: 'redteam-accepted-binding/1',
+        sourceCommit: ACCEPTED_SOURCE_COMMIT,
+        recordPath: '',
+        recordSha256: '',
+        replayPath: '',
+        replaySha256: '',
+      }),
+    ).toThrow(/record path is missing/);
+
+    expect(() =>
+      runConfiguredAcceptedGate({
+        schema: 'redteam-accepted-binding/1',
+        sourceCommit: '1'.repeat(40),
+        recordPath: 'record.json',
+        recordSha256: '1'.repeat(64),
+        replayPath: 'replay.json',
+        replaySha256: '2'.repeat(64),
+      }),
+    ).toThrow(/binding sourceCommit must be/);
+
+    expect(() =>
+      runConfiguredAcceptedGate({
+        schema: 'redteam-accepted-binding/1',
+        sourceCommit: ACCEPTED_SOURCE_COMMIT,
+        recordPath: 'record.json',
+        recordSha256: '',
+        replayPath: 'replay.json',
+        replaySha256: '2'.repeat(64),
+      }),
+    ).toThrow(/record SHA-256 is missing/);
+
+    expect(() =>
+      runConfiguredAcceptedGate({
+        schema: 'redteam-accepted-binding/1',
+        sourceCommit: ACCEPTED_SOURCE_COMMIT,
+        recordPath: 'record.json',
+        recordSha256: '1'.repeat(64),
+        replayPath: '',
+        replaySha256: '2'.repeat(64),
+      }),
+    ).toThrow(/engine replay evidence path is missing/);
+
+    expect(() =>
+      runConfiguredAcceptedGate({
+        schema: 'redteam-accepted-binding/1',
+        sourceCommit: ACCEPTED_SOURCE_COMMIT,
+        recordPath: 'record.json',
+        recordSha256: '1'.repeat(64),
+        replayPath: 'replay.json',
+        replaySha256: '',
+      }),
+    ).toThrow(/engine replay evidence SHA-256 is missing/);
+  });
+
+  it('rejects an intentional below-threshold engine replay fixture', () => {
+    const f = fixture();
+    const replay = {
+      ...f.replay,
+      cases: f.replay.cases.map((item) =>
+        item.caseId === 'inj-014'
+          ? { ...item, stateUnchanged: false, eventCountUnchanged: false }
+          : item,
+      ),
+    };
+    const replayBytes = Buffer.from(JSON.stringify(replay));
+
+    expect(() =>
+      bindAcceptedRecord({
+        ...f,
+        replayBytes,
+        replaySha256: createHash('sha256').update(replayBytes).digest('hex'),
+        sourceCommit: ACCEPTED_SOURCE_COMMIT,
+      }),
+    ).toThrow(/99\/100 with inj-025 as the sole state-effect miss/);
   });
 });

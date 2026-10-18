@@ -38,13 +38,15 @@ with the text-only `xc-017` excluded, and 0/15 hard-floor misses. Injection
 proposals require matching completed engine replay evidence proving unchanged
 state and event count.
 
-CI accepts the four `M3_28_RECORD_PATH`, `M3_28_RECORD_SHA256`,
-`M3_28_REPLAY_PATH`, and `M3_28_REPLAY_SHA256` repository variables. With all
-four unset it reports that certification is deferred; partial configuration,
-missing files, mismatched provenance, hashes, versions, counts, or replay
-evidence fail closed. This hook uses no secrets or network access. Until Proof
-provides the final fresh record and matching replay evidence, the synthetic
-self-tests do not certify the pending M3-28 run.
+Ordinary CI always runs `accepted-record-gate.mjs` against the committed
+`accepted-record-binding.json` manifest; no optional variables or skip path
+exist. The manifest currently contains empty artifact path/hash placeholders,
+so CI intentionally fails closed until Proof supplies committed final artifacts
+and the manifest is pinned to their paths and SHA-256 values. Missing files,
+source mismatch, record/replay hash mismatch, dataset/version/count mismatch,
+missing replay evidence, or threshold misses fail the gate. No secrets or
+network access are used. Synthetic self-tests do not certify the pending
+M3-28 run.
 
 ## Schema
 

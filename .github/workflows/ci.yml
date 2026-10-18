@@ -161,13 +161,8 @@ jobs:
       # Offline synthetic recorded fixtures exercise the real row scorers and
       # every M3-41 aggregate threshold.
       - run: pnpm --filter @game/evals exec vitest run redteam/threshold-gate.test.mjs
-      # Proof supplies the accepted record/replay paths and hashes when ready.
-      # No credentials or network access are used; partial configuration fails.
-      - run: node packages/evals/redteam/accepted-record-gate.mjs
-        env:
-          M3_28_RECORD_PATH: ${{ vars.M3_28_RECORD_PATH }}
-          M3_28_RECORD_SHA256: ${{ vars.M3_28_RECORD_SHA256 }}
-          M3_28_REPLAY_PATH: ${{ vars.M3_28_REPLAY_PATH }}
-          M3_28_REPLAY_SHA256: ${{ vars.M3_28_REPLAY_SHA256 }}
       - run: pnpm --filter @game/evals exec vitest run redteam/accepted-record-gate.test.mjs
       - run: pnpm --filter @game/server exec vitest run test/safety/hardFloorRedteam.test.ts
+      # Always consume the repository-committed binding manifest. Empty or
+      # mismatched artifact fields fail closed; no secrets/network are used.
+      - run: node packages/evals/redteam/accepted-record-gate.mjs

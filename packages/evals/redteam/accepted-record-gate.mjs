@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 import { evaluateRedteamThresholds } from './threshold-gate.mjs';
@@ -24,6 +25,10 @@ const AUTHENTICATED_SIGNALERS = new Set([
   'spectator',
 ]);
 const SHA256_RE = /^[0-9a-f]{64}$/i;
+const DEFAULT_BINDING_PATH = new URL(
+  './accepted-record-binding.json',
+  import.meta.url,
+);
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const fail = (message) => {
@@ -335,29 +340,69 @@ export function loadDatasets(directory = new URL('./', import.meta.url)) {
   );
 }
 
-export function runConfiguredAcceptedGate(env = process.env) {
-  const names = [
-    'M3_28_RECORD_PATH',
-    'M3_28_RECORD_SHA256',
-    'M3_28_REPLAY_PATH',
-    'M3_28_REPLAY_SHA256',
-  ];
-  const values = Object.fromEntries(
-    names.map((name) => [name, env[name] ?? '']),
-  );
-  const configured = names.filter((name) => values[name].length > 0);
-  if (configured.length === 0) return { configured: false };
-  const missing = names.filter((name) => values[name].length === 0);
-  if (missing.length > 0)
-    fail(`binding is partial; missing ${missing.join(', ')}`);
+function readCommittedBinding(path = DEFAULT_BINDING_PATH) {
+  let bytes;
+  try {
+    bytes = readFileSync(path);
+  } catch {
+    fail(`committed binding manifest is missing or unreadable (${path})`);
+  }
+  const binding = parseJson(bytes, 'committed binding manifest');
+  return binding;
+}
+
+function readArtifact(path, label) {
+  try {
+    return readFileSync(resolve(process.cwd(), path));
+  } catch {
+    fail(`${label} path is missing or unreadable (${path})`);
+  }
+}
+
+export function runConfiguredAcceptedGate(binding = readCommittedBinding()) {
+  if (!binding || typeof binding !== 'object')
+    fail('committed binding manifest is missing');
+  if (binding.schema !== 'redteam-accepted-binding/1') {
+    fail(
+      'committed binding manifest schema must be redteam-accepted-binding/1',
+    );
+  }
+  if (typeof binding.sourceCommit !== 'string' || !binding.sourceCommit) {
+    fail('sourceCommit is missing from the committed binding manifest');
+  }
+  if (binding.sourceCommit !== ACCEPTED_SOURCE_COMMIT) {
+    fail(`binding sourceCommit must be ${ACCEPTED_SOURCE_COMMIT}`);
+  }
+  if (typeof binding.recordPath !== 'string' || !binding.recordPath.trim()) {
+    fail('record path is missing from the committed binding manifest');
+  }
+  if (typeof binding.replayPath !== 'string' || !binding.replayPath.trim()) {
+    fail(
+      'engine replay evidence path is missing from the committed binding manifest',
+    );
+  }
+  if (
+    typeof binding.recordSha256 !== 'string' ||
+    !binding.recordSha256.trim()
+  ) {
+    fail('record SHA-256 is missing from the committed binding manifest');
+  }
+  if (
+    typeof binding.replaySha256 !== 'string' ||
+    !binding.replaySha256.trim()
+  ) {
+    fail(
+      'engine replay evidence SHA-256 is missing from the committed binding manifest',
+    );
+  }
   return {
     configured: true,
     ...bindAcceptedRecord({
-      recordBytes: readFileSync(values.M3_28_RECORD_PATH),
-      recordSha256: values.M3_28_RECORD_SHA256,
-      replayBytes: readFileSync(values.M3_28_REPLAY_PATH),
-      replaySha256: values.M3_28_REPLAY_SHA256,
-      sourceCommit: ACCEPTED_SOURCE_COMMIT,
+      recordBytes: readArtifact(binding.recordPath, 'record'),
+      recordSha256: binding.recordSha256,
+      replayBytes: readArtifact(binding.replayPath, 'engine replay evidence'),
+      replaySha256: binding.replaySha256,
+      sourceCommit: binding.sourceCommit,
       datasets: loadDatasets(),
     }),
   };
@@ -365,12 +410,6 @@ export function runConfiguredAcceptedGate(env = process.env) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = runConfiguredAcceptedGate();
-  if (!result.configured) {
-    process.stdout.write(
-      'M3-28 accepted record is not configured; live threshold certification is deferred.\n',
-    );
-  } else {
-    process.stdout.write(`${JSON.stringify(result.evaluation, null, 2)}\n`);
-  }
-  if (result.configured && !result.evaluation.passed) process.exitCode = 1;
+  process.stdout.write(`${JSON.stringify(result.evaluation, null, 2)}\n`);
+  if (!result.evaluation.passed) process.exitCode = 1;
 }
