@@ -700,6 +700,27 @@ describe('Room commit safety', () => {
     expect(checkpoint.checkpoint).toBeUndefined();
   });
 
+  it('keeps last-turn narration and player text out of client checkpoints', async () => {
+    const { room } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    await room.persistRecap({ recap: 'start', memoryHash: 'h0' });
+    const state = (
+      room as unknown as { state: { gameState: Record<string, unknown> } }
+    ).state;
+    state.gameState.lastNarration = 'secret narration';
+    state.gameState.lastPlayerText = 'secret player text';
+    await room.saveCheckpoint();
+    const checkpoint = (
+      room.clientState().gameState as { checkpoint: Record<string, unknown> }
+    ).checkpoint;
+    expect(checkpoint).toBeDefined();
+    expect(checkpoint).not.toHaveProperty('lastNarration');
+    expect(checkpoint).not.toHaveProperty('lastPlayerText');
+  });
+
   function gatedRunner() {
     let finish!: () => void;
     const gate = new Promise<void>((resolve) => {

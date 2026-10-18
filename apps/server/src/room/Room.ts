@@ -232,6 +232,14 @@ export class Room {
     delete gameState.lastNarration;
     delete gameState.lastPlayerText;
     delete gameState.sceneSummary;
+    if (gameState.checkpoint && typeof gameState.checkpoint === 'object') {
+      const checkpoint = {
+        ...(gameState.checkpoint as Record<string, unknown>),
+      };
+      delete checkpoint.lastNarration;
+      delete checkpoint.lastPlayerText;
+      gameState.checkpoint = checkpoint;
+    }
     // Registry prose and persisted recaps may predate output moderation. They are
     // server-side model context; recap is returned separately after route gating.
     delete gameState.world;
