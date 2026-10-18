@@ -218,7 +218,7 @@ describe('injection resistance', () => {
     }
   });
 
-  it('states that table lines apply when depicted without graphic detail, at every tier', () => {
+  it("quotes each tier's table-line rule into the judge prompt", () => {
     for (const tier of ['family', 'standard', 'mature'] as const) {
       const [system] = buildJudgeMessages({
         ...request("A giant snake coils around Mara's leg and bites."),
@@ -226,9 +226,11 @@ describe('injection resistance', () => {
         direction: 'output',
         tableLines: ['snakes'],
       });
-      expect(system!.content).toMatch(
-        /An entry in <table_lines> that the text explicitly requires, meaning the scene is built around it/,
-      );
+      const rule = MODERATION_SECTIONS[`rubric:${tier}`]
+        .split('\n')
+        .find((line) => line.includes('An entry in <table_lines>'));
+      expect(rule).toBeDefined();
+      expect(system!.content).toContain(rule!);
     }
   });
 });
