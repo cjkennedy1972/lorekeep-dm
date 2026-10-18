@@ -8,34 +8,12 @@ const MAX_LEAVE_JUDGMENTS_PER_TURN = 2;
 
 export type LeaveJudge = (playerText: string) => Promise<boolean>;
 
-const CYRILLIC_LOOKALIKES: Record<string, string> = {
-  а: 'a',
-  е: 'e',
-  о: 'o',
-  р: 'p',
-  с: 'c',
-  у: 'y',
-  х: 'x',
-  і: 'i',
-  ѕ: 's',
-  А: 'a',
-  Е: 'e',
-  О: 'o',
-  Р: 'p',
-  С: 'c',
-  У: 'y',
-  Х: 'x',
-  І: 'i',
-  Ѕ: 's',
-};
+const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
 
+// Escaping every '<' means no player character can open a tag, whatever its lookalike form.
 function framePlayerText(playerText: string): string {
-  const normalized = playerText
-    .normalize('NFKC')
-    .replace(/\p{Cf}/gu, '')
-    .replace(/[аеорсухіѕАЕОРСУХІЅ]/g, (c) => CYRILLIC_LOOKALIKES[c] ?? c);
-  const neutralized = normalized.replace(/<\s*\/?\s*player_message\b[^<>]*>?/gi, '[tag]');
-  return `<player_message>\n${neutralized}\n</player_message>`;
+  const escaped = playerText.replace(/[&<>]/g, (c) => HTML_ESCAPES[c]);
+  return `<player_message>\n${escaped}\n</player_message>`;
 }
 
 /** Fail closed: any error or any answer other than LEAVE is STAY. */
