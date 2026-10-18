@@ -402,6 +402,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         sceneId: adventure?.ok ? initialSceneId : undefined,
         nextSceneIds: currentScene?.nextSceneIds ?? [],
         allowSummary: allowPlayerVisibleText,
+        playerText: request.text,
       }),
       commitState(previous, output) {
         return {

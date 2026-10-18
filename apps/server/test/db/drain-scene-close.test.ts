@@ -166,8 +166,7 @@ afterAll(async () => {
 });
 
 describe('scene close against the Room commit', () => {
-  // Skipped: needs a structured player leave action (follow-up).
-  it.skip('keeps the DB scene open when drain gives up while the scene is closing', async () => {
+  it('keeps the DB scene open when drain gives up while the scene is closing', async () => {
     const { accountId, sessionId } = await seedTable();
     const dm = slowSummaryDm();
     const { room, writes, turnDone, releaseLease } = await harness(
@@ -190,8 +189,7 @@ describe('scene close against the Room commit', () => {
     expect(await closedRows(sessionId)).toBe(0);
   });
 
-  // Skipped: needs a structured player leave action (follow-up).
-  it.skip('closes the scene in the DB and the Room together when the turn commits in time', async () => {
+  it('closes the scene in the DB and the Room together when the turn commits in time', async () => {
     const { accountId, sessionId } = await seedTable();
     const dm = slowSummaryDm();
     const { room, writes, turnDone } = await harness(sessionId, dm);

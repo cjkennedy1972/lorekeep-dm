@@ -238,8 +238,7 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     );
   });
 
-  // Skipped: needs a structured player leave action (follow-up).
-  it.skip('persists only the authored fallback when the generated scene summary is blocked', async () => {
+  it('persists only the authored fallback when the generated scene summary is blocked', async () => {
     const unsafeGeneratedSummary = 'Unsafe gore summary from the summarizer.';
     const moderationTexts: string[] = [];
     const { result, sessionId } = await turn(
@@ -276,8 +275,7 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     expect(stored.rows[0]?.summary).not.toContain(unsafeGeneratedSummary);
   });
 
-  // Skipped: needs a structured player leave action (follow-up).
-  it.skip('advances to the authored next scene with exactly one SceneClosed and one summary call', async () => {
+  it('advances to the authored next scene with exactly one SceneClosed and one summary call', async () => {
     const { result, closed, calls } = await turn('scene-marowfell-well', {
       summary: 'The party leaves the well.',
     });
@@ -287,8 +285,7 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     expect(calls.filter((c) => !(c.tools?.length ?? 0))).toHaveLength(1);
   });
 
-  // Skipped: needs a structured player leave action (follow-up).
-  it.skip('closes once and summarizes once when one response calls close_scene repeatedly', async () => {
+  it('closes once and summarizes once when one response calls close_scene repeatedly', async () => {
     const { result, closed, calls } = await turn('scene-marowfell-well', [
       { summary: 'The party leaves the well.' },
       {
@@ -306,8 +303,7 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     expect(calls.filter((c) => !(c.tools?.length ?? 0))).toHaveLength(1);
   });
 
-  // Skipped: needs a structured player leave action (follow-up).
-  it.skip('honors a valid requested next scene', async () => {
+  it('honors a valid requested next scene', async () => {
     const { result } = await turn('scene-marowfell-well', {
       summary: 'Onward.',
       nextSceneId: 'scene-broken-gatehouse',
@@ -326,8 +322,7 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     );
   });
 
-  // Skipped: needs a structured player leave action (follow-up).
-  it.skip('marks the adventure completed when a terminal scene closes', async () => {
+  it('marks the adventure completed when a terminal scene closes', async () => {
     const adventure = (
       await import('../../../../packages/engine/adventures/01/adventure.json', {
         with: { type: 'json' },
