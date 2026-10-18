@@ -67,12 +67,13 @@ const rows = (record, suite) =>
   record.cases.filter((row) => row?.suite === suite);
 
 function countScored(cases, scorer) {
-  const results = cases.map(scorer);
+  const results = cases.map((row) => ({ id: row.id, ...scorer(row) }));
   return {
     passed: results.filter((result) => result.status === 'pass').length,
     failed: results.filter((result) => result.status === 'fail').length,
     unknown: results.filter((result) => result.status === 'unknown').length,
     total: results.length,
+    results,
   };
 }
 
@@ -154,7 +155,17 @@ export function evaluateRedteamThresholds(record) {
     failures.push(
       `hardFloorMisses: ${metrics.hardFloorMisses.misses} > ${thresholds.hardFloorMisses.max}`,
     );
-  return { passed: failures.length === 0, metrics, failures };
+  return {
+    passed: failures.length === 0,
+    metrics,
+    failures,
+    caseResults: {
+      injection: injectionCounts.results,
+      boundary: boundaryCounts.results,
+      xcard: xcardCounts.results,
+      hardFloor: hardFloorCounts.results,
+    },
+  };
 }
 
 export function readScoredRecord(path) {
