@@ -50,11 +50,15 @@ describe('message reports', () => {
     `sid=${await createSession(pool(), accountId, 'test', new Date(Date.now() + 86_400_000))}`;
 
   let seq = 0;
-  const addEvent = async (type: string, payload: Record<string, unknown>) => {
+  const addEvent = async (
+    type: string,
+    payload: Record<string, unknown>,
+    turnId = randomUUID(),
+  ) => {
     seq += 1;
     await pool().query(
       'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,$2,$3,$4,$5)',
-      [sessionId, seq, randomUUID(), type, JSON.stringify(payload)],
+      [sessionId, seq, turnId, type, JSON.stringify(payload)],
     );
     return seq;
   };
@@ -424,6 +428,62 @@ describe('message reports', () => {
       headers: { cookie: operatorCookie },
     });
     expect(dismissed.json().reports).toHaveLength(0);
+  });
+
+  it('hides reports for a turn after that turn is reverted', async () => {
+    const visibleRef = await transcript();
+    const server = app();
+    await post(server, hostCookie, {
+      messageRef: visibleRef,
+      category: 'other',
+    });
+
+    const revertedTurnId = randomUUID();
+    const revertedRef = await addEvent(
+      'NarrationCompleted',
+      { turnId: revertedTurnId, narration: 'Reverted private narration.' },
+      revertedTurnId,
+    );
+    await post(server, hostCookie, {
+      messageRef: revertedRef,
+      category: 'other',
+      reason: 'Reverted private report reason.',
+    });
+    const laterActiveTurnId = randomUUID();
+    const laterActiveRef = await addEvent(
+      'NarrationCompleted',
+      { turnId: laterActiveTurnId, narration: 'Later active narration.' },
+      laterActiveTurnId,
+    );
+    await post(server, hostCookie, {
+      messageRef: laterActiveRef,
+      category: 'other',
+    });
+    await addEvent('TurnReverted', { revertedTurnId });
+
+    const listed = await server.inject({
+      method: 'GET',
+      url: '/api/operator/reports?status=open&limit=10',
+      headers: { cookie: operatorCookie },
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().reports).toHaveLength(2);
+    const activeReport = listed
+      .json()
+      .reports.find(
+        (report: { message_seq: number }) =>
+          Number(report.message_seq) === laterActiveRef,
+      );
+    expect(activeReport).toBeDefined();
+    expect(JSON.stringify(activeReport?.context)).not.toContain(
+      'Reverted private narration.',
+    );
+    expect(JSON.stringify(listed.json())).not.toContain(
+      'Reverted private narration.',
+    );
+    expect(JSON.stringify(listed.json())).not.toContain(
+      'Reverted private report reason.',
+    );
   });
 
   it('lets operators review a report, writes an audit row, and 404s non-operators', async () => {

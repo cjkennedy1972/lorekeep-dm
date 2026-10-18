@@ -139,6 +139,7 @@ describe('rewind last resolved turn', () => {
 
     expect(room.state.gameState).toEqual(afterFirst);
     expect(room.seq).toBeGreaterThan(firstSeq);
+    expect(room.seq).toBe(events.at(-1)?.seq);
     const reverted = events.filter((event) => event.type === 'TurnReverted');
     expect(reverted).toHaveLength(1);
     expect(TurnRevertedSchema.parse(reverted[0]!.payload)).toMatchObject({

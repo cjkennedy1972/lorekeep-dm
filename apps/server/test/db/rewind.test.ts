@@ -148,15 +148,27 @@ describe('rewind plan', () => {
         { turn: 2 },
       );
       await persistence.append(id, [
+        row('pause', 'ActionAccepted', { actionId: 'queued' }),
+        row('pause', 'SeatJoined', { accountId: randomUUID() }),
+        row('pause', 'SeatRevoked', { accountId: randomUUID() }),
+        row('pause', 'PresenceChanged', { accountId: randomUUID() }),
         row('pause', 'TablePaused', { paused: true }),
+        row('pause', 'SafetyFlag', { flag: 'x-card' }),
+        row('pause', 'ClarificationClosed', { actionId: 'clarification' }),
       ]);
 
       const plan = await persistence.loadRewindPlan(id);
       expect(plan!.before.events).toEqual([]);
       expect(plan!.retained.map((event) => event.type)).toEqual([
+        'ActionAccepted',
+        'SeatJoined',
+        'SeatRevoked',
+        'PresenceChanged',
         'TablePaused',
+        'SafetyFlag',
+        'ClarificationClosed',
       ]);
-      expect(plan!.headSeq).toBe(4);
+      expect(plan!.headSeq).toBe(10);
     }));
 
   it('refuses a rewind planned against a log head that has since moved', () =>
