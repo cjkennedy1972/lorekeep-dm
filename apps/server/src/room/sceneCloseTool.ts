@@ -8,11 +8,11 @@ const MAX_LEAVE_JUDGMENTS_PER_TURN = 2;
 
 export type LeaveJudge = (playerText: string) => Promise<boolean>;
 
-const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;" } as const;
 
 // Escaping every '<' means no player character can open a tag, whatever its lookalike form.
 function framePlayerText(playerText: string): string {
-  const escaped = playerText.replace(/[&<>]/g, (c) => HTML_ESCAPES[c]);
+  const escaped = playerText.replace(/[&<>]/g, (c) => HTML_ESCAPES[c as keyof typeof HTML_ESCAPES]);
   return `<player_message>\n${escaped}\n</player_message>`;
 }
 
