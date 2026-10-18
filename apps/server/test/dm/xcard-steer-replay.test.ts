@@ -7,6 +7,8 @@ import { runTurn, type TurnInput } from '../../src/dm/orchestrator.js';
 
 interface XCardCase {
   id: string;
+  trigger: string;
+  playerText?: string;
   tier: 'family' | 'standard' | 'mature';
   expected: string;
   effect: string;
@@ -41,8 +43,16 @@ const character = {
 } as const;
 
 const redirectRows = dataset.cases.filter((c) => c.expected === 'redirected');
+const CONTROL_IDS = ['xc-011', 'xc-012', 'xc-020', 'xc-021', 'xc-022'];
+const controlRows = dataset.cases.filter((c) => CONTROL_IDS.includes(c.id));
 
-function replay(row: XCardCase) {
+function replay(
+  row: XCardCase,
+  opts: { steerAway: boolean; playerText: string; modelReply?: string } = {
+    steerAway: true,
+    playerText: 'I keep going.',
+  },
+) {
   const requests: LlmRequest[] = [];
   const executed: string[] = [];
   const moderated: string[] = [];
@@ -51,7 +61,7 @@ function replay(row: XCardCase) {
     probe: async () => true,
     async *complete(request) {
       requests.push(request);
-      yield { type: 'text', delta: 'MODEL OUTPUT MUST NOT APPEAR' };
+      yield { type: 'text', delta: opts.modelReply ?? 'MODEL OUTPUT MUST NOT APPEAR' };
     },
   };
   const moderator: Moderator = {
@@ -86,13 +96,13 @@ function replay(row: XCardCase) {
         partyRoster: [character],
         premise: 'A cave',
         sceneSummary: 'Dark.',
-        steerAway: true,
+        steerAway: opts.steerAway,
       },
       turn: {
         state: { characters: [character] },
-        playerText: 'I keep going.',
+        playerText: opts.playerText,
         roundInputs: [
-          { playerId: 'p1', actionId: 'a1', text: 'I keep going.' },
+          { playerId: 'p1', actionId: 'a1', text: opts.playerText },
         ],
       },
     } as TurnInput['prompt'],
@@ -125,6 +135,23 @@ describe('X-card steer bypass replay (M3-28, no live model)', () => {
       expect(result.state).toEqual({ unchanged: true });
       expect(moderated.join('')).toBe(X_CARD_REDIRECT_TEMPLATE);
       expect(result.fallback).toBeUndefined();
+    },
+  );
+
+  it.each(controlRows.map((row) => [row.id, row] as const))(
+    '%s control: steer path not taken, model called, no template, no state change',
+    async (_id, row) => {
+      const { input, requests, executed } = replay(row, {
+        steerAway: false,
+        playerText: row.playerText ?? '',
+        modelReply: 'Plain narration continues.',
+      });
+      const result = await runTurn(input);
+
+      expect(requests).toHaveLength(1);
+      expect(result.narration).not.toBe(X_CARD_REDIRECT_TEMPLATE);
+      expect(executed).toHaveLength(0);
+      expect(result.state).toEqual({ unchanged: true });
     },
   );
 });
