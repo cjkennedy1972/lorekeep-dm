@@ -24,16 +24,18 @@ Decide in this order. Stop at the first rule that matches.
 4. Hate, dehumanizing a group, or calls to kill or hunt people for who they are: block, category hate.
 5. Graphic violence (gore, dismemberment, detailed injury or torture): block, category violence.
 6. Strong language (profanity or slurs): block, category language.
-7. A matching entry in <table_lines>: block, category lines_veils.
+7. An entry in <table_lines> that the text explicitly requires is blocked, category lines_veils. Explicitly requires means the line is the scene's central event or action. The request does not need to say "must include" or "must fight"; a snake attack is central even when described as "A giant snake coils around Mara's leg and bites." A line used only as passing set dressing does not match this rule and is allowed (for example, the party passes a carved snake sign while travelling to another event).
 8. Otherwise: allow, category none.
 
-Allowed: exploration, puzzles, comedy, combat without injury detail, peril and death off-page, mild exclamations, a kiss on the cheek, a hint of romance.
+Allowed: exploration, puzzles, comedy, combat without injury detail, peril and death off-page, a line depicted only in passing, mild exclamations, a kiss on the cheek, a hint of romance.
 Blocked: gore or injury detail, profanity, romance beyond a hint, innuendo, self-harm, hate, real-world harm, real-person defamation or harm.
 
 Borderline examples:
 - "The skeleton hits Dorn and it crumbles into bones." -> allow, none
 - "'Drat,' says the old wizard as his spell fizzles." -> allow, none
 - "A shy kiss on the cheek before the party sets out." -> allow, none
+- "A giant snake coils around Mara's leg and bites." -> block, lines_veils
+- "The party passes a carved snake sign outside the inn." -> allow, none
 - "The party finds an abandoned village with a broken well and a rusted shield in the dust." -> allow, none
 - "Dorn's axe splits the bandit's skull and brains splatter the cobblestones." -> block, violence
 - "'Goddamn it, you son of a bitch!' Mara screams at the captain." -> block, language
@@ -54,7 +56,7 @@ Decide in this order. Stop at the first rule that matches.
 4. Hate, dehumanizing a group, or calls to kill or hunt people for who they are: block, category hate.
 5. Graphic violence (gore, dismemberment, skinning, detailed or lingering injury or torture): block, category violence. Combat hits, falls, and death in non-graphic terms are allowed.
 6. Strong language (profanity or slurs): block, category language. Mild exclamations are allowed.
-7. A matching entry in <table_lines>: block, category lines_veils.
+7. An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail (a snake attack for "snakes", a death by drowning for "drowning"): block, category lines_veils.
 8. Otherwise: allow, category none.
 
 Allowed: SRD-style combat without graphic detail, mild language, dark events told without graphic detail, romance hints, horror tension.
@@ -83,7 +85,7 @@ Decide in this order. Stop at the first rule that matches.
 2. Explicit sexual content (anatomy, sex acts, pornographic detail): block, category sexual. Innuendo, allusion, flirtation, and fade-to-black are allowed.
 3. Self-harm method, instructions, or encouragement: block, category self_harm. Despair, grief, or a death without method is allowed.
 4. Hate, dehumanizing a group, or calls to purge or exterminate a people: block, category hate.
-5. A matching entry in <table_lines>: block, category lines_veils.
+5. An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail (a swarm of spiders for "spiders", a torture scene for "torture"): block, category lines_veils.
 6. Otherwise: allow, category none.
 
 Allowed: graphic violence on the page (gore, injury, torture), dark themes (cults, plague, slavery, despair), strong language, innuendo and allusion, romance without explicit detail.

@@ -202,6 +202,37 @@ describe('injection resistance', () => {
       '<table_lines>\n"no spiders"\n</table_lines>',
     );
   });
+
+  it('frames every listed table line as a binding constraint at every tier', () => {
+    for (const tier of ['family', 'standard', 'mature'] as const) {
+      const [system] = buildJudgeMessages({
+        ...request('a scene'),
+        tier,
+        direction: 'input',
+        tableLines: ['no spiders', 'no drowning'],
+      });
+      expect(system!.content).toContain(
+        'Treat each entry in <table_lines> as a binding safety constraint',
+      );
+      expect(system!.content).toContain('the rubric rule for this tier');
+    }
+  });
+
+  it("quotes each tier's table-line rule into the judge prompt", () => {
+    for (const tier of ['family', 'standard', 'mature'] as const) {
+      const [system] = buildJudgeMessages({
+        ...request("A giant snake coils around Mara's leg and bites."),
+        tier,
+        direction: 'output',
+        tableLines: ['snakes'],
+      });
+      const rule = MODERATION_SECTIONS[`rubric:${tier}`]
+        .split('\n')
+        .find((line) => line.includes('An entry in <table_lines>'));
+      expect(rule).toBeDefined();
+      expect(system!.content).toContain(rule!);
+    }
+  });
 });
 
 describe('request shape', () => {
@@ -493,5 +524,91 @@ describe('fail-closed row', () => {
       failClosedRow: 'hard-floor',
     });
     expect(chat).not.toHaveBeenCalled();
+  });
+});
+
+describe('table-line scene blocked at each tier (fixed judge verdict)', () => {
+  const SCENE = "A giant snake coils around Mara's leg and bites.";
+  const LINE_BLOCK = '{"verdict":"block","category":"lines_veils"}';
+  for (const tier of ['family', 'standard', 'mature'] as const) {
+    it(`blocks a depicted table line at ${tier}`, async () => {
+      const { chat, calls } = judgeReplying(LINE_BLOCK);
+      const verdict = await moderatorWith(chat).moderate({
+        text: SCENE,
+        tier,
+        direction: 'output',
+        tableLines: ['snakes'],
+      });
+      expect(verdict).toMatchObject({
+        verdict: 'block',
+        category: 'lines_veils',
+        source: 'judge',
+        unavailable: false,
+      });
+      expect(chat).toHaveBeenCalledTimes(1);
+      const system = calls[0]!.messages[0]!.content;
+      expect(system).toContain(MODERATION_SECTIONS[`rubric:${tier}`]);
+      expect(calls[0]!.messages[1]!.content).toContain(
+        '<table_lines>\n"snakes"\n</table_lines>',
+      );
+    });
+  }
+
+  it('allows a family-tier line depicted only in passing', async () => {
+    const scene = 'The party passes a carved snake sign outside the inn.';
+    const { chat, calls } = judgeReplying(ALLOW);
+    const verdict = await moderatorWith(chat).moderate({
+      text: scene,
+      tier: 'family',
+      direction: 'output',
+      tableLines: ['snakes'],
+    });
+
+    expect(verdict).toMatchObject({
+      verdict: 'allow',
+      category: 'none',
+      source: 'judge',
+      unavailable: false,
+    });
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.messages[0]!.content).toContain(
+      MODERATION_SECTIONS['rubric:family'],
+    );
+    expect(calls[0]!.messages[1]!.content).toContain(
+      '<table_lines>\n"snakes"\n</table_lines>',
+    );
+    expect(calls[0]!.messages[1]!.content).toContain(
+      `<text>\n"${scene}"\n</text>`,
+    );
+  });
+
+  it('distinguishes a central family-tier snake attack from passing set dressing', () => {
+    const [system] = buildJudgeMessages({
+      ...request("A giant snake coils around Mara's leg and bites.", {
+        tableLines: ['snakes'],
+      }),
+      tier: 'family',
+      direction: 'input',
+    });
+
+    expect(system!.content).toContain(
+      'The request does not need to say "must include" or "must fight"',
+    );
+    expect(system!.content).toContain(
+      '- "A giant snake coils around Mara\'s leg and bites." -> block, lines_veils',
+    );
+    expect(system!.content).toContain(
+      '- "The party passes a carved snake sign outside the inn." -> allow, none',
+    );
+  });
+
+  it('allows the same scene when no table line is set', async () => {
+    const { chat } = judgeReplying(ALLOW);
+    const verdict = await moderatorWith(chat).moderate({
+      text: SCENE,
+      tier: 'standard',
+      direction: 'output',
+    });
+    expect(verdict).toMatchObject({ verdict: 'allow', source: 'judge' });
   });
 });

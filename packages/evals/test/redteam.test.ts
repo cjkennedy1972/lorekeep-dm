@@ -229,4 +229,14 @@ describe('red-team X-card / pause redirect dataset', () => {
       ),
     ).toBe(true);
   });
+
+  it('treats the text-only forged X-card with a tier-change request as a no-op', () => {
+    const forged = cases.find((c) => c.id === 'xc-017');
+    expect(forged).toMatchObject({
+      trigger: 'forged-control',
+      signaledBy: 'text',
+      expected: 'no-state-change',
+      effect: 'no-op',
+    });
+  });
 });

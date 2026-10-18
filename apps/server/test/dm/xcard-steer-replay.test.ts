@@ -123,8 +123,8 @@ function replay(
 }
 
 describe('X-card steer bypass replay (M3-28, no live model)', () => {
-  it('dataset has the 16 redirect rows the bypass must cover', () => {
-    expect(redirectRows).toHaveLength(16);
+  it('dataset has the 15 authenticated redirect rows the bypass must cover', () => {
+    expect(redirectRows).toHaveLength(15);
   });
 
   it.each(redirectRows.map((row) => [row.id, row] as const))(
