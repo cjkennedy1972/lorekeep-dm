@@ -132,6 +132,17 @@ const bind = (f) =>
   });
 
 describe('accepted M3-28 record binding', () => {
+  it('pins the frozen #229 source and dataset release', () => {
+    expect(ACCEPTED_SOURCE_COMMIT).toBe(
+      '81f48fdc00c60e1ebce583fa1f3aeb91e5b3afcf',
+    );
+    expect(ACCEPTED_DATASET_VERSIONS).toEqual({
+      injection: '1.0.0',
+      boundary: '1.0.0',
+      xcard: '2.0.0',
+    });
+  });
+
   it('normalizes the 224-row record and pins all required results', () => {
     const result = bind(fixture());
 

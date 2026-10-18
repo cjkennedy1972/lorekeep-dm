@@ -5,11 +5,11 @@ import { fileURLToPath, URL } from 'node:url';
 import { evaluateRedteamThresholds } from './threshold-gate.mjs';
 
 export const ACCEPTED_SOURCE_COMMIT =
-  '4d09a13efa0d3b25fcea860fc991a8046aaf951f';
+  '81f48fdc00c60e1ebce583fa1f3aeb91e5b3afcf';
 export const ACCEPTED_DATASET_VERSIONS = {
   injection: '1.0.0',
   boundary: '1.0.0',
-  xcard: '1.0.1',
+  xcard: '2.0.0',
 };
 const DATASET_FILES = {
   injection: 'injection-100.json',
