@@ -9,6 +9,9 @@ import { currentMemberEventsSql } from '../../room/membership.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
+// ponytail: recap is a regenerable cache of prior narration that can name characters; drop it wholesale.
+const CACHE_KEYS = ['lastPlayerText', 'recap'];
+const TEXT_CACHE_PATTERNS = ['%lastPlayerText%', '%"recap"%'];
 const REDACTED = '[removed]';
 const HELD = 'HELD';
 const MENTIONING_SQL = `SELECT session_id FROM events WHERE payload::text LIKE $1
@@ -252,16 +255,16 @@ async function deleteAccount(
     eventRows.push(
       ...(
         await client.query<EventRow>(
-          "SELECT session_id, seq, payload FROM events WHERE session_id = ANY($1) AND payload::text LIKE '%lastPlayerText%'",
-          [touched],
+          "SELECT session_id, seq, payload FROM events WHERE session_id = ANY($1) AND payload::text LIKE ANY($2)",
+          [touched, TEXT_CACHE_PATTERNS],
         )
       ).rows,
     );
     snapshotRows.push(
       ...(
         await client.query<SnapshotRow>(
-          "SELECT session_id, seq, state FROM snapshots WHERE session_id = ANY($1) AND state::text LIKE '%lastPlayerText%'",
-          [touched],
+          "SELECT session_id, seq, state FROM snapshots WHERE session_id = ANY($1) AND state::text LIKE ANY($2)",
+          [touched, TEXT_CACHE_PATTERNS],
         )
       ).rows,
     );
@@ -445,7 +448,7 @@ function scrub(value: unknown, s: Scrub): unknown {
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(obj)) {
     if (key === s.accountId || s.charIds.has(key)) continue;
-    if (key === 'lastPlayerText') continue;
+    if (CACHE_KEYS.includes(key)) continue;
     if (owned && PLAYER_TEXT_KEYS.includes(key)) continue;
     out[key] = scrub(child, s);
   }
