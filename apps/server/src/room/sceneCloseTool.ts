@@ -8,8 +8,24 @@ const MAX_LEAVE_JUDGMENTS_PER_TURN = 2;
 
 export type LeaveJudge = (playerText: string) => Promise<boolean>;
 
+const CYRILLIC_LOOKALIKES: Record<string, string> = {
+  а: 'a',
+  е: 'e',
+  о: 'o',
+  р: 'p',
+  с: 'c',
+  у: 'y',
+  х: 'x',
+  і: 'i',
+  ѕ: 's',
+};
+
 function framePlayerText(playerText: string): string {
-  const neutralized = playerText.replace(/<\/?\s*player_message\s*>?/gi, '[tag]');
+  const normalized = playerText
+    .normalize('NFKC')
+    .replace(/\p{Cf}/gu, '')
+    .replace(/[аеорсухіѕ]/g, (c) => CYRILLIC_LOOKALIKES[c] ?? c);
+  const neutralized = normalized.replace(/<\/?\s*player_message\b[^<>]*>?/gi, '[tag]');
   return `<player_message>\n${neutralized}\n</player_message>`;
 }
 
