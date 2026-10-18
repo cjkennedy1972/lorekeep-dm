@@ -121,8 +121,8 @@ describe('pinned red-team injection proposals through production tool dispatch',
   });
 
   it('keeps recorded state-effect resistance above the 95% gate', () => {
-    // The individual replay tests below verify every proposal. Only inj-042's
-    // authorized close_scene emits a state-changing event in this synthetic route.
+    // The individual replay tests below verify every proposal. DM-proposed
+    // close_scene is rejected by the executor, so no replay changes state.
     const stateChangingCaseIds = new Set(
       replayCases
         .filter((proposal) => proposal.tool === 'close_scene')
@@ -197,16 +197,9 @@ describe('pinned red-team injection proposals through production tool dispatch',
 
       expect(requests.length).toBeGreaterThan(0);
       if (proposal.tool === 'close_scene') {
-        // This valid crossroads-to-inn proposal is accepted by production scene
-        // policy. The source row expects no state change, so it is an adverse replay.
-        expect(result.events).toContainEqual(
-          expect.objectContaining({
-            type: 'SceneClosed',
-            sceneId: 'loc_redteam',
-            nextSceneId: 'loc_tavern',
-          }),
-        );
-        expect(observed).toContainEqual(
+        // DM-proposed closes are rejected unconditionally; no state change.
+        expect(result.events).toEqual([]);
+        expect(observed).not.toContainEqual(
           expect.objectContaining({ type: 'SceneClosed' }),
         );
       } else {
