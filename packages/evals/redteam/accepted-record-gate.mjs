@@ -367,7 +367,9 @@ function readCommittedBinding(path = DEFAULT_BINDING_PATH) {
 
 function readArtifact(path, label) {
   try {
-    return readFileSync(resolve(process.cwd(), path));
+    return readFileSync(
+      resolve(fileURLToPath(new URL('../', import.meta.url)), path),
+    );
   } catch {
     fail(`${label} path is missing or unreadable (${path})`);
   }
