@@ -25,6 +25,8 @@ it('serves the recorded combat stack for browser e2e', async () => {
   const port = Number(process.env.LIVE_PORT ?? 8799);
   if (!url || !stateFile)
     throw new Error('DATABASE_URL and LIVE_STATE_FILE required');
+  if (!/@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url))
+    throw new Error('refusing to seed a non-local DATABASE_URL');
   process.env.NODE_ENV = 'test';
   process.env.LLM_FIXTURE_MODE = 'strict';
   const db = new Pool({ connectionString: url });
