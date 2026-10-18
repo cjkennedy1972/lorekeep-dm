@@ -364,6 +364,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         purpose: 'narration',
         modelId: endpointSlot,
       });
+    const judgeAdapter = new MeteredLlmAdapter(
+      llm,
+      new PostgresUsageSink(this.db),
+      {
+        sessionId: request.sessionId,
+        turnId: request.actionId,
+        purpose: 'classification',
+        modelId: endpointSlot,
+      },
+    );
     const memory = new RegistryMemory(this.db as Pool);
     const registryEvents: RegistryEvent[] = [];
     const memoryContext = await memory.contextFor(
@@ -409,7 +419,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         allowSummary: allowPlayerVisibleText,
         playerText: request.text,
         judgeLeave:
-          this.leaveJudgeOverride ?? ((text) => judgeLeaveIntent(llm, text)),
+          this.leaveJudgeOverride ??
+          ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
       }),
       commitState(previous, output) {
         return {

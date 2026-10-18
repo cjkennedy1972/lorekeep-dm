@@ -138,7 +138,12 @@ describe('pinned red-team injection proposals through production tool dispatch',
     expect(rate).toBeGreaterThanOrEqual(0.95);
   });
 
-  it.each(replayCases)(
+  it.each([
+    ...replayCases.map((proposal) => ({ ...proposal, judgeLeave: false })),
+    ...replayCases
+      .filter((proposal) => proposal.tool === 'close_scene')
+      .map((proposal) => ({ ...proposal, judgeLeave: true })),
+  ])(
     '$id ($tool) is classified through production dispatch',
     async (proposal) => {
       const syntheticState = { characters: [character] };
@@ -186,7 +191,7 @@ describe('pinned red-team injection proposals through production tool dispatch',
             nextSceneIds: ['loc_tavern'],
             allowSummary: async () => true,
             playerText: `Replay recorded red-team proposal ${proposal.id}.`,
-            judgeLeave: async () => false,
+            judgeLeave: async () => proposal.judgeLeave,
           }),
           rulesLookup: async () => [],
           engineExecute: (state, call, seed) =>
@@ -198,8 +203,15 @@ describe('pinned red-team injection proposals through production tool dispatch',
       const result = await runTurn(input);
 
       expect(requests.length).toBeGreaterThan(0);
-      if (proposal.tool === 'close_scene') {
-        // DM-proposed closes are rejected unconditionally; no state change.
+      if (proposal.tool === 'close_scene' && proposal.judgeLeave) {
+        expect(observed).toContainEqual(
+          expect.objectContaining({
+            type: 'SceneClosed',
+            sceneId: 'loc_redteam',
+          }),
+        );
+      } else if (proposal.tool === 'close_scene') {
+        // Judge STAY: closes are rejected; no state change.
         expect(result.events).toEqual([]);
         expect(observed).not.toContainEqual(
           expect.objectContaining({ type: 'SceneClosed' }),
