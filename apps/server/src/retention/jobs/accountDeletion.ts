@@ -255,7 +255,7 @@ async function deleteAccount(
     eventRows.push(
       ...(
         await client.query<EventRow>(
-          "SELECT session_id, seq, payload FROM events WHERE session_id = ANY($1) AND payload::text LIKE ANY($2)",
+          'SELECT session_id, seq, payload FROM events WHERE session_id = ANY($1) AND payload::text LIKE ANY($2)',
           [touched, TEXT_CACHE_PATTERNS],
         )
       ).rows,
@@ -263,7 +263,7 @@ async function deleteAccount(
     snapshotRows.push(
       ...(
         await client.query<SnapshotRow>(
-          "SELECT session_id, seq, state FROM snapshots WHERE session_id = ANY($1) AND state::text LIKE ANY($2)",
+          'SELECT session_id, seq, state FROM snapshots WHERE session_id = ANY($1) AND state::text LIKE ANY($2)',
           [touched, TEXT_CACHE_PATTERNS],
         )
       ).rows,

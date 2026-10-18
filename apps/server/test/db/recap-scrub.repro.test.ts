@@ -8,7 +8,8 @@ import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { runSweep } from '../../src/retention/sweeper.js';
 
 const CHAR_NAME = 'Brann';
-const RECAP = 'Previously on the hollow: Brann bargained with the guard at the well.';
+const RECAP =
+  'Previously on the hollow: Brann bargained with the guard at the well.';
 let db: Pool;
 let dir: string;
 
@@ -42,15 +43,31 @@ describe('account deletion scrubs persisted recap text (5baae77f repro)', () => 
     try {
       await q(
         'INSERT INTO sessions(id,owner_account_id,name,adventure_id,character_id) VALUES($1,$2,$3,$4,$5)',
-        [session, gone, 'Recap', 'adventure:01-hollow-under-marrowfell', charId],
+        [
+          session,
+          gone,
+          'Recap',
+          'adventure:01-hollow-under-marrowfell',
+          charId,
+        ],
       );
       await q(
         "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'SeatJoined',$3),($1,2,$2,'SeatJoined',$4),($1,3,$2,'GameStateCommitted',$5)",
         [
           session,
           randomUUID(),
-          { seatId: randomUUID(), accountId: heir, displayName: 'Heir', presence: 'offline' },
-          { seatId: randomUUID(), accountId: gone, displayName: 'Acct', presence: 'offline' },
+          {
+            seatId: randomUUID(),
+            accountId: heir,
+            displayName: 'Heir',
+            presence: 'offline',
+          },
+          {
+            seatId: randomUUID(),
+            accountId: gone,
+            displayName: 'Acct',
+            presence: 'offline',
+          },
           { gameState: { recap: { recap: RECAP, memoryHash: 'h1' } } },
         ],
       );
