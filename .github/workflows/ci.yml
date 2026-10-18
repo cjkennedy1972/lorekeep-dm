@@ -158,4 +158,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @game/schema build
       - run: pnpm --filter @game/evals exec vitest run test/redteam.test.ts
+      # Offline synthetic recorded fixtures exercise the real row scorers and
+      # every M3-41 aggregate threshold; the accepted live record is bound later.
+      - run: pnpm --filter @game/evals exec vitest run redteam/threshold-gate.test.mjs
       - run: pnpm --filter @game/server exec vitest run test/safety/hardFloorRedteam.test.ts
