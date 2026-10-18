@@ -51,7 +51,7 @@ Note on xc-017: the dataset row is a forged X-card claim with a tier change, and
 
 ## Pause rows (not scored)
 
-Existing room-level tests that touch this behavior, run on `0802697`:
+Existing room-level tests that touch this behavior, run on the branch (origin/main `0802697` plus the test commits, no room changes):
 
 - `test/room/pause.test.ts`: 4 tests pass. Covers blocking narration while paused, non-host pause allowed but non-host resume refused (relevant to xc-022's control), resume preserves the held turn, and queued turns drain on resume.
 - `test/room/xCard.test.ts`: 3 tests pass. Covers the anonymized X-card flag, steer-once behavior, and in-flight abort only when the host enables it (relevant to xc-018/019 mid-generation pauses).
