@@ -27,6 +27,23 @@ const replayPath = fileURLToPath(
   ),
 );
 const replayBytes = readFileSync(replayPath);
+const outcomeManifestPath = fileURLToPath(
+  new URL(
+    '../../../../docs/plan/evidence/m3-28-injection-engine-replay-81f48fd.json',
+    import.meta.url,
+  ),
+);
+const outcomeManifest = JSON.parse(
+  readFileSync(outcomeManifestPath, 'utf8'),
+) as {
+  replay: { harnessSha256: string };
+  proposalOutcomes: {
+    id: string;
+    tool: string;
+    dispatchOutcome: 'accepted' | 'rejected';
+    rejectionCode?: string;
+  }[];
+};
 const replayEvidence = JSON.parse(replayBytes.toString('utf8')) as {
   schema: string;
   sourceCommit: string;
@@ -147,6 +164,11 @@ describe('M3-28 final exact-head live record: every proposed injection tool call
     expect(createHash('sha256').update(replayBytes).digest('hex')).toBe(
       'ae527956778e7b2f47ef7ba26f86f9d48c6f6de5242e1c0619d3866062ae4436',
     );
+    expect(
+      createHash('sha256')
+        .update(readFileSync(fileURLToPath(import.meta.url)))
+        .digest('hex'),
+    ).toBe(outcomeManifest.replay.harnessSha256);
     expect(replayEvidence.cases).toHaveLength(proposals.length);
     expect(
       replayEvidence.cases.map(
@@ -173,14 +195,24 @@ describe('M3-28 final exact-head live record: every proposed injection tool call
         actors: { ent_ayla: character },
         catalog: loadCatalog(),
       };
+      const turnId =
+        proposal.tool === 'ask_clarification'
+          ? String(proposal.args.actionId)
+          : proposal.id;
+      const declaredOutcome = outcomeManifest.proposalOutcomes.find(
+        (item) => item.id === proposal.id,
+      );
+      expect(declaredOutcome?.tool).toBe(proposal.tool);
       const beforeActors = structuredClone(engineState.actors);
       const observed: unknown[] = [];
       let committedEngine: ToolExecutorState | undefined;
       const { adapter: llm, requests } = adapter(proposal);
       const input: TurnInput = {
-        turnId: proposal.id,
+        turnId,
         turnSeed: 7,
         testMode: true,
+        allowClarification: proposal.tool === 'ask_clarification',
+        clarificationAsked: false,
         adapter: llm,
         toolMode: 'native',
         outputModerator: allowOutput,
@@ -215,7 +247,7 @@ describe('M3-28 final exact-head live record: every proposed injection tool call
           engineState,
           seed: 7,
           rollIndex: 0,
-          turnId: proposal.id,
+          turnId,
           commitState(_previous, output) {
             committedEngine = output.nextState as ToolExecutorState;
             return { engine: output.nextState };
@@ -227,17 +259,42 @@ describe('M3-28 final exact-head live record: every proposed injection tool call
         emit: (event) => observed.push(event),
       };
       const result = await runTurn(input);
-      expect(requests).toHaveLength(2);
-      const domainEvents = result.events.filter(
-        (event) =>
-          ![
-            'TurnStarted',
-            'NarrationChunk',
-            'NarrationCompleted',
-            'TurnCommitted',
-            'ToolCallRejected',
-          ].includes(String((event as { type?: unknown }).type)),
+      expect(requests).toHaveLength(
+        proposal.tool === 'ask_clarification' ? 1 : 2,
       );
+      const domainEvents = [...result.events];
+      const rejectedCalls = observed.filter(
+        (event): event is { type: string; toolName: string; error: string } =>
+          typeof event === 'object' &&
+          event !== null &&
+          (event as { type?: unknown }).type === 'ToolCallRejected',
+      );
+      if (declaredOutcome?.dispatchOutcome === 'rejected') {
+        expect(declaredOutcome.rejectionCode).toBeDefined();
+        expect(rejectedCalls).toEqual([
+          expect.objectContaining({
+            toolName: proposal.tool,
+            error: declaredOutcome.rejectionCode,
+          }),
+        ]);
+      } else {
+        expect(declaredOutcome?.dispatchOutcome).toBe('accepted');
+        expect(rejectedCalls).toEqual([]);
+      }
+      if (proposal.tool === 'ask_clarification') {
+        expect(declaredOutcome?.dispatchOutcome).toBe('accepted');
+        expect(result.clarification).toEqual({
+          actionId: proposal.args.actionId,
+          question: proposal.args.question,
+        });
+        expect(observed).toContainEqual(
+          expect.objectContaining({
+            type: 'ClarificationRequested',
+            actionId: proposal.args.actionId,
+            question: proposal.args.question,
+          }),
+        );
+      }
       const stateUnchanged =
         JSON.stringify(committedEngine?.actors ?? engineState.actors) ===
         JSON.stringify(beforeActors);
