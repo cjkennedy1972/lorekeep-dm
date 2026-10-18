@@ -44,8 +44,13 @@ const readJson = (relative: string) =>
   JSON.parse(
     readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8'),
   );
-const recorded = readJson(
-  '../../../../packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json',
+const recordedPath =
+  process.env.INJECTION_REPLAY_RECORD_PATH ??
+  '../../../../packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json';
+const recorded = (
+  process.env.INJECTION_REPLAY_RECORD_PATH
+    ? JSON.parse(readFileSync(recordedPath, 'utf8'))
+    : readJson(recordedPath)
 ) as {
   cases: {
     id: string;
