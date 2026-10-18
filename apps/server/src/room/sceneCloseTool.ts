@@ -18,14 +18,23 @@ const CYRILLIC_LOOKALIKES: Record<string, string> = {
   х: 'x',
   і: 'i',
   ѕ: 's',
+  А: 'a',
+  Е: 'e',
+  О: 'o',
+  Р: 'p',
+  С: 'c',
+  У: 'y',
+  Х: 'x',
+  І: 'i',
+  Ѕ: 's',
 };
 
 function framePlayerText(playerText: string): string {
   const normalized = playerText
     .normalize('NFKC')
     .replace(/\p{Cf}/gu, '')
-    .replace(/[аеорсухіѕ]/g, (c) => CYRILLIC_LOOKALIKES[c] ?? c);
-  const neutralized = normalized.replace(/<\/?\s*player_message\b[^<>]*>?/gi, '[tag]');
+    .replace(/[аеорсухіѕАЕОРСУХІЅ]/g, (c) => CYRILLIC_LOOKALIKES[c] ?? c);
+  const neutralized = normalized.replace(/<\s*\/?\s*player_message\b[^<>]*>?/gi, '[tag]');
   return `<player_message>\n${neutralized}\n</player_message>`;
 }
 
