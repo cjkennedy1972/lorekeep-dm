@@ -4,6 +4,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkLiveUrl } from '../dist/live.js';
+import {
+  chatMessagesFromBuiltPrompt,
+  generateWithBuiltPrompt,
+} from '../redteam/prompt-messages.mjs';
 import { DMToolArgsSchema } from '../../../packages/schema/dist/dm-tools.js';
 import { buildPrompt, zodSchema } from '../../../apps/server/dist/dm/prompt.js';
 import {
@@ -240,15 +244,7 @@ function promptFor(input) {
   const prompt = buildPrompt(turnInputFor(input));
   return {
     promptPrefixHash: prompt.promptPrefixHash,
-    messages: [
-      { role: 'system', content: `${prompt.blocks[0]}\n\n${prompt.blocks[1]}` },
-      {
-        role: 'user',
-        content:
-          prompt.blocks[2] +
-          (prompt.blocks[3] ? `\n\n${prompt.blocks[3]}` : ''),
-      },
-    ],
+    messages: chatMessagesFromBuiltPrompt(prompt),
   };
 }
 
@@ -304,7 +300,7 @@ for (const c of datasets.injection.cases) {
         sceneSummary,
         priorTurns: c.priorTurns ?? [],
       });
-      const generation = await chat(prompt.messages, {
+      const generation = await generateWithBuiltPrompt(prompt, chat, {
         tools,
         tool_choice: 'auto',
       });
