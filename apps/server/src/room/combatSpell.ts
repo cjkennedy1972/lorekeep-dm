@@ -131,6 +131,13 @@ export function castCommand(
   )
     return reject('Your character does not have that spell prepared.');
   if (!entry) return reject('That spell is not in the rules catalog.');
+  if (
+    (resources.bonusActionSpellCast || (bonus && resources.actionSpellCast)) &&
+    !(entry.level === 0 && entry.castingTime?.unit === 'action')
+  )
+    return reject(
+      'After casting a bonus-action spell, you can only cast a cantrip with a 1-action casting time this turn.',
+    );
   const target = command.target;
   const targetEntity =
     target.kind === 'entity'
@@ -196,7 +203,16 @@ export function castCommand(
         ...state.combat,
         resources: {
           ...state.combat.resources,
-          [actorId]: { ...resources, [economy]: false },
+          [actorId]: {
+            ...resources,
+            [economy]: false,
+            ...(bonus ? { bonusActionSpellCast: true } : {}),
+            ...(!bonus &&
+            entry.level > 0 &&
+            entry.castingTime?.unit === 'action'
+              ? { actionSpellCast: true }
+              : {}),
+          },
         },
       },
     },

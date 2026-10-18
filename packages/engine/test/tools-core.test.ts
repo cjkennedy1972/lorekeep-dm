@@ -234,6 +234,74 @@ describe('M2-10 tool executors', () => {
       ),
     ).toBe('unknown-spell');
   });
+  test('scripted spell casts enforce bonus-action pairing for the current turn', () => {
+    const caster = {
+      ...actors.ent_hero!,
+      spellsKnown: [
+        'spell:expeditious-retreat',
+        'spell:burning-hands',
+        'spell:fire-bolt',
+      ],
+      spellsPrepared: [
+        'spell:expeditious-retreat',
+        'spell:burning-hands',
+        'spell:fire-bolt',
+      ],
+      slots: { '1': { max: 2, used: 0 } },
+    };
+    const turnState = {
+      ...state,
+      actors: { ...actors, ent_hero: caster },
+      targets: {
+        ent_hero: {
+          id: 'ent_hero',
+          hp: 10,
+          maxHp: 10,
+          abilities: caster.abilities,
+        },
+        ent_goblin: {
+          id: 'ent_goblin',
+          hp: 8,
+          maxHp: 8,
+          ac: 10,
+          abilities: actors.ent_goblin!.abilities,
+        },
+      },
+      turnActorId: 'ent_hero',
+    };
+    const call = (spellId: string, slotLevel: number) => ({
+      name: 'cast_spell',
+      args: {
+        casterId: 'ent_hero',
+        spellId: `srd:spell/${spellId}`,
+        slotLevel,
+        target:
+          spellId === 'expeditious-retreat'
+            ? { kind: 'self' }
+            : { kind: 'entity', ref: 'ent_goblin' },
+      },
+    });
+    const bonus = success(
+      execute(turnState, call('expeditious-retreat', 1), 42) as never,
+    ) as { bonusActionSpellCast: Record<string, boolean> };
+    expect(bonus.bonusActionSpellCast.ent_hero).toBe(true);
+    expect(
+      error(
+        execute(
+          { ...turnState, bonusActionSpellCast: bonus.bonusActionSpellCast },
+          call('burning-hands', 1),
+          43,
+        ),
+      ),
+    ).toBe('forbidden');
+    expect(
+      execute(
+        { ...turnState, bonusActionSpellCast: bonus.bonusActionSpellCast },
+        call('fire-bolt', 0),
+        44,
+      ).ok,
+    ).toBe(true);
+  });
   test('conditions validate engine ownership, duplicates and missing entities; coordinates stay rejected', () => {
     const call = (conditionId: string) => ({
       name: 'apply_condition',

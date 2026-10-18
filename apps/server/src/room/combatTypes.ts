@@ -36,6 +36,10 @@ export type CombatEntity = {
 export type CombatResourcesState = {
   action: boolean;
   bonusAction: boolean;
+  /** Set only after this entity casts a bonus-action spell; reset at turn start. */
+  bonusActionSpellCast?: boolean;
+  /** Set only after this entity casts a leveled action spell; reset at turn start. */
+  actionSpellCast?: boolean;
   reaction: boolean;
   movementRemaining: number;
 };
