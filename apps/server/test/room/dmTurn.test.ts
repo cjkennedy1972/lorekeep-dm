@@ -684,6 +684,29 @@ describe('Room commit safety', () => {
     expect(JSON.stringify(latestSnapshot()?.state)).toBe(before);
   });
 
+  it('reloads the head seq after a failed write so the next write does not reuse a seq', async () => {
+    const { room, store } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    const original = store.writeTurn.bind(store);
+    const seqs: number[] = [];
+    let failNext = true;
+    store.writeTurn = (async (...args: Parameters<typeof original>) => {
+      seqs.push(args[1][0]!.seq);
+      if (!failNext) return original(...args);
+      failNext = false;
+      await original(...args);
+      throw new Error('lease fenced after commit');
+    }) as typeof store.writeTurn;
+    await expect(room.seat(randomUUID(), 'First', false)).rejects.toThrow(
+      'lease fenced',
+    );
+    await room.seat(randomUUID(), 'Second', false);
+    expect(seqs).toEqual([1, 2]);
+  });
+
   it('does not nest the previous checkpoint inside a new one', async () => {
     const { room, latestSnapshot } = setup({
       async run() {

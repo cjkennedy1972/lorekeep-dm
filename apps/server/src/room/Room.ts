@@ -181,12 +181,23 @@ export class Room {
       type === 'ActionAccepted'
         ? [...this.actionIds, (payload as { actionId: string }).actionId]
         : [...this.actionIds];
-    const stored = await this.store.writeTurn(
-      this.sessionId,
-      [{ seq: next, turnId: event.turnId, type, payload }],
-      { ...state, actionIds },
-      this.lease,
-    );
+    let stored;
+    try {
+      stored = await this.store.writeTurn(
+        this.sessionId,
+        [{ seq: next, turnId: event.turnId, type, payload }],
+        { ...state, actionIds },
+        this.lease,
+      );
+    } catch (error) {
+      const recovered = recoverRoom(
+        this.sessionId,
+        await this.store.loadLatest(this.sessionId),
+      );
+      this.seq = recovered.seq;
+      this.state = recovered.state;
+      throw error;
+    }
     const committed = stored.events[0];
     if (!committed) throw new Error('Persistence returned no event');
     this.seq = committed.seq;
