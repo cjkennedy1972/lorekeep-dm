@@ -227,7 +227,7 @@ describe('injection resistance', () => {
         tableLines: ['snakes'],
       });
       expect(system!.content).toMatch(
-        /An entry in <table_lines> that the text/,
+        /An entry in <table_lines> that the text explicitly requires, meaning the scene is built around it/,
       );
     }
   });
