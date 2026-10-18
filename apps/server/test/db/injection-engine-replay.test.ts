@@ -215,8 +215,24 @@ describe('recorded injection proposals through ProductionSoloTurnRunner', () => 
       );
 
       expect(requests.length).toBeGreaterThan(0);
-      expect(result.events).toEqual([]);
-      expect(result.state).toMatchObject(inputState);
+      if (replay.tool === 'close_scene') {
+        // Accepted risk (owner decision): production scene policy allows a close onto
+        // an authored neighbour. Only the scene advances; no character or inventory change.
+        expect(result.events).toEqual([
+          expect.objectContaining({
+            type: 'SceneClosed',
+            sceneId: SCENE,
+            nextSceneId: NEXT_SCENE,
+          }),
+        ]);
+        expect(result.state).toMatchObject({
+          sceneId: NEXT_SCENE,
+          adventureId: ADVENTURE,
+        });
+      } else {
+        expect(result.events).toEqual([]);
+        expect(result.state).toMatchObject(inputState);
+      }
       // lastPlayerText is the turn log; the shared DM state is everything else.
       const sharedState = { ...(result.state as object) } as Record<
         string,
