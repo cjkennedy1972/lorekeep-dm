@@ -18,10 +18,12 @@ export type SpellToolState = {
   targets: Readonly<Record<string, SpellTarget>>;
   catalog: Catalog;
   map?: SpellMapContext;
+  /** Combat map projection for spells; `map` is also used by movement tools. */
+  spellMap?: SpellMapContext;
   spellState?: SpellState;
   turnId: string;
   turnActorId?: string | null;
-  /** Bonus-action spells already cast by each actor during this DM turn. */
+  /** Bonus-action spells already cast by each actor during this combat turn. */
   bonusActionSpellCast?: Readonly<Record<string, boolean>>;
   options?: Readonly<Record<string, AreaOption>>;
 };
@@ -146,7 +148,9 @@ export function executeSpell(
     slotLevel,
     seed: rng,
     catalog: state.catalog,
-    ...(state.map ? { map: state.map } : {}),
+    ...((state.spellMap ?? state.map)
+      ? { map: state.spellMap ?? state.map }
+      : {}),
     ...(state.spellState ? { state: state.spellState } : {}),
   });
   if ('error' in result) return fail(engineCode(result.error), result.hint);
