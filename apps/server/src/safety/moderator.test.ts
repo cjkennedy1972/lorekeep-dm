@@ -554,6 +554,34 @@ describe('table-line scene blocked at each tier (fixed judge verdict)', () => {
     });
   }
 
+  it('allows a family-tier line depicted only in passing', async () => {
+    const scene = 'The party passes a carved snake sign outside the inn.';
+    const { chat, calls } = judgeReplying(ALLOW);
+    const verdict = await moderatorWith(chat).moderate({
+      text: scene,
+      tier: 'family',
+      direction: 'output',
+      tableLines: ['snakes'],
+    });
+
+    expect(verdict).toMatchObject({
+      verdict: 'allow',
+      category: 'none',
+      source: 'judge',
+      unavailable: false,
+    });
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.messages[0]!.content).toContain(
+      MODERATION_SECTIONS['rubric:family'],
+    );
+    expect(calls[0]!.messages[1]!.content).toContain(
+      '<table_lines>\n"snakes"\n</table_lines>',
+    );
+    expect(calls[0]!.messages[1]!.content).toContain(
+      `<text>\n"${scene}"\n</text>`,
+    );
+  });
+
   it('allows the same scene when no table line is set', async () => {
     const { chat } = judgeReplying(ALLOW);
     const verdict = await moderatorWith(chat).moderate({
