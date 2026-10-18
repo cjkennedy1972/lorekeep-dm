@@ -258,6 +258,73 @@ describe('player commands', () => {
   });
 });
 
+describe('action economy for spells', () => {
+  const healer = {
+    ...hero,
+    spellsKnown: ['spell:expeditious-retreat'],
+    spellsPrepared: ['spell:expeditious-retreat'],
+  };
+  const withSpent = (
+    state: RoomCombatState,
+    spent: 'action' | 'bonusAction',
+  ): RoomCombatState => ({
+    ...state,
+    combat: {
+      ...state.combat,
+      resources: {
+        ...state.combat.resources,
+        ent_aria: { ...state.combat.resources.ent_aria!, [spent]: false },
+      },
+    },
+  });
+  const healSelf = {
+    command: 'cast',
+    spellId: 'spell:expeditious-retreat',
+    slotLevel: 1,
+    target: { kind: 'entity', ref: 'ent_aria' },
+  } as const;
+
+  it('spends only the bonus action for a bonus-action spell', () => {
+    const { runtime, state } = engaged();
+    const cast = ok(
+      runtime.execute(state, 'ent_aria', healSelf, {
+        character: healer,
+        now: NOW,
+      }),
+    );
+    expect(cast.state.combat.resources.ent_aria?.bonusAction).toBe(false);
+    expect(cast.state.combat.resources.ent_aria?.action).toBe(true);
+    expect(types(cast.events)).toContain('BonusActionSpent');
+  });
+
+  it('refuses a bonus-action spell once the bonus action is spent', () => {
+    const { runtime, state } = engaged();
+    expect(
+      runtime.execute(withSpent(state, 'bonusAction'), 'ent_aria', healSelf, {
+        character: healer,
+        now: NOW,
+      }),
+    ).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+
+  it('refuses an action spell when only the bonus action is left', () => {
+    const { runtime, state } = engaged();
+    expect(
+      runtime.execute(
+        withSpent(state, 'action'),
+        'ent_aria',
+        {
+          command: 'cast',
+          spellId: 'spell:burning-hands',
+          slotLevel: 1,
+          target: { kind: 'self' },
+        },
+        { character: hero, now: NOW },
+      ),
+    ).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+});
+
 describe('opportunity attack reactions', () => {
   const leave = { command: 'move', destination: { x: 7, y: 6 } } as const;
   const provoke = () => {

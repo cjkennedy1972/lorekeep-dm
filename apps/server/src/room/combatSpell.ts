@@ -119,15 +119,17 @@ export function castCommand(
 ): CombatTransition | CombatCommandError {
   const caster = state.entities.find((e) => e.id === actorId);
   const resources = state.combat.resources[actorId];
-  if (!caster || !character || !resources?.action)
-    return reject('You cannot cast a spell right now.');
   const spellId = catalogSpellId(command.spellId);
+  const entry = catalog.get('spell', spellId);
+  const bonus = entry?.castingTime?.unit === 'bonus-action';
+  const economy = bonus ? 'bonusAction' : 'action';
+  if (!caster || !character || !resources?.[economy])
+    return reject('You cannot cast a spell right now.');
   if (
     !character.spellsKnown.includes(spellId) &&
     !character.spellsPrepared.includes(spellId)
   )
     return reject('Your character does not have that spell prepared.');
-  const entry = catalog.get('spell', spellId);
   if (!entry) return reject('That spell is not in the rules catalog.');
   const target = command.target;
   const targetEntity =
@@ -194,7 +196,7 @@ export function castCommand(
         ...state.combat,
         resources: {
           ...state.combat.resources,
-          [actorId]: { ...resources, action: false },
+          [actorId]: { ...resources, [economy]: false },
         },
       },
     },
@@ -206,7 +208,7 @@ export function castCommand(
     events: [
       ...events,
       ...applied.events,
-      { type: 'ActionSpent', entityId: actorId },
+      { type: bonus ? 'BonusActionSpent' : 'ActionSpent', entityId: actorId },
       ...closing.events,
     ],
     slots: { entityId: actorId, slots: result.state.slots[actorId] ?? {} },
