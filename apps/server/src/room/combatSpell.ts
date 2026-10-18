@@ -133,7 +133,7 @@ export function castCommand(
   if (!entry) return reject('That spell is not in the rules catalog.');
   if (
     !bonus &&
-    !resources.bonusAction &&
+    resources.bonusActionSpellCast &&
     !(entry.level === 0 && entry.castingTime?.unit === 'action')
   )
     return reject(
@@ -204,7 +204,11 @@ export function castCommand(
         ...state.combat,
         resources: {
           ...state.combat.resources,
-          [actorId]: { ...resources, [economy]: false },
+          [actorId]: {
+            ...resources,
+            [economy]: false,
+            ...(bonus ? { bonusActionSpellCast: true } : {}),
+          },
         },
       },
     },

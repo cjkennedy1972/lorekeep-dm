@@ -6,6 +6,7 @@ import {
   createCombatRuntime,
   type RoomCombatState,
 } from '../../src/room/combat.js';
+import { advanceTurn } from '../../src/room/combatEngine.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
 import { joinSeated } from '../helpers/room.js';
 
@@ -92,6 +93,29 @@ const combat: RoomCombatState = {
     },
   },
 };
+
+describe('combat turn resource refresh', () => {
+  it('resets the bonus-action-spell flag when an entity starts its turn', () => {
+    const transition = advanceTurn({
+      ...combat,
+      combat: {
+        ...combat.combat,
+        resources: {
+          ...combat.combat.resources,
+          ent_goblin: {
+            ...combat.combat.resources.ent_goblin!,
+            bonusActionSpellCast: true,
+          },
+        },
+      },
+    });
+
+    expect(
+      transition.state.combat.resources.ent_goblin?.bonusActionSpellCast,
+    ).toBe(false);
+  });
+});
+
 function setup() {
   const events: StoredEvent[] = [];
   let snapshot: LatestState['snapshot'] = null;

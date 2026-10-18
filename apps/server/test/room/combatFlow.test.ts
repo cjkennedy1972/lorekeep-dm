@@ -293,6 +293,9 @@ describe('action economy for spells', () => {
       }),
     );
     expect(cast.state.combat.resources.ent_aria?.bonusAction).toBe(false);
+    expect(cast.state.combat.resources.ent_aria?.bonusActionSpellCast).toBe(
+      true,
+    );
     expect(cast.state.combat.resources.ent_aria?.action).toBe(true);
     expect(types(cast.events)).toContain('BonusActionSpent');
   });
@@ -345,6 +348,22 @@ describe('action economy for spells', () => {
         { character: hero, now: NOW },
       ),
     ).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+
+  it('allows an action spell after a non-spell bonus action', () => {
+    const { runtime, state } = engaged();
+    const result = runtime.execute(
+      withSpent(state, 'bonusAction'),
+      'ent_aria',
+      {
+        command: 'cast',
+        spellId: 'spell:burning-hands',
+        slotLevel: 1,
+        target: { kind: 'self' },
+      },
+      { character: hero, now: NOW },
+    );
+    expect(result).not.toMatchObject({ code: 'COMMAND_REJECTED' });
   });
 
   it('allows an action cantrip after a bonus-action spell', () => {
