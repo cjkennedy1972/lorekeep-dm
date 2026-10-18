@@ -712,6 +712,8 @@ describe('Room commit safety', () => {
     ).state;
     state.gameState.lastNarration = 'secret narration';
     state.gameState.lastPlayerText = 'secret player text';
+    state.gameState.sceneSummary = 'secret scene summary';
+    state.gameState.world = { registryText: 'secret registry prose' };
     await room.saveCheckpoint();
     const checkpoint = (
       room.clientState().gameState as { checkpoint: Record<string, unknown> }
@@ -719,6 +721,8 @@ describe('Room commit safety', () => {
     expect(checkpoint).toBeDefined();
     expect(checkpoint).not.toHaveProperty('lastNarration');
     expect(checkpoint).not.toHaveProperty('lastPlayerText');
+    expect(checkpoint).not.toHaveProperty('sceneSummary');
+    expect(checkpoint).not.toHaveProperty('world');
   });
 
   function gatedRunner() {

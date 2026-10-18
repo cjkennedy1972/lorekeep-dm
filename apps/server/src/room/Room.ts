@@ -238,6 +238,8 @@ export class Room {
       };
       delete checkpoint.lastNarration;
       delete checkpoint.lastPlayerText;
+      delete checkpoint.sceneSummary;
+      delete checkpoint.world;
       gameState.checkpoint = checkpoint;
     }
     // Registry prose and persisted recaps may predate output moderation. They are
