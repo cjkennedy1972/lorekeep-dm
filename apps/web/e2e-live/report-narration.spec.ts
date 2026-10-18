@@ -6,7 +6,6 @@ import { expect, test } from '@playwright/test';
 const state = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as {
     token: string;
-    table: string;
   };
 
 test('a player reports a DM narration through the real reports route', async ({
@@ -14,10 +13,21 @@ test('a player reports a DM narration through the real reports route', async ({
   context,
 }) => {
   test.setTimeout(120_000);
-  const { token, table } = state();
+  const { token } = state();
   await context.addCookies([
     { name: 'sid', value: token, url: 'http://localhost:5174' },
   ]);
+  // Own table: the seeded pre-combat table belongs to solo-combat.spec.ts.
+  const created = await page.request.post('/api/tables', {
+    data: {
+      name: 'Report probe',
+      adventureId: 'adventure:01-hollow-under-marrowfell',
+      difficulty: 'moderate',
+      startingLevel: 1,
+    },
+  });
+  expect(created.status()).toBe(201);
+  const table = ((await created.json()) as { game: { id: string } }).game.id;
   await page.goto(`/rooms/${table}/game`);
 
   await page.getByLabel('Your action').fill('I look around the crypt');
