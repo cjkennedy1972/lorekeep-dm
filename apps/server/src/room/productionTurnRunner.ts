@@ -403,6 +403,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             rulings: [],
           },
         }) as unknown as ToolExecutorState & { world: WorldRegistry };
+    // A production runner invocation is one DM turn. Do not carry scripted-cast
+    // pairing state over from the previous player action stored in gameEngine.
+    engineState.bonusActionSpellCast = {};
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
@@ -472,7 +475,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             );
         if (!result.ok) return { ...result, events: [] };
         const value = result.value as
-          | { events?: readonly unknown[] }
+          | {
+              events?: readonly unknown[];
+              bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+            }
           | undefined;
         const authoredRegistryEvents = (value?.events ?? []).filter(
           (event) =>
@@ -577,6 +583,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             events: value?.events ?? [],
             state: {
               ...mergeCombatOutput(current, request.name, result.value),
+              ...(value?.bonusActionSpellCast
+                ? { bonusActionSpellCast: value.bonusActionSpellCast }
+                : {}),
               world: nextWorld,
             },
           },
