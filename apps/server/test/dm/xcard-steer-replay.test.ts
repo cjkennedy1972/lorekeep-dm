@@ -57,11 +57,18 @@ function replay(
   const executed: string[] = [];
   const moderated: string[] = [];
   const adapter: LlmAdapter = {
-    capabilities: () => ({ streaming: true, nativeTools: true, jsonSchema: true }),
+    capabilities: () => ({
+      streaming: true,
+      nativeTools: true,
+      jsonSchema: true,
+    }),
     probe: async () => true,
     async *complete(request) {
       requests.push(request);
-      yield { type: 'text', delta: opts.modelReply ?? 'MODEL OUTPUT MUST NOT APPEAR' };
+      yield {
+        type: 'text',
+        delta: opts.modelReply ?? 'MODEL OUTPUT MUST NOT APPEAR',
+      };
     },
   };
   const moderator: Moderator = {
