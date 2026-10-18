@@ -18,6 +18,7 @@ import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import { hero, preCombatGame } from '../room/combatFixtures.js';
 import { scriptedDm } from '../room/scriptedDm.js';
+import { isLocalDatabaseUrl } from './localDatabaseUrl.js';
 
 it('serves the recorded combat stack for browser e2e', async () => {
   const url = process.env.DATABASE_URL;
@@ -25,7 +26,7 @@ it('serves the recorded combat stack for browser e2e', async () => {
   const port = Number(process.env.LIVE_PORT ?? 8799);
   if (!url || !stateFile)
     throw new Error('DATABASE_URL and LIVE_STATE_FILE required');
-  if (!/@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url))
+  if (!isLocalDatabaseUrl(url))
     throw new Error('refusing to seed a non-local DATABASE_URL');
   process.env.NODE_ENV = 'test';
   process.env.LLM_FIXTURE_MODE = 'strict';
