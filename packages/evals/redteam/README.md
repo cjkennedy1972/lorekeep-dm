@@ -40,13 +40,14 @@ state and event count.
 
 Ordinary CI always runs `accepted-record-gate.mjs` against the committed
 `accepted-record-binding.json` manifest; no optional variables or skip path
-exist. The manifest currently contains empty artifact path/hash placeholders,
-so CI intentionally fails closed until Proof supplies committed final artifacts
-and the manifest is pinned to their paths and SHA-256 values. Missing files,
-source mismatch, record/replay hash mismatch, dataset/version/count mismatch,
-missing replay evidence, or threshold misses fail the gate. No secrets or
-network access are used. Synthetic self-tests do not certify the pending
-M3-28 run.
+exist. The manifest is populated with repository-committed paths and SHA-256
+hashes for the accepted M3-28 record and engine-replay evidence. CI evaluates
+those bound artifacts on every run; the current record clears the configured
+thresholds. Missing files, source mismatch, record/replay hash mismatch,
+dataset/version/count mismatch, missing replay evidence, or threshold misses
+fail the gate. No secrets or network access are used. Synthetic self-tests
+prove the gate's independent failure behavior; the committed artifacts are
+evaluated separately by the normal CI command above.
 
 ## Schema
 
