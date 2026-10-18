@@ -643,7 +643,7 @@ describe('Room commit safety', () => {
     expect(state).not.toHaveProperty('sceneSummary');
     expect(state).not.toHaveProperty('world');
     expect(room.clientState().seats[0]).not.toHaveProperty('matureOptOut');
-    expect(state.gameEngine).toEqual({ turn: 3 });
+    expect(state).not.toHaveProperty('gameEngine');
     expect(JSON.stringify(room.clientState())).not.toContain('unsafe');
   });
 
@@ -721,6 +721,48 @@ describe('Room commit safety', () => {
     ).gameState.checkpoint as Record<string, unknown>;
     expect(checkpoint.recap).toEqual({ recap: 'start', memoryHash: 'h0' });
     expect(checkpoint.checkpoint).toBeUndefined();
+  });
+
+  it('projects only UI-required fields from game state and checkpoints', async () => {
+    const { room } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    const visible = {
+      characters: { player: { name: 'Hero' } },
+      combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+    };
+    await room.persistGameState({
+      ...visible,
+      lastNarration: 'secret narration',
+      lastPlayerText: 'secret player text',
+      sceneSummary: 'secret scene summary',
+      world: { registryText: 'secret registry prose' },
+      recap: { recap: 'secret recap', memoryHash: 'secret hash' },
+      gameEngine: {
+        turn: 3,
+        world: { rulings: [{ ruling: 'secret engine registry prose' }] },
+      },
+      failForward: { narrative: 'secret player-provided prose' },
+      madeUpFutureKey: 'secret future prose',
+    });
+    await room.saveCheckpoint();
+    const clientGameState = room.clientState().gameState as Record<
+      string,
+      unknown
+    >;
+    const checkpoint = clientGameState.checkpoint as Record<string, unknown>;
+    const expectedVisibleFields = ['characters', 'combatRoom'];
+    expect(Object.keys(clientGameState).sort()).toEqual(
+      [...expectedVisibleFields, 'checkpoint'].sort(),
+    );
+    expect(Object.keys(checkpoint).sort()).toEqual(expectedVisibleFields);
+    expect(clientGameState.characters).toEqual(visible.characters);
+    expect(clientGameState.combatRoom).toEqual(visible.combatRoom);
+    expect(checkpoint.characters).toEqual(visible.characters);
+    expect(checkpoint.combatRoom).toEqual(visible.combatRoom);
+    expect(JSON.stringify(room.clientState())).not.toContain('secret');
   });
 
   function gatedRunner() {

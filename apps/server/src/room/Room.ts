@@ -42,6 +42,19 @@ import type { Catalog } from '@game/rules-engine';
 import { resolveSoloRest } from './rest.js';
 import { failForward, resolveDeathSave, retryFromCheckpoint } from './death.js';
 
+const CLIENT_GAME_STATE_FIELDS = ['characters', 'combatRoom'] as const;
+
+function clientGameState(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const key of CLIENT_GAME_STATE_FIELDS)
+    if (key in source) result[key] = source[key];
+  if (source.checkpoint && typeof source.checkpoint === 'object')
+    result.checkpoint = clientGameState(source.checkpoint);
+  return result;
+}
+
 const MAX_QUEUED_ACTIONS_PER_SEAT = 3;
 const MAX_QUEUED_ACTIONS_PER_ROOM = 12;
 
@@ -239,21 +252,7 @@ export class Room {
       return clientSeat;
     });
     if (!this.state.gameState) return { ...this.state, seats };
-    const gameState = { ...(this.state.gameState as Record<string, unknown>) };
-    delete gameState.lastNarration;
-    delete gameState.lastPlayerText;
-    delete gameState.sceneSummary;
-    // Registry prose and persisted recaps may predate output moderation. They are
-    // server-side model context; recap is returned separately after route gating.
-    delete gameState.world;
-    delete gameState.recap;
-    if (gameState.gameEngine && typeof gameState.gameEngine === 'object') {
-      const gameEngine = {
-        ...(gameState.gameEngine as Record<string, unknown>),
-      };
-      delete gameEngine.world;
-      gameState.gameEngine = gameEngine;
-    }
+    const gameState = clientGameState(this.state.gameState);
     return { ...this.state, seats, gameState };
   }
 
