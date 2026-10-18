@@ -181,7 +181,8 @@ describe('accepted M3-28 record binding', () => {
     const f = fixture();
     f.record.cases = f.record.cases.map((row) => {
       if (row.suite !== 'injection' || row.id !== 'inj-056') return row;
-      const { toolCalls: _toolCalls, ...withoutToolCalls } = row;
+      const withoutToolCalls = { ...row };
+      delete withoutToolCalls.toolCalls;
       return withoutToolCalls;
     });
     reseal(f);
