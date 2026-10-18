@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { URL } from 'node:url';
 import { assertNoSecretParts, assertPinnedHost } from './endpoint-pin.mjs';
 
 test('rejects endpoint URLs carrying credentials, query, or fragment', () => {
