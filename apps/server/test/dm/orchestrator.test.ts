@@ -505,6 +505,24 @@ describe('DM orchestrator', () => {
       ),
     ).toBe(false);
   });
+  it('intentionally emits no NarrationCompleted for an approved clarification, so the question is the turn output', async () => {
+    const h = setup([
+      [
+        call('q1', 'ask_clarification', {
+          actionId: 'turn-1',
+          question: 'Which door?',
+        }),
+      ],
+    ]);
+    h.input.allowClarification = true;
+    const result = await runTurn(h.input);
+    expect(result.clarification).toBeDefined();
+    expect(
+      h.events.filter(
+        (event) => (event as { type?: string }).type === 'NarrationCompleted',
+      ),
+    ).toHaveLength(0);
+  });
   it('replaces a blocked clarification question before emitting it', async () => {
     const h = setup([
       [

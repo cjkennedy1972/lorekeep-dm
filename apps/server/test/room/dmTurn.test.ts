@@ -647,6 +647,43 @@ describe('Room commit safety', () => {
     expect(JSON.stringify(room.clientState())).not.toContain('unsafe');
   });
 
+  it('intentionally commits nothing for an endpoint-error turn, so the event log stays empty for it', async () => {
+    const { room, events, latestSnapshot } = setup({
+      async run(_input: unknown, emit: (event: unknown) => void) {
+        emit({
+          type: 'NarrationCompleted',
+          turnId: 'turn',
+          text: 'The DM falters.',
+          words: 3,
+          fallback: 'endpoint-error',
+        });
+        return { ...result, fallback: 'endpoint-error' } as never;
+      },
+    });
+    const account = randomUUID();
+    const sent: { type?: string; payload?: { fallback?: unknown } }[] = [];
+    await joinSeated(room, account, {
+      send(message: unknown) {
+        sent.push(message as (typeof sent)[number]);
+      },
+    });
+    const before = JSON.stringify(latestSnapshot()?.state);
+    const storedBefore = events.length;
+    expect(await room.submitAction(account, randomUUID(), 'I look.')).toBe(
+      true,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      sent.some(
+        (message) =>
+          message.type === 'NarrationCompleted' &&
+          message.payload?.fallback === 'endpoint-error',
+      ),
+    ).toBe(true);
+    expect(events.length).toBe(storedBefore);
+    expect(JSON.stringify(latestSnapshot()?.state)).toBe(before);
+  });
+
   it('does not nest the previous checkpoint inside a new one', async () => {
     const { room, latestSnapshot } = setup({
       async run() {
