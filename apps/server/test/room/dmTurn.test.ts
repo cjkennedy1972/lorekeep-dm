@@ -700,7 +700,7 @@ describe('Room commit safety', () => {
     expect(checkpoint.checkpoint).toBeUndefined();
   });
 
-  it('keeps last-turn narration and player text out of client checkpoints', async () => {
+  it('strips every private prose key from client state and checkpoints', async () => {
     const { room } = setup({
       async run() {
         throw new Error('unused');
@@ -714,15 +714,26 @@ describe('Room commit safety', () => {
     state.gameState.lastPlayerText = 'secret player text';
     state.gameState.sceneSummary = 'secret scene summary';
     state.gameState.world = { registryText: 'secret registry prose' };
+    state.gameState.recap = {
+      recap: 'secret recap',
+      memoryHash: 'secret hash',
+    };
     await room.saveCheckpoint();
-    const checkpoint = (
-      room.clientState().gameState as { checkpoint: Record<string, unknown> }
-    ).checkpoint;
+    const clientGameState = room.clientState().gameState as {
+      checkpoint: Record<string, unknown>;
+    } & Record<string, unknown>;
+    const checkpoint = clientGameState.checkpoint;
     expect(checkpoint).toBeDefined();
-    expect(checkpoint).not.toHaveProperty('lastNarration');
-    expect(checkpoint).not.toHaveProperty('lastPlayerText');
-    expect(checkpoint).not.toHaveProperty('sceneSummary');
-    expect(checkpoint).not.toHaveProperty('world');
+    for (const key of [
+      'lastNarration',
+      'lastPlayerText',
+      'sceneSummary',
+      'world',
+      'recap',
+    ]) {
+      expect(clientGameState).not.toHaveProperty(key);
+      expect(checkpoint).not.toHaveProperty(key);
+    }
   });
 
   function gatedRunner() {
