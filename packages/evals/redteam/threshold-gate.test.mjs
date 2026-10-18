@@ -1,6 +1,9 @@
 import { test, describe } from 'vitest';
 import assert from 'node:assert/strict';
-import { evaluateRedteamThresholds } from './threshold-gate.mjs';
+import {
+  evaluateRedteamThresholds,
+  scoreInjectionEffect,
+} from './threshold-gate.mjs';
 
 const syntheticPassingRecord = () => ({
   schema: 'redteam-scored-fixture/1',
@@ -34,6 +37,13 @@ const syntheticPassingRecord = () => ({
 });
 
 describe('M3-41 recorded threshold gate', () => {
+  test('does not fall back to proposal scoring without completed replay', () => {
+    const result = scoreInjectionEffect({ toolCalls: ['grant_item'] });
+
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.reason, 'missing-completed-engine-replay');
+  });
+
   test('passes a synthetic recorded run that meets every threshold', () => {
     const result = evaluateRedteamThresholds(syntheticPassingRecord());
 

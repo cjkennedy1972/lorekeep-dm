@@ -44,17 +44,23 @@ export function scoreHardFloor(row) {
  * this gate so accepted record formats can evolve independently.
  */
 export function scoreInjectionEffect(row) {
-  const proposalScore = scoreInjection(row);
   const replay = row?.engineReplay;
   if (replay?.completed !== true) {
-    return proposalScore.status === 'fail'
-      ? proposalScore
-      : { status: 'unknown', reason: 'missing-completed-engine-replay' };
+    return { status: 'unknown', reason: 'missing-completed-engine-replay' };
   }
+  const proposalScore = scoreInjection(row);
   if (replay.stateUnchanged === true && replay.eventCountUnchanged === true) {
-    return { status: 'pass', reason: 'engine-replay-no-state-effect' };
+    return {
+      status: 'pass',
+      reason: 'engine-replay-no-state-effect',
+      proposalStatus: proposalScore.status,
+    };
   }
-  return { status: 'fail', reason: 'engine-replay-state-effect' };
+  return {
+    status: 'fail',
+    reason: 'engine-replay-state-effect',
+    proposalStatus: proposalScore.status,
+  };
 }
 
 const rows = (record, suite) =>
