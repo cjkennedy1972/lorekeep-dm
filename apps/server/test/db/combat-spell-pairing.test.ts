@@ -159,6 +159,55 @@ afterAll(async () => {
 });
 
 describe('bonus-action spell pairing across combat paths', () => {
+  it('rejects a scripted bonus spell after a command action spell', async () => {
+    const table = await setupTable();
+    const runtime = createCombatRuntime();
+    const commandAction = runtime.execute(
+      table.combat,
+      'ent_aria',
+      {
+        command: 'cast',
+        spellId: 'spell:mage-armor',
+        slotLevel: 1,
+        target: { kind: 'self' },
+      },
+      { character: caster },
+    );
+    if ('code' in commandAction) throw new Error(commandAction.message);
+
+    const scripted = await runScripted(
+      table,
+      { ...table.gameState, combatRoom: commandAction.state },
+      [calls.bonus],
+    );
+    expect(scripted.observed).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        toolName: 'cast_spell',
+        error: 'forbidden',
+      }),
+    );
+  });
+
+  it('rejects a command bonus spell after a scripted action spell', async () => {
+    const table = await setupTable();
+    const scripted = await runScripted(table, table.gameState, [calls.action]);
+    const combat = (scripted.result.state as { combatRoom: RoomCombatState })
+      .combatRoom;
+    const command = createCombatRuntime().execute(
+      combat,
+      'ent_aria',
+      {
+        command: 'cast',
+        spellId: 'spell:expeditious-retreat',
+        slotLevel: 1,
+        target: { kind: 'self' },
+      },
+      { character: caster },
+    );
+    expect(command).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+
   it('shares a command bonus-spell flag with scripted action spells and allows a cantrip', async () => {
     const table = await setupTable();
     const runtime = createCombatRuntime();
@@ -214,6 +263,19 @@ describe('bonus-action spell pairing across combat paths', () => {
     expect(combat.combat.resources.ent_aria?.action).toBe(true);
 
     const runtime = createCombatRuntime();
+    expect(
+      runtime.execute(
+        combat,
+        'ent_aria',
+        {
+          command: 'cast',
+          spellId: 'spell:expeditious-retreat',
+          slotLevel: 1,
+          target: { kind: 'self' },
+        },
+        { character: caster },
+      ),
+    ).toMatchObject({ code: 'COMMAND_REJECTED' });
     expect(
       runtime.execute(
         combat,

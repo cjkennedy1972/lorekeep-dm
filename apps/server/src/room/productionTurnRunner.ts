@@ -158,7 +158,10 @@ function combatSpellMap(room: RoomCombatState, casterId: string) {
 const withoutCatalog = (engine: unknown) =>
   Object.fromEntries(
     Object.entries(engine as Record<string, unknown>).filter(
-      ([key]) => key !== 'catalog' && key !== 'bonusActionSpellCast',
+      ([key]) =>
+        key !== 'catalog' &&
+        key !== 'bonusActionSpellCast' &&
+        key !== 'actionSpellCast',
     ),
   );
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -457,6 +460,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ),
         )
       : {};
+    engineState.actionSpellCast = state.combatRoom
+      ? Object.fromEntries(
+          Object.entries(state.combatRoom.combat.resources).map(
+            ([entityId, resources]) => [
+              entityId,
+              resources.actionSpellCast === true,
+            ],
+          ),
+        )
+      : {};
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
@@ -479,10 +492,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       commitState(previous, output) {
         const nextEngine = output.nextState as ToolExecutorState & {
           bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+          actionSpellCast?: Readonly<Record<string, boolean>>;
         };
         const combatRoom = (previous as GameState).combatRoom;
         const updatedCombatRoom =
-          combatRoom && nextEngine.bonusActionSpellCast
+          combatRoom &&
+          (nextEngine.bonusActionSpellCast || nextEngine.actionSpellCast)
             ? {
                 ...combatRoom,
                 combat: {
@@ -490,20 +505,36 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                   resources: {
                     ...combatRoom.combat.resources,
                     ...Object.fromEntries(
-                      Object.entries(nextEngine.bonusActionSpellCast).flatMap(
-                        ([entityId, cast]) => {
-                          const resources =
-                            combatRoom.combat.resources[entityId];
-                          return resources
-                            ? [
-                                [
-                                  entityId,
-                                  { ...resources, bonusActionSpellCast: cast },
-                                ],
-                              ]
-                            : [];
-                        },
-                      ),
+                      Object.keys({
+                        ...nextEngine.bonusActionSpellCast,
+                        ...nextEngine.actionSpellCast,
+                      }).flatMap((entityId) => {
+                        const resources = combatRoom.combat.resources[entityId];
+                        if (!resources) return [];
+                        return [
+                          [
+                            entityId,
+                            {
+                              ...resources,
+                              ...(nextEngine.bonusActionSpellCast?.[
+                                entityId
+                              ] !== undefined
+                                ? {
+                                    bonusActionSpellCast:
+                                      nextEngine.bonusActionSpellCast[entityId],
+                                  }
+                                : {}),
+                              ...(nextEngine.actionSpellCast?.[entityId] !==
+                              undefined
+                                ? {
+                                    actionSpellCast:
+                                      nextEngine.actionSpellCast[entityId],
+                                  }
+                                : {}),
+                            },
+                          ],
+                        ];
+                      }),
                     ),
                   },
                 },
@@ -572,6 +603,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           | {
               events?: readonly unknown[];
               bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+              actionSpellCast?: Readonly<Record<string, boolean>>;
             }
           | undefined;
         const authoredRegistryEvents = (value?.events ?? []).filter(
@@ -679,6 +711,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               ...mergeCombatOutput(current, request.name, result.value),
               ...(value?.bonusActionSpellCast
                 ? { bonusActionSpellCast: value.bonusActionSpellCast }
+                : {}),
+              ...(value?.actionSpellCast
+                ? { actionSpellCast: value.actionSpellCast }
                 : {}),
               world: nextWorld,
             },

@@ -25,6 +25,8 @@ export type SpellToolState = {
   turnActorId?: string | null;
   /** Bonus-action spells already cast by each actor during this combat turn. */
   bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+  /** Leveled action spells already cast by each actor during this combat turn. */
+  actionSpellCast?: Readonly<Record<string, boolean>>;
   options?: Readonly<Record<string, AreaOption>>;
 };
 const engineCode = (
@@ -60,6 +62,7 @@ export function executeSpell(
   rng: RngState;
   state: SpellState;
   bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+  actionSpellCast?: Readonly<Record<string, boolean>>;
 }> {
   const parsed = DMToolArgsSchema.cast_spell.safeParse(args);
   if (!parsed.success)
@@ -74,7 +77,8 @@ export function executeSpell(
     return fail('unknown-spell', 'Choose a spell in the loaded catalog.');
   const bonusAction = spell.castingTime?.unit === 'bonus-action';
   if (
-    state.bonusActionSpellCast?.[casterId] &&
+    (state.bonusActionSpellCast?.[casterId] ||
+      (bonusAction && state.actionSpellCast?.[casterId])) &&
     !(spell.level === 0 && spell.castingTime?.unit === 'action')
   )
     return fail(
@@ -158,12 +162,17 @@ export function executeSpell(
   const bonusActionSpellCast = bonusAction
     ? { ...state.bonusActionSpellCast, [casterId]: true }
     : state.bonusActionSpellCast;
+  const actionSpellCast =
+    !bonusAction && spell.level > 0 && spell.castingTime?.unit === 'action'
+      ? { ...state.actionSpellCast, [casterId]: true }
+      : state.actionSpellCast;
   return ok(
     {
       events: result.events,
       rng: result.rng,
       state: result.state,
       ...(bonusActionSpellCast ? { bonusActionSpellCast } : {}),
+      ...(actionSpellCast ? { actionSpellCast } : {}),
     },
     events,
     `${caster.name} casts ${spellId.replace('srd:spell/', '').replaceAll('-', ' ')}.`,

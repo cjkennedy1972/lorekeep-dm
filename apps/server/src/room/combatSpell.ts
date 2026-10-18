@@ -132,8 +132,7 @@ export function castCommand(
     return reject('Your character does not have that spell prepared.');
   if (!entry) return reject('That spell is not in the rules catalog.');
   if (
-    !bonus &&
-    resources.bonusActionSpellCast &&
+    (resources.bonusActionSpellCast || (bonus && resources.actionSpellCast)) &&
     !(entry.level === 0 && entry.castingTime?.unit === 'action')
   )
     return reject(
@@ -208,6 +207,11 @@ export function castCommand(
             ...resources,
             [economy]: false,
             ...(bonus ? { bonusActionSpellCast: true } : {}),
+            ...(!bonus &&
+            entry.level > 0 &&
+            entry.castingTime?.unit === 'action'
+              ? { actionSpellCast: true }
+              : {}),
           },
         },
       },

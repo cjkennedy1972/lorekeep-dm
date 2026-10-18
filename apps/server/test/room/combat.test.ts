@@ -95,7 +95,7 @@ const combat: RoomCombatState = {
 };
 
 describe('combat turn resource refresh', () => {
-  it('resets the bonus-action-spell flag when an entity starts its turn', () => {
+  it('resets spell-pairing flags when an entity starts its turn', () => {
     const transition = advanceTurn({
       ...combat,
       combat: {
@@ -105,6 +105,7 @@ describe('combat turn resource refresh', () => {
           ent_goblin: {
             ...combat.combat.resources.ent_goblin!,
             bonusActionSpellCast: true,
+            actionSpellCast: true,
           },
         },
       },
@@ -113,6 +114,9 @@ describe('combat turn resource refresh', () => {
     expect(
       transition.state.combat.resources.ent_goblin?.bonusActionSpellCast,
     ).toBe(false);
+    expect(transition.state.combat.resources.ent_goblin?.actionSpellCast).toBe(
+      false,
+    );
   });
 });
 
