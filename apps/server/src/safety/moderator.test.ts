@@ -582,6 +582,26 @@ describe('table-line scene blocked at each tier (fixed judge verdict)', () => {
     );
   });
 
+  it('distinguishes a central family-tier snake attack from passing set dressing', () => {
+    const [system] = buildJudgeMessages({
+      ...request("A giant snake coils around Mara's leg and bites.", {
+        tableLines: ['snakes'],
+      }),
+      tier: 'family',
+      direction: 'input',
+    });
+
+    expect(system!.content).toContain(
+      'The request does not need to say "must include" or "must fight"',
+    );
+    expect(system!.content).toContain(
+      '- "A giant snake coils around Mara\'s leg and bites." -> block, lines_veils',
+    );
+    expect(system!.content).toContain(
+      '- "The party passes a carved snake sign outside the inn." -> allow, none',
+    );
+  });
+
   it('allows the same scene when no table line is set', async () => {
     const { chat } = judgeReplying(ALLOW);
     const verdict = await moderatorWith(chat).moderate({

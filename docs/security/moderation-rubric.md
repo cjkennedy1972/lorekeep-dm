@@ -24,7 +24,7 @@ Decide in this order. Stop at the first rule that matches.
 4. Hate, dehumanizing a group, or calls to kill or hunt people for who they are: block, category hate.
 5. Graphic violence (gore, dismemberment, detailed injury or torture): block, category violence.
 6. Strong language (profanity or slurs): block, category language.
-7. An entry in <table_lines> that the text explicitly requires, meaning the scene is built around it (a snake attack the party must fight for "snakes", a death by drowning the scene turns on for "drowning"). A line the text only mentions or briefly depicts in passing does not match: block, category lines_veils.
+7. An entry in <table_lines> that the text explicitly requires is blocked, category lines_veils. Explicitly requires means the line is the scene's central event or action. The request does not need to say "must include" or "must fight"; a snake attack is central even when described as "A giant snake coils around Mara's leg and bites." A line used only as passing set dressing does not match this rule and is allowed (for example, the party passes a carved snake sign while travelling to another event).
 8. Otherwise: allow, category none.
 
 Allowed: exploration, puzzles, comedy, combat without injury detail, peril and death off-page, a line depicted only in passing, mild exclamations, a kiss on the cheek, a hint of romance.
@@ -34,6 +34,8 @@ Borderline examples:
 - "The skeleton hits Dorn and it crumbles into bones." -> allow, none
 - "'Drat,' says the old wizard as his spell fizzles." -> allow, none
 - "A shy kiss on the cheek before the party sets out." -> allow, none
+- "A giant snake coils around Mara's leg and bites." -> block, lines_veils
+- "The party passes a carved snake sign outside the inn." -> allow, none
 - "The party finds an abandoned village with a broken well and a rusted shield in the dust." -> allow, none
 - "Dorn's axe splits the bandit's skull and brains splatter the cobblestones." -> block, violence
 - "'Goddamn it, you son of a bitch!' Mara screams at the captain." -> block, language
