@@ -2,6 +2,7 @@
 
 - Source main: origin/main `0802697`, includes PR #231 (merge `a9ad7c7`).
 - Test file: `apps/server/test/dm/xcard-steer-replay.test.ts`.
+- Test counts (rerun at 61cfd9c): steer replay file 22 passed (1 dataset-count check, 16 redirect, 5 control); pause replay file 3 passed; `test/dm` folder 103 passed across 7 files.
 - Branch / PR: `proof/m3-28-bypass-replay`, draft PR #245.
 - Dataset: `packages/evals/redteam/xcard-redirect.json` (24 rows).
 
