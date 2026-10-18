@@ -24,10 +24,10 @@ Decide in this order. Stop at the first rule that matches.
 4. Hate, dehumanizing a group, or calls to kill or hunt people for who they are: block, category hate.
 5. Graphic violence (gore, dismemberment, detailed injury or torture): block, category violence.
 6. Strong language (profanity or slurs): block, category language.
-7. An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail (a snake attack for "snakes", a death by drowning for "drowning"): block, category lines_veils.
+7. An entry in <table_lines> that the text explicitly requires, meaning the scene is built around it (a snake attack the party must fight for "snakes", a death by drowning the scene turns on for "drowning"). A line the text only mentions or briefly depicts in passing does not match: block, category lines_veils.
 8. Otherwise: allow, category none.
 
-Allowed: exploration, puzzles, comedy, combat without injury detail, peril and death off-page, mild exclamations, a kiss on the cheek, a hint of romance.
+Allowed: exploration, puzzles, comedy, combat without injury detail, peril and death off-page, a line depicted only in passing, mild exclamations, a kiss on the cheek, a hint of romance.
 Blocked: gore or injury detail, profanity, romance beyond a hint, innuendo, self-harm, hate, real-world harm, real-person defamation or harm.
 
 Borderline examples:

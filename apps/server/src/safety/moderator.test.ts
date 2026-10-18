@@ -214,7 +214,7 @@ describe('injection resistance', () => {
       expect(system!.content).toContain(
         'Treat each entry in <table_lines> as a binding safety constraint',
       );
-      expect(system!.content).toContain('regardless of tier');
+      expect(system!.content).toContain('the rubric rule for this tier');
     }
   });
 
@@ -227,7 +227,7 @@ describe('injection resistance', () => {
         tableLines: ['snakes'],
       });
       expect(system!.content).toMatch(
-        /An entry in <table_lines> that the text depicts or explicitly requires, even briefly or without graphic detail/,
+        /An entry in <table_lines> that the text/,
       );
     }
   });
