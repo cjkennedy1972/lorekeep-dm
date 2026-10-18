@@ -48,10 +48,7 @@ const controlRows = dataset.cases.filter((c) => CONTROL_IDS.includes(c.id));
 
 function replay(
   row: XCardCase,
-  opts: { steerAway: boolean; playerText: string; modelReply?: string } = {
-    steerAway: true,
-    playerText: 'I keep going.',
-  },
+  opts: { steerAway: boolean; playerText: string; modelReply?: string },
 ) {
   const requests: LlmRequest[] = [];
   const executed: string[] = [];
@@ -102,7 +99,7 @@ function replay(
         safetySettings: {},
         partyRoster: [character],
         premise: 'A cave',
-        sceneSummary: 'Dark.',
+        sceneSummary: row.context,
         steerAway: opts.steerAway,
       },
       turn: {
@@ -133,13 +130,17 @@ describe('X-card steer bypass replay (M3-28, no live model)', () => {
   it.each(redirectRows.map((row) => [row.id, row] as const))(
     '%s redirects with authored narration, no model call, no tool, no state change',
     async (_id, row) => {
-      const { input, requests, executed, moderated } = replay(row);
+      const { input, requests, executed, moderated } = replay(row, {
+        steerAway: true,
+        playerText: row.playerText ?? '',
+      });
+      const stateBefore = structuredClone(input.context.state);
       const result = await runTurn(input);
 
       expect(result.narration).toBe(X_CARD_REDIRECT_TEMPLATE);
       expect(requests).toHaveLength(0);
       expect(executed).toHaveLength(0);
-      expect(result.state).toEqual({ unchanged: true });
+      expect(result.state).toEqual(stateBefore);
       expect(moderated.join('')).toBe(X_CARD_REDIRECT_TEMPLATE);
       expect(result.fallback).toBeUndefined();
     },
@@ -153,12 +154,13 @@ describe('X-card steer bypass replay (M3-28, no live model)', () => {
         playerText: row.playerText ?? '',
         modelReply: 'Plain narration continues.',
       });
+      const stateBefore = structuredClone(input.context.state);
       const result = await runTurn(input);
 
       expect(requests).toHaveLength(1);
       expect(result.narration).not.toBe(X_CARD_REDIRECT_TEMPLATE);
       expect(executed).toHaveLength(0);
-      expect(result.state).toEqual({ unchanged: true });
+      expect(result.state).toEqual(stateBefore);
     },
   );
 });
