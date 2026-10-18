@@ -323,6 +323,73 @@ describe('action economy for spells', () => {
       ),
     ).toMatchObject({ code: 'COMMAND_REJECTED' });
   });
+
+  it('refuses an action spell after a bonus-action spell', () => {
+    const { runtime, state } = engaged();
+    const castBonus = ok(
+      runtime.execute(state, 'ent_aria', healSelf, {
+        character: healer,
+        now: NOW,
+      }),
+    );
+    expect(
+      runtime.execute(
+        castBonus.state,
+        'ent_aria',
+        {
+          command: 'cast',
+          spellId: 'spell:burning-hands',
+          slotLevel: 1,
+          target: { kind: 'self' },
+        },
+        { character: hero, now: NOW },
+      ),
+    ).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+
+  it('allows an action cantrip after a bonus-action spell', () => {
+    const { runtime, state } = engaged();
+    const castBonus = ok(
+      runtime.execute(state, 'ent_aria', healSelf, {
+        character: healer,
+        now: NOW,
+      }),
+    );
+    const cantripCaster = {
+      ...hero,
+      spellsKnown: ['spell:fire-bolt'],
+      spellsPrepared: ['spell:fire-bolt'],
+    };
+    expect(
+      runtime.execute(
+        castBonus.state,
+        'ent_aria',
+        {
+          command: 'cast',
+          spellId: 'spell:fire-bolt',
+          slotLevel: 0,
+          target: { kind: 'entity', ref: 'ent_goblin-minion_1' },
+        },
+        { character: cantripCaster, now: NOW },
+      ),
+    ).not.toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+
+  it('refuses a second bonus-action spell in the same turn', () => {
+    const { runtime, state } = engaged();
+    const castBonus = ok(
+      runtime.execute(state, 'ent_aria', healSelf, {
+        character: healer,
+        now: NOW,
+      }),
+    );
+    expect(
+      runtime.execute(castBonus.state, 'ent_aria', healSelf, {
+        character: healer,
+        now: NOW,
+      }),
+    ).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
 });
 
 describe('opportunity attack reactions', () => {
