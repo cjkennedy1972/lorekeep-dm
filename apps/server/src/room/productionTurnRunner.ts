@@ -2,7 +2,11 @@ import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { closeScene } from '../dm/summarize.js';
-import { createSceneCloseExecutor } from './sceneCloseTool.js';
+import {
+  createSceneCloseExecutor,
+  judgeLeaveIntent,
+  type LeaveJudge,
+} from './sceneCloseTool.js';
 import {
   loadContentTierState,
   loadSeatedContentBoundaries,
@@ -198,6 +202,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     // ponytail: false until the M3-19 endpoint probe sets it, so mature stays unreachable.
     private readonly endpointAllowsMature = false,
     private readonly moderatorOverride?: Moderator,
+    private readonly leaveJudgeOverride?: LeaveJudge,
   ) {}
 
   async run(
@@ -403,6 +408,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         nextSceneIds: currentScene?.nextSceneIds ?? [],
         allowSummary: allowPlayerVisibleText,
         playerText: request.text,
+        judgeLeave:
+          this.leaveJudgeOverride ?? ((text) => judgeLeaveIntent(llm, text)),
       }),
       commitState(previous, output) {
         return {

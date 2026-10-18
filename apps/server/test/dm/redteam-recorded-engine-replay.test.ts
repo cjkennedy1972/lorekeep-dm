@@ -185,6 +185,8 @@ describe('pinned red-team injection proposals through production tool dispatch',
             sceneId: 'loc_redteam',
             nextSceneIds: ['loc_tavern'],
             allowSummary: async () => true,
+            playerText: `Replay recorded red-team proposal ${proposal.id}.`,
+            judgeLeave: async () => false,
           }),
           rulesLookup: async () => [],
           engineExecute: (state, call, seed) =>

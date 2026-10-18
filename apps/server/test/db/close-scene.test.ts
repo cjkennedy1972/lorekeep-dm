@@ -102,6 +102,7 @@ async function turn(
     true,
     false,
     moderator,
+    async () => true,
   );
   const result = await runner.run(
     {

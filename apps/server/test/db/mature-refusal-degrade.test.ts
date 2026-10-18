@@ -106,7 +106,11 @@ async function waitForNarrationSent(sent: Sent[], count: number) {
   throw new Error('narration did not complete');
 }
 
-async function openRoom(sessionId: string, adapter: LlmAdapter) {
+async function openRoom(
+  sessionId: string,
+  adapter: LlmAdapter,
+  leaveJudge?: (playerText: string) => Promise<boolean>,
+) {
   const store = new Persistence(db);
   const lease = await new SessionLease(db).acquire(sessionId, randomUUID());
   if (!lease) throw new Error('lease unavailable');
@@ -119,6 +123,7 @@ async function openRoom(sessionId: string, adapter: LlmAdapter) {
     false,
     true,
     allowOutput,
+    leaveJudge,
   );
   return new Room(store, lease, await store.loadLatest(sessionId), runner);
 }
@@ -253,7 +258,7 @@ describe('endpoint refusal of a mature prompt', () => {
         } as LlmChunk;
       },
     };
-    const room = await openRoom(sessionId, adapter);
+    const room = await openRoom(sessionId, adapter, async () => true);
     const seen = recorder();
     await joinSeated(room, owner, seen.connection, 'Owner');
     await room.persistGameState({
