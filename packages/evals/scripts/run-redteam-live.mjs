@@ -5,7 +5,10 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkLiveUrl } from '../dist/live.js';
 import { generateWithBuiltPrompt } from '../redteam/prompt-messages.mjs';
-import { assertPinnedHost } from '../redteam/endpoint-pin.mjs';
+import {
+  assertNoSecretParts,
+  assertPinnedHost,
+} from '../redteam/endpoint-pin.mjs';
 import { DMToolArgsSchema } from '../../../packages/schema/dist/dm-tools.js';
 import { buildPrompt, zodSchema } from '../../../apps/server/dist/dm/prompt.js';
 import {
@@ -43,6 +46,7 @@ if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
 if (checkoutChanges)
   throw new Error('The live runner requires a clean Git working tree');
 const endpointUrl = checkLiveUrl(baseUrl);
+assertNoSecretParts(endpointUrl);
 assertPinnedHost(endpointUrl.host, process.env.REDTEAM_EXPECTED_HOST);
 const RETRYABLE_HTTP_STATUSES = new Set([400, 429]);
 const HTTP_RETRY_DELAY_MS = 250;
@@ -89,7 +93,11 @@ const syntheticCharacter = {
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const output = {
   schema: 'redteam-live-record/2',
-  endpoint: { profile, baseUrl, model },
+  endpoint: {
+    profile,
+    baseUrl: endpointUrl.origin + endpointUrl.pathname,
+    model,
+  },
   startedAt,
   finishedAt: null,
   versions: Object.fromEntries(
