@@ -94,6 +94,10 @@ async function harness(
     undefined,
     undefined,
     dm.adapter,
+    true,
+    false,
+    undefined,
+    async () => true,
   );
   let turnDone: Promise<unknown> = Promise.resolve();
   const runner: SoloTurnRunner = {

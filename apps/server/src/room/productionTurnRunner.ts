@@ -2,7 +2,11 @@ import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { closeScene } from '../dm/summarize.js';
-import { createSceneCloseExecutor } from './sceneCloseTool.js';
+import {
+  createSceneCloseExecutor,
+  judgeLeaveIntent,
+  type LeaveJudge,
+} from './sceneCloseTool.js';
 import {
   loadContentTierState,
   loadSeatedContentBoundaries,
@@ -198,6 +202,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     // ponytail: false until the M3-19 endpoint probe sets it, so mature stays unreachable.
     private readonly endpointAllowsMature = false,
     private readonly moderatorOverride?: Moderator,
+    private readonly leaveJudgeOverride?: LeaveJudge,
   ) {}
 
   async run(
@@ -359,6 +364,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         purpose: 'narration',
         modelId: endpointSlot,
       });
+    const judgeAdapter = new MeteredLlmAdapter(
+      llm,
+      new PostgresUsageSink(this.db),
+      {
+        sessionId: request.sessionId,
+        turnId: request.actionId,
+        purpose: 'classification',
+        modelId: endpointSlot,
+      },
+    );
     const memory = new RegistryMemory(this.db as Pool);
     const registryEvents: RegistryEvent[] = [];
     const memoryContext = await memory.contextFor(
@@ -402,6 +417,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         sceneId: adventure?.ok ? initialSceneId : undefined,
         nextSceneIds: currentScene?.nextSceneIds ?? [],
         allowSummary: allowPlayerVisibleText,
+        playerText: request.text,
+        judgeLeave:
+          this.leaveJudgeOverride ??
+          ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
       }),
       commitState(previous, output) {
         return {

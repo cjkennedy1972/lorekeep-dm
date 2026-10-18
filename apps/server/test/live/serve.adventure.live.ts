@@ -98,6 +98,10 @@ it('serves the restartable Adventure #1 scripted server', async () => {
     'record',
     fixturePath,
     adventureDm(),
+    true,
+    false,
+    undefined,
+    async (text) => /ADVANCE-[A-Z0-9-]+/.test(text),
   );
   const rooms = new RoomRegistry(
     new Persistence(db),
