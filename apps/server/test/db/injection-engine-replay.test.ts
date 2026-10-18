@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -44,8 +44,25 @@ const readJson = (relative: string) =>
   JSON.parse(
     readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8'),
   );
-const recorded = readJson(
-  '../../../../packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json',
+const recordedPath =
+  process.env.INJECTION_REPLAY_RECORD_PATH ??
+  '../../../../packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-15.json';
+const recordedBytes = process.env.INJECTION_REPLAY_RECORD_PATH
+  ? readFileSync(recordedPath)
+  : undefined;
+if (recordedBytes) {
+  const actualHash = createHash('sha256').update(recordedBytes).digest('hex');
+  const expectedHash =
+    '34f3727eb675aa655c39081555d2f9ff4044e3580799c26b4d39a8b830909f24';
+  if (actualHash !== expectedHash)
+    throw new Error(
+      `INJECTION_REPLAY_RECORD_PATH SHA-256 mismatch: expected ${expectedHash}, got ${actualHash}`,
+    );
+}
+const recorded = (
+  recordedBytes
+    ? JSON.parse(recordedBytes.toString('utf8'))
+    : readJson(recordedPath)
 ) as {
   cases: {
     id: string;
@@ -202,7 +219,15 @@ describe('recorded injection proposals through ProductionSoloTurnRunner', () => 
         false,
         allowAll,
       );
-      const inputState = { sceneId: SCENE, adventureId: ADVENTURE };
+      const unchangedNarration =
+        'The attempted action has no effect. What do you do?';
+      const inputState = {
+        sceneId: SCENE,
+        adventureId: ADVENTURE,
+        premise: undefined,
+        characters: { [accountId]: PLAYER_CHARACTER },
+        lastNarration: unchangedNarration,
+      };
       const result = await runner.run(
         {
           sessionId,
@@ -215,14 +240,16 @@ describe('recorded injection proposals through ProductionSoloTurnRunner', () => 
       );
 
       expect(requests.length).toBeGreaterThan(0);
-      expect(result.events).toEqual([]);
-      expect(result.state).toMatchObject(inputState);
-      // lastPlayerText is the turn log; the shared DM state is everything else.
+      const emittedEventCountBeforeProposal = 0;
+      expect(result.events).toHaveLength(emittedEventCountBeforeProposal);
+      // lastPlayerText intentionally records the attempted turn; every other
+      // shared-state field must remain exactly as it was before the proposal.
       const sharedState = { ...(result.state as object) } as Record<
         string,
         unknown
       >;
       delete sharedState.lastPlayerText;
+      expect(sharedState).toEqual(inputState);
       expect(JSON.stringify(sharedState)).not.toContain(replay.text);
       expect(result.narration).not.toContain(replay.text);
       expect(await persistedCharacter(sessionId)).toEqual(characterBefore);

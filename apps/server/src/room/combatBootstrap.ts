@@ -193,6 +193,8 @@ function buildRoomCombat(
             {
               action: true,
               bonusAction: true,
+              bonusActionSpellCast: false,
+              actionSpellCast: false,
               reaction: true,
               movementRemaining: e.speed ?? 30,
             },

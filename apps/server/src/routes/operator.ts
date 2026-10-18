@@ -271,8 +271,39 @@ export function registerOperatorRoutes(
     if (!query.success) return reply.code(400).send({ code: 'INVALID_INPUT' });
     const { status, limit, offset } = query.data;
     const result = await db.query<{ context: Array<Record<string, unknown>> }>(
-      `SELECT id,session_id,message_seq,reporter_account_id,author_account_id,category,reason,context,status,created_at,expires_at,reviewed_by,reviewed_at
-       FROM message_reports WHERE status=$1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
+      `WITH reverted_turns AS (
+         SELECT session_id,payload->>'revertedTurnId' AS turn_id
+         FROM events WHERE type='TurnReverted'
+       ), visible_reports AS (
+         SELECT report.*
+         FROM message_reports report
+         WHERE report.status=$1
+           AND NOT EXISTS (
+             SELECT 1 FROM events target
+             JOIN reverted_turns reverted
+               ON reverted.session_id=target.session_id
+              AND reverted.turn_id=target.turn_id::text
+             WHERE target.session_id=report.session_id
+               AND target.seq=report.message_seq
+           )
+         ORDER BY report.created_at DESC, report.id LIMIT $2 OFFSET $3
+       )
+       SELECT report.id,report.session_id,report.message_seq,report.reporter_account_id,report.author_account_id,report.category,report.reason,
+         COALESCE((
+           SELECT jsonb_agg(entry ORDER BY (entry->>'seq')::bigint)
+           FROM jsonb_array_elements(report.context) AS context_entry(entry)
+           WHERE NOT EXISTS (
+             SELECT 1 FROM events context_event
+             JOIN reverted_turns reverted
+               ON reverted.session_id=context_event.session_id
+              AND reverted.turn_id=context_event.turn_id::text
+             WHERE context_event.session_id=report.session_id
+               AND context_event.seq=(context_entry.entry->>'seq')::bigint
+           )
+       ), '[]'::jsonb) AS context,
+         report.status,report.created_at,report.expires_at,report.reviewed_by,report.reviewed_at
+       FROM visible_reports report
+       ORDER BY report.created_at DESC, report.id`,
       [status, limit, offset],
     );
     return {

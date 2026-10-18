@@ -175,6 +175,8 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
             [nextId]: {
               action: true,
               bonusAction: true,
+              bonusActionSpellCast: false,
+              actionSpellCast: false,
               reaction: true,
               movementRemaining: entity.speed ?? 30,
             },

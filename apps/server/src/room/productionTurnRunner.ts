@@ -60,6 +60,7 @@ import {
   RecordedLlmAdapter,
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
+import type { RoomCombatState } from './combatTypes.js';
 import {
   LiveDmRestrictedError,
   type SoloTurnRequest,
@@ -79,6 +80,7 @@ type GameState = {
   lastNarration?: string;
   lastPlayerText?: string;
   world?: WorldRegistry;
+  combatRoom?: RoomCombatState;
 };
 type CombatOutput = {
   entities?: { id: string; hp: number }[];
@@ -127,10 +129,39 @@ function liveTurnActorId(state: unknown): string | null {
     room.combat.activeEntityId ?? room.combat.initiative[0]?.entityId ?? null
   );
 }
+function combatSpellMap(room: RoomCombatState, casterId: string) {
+  const caster = room.entities.find((entity) => entity.id === casterId);
+  if (!caster) return undefined;
+  const target = (entity: (typeof room.entities)[number]) => ({
+    id: entity.id,
+    hp: entity.hp,
+    maxHp: entity.maxHp,
+    ...(entity.ac !== undefined ? { ac: entity.ac } : {}),
+    abilities: entity.abilities ?? {
+      str: 10,
+      dex: 10,
+      con: 10,
+      int: 10,
+      wis: 10,
+      cha: 10,
+    },
+  });
+  return {
+    map: room.map,
+    caster: { pos: caster.pos, size: caster.size },
+    entities: room.entities
+      .filter((entity) => entity.hp > 0 && !entity.fled)
+      .map(({ id, pos, size }) => ({ id, pos, size })),
+    targets: room.entities.map(target),
+  };
+}
 const withoutCatalog = (engine: unknown) =>
   Object.fromEntries(
     Object.entries(engine as Record<string, unknown>).filter(
-      ([key]) => key !== 'catalog',
+      ([key]) =>
+        key !== 'catalog' &&
+        key !== 'bonusActionSpellCast' &&
+        key !== 'actionSpellCast',
     ),
   );
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -403,6 +434,42 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             rulings: [],
           },
         }) as unknown as ToolExecutorState & { world: WorldRegistry };
+    engineState.targets = {
+      ...Object.fromEntries(
+        Object.values(actors).map((actor) => [
+          actor.id,
+          {
+            id: actor.id,
+            hp: actor.hp.current,
+            maxHp: actor.hp.max,
+            abilities: actor.abilities,
+          },
+        ]),
+      ),
+      ...(engineState.targets ?? {}),
+    };
+    // In combat the Room resource flag is authoritative across both player
+    // commands and scripted DM tools. Outside combat, scope it to this DM turn.
+    engineState.bonusActionSpellCast = state.combatRoom
+      ? Object.fromEntries(
+          Object.entries(state.combatRoom.combat.resources).map(
+            ([entityId, resources]) => [
+              entityId,
+              resources.bonusActionSpellCast === true,
+            ],
+          ),
+        )
+      : {};
+    engineState.actionSpellCast = state.combatRoom
+      ? Object.fromEntries(
+          Object.entries(state.combatRoom.combat.resources).map(
+            ([entityId, resources]) => [
+              entityId,
+              resources.actionSpellCast === true,
+            ],
+          ),
+        )
+      : {};
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
@@ -423,9 +490,60 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
       }),
       commitState(previous, output) {
+        const nextEngine = output.nextState as ToolExecutorState & {
+          bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+          actionSpellCast?: Readonly<Record<string, boolean>>;
+        };
+        const combatRoom = (previous as GameState).combatRoom;
+        const updatedCombatRoom =
+          combatRoom &&
+          (nextEngine.bonusActionSpellCast || nextEngine.actionSpellCast)
+            ? {
+                ...combatRoom,
+                combat: {
+                  ...combatRoom.combat,
+                  resources: {
+                    ...combatRoom.combat.resources,
+                    ...Object.fromEntries(
+                      Object.keys({
+                        ...nextEngine.bonusActionSpellCast,
+                        ...nextEngine.actionSpellCast,
+                      }).flatMap((entityId) => {
+                        const resources = combatRoom.combat.resources[entityId];
+                        if (!resources) return [];
+                        return [
+                          [
+                            entityId,
+                            {
+                              ...resources,
+                              ...(nextEngine.bonusActionSpellCast?.[
+                                entityId
+                              ] !== undefined
+                                ? {
+                                    bonusActionSpellCast:
+                                      nextEngine.bonusActionSpellCast[entityId],
+                                  }
+                                : {}),
+                              ...(nextEngine.actionSpellCast?.[entityId] !==
+                              undefined
+                                ? {
+                                    actionSpellCast:
+                                      nextEngine.actionSpellCast[entityId],
+                                  }
+                                : {}),
+                            },
+                          ],
+                        ];
+                      }),
+                    ),
+                  },
+                },
+              }
+            : combatRoom;
         return {
           ...(previous as GameState),
-          gameEngine: withoutCatalog(output.nextState),
+          gameEngine: withoutCatalog(nextEngine),
+          ...(updatedCombatRoom ? { combatRoom: updatedCombatRoom } : {}),
           characters: Object.fromEntries(
             Object.entries((previous as GameState).characters ?? actors).map(
               ([accountId, character]) => [
@@ -463,16 +581,30 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           : undefined;
         const rejection = worldMutationRejection(request.name ?? '', isHost);
         if (rejection) return { ...rejection, events: [] };
+        const spellCasterId = (
+          request.args as { casterId?: string } | undefined
+        )?.casterId;
+        const spellState =
+          request.name === 'cast_spell' && state.combatRoom && spellCasterId
+            ? {
+                ...current,
+                spellMap: combatSpellMap(state.combatRoom, spellCasterId),
+              }
+            : current;
         const result = worldExecute
           ? worldExecute(current.world, request.args)
           : execute(
-              { ...current, turnActorId: liveTurnActorId(state) },
+              { ...spellState, turnActorId: liveTurnActorId(state) },
               call,
               seed,
             );
         if (!result.ok) return { ...result, events: [] };
         const value = result.value as
-          | { events?: readonly unknown[] }
+          | {
+              events?: readonly unknown[];
+              bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+              actionSpellCast?: Readonly<Record<string, boolean>>;
+            }
           | undefined;
         const authoredRegistryEvents = (value?.events ?? []).filter(
           (event) =>
@@ -577,6 +709,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             events: value?.events ?? [],
             state: {
               ...mergeCombatOutput(current, request.name, result.value),
+              ...(value?.bonusActionSpellCast
+                ? { bonusActionSpellCast: value.bonusActionSpellCast }
+                : {}),
+              ...(value?.actionSpellCast
+                ? { actionSpellCast: value.actionSpellCast }
+                : {}),
               world: nextWorld,
             },
           },

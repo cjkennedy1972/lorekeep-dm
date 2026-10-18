@@ -643,7 +643,7 @@ describe('Room commit safety', () => {
     expect(state).not.toHaveProperty('sceneSummary');
     expect(state).not.toHaveProperty('world');
     expect(room.clientState().seats[0]).not.toHaveProperty('matureOptOut');
-    expect(state.gameEngine).toEqual({ turn: 3 });
+    expect(state).not.toHaveProperty('gameEngine');
     expect(JSON.stringify(room.clientState())).not.toContain('unsafe');
   });
 
@@ -684,6 +684,29 @@ describe('Room commit safety', () => {
     expect(JSON.stringify(latestSnapshot()?.state)).toBe(before);
   });
 
+  it('reloads the head seq after a failed write so the next write does not reuse a seq', async () => {
+    const { room, store } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    const original = store.writeTurn.bind(store);
+    const seqs: number[] = [];
+    let failNext = true;
+    store.writeTurn = (async (...args: Parameters<typeof original>) => {
+      seqs.push(args[1][0]!.seq);
+      if (!failNext) return original(...args);
+      failNext = false;
+      await original(...args);
+      throw new Error('lease fenced after commit');
+    }) as typeof store.writeTurn;
+    await expect(room.seat(randomUUID(), 'First', false)).rejects.toThrow(
+      'lease fenced',
+    );
+    await room.seat(randomUUID(), 'Second', false);
+    expect(seqs).toEqual([1, 2]);
+  });
+
   it('does not nest the previous checkpoint inside a new one', async () => {
     const { room, latestSnapshot } = setup({
       async run() {
@@ -698,6 +721,48 @@ describe('Room commit safety', () => {
     ).gameState.checkpoint as Record<string, unknown>;
     expect(checkpoint.recap).toEqual({ recap: 'start', memoryHash: 'h0' });
     expect(checkpoint.checkpoint).toBeUndefined();
+  });
+
+  it('projects only UI-required fields from game state and checkpoints', async () => {
+    const { room } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    const visible = {
+      characters: { player: { name: 'Hero' } },
+      combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+    };
+    await room.persistGameState({
+      ...visible,
+      lastNarration: 'secret narration',
+      lastPlayerText: 'secret player text',
+      sceneSummary: 'secret scene summary',
+      world: { registryText: 'secret registry prose' },
+      recap: { recap: 'secret recap', memoryHash: 'secret hash' },
+      gameEngine: {
+        turn: 3,
+        world: { rulings: [{ ruling: 'secret engine registry prose' }] },
+      },
+      failForward: { narrative: 'secret player-provided prose' },
+      madeUpFutureKey: 'secret future prose',
+    });
+    await room.saveCheckpoint();
+    const clientGameState = room.clientState().gameState as Record<
+      string,
+      unknown
+    >;
+    const checkpoint = clientGameState.checkpoint as Record<string, unknown>;
+    const expectedVisibleFields = ['characters', 'combatRoom'];
+    expect(Object.keys(clientGameState).sort()).toEqual(
+      [...expectedVisibleFields, 'checkpoint'].sort(),
+    );
+    expect(Object.keys(checkpoint).sort()).toEqual(expectedVisibleFields);
+    expect(clientGameState.characters).toEqual(visible.characters);
+    expect(clientGameState.combatRoom).toEqual(visible.combatRoom);
+    expect(checkpoint.characters).toEqual(visible.characters);
+    expect(checkpoint.combatRoom).toEqual(visible.combatRoom);
+    expect(JSON.stringify(room.clientState())).not.toContain('secret');
   });
 
   function gatedRunner() {

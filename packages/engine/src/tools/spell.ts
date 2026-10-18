@@ -18,9 +18,15 @@ export type SpellToolState = {
   targets: Readonly<Record<string, SpellTarget>>;
   catalog: Catalog;
   map?: SpellMapContext;
+  /** Combat map projection for spells; `map` is also used by movement tools. */
+  spellMap?: SpellMapContext;
   spellState?: SpellState;
   turnId: string;
   turnActorId?: string | null;
+  /** Bonus-action spells already cast by each actor during this combat turn. */
+  bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+  /** Leveled action spells already cast by each actor during this combat turn. */
+  actionSpellCast?: Readonly<Record<string, boolean>>;
   options?: Readonly<Record<string, AreaOption>>;
 };
 const engineCode = (
@@ -51,7 +57,13 @@ export function executeSpell(
   state: SpellToolState,
   args: unknown,
   rng: RngState,
-): ToolResult<{ events: SpellEvent[]; rng: RngState; state: SpellState }> {
+): ToolResult<{
+  events: SpellEvent[];
+  rng: RngState;
+  state: SpellState;
+  bonusActionSpellCast?: Readonly<Record<string, boolean>>;
+  actionSpellCast?: Readonly<Record<string, boolean>>;
+}> {
   const parsed = DMToolArgsSchema.cast_spell.safeParse(args);
   if (!parsed.success)
     return fail(
@@ -60,8 +72,19 @@ export function executeSpell(
     );
   const { casterId, slotLevel, target: targetRef } = parsed.data;
   const spellId = parsed.data.spellId.replace(/^srd:spell\//, 'spell:');
-  if (!state.catalog.get('spell', spellId))
+  const spell = state.catalog.get('spell', spellId);
+  if (!spell)
     return fail('unknown-spell', 'Choose a spell in the loaded catalog.');
+  const bonusAction = spell.castingTime?.unit === 'bonus-action';
+  if (
+    (state.bonusActionSpellCast?.[casterId] ||
+      (bonusAction && state.actionSpellCast?.[casterId])) &&
+    !(spell.level === 0 && spell.castingTime?.unit === 'action')
+  )
+    return fail(
+      'forbidden',
+      'After casting a bonus-action spell, you can only cast a cantrip with a 1-action casting time this turn.',
+    );
   const caster = state.actors[casterId];
   if (!caster)
     return fail('unknown-entity', 'Choose a caster present in the session.');
@@ -129,13 +152,28 @@ export function executeSpell(
     slotLevel,
     seed: rng,
     catalog: state.catalog,
-    ...(state.map ? { map: state.map } : {}),
+    ...((state.spellMap ?? state.map)
+      ? { map: state.spellMap ?? state.map }
+      : {}),
     ...(state.spellState ? { state: state.spellState } : {}),
   });
   if ('error' in result) return fail(engineCode(result.error), result.hint);
   const events = result.events.map((event) => event.type);
+  const bonusActionSpellCast = bonusAction
+    ? { ...state.bonusActionSpellCast, [casterId]: true }
+    : state.bonusActionSpellCast;
+  const actionSpellCast =
+    !bonusAction && spell.level > 0 && spell.castingTime?.unit === 'action'
+      ? { ...state.actionSpellCast, [casterId]: true }
+      : state.actionSpellCast;
   return ok(
-    { events: result.events, rng: result.rng, state: result.state },
+    {
+      events: result.events,
+      rng: result.rng,
+      state: result.state,
+      ...(bonusActionSpellCast ? { bonusActionSpellCast } : {}),
+      ...(actionSpellCast ? { actionSpellCast } : {}),
+    },
     events,
     `${caster.name} casts ${spellId.replace('srd:spell/', '').replaceAll('-', ' ')}.`,
   );
