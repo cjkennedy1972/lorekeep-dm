@@ -5,6 +5,12 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkLiveUrl } from '../dist/live.js';
 import { generateWithBuiltPrompt } from '../redteam/prompt-messages.mjs';
+import {
+  assertNoSecretParts,
+  assertPinnedHost,
+  buildChatCompletionsUrl,
+  canonicalEndpointBaseUrl,
+} from '../redteam/endpoint-pin.mjs';
 import { DMToolArgsSchema } from '../../../packages/schema/dist/dm-tools.js';
 import { buildPrompt, zodSchema } from '../../../apps/server/dist/dm/prompt.js';
 import {
@@ -20,7 +26,8 @@ import {
   X_CARD_REDIRECT_TEMPLATE,
 } from '../../../apps/server/dist/safety/outputGate.js';
 
-const baseUrl = process.env.REDTEAM_BASE_URL ?? 'http://172.31.25.75:8080/v1';
+const baseUrl = process.env.REDTEAM_BASE_URL;
+if (!baseUrl) throw new Error('REDTEAM_BASE_URL is required');
 const model = process.env.REDTEAM_MODEL ?? 'qwen3.8-35b-a3b-distill-q4';
 const profile = process.env.REDTEAM_PROFILE ?? 'local-qwen35';
 const sourceCommit = process.env.REDTEAM_SOURCE_COMMIT;
@@ -41,8 +48,9 @@ if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
 if (checkoutChanges)
   throw new Error('The live runner requires a clean Git working tree');
 const endpointUrl = checkLiveUrl(baseUrl);
-if (endpointUrl.host !== '172.31.25.75:8080')
-  throw new Error('This run is pinned to the documented local Qwen endpoint');
+assertNoSecretParts(endpointUrl, baseUrl);
+assertPinnedHost(endpointUrl.host, process.env.REDTEAM_EXPECTED_HOST);
+const chatCompletionsUrl = buildChatCompletionsUrl(endpointUrl);
 const RETRYABLE_HTTP_STATUSES = new Set([400, 429]);
 const HTTP_RETRY_DELAY_MS = 250;
 
@@ -88,7 +96,11 @@ const syntheticCharacter = {
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const output = {
   schema: 'redteam-live-record/2',
-  endpoint: { profile, baseUrl, model },
+  endpoint: {
+    profile,
+    baseUrl: canonicalEndpointBaseUrl(endpointUrl),
+    model,
+  },
   startedAt,
   finishedAt: null,
   versions: Object.fromEntries(
@@ -121,7 +133,7 @@ async function chat(messages, extra = {}) {
   let retryCount = 0;
   let response;
   for (;;) {
-    response = await fetch(`${baseUrl}/chat/completions`, {
+    response = await fetch(chatCompletionsUrl, {
       method: 'POST',
       redirect: 'error',
       headers: {
