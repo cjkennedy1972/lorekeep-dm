@@ -556,6 +556,8 @@ export async function runAccountDeletions(
   ctx: JobContext & { db: Pool },
   accountIds: string[] | null = null,
 ) {
+  if (accountIds?.length === 0)
+    throw new Error('Empty account filter; pass null to sweep all accounts');
   const ids = (
     await ctx.db.query<{ id: string }>(
       "SELECT id FROM accounts WHERE status='deleting' AND ($1::uuid[] IS NULL OR id = ANY($1::uuid[])) ORDER BY deletion_requested_at",

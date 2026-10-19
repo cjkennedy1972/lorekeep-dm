@@ -211,8 +211,14 @@ export class Room {
   private async writeTurn(
     ...args: Parameters<RoomStore['writeTurn']>
   ): ReturnType<RoomStore['writeTurn']> {
+    return this.withCommittedHeadRecovery(() => this.store.writeTurn(...args));
+  }
+
+  private async withCommittedHeadRecovery<T>(
+    write: () => Promise<T>,
+  ): Promise<T> {
     try {
-      return await this.store.writeTurn(...args);
+      return await write();
     } catch (error) {
       await this.reloadCommittedHead().catch(() => undefined);
       throw error;
@@ -226,6 +232,8 @@ export class Room {
     );
     this.seq = recovered.seq;
     this.state = recovered.state;
+    this.actionIds.clear();
+    for (const id of recovered.actionIds) this.actionIds.add(id);
   }
 
   subscribe(
@@ -641,11 +649,13 @@ export class Room {
   setHostTierCap(cap: HostCap | null): Promise<void> {
     if (!this.accepting) throw new LeaseConflictError('Room is draining');
     return this.enqueue(async () => {
-      const [event] = await this.store.writeHostTierCap(
-        this.sessionId,
-        cap,
-        this.lease,
-        this.seq + 1,
+      const [event] = await this.withCommittedHeadRecovery(() =>
+        this.store.writeHostTierCap(
+          this.sessionId,
+          cap,
+          this.lease,
+          this.seq + 1,
+        ),
       );
       if (!event) return;
       this.seq = event.seq;
