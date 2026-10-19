@@ -8,6 +8,8 @@ import { generateWithBuiltPrompt } from '../redteam/prompt-messages.mjs';
 import {
   assertNoSecretParts,
   assertPinnedHost,
+  buildChatCompletionsUrl,
+  canonicalEndpointBaseUrl,
 } from '../redteam/endpoint-pin.mjs';
 import { DMToolArgsSchema } from '../../../packages/schema/dist/dm-tools.js';
 import { buildPrompt, zodSchema } from '../../../apps/server/dist/dm/prompt.js';
@@ -46,8 +48,9 @@ if (sourceCommit.toLowerCase() !== checkoutCommit.toLowerCase())
 if (checkoutChanges)
   throw new Error('The live runner requires a clean Git working tree');
 const endpointUrl = checkLiveUrl(baseUrl);
-assertNoSecretParts(endpointUrl);
+assertNoSecretParts(endpointUrl, baseUrl);
 assertPinnedHost(endpointUrl.host, process.env.REDTEAM_EXPECTED_HOST);
+const chatCompletionsUrl = buildChatCompletionsUrl(endpointUrl);
 const RETRYABLE_HTTP_STATUSES = new Set([400, 429]);
 const HTTP_RETRY_DELAY_MS = 250;
 
@@ -95,7 +98,7 @@ const output = {
   schema: 'redteam-live-record/2',
   endpoint: {
     profile,
-    baseUrl: endpointUrl.origin + endpointUrl.pathname,
+    baseUrl: canonicalEndpointBaseUrl(endpointUrl),
     model,
   },
   startedAt,
@@ -130,7 +133,7 @@ async function chat(messages, extra = {}) {
   let retryCount = 0;
   let response;
   for (;;) {
-    response = await fetch(`${baseUrl}/chat/completions`, {
+    response = await fetch(chatCompletionsUrl, {
       method: 'POST',
       redirect: 'error',
       headers: {
