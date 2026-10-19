@@ -71,6 +71,7 @@ export function executeSpell(
       parsed.error.issues[0]?.message ?? 'Provide valid spell arguments.',
     );
   const { casterId, slotLevel, target: targetRef } = parsed.data;
+  const spellMap = state.spellMap ?? state.map;
   const spellId = parsed.data.spellId.replace(/^srd:spell\//, 'spell:');
   const spell = state.catalog.get('spell', spellId);
   if (!spell)
@@ -118,10 +119,10 @@ export function executeSpell(
       return fail('unknown-entity', 'Choose a placed target entity.');
     target = entity;
   } else if (targetRef.kind === 'anchor') {
-    const marker = state.map?.map.markers.find(
+    const marker = spellMap?.map.markers.find(
       (item) => item.markerId === targetRef.ref,
     );
-    const feature = state.map?.map.features.find(
+    const feature = spellMap?.map.features.find(
       (item) => item.featureId === targetRef.ref,
     );
     const cell = marker?.cell ?? feature?.cells[0];
@@ -140,7 +141,7 @@ export function executeSpell(
       );
     target = { kind: 'option', pos: option.pos };
   }
-  if ('kind' in target && !state.map)
+  if ('kind' in target && !spellMap)
     return fail(
       'area-needs-anchor',
       'This area target requires an active map.',
@@ -152,9 +153,7 @@ export function executeSpell(
     slotLevel,
     seed: rng,
     catalog: state.catalog,
-    ...((state.spellMap ?? state.map)
-      ? { map: state.spellMap ?? state.map }
-      : {}),
+    ...(spellMap ? { map: spellMap } : {}),
     ...(state.spellState ? { state: state.spellState } : {}),
   });
   if ('error' in result) return fail(engineCode(result.error), result.hint);
