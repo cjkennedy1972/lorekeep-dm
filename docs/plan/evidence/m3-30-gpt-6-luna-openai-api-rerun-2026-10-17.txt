@@ -10,7 +10,7 @@ Cache state: provider-managed; not independently disabled or verified
 
 Results (nearest-rank p50/p95):
 - Input judge: 846 / 1,199 ms (supporting target <=400 ms; miss)
-- Output gate after model completion: 3,334 / 5,740 ms (supporting target <=500 ms; miss)
+- Output gate after model completion: 3,334 / 5,740 ms (whole-response diagnostic duration; not scored against the <=500 ms per-chunk criterion, which remains unmeasured)
 - First visible narration from narration-model request: 8,219 / 11,545 ms (canonical target <=3,000 ms p95; miss)
 
 Compatibility adjustments and limitations:
