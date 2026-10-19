@@ -100,3 +100,23 @@ Sentinel and Bastion returned read-only NO-GO reviews on the prior report head `
 ## Method and limitations
 
 The R7 and R8 findings and R1–R5 outcomes summarize an owner-relayed, scoped Astra review against the stated target SHA. The report author did not run Astra independently; targeted source tracing and local probes are supplementary checks, not a second Astra review. No live model call, HTTP/database integration test, browser session, concurrency test, deployed proxy/DNS test, or recorded M3-28 dataset replay was performed. The report makes no claim of complete penetration testing or live-model bypass resistance. All findings should be rechecked against current heads before closure.
+
+## Disposition update (2026-10-18)
+
+This section records current dispositions. The original findings above are unchanged; the "Current remediation status" text describes the state at 2026-10-17 and is superseded here. Report merged as PR #228 (merge commit `4e1ddcf`).
+
+Verified with `gh pr view` on 2026-10-18 unless marked relayed.
+
+| ID | Disposition | PR / SHA | Status |
+|---|---|---|---|
+| R7 (High) | Fixed. Condition catalog membership and free-text source gate. | PR #227 merged, merge `4ca70991`, head `4a1baa67` | Verified merged. Card `f344614c` done (relayed). |
+| R1 (Medium) | Fixed, narrow scope (copula after bare age). Version `2026-10-17.26`. | PR #225 merged, merge `fd2005a9`, head `ee7494a3` | Verified merged. Numbered-object overblocking advisory and streaming/chunk-boundary path remain unverified, as stated above. |
+| R2–R5 (Medium) | Accepted as Medium defense-in-depth gaps per owner scope decision 2026-10-17. The judge layer covers them. Red-team: boundary 0/49 false negatives; hard floor 15/15. | No PR | Card `ebcf1212` stays backlog (relayed; card state not verified here). |
+| R8 (Medium, conditional) | Client-state projection allowlists game state and recurses into nested checkpoints. Rewind hides reverted content from reports. | PR #240 merged, merge `d8968da5`, head `8c612f5`; PR #249 merged, merge `326e6d96`, head `3f4c61bd` | Verified merged. Projection on main confirmed by reading `apps/server/src/room/Room.ts` (`clientGameState`). Tests not re-run here. |
+| R6 (Low) | Still stale on main. `docs/security/hard-floor.md` names gate `hardFloorGate.ts`, but the file is `apps/server/src/safety/inputGate.ts`. It states a 20,000-character cap, but `MAX_INPUT_CHARS` is 30,000 in `hardFloor.ts`. The input-scope wording was not re-verified. | No PR | Doc correction still needed. |
+| A1 (Medium advisory) | Unchanged. Per-IP limits can rotate with IPv6; account-level limits remain. | None | Advisory. |
+| A2 (Low advisory) | Unchanged. Eval endpoint hostname is not pinned before fetch; operator-supplied only. | None | Advisory. |
+
+Verified: the PR states and merge SHAs above, the `Room.ts` projection, the `MAX_INPUT_CHARS` value, and the missing `hardFloorGate.ts`.
+
+Relayed, not verified here: the owner scope decision for R2–R5, the red-team counts, and card states for `f344614c` and `ebcf1212`.
