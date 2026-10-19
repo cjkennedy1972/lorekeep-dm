@@ -174,6 +174,7 @@ describe('bonus-action spell pairing across combat paths', () => {
       { character: caster },
     );
     if ('code' in commandAction) throw new Error(commandAction.message);
+    expect(commandAction.state.combat.resources.ent_aria?.action).toBe(false);
 
     const scripted = await runScripted(
       table,
@@ -194,6 +195,7 @@ describe('bonus-action spell pairing across combat paths', () => {
     const scripted = await runScripted(table, table.gameState, [calls.action]);
     const combat = (scripted.result.state as { combatRoom: RoomCombatState })
       .combatRoom;
+    expect(combat.combat.resources.ent_aria?.action).toBe(false);
     const command = createCombatRuntime().execute(
       combat,
       'ent_aria',
@@ -223,6 +225,9 @@ describe('bonus-action spell pairing across combat paths', () => {
       { character: caster },
     );
     if ('code' in commandBonus) throw new Error(commandBonus.message);
+    expect(commandBonus.state.combat.resources.ent_aria?.bonusAction).toBe(
+      false,
+    );
 
     const seeded = {
       ...table.gameState,
@@ -257,9 +262,7 @@ describe('bonus-action spell pairing across combat paths', () => {
     const combat = (scripted.result.state as { combatRoom: RoomCombatState })
       .combatRoom;
     expect(combat.combat.resources.ent_aria?.bonusActionSpellCast).toBe(true);
-    // Scripted casts do not spend command action/bonus-action resources; that
-    // behavior predates this PR and remains outside this pairing fix.
-    expect(combat.combat.resources.ent_aria?.bonusAction).toBe(true);
+    expect(combat.combat.resources.ent_aria?.bonusAction).toBe(false);
     expect(combat.combat.resources.ent_aria?.action).toBe(true);
 
     const runtime = createCombatRuntime();
@@ -289,8 +292,61 @@ describe('bonus-action spell pairing across combat paths', () => {
         { character: caster },
       ),
     ).toMatchObject({ code: 'COMMAND_REJECTED' });
+    const cantrip = runtime.execute(
+      combat,
+      'ent_aria',
+      {
+        command: 'cast',
+        spellId: 'spell:true-strike',
+        slotLevel: 0,
+        target: { kind: 'self' },
+      },
+      { character: caster },
+    );
+    expect(cantrip).not.toMatchObject({ code: 'COMMAND_REJECTED' });
+    if (!('code' in cantrip))
+      expect(cantrip.state.combat.resources.ent_aria?.action).toBe(false);
+  });
+
+  it('rejects a scripted cantrip after a command spell spends the shared action', async () => {
+    const table = await setupTable();
+    const command = createCombatRuntime().execute(
+      table.combat,
+      'ent_aria',
+      {
+        command: 'cast',
+        spellId: 'spell:mage-armor',
+        slotLevel: 1,
+        target: { kind: 'self' },
+      },
+      { character: caster },
+    );
+    if ('code' in command) throw new Error(command.message);
+
+    expect(command.state.combat.resources.ent_aria?.action).toBe(false);
+    const scripted = await runScripted(
+      table,
+      { ...table.gameState, combatRoom: command.state },
+      [calls.cantrip],
+    );
+    expect(scripted.observed).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        toolName: 'cast_spell',
+        error: 'forbidden',
+      }),
+    );
+  });
+
+  it('rejects a command cantrip after a scripted spell spends the shared action', async () => {
+    const table = await setupTable();
+    const scripted = await runScripted(table, table.gameState, [calls.action]);
+    const combat = (scripted.result.state as { combatRoom: RoomCombatState })
+      .combatRoom;
+
+    expect(combat.combat.resources.ent_aria?.action).toBe(false);
     expect(
-      runtime.execute(
+      createCombatRuntime().execute(
         combat,
         'ent_aria',
         {
@@ -301,7 +357,19 @@ describe('bonus-action spell pairing across combat paths', () => {
         },
         { character: caster },
       ),
-    ).not.toMatchObject({ code: 'COMMAND_REJECTED' });
+    ).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+
+  it('spends action for a scripted action cantrip', async () => {
+    const table = await setupTable();
+    const scripted = await runScripted(table, table.gameState, [calls.cantrip]);
+    const combat = (scripted.result.state as { combatRoom: RoomCombatState })
+      .combatRoom;
+
+    expect(scripted.observed).not.toContainEqual(
+      expect.objectContaining({ type: 'ToolCallRejected' }),
+    );
+    expect(combat.combat.resources.ent_aria?.action).toBe(false);
   });
 
   it('keeps the shared tracker across multiple cast_spell calls in one runner turn', async () => {
@@ -317,5 +385,24 @@ describe('bonus-action spell pairing across combat paths', () => {
         error: 'forbidden',
       }),
     );
+  });
+
+  it('cannot spend the same action twice across scripted calls in one runner turn', async () => {
+    const table = await setupTable();
+    const scripted = await runScripted(table, table.gameState, [
+      calls.cantrip,
+      calls.cantrip,
+    ]);
+    const combat = (scripted.result.state as { combatRoom: RoomCombatState })
+      .combatRoom;
+
+    expect(scripted.observed).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        toolName: 'cast_spell',
+        error: 'forbidden',
+      }),
+    );
+    expect(combat.combat.resources.ent_aria?.action).toBe(false);
   });
 });
