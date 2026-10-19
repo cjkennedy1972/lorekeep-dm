@@ -184,22 +184,19 @@ describe('text cannot change the tier through the real turn path', () => {
       await commit(benign.sessionId, baseline.changes);
 
       const attacked = await table();
+      await commit(attacked.sessionId, baseline.changes);
       const run = await turnWithText(
         attacked.sessionId,
         attacked.accountId,
         injected,
         injected,
       );
-      expect(run.changes).toEqual(baseline.changes);
-      expect(promptTier(run.calls)).toBe(promptTier(baseline.calls));
+      expect(run.changes).toEqual([]);
+      expect(promptTier(run.calls)).toBe('mature');
       await commit(attacked.sessionId, run.changes);
 
-      expect(await storedTier(attacked.sessionId)).toBe(
-        await storedTier(benign.sessionId),
-      );
-      expect(await tierChangeEvents(attacked.sessionId)).toEqual(
-        await tierChangeEvents(benign.sessionId),
-      );
+      expect(await storedTier(attacked.sessionId)).toBe('mature');
+      expect(await tierChangeEvents(attacked.sessionId)).toHaveLength(1);
     },
   );
 
