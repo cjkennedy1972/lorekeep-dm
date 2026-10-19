@@ -13,6 +13,7 @@ import type { RngState } from '../rng.js';
 import { fail, ok, turnHint, type ToolResult } from './result.js';
 
 type AreaOption = { optionId: string; pos: GridPos; expiresTurn: string };
+type SpellActionResources = { action: boolean; bonusAction: boolean };
 export type SpellToolState = {
   actors: Readonly<Record<string, CharacterInput>>;
   targets: Readonly<Record<string, SpellTarget>>;
@@ -27,6 +28,8 @@ export type SpellToolState = {
   bonusActionSpellCast?: Readonly<Record<string, boolean>>;
   /** Leveled action spells already cast by each actor during this combat turn. */
   actionSpellCast?: Readonly<Record<string, boolean>>;
+  /** Combat action economy mirrored from the Room's authoritative resources. */
+  resources?: Readonly<Record<string, SpellActionResources>>;
   options?: Readonly<Record<string, AreaOption>>;
 };
 const engineCode = (
@@ -63,6 +66,7 @@ export function executeSpell(
   state: SpellState;
   bonusActionSpellCast?: Readonly<Record<string, boolean>>;
   actionSpellCast?: Readonly<Record<string, boolean>>;
+  resources?: Readonly<Record<string, SpellActionResources>>;
 }> {
   const parsed = DMToolArgsSchema.cast_spell.safeParse(args);
   if (!parsed.success)
@@ -77,6 +81,13 @@ export function executeSpell(
   if (!spell)
     return fail('unknown-spell', 'Choose a spell in the loaded catalog.');
   const bonusAction = spell.castingTime?.unit === 'bonus-action';
+  const economy = bonusAction ? 'bonusAction' : 'action';
+  const resources = state.resources?.[casterId];
+  if (state.resources && !resources?.[economy])
+    return fail(
+      'forbidden',
+      `Your ${bonusAction ? 'bonus action' : 'action'} has already been spent this turn.`,
+    );
   if (
     (state.bonusActionSpellCast?.[casterId] ||
       (bonusAction && state.actionSpellCast?.[casterId])) &&
@@ -165,6 +176,12 @@ export function executeSpell(
     !bonusAction && spell.level > 0 && spell.castingTime?.unit === 'action'
       ? { ...state.actionSpellCast, [casterId]: true }
       : state.actionSpellCast;
+  const updatedResources = state.resources
+    ? {
+        ...state.resources,
+        [casterId]: { ...resources!, [economy]: false },
+      }
+    : undefined;
   return ok(
     {
       events: result.events,
@@ -172,6 +189,7 @@ export function executeSpell(
       state: result.state,
       ...(bonusActionSpellCast ? { bonusActionSpellCast } : {}),
       ...(actionSpellCast ? { actionSpellCast } : {}),
+      ...(updatedResources ? { resources: updatedResources } : {}),
     },
     events,
     `${caster.name} casts ${spellId.replace('srd:spell/', '').replaceAll('-', ' ')}.`,
