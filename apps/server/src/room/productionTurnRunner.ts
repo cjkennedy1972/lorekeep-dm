@@ -500,6 +500,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
       }),
       commitState(previous, output) {
+        // Room rejects combat commands while turnInFlight (Room.ts:1347), and queued DM turns run serially.
+        // These resource snapshots therefore cannot overwrite a concurrent combat spend.
         const nextEngine = output.nextState as ToolExecutorState & {
           resources?: Readonly<
             Record<string, { action: boolean; bonusAction: boolean }>
