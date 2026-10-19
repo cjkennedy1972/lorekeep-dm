@@ -110,10 +110,16 @@ export async function processExport(
     ].join(',')}}`;
     const key = `${id}.json`;
     await store.put(key, body);
-    await db.query(
-      "UPDATE export_jobs SET status='completed',completed_at=now(),expires_at=$2,archive_key=$3 WHERE id=$1",
-      [id, new Date(Date.now() + WEEK), key],
-    );
+    try {
+      await db.query(
+        "UPDATE export_jobs SET status='completed',completed_at=now(),expires_at=$2,archive_key=$3 WHERE id=$1",
+        [id, new Date(Date.now() + WEEK), key],
+      );
+    } catch (error) {
+      // ponytail: a failed delete leaves the blob orphaned; the job row has no archive_key to find it by.
+      await store.delete(key).catch(() => undefined);
+      throw error;
+    }
   } catch (error) {
     await db.query(
       "UPDATE export_jobs SET status='failed',error_code=$2 WHERE id=$1",
