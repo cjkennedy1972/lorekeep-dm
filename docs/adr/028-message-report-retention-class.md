@@ -1,6 +1,6 @@
 # ADR-028: Message reports are a distinct moderation-evidence retention class (addendum to ADR-017)
 
-Status: Accepted (Atlas decision 2026-10-18, reversible; flagged for Chris to override) · Date: 2026-10-18 · Owner: Atlas · Amends ADR-017 for `message_reports` only; ADR-017 text is unchanged.
+Status: Proposed: clarifies existing behavior, owner confirmation requested · Date: 2026-10-18 · Owner: Atlas · Amends ADR-017 for `message_reports` only; ADR-017 text is unchanged.
 
 ## Context
 
@@ -25,4 +25,4 @@ Reports need review time: a report may sit in the queue for weeks, and a reviewe
 
 ## Needs human
 
-Chris may override this and set 30 days. Legal-hold policy remains a human decision, as in ADR-017.
+Chris confirms this decision or overrides it. This ADR changes no behavior: the code already keeps 90/30/90. An override to 30 days is the one-line migration default change described under Consequences, with the backfill decision for existing rows. Legal-hold policy remains a human decision, as in ADR-017.
