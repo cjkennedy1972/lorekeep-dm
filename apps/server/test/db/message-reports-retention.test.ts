@@ -237,7 +237,7 @@ describe('message report retention (Postgres)', () => {
     expect(await contexts()).toContain('Hollis own words.');
 
     await markDeleting(reporter);
-    await runAccountDeletions(ctx());
+    await runAccountDeletions(ctx(), [reporter]);
     let dump = await contexts();
     expect(dump).not.toContain('Hollis own words.');
     expect(dump).not.toContain('Hollis');
@@ -246,7 +246,7 @@ describe('message report retention (Postgres)', () => {
     expect(dump).toContain('I hit the goblin.');
 
     await markDeleting(author);
-    await runAccountDeletions(ctx());
+    await runAccountDeletions(ctx(), [author]);
     dump = await contexts();
     expect(dump).not.toContain('I hit the goblin.');
     expect(dump).not.toContain('Quinn');
@@ -282,7 +282,7 @@ describe('message report retention (Postgres)', () => {
     ]);
     await markDeleting(author);
 
-    await runAccountDeletions(ctx());
+    await runAccountDeletions(ctx(), [author]);
 
     expect(
       (await q('SELECT status FROM accounts WHERE id=$1', [author]))[0].status,
@@ -293,7 +293,7 @@ describe('message report retention (Postgres)', () => {
       ),
     ).toContain('Still here.');
     await q('DELETE FROM legal_holds WHERE item_id=$1', [sid]);
-    await runAccountDeletions(ctx());
+    await runAccountDeletions(ctx(), [author]);
   });
 
   it('does not keep the author text when their deletion commits between the report context read and the insert', async () => {
@@ -338,7 +338,7 @@ describe('message report retention (Postgres)', () => {
               "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
               [author],
             );
-            deletion = runAccountDeletions(ctx());
+            deletion = runAccountDeletions(ctx(), [author]);
             await Promise.race([
               deletion,
               new Promise((resolve) => setTimeout(resolve, 300)),

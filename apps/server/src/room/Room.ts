@@ -194,28 +194,38 @@ export class Room {
       type === 'ActionAccepted'
         ? [...this.actionIds, (payload as { actionId: string }).actionId]
         : [...this.actionIds];
-    let stored;
-    try {
-      stored = await this.store.writeTurn(
-        this.sessionId,
-        [{ seq: next, turnId: event.turnId, type, payload }],
-        { ...state, actionIds },
-        this.lease,
-      );
-    } catch (error) {
-      const recovered = recoverRoom(
-        this.sessionId,
-        await this.store.loadLatest(this.sessionId),
-      );
-      this.seq = recovered.seq;
-      this.state = recovered.state;
-      throw error;
-    }
+    const stored = await this.writeTurn(
+      this.sessionId,
+      [{ seq: next, turnId: event.turnId, type, payload }],
+      { ...state, actionIds },
+      this.lease,
+    );
     const committed = stored.events[0];
     if (!committed) throw new Error('Persistence returned no event');
     this.seq = committed.seq;
     this.state = state;
     return committed;
+  }
+
+  /** A failed write reloads the committed head so in-memory seq and state match storage. */
+  private async writeTurn(
+    ...args: Parameters<RoomStore['writeTurn']>
+  ): ReturnType<RoomStore['writeTurn']> {
+    try {
+      return await this.store.writeTurn(...args);
+    } catch (error) {
+      await this.reloadCommittedHead().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async reloadCommittedHead(): Promise<void> {
+    const recovered = recoverRoom(
+      this.sessionId,
+      await this.store.loadLatest(this.sessionId),
+    );
+    this.seq = recovered.seq;
+    this.state = recovered.state;
   }
 
   subscribe(
@@ -398,7 +408,7 @@ export class Room {
     return this.enqueue(async () => {
       this.assertNotNarrating();
       const nextState = RoomStateSchema.parse({ ...this.state, gameState });
-      const stored = await this.store.writeTurn(
+      const stored = await this.writeTurn(
         this.sessionId,
         [
           {
@@ -423,7 +433,7 @@ export class Room {
         recap,
       };
       const nextState = RoomStateSchema.parse({ ...this.state, gameState });
-      const stored = await this.store.writeTurn(
+      const stored = await this.writeTurn(
         this.sessionId,
         [
           {
@@ -617,7 +627,7 @@ export class Room {
         payload: { gameState },
       },
     ];
-    const stored = await this.store.writeTurn(
+    const stored = await this.writeTurn(
       this.sessionId,
       writes,
       parsed,
@@ -699,7 +709,7 @@ export class Room {
         turnId: randomUUID(),
         revertedTurnId: plan.turnId,
       });
-      const stored = await this.store.writeTurn(
+      const stored = await this.writeTurn(
         this.sessionId,
         [{ turnId: reverted.turnId, type: reverted.type, payload: reverted }],
         { ...restoredState, actionIds: [...actionIds] },
@@ -1260,7 +1270,7 @@ export class Room {
             ? [...this.actionIds]
             : [...this.actionIds, actionId],
         };
-        const stored = await this.store.writeTurn(
+        const stored = await this.writeTurn(
           this.sessionId,
           writes,
           snapshotState,
@@ -1404,7 +1414,7 @@ export class Room {
     const actionIds = actionId
       ? [...this.actionIds, actionId]
       : [...this.actionIds];
-    const stored = await this.store.writeTurn(
+    const stored = await this.writeTurn(
       this.sessionId,
       writes,
       { ...this.state, gameState, actionIds },

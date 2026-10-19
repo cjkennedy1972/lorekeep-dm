@@ -552,10 +552,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-export async function runAccountDeletions(ctx: JobContext & { db: Pool }) {
+export async function runAccountDeletions(
+  ctx: JobContext & { db: Pool },
+  accountIds: string[] | null = null,
+) {
   const ids = (
     await ctx.db.query<{ id: string }>(
-      "SELECT id FROM accounts WHERE status='deleting' ORDER BY deletion_requested_at",
+      "SELECT id FROM accounts WHERE status='deleting' AND ($1::uuid[] IS NULL OR id = ANY($1::uuid[])) ORDER BY deletion_requested_at",
+      [accountIds],
     )
   ).rows;
   let deleted = 0;
