@@ -1,6 +1,6 @@
 # M3 exit-criteria proof report (refresh)
 
-Status: **M3 closeout remains open.** There is one disclosed injection miss, two measured latency misses (8,051 ms first-visible and 811 ms input judge), and a separate unmeasured per-chunk output-gate criterion. The first-visible miss is measured and its owner disposition is recorded on Workboard card 62400d89, which is not verifiable from the repo; the input-judge miss is reported separately. Row 4b remains open pending a per-chunk measurement, and row 8 remains open until draft PR #251 (Quill's review disposition) merges. No claim is made that Chris personally approved a latency or dataset decision; see “Owner decisions and approvals.”
+Status: **M3 is not complete.** Met: rows 1, 2, 5, 6, 7, and 8 (row 8 dispositions are on `origin/main`; R2–R5 are accepted Medium gaps). Conditional: row 3 (xc-017 reclassification, pending Chris's confirmation). Measured misses with recorded owner disposition: rows 4 (8,051 ms first-visible) and 4a (811 ms input judge); the disposition is on Workboard card 62400d89, which is not verifiable from the repo. Unmeasured: row 4b (per-chunk output-gate latency). ADR-028 is Proposed. No claim is made that Chris personally approved a latency or dataset decision; see “Owner decisions and approvals.”
 
 Base: `origin/main` at `b48f4af` (M3-41, #250). Supersedes the stale report from `7df49ea`.
 
@@ -30,7 +30,7 @@ Base: `origin/main` at `b48f4af` (M3-41, #250). Supersedes the stale report from
 | 5 | Opt-out honored by the next narration | `apps/server/test/db/mature-opt-out-api.test.ts`, `apps/server/test/db/content-tier-turn.test.ts`, `apps/server/test/room/pause.test.ts`. | **PASS: 23/23** on throwaway Postgres | Operator guide `2f1d0a5`. |
 | 6 | Text cannot change the tier | `apps/server/src/safety/tier.test.ts`: **397/397 pass**. New turn-path test `apps/server/test/db/text-tier-immutability.test.ts`: **14/14 pass** on throwaway Postgres. Covers the 12 `tier-flip` cases from `injection-100.json` through `ProductionSoloTurnRunner`. Each attacked session starts already at mature, and the test asserts zero `ContentTierChanged` events, stored tier still `mature`, and prompt tier `mature`. A benign fresh session still flips standard to mature as the non-vacuity control. Also covers an opt-out case. | **PASS** | Committed in #252. |
 | 7 | M3-29 input-threat gates | Rows 2 and 6; `threshold-gate.test.mjs` and `accepted-record-gate.test.mjs`: **26/26 pass** under vitest. | **MET** | Row 1 now verified. |
-| 8 | M3-34 review | `docs/security/m3-review.md` is owned by Quill and not edited here. R7 (High) fixed in #227 (`4ca70991`). R1 (Medium) fixed in #225 (`fd2005a9`). R8 linkage: #240 (merge `d8968da5`, allowlist for client state and nested checkpoint) and #249 (merge `326e6d96`, hide reverted content from reports). R2-R5 are accepted Medium defense-in-depth gaps (owner scope decision 2026-10-17). Disposition update: draft **#251** (head `0c691bdc` at verification; being updated). | **OPEN until #251 merges** | #251 becomes the document of record for row 8 once merged. |
+| 8 | M3-34 review | `docs/security/m3-review.md` is owned by Quill and not edited here. R7 (High) fixed in #227 (`4ca70991`). R1 (Medium) fixed in #225 (`fd2005a9`). R8 linkage: #240 (merge `d8968da5`, allowlist for client state and nested checkpoint) and #249 (merge `326e6d96`, hide reverted content from reports). R2-R5 are accepted Medium defense-in-depth gaps (owner scope decision 2026-10-17). Documented dispositions for R1–R8, A1, and A2 are in `docs/security/m3-review.md` on `origin/main` (merged via #251, `d03362b0`). | **MET (documented dispositions on main), with R2–R5 accepted Medium defense-in-depth gaps** | The merged document is the record of row 8. |
 
 ## Owner decisions and approvals
 
@@ -41,8 +41,9 @@ Base: `origin/main` at `b48f4af` (M3-41, #250). Supersedes the stale report from
 
 ## Remaining to close M3
 
-1. Row 4b: measure output-gate latency per chunk against the <=0.5 s criterion. The available whole-response duration does not satisfy this evidence requirement, and no owner disposition making row 4b non-gating is claimed here.
-2. Row 8: merge #251 (Quill's disposition update) after its update lands.
+- (a) Row 4b per-chunk <=0.5 s output-gate latency is UNMEASURED.
+- (b) Chris's explicit confirmation of the xc-017 reclassification (row 3 stays conditional until then).
+- (c) Chris's confirmation or override of ADR-028 (Proposed).
 
 ## Evidence index
 
