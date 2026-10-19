@@ -1,6 +1,6 @@
 # Hard floor: deterministic input rules (M3-06)
 
-Code: `apps/server/src/safety/hardFloor.ts`, gate `hardFloorGate.ts`. Fixtures: `apps/server/test/fixtures/hard-floor-fixtures.ts` (shared; reuse for M3-27 and M3-31 proof).
+Code: `apps/server/src/safety/hardFloor.ts`, called from the input gate `apps/server/src/safety/inputGate.ts`. Fixtures: `apps/server/test/fixtures/hard-floor-fixtures.ts` (shared; reuse for M3-27 and M3-31 proof).
 
 Scope: sexual content involving minors, checked on user input only (LLM output is out of scope for this module; the output classifier covers it). No model call, no tier input: the verdict is a pure function of the text and is identical at every content tier (ADR-016).
 
@@ -42,7 +42,7 @@ ws `PlayerAction.text` and `ClarificationAnswer.answer`; `POST /api/tables` tabl
 
 ## Performance
 
-Linear time: one pass over tokens, each start position joins at most 12 short pieces. Measured at the cap (20,000 characters): 43 ms worst case for the cases tried (`a `, `ab `, `1 `, `s `, `x.`, `under `, `child sexual `). `MAX_INPUT_CHARS` (20,000) is enforced in the module: longer input is blocked as `input.over-limit` without being scanned. Callers cap input much lower (ws text 4,000, names 80).
+Linear time: one pass over tokens, each start position joins at most 12 short pieces. Measured at the earlier 20,000-character cap: 43 ms worst case for the cases tried (`a `, `ab `, `1 `, `s `, `x.`, `under `, `child sexual `); not re-measured at 30,000. `MAX_INPUT_CHARS` (30,000) is enforced in the module: longer input is blocked as `input.over-limit` without being scanned. Callers cap input much lower (ws text 4,000, names 80).
 
 ## Tradeoffs
 
