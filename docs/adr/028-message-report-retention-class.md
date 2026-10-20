@@ -23,10 +23,10 @@ Reports need review time: a report may sit in the queue for weeks, and a reviewe
 - Switching report retention to 30 days later is a one-line migration default change in `0021_message_reports.sql`, plus a sweeper expectation change in `reports.ts` and the report tests. Existing rows would need an explicit backfill decision.
 - Account deletion still replaces authored text with `[removed]` in every report, regardless of the retention class (ADR-017).
 
-## Needs human
+## Needs human (historical; closed by the Confirmation below)
 
 Chris confirms this decision or overrides it. This ADR changes no behavior: the code already keeps 90/30/90. An override to 30 days is the one-line migration default change described under Consequences, with the backfill decision for existing rows. Legal-hold policy remains a human decision, as in ADR-017.
 
 ## Confirmation
 
-Confirmed by Chris Kennedy on 2026-10-19. Status is Accepted. Report snapshot text keeps the 90/30/90-day clocks, and legal holds override them. No code or migration change. ADR-017 text is untouched.
+Confirmed by Chris Kennedy on 2026-10-19. Status is Accepted. This confirmation satisfies and closes the request in "Needs human"; nothing is outstanding. Report snapshot text keeps the 90/30/90-day clocks, and legal holds override them. No code or migration change. ADR-017 text is untouched.
