@@ -1,6 +1,7 @@
+Redacted for host/port only: endpoint host and loopback DB port replaced with placeholders; original sha256 ffec7324f2b55289f678764d030f7b83959c9e24ebd2c382bf3eb9d7e3a1227e; numbers are unchanged.
 M3-30 Serenity cache-off rerun
 Date: 2026-10-17
-Endpoint: http://172.31.25.75:8080/v1 (owner-provided LAN endpoint)
+Endpoint: <LAN-LOCALAI-HOST> (owner-provided LAN endpoint)
 Model: serenity-26b-a4b
 Harness: apps/server/scripts/first-token-probe.mjs, production-shaped buffered output gate
 Sample size: N=30 (one warmup per slot excluded)
@@ -20,6 +21,6 @@ Limitations:
 - This is an engineering sample, not a production SLO pass.
 
 Execution/cleanup:
-- Disposable Docker Postgres container on 127.0.0.1:55439; temporary endpoint slots seeded for `fast` and `moderate` only.
+- Disposable Docker Postgres container on loopback; temporary endpoint slots seeded for `fast` and `moderate` only.
 - Container stopped with `--rm`; no long-lived database or endpoint configuration changed.
 - API key was read from the checkout key file into the probe's temporary encrypted database configuration; it was not printed or committed.
