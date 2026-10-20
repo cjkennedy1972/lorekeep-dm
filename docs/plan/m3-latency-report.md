@@ -62,7 +62,7 @@ The corrected harness completed N=30 after the owner reported cache disabled and
 | Measure | p50 | p95 | Target / budget | Result |
 |---|---:|---:|---:|---|
 | Input judge | 353 ms | 365 ms | <= 400 ms supporting budget | Pass in this sample |
-| Output gate after model completion | 3,222 ms | 3,962 ms | <= 500 ms supporting budget | Miss |
+| Output gate after model completion (unscored whole-response diagnostic) | 3,222 ms | 3,962 ms | Per-chunk <= 500 ms budget | UNMEASURED per chunk; whole-response duration only, not scored |
 | First visible narration from model request | 5,346 ms | 6,306 ms | <= 3,000 ms p95 | Miss |
 
 This is operator-attested cache-off, not independent provider cache verification. The clock starts at narration-model request, not player submit; DB/session overhead, WebSocket acknowledgement, per-model TTFT/total split, per-gate-call timings, tool loops, and real prompt distribution are not measured. The run is an engineering sample and **does not meet the first-visible p95 target**. The prior streamed-through-the-gate sample remains withdrawn.
@@ -76,7 +76,7 @@ Prompt caching remained provider-managed and was not independently disabled or v
 | Measure | p50 | p95 | Target / budget | Result |
 |---|---:|---:|---:|---|
 | Input judge | 846 ms | 1,199 ms | <= 400 ms supporting budget | Miss |
-| Output gate after model completion | 3,334 ms | 5,740 ms | <= 500 ms supporting budget | Miss |
+| Output gate after model completion (unscored whole-response diagnostic) | 3,334 ms | 5,740 ms | Per-chunk <= 500 ms budget | UNMEASURED per chunk; whole-response duration only, not scored |
 | First visible narration from model request | 8,219 ms | 11,545 ms | <= 3,000 ms p95 | Miss |
 
 The timer still starts at narration-model request, not player submit. DB/session overhead, WebSocket acknowledgement, per-model TTFT/total split, per-gate-call timings, tool loops, and real prompt distribution are not measured. This is an engineering sample and **does not meet the first-visible p95 target**. Detailed execution notes are in `docs/plan/evidence/m3-30-gpt-6-luna-openai-api-rerun-2026-10-17.txt`.
