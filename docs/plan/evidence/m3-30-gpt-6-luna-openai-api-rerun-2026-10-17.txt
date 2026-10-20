@@ -1,0 +1,28 @@
+M3-30 supplemental GPT-6-Luna API rerun
+Date: 2026-10-17
+Endpoint: https://api.openai.com/v1 (temporary local compatibility proxy)
+Model: gpt-6-luna
+Harness: apps/server/scripts/first-token-probe.mjs, temporary copy with compatibility adjustments
+Sample size: N=30 (one warmup per slot excluded)
+Prompt: deterministic synthetic standard-tier single turn; no tools/session/DB turn writes
+Prompt SHA-256: sha256:27a58ad476146c0b4d06a071b6d632d46f0058c8d2bd44e7ca5d66993a059e7f
+Cache state: provider-managed; not independently disabled or verified
+
+Results (nearest-rank p50/p95):
+- Input judge: 846 / 1,199 ms (supporting target <=400 ms; miss)
+- Output gate after model completion: 3,334 / 5,740 ms (whole-response diagnostic duration; not scored against the <=500 ms per-chunk criterion, which remains unmeasured)
+- First visible narration from narration-model request: 8,219 / 11,545 ms (canonical target <=3,000 ms p95; miss)
+
+Compatibility adjustments and limitations:
+- The unmodified OpenAI-compatible adapter sends `max_tokens` and temperature 0 for moderation. GPT-6-Luna rejected `max_tokens` (it requires `max_completion_tokens`) and rejected any `temperature` value.
+- A temporary local HTTP proxy translated `max_tokens` to `max_completion_tokens` and omitted `temperature`. Thus moderation used provider-default temperature, not deterministic temperature 0; this is not directly adapter-equivalent.
+- The 8-token narration warmup exhausted its completion budget without emitting text. The temporary probe copy raised only the unmeasured warmup budget to 128 and did not require warmup text. Measured narration requests retained the 512-token harness budget.
+- Prompt caching was provider-managed and not independently disabled or verified. Additional API preflight and compatibility diagnostics, plus warmups, are excluded from N=30.
+- First-visible clock starts at narration-model request, not player submit. No WebSocket acknowledgement, DB/session overhead, per-model TTFT/total split, per-gate-call durations, tool loop, or real user prompt distribution was measured.
+- This is an engineering diagnostic, not an SLO qualification. Component p95s must not be added.
+
+Execution and cleanup:
+- A fresh disposable Docker Postgres 17 container was used and removed after the run.
+- Temporary endpoint slots and encryption key existed only in that database/process; no permanent endpoint configuration changed.
+- The compatibility proxy and temporary probe copy were removed after the run.
+- The API key was read from `OPENAI_API_KEY` after verifying it had exactly one non-empty line. It was not printed, logged, or stored in the repository.
