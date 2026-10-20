@@ -1,0 +1,25 @@
+M3-30 Serenity cache-off rerun
+Date: 2026-10-17
+Endpoint: http://172.31.25.75:8080/v1 (owner-provided LAN endpoint)
+Model: serenity-26b-a4b
+Harness: apps/server/scripts/first-token-probe.mjs, production-shaped buffered output gate
+Sample size: N=30 (one warmup per slot excluded)
+Prompt: deterministic synthetic standard-tier single turn; no tools/session/DB turn writes
+Cache state: operator-attested disabled by owner before run; provider cache state not independently observable or verified by the harness
+Prompt SHA-256: sha256:27a58ad476146c0b4d06a071b6d632d46f0058c8d2bd44e7ca5d66993a059e7f
+
+Results (nearest-rank p50/p95):
+- Input judge: 353 / 365 ms (supporting target <=400 ms; pass in this sample)
+- Output gate after model completion: 3222 / 3962 ms (supporting target <=500 ms; miss)
+- First visible narration from narration-model request: 5346 / 6306 ms (canonical target <=3000 ms p95; miss)
+
+Limitations:
+- First-visible clock starts at narration model request, not player submit; excludes input-judge and DB/session overhead.
+- No per-model TTFT/total split or per-gate-call breakdown; aggregate component p95s must not be added.
+- No WebSocket acknowledgement timing, tool loop, real user prompt distribution, or cache-hit metric.
+- This is an engineering sample, not a production SLO pass.
+
+Execution/cleanup:
+- Disposable Docker Postgres container on 127.0.0.1:55439; temporary endpoint slots seeded for `fast` and `moderate` only.
+- Container stopped with `--rm`; no long-lived database or endpoint configuration changed.
+- API key was read from the checkout key file into the probe's temporary encrypted database configuration; it was not printed or committed.
