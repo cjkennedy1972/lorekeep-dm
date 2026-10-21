@@ -71,6 +71,10 @@ const innocent = 'The innkeeper pours ale and nods at the table.';
 const minorSexual = 'the 14yo girl had sex with the guard';
 
 describe('createInputGate', () => {
+  it('sets the per-table player-action judge cap to 48 calls per minute', () => {
+    expect(ACTION_CALLS_PER_TABLE_PER_MINUTE).toBe(48);
+  });
+
   it('fails closed with a retryable limited decision for action capacity', async () => {
     const chat = vi.fn(async () => ({
       kind: 'limited' as const,

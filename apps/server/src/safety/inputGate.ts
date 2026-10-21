@@ -71,7 +71,7 @@ export interface ChatInputResult {
 
 export const MODERATION_CALLS_PER_MINUTE = { account: 30, ip: 20 } as const;
 export const CHAT_CALLS_PER_TABLE_PER_MINUTE = 40;
-export const ACTION_CALLS_PER_TABLE_PER_MINUTE = 30;
+export const ACTION_CALLS_PER_TABLE_PER_MINUTE = 48;
 export const MODERATION_LOG_ROWS_PER_DAY = 100;
 export const JUDGE_MAX_RESPONSE_BYTES = 16 * 1024;
 export const HARD_FLOOR_LOG_RETENTION_MS = 30 * 86_400_000;
