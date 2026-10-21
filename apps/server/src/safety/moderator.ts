@@ -33,6 +33,7 @@ export type Verdict = VerdictBase &
 export function failClosedVerdict(
   latencyMs: number,
   capacityLimited?: 'action-input' | 'chat' | 'output',
+  failClosedRow: FailClosedRow = 'hard-floor',
 ): Verdict {
   return {
     verdict: 'block',
@@ -40,7 +41,7 @@ export function failClosedVerdict(
     source: 'failclosed',
     latencyMs,
     unavailable: true,
-    failClosedRow: 'hard-floor',
+    failClosedRow,
     ...(capacityLimited ? { capacityLimited } : {}),
   };
 }
@@ -260,7 +261,14 @@ export class JudgeModerator implements Moderator {
 
     const judged = await this.judge(req);
     if (judged === null) return failClosedVerdict(elapsed());
-    if ('kind' in judged) return failClosedVerdict(elapsed(), judged.class);
+    if ('kind' in judged) {
+      // ADR-032 §4: DM output capacity exhaustion is a HOLD under ADR-023.
+      return failClosedVerdict(
+        elapsed(),
+        judged.class,
+        judged.class === 'output' ? 'tier' : 'hard-floor',
+      );
+    }
     return {
       ...judged,
       source: 'judge',

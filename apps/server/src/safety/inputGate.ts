@@ -70,7 +70,8 @@ export interface ChatInputResult {
 }
 
 export const MODERATION_CALLS_PER_MINUTE = { account: 30, ip: 20 } as const;
-export const CHAT_CALLS_PER_TABLE_PER_MINUTE = 120;
+export const CHAT_CALLS_PER_TABLE_PER_MINUTE = 40;
+export const ACTION_CALLS_PER_TABLE_PER_MINUTE = 30;
 export const MODERATION_LOG_ROWS_PER_DAY = 100;
 export const JUDGE_MAX_RESPONSE_BYTES = 16 * 1024;
 export const HARD_FLOOR_LOG_RETENTION_MS = 30 * 86_400_000;
@@ -103,6 +104,7 @@ export function createInputGate({
   const callsByAccount = new BoundedCounter(MINUTE_MS);
   const callsByIp = new BoundedCounter(MINUTE_MS);
   const chatCallsByTable = new BoundedCounter(MINUTE_MS);
+  const actionCallsByTable = new BoundedCounter(MINUTE_MS);
   const rowsByKey = new BoundedCounter(DAY_MS);
 
   function overBudget(input: InputCheck): boolean {
@@ -223,6 +225,14 @@ export function createInputGate({
         };
       }
     }
+    if (
+      (input.surface === 'player-action' ||
+        input.surface === 'clarification') &&
+      input.sessionId !== undefined &&
+      actionCallsByTable.hit(input.sessionId) >
+        ACTION_CALLS_PER_TABLE_PER_MINUTE
+    )
+      return { decision: 'busy', attributable: false };
     const verdict = await moderator.moderate({
       text: input.text,
       tier: await tierFor(input.sessionId),
@@ -348,25 +358,40 @@ export function createEndpointJudge(
       );
       if (budget.kind === 'limited')
         return { kind: 'limited', class: budget.class };
+      let currentAdapter: LlmAdapter | undefined;
+      let destroyed = false;
+      const operation = (async () => {
+        const adapter: LlmAdapter = await createConfiguredAdapter(
+          db,
+          'moderate',
+          egress,
+        );
+        // A hard-cap timer can fire while adapter setup is pending.
+        if (destroyed) adapter.destroy?.();
+        // Keep the handle so the 60 s bound can destroy this call's transport.
+        currentAdapter = adapter;
+        return await collectJudgeText(
+          adapter.complete({
+            messages,
+            maxTokens: max_tokens,
+            temperature,
+            signal,
+          }),
+        );
+      })();
+      const onCallerAbort = () => budget.markLost();
+      signal.addEventListener('abort', onCallerAbort, { once: true });
+      if (signal.aborted) onCallerAbort();
       return withJudgeHardCap(
-        (async () => {
-          const adapter: LlmAdapter = await createConfiguredAdapter(
-            db,
-            'moderate',
-            egress,
-          );
-          return await collectJudgeText(
-            adapter.complete({
-              messages,
-              maxTokens: max_tokens,
-              temperature,
-              signal,
-            }),
-          );
-        })(),
+        operation,
         budget.release,
         budget.markLost,
-      );
+        undefined,
+        () => {
+          destroyed = true;
+          currentAdapter?.destroy?.();
+        },
+      ).finally(() => signal.removeEventListener('abort', onCallerAbort));
     },
   });
 }

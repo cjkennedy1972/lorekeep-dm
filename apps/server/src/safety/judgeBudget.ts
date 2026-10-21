@@ -12,7 +12,7 @@ const PER_MINUTE_LIMITS: Record<CapacityClass, number> = {
   output: 40,
 };
 const WINDOW_MS = 60_000;
-export const JUDGE_UPSTREAM_HARD_CAP_MS = 10_000;
+export const JUDGE_UPSTREAM_HARD_CAP_MS = 60_000;
 const LOST_CALL_LIMITS: Record<CapacityClass, number> = {
   'action-input': 1,
   chat: 2,
@@ -52,13 +52,18 @@ export class JudgeBudget {
       return { kind: 'limited', class: budgetClass };
     recent.push(now);
     this.inFlight[budgetClass] += 1;
+    const startedAt = Date.now();
     let state: 'in-flight' | 'lost' | 'settled' = 'in-flight';
+    let lostTimer: ReturnType<typeof setTimeout> | undefined;
     return {
       kind: 'acquired',
       release: () => {
         if (state === 'settled') return;
         if (state === 'in-flight') this.inFlight[budgetClass] -= 1;
-        else this.unsettledLost[budgetClass] -= 1;
+        else {
+          this.unsettledLost[budgetClass] -= 1;
+          if (lostTimer !== undefined) clearTimeout(lostTimer);
+        }
         state = 'settled';
       },
       markLost: () => {
@@ -66,24 +71,42 @@ export class JudgeBudget {
         this.inFlight[budgetClass] -= 1;
         this.unsettledLost[budgetClass] += 1;
         state = 'lost';
+        const remaining = Math.max(
+          0,
+          startedAt + JUDGE_UPSTREAM_HARD_CAP_MS - Date.now(),
+        );
+        lostTimer = setTimeout(() => {
+          if (state !== 'lost') return;
+          this.unsettledLost[budgetClass] -= 1;
+          state = 'settled';
+        }, remaining);
+        lostTimer.unref?.();
       },
     };
   }
 }
 
-/** ADR-032 §4: slots follow upstream settlement; capped requests remain counted as lost. */
+/** ADR-032 §4: lost calls retain capacity until settlement or 60 s transport destruction. */
 export async function withJudgeHardCap<T>(
   operation: Promise<T>,
   release: () => void,
   markLost: () => void = release,
   hardCapMs = JUDGE_UPSTREAM_HARD_CAP_MS,
+  destroy?: () => void,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // The caller may time out earlier; only upstream settlement frees its live-call accounting.
+  // Caller timeout marks the request lost; this bound destroys its transport and frees capacity.
   void operation.then(release, release);
   const hardCap = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       markLost();
+      try {
+        destroy?.();
+      } catch {
+        // Capacity still recovers at the hard deadline even if transport teardown fails.
+      } finally {
+        release();
+      }
       reject(new Error('judge upstream hard cap exceeded'));
     }, hardCapMs);
   });

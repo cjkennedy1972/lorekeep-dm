@@ -7,6 +7,7 @@ import {
   MODERATION_CALLS_PER_MINUTE,
   MODERATION_LOG_ROWS_PER_DAY,
   CHAT_CALLS_PER_TABLE_PER_MINUTE,
+  ACTION_CALLS_PER_TABLE_PER_MINUTE,
   type InputGateDb,
 } from '../../src/safety/inputGate.js';
 import { JudgeBudget, withJudgeHardCap } from '../../src/safety/judgeBudget.js';
@@ -536,6 +537,38 @@ describe('moderation call budget', () => {
     expect(calls).toHaveLength(CHAT_CALLS_PER_TABLE_PER_MINUTE + 1);
   });
 
+  it('caps player action judge calls per table and leaves another table available', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-21T12:00:00Z'));
+    const { db } = fakeDb();
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    for (let i = 0; i < ACTION_CALLS_PER_TABLE_PER_MINUTE; i++)
+      await expect(
+        gate.check({
+          text: innocent,
+          surface: 'player-action',
+          sessionId: 'table-one',
+        }),
+      ).resolves.toBe('allow');
+    await expect(
+      gate.check({
+        text: innocent,
+        surface: 'player-action',
+        sessionId: 'table-one',
+      }),
+    ).resolves.toBe('busy');
+    await expect(
+      gate.check({
+        text: innocent,
+        surface: 'player-action',
+        sessionId: 'table-two',
+      }),
+    ).resolves.toBe('allow');
+    expect(calls).toHaveLength(ACTION_CALLS_PER_TABLE_PER_MINUTE + 1);
+  });
+
   it('caps moderation_log rows per account per day and logs the cap once', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
@@ -632,7 +665,7 @@ describe('moderation call budget', () => {
 describe('judge slot hard cap', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('releases active slots at 10 seconds but counts unsettled calls as lost', async () => {
+  it('destroys and releases active slots at 60 seconds', async () => {
     vi.useFakeTimers();
     const singleLostBudget = new JudgeBudget();
     const singleLostSlot = singleLostBudget.acquire('chat');
@@ -646,7 +679,7 @@ describe('judge slot hard cap', () => {
     const singleLostRejection = expect(singleLost).rejects.toThrow(
       'judge upstream hard cap exceeded',
     );
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(60_000);
     await singleLostRejection;
     const availableChatSlot = singleLostBudget.acquire('chat');
     expect(availableChatSlot.kind).toBe('acquired');
@@ -672,14 +705,11 @@ describe('judge slot hard cap', () => {
     const rejections = calls.map((call) =>
       expect(call).rejects.toThrow('judge upstream hard cap exceeded'),
     );
-    await vi.advanceTimersByTimeAsync(9_999);
+    await vi.advanceTimersByTimeAsync(59_999);
     expect(budget.acquire('chat').kind).toBe('limited');
     await vi.advanceTimersByTimeAsync(1);
     await Promise.all(rejections);
-    expect(budget.acquire('output')).toEqual({
-      kind: 'limited',
-      class: 'output',
-    });
+    expect(budget.acquire('output').kind).toBe('acquired');
     deferred[0]!.resolve('late verdict');
     await Promise.resolve();
     const afterLateSettle = budget.acquire('chat');

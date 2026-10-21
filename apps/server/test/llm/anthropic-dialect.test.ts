@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LlmEndpointError } from '../../src/llm/adapter.js';
 import { createEgressGuard } from '../../src/llm/egress.js';
 import { RecordedLlmAdapter } from '../../src/llm/recorded.js';
@@ -114,6 +114,14 @@ describe('Anthropic Messages adapter', () => {
     expect(JSON.stringify(server.requests[0]?.body)).not.toContain(
       'cache_control',
     );
+  });
+  it('destroys active transport connections when the adapter is destroyed', async () => {
+    server = await startFakeAnthropicServer({ delayMs: 200 });
+    const adapter = adapterFor();
+    const pending = collect(adapter);
+    await vi.waitFor(() => expect(server?.requests).toHaveLength(1));
+    adapter.destroy();
+    await expect(pending).rejects.toBeInstanceOf(LlmEndpointError);
   });
   it('supports recorded mode around this dialect', async () => {
     server = await startFakeAnthropicServer({ chunks: anthropicStream });

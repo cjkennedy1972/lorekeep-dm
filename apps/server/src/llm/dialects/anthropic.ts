@@ -28,6 +28,7 @@ const endpointUrl = (baseUrl: string) =>
 /** Translator for the Messages wire protocol; shared orchestration stays provider-neutral. */
 export class AnthropicMessagesAdapter implements LlmAdapter {
   private readonly timeoutMs: number;
+  private readonly activeRequests = new Set<AbortController>();
 
   constructor(private readonly config: AnthropicMessagesConfig) {
     this.timeoutMs = config.timeoutMs ?? 12_000;
@@ -35,6 +36,10 @@ export class AnthropicMessagesAdapter implements LlmAdapter {
 
   capabilities(): LlmCapabilities {
     return { streaming: true, nativeTools: true, jsonSchema: false };
+  }
+
+  destroy(): void {
+    for (const controller of this.activeRequests) controller.abort();
   }
 
   async probe(signal?: AbortSignal): Promise<boolean> {
@@ -79,13 +84,15 @@ export class AnthropicMessagesAdapter implements LlmAdapter {
 
   async *complete(request: LlmRequest): AsyncIterable<LlmChunk> {
     const controller = new AbortController();
+    this.activeRequests.add(controller);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, this.timeoutMs);
     const abort = () => controller.abort();
-    request.signal?.addEventListener('abort', abort, { once: true });
+    if (request.signal?.aborted) controller.abort();
+    else request.signal?.addEventListener('abort', abort, { once: true });
     try {
       const response = await this.config.egress.fetch(
         endpointUrl(this.config.baseUrl),
@@ -122,6 +129,7 @@ export class AnthropicMessagesAdapter implements LlmAdapter {
       throw normalizeEndpointError(error);
     } finally {
       clearTimeout(timer);
+      this.activeRequests.delete(controller);
       request.signal?.removeEventListener('abort', abort);
       controller.abort();
     }

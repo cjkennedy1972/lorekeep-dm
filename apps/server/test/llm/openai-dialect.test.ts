@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DMToolArgsSchema } from '@game/schema';
 import { z } from 'zod';
 import { buildPrompt } from '../../src/dm/prompt.js';
@@ -157,6 +157,15 @@ describe('OpenAI-compatible LLM adapter', () => {
     })();
     setTimeout(() => controller.abort(), 20);
     await expect(pending).rejects.toMatchObject({ code: 'stream-aborted' });
+  });
+
+  it('destroys active transport connections when the adapter is destroyed', async () => {
+    server = await startFakeOpenAIServer({ delayMs: 200 });
+    const adapter = adapterFor();
+    const pending = collect(adapter);
+    await vi.waitFor(() => expect(server?.requests).toHaveLength(1));
+    adapter.destroy();
+    await expect(pending).rejects.toBeInstanceOf(LlmEndpointError);
   });
 
   it.each([429, 503])(

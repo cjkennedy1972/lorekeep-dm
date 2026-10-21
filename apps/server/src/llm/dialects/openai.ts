@@ -122,6 +122,7 @@ function stripUnsupportedSchemaKeywords(
 /** OpenAI-compatible chat-completions wire dialect; config owns URL and model. */
 export class OpenAICompatibleAdapter implements LlmAdapter {
   private readonly timeoutMs: number;
+  private readonly activeRequests = new Set<AbortController>();
 
   constructor(private readonly config: OpenAICompatibleConfig) {
     this.timeoutMs = config.timeoutMs ?? 12_000;
@@ -129,6 +130,10 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
 
   capabilities(): LlmCapabilities {
     return { streaming: true, nativeTools: true, jsonSchema: true };
+  }
+
+  destroy(): void {
+    for (const controller of this.activeRequests) controller.abort();
   }
 
   async probe(signal?: AbortSignal): Promise<boolean> {
@@ -170,13 +175,15 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
 
   async *complete(request: LlmRequest): AsyncIterable<LlmChunk> {
     const controller = new AbortController();
+    this.activeRequests.add(controller);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, this.timeoutMs);
     const abort = () => controller.abort();
-    request.signal?.addEventListener('abort', abort, { once: true });
+    if (request.signal?.aborted) controller.abort();
+    else request.signal?.addEventListener('abort', abort, { once: true });
     try {
       const body = this.requestBody(request);
       const response = await this.config.egress.fetch(
@@ -215,6 +222,7 @@ export class OpenAICompatibleAdapter implements LlmAdapter {
       throw this.classify(error);
     } finally {
       clearTimeout(timer);
+      this.activeRequests.delete(controller);
       request.signal?.removeEventListener('abort', abort);
       controller.abort();
     }

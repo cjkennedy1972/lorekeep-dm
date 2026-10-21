@@ -33,6 +33,7 @@ function dbStub() {
 
 function setupAdapter() {
   const pending: ReturnType<typeof deferred<void>>[] = [];
+  const destroy = vi.fn();
   const complete = vi.fn(() => {
     const hold = deferred<void>();
     pending.push(hold);
@@ -43,8 +44,9 @@ function setupAdapter() {
   });
   vi.mocked(createConfiguredAdapter).mockResolvedValue({
     complete,
+    destroy,
   } as never);
-  return { complete, pending };
+  return { complete, destroy, pending };
 }
 
 afterEach(() => {
@@ -85,6 +87,7 @@ describe('production endpoint judge wrapper', () => {
     ).resolves.toMatchObject({
       unavailable: true,
       capacityLimited: 'output',
+      failClosedRow: 'tier',
     });
     expect(parser).not.toHaveBeenCalled();
     outputSlot.release();
@@ -211,24 +214,68 @@ describe('production endpoint judge wrapper', () => {
     await vi.advanceTimersByTimeAsync(0);
   });
 
-  it('discards a verdict that arrives after the upstream hard cap', async () => {
+  it('holds DM output when its lost-call capacity is full', async () => {
     vi.useFakeTimers();
     const adapter = setupAdapter();
     const parser = vi.fn(parseVerdictReply);
     const judge = createEndpointJudge(dbStub(), parser);
-    const result = judge.moderate({
-      text: 'A slow chat request.',
-      tier: 'standard',
-      direction: 'input',
-      budgetClass: 'chat',
+    const output = (text: string) =>
+      judge.moderate({ text, tier: 'standard', direction: 'output' });
+    const lost = output('A narration request that never settles.');
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(4_500);
+    await expect(lost).resolves.toMatchObject({ unavailable: true });
+
+    await expect(
+      output('The next narration must be held.'),
+    ).resolves.toMatchObject({
+      unavailable: true,
+      capacityLimited: 'output',
+      failClosedRow: 'tier',
     });
+    expect(parser).not.toHaveBeenCalled();
+    adapter.pending[0]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('destroys a never-settling upstream at 60s, recovers capacity, and discards its late verdict', async () => {
+    vi.useFakeTimers();
+    const adapter = setupAdapter();
+    const parser = vi.fn(parseVerdictReply);
+    const judge = createEndpointJudge(dbStub(), parser);
+    const request = (text: string) =>
+      judge.moderate({
+        text,
+        tier: 'standard',
+        direction: 'input',
+        budgetClass: 'chat',
+      });
+    const result = request('A slow chat request.');
+    const secondLost = request('A second slow chat request.');
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(4_500);
     await expect(result).resolves.toMatchObject({ unavailable: true });
+    await expect(secondLost).resolves.toMatchObject({ unavailable: true });
     expect(parser).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(5_500);
+    await expect(
+      judge.moderate({
+        text: 'Still busy until destruction.',
+        tier: 'standard',
+        direction: 'input',
+        budgetClass: 'chat',
+      }),
+    ).resolves.toMatchObject({ capacityLimited: 'chat' });
+    await vi.advanceTimersByTimeAsync(55_500);
+    expect(adapter.destroy).toHaveBeenCalledTimes(2);
+    const recovered = request('Capacity recovered after destruction.');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(adapter.complete).toHaveBeenCalledTimes(3);
+    adapter.pending[2]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(recovered).resolves.toMatchObject({ verdict: 'allow' });
+    expect(parser).toHaveBeenCalledTimes(1);
     adapter.pending[0]!.resolve();
     await vi.advanceTimersByTimeAsync(0);
-    expect(parser).not.toHaveBeenCalled();
+    expect(parser).toHaveBeenCalledTimes(1);
   });
 });

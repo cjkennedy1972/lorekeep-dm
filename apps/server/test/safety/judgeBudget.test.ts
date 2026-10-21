@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { JudgeBudget } from '../../src/safety/judgeBudget.js';
 
 describe('shared judge budget', () => {
@@ -45,6 +45,25 @@ describe('shared judge budget', () => {
       kind: 'limited',
       class: 'output',
     });
+  });
+
+  it('recovers a class when an unsettled lost call reaches its 60-second destruction bound', async () => {
+    vi.useFakeTimers();
+    const budget = new JudgeBudget();
+    const lost = budget.acquire('action-input');
+    expect(lost.kind).toBe('acquired');
+    if (lost.kind !== 'acquired') return;
+    lost.markLost();
+    expect(budget.acquire('action-input')).toEqual({
+      kind: 'limited',
+      class: 'action-input',
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    const recovered = budget.acquire('action-input');
+    expect(recovered.kind).toBe('acquired');
+    if (recovered.kind === 'acquired') recovered.release();
+    vi.useRealTimers();
   });
 
   it('caps chat at 120/min, actions at 80/min and reserves output at 40/min', () => {
