@@ -34,22 +34,22 @@ Each seat is in exactly one presence state. Presence is engine state in the Room
 | `returning` | Authenticated (§3.5 check passed), held less than 10 s. | Yes, from reconnect success (§3.1) | No |
 | `disconnected` | Socket closed. The 30 s away clock is running. | No | No |
 | `away` | Disconnected for 30 s on a running server. Excluded from round required sets. Stays in rest-vote N and counts as `no` unless its ballot was cast (§4.2). | No | No |
-| `unknown` | Presence not known after a server restart or a missed heartbeat (§2.6). | No | No |
+| `unknown` | Presence not known after a server restart (§2.6). | No | No |
 | `revoked` | Seat removed by kick, ban, retirement, or departure (§2.7). Terminal for that seat. | No | No |
 
 A seat gets control only after the re-check in §3.5 passes. Only confirmed-connected seats count toward the pause rule (§4.7).
 
 ### 2. Transitions and events
 
-1. **Disconnect.** A socket close moves the seat to `disconnected` and starts the 30 s clock. `SeatDisconnected{seat, at}` is emitted only if the seat is still `disconnected` after 10 s (§2.5), so a blip leaves no event.
+1. **Disconnect.** A confirmed disconnect moves the seat to `disconnected` and starts the 30 s clock. A disconnect is confirmed in one of two ways. A socket close is confirmed at the close. A silent loss is confirmed when the heartbeat limit is reached: heartbeats run every 5 s, and 3 missed heartbeats declare the connection lost at 15 s after the last heartbeat received (Decision item 6). `SeatDisconnected{seat, at}` is emitted only if the seat is still `disconnected` after 10 s (§2.5), so a blip leaves no event.
 2. **Away.** At 30 s of continuous `disconnected` on a running server, the seat moves to `away` and emits `SeatAway{seat, at}`.
 3. **Return.** A socket that passes the §3.5 check moves the seat to `returning`, and control is granted within 2 s (§3.1). A `disconnected` seat that returns stops its clock. The clock is kept, not reset (point 5). An `away` seat stays `away` until it reaches `connected`.
 4. **Hold.** A `returning` seat becomes `connected` after 10 s without a socket drop. The hold itself emits no event, and completing it clears the away clock. `SeatReconnected{seat, at, wasAway}` is emitted at the control grant (§3.1), and only when a `SeatDisconnected` or `SeatAway` was emitted for that disconnect. `wasAway` is true only when the seat was `away` at its return.
-5. **Hysteresis on both edges.** The 10 s value applies to entering `disconnected` (point 1: no event before 10 s) and to leaving `returning` (point 4: `connected` only after a full 10 s hold). Its effect on the 30 s clock: the clock starts at socket close, pauses while the seat is `returning`, and is cleared only by a completed hold. A drop during `returning` goes back to `disconnected`, and the clock resumes from where it paused. It is not reset. A seat that was `away` and drops during `returning` goes back to `away`. So `away` needs 30 s of disconnected time with no completed hold in between. Entering or leaving `away` never restarts the clock.
-   Worked cases (socket closes at t = 0; the 30 s clock starts there):
+5. **Hysteresis on both edges.** The 10 s value applies to entering `disconnected` (point 1: no event before 10 s) and to leaving `returning` (point 4: `connected` only after a full 10 s hold). Its effect on the 30 s clock: the clock starts at the confirmed disconnect (point 1), pauses while the seat is `returning`, and is cleared only by a completed hold. A drop during `returning` goes back to `disconnected`, and the clock resumes from where it paused. It is not reset. A seat that was `away` and drops during `returning` goes back to `away`. So `away` needs 30 s of disconnected time with no completed hold in between. Entering or leaving `away` never restarts the clock.
+   Worked cases (the disconnect is confirmed at t = 0, a socket close; the 30 s clock starts there):
    - *Reconnect at 5 s.* Authenticated at 5 s, so the seat is `returning` and control is granted at 5 s. No `SeatDisconnected` was emitted (the seat was never `disconnected` for 10 s), so the grant emits no `SeatReconnected`. The 10 s hold runs to 15 s, when the seat becomes `connected` and the clock is cleared. No event is emitted at 15 s.
    - *Reconnect at 15 s.* `SeatDisconnected{seat, at}` is emitted at 10 s. Authenticated at 15 s, so the seat is `returning` and control is granted at 15 s, emitting `SeatReconnected{seat, at, wasAway: false}`. The 10 s hold runs to 25 s, when the seat becomes `connected` and the clock is cleared before it reaches 30 s, so no `SeatAway` is emitted.
-6. **Unknown.** At server restart every seat moves to `unknown`, and no away clock runs. A `connected` or `returning` seat whose heartbeat is missing past the limit (Decision item 6) moves to `unknown`. A seat leaves `unknown` only through point 3. `unknown` never becomes `away` by time, so autopilot never acts on it (§5.1).
+6. **Unknown.** At server restart every seat moves to `unknown`, and no away clock runs. A `connected` or `returning` seat whose heartbeat is lost is a confirmed disconnect (point 1) and moves to `disconnected`, not `unknown`. A seat leaves `unknown` only through point 3. `unknown` never becomes `away` by time, so autopilot never acts on it (§5.1).
 7. **Revoked.** Removal moves the seat to `revoked` at once, with no clock. It emits `SeatRevoked{seat, at, cause}`, where `cause` is `kick`, `ban`, `retired`, or `departed`. A revoked seat returns only through a new authorization under Seat claim and entry, item 2.
 8. **Event rate limit.** At most one presence event per seat per 10 s. A transition inside that window is merged into the next event, and the log records the state that holds at the window's end. State changes apply immediately and only event emission is coalesced. The snapshot always holds the current state.
 9. **Retention.** Presence events (`SeatDisconnected`, `SeatReconnected`, `SeatRevoked`, `AutopilotActed`, and the other presence events in §2) are in the ADR-017 gameplay class, the same class as the vote events in ADR-030 §7. They are live while the session is active, archived after 14 days idle, and deleted 90 days after archive unless claimed.
@@ -62,7 +62,7 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 2. **Full state restore: 3 s.** Clock start: the snapshot request, sent at reconnect success. Clock end: the snapshot ack, the point at which the client holds full state (§9.1). Until the ack, the client may show possibly stale state, read-only. It never submits an action until the ack. Input the server does receive before the ack is queued (item 4).
 3. **Both targets stand.** They measure different things. Neither replaces the other, and this ADR changes no spec number.
 4. **Input during restore.** Input received before the snapshot ack is queued and processed after it, in receipt order (ADR-029 §1).
-5. **Re-check on every return.** Before a return gets control, run the ADR-029 §7 check on the socket's ticket: the ticket is valid and not revoked (ADR-014), the seat is still seated, and it is not retired or muted. The ticket's account must also be the seat's owning account. If the check fails, the socket is closed with an auth error. No `SeatReconnected` is emitted, control is not granted, and the presence state does not change. Because "not muted" is part of the check, a muted seat cannot regain control on return (Decision item 7).
+5. **Re-check on every return.** Before a return gets control, run the control check on the socket's ticket: the ticket is valid and not revoked (ADR-014), the seat is still seated, and it is not retired. The ticket's account must also be the seat's owning account. If the check fails, the socket is closed with an auth error. No `SeatReconnected` is emitted, control is not granted, and the presence state does not change. Mute is not part of this check. A muted seat regains game control on return and stays muted for chat until the host unmutes. The mute persists across reconnect (Decision item 7). The ADR-029 §7 chat gate still applies the mute test to chat sends.
 6. **Takeover.** A second socket for a seat that already has an open socket runs the same check. If it passes, the new socket is acked and then the first socket is closed, so the seat never has zero sockets. Presence does not change, and no disconnect or away clock starts. If the check or the ack fails, the first socket is untouched. A seat has at most one socket at a time. A takeover emits `SeatTakenOver{seat, at}`.
 
 ### 4. Effect of presence on rounds and combat
@@ -106,10 +106,11 @@ This section sets the "120 s round" default that ADR-029 §8 refers to. It was n
 | Combat turn (party) | 90 s | spec US-B2 AC2, ADR-005 | Default. Host-configurable (spec line 575); off for solo. Expiry resolves as Dodge. Min and max bounds are not set in the spec and are decided in M4 item 3 (host controls). |
 | Rest vote | 120 s | ADR-030 §4 | Fixed for M4. |
 | Reaction window | 15 s | spec §6.3 | Auto-declined for `away`, `revoked`, and `unknown` seats. |
-| Away threshold | 30 s | spec US-P5 AC1, §6.4 | Applies to `disconnected` seats on a running server. |
+| Away threshold | 30 s | spec US-P5 AC1, §6.4 | Applies to `disconnected` seats on a running server. Runs from the confirmed disconnect (§2.1). |
 | Hysteresis on both edges | 10 s | §2.5 | Starting value, tunable by amendment. |
 | Presence event window | 10 s | §2.8 | Coalesces presence events. |
-| Heartbeat missed limit | Not set | §2.6 | Decision item 6. |
+| Heartbeat interval | 5 s | §2.1, Decision item 6 | Tunable by amendment. |
+| Heartbeat missed limit | 3 missed (lost at 15 s) | §2.1, Decision item 6 | Tunable by amendment. |
 
 Pause freezes every timer in this table. This freeze is this ADR's own rule; ADR-029 §5 covers the round timer only.
 
@@ -145,8 +146,8 @@ Routine within delegation, flagged because they set behavior:
 3. **Q7, autopilot and votes.** Decided by Chris's delegate: autopilot never votes or submits a non-defensive action, and away seats stay in the rest-vote N and count as `no` until they cast. Spec §13 Q7 remains open for Chris to close.
 4. **Host away and host revoked have no automatic transfer.** Recommendation: accept, and track host reassignment as a separate ADR.
 5. **Autopilot is Dodge or hold only.** Decided by Atlas for M4: no movement, no cover moves, no opportunity attacks, no consumables.
-6. **Heartbeat interval and missed-heartbeat limit.** Not set in ADR-029 or any transport ADR, and needed before M4 item 4 can be built. Recommendation: set both in the transport ADR. This ADR names only the condition.
-7. **Muted seat on return.** The ADR-029 §7 check includes "not muted", so a muted seat cannot regain control on return (§3.5). Mute is a chat restriction in the spec. Atlas to confirm this literal reading, or to split the check so mute blocks chat only.
+6. **Heartbeat.** Decided by Atlas: 5 s interval; 3 missed heartbeats declare the connection lost at 15 s, which is a confirmed disconnect (§2.1). The 30 s away clock runs from the confirmed disconnect. Values are tunable by amendment.
+7. **Muted seat on return.** Decided by Atlas: a muted seat regains game control on return but stays muted for chat until the host unmutes. Mute persists across reconnect (§3.5). ADR-029 §7 is not edited here; its chat gate keeps the mute test for chat, and any wording there that bars control on mute needs a matching amendment in ADR-029.
 8. **Reclaim is owner-only; drop-in stays in M4 scope.** Decided by Atlas, per spec §6.4 and §6.5.
 9. **A returning seat may replace an autopilot command until the turn resolves.** Decided by Atlas.
 10. **Mid-turn away and the reason enum.** Follows Atlas's decision that a mid-turn away is not replaced mid-turn. The turn resolves by timer as Dodge, and autopilot acts from the seat's next turn prompt. This leaves `reason` with one value, `away-at-turn-start`. Atlas to confirm the one-value enum.
