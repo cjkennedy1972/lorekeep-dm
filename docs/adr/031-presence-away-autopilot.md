@@ -14,7 +14,7 @@ Append-only: this ADR defines presence and autopilot contracts. It does not edit
 - Spec §6.4: a seat drops out after 30 s and is excluded from the spotlight. Drop-in is governed by §6.4. Zero connected seats pauses the table.
 - Spec §6.5: the host approves or denies late joiners.
 - Spec A7: autopilot is defensive only. Spec A8: the spotlight gives every active player at least one direct prompt per 10 DM turns.
-- Narrowings of the spec, all made by decision in this ADR and not by reading the spec: (1) the §6.3 autopilot list is narrowed to Dodge or hold only for M4 (§5.4); (2) autopilot declines all reactions, including opportunity attacks (§6); (3) control restore stays within 2 s of reconnect (US-P5 AC1) but is timed from authenticated reconnect to the control grant (§3.1). Where this ADR and the spec differ, this ADR governs for M4.
+- Narrowings of the spec, all made by decision in this ADR and not by reading the spec: (1) the §6.3 autopilot list is narrowed to Dodge or hold only for M4 (§5.4); (2) autopilot declines all reactions, including opportunity attacks (§6); (3) control restore stays within 2 s of reconnect (US-P5 AC1), with control granted at authenticated-reconnect success and the clock running from socket open to that grant (§3.1); (4) a seat's reactions are auto-declined at once on confirmed `away`, where spec §6.3 auto-declines only on expiry (§6). Where this ADR and the spec differ, this ADR governs for M4.
 - Spec §13 Q7 asks whether autopilot may take part in votes. Chris's delegate decided it does not (§5.1). Q7 stays open for Chris to close.
 - Architecture §2.2: active → paused on host pause or zero confirmed-connected seats.
 - ADR-029 §7: every chat send re-checks the socket's ticket, the seat, and its retirement and mute state.
@@ -31,7 +31,7 @@ Each seat is in exactly one presence state. Presence is engine state in the Room
 | State | Meaning | Control | Confirmed-connected |
 |---|---|---|---|
 | `connected` | Authenticated (§3.5 check passed) and held for 10 s (§2.4). | Yes | Yes |
-| `returning` | Authenticated (§3.5 check passed), held less than 10 s. | Yes, from 2 s (§3.1) | No |
+| `returning` | Authenticated (§3.5 check passed), held less than 10 s. | Yes, from reconnect success (§3.1) | No |
 | `disconnected` | Socket closed. The 30 s away clock is running. | No | No |
 | `away` | Disconnected for 30 s on a running server. Excluded from round required sets. Stays in rest-vote N and counts as `no` unless its ballot was cast (§4.2). | No | No |
 | `unknown` | Presence not known after a server restart or a missed heartbeat (§2.6). | No | No |
@@ -46,6 +46,9 @@ A seat gets control only after the re-check in §3.5 passes. Only confirmed-conn
 3. **Return.** A socket that passes the §3.5 check moves the seat to `returning`, and control is granted within 2 s (§3.1). A `disconnected` seat that returns stops its clock. The clock is kept, not reset (point 5). An `away` seat stays `away` until it reaches `connected`.
 4. **Hold.** A `returning` seat becomes `connected` after 10 s without a socket drop. The hold itself emits no event, and completing it clears the away clock. `SeatReconnected{seat, at, wasAway}` is emitted at the control grant (§3.1), and only when a `SeatDisconnected` or `SeatAway` was emitted for that disconnect. `wasAway` is true only when the seat was `away` at its return.
 5. **Hysteresis on both edges.** The 10 s value applies to entering `disconnected` (point 1: no event before 10 s) and to leaving `returning` (point 4: `connected` only after a full 10 s hold). Its effect on the 30 s clock: the clock starts at socket close, pauses while the seat is `returning`, and is cleared only by a completed hold. A drop during `returning` goes back to `disconnected`, and the clock resumes from where it paused. It is not reset. A seat that was `away` and drops during `returning` goes back to `away`. So `away` needs 30 s of disconnected time with no completed hold in between. Entering or leaving `away` never restarts the clock.
+   Worked cases (socket closes at t = 0; the 30 s clock starts there):
+   - *Reconnect at 5 s.* Authenticated at 5 s, so the seat is `returning` and control is granted at 5 s. No `SeatDisconnected` was emitted (the seat was never `disconnected` for 10 s), so the grant emits no `SeatReconnected`. The 10 s hold runs to 15 s, when the seat becomes `connected` and the clock is cleared. No event is emitted at 15 s.
+   - *Reconnect at 15 s.* `SeatDisconnected{seat, at}` is emitted at 10 s. Authenticated at 15 s, so the seat is `returning` and control is granted at 15 s, emitting `SeatReconnected{seat, at, wasAway: false}`. The 10 s hold runs to 25 s, when the seat becomes `connected` and the clock is cleared before it reaches 30 s, so no `SeatAway` is emitted.
 6. **Unknown.** At server restart every seat moves to `unknown`, and no away clock runs. A `connected` or `returning` seat whose heartbeat is missing past the limit (Decision item 6) moves to `unknown`. A seat leaves `unknown` only through point 3. `unknown` never becomes `away` by time, so autopilot never acts on it (§5.1).
 7. **Revoked.** Removal moves the seat to `revoked` at once, with no clock. It emits `SeatRevoked{seat, at, cause}`, where `cause` is `kick`, `ban`, `retired`, or `departed`. A revoked seat returns only through a new authorization under Seat claim and entry, item 2.
 8. **Event rate limit.** At most one presence event per seat per 10 s. A transition inside that window is merged into the next event, and the log records the state that holds at the window's end. State changes apply immediately and only event emission is coalesced. The snapshot always holds the current state.
@@ -55,8 +58,8 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 
 ### 3. Control restore, state restore, and re-check
 
-1. **Control restore: 2 s.** Clock start: authenticated-reconnect success, meaning the socket is authenticated and the §3.5 check has passed. Clock end: the control grant. After a `SeatDisconnected` or `SeatAway`, the grant is recorded by `SeatReconnected` (§2.4). A blip with no such event has no event at the grant, and the clock ends there. The seat regains input rights within 2 s (US-P5 AC1). This covers input rights only.
-2. **Full state restore: 3 s.** Clock start: the snapshot request. Clock end: the snapshot ack, the point at which the client holds full state (§9.1).
+1. **Control restore: 2 s.** Clock start: socket open for the reconnect. Clock end: the control grant, which is made at authenticated-reconnect success, meaning the socket is authenticated and the §3.5 check has passed. After a `SeatDisconnected` or `SeatAway`, the grant is recorded by `SeatReconnected` (§2.4). A blip with no such event has no event at the grant, and the clock ends there. The seat regains input rights within 2 s (US-P5 AC1). This covers input rights only.
+2. **Full state restore: 3 s.** Clock start: the snapshot request, sent at reconnect success. Clock end: the snapshot ack, the point at which the client holds full state (§9.1). Until the ack, the client may show possibly stale state, read-only. It never submits an action until the ack. Input the server does receive before the ack is queued (item 4).
 3. **Both targets stand.** They measure different things. Neither replaces the other, and this ADR changes no spec number.
 4. **Input during restore.** Input received before the snapshot ack is queued and processed after it, in receipt order (ADR-029 §1).
 5. **Re-check on every return.** Before a return gets control, run the ADR-029 §7 check on the socket's ticket: the ticket is valid and not revoked (ADR-014), the seat is still seated, and it is not retired or muted. The ticket's account must also be the seat's owning account. If the check fails, the socket is closed with an auth error. No `SeatReconnected` is emitted, control is not granted, and the presence state does not change. Because "not muted" is part of the check, a muted seat cannot regain control on return (Decision item 7).
@@ -68,10 +71,10 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 2. **Rest-vote N (ADR-030 §2.3).** N is fixed when a vote opens. An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A seat that is `revoked` by departure, retirement, kick, or ban leaves N, and its cast ballot, if any, is voided. `disconnected`, `returning`, `unknown`, and `away` seats are never removed from N by going away. Presence never lowers the pass bar.
    - An `away` seat cannot cast. A cast needs control (§3.1).
 3. **Submissions kept.** A submission accepted before the seat went away is kept. A queued submission is kept and promoted to `accepted` at the next round open, in `receiptSeq` order (ADR-029 §4, Promotion). Its away state does not change that.
-4. **No edits without control.** A seat without control cannot edit or withdraw. A `returning` seat has control from 2 s. `disconnected` and `unknown` seats do not.
+4. **No edits without control.** A seat without control cannot edit or withdraw. A `returning` seat has control from reconnect success (§3.1). `disconnected` and `unknown` seats do not.
 5. **Exploration.** An away PC does not submit an action. The party's PC follows the party. Spotlight prompts (A8) go only to connected seats. `away`, `revoked`, and `unknown` seats are excluded.
 6. **Combat.** A confirmed `away` PC's turn is taken by autopilot (§5). A committed action stays committed when the seat returns, unless the returning seat replaces it (item 8).
-7. **Zero confirmed-connected seats.** When no seat is `connected`, the table moves from `active` to `paused` (architecture §2.2). `returning`, `disconnected`, `away`, `unknown`, and `revoked` do not count. Pause freezes all timers (ADR-029 §5). Resume follows ADR-029 §5.
+7. **Zero confirmed-connected seats.** When no seat is `connected`, the table moves from `active` to `paused` (architecture §2.2). `returning`, `disconnected`, `away`, `unknown`, and `revoked` do not count. Pause freezes all presence timers (the away clock and the hysteresis clock). This freeze is this ADR's own rule. The round timer's freeze and resume are ADR-029 §5, and presence timers resume from their paused value.
 8. **Replacement of autopilot commands.** Until the turn resolves, a returning seat's command replaces an autopilot-committed command. The replacement is a normal player command. It counts against the ADR-029 §8 per-seat budget and is applied in receipt order. The log keeps the `AutopilotActed` event followed by the seat's command.
 9. **Host.** When the host is `away`, the table keeps running and nothing transfers automatically. An `away` or `revoked` host is ineligible as tie-breaker. A `revoked` host has also left N, so under ADR-030 §3.4 a tie with no eligible host fails as `tie-failed`. When the host is `revoked`, host actions are unavailable until a manual host reassignment outside this ADR. Host actions, including pause, use the host's recorded presence state as it stands.
 
@@ -91,7 +94,7 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 
 ### 6. Reaction window
 
-Reactions use the 15 s window in spec §6.3. When the reacting seat is `away`, `revoked`, or `unknown`, the window is auto-declined at once. A `returning` seat keeps its window. Defensive autopilot declines every reaction, so an away seat never takes an opportunity attack or any other reaction. This is consistent with the 15 s auto-decline in spec §6.3, and it is this ADR's decision, not a reading of the spec.
+Reactions use the 15 s window in spec §6.3. When the reacting seat is confirmed `away`, `revoked`, or `unknown`, its reactions are auto-declined at once. This narrows spec §6.3, which auto-declines only on expiry; the early decline is this ADR's decision. A `returning` seat keeps its window. Defensive autopilot declines every reaction, so an away seat never takes an opportunity attack or any other reaction. This is consistent with the 15 s auto-decline in spec §6.3, and it is this ADR's decision, not a reading of the spec.
 
 ### 7. Timer and threshold defaults
 
@@ -108,7 +111,7 @@ This section sets the "120 s round" default that ADR-029 §8 refers to. It was n
 | Presence event window | 10 s | §2.8 | Coalesces presence events. |
 | Heartbeat missed limit | Not set | §2.6 | Decision item 6. |
 
-Pause freezes every timer in this table (ADR-029 §5).
+Pause freezes every timer in this table. This freeze is this ADR's own rule; ADR-029 §5 covers the round timer only.
 
 ## Seat claim and entry
 
@@ -152,6 +155,6 @@ Routine within delegation, flagged because they set behavior:
 ## Verification
 
 - Docs-only change: one file, `docs/adr/031-presence-away-autopilot.md`. No existing ADR and no `docs/architecture.md` change. No code is written.
-- Citations checked against `docs/spec.md` US-P5 AC1, US-B2 AC2, §6.1, §6.3 (autopilot list, 15 s window), §6.4, §6.5, §9.1, A7, A8, §13 Q7, and the turn-timer consistency line in §15 (both timers host-configurable); `docs/architecture.md` §2.2 and §15.6; `docs/plan/m4-breakdown.md` items 4 and 5; ADR-002, ADR-003, ADR-005, ADR-014, ADR-029 §1 (barrier and input queueing), §2, §4 (promotion at next round open), §5, §7 (re-check and gate), §8 (per-seat budget and 120 s round); ADR-030 §2.3 (away leaves N, ballot kept), §3.4 (host tie-break, tie-failed), §5.1 (cast re-check). New event types are declared as additions to the v0.2 list in architecture §15.6; neither `docs/architecture.md` nor ADR-022 is edited.
+- Citations checked against `docs/spec.md` US-P5 AC1, US-B2 AC2, §6.1, §6.3 (autopilot list, 15 s window), §6.4, §6.5, §9.1, A7, A8, §13 Q7, and the turn-timer consistency line in §15 (both timers host-configurable); `docs/architecture.md` §2.2 and §15.6; `docs/plan/m4-breakdown.md` items 4 and 5; ADR-002, ADR-003, ADR-005, ADR-014, ADR-029 §1 (barrier and input queueing), §2, §4 (promotion at next round open), §5, §7 (re-check and gate), §8 (per-seat budget and 120 s round); ADR-030 §2.3 (away stays in N, ballot kept, uncast counts as no), §3.4 (host tie-break, tie-failed), §5.1 (cast re-check). New event types are declared as additions to the v0.2 list in architecture §15.6; neither `docs/architecture.md` nor ADR-022 is edited.
 - Stale-sentence sweep: recorded in the PR report.
 - `prettier --check` run against the branch head.
