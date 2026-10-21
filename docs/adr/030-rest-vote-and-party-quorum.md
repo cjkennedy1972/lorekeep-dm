@@ -2,7 +2,7 @@
 
 Status: Proposed (draft PR for Atlas review) · Date: 2026-10-21 · Owner: Sage · Work item: M4 item 5 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-017, ADR-022, ADR-029 (round states, timers, pause, judge budgets, OOC), ADR-031 (away state; ADR-031 merges first). M4 item 5 is blocked on the ADR-031 merge.
 
-Append-only: this ADR defines the rest vote. It does not edit ADR-001 through ADR-029, and it does not edit `docs/architecture.md`. It fills the `call_for_rest` row that ADR-022 §2 deferred to M4. It adds four event types, listed in §6.1 as additions to the architecture §15.6 event list. It extends the ADR-022 §2.4 closed reason enum, listed in §1. ADR-022 is not edited.
+Append-only: this ADR defines the rest vote. It does not edit ADR-001 through ADR-029, and it does not edit `docs/architecture.md`. It fills the `call_for_rest` row that ADR-022 §2 deferred to M4. It adds five event types, listed in §6.1 as additions to the architecture §15.6 event list. It extends the ADR-022 §2.4 closed reason enum, listed in §1. ADR-022 is not edited.
 
 ## Context
 
@@ -34,7 +34,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 **Error codes.** This ADR extends the closed reason enum of ADR-022 §2.4 with the codes below. ADR-022 is not edited.
 - `rest-not-allowed`, with a `reason` of `precondition`, `cooldown`, or `session-limit`.
 - `vote-closed`, returned when a cast arrives after close (§5.5).
-- `ballot-not-allowed`, returned when a cast fails the re-check in §5.1. This code is declared here as an addition to the ADR-022 §2.4 set; ADR-022 is not edited.
+- `ballot-not-allowed`, returned when a cast fails the re-check in §5.1. ACCEPTED: this ADR declares it as an extension of the ADR-022 §2.4 enum. ADR-022 is not edited.
 
 ### 2. Eligible voters and the count N
 
@@ -141,7 +141,7 @@ Decided by Chris's delegate in review:
 7. **Host tie-break window within the vote deadline; ties at expiry fail.**
 8. **Quorum.** Abstain counts as `no`. The denominator is N in force (§2.2). Pass requires yes more than N / 2.
 9. **N is fixed at vote open. An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A `revoked` seat (kicked, banned, retired, or departed) leaves N, and its cast ballot, if any, is voided (§2.3).** This matches ADR-031 §4.2, and it supersedes the earlier rule that away seats leave N.
-10. **`ballot-not-allowed` is an error code declared here as an addition to the ADR-022 §2.4 set**, alongside `rest-not-allowed` and `vote-closed`. ADR-022 is not edited.
+10. **`ballot-not-allowed`: ACCEPTED.** This ADR declares it, alongside `rest-not-allowed` and `vote-closed`, as an extension of the ADR-022 §2.4 enum. ADR-022 is not edited.
 
 ## Verification
 
