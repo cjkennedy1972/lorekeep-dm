@@ -85,21 +85,21 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 6. Effects and persistence
 
-1. **Events.** The vote adds four event types: `RestVoteOpened{voteId, type, eligibleSeats, deadlineAt, openedByTurnId}`, `RestVoteCast{voteId, seat, choice}`, `RestVoteClosed{voteId, outcome, reason, yes, no}`, and `RestApplied{voteId, type, effects}`. The last one is emitted only on a pass. These four types are the additions to the event list in architecture §15.6. This ADR declares them. `docs/architecture.md` is not edited.
+1. **Events.** The vote adds five event types: `RestVoteOpened{voteId, type, eligibleSeats, deadlineAt, openedByTurnId}`, `RestVoteCast{voteId, seat, choice}`, `RestVoteCastNotice{voteId, seat}`, `RestVoteClosed{voteId, outcome, reason, yes, no}`, and `RestApplied{voteId, type, effects}`. `RestVoteCast` is server-internal: it carries the choice and is never broadcast. `RestVoteCastNotice` is the broadcast: it carries the seat and the word `cast`, and no choice. `RestApplied` is emitted only on a pass. These five types are the additions to the event list in architecture §15.6. This ADR declares them. `docs/architecture.md` is not edited.
 2. **Engine applies rest.** On a pass, the rules engine computes and applies the SRD rest effects in the same serial mailbox step that closes the vote (ADR-002, ADR-022 §3). The DM never writes rest effects.
 3. **Rest state is transient.** The architecture §2.2 `rest` state exists only inside that mailbox step. The Room returns to the exploration state in the same step that applies the effects.
-4. **Visibility before close.** Clients see that a vote is open, its type, and its `deadlineAt`. Clients see that a seat has cast, but never the choice. The `RestVoteCast` broadcast omits `choice` until close.
+4. **Visibility before close.** Clients see that a vote is open, its type, and its `deadlineAt`. Clients see that a seat has cast through `RestVoteCastNotice`, which carries no choice. `RestVoteCast` is never broadcast, at open, during the vote, or at close. Choices reach clients only as the tally in `RestVoteClosed` (§6.5).
 5. **Visibility at close.** `RestVoteClosed` carries the yes and no tally, the outcome, and the reason, and it goes to all seats. This visibility rule is this ADR's own rule.
-6. **DM prompt exclusion.** `RestVoteCast` events are excluded from the DM prompt allowlist. ADR-029 §11 keeps OOC content out of DM prompts; this ADR applies the same kind of exclusion to ballot choices. The DM sees only the close outcome, through `RestVoteClosed`.
-7. **Persistence.** The events go to the append-only log (ADR-003). A reconnecting client gets an open vote from snapshot plus replay, with choices omitted as in §6.4.
+6. **DM prompt exclusion.** `RestVoteCast` events, which carry the choice, are excluded from the DM prompt allowlist. `RestVoteCastNotice` carries no choice and is not a source of ballot content. ADR-029 §11 keeps OOC content out of DM prompts; this ADR applies the same kind of exclusion to ballot choices. The DM sees only the close outcome, through `RestVoteClosed`.
+7. **Persistence.** The events go to the append-only log (ADR-003). A reconnecting client gets an open vote from snapshot plus replay. Replay carries `RestVoteCastNotice` and never `RestVoteCast`.
 8. **Rewind.** If a `TurnReverted` removes the turn that opened a vote, the vote closes as `cancelled` and applies nothing. If the reverted turn's rest effects were applied, the restored snapshot undoes them (ADR-003).
 9. **Small tables.** For N ≤ 3, a published tally can reveal a seat's choice, because the other counts are known. This is accepted. The tally publishes counts only, never a seat-linked choice.
 
 ### 7. Retention and account deletion
 
-1. **Class.** Vote events (`RestVoteOpened`, `RestVoteCast`, `RestVoteClosed`, `RestApplied`) are in the ADR-017 gameplay class, the same class as events and snapshots. They are live while the session is active, archived after 14 days idle, and deleted 90 days after archive unless claimed.
+1. **Class.** Vote events (`RestVoteOpened`, `RestVoteCast`, `RestVoteCastNotice`, `RestVoteClosed`, `RestApplied`) are in the ADR-017 gameplay class, the same class as events and snapshots. They are live while the session is active, archived after 14 days idle, and deleted 90 days after archive unless claimed.
 2. **Account deletion.** ADR-017's account-deletion rule is quoted here, not only cited: "Sessions where the deleted account is only a seat are redacted, not purged." Redaction is the only change made to the log. For every vote in such a session, the vote's data is scrubbed as follows:
-   - All `RestVoteCast` events for that vote are removed. This removes each per-ballot choice and each seat.
+   - All `RestVoteCast` and `RestVoteCastNotice` events for that vote are removed. This removes each per-ballot choice and each seat.
    - `eligibleSeats` is removed from `RestVoteOpened`. Its other fields (`voteId`, `type`, `deadlineAt`, `openedByTurnId`) carry no seat or choice and are kept.
    - The `RestVoteClosed` tally is kept unchanged.
 3. **Only the tally survives.** After scrubbing, the vote's outcome survives only as the anonymous `RestVoteClosed{voteId, outcome, reason, yes, no}` tally. Item 2 is the rule that produces it. Items 2 and 3 agree: no per-ballot choice and no seat list survive account deletion.
