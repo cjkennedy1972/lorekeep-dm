@@ -120,6 +120,10 @@ try {
   const inputMs = [];
   const gateMs = [];
   const visibleMs = [];
+  // Per-gate-chunk judge latency from runOutputGate's end.metrics.chunks.
+  // Excludes deterministic hard-floor/failclosed terminal decisions (no judge call).
+  const gateChunkJudgeMs = [];
+  const gateChunksPerRun = [];
 
   // Warm up model execution before measuring. The operator must separately
   // disable and verify provider-side prompt caching before setting the guard.
@@ -180,10 +184,19 @@ try {
     });
     let outcome;
     let safeText = '';
+    let gateMetrics;
     for await (const event of gate) {
       if (event.kind === 'chunk') safeText += event.text;
-      if (event.kind === 'end') outcome = event.outcome;
+      if (event.kind === 'end') {
+        outcome = event.outcome;
+        gateMetrics = event.metrics;
+      }
     }
+    const judged = (gateMetrics?.chunks ?? []).filter(
+      (c) => c.source !== 'hardfloor' && c.source !== 'failclosed',
+    );
+    gateChunksPerRun.push(judged.length);
+    for (const c of judged) gateChunkJudgeMs.push(c.judgeLatencyMs);
     const visible = outcome === 'redirected' ? 'safe redirect' : safeText;
     if (!visible)
       throw new Error(`output gate produced no text on run ${i + 1}`);
@@ -201,6 +214,21 @@ try {
   );
   console.log(
     `first_visible_narration_from_model_request=${JSON.stringify(summarize(visibleMs))}`,
+  );
+  const chunkSummary = gateChunkJudgeMs.length
+    ? {
+        ...summarize(gateChunkJudgeMs),
+        max_ms: Math.round(Math.max(...gateChunkJudgeMs)),
+      }
+    : null;
+  console.log(
+    `output_gate_per_chunk_judge_latency_ms=${JSON.stringify(chunkSummary)}`,
+  );
+  console.log(
+    `output_gate_judged_chunks_per_run=${JSON.stringify(summarize(gateChunksPerRun))}`,
+  );
+  console.log(
+    'per_chunk_label="judge latency per gate chunk on the buffered path (production buffers before gating, ADR-023 addendum); per streamed production chunk NOT measured"',
   );
   console.log('classifier_on=true tier=standard tool_loop=not_exercised');
   console.log(
