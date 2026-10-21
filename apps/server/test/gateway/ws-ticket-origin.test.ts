@@ -5,7 +5,7 @@ import { allowInputGate } from '../support/allowInputGate.js';
 
 const host = 'api.example.test';
 
-async function postTicket(origin: string | undefined) {
+async function postTicket(origin: string | undefined, requestScheme = 'http') {
   const db = {
     connect: async () => undefined,
     query: async () => ({ rows: [], rowCount: 0 }),
@@ -14,12 +14,17 @@ async function postTicket(origin: string | undefined) {
     inputGate: allowInputGate,
     rooms: { get: async () => undefined } as never,
     isOperator: async () => false,
+    trustProxy: true,
   });
   installGateway(app, db as never, { get: async () => undefined } as never);
   const res = await app.inject({
     method: 'POST',
     url: '/api/ws-ticket',
-    headers: { host, ...(origin ? { origin } : {}) },
+    headers: {
+      host,
+      'x-forwarded-proto': requestScheme,
+      ...(origin ? { origin } : {}),
+    },
     payload: {},
   });
   await app.close();
@@ -35,12 +40,12 @@ describe('POST /api/ws-ticket origin check', () => {
 
   it('normalizes a same-host origin before matching it', async () => {
     delete process.env.WS_ALLOWED_ORIGINS;
-    expect(await postTicket(`https://${host}`)).toBe(401);
+    expect(await postTicket(`https://${host}`, 'https')).toBe(401);
   });
 
   it('accepts a same-scheme same-host origin', async () => {
     delete process.env.WS_ALLOWED_ORIGINS;
-    expect(await postTicket(`http://${host}`)).toBe(401);
+    expect(await postTicket(`http://${host}`, 'http')).toBe(401);
   });
 
   it('rejects a missing origin', async () => {
@@ -58,14 +63,17 @@ describe('POST /api/ws-ticket origin check', () => {
     expect(await postTicket('https://web.example.test')).toBe(401);
   });
 
-  it('uses the normalized WebSocket origin check for same-host origins with WS_ALLOWED_ORIGINS set', async () => {
+  it('keeps the scheme+host check for same-host origins with WS_ALLOWED_ORIGINS set', async () => {
     process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test';
-    expect(await postTicket(`https://${host}`)).toBe(401);
-    expect(await postTicket(`http://${host}`)).toBe(401);
+    expect(await postTicket(`https://${host}`, 'https')).toBe(401);
+    expect(await postTicket(`http://${host}`, 'https')).toBe(403);
+    expect(await postTicket('https://web.example.test', 'https')).toBe(401);
   });
 
   it('normalizes a trailing slash in WS_ALLOWED_ORIGINS matching', async () => {
     process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test';
     expect(await postTicket('https://web.example.test/')).toBe(401);
+    process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test/';
+    expect(await postTicket('https://web.example.test', 'https')).toBe(403);
   });
 });

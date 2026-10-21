@@ -8,6 +8,8 @@ const NON_ALLOW_LIMIT = 3;
 const AUTO_MUTE_MS = 5 * 60_000;
 const TABLE_WINDOW_MS = 60_000;
 const TABLE_GATE_LIMIT = 120;
+const IDLE_EVICTION_MS = 60 * 60_000;
+const SWEEP_INTERVAL_MS = 60_000;
 
 type SeatBucket = {
   tokens: number;
@@ -16,14 +18,42 @@ type SeatBucket = {
   lastText?: { text: string; at: number };
   nonAllows: number[];
   mutedUntil: number;
+  lastAccessAt: number;
 };
+
+type TableGate = { calls: number[]; lastAccessAt: number };
 
 /** In-process per-table chat admission policy; callers enforce socket queue bounds separately. */
 export class ChatPolicy {
   private readonly seats = new Map<string, SeatBucket>();
-  private readonly tableGates = new Map<string, number[]>();
+  private readonly tableGates = new Map<string, TableGate>();
+  private lastSweepAt = Number.NEGATIVE_INFINITY;
+
+  private sweepOnAccess(now: number): void {
+    if (now - this.lastSweepAt >= SWEEP_INTERVAL_MS) this.sweep(now);
+  }
+
+  /** Evicts inactive per-seat and per-table counters; may also be called by a periodic sweep. */
+  sweep(now = Date.now()): number {
+    this.lastSweepAt = now;
+    let removed = 0;
+    for (const [key, bucket] of this.seats) {
+      if (bucket.lastAccessAt <= now - IDLE_EVICTION_MS) {
+        this.seats.delete(key);
+        removed++;
+      }
+    }
+    for (const [key, gate] of this.tableGates) {
+      if (gate.lastAccessAt <= now - IDLE_EVICTION_MS) {
+        this.tableGates.delete(key);
+        removed++;
+      }
+    }
+    return removed;
+  }
 
   private seat(roomId: string, seatId: string, now: number): SeatBucket {
+    this.sweepOnAccess(now);
     const key = `${roomId}:${seatId}`;
     let bucket = this.seats.get(key);
     if (!bucket) {
@@ -33,9 +63,11 @@ export class ChatPolicy {
         submissions: [],
         nonAllows: [],
         mutedUntil: 0,
+        lastAccessAt: now,
       };
       this.seats.set(key, bucket);
     }
+    bucket.lastAccessAt = now;
     return bucket;
   }
 
@@ -71,15 +103,21 @@ export class ChatPolicy {
   }
 
   reserveTableGate(roomId: string, now = Date.now()): boolean {
-    const calls = (this.tableGates.get(roomId) ?? []).filter(
-      (at) => at > now - TABLE_WINDOW_MS,
-    );
+    this.sweepOnAccess(now);
+    const gate = this.tableGates.get(roomId) ?? {
+      calls: [],
+      lastAccessAt: now,
+    };
+    const calls = gate.calls.filter((at) => at > now - TABLE_WINDOW_MS);
+    gate.lastAccessAt = now;
     if (calls.length >= TABLE_GATE_LIMIT) {
-      this.tableGates.set(roomId, calls);
+      gate.calls = calls;
+      this.tableGates.set(roomId, gate);
       return false;
     }
     calls.push(now);
-    this.tableGates.set(roomId, calls);
+    gate.calls = calls;
+    this.tableGates.set(roomId, gate);
     return true;
   }
 
@@ -108,6 +146,7 @@ export class ChatPolicy {
   liftMute(roomId: string, seatId: string): void {
     const bucket = this.seats.get(`${roomId}:${seatId}`);
     if (bucket) {
+      // This cache is cleared on lift; the chat_mutes database row remains authoritative.
       bucket.mutedUntil = 0;
       bucket.nonAllows = [];
     }

@@ -26,6 +26,30 @@ export function validOrigin(
     return false;
   }
 }
+
+/** Exact normalized-origin allowlist check used only as the ticket-route bypass. */
+export function isConfiguredOriginAllowed(
+  origin: string | undefined,
+  allowed = process.env.WS_ALLOWED_ORIGINS,
+): boolean {
+  if (!origin || !allowed) return false;
+  try {
+    const parsedOrigin = new URL(origin);
+    if (
+      parsedOrigin.pathname !== '/' ||
+      parsedOrigin.search ||
+      parsedOrigin.hash
+    )
+      return false;
+    const normalized = parsedOrigin.origin;
+    return allowed
+      .split(',')
+      .map((value) => value.trim())
+      .includes(normalized);
+  } catch {
+    return false;
+  }
+}
 export async function eligibleSession(
   db: Pool,
   accountId: string,

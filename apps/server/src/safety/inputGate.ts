@@ -13,6 +13,7 @@ import {
   type Category,
   type JudgeChat,
   type Moderator,
+  type VerdictParser,
 } from './moderator.js';
 import type { ContentTier } from './tier.js';
 import { loadContentTierState } from './tierLoader.js';
@@ -308,12 +309,15 @@ export async function collectJudgeText(
 
 export function createModerationJudge({
   chat,
+  parseVerdictReply,
 }: {
   chat: JudgeChat;
+  parseVerdictReply?: VerdictParser;
 }): JudgeModerator {
   return new JudgeModerator({
     chat,
     deterministic: hardFloorLayer,
+    ...(parseVerdictReply ? { parseVerdictReply } : {}),
   });
 }
 
@@ -324,9 +328,13 @@ declare module 'fastify' {
 }
 
 /** Judge on the operator's `moderate` endpoint only (R-L5); no other egress path. */
-export function createEndpointJudge(db: InputGateDb): JudgeModerator {
+export function createEndpointJudge(
+  db: InputGateDb,
+  parseVerdictReply?: VerdictParser,
+): JudgeModerator {
   const egress = createEndpointEgress();
   return createModerationJudge({
+    ...(parseVerdictReply ? { parseVerdictReply } : {}),
     chat: async ({
       messages,
       max_tokens,
@@ -357,6 +365,7 @@ export function createEndpointJudge(db: InputGateDb): JudgeModerator {
           );
         })(),
         budget.release,
+        budget.markLost,
       );
     },
   });

@@ -117,7 +117,7 @@ export type JudgeChat = (
 ) => Promise<string | JudgeChatLimited>;
 
 export const JUDGE_MAX_TOKENS = 1024;
-// ADR-032 §4 fixes this below the 5 s gate deadline to leave commit time.
+// ADR-032 §4: caller deadline is 4.5 s; an aborted upstream retains capacity through settle or the 10 s lost-call cap.
 export const DEFAULT_JUDGE_TIMEOUT_MS = 4_500;
 
 const RUBRIC_TAG = {
@@ -160,6 +160,7 @@ export function parseVerdictReply(
   if (verdict === 'block' && category === 'none') return null;
   return { verdict, category: category as Category };
 }
+export type VerdictParser = typeof parseVerdictReply;
 
 const quoteData = (value: string) =>
   JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -188,6 +189,7 @@ export function buildJudgeMessages(req: ModerationRequest): ChatMessage[] {
 
 export interface JudgeModeratorOptions {
   chat: JudgeChat;
+  parseVerdictReply?: VerdictParser;
   deterministic: DeterministicLayer;
   timeoutMs?: number;
   now?: () => number;
@@ -308,7 +310,7 @@ export class JudgeModerator implements Moderator {
       const result = await Promise.race([call, timeout, callerAbort]);
       if (!result.ok) return null;
       if (typeof result.raw !== 'string') return result.raw;
-      return parseVerdictReply(result.raw);
+      return (this.options.parseVerdictReply ?? parseVerdictReply)(result.raw);
     } finally {
       clearTimeout(timer);
       req.signal?.removeEventListener('abort', abortFromCaller);

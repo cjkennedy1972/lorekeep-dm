@@ -41,4 +41,14 @@ describe('chat rate and flood policy', () => {
     expect(policy.reserveTableGate('room', 120)).toBe(false);
     expect(policy.reserveTableGate('room', 60_001)).toBe(true);
   });
+
+  it('evicts seat and table-gate entries idle for one hour', () => {
+    const policy = new ChatPolicy();
+    policy.recordNonAllow('old-room', 'old-seat', 0);
+    policy.reserveTableGate('old-room', 0);
+    expect(policy.sweep(3_600_001)).toBe(2);
+    expect(policy.sweep(3_600_002)).toBe(0);
+    expect(policy.reserveTableGate('old-room', 3_600_002)).toBe(true);
+    expect(policy.isMuted('old-room', 'old-seat', 3_600_002)).toBe(false);
+  });
 });

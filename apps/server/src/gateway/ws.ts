@@ -18,6 +18,7 @@ import {
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
+import { validOrigin as validRequestOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
   NotTableHostError,
@@ -27,8 +28,9 @@ import {
 import {
   consumeTicket,
   eligibleSession,
+  isConfiguredOriginAllowed,
   issueTicket,
-  validOrigin,
+  validOrigin as validWebSocketOrigin,
 } from './tickets.js';
 import { ConnectionRegistry } from './connections.js';
 import { ChatPolicy } from '../chat/policy.js';
@@ -96,7 +98,13 @@ export function installGateway(
     {
       onRequest: async (request, reply) => {
         const origin = request.headers.origin;
-        if (origin && validOrigin(origin, request.headers.host)) return;
+        // Ticket creation binds same-host browser origins to the request scheme.
+        // WS_ALLOWED_ORIGINS is the deliberate exact-origin cross-origin bypass (ADR-029).
+        if (
+          origin &&
+          (validRequestOrigin(request) || isConfiguredOriginAllowed(origin))
+        )
+          return;
         return reply.code(403).send({ error: 'origin' });
       },
     },
@@ -136,7 +144,7 @@ export function installGateway(
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
       const reject = () => ws.close(1008, 'Policy violation');
-      if (!validOrigin(request.headers.origin, request.headers.host)) {
+      if (!validWebSocketOrigin(request.headers.origin, request.headers.host)) {
         reject();
         return;
       }
@@ -182,7 +190,10 @@ export function installGateway(
           const delivery = chatDeliveryChain.then(async () => {
             if (
               ws.readyState !== WebSocket.OPEN ||
-              !validOrigin(request.headers.origin, request.headers.host) ||
+              !validWebSocketOrigin(
+                request.headers.origin,
+                request.headers.host,
+              ) ||
               !(await hasCurrentSeat(
                 db,
                 identity.accountId,
@@ -407,7 +418,10 @@ export function installGateway(
           for (const entry of entries) {
             if (
               ws.readyState !== WebSocket.OPEN ||
-              !validOrigin(request.headers.origin, request.headers.host) ||
+              !validWebSocketOrigin(
+                request.headers.origin,
+                request.headers.host,
+              ) ||
               !(await hasCurrentSeat(
                 db,
                 identity.accountId,
@@ -457,7 +471,12 @@ export function installGateway(
           if (msg.type === 'ChatHistoryRequest') {
             const requestMessage = ChatHistoryRequestSchema.safeParse(msg);
             if (!requestMessage.success) return;
-            if (!validOrigin(request.headers.origin, request.headers.host)) {
+            if (
+              !validWebSocketOrigin(
+                request.headers.origin,
+                request.headers.host,
+              )
+            ) {
               ws.close(1008, 'Policy violation');
               return;
             }
@@ -925,7 +944,9 @@ export function installGateway(
             }
           };
           if (receipt.decision !== undefined) return;
-          if (!validOrigin(request.headers.origin, request.headers.host)) {
+          if (
+            !validWebSocketOrigin(request.headers.origin, request.headers.host)
+          ) {
             await reject('authorization', action.actionId);
             return;
           }
@@ -1110,7 +1131,10 @@ export function installGateway(
             .then((result) => result.rowCount === 1)
             .catch(() => true);
           if (
-            !validOrigin(request.headers.origin, request.headers.host) ||
+            !validWebSocketOrigin(
+              request.headers.origin,
+              request.headers.host,
+            ) ||
             !stillSeated ||
             currentSeatAfterGate !== seat.seatId ||
             muteAfterGate

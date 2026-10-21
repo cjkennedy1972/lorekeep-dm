@@ -13,9 +13,10 @@ const PER_MINUTE_LIMITS: Record<CapacityClass, number> = {
 };
 const WINDOW_MS = 60_000;
 export const JUDGE_UPSTREAM_HARD_CAP_MS = 10_000;
+const LOST_CALL_LIMIT = 4;
 
 export type JudgeBudgetResult =
-  | { kind: 'acquired'; release: () => void }
+  | { kind: 'acquired'; release: () => void; markLost: () => void }
   | { kind: 'limited'; class: BudgetClass };
 
 /** Process-wide judge capacity partitioned across chat, actions, and output. */
@@ -30,50 +31,58 @@ export class JudgeBudget {
     chat: [],
     output: [],
   };
+  private unsettledLost = 0;
 
   acquire(budgetClass: BudgetClass, now = Date.now()): JudgeBudgetResult {
     const recent = this.calls[budgetClass].filter((at) => at > now - WINDOW_MS);
     this.calls[budgetClass] = recent;
     if (
+      this.unsettledLost >= LOST_CALL_LIMIT ||
       recent.length >= PER_MINUTE_LIMITS[budgetClass] ||
       this.inFlight[budgetClass] >= IN_FLIGHT_LIMITS[budgetClass]
     )
       return { kind: 'limited', class: budgetClass };
     recent.push(now);
     this.inFlight[budgetClass] += 1;
-    let released = false;
+    let state: 'in-flight' | 'lost' | 'settled' = 'in-flight';
     return {
       kind: 'acquired',
       release: () => {
-        if (released) return;
-        released = true;
-        this.inFlight[budgetClass] = Math.max(
-          0,
-          this.inFlight[budgetClass] - 1,
-        );
+        if (state === 'settled') return;
+        if (state === 'in-flight') this.inFlight[budgetClass] -= 1;
+        else this.unsettledLost -= 1;
+        state = 'settled';
+      },
+      markLost: () => {
+        if (state !== 'in-flight') return;
+        this.inFlight[budgetClass] -= 1;
+        this.unsettledLost += 1;
+        state = 'lost';
       },
     };
   }
 }
 
-/** Releases a judge slot when its upstream settles or reaches the hard cap. */
+/** ADR-032 §4: slots follow upstream settlement; capped requests remain counted as lost. */
 export async function withJudgeHardCap<T>(
   operation: Promise<T>,
   release: () => void,
+  markLost: () => void = release,
   hardCapMs = JUDGE_UPSTREAM_HARD_CAP_MS,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // The caller may time out earlier; only upstream settlement frees its live-call accounting.
+  void operation.then(release, release);
   const hardCap = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error('judge upstream hard cap exceeded')),
-      hardCapMs,
-    );
+    timer = setTimeout(() => {
+      markLost();
+      reject(new Error('judge upstream hard cap exceeded'));
+    }, hardCapMs);
   });
   try {
     return await Promise.race([operation, hardCap]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
-    release();
   }
 }
 

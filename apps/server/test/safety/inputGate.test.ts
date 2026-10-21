@@ -101,6 +101,30 @@ describe('createInputGate', () => {
     expect(chat).toHaveBeenCalledTimes(1);
   });
 
+  it('does not pass a typed capacity result to the verdict parser', async () => {
+    const parser = vi.fn(parseVerdictReply);
+    const chat = vi.fn(async () => ({
+      kind: 'limited' as const,
+      class: 'action-input' as const,
+    }));
+    const moderator = createModerationJudge({
+      chat,
+      parseVerdictReply: parser,
+    });
+
+    await expect(
+      moderator.moderate({
+        text: innocent,
+        tier: 'standard',
+        direction: 'input',
+      }),
+    ).resolves.toMatchObject({
+      unavailable: true,
+      capacityLimited: 'action-input',
+    });
+    expect(parser).not.toHaveBeenCalled();
+  });
+
   it('keeps DM output judge calls explicitly on the output direction', async () => {
     const budget = new JudgeBudget();
     const chatSlots = [budget.acquire('chat'), budget.acquire('chat')];
@@ -608,29 +632,60 @@ describe('moderation call budget', () => {
 describe('judge slot hard cap', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('releases an aborted upstream slot at 10 seconds even if it never settles', async () => {
+  it('releases active slots at 10 seconds but counts unsettled calls as lost', async () => {
     vi.useFakeTimers();
-    const budget = new JudgeBudget();
-    const slot = budget.acquire('chat');
-    const secondSlot = budget.acquire('chat');
-    expect(slot.kind).toBe('acquired');
-    expect(secondSlot.kind).toBe('acquired');
-    if (slot.kind !== 'acquired' || secondSlot.kind !== 'acquired') return;
-    const pending = withJudgeHardCap(
+    const singleLostBudget = new JudgeBudget();
+    const singleLostSlot = singleLostBudget.acquire('chat');
+    expect(singleLostSlot.kind).toBe('acquired');
+    if (singleLostSlot.kind !== 'acquired') return;
+    const singleLost = withJudgeHardCap(
       new Promise<string>(() => {}),
-      slot.release,
+      singleLostSlot.release,
+      singleLostSlot.markLost,
     );
-    const rejectedAtHardCap = expect(pending).rejects.toThrow(
+    const singleLostRejection = expect(singleLost).rejects.toThrow(
       'judge upstream hard cap exceeded',
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    await singleLostRejection;
+    const availableChatSlot = singleLostBudget.acquire('chat');
+    expect(availableChatSlot.kind).toBe('acquired');
+    if (availableChatSlot.kind === 'acquired') availableChatSlot.release();
+
+    const budget = new JudgeBudget();
+    const deferred = Array.from({ length: 4 }, () => {
+      let resolve!: (value: string) => void;
+      const promise = new Promise<string>((r) => (resolve = r));
+      return { promise, resolve };
+    });
+    const classes = ['chat', 'chat', 'action-input', 'output'] as const;
+    const calls = classes.map((budgetClass, index) => {
+      const slot = budget.acquire(budgetClass);
+      expect(slot.kind).toBe('acquired');
+      if (slot.kind !== 'acquired') throw new Error('expected acquired slot');
+      return withJudgeHardCap(
+        deferred[index]!.promise,
+        slot.release,
+        slot.markLost,
+      );
+    });
+    const rejections = calls.map((call) =>
+      expect(call).rejects.toThrow('judge upstream hard cap exceeded'),
     );
     await vi.advanceTimersByTimeAsync(9_999);
     expect(budget.acquire('chat').kind).toBe('limited');
     await vi.advanceTimersByTimeAsync(1);
-    await rejectedAtHardCap;
-    const releasedSlot = budget.acquire('chat');
-    expect(releasedSlot.kind).toBe('acquired');
-    if (releasedSlot.kind === 'acquired') releasedSlot.release();
-    secondSlot.release();
+    await Promise.all(rejections);
+    expect(budget.acquire('output')).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
+    deferred[0]!.resolve('late verdict');
+    await Promise.resolve();
+    const afterLateSettle = budget.acquire('output');
+    expect(afterLateSettle.kind).toBe('acquired');
+    if (afterLateSettle.kind === 'acquired') afterLateSettle.release();
+    for (const item of deferred.slice(1)) item.resolve('late verdict');
   });
 
   it('releases the slot as soon as the upstream settles before the hard cap', async () => {
