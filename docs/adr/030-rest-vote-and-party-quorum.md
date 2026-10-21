@@ -1,8 +1,8 @@
 # ADR-030: Rest vote and party quorum
 
-Status: Proposed (draft PR for Atlas review) · Date: 2026-10-21 · Owner: Sage · Work item: M4 item 5 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-017, ADR-022, ADR-029 (round states, timers, pause, judge budgets, OOC), ADR-031 (away state)
+Status: Proposed (draft PR for Atlas review) · Date: 2026-10-21 · Owner: Sage · Work item: M4 item 5 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-017, ADR-022, ADR-029 (round states, timers, pause, judge budgets, OOC), ADR-031 (away state; ADR-031 merges first). M4 item 5 is blocked on the ADR-031 merge.
 
-Append-only: this ADR defines the rest vote. It does not edit ADR-001 through ADR-029. It fills the `call_for_rest` row that ADR-022 §2 deferred to M4. It adds four event types, listed in §6.1. It adds two error codes, listed in §1. ADR-022 is not edited.
+Append-only: this ADR defines the rest vote. It does not edit ADR-001 through ADR-029, and it does not edit `docs/architecture.md`. It fills the `call_for_rest` row that ADR-022 §2 deferred to M4. It adds four event types, listed in §6.1 as additions to the architecture §15.6 event list. It extends the ADR-022 §2.4 closed reason enum, listed in §1. ADR-022 is not edited.
 
 ## Context
 
@@ -10,8 +10,9 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 - Spec §3.6 AC2: rest requires party consensus in multiplayer (majority vote, host tiebreak). The spec gives no timer for a vote.
 - Architecture §2.2 has `exploration → rest` on "party vote passes" and `rest → exploration` on "rest resolved".
 - Architecture §3.2 gives `call_for_rest(type)` as "opens a party vote" with "Engine applies rest on pass".
+- Architecture §15.6 is the v0.2 event-types list.
 - M4 item 5 requires that a failed or expired vote changes no rest state, that the engine alone applies SRD rest effects, and that the vote and its result persist and are visible to all players.
-- ADR-029 §2 defines round states and §5 defines pause and timers. ADR-029 §8 sets the per-seat mutation budget and judge budgets. ADR-029 §11 keeps OOC content out of DM prompts.
+- ADR-029 §2 defines round states, §4 the accepted and queued input categories, and §5 pause and timers. ADR-029 §8 sets the per-seat mutation budget and judge budgets. ADR-029 §11 keeps OOC content out of DM prompts.
 - ADR-017 §Data classes puts events and snapshots in the gameplay class. ADR-022 §4.2 defines the fallback turns.
 
 ## Decision
@@ -21,62 +22,73 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 1. **Trigger.** In M4, only the DM opens a vote, by calling `call_for_rest`. Players cannot open a vote (see Decisions needed).
 2. **Arguments.** `{type: "short" | "long"}`. Any other value is rejected and no vote opens.
 3. **Timing.** The vote opens when the DM turn that called the tool commits. It does not open mid-turn, so the T2 ordering in ADR-022 holds and the Room's single writer (ADR-002) applies the change.
-4. **Fallback turns never open a vote.** A turn that ADR-022 §4.2 resolves through a fallback cannot call `call_for_rest`. The fallback cannot open a vote, even if the DM's output contained the call.
+4. **Fallback turns never open a vote.** A turn that ADR-022 §4.2 resolves through a fallback cannot call `call_for_rest`, even if the DM's output contained the call.
 5. **Idempotent on turnId.** The open is keyed by the committing turn's `turnId`. A replayed or retried commit for the same turn does not open a second vote.
-6. **Preconditions.** The table is `active` and not paused (ADR-029 §5). No round is `open`, `closing`, or `resolving`. No other vote is open. The table is in exploration, not combat (architecture §2.2). If a precondition fails, no vote opens and the DM receives `rest-not-allowed`.
+6. **Preconditions.** The table is `active` and not paused (ADR-029 §5). The table is in the exploration state (architecture §2.2). No round is `open`, `closing`, or `resolving`. No other vote is open. If a precondition fails, no vote opens and the DM receives `rest-not-allowed` with reason `precondition`.
 7. **Rate limits on opening.** At most one vote may open per 10 min per table, measured from the close of the previous vote, whatever its outcome. At most 6 votes may be opened per session. If either limit binds, no vote opens and the DM receives `rest-not-allowed` with reason `cooldown` or `session-limit`.
-8. **No overlap.** A vote and a round never run at once. A round cannot open while a vote is open, and a vote cannot open while a round is open. A vote therefore delays a round by at most its timer length (§4).
-9. **Solo.** Solo has no vote. Solo rest stays a client command, `POST /session/:id/rest` (ADR-022 §2), and this ADR does not change it.
+8. **A vote is a sub-state of exploration.** An open vote lives inside the exploration state (architecture §2.2). `rest` is entered only inside the closing step (§6.3).
+9. **A vote blocks round opening.** While a vote is open, no round can open. A vote therefore delays a round by at most its timer length (§4).
+10. **Player actions during a vote.** While a vote is open, player round actions are accepted and queued for the next round, under the ADR-029 §4 queued-input rules. A queued action may be edited. OOC chat is unaffected by the vote.
+11. **Solo.** Solo has no vote. Solo rest stays a client command, `POST /session/:id/rest` (ADR-022 §2), and this ADR does not change it.
 
-**Error codes added by this ADR** (ADR-022 §2.4 catalogue):
+**Error codes.** This ADR extends the closed reason enum of ADR-022 §2.4 with the codes below. ADR-022 is not edited.
 - `rest-not-allowed`, with a `reason` of `precondition`, `cooldown`, or `session-limit`.
-- `ballot-not-allowed`, returned when a cast fails the re-check in §5.
+- `vote-closed`, returned when a cast arrives after close (§5.5).
+- `ballot-not-allowed`, returned when a cast fails the re-check in §5.1. This code is an addition beyond the two named in the review; see Decisions needed.
 
-### 2. Eligible voters and the denominator
+### 2. Eligible voters and the count N
 
-1. **Eligible set fixed at open.** The eligible set is the seated, non-retired, non-away, non-muted seats at open. It cannot grow after open. A seat that joins after open is not eligible for that vote.
-2. **Denominator D.** D is the eligible seats that are currently not `away` and not retired. An `away` seat leaves D at the moment it goes away (ADR-031 §4.1a). Its cast ballot is kept. It cannot cast or change a ballot while `away`, and if it returns before close its ballot still counts.
-3. **A retired seat** leaves D and its ballot is discarded.
-4. **Non-cast seats** count as `no` for the pass test at close. They do not count as abstentions.
-5. **Vote count is yes and no only.** There is no abstain option.
+1. **Eligible set at open.** The eligible set is the seated, non-retired, non-away, non-muted seats at open. A seat that joins after open is not eligible for that vote.
+2. **N is fixed at open,** and is the size of the eligible set at open.
+3. **Exceptions: a seat leaves N.** A seat that is revoked, retired, departed, or goes `away` leaves N. Away seats are excluded from the denominator (ADR-031 §4.1a). The seat's cast ballot, if it has one, is voided. A seat that leaves N does not re-enter N for this vote, even if it returns before close.
+4. **Early-close arithmetic uses the current N.** Every threshold in §4 is computed with the N in force at that moment.
+5. **Non-cast seats count as no.** A seat in the current N that has not cast counts as `no` in the pass test. There is no abstention.
+6. **Two choices only.** A ballot is `yes` or `no`. There is no abstain option.
+7. **A muted seat in N** cannot cast (§5.1). Its non-cast counts as `no`.
 
 ### 3. Pass, tie, and host break
 
-1. **Pass test.** The vote passes when yes is more than D / 2.
-2. **Tie at expiry is failed.** At the deadline, a vote where yes equals no (with non-cast seats counted as no) fails with reason `tie-failed`. No host action applies at expiry.
-3. **Tie before expiry: host window.** A tie can exist before the deadline only when every seat in D has cast. The host's own ballot counts once, as a normal vote. Then the host gets one separate tie-break action, a choice of `yes` or `no`, within the remaining vote window.
-4. **Host eligibility at tie-break.** The tie-break needs the host to be in D and to have cast a ballot. If the host is not in D when the tie appears, the vote fails at once with reason `tie-failed`.
-5. **Host tie-break outcome.** The host's choice is final. `yes` passes the vote with reason `host-tiebreak`. `no` fails it with reason `host-tiebreak`.
-6. **No host action by expiry** fails the vote with reason `tie-failed` (see §4.6).
-7. **The tie-break action is a cast.** It passes the same re-check as §5, uses the key `(voteId, hostSeat, "tiebreak")`, and counts toward the mutation budget.
+1. **Pass test.** The vote passes when yes is more than N / 2.
+2. **Tie is failed unless the host acts.** A tie is yes equal to no, counting non-cast seats in N as no. A tie fails at the deadline with reason `tie-failed` unless the host tie-break in §3.3 has resolved it. A tie cannot be resolved by anyone else.
+3. **Host window.** The host window opens only when every seat in the current N has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline.
+4. **Host eligibility.** The tie-break needs the host to be in N and to have cast a ballot. If the host is not in N when a tie appears, the vote fails at once with reason `tie-failed`.
+5. **Host outcome.** The host's choice is final. `yes` passes the vote with reason `host-tiebreak`. `no` fails it with reason `host-tiebreak`.
+6. **No host action by deadline.** The vote fails with reason `tie-failed` (§4.6). This matches §4.6.
+7. **The tie-break is a cast.** It passes the same re-check as §5.1, uses the key `(voteId, hostSeat, "tiebreak")`, and counts toward the per-seat mutation budget (§5.4).
 
 ### 4. Timing and closing
 
 1. **Timer.** The vote timer is 120 s. It is fixed for M4 and is not host-configurable. It is separate from the exploration round timer in spec §6.1, which the host can change.
 2. **Deadline is wall-clock.** At open the engine stores `deadlineAt` as a UTC timestamp. A monotonic clock is not used, because it does not survive a restart.
-3. **Pause.** On pause the engine stores the remaining milliseconds. On resume it writes a new `deadlineAt` from the remaining milliseconds. Votes are rejected while paused, as ADR-029 §5 requires for submissions.
-4. **Early pass.** The vote closes as passed as soon as yes is more than D / 2 (reason `majority`).
-5. **Early fail.** The vote closes as failed as soon as yes plus the number of seats in D that have not cast is at most D / 2 (reason `no-majority`).
-6. **Expiry.** At `deadlineAt`, the vote closes. If yes is more than D / 2 it passes (reason `majority`). If yes equals no, it fails with reason `tie-failed` (§3.2 and §3.6). Otherwise it fails with reason `expired`.
-7. **All cast.** When every seat in D has cast and the result is not a tie, the vote closes at once with reason `majority` or `no-majority`. A tie goes to §3.3.
-8. **Reasons.** `RestVoteClosed` records one of `majority`, `no-majority`, `host-tiebreak`, `tie-failed`, `expired`, or `cancelled`.
+3. **Pause.** On pause the engine stores the remaining milliseconds. On resume it writes a new `deadlineAt` from the remaining milliseconds (ADR-029 §5). A ballot sent while paused is rejected and not queued (ADR-029 §4, "Not queued").
+4. **Early pass.** The vote closes as passed as soon as yes is more than N / 2. Reason `majority`.
+5. **Early fail.** The vote closes as failed as soon as yes plus the number of seats in N that have not cast is at most N / 2. Reason `no-majority`.
+6. **Expiry.** At `deadlineAt` the vote closes, using the current N. If yes is more than N / 2 it passes, reason `majority`. If yes equals no, it fails with reason `tie-failed` (§3.2, §3.6). Otherwise it fails with reason `expired`.
+7. **All cast.** When every seat in the current N has cast and the result is not a tie, the vote closes at once. A pass is reason `majority`; a fail is reason `no-majority`. A tie opens the host window in §3.3.
+8. **Reason mapping.** `RestVoteClosed` records one of the following:
+   - `majority`: a pass by early pass (§4.4), at all-cast (§4.7), or at expiry (§4.6).
+   - `no-majority`: an early fail (§4.5) or an all-cast fail (§4.7).
+   - `host-tiebreak`: the host's tie-break outcome (§3.5).
+   - `tie-failed`: a tie at expiry with no host action (§3.6), or a host who is not in N (§3.4).
+   - `expired`: deadline reached, yes below no, and not all seats have cast.
+   - `cancelled`: the vote was reverted (§6.8).
 9. **Cooldown.** The close of any vote, whatever its outcome, starts the 10 min table cooldown in §1.7.
 
 ### 5. Casting ballots
 
-1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, and the seat is eligible (not muted, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
+1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, and the seat is eligible (in the current N, not muted, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
 2. **Idempotency key.** Each cast carries the key `(voteId, seat)`. A replayed cast with the same key returns the stored result and records nothing new.
 3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected. There is no change after a cast.
-4. **Votes skip the chat gate and judge calls.** A ballot is an enum, so it makes no judge call and uses no judge budget (ADR-029 §8). It counts toward the per-seat mutation budget of 6 per 60 s (ADR-029 §8).
+4. **Casts skip the judge budgets.** A cast is an enum with no free text, so it makes no judge call. It is not subject to the ADR-029 §7 or §8 judge budgets. Each cast counts toward the per-seat mutation budget of 6 per 60 s (ADR-029 §8).
 5. **Late casts** after close are rejected with `vote-closed`.
 
 ### 6. Effects and persistence
 
-1. **Events.** The vote adds four event types, listed here and not added to the ADR-022 §7 list: `RestVoteOpened{voteId, type, eligibleSeats, deadlineAt, openedByTurnId}`, `RestVoteCast{voteId, seat, choice}`, and `RestVoteClosed{voteId, outcome, reason, yes, no}`. A passed vote also emits `RestApplied{voteId, type, effects}`.
+1. **Events.** The vote adds four event types: `RestVoteOpened{voteId, type, eligibleSeats, deadlineAt, openedByTurnId}`, `RestVoteCast{voteId, seat, choice}`, `RestVoteClosed{voteId, outcome, reason, yes, no}`, and `RestApplied{voteId, type, effects}`. The last one is emitted only on a pass. These four types are the additions to the event list in architecture §15.6. This ADR declares them. `docs/architecture.md` is not edited.
 2. **Engine applies rest.** On a pass, the rules engine computes and applies the SRD rest effects in the same serial mailbox step that closes the vote (ADR-002, ADR-022 §3). The DM never writes rest effects.
-3. **Rest state is transient.** The architecture §2.2 `rest` state exists only inside that mailbox step, so the Room returns to `exploration` in the same step that applies the effects.
+3. **Rest state is transient.** The architecture §2.2 `rest` state exists only inside that mailbox step. The Room returns to the exploration state in the same step that applies the effects.
 4. **Visibility before close.** Clients see that a vote is open, its type, and its `deadlineAt`. Clients see that a seat has cast, but never the choice. The `RestVoteCast` broadcast omits `choice` until close.
-5. **Visibility at close.** `RestVoteClosed` carries the yes and no tally, the outcome, and the reason. Spec §3.6 requires the result to be visible, and this rule satisfies it.
+5. **Visibility at close.** `RestVoteClosed` carries the yes and no tally, the outcome, and the reason, and it goes to all seats. This visibility rule is this ADR's own rule.
 6. **DM prompt exclusion.** `RestVoteCast` events are excluded from the DM prompt allowlist. ADR-029 §11 keeps OOC content out of DM prompts; this ADR applies the same kind of exclusion to ballot choices. The DM sees only the close outcome, through `RestVoteClosed`.
 7. **Persistence.** The events go to the append-only log (ADR-003). A reconnecting client gets an open vote from snapshot plus replay, with choices omitted as in §6.4.
 8. **Rewind.** If a `TurnReverted` removes the turn that opened a vote, the vote closes as `cancelled` and applies nothing. If the reverted turn's rest effects were applied, the restored snapshot undoes them (ADR-003).
@@ -94,7 +106,7 @@ A failed, expired, cancelled, or `tie-failed` vote emits `RestVoteClosed` only. 
 ## Alternatives considered
 
 - **Simple majority of ballots cast, abstentions excluded.** Rejected: two of six seats could decide a rest.
-- **Denominator fixed at close, with away seats kept.** Rejected: an away seat could hold a vote open. Away seats leave D instead (§2.2).
+- **Denominator fixed at close, with away seats kept.** Rejected: an away seat could hold a vote open. Away seats leave N instead (§2.3).
 - **Host decides ties at expiry.** Rejected: it lets the host override the count at the last moment. Ties at expiry fail (§3.2).
 - **Ballots can be changed until close.** Rejected: one ballot per seat, first cast wins (§5.3), so the count cannot be moved by re-voting.
 - **Choices shown live.** Rejected: a visible running tally creates pressure on seats that have not voted (§6.4).
@@ -103,25 +115,28 @@ A failed, expired, cancelled, or `tie-failed` vote emits `RestVoteClosed` only. 
 
 ## Consequences
 
-- M4 item 5 can start after this ADR is accepted and ADR-031 defines away state.
+- M4 item 5 is blocked on the ADR-031 merge, and can start after this ADR is accepted.
 - A vote can delay a round by up to 120 s.
 - A 10 min cooldown and a 6-vote session cap bound how often the DM can open a vote.
 - Choices are hidden until close. The vote record keeps the choice as an anonymised tally after account deletion.
 
 ## Decisions needed
 
-Accepted by Chris's delegate in review:
+Decided by Chris's delegate in review:
 
 1. **Player-initiated votes.** DM only in M4; player votes need a new ADR.
 2. **Vote timer of 120 s, fixed.**
-3. **Ballots count toward the 6 per 60 s mutation budget.**
+3. **Casts count toward the 6 per 60 s mutation budget, and skip the judge budgets (§5.4).**
 4. **Choices hidden until close.**
 5. **No vote during combat.**
 6. **Cooldown 10 min after any close, cap 6 opened votes per session.**
-7. **Host tie-break window within the vote deadline, with ties at expiry failed.**
+7. **Host tie-break window within the vote deadline; ties at expiry fail.**
+8. **Quorum.** Abstain counts as `no`. The denominator is the current N (§2.2). Pass requires yes more than N / 2.
+9. **Away seats leave N and their ballots are voided (§2.3).** ADR-031 §4.1a must say the same before ADR-031 merges. As written, ADR-031 §4.1a keeps the cast ballot, so it needs amendment. ADR-031 is not edited here.
+10. **`ballot-not-allowed` is an error code added beyond the two named in review.** Atlas to confirm, or fold it into `vote-closed`.
 
 ## Verification
 
-- Docs-only change: one new file, `docs/adr/030-rest-vote-and-party-quorum.md`. No existing ADR is edited. No code is written.
-- Citations checked against `docs/spec.md` §3.6 AC2 and §6.1, `docs/architecture.md` §2.2 and §3.2, ADR-002, ADR-003, ADR-004, ADR-017 (gameplay class and account deletion), ADR-022 §2, §2.4, §3, §4.2, §7, ADR-029 §1, §2, §5, §8, §11, and ADR-031 §4.1a.
+- Docs-only change: one file, `docs/adr/030-rest-vote-and-party-quorum.md`. No existing ADR is edited, and `docs/architecture.md` is not edited.
+- Citations checked against `docs/spec.md` §3.6 AC2 and §6.1, `docs/architecture.md` §2.2, §3.2, and §15.6, ADR-002, ADR-003, ADR-004, ADR-017 (gameplay class and account deletion), ADR-022 §2, §2.4, §3, §4.2, ADR-029 §1, §2, §4, §5, §8, §11, and ADR-031 §4.1a.
 - `prettier --check` run against the branch head. Result recorded in the PR.
