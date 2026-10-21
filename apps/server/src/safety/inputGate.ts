@@ -379,9 +379,17 @@ export function createEndpointJudge(
           }),
         );
       })();
-      const onCallerAbort = () => budget.markLost();
+      let callerLostTimer: ReturnType<typeof setTimeout> | undefined;
+      const onCallerAbort = () => {
+        if (callerLostTimer !== undefined) return;
+        callerLostTimer = setTimeout(() => budget.markLost(), 10_000);
+      };
       signal.addEventListener('abort', onCallerAbort, { once: true });
       if (signal.aborted) onCallerAbort();
+      const clearCallerLostTimer = () => {
+        if (callerLostTimer !== undefined) clearTimeout(callerLostTimer);
+      };
+      void operation.then(clearCallerLostTimer, clearCallerLostTimer);
       return withJudgeHardCap(
         operation,
         budget.release,

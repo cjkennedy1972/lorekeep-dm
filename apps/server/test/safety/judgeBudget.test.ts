@@ -66,6 +66,59 @@ describe('shared judge budget', () => {
     vi.useRealTimers();
   });
 
+  it('keeps an aborted caller slot until settle, then transitions unsettled work to lost at 10 seconds', async () => {
+    vi.useFakeTimers();
+    const budget = new JudgeBudget();
+    const first = budget.acquire('chat');
+    const second = budget.acquire('chat');
+    expect(first.kind).toBe('acquired');
+    expect(second.kind).toBe('acquired');
+    if (first.kind !== 'acquired' || second.kind !== 'acquired') return;
+
+    // Caller abort is only a delayed markLost; it must not release admission immediately.
+    const callerAbortTimer = setTimeout(first.markLost, 10_000);
+    expect(budget.acquire('chat')).toEqual({ kind: 'limited', class: 'chat' });
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(budget.acquire('chat')).toEqual({ kind: 'limited', class: 'chat' });
+    await vi.advanceTimersByTimeAsync(1);
+    const replacement = budget.acquire('chat');
+    expect(replacement.kind).toBe('acquired');
+    if (replacement.kind === 'acquired') replacement.release();
+    const action = budget.acquire('action-input');
+    expect(action.kind).toBe('acquired');
+    if (action.kind === 'acquired') action.release();
+
+    first.release();
+    clearTimeout(callerAbortTimer);
+    second.release();
+    const recovered = budget.acquire('chat');
+    expect(recovered.kind).toBe('acquired');
+    if (recovered.kind === 'acquired') recovered.release();
+    vi.useRealTimers();
+  });
+
+  it('releases an aborted caller slot on late upstream settlement before the 10-second lost transition', async () => {
+    vi.useFakeTimers();
+    const budget = new JudgeBudget();
+    const slot = budget.acquire('chat');
+    expect(slot.kind).toBe('acquired');
+    if (slot.kind !== 'acquired') return;
+    let resolve!: () => void;
+    const operation = new Promise<void>((r) => (resolve = r));
+    const abortTimer = setTimeout(slot.markLost, 10_000);
+    void operation.then(() => {
+      clearTimeout(abortTimer);
+      slot.release();
+    });
+    resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const recovered = budget.acquire('chat');
+    expect(recovered.kind).toBe('acquired');
+    if (recovered.kind === 'acquired') recovered.release();
+    vi.useRealTimers();
+  });
+
   it('caps chat at 120/min, actions at 80/min and reserves output at 40/min', () => {
     const budget = new JudgeBudget();
     for (let i = 0; i < 120; i++) {

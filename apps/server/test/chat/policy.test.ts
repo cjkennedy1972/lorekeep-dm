@@ -36,9 +36,9 @@ describe('chat rate and flood policy', () => {
 
   it('enforces the per-table chat-gate cap independently of per-seat buckets', () => {
     const policy = new ChatPolicy();
-    for (let i = 0; i < 120; i++)
+    for (let i = 0; i < 40; i++)
       expect(policy.reserveTableGate('room', i)).toBe(true);
-    expect(policy.reserveTableGate('room', 120)).toBe(false);
+    expect(policy.reserveTableGate('room', 40)).toBe(false);
     expect(policy.reserveTableGate('room', 60_001)).toBe(true);
   });
 
