@@ -21,7 +21,7 @@ Append-only: this ADR amends ADR-029 §5, §7, and §8 by decision. It does not 
    - DM output gating: unchanged, 1 in-flight slot and 40 calls per minute, reserved. Chat and action input never use them.
    - The per-table limit of ADR-029 §8 is unchanged: at most 120 chat gate calls per minute for one table, chat gate calls only.
    - A call refused for capacity returns a typed result `limited` that names its class. A chat call that gets `limited` is rejected with the neutral busy response and is not attributable for the automatic mute. An action-input call that gets `limited` fails closed with a neutral, retryable busy response. It is not an allow and it is not attributable for the automatic mute.
-4. **Judge call timeout and abort (amends ADR-029 §1.4 and §7).** A judge call times out after 4.5 s, so the whole gate (checks, judge call, and commit step) fits the 5 s of gate time per message. An aborted call keeps its in-flight slot until the upstream request settles. An upstream that ignores the abort holds the slot for at most 10 s. At 10 s the slot is released and the call is counted as lost, with no verdict.
+4. **Judge call timeout and abort (amends ADR-029 §1.4 and §7).** A judge call times out after 4.5 s, so the whole gate (checks, judge call, and commit step) fits the 5 s of gate time per message. An aborted call keeps its in-flight slot until the upstream request settles, not until the awaiting caller sees a rejection. An upstream that ignores the abort holds the slot for at most 10 s. At 10 s the slot is released and the call is counted as lost, with no verdict. This replaces the statement in ADR-029 §8 that the in-flight slot is released on a timeout abort.
 
 ## Alternatives considered
 
@@ -38,4 +38,4 @@ Append-only: this ADR amends ADR-029 §5, §7, and §8 by decision. It does not 
 
 - Docs-only change: one file, `docs/adr/032-adr-029-amendments.md`. No existing ADR is edited.
 - Citations to be checked by the reviewers against ADR-029 §1.4, §5, §7, §8, ADR-030 §2.3, and ADR-031 §3.5 and §4.7.
-- Tests for the allocation and the timeout live in PR #266: an action call gets a slot while chat is saturated; output calls always pass direction `output`; a `limited` result fails closed for actions and never reaches the verdict parser; an aborted call keeps its slot until the upstream settles, up to the 10 s cap.
+- Tests for the allocation and the timeout live in PR #266: an action call gets a slot while chat is saturated; output calls always pass direction `output`; a `limited` result fails closed for actions and never reaches the verdict parser; an aborted call keeps its slot until the upstream settles, up to the 10 s cap, shown with an adapter whose request settles late; the DM-output class mapping is tested through the production wrapper; the verdict parser is shown by a spy never to receive a capacity result.
