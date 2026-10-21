@@ -48,6 +48,8 @@ export interface ModerationRequest {
   /** Turn-scoped deterministic scanner. When set, it judges `text` in place of `context + text`; message-level rules need the whole turn, not a carry. */
   turn?: DeterministicTurn;
   direction: Direction;
+  /** Optional caller deadline (chat receipt bound); aborts the in-flight judge request. */
+  signal?: AbortSignal;
 }
 
 export interface Moderator {
@@ -93,6 +95,7 @@ export interface JudgeChatRequest {
   temperature: 0;
   max_tokens: number;
   signal: AbortSignal;
+  direction: Direction;
 }
 
 /** OpenAI-compatible chat call returning the assistant message content. */
@@ -250,11 +253,24 @@ export class JudgeModerator implements Moderator {
   private async judge(req: ModerationRequest) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let resolveCallerAbort!: () => void;
+    const abortFromCaller = () => {
+      controller.abort();
+      resolveCallerAbort();
+    };
     const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
       timer = setTimeout(() => {
         controller.abort();
         resolve(TIMED_OUT);
       }, this.timeoutMs);
+    });
+    const callerAbort = new Promise<typeof TIMED_OUT>((resolve) => {
+      resolveCallerAbort = () => resolve(TIMED_OUT);
+      if (req.signal?.aborted) {
+        abortFromCaller();
+      } else {
+        req.signal?.addEventListener('abort', abortFromCaller, { once: true });
+      }
     });
     const call = Promise.resolve()
       .then(() =>
@@ -263,6 +279,7 @@ export class JudgeModerator implements Moderator {
           temperature: 0,
           max_tokens: JUDGE_MAX_TOKENS,
           signal: controller.signal,
+          direction: req.direction,
         }),
       )
       .then(
@@ -270,11 +287,12 @@ export class JudgeModerator implements Moderator {
         () => TIMED_OUT,
       );
     try {
-      const result = await Promise.race([call, timeout]);
+      const result = await Promise.race([call, timeout, callerAbort]);
       if (!result.ok) return null;
       return parseVerdictReply(result.raw);
     } finally {
       clearTimeout(timer);
+      req.signal?.removeEventListener('abort', abortFromCaller);
     }
   }
 }

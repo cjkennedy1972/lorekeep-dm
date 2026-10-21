@@ -191,6 +191,8 @@ export function narrationLogReducer(
     case 'TpkChoiceRequired':
     case 'StateSync':
     case 'PresenceChanged':
+    case 'ChatMessage':
+    case 'ChatHistory':
       return state;
   }
 }

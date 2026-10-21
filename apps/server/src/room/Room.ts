@@ -2,11 +2,14 @@ import { randomUUID } from 'node:crypto';
 import {
   RoomStateSchema,
   TurnRevertedSchema,
+  type ChatHistoryEntry,
   type RoomState,
   type ServerMessage,
+  type ChatMessage,
 } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import {
+  ChatSeatRevokedError,
   LeaseConflictError,
   RewindRefusedError,
   type EventInput,
@@ -81,6 +84,15 @@ export interface RoomStore {
     lease: Lease,
     seq: number,
   ): Promise<StoredEvent[]>;
+  writeChat?(
+    sessionId: string,
+    event: EventInput,
+    lease: Lease,
+  ): Promise<StoredEvent>;
+  loadChatHistory?(
+    sessionId: string,
+    limit?: number,
+  ): Promise<ChatHistoryEntry[]>;
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
   loadRewindPlan?(sessionId: string): Promise<RewindPlan | null>;
@@ -88,6 +100,15 @@ export interface RoomStore {
   /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
   xCardAbortEnabled?(sessionId: string): Promise<boolean>;
   setXCardAbortEnabled?(sessionId: string, enabled: boolean): Promise<void>;
+}
+
+export interface ChatReceipt {
+  readonly receiptSeq: number;
+  readonly receivedAt: number;
+  readonly previous: Promise<void>;
+  readonly decision?: string;
+  decide(reason: string): boolean;
+  readonly finish: () => void;
 }
 export interface Connection {
   send(message: ServerMessage): void;
@@ -128,6 +149,8 @@ export class Room {
   private turnAccountId?: string;
   private matureDelivery: Promise<void> = Promise.resolve();
   private readonly pendingActions = new Set<string>();
+  private chatReceiptSeq: number;
+  private chatCommitTail: Promise<void> = Promise.resolve();
   private activeTurn: Promise<void> = Promise.resolve();
   private readonly queuedActions: {
     accountId: string;
@@ -156,6 +179,13 @@ export class Room {
     const recovered = recoverRoom(this.sessionId, latest);
     this.state = recovered.state;
     this.seq = recovered.seq;
+    this.chatReceiptSeq = Math.max(
+      this.seq,
+      ...latest.events.map((event) => {
+        const payload = event.payload as { receiptSeq?: unknown };
+        return typeof payload?.receiptSeq === 'number' ? payload.receiptSeq : 0;
+      }),
+    );
     this.actionIds = recovered.actionIds;
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     this.scheduleReaction();
@@ -260,6 +290,129 @@ export class Room {
             payload: { actionId, question: open.question },
           } as ServerMessage);
     });
+  }
+
+  /** Allocates receipt order synchronously at gateway ingress, before async validation or gating. */
+  registerChatReceipt(receivedAt: number): ChatReceipt {
+    const previous = this.chatCommitTail;
+    let finish!: () => void;
+    const done = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    this.chatCommitTail = done;
+    let decision: string | undefined;
+    return {
+      receiptSeq: ++this.chatReceiptSeq,
+      receivedAt,
+      previous,
+      get decision() {
+        return decision;
+      },
+      decide(reason) {
+        if (decision !== undefined) return false;
+        decision = reason;
+        return true;
+      },
+      finish,
+    };
+  }
+
+  async loadChatHistory(accountId: string): Promise<ChatHistoryEntry[]> {
+    if (!this.state.seats.some((seat) => seat.accountId === accountId))
+      throw new RoomSeatRequiredError();
+    if (!this.store.loadChatHistory)
+      throw new Error('Chat history unavailable');
+    return this.store.loadChatHistory(this.sessionId, 100);
+  }
+
+  async commitChat(
+    receipt: ChatReceipt,
+    message: ChatMessage,
+    accountId: string,
+  ): Promise<number> {
+    await receipt.previous;
+    try {
+      return await this.enqueue(async () => {
+        if (!this.store.writeChat)
+          throw new Error('Chat persistence unavailable');
+        if (!this.state.seats.some((seat) => seat.accountId === accountId))
+          throw new RoomSeatRequiredError();
+        let stored: StoredEvent;
+        try {
+          stored = await this.store.writeChat(
+            this.sessionId,
+            {
+              seq: this.seq + 1,
+              turnId: randomUUID(),
+              type: 'chat.committed',
+              payload: { ...message, accountId },
+            },
+            this.lease,
+          );
+        } catch (error) {
+          if (!(error instanceof ChatSeatRevokedError)) throw error;
+          const rejected = await this.store.writeChat(
+            this.sessionId,
+            {
+              seq: this.seq + 1,
+              turnId: randomUUID(),
+              type: 'chat.rejected',
+              payload: {
+                receiptSeq: receipt.receiptSeq,
+                receivedAt: receipt.receivedAt,
+                reason: 'authorization',
+                moderationLogId: message.gateDecision.moderationLogId,
+              },
+            },
+            this.lease,
+          );
+          this.seq = rejected.seq;
+          throw error;
+        }
+        this.seq = stored.seq;
+        this.broadcast({
+          seq: this.seq,
+          type: 'ChatMessage',
+          payload: message,
+        });
+        return this.seq;
+      });
+    } finally {
+      receipt.finish();
+    }
+  }
+
+  async rejectChat(
+    receipt: ChatReceipt,
+    reason: string,
+    moderationLogId?: string,
+  ): Promise<number> {
+    await receipt.previous;
+    try {
+      return await this.enqueue(async () => {
+        if (!this.store.writeChat)
+          throw new Error('Chat persistence unavailable');
+        const stored = await this.store.writeChat(
+          this.sessionId,
+          {
+            seq: this.seq + 1,
+            turnId: randomUUID(),
+            type: 'chat.rejected',
+            payload: {
+              receiptSeq: receipt.receiptSeq,
+              receivedAt: receipt.receivedAt,
+              reason,
+              moderationLogId: moderationLogId ?? null,
+            },
+          },
+          this.lease,
+        );
+        this.seq = stored.seq;
+        return this.seq;
+      });
+    } finally {
+      receipt.finish();
+    }
   }
 
   /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */

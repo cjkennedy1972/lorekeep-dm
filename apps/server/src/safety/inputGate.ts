@@ -16,10 +16,12 @@ import {
 } from './moderator.js';
 import type { ContentTier } from './tier.js';
 import { loadContentTierState } from './tierLoader.js';
+import { endpointJudgeBudget } from './judgeBudget.js';
 
 export const INPUT_SURFACES = [
   'player-action',
   'clarification',
+  'chat',
   'character',
   'table-name',
   'room-name',
@@ -39,6 +41,7 @@ export interface InputCheck {
   accountId?: string;
   ip?: string;
   sessionId?: string;
+  signal?: AbortSignal;
 }
 
 /** `limited`: over the moderation-call budget; the judge was not called and nothing was logged. */
@@ -47,6 +50,15 @@ export type InputDecision = 'allow' | 'block' | 'limited';
 /** Never throws. */
 export interface InputGate {
   check(input: InputCheck): Promise<InputDecision>;
+  checkChat?(input: InputCheck): Promise<ChatInputResult>;
+}
+
+export interface ChatInputResult {
+  decision: InputDecision;
+  moderationLogId?: string;
+  category?: Category;
+  source?: 'hardfloor' | 'denylist' | 'judge' | 'failclosed';
+  attributable: boolean;
 }
 
 export const MODERATION_CALLS_PER_MINUTE = { account: 30, ip: 20 } as const;
@@ -87,8 +99,11 @@ export function createInputGate({
     let limited = false;
     if (input.accountId !== undefined)
       limited =
-        callsByAccount.hit(input.accountId) >
-          MODERATION_CALLS_PER_MINUTE.account || limited;
+        callsByAccount.hit(
+          input.surface === 'chat'
+            ? `chat:${input.accountId}`
+            : input.accountId,
+        ) > MODERATION_CALLS_PER_MINUTE.account || limited;
     if (input.ip !== undefined)
       limited =
         callsByIp.hit(input.ip) > MODERATION_CALLS_PER_MINUTE.ip || limited;
@@ -101,7 +116,7 @@ export function createInputGate({
     category: Category,
     source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed',
     failClosedRow?: 'hard-floor' | 'tier' | 'boundaries',
-  ) {
+  ): Promise<string | undefined> {
     const key = input.accountId ?? input.ip ?? 'anonymous';
     const rows = rowsByKey.hit(key);
     if (rows > MODERATION_LOG_ROWS_PER_DAY) {
@@ -110,12 +125,12 @@ export function createInputGate({
           { event: 'moderation_log_cap_reached', surface: input.surface },
           'moderation log daily cap reached; further rows dropped',
         );
-      return;
+      return undefined;
     }
     try {
-      await db.query(
+      const result = await db.query<{ id: string }>(
         `INSERT INTO moderation_log(surface,account_id,session_id,category,source,fail_closed_row,expires_at)
-         VALUES($1,$2,$3,$4,$5,$6,now() + interval '30 days')`,
+         VALUES($1,$2,$3,$4,$5,$6,now() + interval '30 days') RETURNING id`,
         [
           input.surface,
           input.accountId ?? null,
@@ -125,74 +140,120 @@ export function createInputGate({
           failClosedRow ?? null,
         ],
       );
+      return result.rows[0]?.id;
     } catch {
       log.warn(
         { event: 'moderation_log_write_failed', surface: input.surface },
         'moderation log write failed',
       );
+      return undefined;
     }
+  }
+
+  async function evaluate(input: InputCheck): Promise<ChatInputResult> {
+    if (overBudget(input)) return { decision: 'limited', attributable: false };
+    const hard = checkHardFloor(input.text);
+    if (hard.blocked) {
+      log.warn(
+        {
+          event: 'hard_floor_block',
+          surface: input.surface,
+          ...(input.accountId ? { accountId: input.accountId } : {}),
+          rule: hard.rule,
+          version: hard.version,
+          expiresAt: new Date(
+            Date.now() + HARD_FLOOR_LOG_RETENTION_MS,
+          ).toISOString(),
+        },
+        'hard floor rejected input',
+      );
+      // ponytail: the hard floor only has minor rules today; map by rule when more land.
+      const moderationLogId = await record(
+        input,
+        hard.rule === 'input.over-limit' ? 'other' : 'minor_sexual',
+        'hardfloor',
+      );
+      return {
+        decision: 'block',
+        moderationLogId,
+        category: hard.rule === 'input.over-limit' ? 'other' : 'minor_sexual',
+        source: 'hardfloor',
+        attributable: true,
+      };
+    }
+    let boundaries:
+      | Awaited<ReturnType<typeof loadSeatedContentBoundaries>>
+      | undefined;
+    if (input.sessionId) {
+      try {
+        boundaries = await loadSeatedContentBoundaries(db, input.sessionId);
+      } catch {
+        log.warn(
+          { event: 'content_boundaries_unavailable', surface: input.surface },
+          'content boundaries unavailable; input blocked',
+        );
+        const moderationLogId = await record(
+          input,
+          'other',
+          'failclosed',
+          'tier',
+        );
+        return {
+          decision: 'block',
+          moderationLogId,
+          category: 'other',
+          source: 'failclosed',
+          attributable: false,
+        };
+      }
+    }
+    const verdict = await moderator.moderate({
+      text: input.text,
+      tier: await tierFor(input.sessionId),
+      tableLines: boundaries
+        ? [
+            ...boundaries.lines.map((line) => `line: ${line}`),
+            ...boundaries.veils.map((veil) => `veil: ${veil}`),
+          ]
+        : undefined,
+      direction: 'input',
+      signal: input.signal,
+    });
+    if (verdict.verdict === 'allow') {
+      const moderationLogId =
+        input.surface === 'chat'
+          ? await record(input, 'none', 'judge')
+          : undefined;
+      return {
+        decision:
+          moderationLogId || input.surface !== 'chat' ? 'allow' : 'block',
+        moderationLogId,
+        category: 'none',
+        source: 'judge',
+        attributable: true,
+      };
+    }
+    const moderationLogId = await record(
+      input,
+      verdict.category,
+      verdict.source,
+      verdict.unavailable ? verdict.failClosedRow : undefined,
+    );
+    return {
+      decision: 'block',
+      moderationLogId,
+      category: verdict.category,
+      source: verdict.source,
+      attributable: !verdict.unavailable,
+    };
   }
 
   return {
     async check(input) {
-      if (overBudget(input)) return 'limited';
-      const hard = checkHardFloor(input.text);
-      if (hard.blocked) {
-        log.warn(
-          {
-            event: 'hard_floor_block',
-            surface: input.surface,
-            ...(input.accountId ? { accountId: input.accountId } : {}),
-            rule: hard.rule,
-            version: hard.version,
-            expiresAt: new Date(
-              Date.now() + HARD_FLOOR_LOG_RETENTION_MS,
-            ).toISOString(),
-          },
-          'hard floor rejected input',
-        );
-        // ponytail: the hard floor only has minor rules today; map by rule when more land.
-        await record(
-          input,
-          hard.rule === 'input.over-limit' ? 'other' : 'minor_sexual',
-          'hardfloor',
-        );
-        return 'block';
-      }
-      let boundaries:
-        | Awaited<ReturnType<typeof loadSeatedContentBoundaries>>
-        | undefined;
-      if (input.sessionId) {
-        try {
-          boundaries = await loadSeatedContentBoundaries(db, input.sessionId);
-        } catch {
-          log.warn(
-            { event: 'content_boundaries_unavailable', surface: input.surface },
-            'content boundaries unavailable; input blocked',
-          );
-          await record(input, 'other', 'failclosed', 'boundaries');
-          return 'block';
-        }
-      }
-      const verdict = await moderator.moderate({
-        text: input.text,
-        tier: await tierFor(input.sessionId),
-        tableLines: boundaries
-          ? [
-              ...boundaries.lines.map((line) => `line: ${line}`),
-              ...boundaries.veils.map((veil) => `veil: ${veil}`),
-            ]
-          : undefined,
-        direction: 'input',
-      });
-      if (verdict.verdict === 'allow') return 'allow';
-      await record(
-        input,
-        verdict.category,
-        verdict.source,
-        verdict.unavailable ? verdict.failClosedRow : undefined,
-      );
-      return 'block';
+      return (await evaluate(input)).decision;
+    },
+    checkChat(input) {
+      return evaluate({ ...input, surface: 'chat' });
     },
   };
 }
@@ -234,20 +295,28 @@ declare module 'fastify' {
 export function createEndpointJudge(db: InputGateDb): JudgeModerator {
   const egress = createEndpointEgress();
   return createModerationJudge({
-    chat: async ({ messages, max_tokens, temperature, signal }) => {
-      const adapter: LlmAdapter = await createConfiguredAdapter(
-        db,
-        'moderate',
-        egress,
-      );
-      return collectJudgeText(
-        adapter.complete({
-          messages,
-          maxTokens: max_tokens,
-          temperature,
-          signal,
-        }),
-      );
+    chat: async ({ messages, max_tokens, temperature, signal, direction }) => {
+      const release = endpointJudgeBudget.acquire(direction);
+      if (!release) return 'judge capacity unavailable';
+      signal.addEventListener('abort', release, { once: true });
+      try {
+        const adapter: LlmAdapter = await createConfiguredAdapter(
+          db,
+          'moderate',
+          egress,
+        );
+        return await collectJudgeText(
+          adapter.complete({
+            messages,
+            maxTokens: max_tokens,
+            temperature,
+            signal,
+          }),
+        );
+      } finally {
+        signal.removeEventListener('abort', release);
+        release();
+      }
     },
   });
 }

@@ -33,9 +33,9 @@ describe('POST /api/ws-ticket origin check', () => {
     else process.env.WS_ALLOWED_ORIGINS = saved;
   });
 
-  it('rejects a scheme-mismatched same-host origin on an HTTP request', async () => {
+  it('normalizes a same-host origin before matching it', async () => {
     delete process.env.WS_ALLOWED_ORIGINS;
-    expect(await postTicket(`https://${host}`)).toBe(403);
+    expect(await postTicket(`https://${host}`)).toBe(401);
   });
 
   it('accepts a same-scheme same-host origin', async () => {
@@ -58,14 +58,14 @@ describe('POST /api/ws-ticket origin check', () => {
     expect(await postTicket('https://web.example.test')).toBe(401);
   });
 
-  it('keeps the scheme+host check for same-host origins with WS_ALLOWED_ORIGINS set', async () => {
+  it('uses the normalized WebSocket origin check for same-host origins with WS_ALLOWED_ORIGINS set', async () => {
     process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test';
-    expect(await postTicket(`https://${host}`)).toBe(403);
+    expect(await postTicket(`https://${host}`)).toBe(401);
     expect(await postTicket(`http://${host}`)).toBe(401);
   });
 
-  it('does not match a WS_ALLOWED_ORIGINS entry with a trailing slash', async () => {
+  it('normalizes a trailing slash in WS_ALLOWED_ORIGINS matching', async () => {
     process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test';
-    expect(await postTicket('https://web.example.test/')).toBe(403);
+    expect(await postTicket('https://web.example.test/')).toBe(401);
   });
 });

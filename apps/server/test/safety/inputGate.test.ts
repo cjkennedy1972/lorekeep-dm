@@ -68,6 +68,42 @@ const innocent = 'The innkeeper pours ale and nods at the table.';
 const minorSexual = 'the 14yo girl had sex with the guard';
 
 describe('createInputGate', () => {
+  it('returns a moderation-log reference for an allowed chat message without storing its text', async () => {
+    const queries: { sql: string; params: unknown[] }[] = [];
+    const db: InputGateDb = {
+      async query(sql: string, params: unknown[] = []) {
+        queries.push({ sql, params });
+        return { rows: [{ id: 'moderation-log-id' }], rowCount: 1 } as never;
+      },
+    };
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkChat({
+        text: innocent,
+        surface: 'chat',
+        accountId: 'a1',
+      }),
+    ).resolves.toMatchObject({
+      decision: 'allow',
+      moderationLogId: 'moderation-log-id',
+      category: 'none',
+      source: 'judge',
+      attributable: true,
+    });
+    expect(calls).toHaveLength(1);
+    expect(queries[0]?.params).toEqual([
+      'chat',
+      'a1',
+      null,
+      'none',
+      'judge',
+      null,
+    ]);
+    expect(JSON.stringify(queries)).not.toContain(innocent);
+  });
+
   it('allows text the judge allows and writes no log row', async () => {
     const { db, queries } = fakeDb();
     const { moderator, calls } = stubModerator(allowVerdict());

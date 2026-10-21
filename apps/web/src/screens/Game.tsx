@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../auth.js';
 import { useRef } from 'react';
 import type { Battlemap, ServerMessage } from '@game/schema';
+import type { ChatHistoryEntry } from '@game/schema';
 import {
   BattlemapSchema,
   CharacterSchema,
@@ -20,6 +21,7 @@ import { ConnectionStatus } from '../room/ConnectionStatus.js';
 import { useRoom } from '../room/useRoom.js';
 import { api, http } from '../api.js';
 import { gameStore } from '../state/store.js';
+import { ChatPanel } from '../features/chat/ChatPanel.js';
 
 const renderer = new Canvas2DRenderer();
 type Tracker = NonNullable<ReturnType<typeof gameStore.getState>['tracker']>;
@@ -65,6 +67,16 @@ const mergeEntities = (previous: Entity[], next: Entity[]): Entity[] =>
   });
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+const mergeChatHistory = (
+  current: ChatHistoryEntry[],
+  incoming: ChatHistoryEntry[],
+): ChatHistoryEntry[] => {
+  const entries = new Map(
+    current.map((entry) => [entry.message.messageId, entry]),
+  );
+  for (const entry of incoming) entries.set(entry.message.messageId, entry);
+  return [...entries.values()].sort((a, b) => a.seq - b.seq);
+};
 
 export function Game() {
   const { id = '' } = useParams();
@@ -112,11 +124,22 @@ export function Game() {
         messagesRef.current = [...messagesRef.current, message];
         setMessages(messagesRef.current);
       }
+      if (message.type === 'ChatMessage')
+        setChatMessages((current) =>
+          mergeChatHistory(current, [
+            { seq: message.seq, message: message.payload },
+          ]),
+        );
+      if (message.type === 'ChatHistory')
+        setChatMessages((current) =>
+          mergeChatHistory(current, message.payload.messages),
+        );
       if (message.type === 'SafetyFlag' && message.payload.kind === 'x-card')
         setSafetyNotice(
           'An X-card was used. The DM will steer away next turn.',
         );
       if (message.type === 'StateSync') {
+        live.send('ChatHistoryRequest');
         const state = asRecord(message.payload.state);
         setSafetyNotice((current) =>
           state.paused === true
@@ -221,6 +244,12 @@ export function Game() {
       }
       if (message.type === 'Error') {
         const payload = asRecord(message.payload);
+        if (payload.code === 'CHAT_REJECTED') {
+          setChatError(
+            String(payload.message ?? 'That message could not be sent.'),
+          );
+          return;
+        }
         setError(String(payload.message ?? 'The command failed.'));
         const actionId = String(payload.actionId ?? '');
         updatePendingAction((current) =>
@@ -231,6 +260,8 @@ export function Game() {
   });
   const [messages, setMessages] = useState<ServerMessage[]>([]);
   const messagesRef = useRef<ServerMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatHistoryEntry[]>([]);
+  const [chatError, setChatError] = useState('');
   const [tracker, setTracker] = useState<Tracker | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [map, setMap] = useState<Battlemap | null>(null);
@@ -497,54 +528,31 @@ export function Game() {
           {safetyNotice ||
             (room.paused ? 'The table is paused.' : 'The table is active.')}
         </p>
-        <button
-          type="button"
-          onClick={() => {
-            if (live.send('XCard'))
-              setSafetyNotice(
-                'X-card sent anonymously. The DM will steer away next turn.',
-              );
-            else
-              setError('Not connected, so the X-card was not sent. Try again.');
-          }}
-          disabled={live.status !== 'connected'}
-        >
-          X-card (anonymous)
-        </button>
-        {!room.paused ? (
-          <button
-            type="button"
-            disabled={live.status !== 'connected'}
-            onClick={() => {
-              if (!live.send('PauseTable', { paused: true }))
-                setError(
-                  'Not connected, so the table was not paused. Try again.',
-                );
-            }}
-          >
-            Pause table
-          </button>
-        ) : isHost ? (
-          <button
-            type="button"
-            disabled={live.status !== 'connected'}
-            onClick={() => {
-              if (!live.send('PauseTable', { paused: false }))
-                setError(
-                  'Not connected, so the table was not resumed. Try again.',
-                );
-            }}
-          >
-            Resume table
-          </button>
-        ) : (
-          <p>Only the host can resume the table.</p>
-        )}
         <p>
-          Pause stops new narration after the current turn. No explanation is
-          needed.
+          X-card and pause apply to the whole table, including party chat. No
+          explanation is needed.
         </p>
       </section>
+      <ChatPanel
+        roomId={id}
+        messages={chatMessages}
+        room={room}
+        isHost={isHost}
+        paused={room.paused === true}
+        connected={live.status === 'connected'}
+        error={chatError}
+        onSend={(text) => live.send('ChatSend', { text })}
+        onXCard={() => {
+          const sent = live.send('XCard');
+          if (sent)
+            setSafetyNotice(
+              'X-card sent anonymously. The DM will steer away next turn.',
+            );
+          return sent;
+        }}
+        onPause={(paused) => live.send('PauseTable', { paused })}
+        onMute={(seatId, muted) => live.send('MuteChat', { seatId, muted })}
+      />
       <ActionInput
         onSubmit={submitAction}
         pending={Boolean(pendingAction)}
