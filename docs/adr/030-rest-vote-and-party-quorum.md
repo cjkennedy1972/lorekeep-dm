@@ -1,6 +1,6 @@
 # ADR-030: Rest vote and party quorum
 
-Status: Proposed (draft PR for Atlas review) · Date: 2026-10-21 · Owner: Sage · Work item: M4 item 5 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-017, ADR-022, ADR-029 (round states, timers, pause, judge budgets, OOC), ADR-031 (away state; ADR-031 merges first). M4 item 5 is blocked on the ADR-031 merge.
+Status: Proposed (draft PR for Atlas review) · Date: 2026-10-21 · Owner: Sage · Work item: M4 item 5 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-017, ADR-022, ADR-029 (round states, timers, pause, judge budgets, OOC), ADR-031 (away state; merged as c3eef17e). M4 item 5 is no longer blocked on ADR-031.
 
 Citation convention: a reference such as §3.5 cites item 5 of section 3 of the same document, and a reference such as ADR-031 §2.4 cites item 4 of section 2 of that ADR.
 
@@ -127,7 +127,7 @@ A failed, expired, cancelled, or `tie-failed` vote emits `RestVoteClosed` only. 
 
 ## Consequences
 
-- M4 item 5 is blocked on the ADR-031 merge, and can start after this ADR is accepted.
+- ADR-031 is merged (c3eef17e), and M4 item 5 can start after this ADR is accepted.
 - A vote can delay a round by up to 120 s.
 - A 10 min cooldown and a 6-vote session cap bound how often the DM can open a vote.
 - Choices are hidden until close. After account deletion, per-seat ballot events and any identifying seat list are removed; counts are nulled if the deleted seat cast a counted ballot (§7.2).
@@ -146,7 +146,7 @@ Decided by Chris's delegate in review:
 8. **Quorum.** Abstain counts as `no`. The denominator is N fixed at open (§2.2). Pass requires yes more than N / 2. Early fail is strict: it fires only when yes plus uncast seats in N is strictly less than N / 2 (§4.5). A tie at N / 2 stays reachable and goes to the host window (§3.3) when all seats have cast.
 9. **N is fixed at vote open for every cause.** An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A `revoked` seat (kick, ban, retirement, or departure) stays in N and keeps its counted ballot, or counts as `no` if it had not cast. It can cast nothing further. Revocation removes control and chat only; it never changes N or the result (§2.3). This matches ADR-031 §4.2.
 10. **`ballot-not-allowed`: ACCEPTED.** This ADR declares it, alongside `rest-not-allowed` and `vote-closed`, as an extension of the ADR-022 §2.4 enum. ADR-022 is not edited.
-11. **Host tie-break after host deletion.** Accepted privacy trade-off. Decided by Atlas as Chris's delegate, under Chris's standing authorization of 2026-10-21 to decide the items Atlas had listed for him. Chris may override it. When the deleted account is the host seat and the vote closed `host-tiebreak`, the public outcome, which equals the host's tie-break choice, is kept with the seat reference scrubbed (§7.2). The outcome cannot be hidden, because the `RestApplied` event shows the effect on game state.
+11. **Host tie-break after host deletion.** Accepted privacy trade-off, decided by Atlas as Chris's delegate on Chris's instruction in the working conversation of 2026-10-21 to decide the items Atlas had listed for him. Chris has not yet seen this entry, so it stays open for his confirmation or override. This ADR's status is Proposed, so nothing is final before then. When the deleted account is the host seat and the vote closed `host-tiebreak`, the public outcome of the vote, which equals the host's tie-break choice, is kept with the seat reference scrubbed (§7.2). The outcome is kept because it is the vote's public result, and removing it would remove the record of whether the party rested. It is not hidden by any other means, and the ADR makes no claim that another event reveals it.
 
 ## Verification
 
@@ -161,7 +161,7 @@ Decided by Chris's delegate in review:
   - Departed after casting: N = 4. Seats A and B cast yes, seat C casts no, and seat D casts no and then departs (revoked). N stays 4, D's no is kept, and the result is the same as if D had stayed connected: an all-cast tie, so the host window opens.
   - Seat revoked before open: N = 3 seated seats plus one seat kicked before open. N is 3, not 4 (§2.1).
   - Subtraction after account deletion: N = 4, closed with yes = 2 and no = 2. The account of seat D, which cast a counted ballot, is deleted. `RestVoteClosed` keeps the outcome and reason with yes and no set to null, the `RestVoteCast` and `RestVoteCastNotice` events are removed, and `eligibleSeats` is removed. Nothing that remains lets anyone derive D's choice by subtraction (§7.2). The only choice that remains derivable is a deleted host's tie-break choice, because it equals the public outcome (§7.2, item 2, last bullet); this is the accepted exception.
-  - Host deleted after a tie-break: the vote closed `host-tiebreak`, and the host's account is deleted. The seat reference is scrubbed and the outcome and reason are kept, so the host's tie-break choice remains derivable from the outcome. This is the accepted exception in §7.2, and the test asserts exactly that: no seat link remains, and no other choice is derivable.
+  - Host deleted after a tie-break: the vote closed `host-tiebreak`, and the host's account is deleted. The seat reference is scrubbed and the outcome and reason are kept, so the host's tie-break choice remains derivable from the outcome. This is the accepted exception in §7.2: the outcome is the vote's public result. The test asserts exactly that: no seat link remains, and no other choice is derivable.
   - Multiplayer check and revoked seats: a session with one active seat and one revoked seat is treated as solo for §1.11, and `POST /session/:id/rest` is allowed; a session with two seated, non-retired seats (one of them away) is multiplayer and the request is rejected with `multiplayer` (§1.11).
   - Output gate precondition: a DM turn whose output the output gate refused, blocked, or held contains a `call_for_rest` call. No vote opens and the DM receives `rest-not-allowed` with reason `precondition` (§1.4, §1.6).
   - Solo-rest endpoint on a multiplayer session: `POST /session/:id/rest` returns `rest-not-allowed` with reason `multiplayer` (§1.11).
