@@ -8,9 +8,9 @@ Append-only: this ADR defines presence and autopilot contracts. It does not edit
 
 - Spec §3.2 US-P5 AC1: a player disconnected for more than 30 s is marked away, and control is restored within 2 s of reconnect.
 - Spec §9.1: reconnect and full state restore complete within 3 s. US-P5 measures control and §9.1 measures full state, so they are separate targets (§3).
-- Spec §3.5 AC2: a combat turn timer of 90 s; expiry resolves the turn as Dodge.
+- Spec US-B2 AC2 (§3.5): a party combat turn timer of 90 s, host-configurable; expiry resolves the turn as Dodge.
 - Spec §6.1: the exploration round default is 120 s, host-configurable, with "off" allowed and a Resolve now control.
-- Spec §6.3: a 15 s reaction window; defensive autopilot applies per A7.
+- Spec §6.3: a 15 s reaction window; a defensive autopilot list (Dodge, move to cover within speed, healing potion below 25% HP, no risky actions or hazards). This ADR narrows that list for M4 (§5.4).
 - Spec §6.4: a seat drops out after 30 s and is excluded from the spotlight. Drop-in is governed by §6.4. Zero connected seats pauses the table.
 - Spec §6.5: the host approves or denies late joiners.
 - Spec A7: autopilot is defensive only. Spec A8: the spotlight gives every active player at least one direct prompt per 10 DM turns.
@@ -78,9 +78,9 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 ### 5. Defensive autopilot
 
 1. **Scope.** Autopilot acts only for a confirmed `away` PC, during combat, on that PC's turn (A7). It never acts for `unknown`, `disconnected`, `returning`, or `revoked` seats. It never acts in exploration, never casts a rest vote, never submits a non-defensive action, and never speaks.
-2. **Trigger.** It acts when the away PC's combat turn begins, and only if the seat is confirmed `away` at that point. If the seat becomes `away` during its own turn, that turn is not replaced mid-turn. It resolves by the 90 s timer as Dodge (spec §3.5 AC2). Autopilot acts for the seat from its next turn prompt, once it is confirmed `away`.
+2. **Trigger.** It acts when the away PC's combat turn begins, and only if the seat is confirmed `away` at that point. If the seat becomes `away` during its own turn, that turn is not replaced mid-turn. It resolves by the 90 s timer as Dodge (spec US-B2 AC2). Autopilot acts for the seat from its next turn prompt, once it is confirmed `away`.
 3. **Engine function.** `autopilot(state, seat) -> command`. It is a pure function of the Room state and the seat. It reads only engine state: positions, HP, turn order, conditions, and concentration. It never reads chat, player text, or LLM output. It uses no LLM and no judge call.
-4. **Policy: Dodge or hold only.** M4 has no movement for autopilot. It takes no move, cover, opportunity attack, consumable, spell, or hazard action.
+4. **Policy: Dodge or hold only.** Spec §6.3 gives the defensive autopilot list: Dodge, move to cover within speed, use a healing potion below 25% HP, and never spend consumables otherwise, initiate risky actions, or move into hazards. This ADR narrows that list for M4, as decided here: autopilot takes no movement, so no move to cover, no opportunity attack, and no consumable (including the healing potion), spell, or hazard action. The narrowing is an explicit decision of this ADR, not a reading of the spec.
    1. Dodge is the default and only action.
    2. If Dodge cannot be taken, hold: end the turn with no action.
    3. Reactions are declined (§6).
@@ -99,8 +99,8 @@ This section sets the "120 s round" default that ADR-029 §8 refers to. It was n
 
 | Timer or threshold | Default | Source | Notes |
 |---|---|---|---|
-| Exploration round | 120 s | spec §6.1, ADR-005 | Host-configurable, "off" allowed, Resolve now control. |
-| Combat turn | 90 s | spec §3.5 AC2, ADR-005 | Expiry resolves as Dodge. |
+| Exploration round | 120 s | spec §6.1, ADR-005 | Default. Host-configurable, "off" allowed, Resolve now control. |
+| Combat turn (party) | 90 s | spec US-B2 AC2, ADR-005 | Default. Host-configurable (spec line 575); off for solo. Expiry resolves as Dodge. Min and max bounds are not set in the spec and are decided in M4 item 3 (host controls). |
 | Rest vote | 120 s | ADR-030 §4 | Fixed for M4. |
 | Reaction window | 15 s | spec §6.3 | Auto-declined for `away`, `revoked`, and `unknown` seats. |
 | Away threshold | 30 s | spec US-P5 AC1, §6.4 | Applies to `disconnected` seats on a running server. |
@@ -152,6 +152,6 @@ Routine within delegation, flagged because they set behavior:
 ## Verification
 
 - Docs-only change: one file, `docs/adr/031-presence-away-autopilot.md`. No existing ADR and no `docs/architecture.md` change. No code is written.
-- Citations checked against `docs/spec.md` US-P5 AC1, §3.5 AC2, §6.1, §6.3, §6.4, §6.5, §9.1, A7, A8, §13 Q7; `docs/architecture.md` §2.2 and §15.6; `docs/plan/m4-breakdown.md` items 4 and 5; ADR-002, ADR-003, ADR-005, ADR-014, ADR-029 §1 (barrier and input queueing), §2, §4 (promotion at next round open), §5, §7 (re-check and gate), §8 (per-seat budget and 120 s round); ADR-030 §2.3 (away leaves N, ballot kept), §3.4 (host tie-break, tie-failed), §5.1 (cast re-check). New event types are declared as additions to the v0.2 list in architecture §15.6; neither `docs/architecture.md` nor ADR-022 is edited.
+- Citations checked against `docs/spec.md` US-P5 AC1, US-B2 AC2, §6.1, §6.3 (autopilot list, 15 s window), §6.4, §6.5, §9.1, A7, A8, §13 Q7, and the turn-timer consistency line in §15 (both timers host-configurable); `docs/architecture.md` §2.2 and §15.6; `docs/plan/m4-breakdown.md` items 4 and 5; ADR-002, ADR-003, ADR-005, ADR-014, ADR-029 §1 (barrier and input queueing), §2, §4 (promotion at next round open), §5, §7 (re-check and gate), §8 (per-seat budget and 120 s round); ADR-030 §2.3 (away leaves N, ballot kept), §3.4 (host tie-break, tie-failed), §5.1 (cast re-check). New event types are declared as additions to the v0.2 list in architecture §15.6; neither `docs/architecture.md` nor ADR-022 is edited.
 - Stale-sentence sweep: recorded in the PR report.
 - `prettier --check` run against the branch head.
