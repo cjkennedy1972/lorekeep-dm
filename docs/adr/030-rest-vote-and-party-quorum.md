@@ -38,7 +38,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 2. Eligible voters and the count N
 
-1. **Eligible set at open.** The eligible set is every seated, non-retired seat at open, regardless of presence. Mute is a chat restriction (ADR-031 §3.5), so it does not affect eligibility. A seat that joins after open is not eligible for that vote.
+1. **Eligible set at open.** The eligible set is every seated, non-retired seat at open, regardless of presence. A seat that was revoked (kicked or banned) before open is not seated, so it is not in N. Mute is a chat restriction (ADR-031 §3.5), so it does not affect eligibility. A seat that joins after open is not eligible for that vote.
 2. **N is fixed at open for every cause,** and is the size of the eligible set at open. N never changes after open, whatever happens to a seat: away, revoked, departed, kicked, or banned.
 3. **Seats stay in N.** An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. While away it cannot cast, because a cast requires control (ADR-031 §3.1, §4.2).
    - A seat that is `revoked` (kick, ban, retirement, or departure) stays in N and keeps its counted ballot, or counts as `no` if it had not cast. It can cast nothing further. Revocation removes control and chat only; it never changes N or the result.
@@ -74,7 +74,7 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
    - `no-majority-early`: an early fail (§4.5).
    - `no-majority`: an all-cast fail (§4.7).
    - `host-tiebreak`: the host's tie-break outcome (§3.5).
-   - `tie-failed`: a tie at expiry with no host action (§3.6), or a host seat that is revoked or away while a tie is possible (§3.4).
+   - `tie-failed`: a tie at expiry with no host action (§3.6); a host seat that is revoked while a tie is possible, at once (§3.4); or a host seat that is away while a tie is possible, at expiry (§3.4, §4.6).
    - `expired`: deadline reached, yes below no, and not all seats have cast.
    - `cancelled`: the vote was reverted (§6.8).
 9. **Cooldown.** The close of any vote, whatever its outcome, starts the 10 min table cooldown in §1.7.
@@ -153,6 +153,9 @@ Decided by Chris's delegate in review:
   - Early-fail boundary: N = 4, yes = 1, two seats cast no, one seat uncast. Yes plus uncast equals N / 2, so no early fail fires and the vote stays open.
   - Early fail fires: N = 4, yes = 0, three seats cast no, one seat uncast. Yes plus uncast is 1, strictly less than N / 2, so the vote closes as failed with `no-majority-early` (§4.5).
   - Away host: the host seat is away when a tie appears. The host window never opens, because the all-cast condition cannot hold while the host cannot cast. The tie fails at expiry with `tie-failed` (§3.4).
-- Revoked host: the host seat is revoked when a tie appears. The tie fails at once with `tie-failed` (§3.4).
-- Departed after casting: N = 4. Seats A and B cast yes, seat C casts no, and seat D casts no and then departs (revoked). N stays 4, D's no is kept, and the result is the same as if D had stayed connected: an all-cast tie, so the host window opens.
+  - Revoked host: the host seat is revoked when a tie appears. The tie fails at once with `tie-failed` (§3.4).
+  - Departed after casting: N = 4. Seats A and B cast yes, seat C casts no, and seat D casts no and then departs (revoked). N stays 4, D's no is kept, and the result is the same as if D had stayed connected: an all-cast tie, so the host window opens.
+  - Seat revoked before open: N = 3 seated seats plus one seat kicked before open. N is 3, not 4 (§2.1).
+  - Subtraction after account deletion: N = 4, closed with yes = 2 and no = 2. The account of seat D, which cast a counted ballot, is deleted. `RestVoteClosed` keeps the outcome and reason with yes and no set to null, the `RestVoteCast` and `RestVoteCastNotice` events are removed, and `eligibleSeats` is removed. Nothing that remains lets anyone derive D's choice, by subtraction or otherwise (§7.2).
+  - Solo-rest endpoint on a multiplayer session: `POST /session/:id/rest` returns `rest-not-allowed` with reason `multiplayer` (§1.11).
 - Run by the author before push: prettier and the stale-sentence sweep.
