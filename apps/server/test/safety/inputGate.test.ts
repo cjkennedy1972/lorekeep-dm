@@ -6,8 +6,11 @@ import {
   JUDGE_MAX_RESPONSE_BYTES,
   MODERATION_CALLS_PER_MINUTE,
   MODERATION_LOG_ROWS_PER_DAY,
+  CHAT_CALLS_PER_TABLE_PER_MINUTE,
+  ACTION_CALLS_PER_TABLE_PER_MINUTE,
   type InputGateDb,
 } from '../../src/safety/inputGate.js';
+import { JudgeBudget, withJudgeHardCap } from '../../src/safety/judgeBudget.js';
 import {
   buildJudgeMessages,
   failClosedVerdict,
@@ -68,6 +71,154 @@ const innocent = 'The innkeeper pours ale and nods at the table.';
 const minorSexual = 'the 14yo girl had sex with the guard';
 
 describe('createInputGate', () => {
+  it('sets the per-table player-action judge cap to 48 calls per minute', () => {
+    expect(ACTION_CALLS_PER_TABLE_PER_MINUTE).toBe(48);
+  });
+
+  it('fails closed with a retryable limited decision for action capacity', async () => {
+    const chat = vi.fn(async () => ({
+      kind: 'limited' as const,
+      class: 'action-input' as const,
+    }));
+    const moderator = createModerationJudge({ chat });
+    const { db } = fakeDb();
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.check({ text: innocent, surface: 'player-action', accountId: 'a1' }),
+    ).resolves.toBe('busy');
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(chat.mock.calls[0]?.[0].direction).toBe('input');
+  });
+
+  it('keeps chat capacity limits on the existing busy rejection path', async () => {
+    const chat = vi.fn(async () => ({
+      kind: 'limited' as const,
+      class: 'chat' as const,
+    }));
+    const moderator = createModerationJudge({ chat });
+    const { db } = fakeDb();
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkChat({ text: innocent, surface: 'chat', accountId: 'a1' }),
+    ).resolves.toMatchObject({ decision: 'limited', attributable: false });
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not pass a typed capacity result to the verdict parser', async () => {
+    const parser = vi.fn(parseVerdictReply);
+    const chat = vi.fn(async () => ({
+      kind: 'limited' as const,
+      class: 'action-input' as const,
+    }));
+    const moderator = createModerationJudge({
+      chat,
+      parseVerdictReply: parser,
+    });
+
+    await expect(
+      moderator.moderate({
+        text: innocent,
+        tier: 'standard',
+        direction: 'input',
+      }),
+    ).resolves.toMatchObject({
+      unavailable: true,
+      capacityLimited: 'action-input',
+    });
+    expect(parser).not.toHaveBeenCalled();
+  });
+
+  it('keeps DM output judge calls explicitly on the output direction', async () => {
+    const budget = new JudgeBudget();
+    const chatSlots = [budget.acquire('chat'), budget.acquire('chat')];
+    const actionSlot = budget.acquire('action-input');
+    const chat = vi.fn(async ({ direction, budgetClass }) => {
+      const slot = budget.acquire(
+        direction === 'output' ? 'output' : (budgetClass ?? 'action-input'),
+      );
+      if (slot.kind === 'limited') return slot;
+      try {
+        return '{"verdict":"allow","category":"none"}';
+      } finally {
+        slot.release();
+      }
+    });
+    const moderator = createModerationJudge({ chat });
+
+    for (let i = 0; i < 3; i++) {
+      await expect(
+        moderator.moderate({
+          text: innocent,
+          tier: 'standard',
+          direction: 'output',
+        }),
+      ).resolves.toMatchObject({ verdict: 'allow' });
+    }
+
+    expect(chat).toHaveBeenCalledTimes(3);
+    expect(
+      chat.mock.calls.every(([request]) => request.direction === 'output'),
+    ).toBe(true);
+    for (const slot of chatSlots) if (slot.kind === 'acquired') slot.release();
+    if (actionSlot.kind === 'acquired') actionSlot.release();
+  });
+
+  it('returns a moderation-log reference for an allowed chat message without storing its text', async () => {
+    const queries: { sql: string; params: unknown[] }[] = [];
+    const db: InputGateDb = {
+      async query(sql: string, params: unknown[] = []) {
+        queries.push({ sql, params });
+        return { rows: [{ id: 'moderation-log-id' }], rowCount: 1 } as never;
+      },
+    };
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkChat({
+        text: innocent,
+        surface: 'chat',
+        accountId: 'a1',
+      }),
+    ).resolves.toMatchObject({
+      decision: 'allow',
+      moderationLogId: 'moderation-log-id',
+      category: 'none',
+      source: 'judge',
+      attributable: true,
+    });
+    expect(calls).toHaveLength(1);
+    expect(queries[0]?.params).toEqual([
+      'chat',
+      'a1',
+      null,
+      'none',
+      'judge',
+      null,
+    ]);
+    expect(JSON.stringify(queries)).not.toContain(innocent);
+  });
+
+  it('allows a judge-approved chat message when the log insert fails, without attribution', async () => {
+    const db: InputGateDb = {
+      async query() {
+        throw new Error('database unavailable');
+      },
+    };
+    const { moderator } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkChat({ text: innocent, surface: 'chat', accountId: 'a1' }),
+    ).resolves.toMatchObject({
+      decision: 'allow',
+      moderationLogId: undefined,
+      attributable: false,
+    });
+  });
+
   it('allows text the judge allows and writes no log row', async () => {
     const { db, queries } = fakeDb();
     const { moderator, calls } = stubModerator(allowVerdict());
@@ -361,6 +512,67 @@ describe('moderation call budget', () => {
     expect(calls).toHaveLength(MODERATION_CALLS_PER_MINUTE.ip);
   });
 
+  it('caps chat judge calls per table without limiting another table', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-21T12:00:00Z'));
+    const { db } = fakeDb();
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    for (let i = 0; i < CHAT_CALLS_PER_TABLE_PER_MINUTE + 1; i++) {
+      await expect(
+        gate.checkChat({
+          text: innocent,
+          surface: 'chat',
+          sessionId: 'table-one',
+        }),
+      ).resolves.toMatchObject({
+        decision: i < CHAT_CALLS_PER_TABLE_PER_MINUTE ? 'allow' : 'limited',
+      });
+    }
+
+    await expect(
+      gate.checkChat({
+        text: innocent,
+        surface: 'chat',
+        sessionId: 'table-two',
+      }),
+    ).resolves.toMatchObject({ decision: 'allow' });
+    expect(calls).toHaveLength(CHAT_CALLS_PER_TABLE_PER_MINUTE + 1);
+  });
+
+  it('caps player action judge calls per table and leaves another table available', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-21T12:00:00Z'));
+    const { db } = fakeDb();
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    for (let i = 0; i < ACTION_CALLS_PER_TABLE_PER_MINUTE; i++)
+      await expect(
+        gate.check({
+          text: innocent,
+          surface: 'player-action',
+          sessionId: 'table-one',
+        }),
+      ).resolves.toBe('allow');
+    await expect(
+      gate.check({
+        text: innocent,
+        surface: 'player-action',
+        sessionId: 'table-one',
+      }),
+    ).resolves.toBe('busy');
+    await expect(
+      gate.check({
+        text: innocent,
+        surface: 'player-action',
+        sessionId: 'table-two',
+      }),
+    ).resolves.toBe('allow');
+    expect(calls).toHaveLength(ACTION_CALLS_PER_TABLE_PER_MINUTE + 1);
+  });
+
   it('caps moderation_log rows per account per day and logs the cap once', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
@@ -390,6 +602,136 @@ describe('moderation call budget', () => {
           (w.obj as { event?: string }).event === 'moderation_log_cap_reached',
       ),
     ).toHaveLength(1);
+  });
+
+  it('allows a judge-approved chat message after the daily log cap without attribution', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
+    const { db, queries } = fakeDb();
+    const { moderator } = stubModerator(
+      (() => {
+        let judged = 0;
+        return () =>
+          judged++ < MODERATION_LOG_ROWS_PER_DAY
+            ? blockVerdict('violence')
+            : allowVerdict();
+      })(),
+    );
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+    for (let i = 0; i < MODERATION_LOG_ROWS_PER_DAY; i++) {
+      if (i > 0 && i % MODERATION_CALLS_PER_MINUTE.account === 0)
+        vi.setSystemTime(Date.now() + 60_000);
+      await gate.check({
+        text: 'blocked',
+        surface: 'player-action',
+        accountId: 'cap-account',
+      });
+    }
+    const result = await gate.checkChat({
+      text: innocent,
+      surface: 'chat',
+      accountId: 'cap-account',
+    });
+    expect(result).toMatchObject({ decision: 'allow', attributable: false });
+    expect(result.moderationLogId).toBeUndefined();
+    expect(
+      queries.filter((q) => /INSERT INTO moderation_log/.test(q.sql)),
+    ).toHaveLength(MODERATION_LOG_ROWS_PER_DAY);
+  });
+
+  it('uses the same daily cap for chat queue and deadline rejection logs', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
+    const { db, queries } = fakeDb();
+    const { moderator } = stubModerator(blockVerdict('violence'));
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+    expect(gate.logChatRejection).toBeTypeOf('function');
+    for (let i = 0; i < MODERATION_LOG_ROWS_PER_DAY; i++) {
+      if (i > 0 && i % MODERATION_CALLS_PER_MINUTE.account === 0)
+        vi.setSystemTime(Date.now() + 60_000);
+      await gate.check({
+        text: 'blocked',
+        surface: 'player-action',
+        accountId: 'rejection-cap-account',
+      });
+    }
+    await gate.logChatRejection?.({
+      surface: 'chat',
+      accountId: 'rejection-cap-account',
+      sessionId: 'session-1',
+    });
+    expect(
+      queries.filter((q) => /INSERT INTO moderation_log/.test(q.sql)),
+    ).toHaveLength(MODERATION_LOG_ROWS_PER_DAY);
+  });
+});
+
+describe('judge slot hard cap', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('destroys and releases active slots at 60 seconds', async () => {
+    vi.useFakeTimers();
+    const singleLostBudget = new JudgeBudget();
+    const singleLostSlot = singleLostBudget.acquire('chat');
+    expect(singleLostSlot.kind).toBe('acquired');
+    if (singleLostSlot.kind !== 'acquired') return;
+    const singleLost = withJudgeHardCap(
+      new Promise<string>(() => {}),
+      singleLostSlot.release,
+      singleLostSlot.markLost,
+    );
+    const singleLostRejection = expect(singleLost).rejects.toThrow(
+      'judge upstream hard cap exceeded',
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    await singleLostRejection;
+    const availableChatSlot = singleLostBudget.acquire('chat');
+    expect(availableChatSlot.kind).toBe('acquired');
+    if (availableChatSlot.kind === 'acquired') availableChatSlot.release();
+
+    const budget = new JudgeBudget();
+    const deferred = Array.from({ length: 4 }, () => {
+      let resolve!: (value: string) => void;
+      const promise = new Promise<string>((r) => (resolve = r));
+      return { promise, resolve };
+    });
+    const classes = ['chat', 'chat', 'action-input', 'output'] as const;
+    const calls = classes.map((budgetClass, index) => {
+      const slot = budget.acquire(budgetClass);
+      expect(slot.kind).toBe('acquired');
+      if (slot.kind !== 'acquired') throw new Error('expected acquired slot');
+      return withJudgeHardCap(
+        deferred[index]!.promise,
+        slot.release,
+        slot.markLost,
+      );
+    });
+    const rejections = calls.map((call) =>
+      expect(call).rejects.toThrow('judge upstream hard cap exceeded'),
+    );
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(budget.acquire('chat').kind).toBe('limited');
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.all(rejections);
+    expect(budget.acquire('output').kind).toBe('acquired');
+    deferred[0]!.resolve('late verdict');
+    await Promise.resolve();
+    const afterLateSettle = budget.acquire('chat');
+    expect(afterLateSettle.kind).toBe('acquired');
+    if (afterLateSettle.kind === 'acquired') afterLateSettle.release();
+    for (const item of deferred.slice(1)) item.resolve('late verdict');
+  });
+
+  it('releases the slot as soon as the upstream settles before the hard cap', async () => {
+    vi.useFakeTimers();
+    const budget = new JudgeBudget();
+    const slot = budget.acquire('chat');
+    expect(slot.kind).toBe('acquired');
+    if (slot.kind !== 'acquired') return;
+    await expect(
+      withJudgeHardCap(Promise.resolve('verdict'), slot.release),
+    ).resolves.toBe('verdict');
+    expect(budget.acquire('chat').kind).toBe('acquired');
   });
 });
 

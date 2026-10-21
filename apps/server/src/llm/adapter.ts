@@ -60,6 +60,8 @@ export interface LlmAdapter {
   capabilities(): LlmCapabilities;
   complete(request: LlmRequest): AsyncIterable<LlmChunk>;
   probe(signal?: AbortSignal): Promise<boolean>;
+  /** Aborts all active transport connections owned by this adapter. */
+  destroy?(): void;
 }
 
 /** Normalize unknown failures without including request/response content. */

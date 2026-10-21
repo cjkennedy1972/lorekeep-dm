@@ -19,6 +19,8 @@ interface VerdictBase {
   category: Category;
   source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed';
   latencyMs: number;
+  /** Capacity refusal is distinct from a malformed or failed judge response. */
+  capacityLimited?: 'action-input' | 'chat' | 'output';
 }
 
 /** `unavailable` is true when the judge could not produce a usable verdict (fail-closed). */
@@ -28,14 +30,19 @@ export type Verdict = VerdictBase &
     | { unavailable: true; failClosedRow: FailClosedRow }
   );
 
-export function failClosedVerdict(latencyMs: number): Verdict {
+export function failClosedVerdict(
+  latencyMs: number,
+  capacityLimited?: 'action-input' | 'chat' | 'output',
+  failClosedRow: FailClosedRow = 'hard-floor',
+): Verdict {
   return {
     verdict: 'block',
     category: 'other',
     source: 'failclosed',
     latencyMs,
     unavailable: true,
-    failClosedRow: 'hard-floor',
+    failClosedRow,
+    ...(capacityLimited ? { capacityLimited } : {}),
   };
 }
 
@@ -48,6 +55,10 @@ export interface ModerationRequest {
   /** Turn-scoped deterministic scanner. When set, it judges `text` in place of `context + text`; message-level rules need the whole turn, not a carry. */
   turn?: DeterministicTurn;
   direction: Direction;
+  /** Chat has an explicit budget class while sharing input capacity with actions. */
+  budgetClass?: 'action-input' | 'chat';
+  /** Optional caller deadline (chat receipt bound); aborts the in-flight judge request. */
+  signal?: AbortSignal;
 }
 
 export interface Moderator {
@@ -93,12 +104,21 @@ export interface JudgeChatRequest {
   temperature: 0;
   max_tokens: number;
   signal: AbortSignal;
+  direction: Direction;
+  budgetClass?: 'action-input' | 'chat' | 'output';
 }
 
-/** OpenAI-compatible chat call returning the assistant message content. */
-export type JudgeChat = (req: JudgeChatRequest) => Promise<string>;
+/** Judge endpoint call; capacity refusals are typed and never enter verdict parsing. */
+export type JudgeChatLimited = {
+  kind: 'limited';
+  class: 'action-input' | 'chat' | 'output';
+};
+export type JudgeChat = (
+  req: JudgeChatRequest,
+) => Promise<string | JudgeChatLimited>;
 
 export const JUDGE_MAX_TOKENS = 1024;
+// ADR-032 §4: after the 4.5 s caller deadline, work stays in flight for 10 s, then counts as lost until settlement or the 60 s hard cap.
 export const DEFAULT_JUDGE_TIMEOUT_MS = 4_500;
 
 const RUBRIC_TAG = {
@@ -141,6 +161,7 @@ export function parseVerdictReply(
   if (verdict === 'block' && category === 'none') return null;
   return { verdict, category: category as Category };
 }
+export type VerdictParser = typeof parseVerdictReply;
 
 const quoteData = (value: string) =>
   JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -169,6 +190,7 @@ export function buildJudgeMessages(req: ModerationRequest): ChatMessage[] {
 
 export interface JudgeModeratorOptions {
   chat: JudgeChat;
+  parseVerdictReply?: VerdictParser;
   deterministic: DeterministicLayer;
   timeoutMs?: number;
   now?: () => number;
@@ -239,6 +261,14 @@ export class JudgeModerator implements Moderator {
 
     const judged = await this.judge(req);
     if (judged === null) return failClosedVerdict(elapsed());
+    if ('kind' in judged) {
+      // ADR-032 §4: DM output capacity exhaustion is a HOLD under ADR-023.
+      return failClosedVerdict(
+        elapsed(),
+        judged.class,
+        judged.class === 'output' ? 'tier' : 'hard-floor',
+      );
+    }
     return {
       ...judged,
       source: 'judge',
@@ -250,11 +280,24 @@ export class JudgeModerator implements Moderator {
   private async judge(req: ModerationRequest) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let resolveCallerAbort!: () => void;
+    const abortFromCaller = () => {
+      controller.abort();
+      resolveCallerAbort();
+    };
     const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
       timer = setTimeout(() => {
         controller.abort();
         resolve(TIMED_OUT);
       }, this.timeoutMs);
+    });
+    const callerAbort = new Promise<typeof TIMED_OUT>((resolve) => {
+      resolveCallerAbort = () => resolve(TIMED_OUT);
+      if (req.signal?.aborted) {
+        abortFromCaller();
+      } else {
+        req.signal?.addEventListener('abort', abortFromCaller, { once: true });
+      }
     });
     const call = Promise.resolve()
       .then(() =>
@@ -263,6 +306,8 @@ export class JudgeModerator implements Moderator {
           temperature: 0,
           max_tokens: JUDGE_MAX_TOKENS,
           signal: controller.signal,
+          direction: req.direction,
+          budgetClass: req.budgetClass,
         }),
       )
       .then(
@@ -270,11 +315,13 @@ export class JudgeModerator implements Moderator {
         () => TIMED_OUT,
       );
     try {
-      const result = await Promise.race([call, timeout]);
+      const result = await Promise.race([call, timeout, callerAbort]);
       if (!result.ok) return null;
-      return parseVerdictReply(result.raw);
+      if (typeof result.raw !== 'string') return result.raw;
+      return (this.options.parseVerdictReply ?? parseVerdictReply)(result.raw);
     } finally {
       clearTimeout(timer);
+      req.signal?.removeEventListener('abort', abortFromCaller);
     }
   }
 }

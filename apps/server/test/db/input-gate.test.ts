@@ -123,6 +123,25 @@ describe('gateway input gate', () => {
     submit.mockRestore();
   }, 30_000);
 
+  it('a capacity-limited action gets a neutral retryable busy response', async () => {
+    gate = { check: async () => 'busy' };
+    const submit = vi.spyOn(Room.prototype, 'submitAction');
+    const ws = await openSocket(tokens[0]!);
+    ws.send(playerAction('A calm plan.'));
+    let reply = await nextMessage(ws);
+    while (reply.type !== 'Error') reply = await nextMessage(ws);
+    expect(reply).toMatchObject({
+      type: 'Error',
+      payload: {
+        code: 'BUSY',
+        message: 'The game is busy. Try again shortly.',
+      },
+    });
+    expect(submit).not.toHaveBeenCalled();
+    ws.close();
+    submit.mockRestore();
+  }, 30_000);
+
   it('a blocked clarification answer is rejected privately and never reaches the Room', async () => {
     gate = {
       check: async ({ text }) =>

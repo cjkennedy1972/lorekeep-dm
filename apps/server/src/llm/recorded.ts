@@ -114,6 +114,9 @@ export class RecordedLlmAdapter implements LlmAdapter {
   async probe(signal?: AbortSignal): Promise<boolean> {
     return this.mode !== 'record' || this.options.upstream!.probe(signal);
   }
+  destroy(): void {
+    this.options.upstream?.destroy?.();
+  }
   async *complete(request: LlmRequest): AsyncIterable<LlmChunk> {
     if (request.signal?.aborted)
       throw new LlmEndpointError('stream-aborted', 'LLM request was aborted');

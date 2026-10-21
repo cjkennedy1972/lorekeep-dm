@@ -82,6 +82,9 @@ export class MeteredLlmAdapter implements LlmAdapter {
   probe(signal?: AbortSignal) {
     return this.inner.probe(signal);
   }
+  destroy() {
+    this.inner.destroy?.();
+  }
   async *complete(request: LlmRequest): AsyncIterable<LlmChunk> {
     const started = this.now();
     let text = '';

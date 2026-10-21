@@ -36,6 +36,54 @@ export const ClarificationAnswerSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+const NormalizedChatTextSchema = z
+  .string()
+  .transform((text) => text.normalize('NFC').trim())
+  .pipe(z.string().min(1).max(2000));
+export const ChatSendSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ChatSend'),
+    payload: z.object({ text: NormalizedChatTextSchema }).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
+export const ChatHistoryRequestSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ChatHistoryRequest'),
+    payload: z.object({}).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
+export const MuteChatSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('MuteChat'),
+    payload: z.object({ seatId: SeatIdSchema, muted: z.boolean() }).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
+export const ChatMessageSchema = z
+  .object({
+    messageId: z.uuid(),
+    roomId: z.uuid(),
+    seatId: SeatIdSchema,
+    receiptSeq: z.int().positive(),
+    receivedAt: z.int().nonnegative(),
+    text: NormalizedChatTextSchema,
+    channel: z.literal('ooc'),
+    gateDecision: z
+      .object({
+        verdict: z.literal('allow'),
+        moderationLogId: z.uuid().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+export const ChatHistoryEntrySchema = z
+  .object({ seq: z.int().positive(), message: ChatMessageSchema })
+  .strict();
 export const CombatCommandSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -129,6 +177,16 @@ export const ErrorMessageSchema = z.object({
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({
     seq: z.int().nonnegative(),
+    type: z.literal('ChatMessage'),
+    payload: ChatMessageSchema,
+  }),
+  z.object({
+    seq: z.int().nonnegative(),
+    type: z.literal('ChatHistory'),
+    payload: z.object({ messages: z.array(ChatHistoryEntrySchema) }).strict(),
+  }),
+  z.object({
+    seq: z.int().nonnegative(),
     type: z.enum([
       'ActionQueued',
       'ActionWithdrawn',
@@ -176,6 +234,8 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ErrorMessageSchema,
 ]);
 export type ClientEnvelope = z.infer<typeof ClientEnvelopeSchema>;
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+export type ChatHistoryEntry = z.infer<typeof ChatHistoryEntrySchema>;
 export type CombatCommand = z.infer<typeof CombatCommandSchema>;
 export type StateSync = z.infer<typeof StateSyncSchema>;
 export type PresenceChanged = z.infer<typeof PresenceChangedSchema>;

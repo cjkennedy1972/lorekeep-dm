@@ -44,6 +44,7 @@ Use nginx: its `proxy_set_header` gives explicit control over `X-Forwarded-For` 
 
 - Run the app with `HOST=127.0.0.1`, `PORT=3000`, `TRUST_PROXY=1`, and firewall the app port so only the proxy can reach it. A client that can reach the app port directly can send its own `X-Forwarded-For` and bypass per-IP rate limits whenever the app trusts forwarded headers, so the firewall is required even with a hop count.
 - Long LLM turns: HTTP has a 300 s timeout; `/ws` has 3600 s because the connection stays open across turns, and the server pings every 10 s.
+- The moderation endpoint's own request timeout MUST be no more than 5 min. A judge connection destroyed after 60 s stops the gate waiting, but the upstream may continue running unobserved until its request timeout.
 - Rate-limit buckets live in process memory, so each instance has its own. Running several replicas multiplies the effective limits.
 - Session cookies are `__Host-sid` with `Secure` in every non-development run, regardless of `X-Forwarded-Proto`, so a plain-HTTP request to the app still gets a `Secure` cookie.
 

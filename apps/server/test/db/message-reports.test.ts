@@ -160,6 +160,36 @@ describe('message reports', () => {
     expect(dump).not.toContain(operator);
   });
 
+  it('accepts a committed OOC chat message as reportable evidence', async () => {
+    await transcript();
+    const chatSeq = await addEvent('chat.committed', {
+      accountId: seated,
+      seatId: randomUUID(),
+      text: 'That was not okay.',
+      channel: 'ooc',
+    });
+    const server = app();
+    const res = await post(server, hostCookie, {
+      messageRef: chatSeq,
+      category: 'harassment',
+      reason: '',
+    });
+    expect(res.statusCode).toBe(202);
+    const row = (
+      await pool().query(
+        'SELECT author_account_id,context,expires_at-created_at AS life FROM message_reports WHERE message_seq=$1',
+        [chatSeq],
+      )
+    ).rows[0];
+    expect(row.author_account_id).toBe(seated);
+    expect(row.life.days).toBe(90);
+    expect(row.context.at(-1)).toMatchObject({
+      seq: chatSeq,
+      type: 'chat.committed',
+      text: 'That was not okay.',
+    });
+  });
+
   it('truncates long transcript text inside the snapshot', async () => {
     await transcript();
     const big = await addEvent('NarrationCompleted', {

@@ -90,6 +90,7 @@ interface Scrub {
 interface EventRow {
   session_id: string;
   seq: string;
+  type: string;
   payload: unknown;
 }
 
@@ -209,7 +210,7 @@ async function deleteAccount(
     await fenceSession(ctx, client, fenced, session_id);
   const eventRows = (
     await client.query<EventRow>(
-      'SELECT session_id, seq, payload FROM events WHERE payload::text LIKE $1',
+      'SELECT session_id, seq, type, payload FROM events WHERE payload::text LIKE $1',
       [accountPattern],
     )
   ).rows;
@@ -227,7 +228,7 @@ async function deleteAccount(
     eventRows.push(
       ...(
         await client.query<EventRow>(
-          'SELECT session_id, seq, payload FROM events WHERE payload::text LIKE ANY($1)',
+          'SELECT session_id, seq, type, payload FROM events WHERE payload::text LIKE ANY($1)',
           [charPatterns],
         )
       ).rows,
@@ -255,7 +256,7 @@ async function deleteAccount(
     eventRows.push(
       ...(
         await client.query<EventRow>(
-          'SELECT session_id, seq, payload FROM events WHERE session_id = ANY($1) AND payload::text LIKE ANY($2)',
+          'SELECT session_id, seq, type, payload FROM events WHERE session_id = ANY($1) AND payload::text LIKE ANY($2)',
           [touched, TEXT_CACHE_PATTERNS],
         )
       ).rows,
@@ -308,12 +309,16 @@ async function deleteAccount(
     if (seenEvents.has(key)) continue;
     seenEvents.add(key);
     const payload = row.payload as Record<string, unknown>;
-    const scrubbed = scrub(payload, {
-      accountId,
-      placeholder: await placeholderFor(row.session_id),
-      charPlaceholder,
-      charIds,
-    });
+    const scrubbed = scrub(
+      payload,
+      {
+        accountId,
+        placeholder: await placeholderFor(row.session_id),
+        charPlaceholder,
+        charIds,
+      },
+      row.type === 'chat.committed',
+    );
     if (JSON.stringify(scrubbed) === JSON.stringify(payload)) continue;
     await client.query('SELECT redact_event($1,$2,$3)', [
       row.session_id,
@@ -419,7 +424,7 @@ function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
   }
 }
 
-function scrub(value: unknown, s: Scrub): unknown {
+function scrub(value: unknown, s: Scrub, preserveChatText = false): unknown {
   if (typeof value === 'string') {
     if (value === s.accountId) return s.placeholder;
     return s.charIds.has(value) ? s.charPlaceholder : value;
@@ -449,7 +454,10 @@ function scrub(value: unknown, s: Scrub): unknown {
   for (const [key, child] of Object.entries(obj)) {
     if (key === s.accountId || s.charIds.has(key)) continue;
     if (CACHE_KEYS.includes(key)) continue;
-    if (owned && PLAYER_TEXT_KEYS.includes(key)) continue;
+    if (owned && PLAYER_TEXT_KEYS.includes(key)) {
+      if (preserveChatText && key === 'text') out[key] = REDACTED;
+      continue;
+    }
     out[key] = scrub(child, s);
   }
   if (owned) {

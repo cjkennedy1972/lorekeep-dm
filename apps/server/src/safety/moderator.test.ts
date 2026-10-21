@@ -413,6 +413,32 @@ describe('timeouts', () => {
       vi.useRealTimers();
     }
   });
+
+  it('an external chat deadline aborts the judge request immediately', async () => {
+    vi.useFakeTimers();
+    try {
+      let seen: AbortSignal | undefined;
+      const chat = vi.fn((req: JudgeChatRequest) => {
+        seen = req.signal;
+        return new Promise<string>(() => {});
+      });
+      const controller = new AbortController();
+      const pending = moderatorWith(chat, NOOP, { timeoutMs: 10_000 }).moderate(
+        { ...request('x'), signal: controller.signal },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(seen?.aborted).toBe(false);
+      controller.abort();
+      await expect(pending).resolves.toMatchObject({
+        verdict: 'block',
+        source: 'failclosed',
+        unavailable: true,
+      });
+      expect(seen?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 const boundaryCases = (

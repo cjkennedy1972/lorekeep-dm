@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { ChatMessageSchema, type ChatHistoryEntry } from '@game/schema';
 import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
 import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
+import { currentMemberSql } from '../room/membership.js';
 import {
   findRewindTarget,
   REVERTED_TURN_EXCLUSION,
@@ -36,6 +38,13 @@ export class RewindRefusedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'RewindRefusedError';
+  }
+}
+
+export class ChatSeatRevokedError extends Error {
+  constructor() {
+    super('Current seat is required to commit chat');
+    this.name = 'ChatSeatRevokedError';
   }
 }
 
@@ -144,6 +153,51 @@ export class Persistence {
     return this.transaction(sessionId, lease, (client) =>
       appendEvents(client, sessionId, events),
     );
+  }
+
+  writeChat(
+    sessionId: string,
+    event: EventInput,
+    lease: LeaseFence,
+  ): Promise<StoredEvent> {
+    return this.transaction(sessionId, lease, async (client) => {
+      if (event.type === 'chat.committed') {
+        const accountId = (event.payload as { accountId?: unknown }).accountId;
+        if (typeof accountId !== 'string') throw new ChatSeatRevokedError();
+        const membership = await client.query<{ current: boolean }>(
+          `SELECT ${currentMemberSql('$2')} AS current FROM sessions s WHERE s.id=$1`,
+          [sessionId, accountId],
+        );
+        if (membership.rows[0]?.current !== true)
+          throw new ChatSeatRevokedError();
+      }
+      const [stored] = await appendEvents(client, sessionId, [event]);
+      if (!stored) throw new Error('Chat event was not persisted');
+      return stored;
+    });
+  }
+
+  async loadChatHistory(
+    sessionId: string,
+    limit = 100,
+  ): Promise<ChatHistoryEntry[]> {
+    const { rows } = await this.pool.query<{ seq: string; payload: unknown }>(
+      `SELECT seq,payload FROM events
+        WHERE session_id=$1 AND type='chat.committed'
+          AND (expires_at IS NULL OR expires_at>now())
+        ORDER BY seq DESC LIMIT $2`,
+      [sessionId, Math.max(1, Math.min(limit, 100))],
+    );
+    return rows
+      .flatMap(({ seq, payload }) => {
+        const record = { ...(payload as Record<string, unknown>) };
+        delete record.accountId;
+        const parsed = ChatMessageSchema.safeParse(record);
+        return parsed.success
+          ? [{ seq: Number(seq), message: parsed.data }]
+          : [];
+      })
+      .reverse();
   }
 
   async isTableHost(sessionId: string, accountId: string): Promise<boolean> {
