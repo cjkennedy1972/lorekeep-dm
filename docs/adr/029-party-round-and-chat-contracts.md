@@ -123,7 +123,7 @@ Buckets. There are three separate per-seat budgets and they never share counters
 
 1. **Chat bucket** (chat messages only): the Burst, Sustained, and Duplicates limits below.
 2. **Action-input budget** (round submit, edit, withdraw, and `ask_dm`): the Mutations and Edits limits below. Action-input gate calls do not draw from the chat bucket, so a chat burst cannot starve a player's action and an action cannot use up chat capacity.
-3. **Judge budgets** (shared, all tables): the per-table and global caps below. These count gate calls, not seats: chat-gate calls count toward the per-table cap, and both chat-gate and action-input-gate calls count toward the global cap. DM output gating is not counted (ADR-023).
+3. **Judge budgets** (shared, all tables): the per-table and global caps below. These count gate calls, not seats: chat-gate calls count toward the per-table cap, and both chat-gate and action-input-gate calls count toward the global cap. DM output gating has a reserved share of the global caps (1 of 4 in flight, 40 of 240 per minute, see below) and is not drawn from the chat and action-input shared share (ADR-023).
 
 Chat bucket:
 
@@ -198,7 +198,7 @@ Neither focused ADR is written here. This ADR states what it needs from them: ro
 
 - M4 item 1 can start once this ADR is accepted: the `ChatMessage` type (§6) and gate order (§7) are fixed.
 - Chat is committed or rejected within 10 s of receipt (§1.4). Accepted as the cost of one order for everyone.
-- Chat judge calls share the moderation endpoint with DM output. The per-table bucket (§8) protects DM narration from chat load. The DM's own gate budget is not reduced by this ADR and is measured in M4 item 9.
+- Chat judge calls share the moderation endpoint with DM output. DM narration is protected by the reserved global capacity (§8). The per-table cap only limits one table's chat. The DM's own gate budget is not reduced by this ADR and is measured in M4 item 9.
 - Thresholds in §8 are proposals with stated reasons. They will need tuning from M4 evidence. Changing them is a config change, not an ADR change, unless the rationale changes.
 - ADR-022 is unchanged. Its T2 ordering and §4.2 fallback are preserved by §2.
 
