@@ -156,4 +156,4 @@ Decided by Chris's delegate in review:
   - Away host: the host seat is away when a tie appears. The host window never opens, because the all-cast condition cannot hold while the host cannot cast. The tie fails at expiry with `tie-failed` (§3.4).
 - Revoked host: the host seat is revoked when a tie appears. The tie fails at once with `tie-failed` (§3.4).
 - Departed after casting: N = 4. Seats A and B cast yes, seat C casts no, and seat D casts no and then departs (revoked). N stays 4, D's no is kept, and the result is the same as if D had stayed connected: an all-cast tie, so the host window opens.
-- Run by the author before push: `prettier --check` on this file, and a stale-sentence sweep. These are not claimed as run by this text.
+- Run by the author before push: prettier and the stale-sentence sweep.
