@@ -80,3 +80,17 @@ Prompt caching remained provider-managed and was not independently disabled or v
 | First visible narration from model request | 8,219 ms | 11,545 ms | <= 3,000 ms p95 | Miss |
 
 The timer still starts at narration-model request, not player submit. DB/session overhead, WebSocket acknowledgement, per-model TTFT/total split, per-gate-call timings, tool loops, and real prompt distribution are not measured. This is an engineering sample and **does not meet the first-visible p95 target**. Detailed execution notes are in `docs/plan/evidence/m3-30-gpt-6-luna-openai-api-rerun-2026-10-17.txt`.
+
+## Row 4b: per-gate-chunk judge latency (2026-10-21)
+
+Judge latency per gate chunk on the buffered path (production buffers before gating, ADR-023 addendum); per streamed production chunk NOT measured.
+
+Method: the same probe, extended to record `end.metrics.chunks[*].judgeLatencyMs` from `runOutputGate`, excluding hard-floor and failclosed terminal decisions that make no judge call. N=30 measured iterations, one warmup per slot excluded, endpoint `qwen3.8-35b-a3b-distill-q4` on the owner's LAN LocalAI host, `FIRST_TOKEN_PROBE_CACHE_DISABLED=1` (operator attestation; cache state not verified). Disposable Docker Postgres, torn down after the run.
+
+| Measure | p50 | p95 | max | Budget | Result |
+|---|---:|---:|---:|---:|---|
+| Judge latency per gate chunk (294 judged chunks; 9 median / 14 p95 per run) | 686 ms | 794 ms | 957 ms | <= 500 ms | **Miss** (measured on buffered path only) |
+
+Same run, unscored: input judge 418 / 470 ms; whole-response output gate after model completion 3,289 / 4,988 ms; first visible from model request 5,843 / 7,652 ms.
+
+Limits: buffered-path replay of a synthetic response; chunk boundaries are gate forced cuts, not production streaming chunks; judge latency excludes hold-back and stream arrival; cache state is attested, not observed; one model, one endpoint, one synthetic prompt. Raw record: `docs/plan/evidence/m3-row4b-per-chunk-qwen-2026-10-21.txt`. This is not a pass and does not relax the <= 500 ms target.

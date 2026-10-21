@@ -1,0 +1,28 @@
+M3 row 4b raw record: per-gate-chunk judge latency (buffered path)
+Date: 2026-10-21
+Harness: apps/server/scripts/first-token-probe.mjs (extended on this branch to record end.metrics.chunks[*].judgeLatencyMs; source hardfloor/failclosed excluded)
+Endpoint: <LAN-LOCALAI-HOST> (owner-provided LAN endpoint, port withheld), model qwen3.8-35b-a3b-distill-q4, openai-compatible, same model for moderate and fast slots
+Sample: N=30 measured iterations (one warmup per slot excluded); 294 judged gate chunks total
+Prompt: deterministic synthetic standard-tier single turn (same prompt as the 2026-10-17 runs)
+Cache state: operator-attested disabled (FIRST_TOKEN_PROBE_CACHE_DISABLED=1). NOT independently verified; the harness cannot observe server-side cache state.
+Database: disposable Docker Postgres on loopback, migrated, torn down after the run; endpoint slots seeded for this run only with a throwaway in-process master key (not stored)
+Credential: read per command from the operator key file; not printed, logged, or committed
+
+Metric limits:
+- Judge latency per gate chunk on the buffered path (production buffers before gating, ADR-023 addendum); per streamed production chunk NOT measured.
+- Gate chunks are produced by runOutputGate's forced cuts over a synthetic 24-character replay of the fully buffered response; chunk sizes are whatever the gate cuts, not production streaming chunks.
+- Per-chunk value is the judge call's latencyMs for that chunk; it excludes hold-back wait and stream arrival.
+- Whole-response gate duration is retained below as an unscored diagnostic only.
+
+Raw probe output (verbatim):
+prompt_sha256=sha256:27a58ad476146c0b4d06a071b6d632d46f0058c8d2bd44e7ca5d66993a059e7f
+runs=30 prompt_cache=operator_attested_disabled
+input_judge={"n":30,"p50_ms":418,"p95_ms":470}
+output_gate_after_model_complete={"n":30,"p50_ms":3289,"p95_ms":4988}
+first_visible_narration_from_model_request={"n":30,"p50_ms":5843,"p95_ms":7652}
+output_gate_per_chunk_judge_latency_ms={"n":294,"p50_ms":686,"p95_ms":794,"max_ms":957}
+output_gate_judged_chunks_per_run={"n":30,"p50_ms":9,"p95_ms":14}
+per_chunk_label="judge latency per gate chunk on the buffered path (production buffers before gating, ADR-023 addendum); per streamed production chunk NOT measured"
+classifier_on=true tier=standard tool_loop=not_exercised
+endpoint_identifiers=withheld; label run with operator-confirmed configuration
+probe_exit=0
