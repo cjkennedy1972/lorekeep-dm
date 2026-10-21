@@ -50,7 +50,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 3. Pass, tie, and host break
 
-This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". The narrowing is this ADR's own decision, not a spec citation: the host seat must be in N and have cast (item 4), and the host window is one action before the deadline (item 3).
+This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". The narrowing is this ADR's own decision, not a spec citation: the host seat must be in N and have cast (item 4), and the host gets one tie-break action after a tie is established and before the vote deadline (item 3).
 
 1. **Pass test.** The vote passes when yes is more than N / 2.
 2. **Tie is failed unless the host acts.** A tie is yes equal to no, counting non-cast seats in N as no. A tie fails at the deadline with reason `tie-failed` unless the host tie-break in §3.3 has resolved it. A tie cannot be resolved by anyone else.
@@ -83,7 +83,7 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
 
 1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is in N, the seat is not retired, and the seat holds control (ADR-031 §3.1). A revoked seat has no control, so it fails this check, and an away seat fails it too. A failed check returns `ballot-not-allowed` and records nothing.
 2. **Idempotency key.** Each cast carries the key `(voteId, seat)`. A replayed cast with the same key returns the stored result and records nothing new.
-3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected. There is no change after a cast.
+3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected, except for the host tie-break cast keyed `(voteId, hostSeat, "tiebreak")` under §3.3. The separate tie-break is allowed only once. There is no change to the original ballot after a cast.
 4. **Casts skip the judge budgets.** A cast is an enum with no free text, so it makes no judge call. It is not subject to the ADR-029 §7 or §8 judge budgets. Each cast counts toward the per-seat mutation budget of 6 per 60 s (ADR-029 §8).
 5. **Late casts** after close are rejected with `vote-closed`. A replay of a cast after close returns the stored status only, never the choice.
 
