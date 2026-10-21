@@ -46,6 +46,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 5. **Non-cast seats count as no.** A seat in the N in force that has not cast counts as `no` in the pass test. There is no abstention.
 6. **Two choices only.** A ballot is `yes` or `no`. There is no abstain option.
 7. **A muted seat in N** can cast, because mute restricts chat only (ADR-031 §3.5). It is counted like any other seat.
+8. **Round rule is separate.** The round required-set exclusion for `away` and `revoked` seats (ADR-031 §4.1) applies to rounds only. It does not change N. N is the rest-vote rule only, and it does not apply to rounds.
 
 ### 3. Pass, tie, and host break
 
@@ -100,7 +101,7 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
 
 ### 7. Retention and account deletion
 
-1. **Class.** Vote events (`RestVoteOpened`, `RestVoteCast`, `RestVoteCastNotice`, `RestVoteClosed`, `RestApplied`) are in the ADR-017 gameplay class, the same class as events and snapshots. They are live while the session is active, archived after 14 days idle, and deleted 90 days after archive unless claimed.
+1. **Class.** Vote events (`RestVoteOpened`, `RestVoteCast`, `RestVoteCastNotice`, `RestVoteClosed`, `RestApplied`) are in the ADR-017 class **Gameplay data**. ADR-017 §Data classes reads, exactly: "Gameplay data | events, snapshots, registry | live while session active; `archived` after 14 days idle; deleted 90 days after archive unless claimed (spec A4)". The vote events take the same retention as those events and snapshots.
 2. **Account deletion.** ADR-017's account-deletion rule is quoted here, not only cited: "Sessions where the deleted account is only a seat are redacted, not purged." Redaction is the only change made to the log. For every vote in such a session, the vote's data is scrubbed as follows:
    - All `RestVoteCast` and `RestVoteCastNotice` events for that vote are removed. This removes each per-ballot choice and each seat.
    - `eligibleSeats` is removed from `RestVoteOpened`. Its other fields (`voteId`, `type`, `deadlineAt`, `openedByTurnId`) carry no seat or choice and are kept.
@@ -139,7 +140,7 @@ Decided by Chris's delegate in review:
 5. **No vote during combat.**
 6. **Cooldown 10 min after any close, cap 6 opened votes per session.**
 7. **Host tie-break window within the vote deadline; ties at expiry fail.**
-8. **Quorum.** Abstain counts as `no`. The denominator is N in force (§2.2). Pass requires yes more than N / 2.
+8. **Quorum.** Abstain counts as `no`. The denominator is N in force (§2.2). Pass requires yes more than N / 2. Early fail is strict: it fires only when yes plus uncast seats in N is strictly less than N / 2 (§4.5). A tie at N / 2 stays reachable and goes to the host window (§3.3) when all seats have cast.
 9. **N is fixed at vote open. An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A `revoked` seat (kicked, banned, retired, or departed) leaves N, and its cast ballot, if any, is voided (§2.3).** This matches ADR-031 §4.2, and it supersedes the earlier rule that away seats leave N.
 10. **`ballot-not-allowed`: ACCEPTED.** This ADR declares it, alongside `rest-not-allowed` and `vote-closed`, as an extension of the ADR-022 §2.4 enum. ADR-022 is not edited.
 
@@ -150,5 +151,6 @@ Decided by Chris's delegate in review:
 - Test cases for M4 item 5:
   - All-cast tie: every seat in N has cast and yes equals no. No early close fires. The host window opens (§3.3). A host tie-break closes the vote with `host-tiebreak`; with no tie-break by the deadline, it closes with `tie-failed`.
   - Early-fail boundary: N = 4, yes = 1, two seats cast no, one seat uncast. Yes plus uncast equals N / 2, so no early fail fires and the vote stays open.
+  - Early fail fires: N = 4, yes = 0, three seats cast no, one seat uncast. Yes plus uncast is 1, strictly less than N / 2, so the vote closes as failed with `no-majority-early` (§4.5).
   - Away host: the host is away when a tie appears. The tie fails at expiry with `tie-failed` (§3.4).
 - `prettier --check` run against the branch head. Result recorded in the PR.
