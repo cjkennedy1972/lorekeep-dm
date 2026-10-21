@@ -49,9 +49,11 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 3. Pass, tie, and host break
 
+This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". The narrowing is this ADR's own decision, not a spec citation: the host must be in N and have cast (item 4), and the host window is one action before the deadline (item 3).
+
 1. **Pass test.** The vote passes when yes is more than N / 2.
 2. **Tie is failed unless the host acts.** A tie is yes equal to no, counting non-cast seats in N as no. A tie fails at the deadline with reason `tie-failed` unless the host tie-break in §3.3 has resolved it. A tie cannot be resolved by anyone else.
-3. **Host window.** The host window opens only when every seat in the N in force has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline.
+3. **Host window.** The host window opens only when every seat in the N in force has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline. The recorded host choice at close is the host's latest cast at close. If the host changes after the tie is known, the new host is not bound by an earlier cast.
 4. **Host eligibility.** The tie-break needs the host to be in N and to have cast a ballot. If the host is not in N when a tie appears, the vote fails at once with reason `tie-failed`. An `away` host stays in N but cannot cast (ADR-031 §3.1), so the all-cast condition in §3.3 never holds while the host is away. The tie then fails at expiry with `tie-failed` (§4.6). This is intended: an away host blocks the tie-break, and the tie fails (ADR-031 §4.9).
 5. **Host outcome.** The host's choice is final. `yes` passes the vote with reason `host-tiebreak`. `no` fails it with reason `host-tiebreak`.
 6. **No host action by deadline.** The vote fails with reason `tie-failed` (§4.6). This matches §4.6.
@@ -63,12 +65,13 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 2. **Deadline is wall-clock.** At open the engine stores `deadlineAt` as a UTC timestamp. A monotonic clock is not used, because it does not survive a restart.
 3. **Pause.** On pause the engine stores the remaining milliseconds. On resume it writes a new `deadlineAt` from the remaining milliseconds (ADR-029 §5). A ballot sent while paused is rejected and not queued (ADR-029 §4, "Not queued").
 4. **Early pass.** The vote closes as passed as soon as yes is more than N / 2. Reason `majority`. Seats in N that have not cast, including `away` seats, count as `no` here, so presence cannot lower the pass bar.
-5. **Early fail.** The vote closes as failed as soon as yes plus the number of seats in N that have not cast is strictly less than N / 2. Reason `no-majority`. `away` seats in N count as not cast. The strict bound keeps a tie reachable: if yes plus uncast equals N / 2, every remaining seat could still cast a tie, and a tie must reach the host window (§3.3) rather than close as a fail.
+5. **Early fail.** The vote closes as failed as soon as yes plus the number of seats in N that have not cast is strictly less than N / 2. Reason `no-majority-early`. `away` seats in N count as not cast. The strict bound keeps a tie reachable: if yes plus uncast equals N / 2, every remaining seat could still cast a tie, and a tie must reach the host window (§3.3) rather than close as a fail.
 6. **Expiry.** At `deadlineAt` the vote closes, using the N in force. If yes is more than N / 2 it passes, reason `majority`. If yes equals no, it fails with reason `tie-failed` (§3.2, §3.6). Otherwise it fails with reason `expired`.
 7. **All cast.** When every seat in the N in force has cast and the result is not a tie, the vote closes at once. A pass is reason `majority`; a fail is reason `no-majority`. A tie opens the host window in §3.3.
 8. **Reason mapping.** `RestVoteClosed` records one of the following:
    - `majority`: a pass by early pass (§4.4), at all-cast (§4.7), or at expiry (§4.6).
-   - `no-majority`: an early fail (§4.5) or an all-cast fail (§4.7).
+   - `no-majority-early`: an early fail (§4.5).
+   - `no-majority`: an all-cast fail (§4.7).
    - `host-tiebreak`: the host's tie-break outcome (§3.5).
    - `tie-failed`: a tie at expiry with no host action (§3.6), or a host who is not in N (§3.4).
    - `expired`: deadline reached, yes below no, and not all seats have cast.
