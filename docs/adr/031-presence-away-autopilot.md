@@ -150,8 +150,8 @@ Routine within delegation, flagged because they set behavior:
 7. **Muted seat on return.** Decided by Atlas: a muted seat regains game control on return but stays muted for chat until the host unmutes. Mute persists across reconnect (§3.5). ADR-029 §7 is not edited here; its chat gate keeps the mute test for chat, and any wording there that bars control on mute needs a matching amendment in ADR-029.
 8. **Reclaim is owner-only; drop-in stays in M4 scope.** Decided by Atlas, per spec §6.4 and §6.5.
 9. **A returning seat may replace an autopilot command until the turn resolves.** Decided by Atlas.
-10. **Mid-turn away and the reason enum.** Follows Atlas's decision that a mid-turn away is not replaced mid-turn. The turn resolves by timer as Dodge, and autopilot acts from the seat's next turn prompt. This leaves `reason` with one value, `away-at-turn-start`. Atlas to confirm the one-value enum.
-11. **Hysteresis clock.** A completed 10 s hold clears the away clock. An interrupted hold pauses the clock and does not reset it, so `away` means 30 s of disconnected time since the last completed hold, not 30 s of unbroken socket closure. Atlas to confirm this reading.
+10. **Mid-turn away and the reason enum.** Follows Atlas's decision that a mid-turn away is not replaced mid-turn. The turn resolves by timer as Dodge, and autopilot acts from the seat's next turn prompt. This leaves `reason` with one value, `away-at-turn-start`. Atlas confirmed the enum is closed. It can be extended only by amendment to this ADR.
+11. **Hysteresis clock.** A completed 10 s hold clears the away clock. An interrupted hold pauses the clock and does not reset it, so `away` means 30 s of disconnected time since the last completed hold, not 30 s of unbroken socket closure. Atlas confirmed this reading.
 
 ## Verification
 
