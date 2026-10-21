@@ -39,8 +39,10 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 ### 2. Eligible voters and the count N
 
 1. **Eligible set at open.** The eligible set is the seated, non-retired, non-away, non-muted seats at open. A seat that joins after open is not eligible for that vote.
-2. **N is fixed at open,** and is the size of the eligible set at open.
-3. **Exceptions: a seat leaves N.** A seat that is revoked, retired, departed, or goes `away` leaves N. Away seats are excluded from the denominator (ADR-031 §4.1a). The seat's cast ballot, if it has one, is voided. A seat that leaves N does not re-enter N for this vote, even if it returns before close.
+2. **N is fixed at open,** and is the size of the eligible set at open. N changes only under item 3.
+3. **Seats that leave N.**
+   - An `away` seat leaves N when it goes away (ADR-031 §4.1a). If it had already cast, its ballot is kept. It re-enters N if it returns before close, and its kept ballot counts again. While away it cannot cast.
+   - A revoked, retired, or departed seat leaves N, and its ballot, if any, is voided. It does not re-enter N.
 4. **Early-close arithmetic uses the current N.** Every threshold in §4 is computed with the N in force at that moment.
 5. **Non-cast seats count as no.** A seat in the current N that has not cast counts as `no` in the pass test. There is no abstention.
 6. **Two choices only.** A ballot is `yes` or `no`. There is no abstain option.
@@ -132,7 +134,7 @@ Decided by Chris's delegate in review:
 6. **Cooldown 10 min after any close, cap 6 opened votes per session.**
 7. **Host tie-break window within the vote deadline; ties at expiry fail.**
 8. **Quorum.** Abstain counts as `no`. The denominator is the current N (§2.2). Pass requires yes more than N / 2.
-9. **Away seats leave N and their ballots are voided (§2.3).** ADR-031 §4.1a must say the same before ADR-031 merges. As written, ADR-031 §4.1a keeps the cast ballot, so it needs amendment. ADR-031 is not edited here.
+9. **Away seats leave N and keep a cast ballot, which counts again if the seat returns before close. Revoked, retired, and departed seats leave N and void their ballot (§2.3).** This matches ADR-031 §4.1a.
 10. **`ballot-not-allowed` is an error code added beyond the two named in review.** Atlas to confirm, or fold it into `vote-closed`.
 
 ## Verification
