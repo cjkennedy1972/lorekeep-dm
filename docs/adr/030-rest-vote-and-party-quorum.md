@@ -29,7 +29,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 8. **A vote is a sub-state of exploration.** An open vote lives inside the exploration state (architecture §2.2). `rest` is entered only inside the closing step (§6.3).
 9. **A vote blocks round opening.** While a vote is open, no round can open. A vote therefore delays a round by at most its timer length (§4).
 10. **Player actions during a vote.** While a vote is open, player round actions are accepted and queued for the next round, under the ADR-029 §4 queued-input rules. A queued action may be edited. OOC chat is unaffected by the vote.
-11. **Solo.** Solo has no vote. Solo rest stays a client command, `POST /session/:id/rest` (ADR-022 §2). The server MUST reject that request with `rest-not-allowed` and reason `multiplayer` whenever the session has more than one seated, non-retired seat, regardless of presence. This check runs server-side on every request, including sessions that became multiplayer after the client loaded; multiplayer rest happens only through this vote.
+11. **Solo.** Solo has no vote. Solo rest stays a client command, `POST /session/:id/rest` (ADR-022 §2). The server MUST reject that request with `rest-not-allowed` and reason `multiplayer` whenever the session has more than one seated, non-retired seat, regardless of presence. A seat that is `revoked` (kicked, banned, retired, or departed) is not seated, so it does not count toward that check. This check runs server-side on every request, including sessions that became multiplayer after the client loaded; multiplayer rest happens only through this vote.
 
 **Error codes.** This ADR extends the closed reason enum of ADR-022 §2.4 with the codes below. ADR-022 is not edited.
 - `rest-not-allowed`, with a `reason` of `precondition`, `cooldown`, `session-limit`, or `multiplayer`.
@@ -74,7 +74,7 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
    - `no-majority-early`: an early fail (§4.5).
    - `no-majority`: an all-cast fail (§4.7).
    - `host-tiebreak`: the host's tie-break outcome (§3.5).
-   - `tie-failed`: a tie at expiry with no host action (§3.6); a host seat that is revoked while a tie is possible, at once (§3.4); or a host seat that is away while a tie is possible, at expiry (§3.4, §4.6).
+   - `tie-failed`: a tie at expiry with no host action (§3.6); a host seat that is revoked at any point before the host window resolves a tie, at once (§3.4); or a host seat that is away when the vote reaches its deadline with a tie, at expiry (§3.4, §4.6).
    - `expired`: deadline reached, yes below no, and not all seats have cast.
    - `cancelled`: the vote was reverted (§6.8).
 9. **Cooldown.** The close of any vote, whatever its outcome, starts the 10 min table cooldown in §1.7.
@@ -107,7 +107,7 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
    - `eligibleSeats` is removed from `RestVoteOpened`. Its other fields (`voteId`, `type`, `deadlineAt`, `openedByTurnId`) carry no seat or choice and are kept.
    - The `RestVoteClosed` outcome and reason are kept; its yes and no counts are set to null whenever the deleted seat cast a counted ballot in that vote. Otherwise, the tally is kept unchanged. This prevents recovering the deleted seat's choice by subtracting remaining ballots from the tally.
    - A host tie-break outcome is the vote's public result. When the deleted account is the host seat and the vote closed with reason `host-tiebreak`, the outcome equals the host's tie-break choice, so that one choice remains derivable from the outcome. This is accepted: the outcome is the public result of the vote, and once the seat reference is scrubbed it is not linked to the deleted account.
-3. **Only the scrubbed outcome survives.** After scrubbing, the vote's outcome survives as `RestVoteClosed{voteId, outcome, reason, yes, no}`; when a deleted seat cast a counted ballot, yes and no are null. Item 2 is the rule that produces it. No per-ballot choice or seat list survives account deletion.
+3. **Only the scrubbed outcome survives.** After scrubbing, the vote's outcome survives as `RestVoteClosed{voteId, outcome, reason, yes, no}`; when a deleted seat cast a counted ballot, yes and no are null. Item 2 is the rule that produces it. No per-ballot choice or seat list survives account deletion. The one exception is stated in item 2: when the deleted account is the host seat and the vote closed with reason `host-tiebreak`, the public outcome equals the host's tie-break choice, and that outcome is kept.
 
 ### 8. Failed or expired vote
 
@@ -144,6 +144,7 @@ Decided by Chris's delegate in review:
 8. **Quorum.** Abstain counts as `no`. The denominator is N fixed at open (§2.2). Pass requires yes more than N / 2. Early fail is strict: it fires only when yes plus uncast seats in N is strictly less than N / 2 (§4.5). A tie at N / 2 stays reachable and goes to the host window (§3.3) when all seats have cast.
 9. **N is fixed at vote open for every cause.** An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A `revoked` seat (kick, ban, retirement, or departure) stays in N and keeps its counted ballot, or counts as `no` if it had not cast. It can cast nothing further. Revocation removes control and chat only; it never changes N or the result (§2.3). This matches ADR-031 §4.2.
 10. **`ballot-not-allowed`: ACCEPTED.** This ADR declares it, alongside `rest-not-allowed` and `vote-closed`, as an extension of the ADR-022 §2.4 enum. ADR-022 is not edited.
+11. **Host tie-break after host deletion.** Accepted privacy trade-off, decided by Chris's delegate: when the deleted account is the host seat and the vote closed `host-tiebreak`, the public outcome (which equals the host's tie-break choice) is kept, with the seat reference scrubbed (§7.2).
 
 ## Verification
 
@@ -157,6 +158,8 @@ Decided by Chris's delegate in review:
   - Revoked host: the host seat is revoked when a tie appears. The tie fails at once with `tie-failed` (§3.4).
   - Departed after casting: N = 4. Seats A and B cast yes, seat C casts no, and seat D casts no and then departs (revoked). N stays 4, D's no is kept, and the result is the same as if D had stayed connected: an all-cast tie, so the host window opens.
   - Seat revoked before open: N = 3 seated seats plus one seat kicked before open. N is 3, not 4 (§2.1).
-  - Subtraction after account deletion: N = 4, closed with yes = 2 and no = 2. The account of seat D, which cast a counted ballot, is deleted. `RestVoteClosed` keeps the outcome and reason with yes and no set to null, the `RestVoteCast` and `RestVoteCastNotice` events are removed, and `eligibleSeats` is removed. Nothing that remains lets anyone derive D's choice, by subtraction or otherwise (§7.2).
+  - Subtraction after account deletion: N = 4, closed with yes = 2 and no = 2. The account of seat D, which cast a counted ballot, is deleted. `RestVoteClosed` keeps the outcome and reason with yes and no set to null, the `RestVoteCast` and `RestVoteCastNotice` events are removed, and `eligibleSeats` is removed. Nothing that remains lets anyone derive D's choice by subtraction (§7.2). The only choice that remains derivable is a deleted host's tie-break choice, because it equals the public outcome (§7.2, item 2, last bullet); this is the accepted exception.
+  - Host deleted after a tie-break: the vote closed `host-tiebreak`, and the host's account is deleted. The seat reference is scrubbed and the outcome and reason are kept, so the host's tie-break choice remains derivable from the outcome. This is the accepted exception in §7.2, and the test asserts exactly that: no seat link remains, and no other choice is derivable.
+  - Multiplayer check and revoked seats: a session with one active seat and one revoked seat is treated as solo for §1.11, and `POST /session/:id/rest` is allowed; a session with two seated, non-retired seats (one of them away) is multiplayer and the request is rejected with `multiplayer` (§1.11).
   - Solo-rest endpoint on a multiplayer session: `POST /session/:id/rest` returns `rest-not-allowed` with reason `multiplayer` (§1.11).
 - Run by the author before push: prettier and the stale-sentence sweep.
