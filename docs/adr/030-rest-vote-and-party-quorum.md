@@ -19,17 +19,17 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 1. Opening a vote
 
-1. **Trigger.** In M4, only the DM opens a vote, by calling `call_for_rest`. Players cannot open a vote (see Decisions needed).
+1. **Trigger.** In M4, only the DM opens a vote, by calling `call_for_rest`. The server validates every call against §1.6 and §1.2; player text is never itself a trigger. Players cannot open a vote (see Decisions needed).
 2. **Arguments.** `{type: "short" | "long"}`. Any other value is rejected and no vote opens.
 3. **Timing.** The vote opens when the DM turn that called the tool commits. It does not open mid-turn, so the T2 ordering in ADR-022 holds and the Room's single writer (ADR-002) applies the change.
 4. **Fallback turns never open a vote.** A turn that ADR-022 §4.2 resolves through a fallback cannot call `call_for_rest`, even if the DM's output contained the call.
 5. **Idempotent on turnId.** The open is keyed by the committing turn's `turnId`. A replayed or retried commit for the same turn does not open a second vote.
 6. **Preconditions.** The table is `active` and not paused (ADR-029 §5). The table is in the exploration state (architecture §2.2). No round is `open`, `closing`, or `resolving`. No other vote is open. If a precondition fails, no vote opens and the DM receives `rest-not-allowed` with reason `precondition`.
-7. **Rate limits on opening.** At most one vote may open per 10 min per table, measured from the close of the previous vote, whatever its outcome. At most 6 votes may be opened per table. The count is persisted with the table, so closing and reopening the Room does not reset it. If either limit binds, no vote opens and the DM receives `rest-not-allowed` with reason `cooldown` or `session-limit`.
+7. **Rate limits on opening.** At most one vote may open per 10 min per table, measured from the close of the previous vote, whatever its outcome. At most 6 votes may be opened per table. DM-triggered votes can be provoked by player text; the server validates every `call_for_rest` against §1.6 and §1.2, and player text is never itself a trigger. The 10 min cooldown and cap of 6 bound the resulting round stall to about 12 minutes per table. The count is persisted with the table, so closing and reopening the Room does not reset it. If either limit binds, no vote opens and the DM receives `rest-not-allowed` with reason `cooldown` or `session-limit`.
 8. **A vote is a sub-state of exploration.** An open vote lives inside the exploration state (architecture §2.2). `rest` is entered only inside the closing step (§6.3).
 9. **A vote blocks round opening.** While a vote is open, no round can open. A vote therefore delays a round by at most its timer length (§4).
 10. **Player actions during a vote.** While a vote is open, player round actions are accepted and queued for the next round, under the ADR-029 §4 queued-input rules. A queued action may be edited. OOC chat is unaffected by the vote.
-11. **Solo.** Solo has no vote. Solo rest stays a client command, `POST /session/:id/rest` (ADR-022 §2), and this ADR does not change it.
+11. **Solo.** Solo has no vote. Solo rest stays a client command, `POST /session/:id/rest` (ADR-022 §2). The server MUST reject `POST /session/:id/rest` with `rest-not-allowed` whenever the session is multiplayer (more than one seated seat); multiplayer rest happens only through this vote. This check is enforced server-side on every request, including sessions that became multiplayer after the client loaded.
 
 **Error codes.** This ADR extends the closed reason enum of ADR-022 §2.4 with the codes below. ADR-022 is not edited.
 - `rest-not-allowed`, with a `reason` of `precondition`, `cooldown`, or `session-limit`.
@@ -102,12 +102,12 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
 ### 7. Retention and account deletion
 
 1. **Class.** Vote events (`RestVoteOpened`, `RestVoteCast`, `RestVoteCastNotice`, `RestVoteClosed`, `RestApplied`) are in the ADR-017 class **Gameplay data**. ADR-017 §Data classes reads, exactly: "Gameplay data | events, snapshots, registry | live while session active; `archived` after 14 days idle; deleted 90 days after archive unless claimed (spec A4)". The vote events take the same retention as those events and snapshots.
-2. **Account deletion.** ADR-017's account-deletion rule is quoted here, not only cited: "Sessions where the deleted account is only a seat are redacted, not purged." Redaction is the only change made to the log. For every vote in such a session, the vote's data is scrubbed as follows:
-   - All `RestVoteCast` and `RestVoteCastNotice` events for that vote are removed. This removes each per-ballot choice and each seat.
+2. **Account deletion.** ADR-017's account-deletion rule is quoted here, not only cited: "Sessions where the deleted account is only a seat are redacted, not purged." For every vote in any session where the deleted account held a seat, apply this single rule:
+   - For the deleted seat only, scrub its seat reference and remove its choice in `RestVoteCast` and scrub its seat reference in `RestVoteCastNotice`. Other seats’ ballot events are unchanged until their own account deletion or retention expiry. Event order and sequence are preserved.
    - `eligibleSeats` is removed from `RestVoteOpened`. Its other fields (`voteId`, `type`, `deadlineAt`, `openedByTurnId`) carry no seat or choice and are kept.
    - The `RestVoteClosed` tally is kept unchanged.
-   - In a shared session, the deleted account's seat is scrubbed from the vote events above, and the tally is kept.
-3. **Only the tally survives.** After scrubbing, the vote's outcome survives only as the anonymous `RestVoteClosed{voteId, outcome, reason, yes, no}` tally. Item 2 is the rule that produces it. Items 2 and 3 agree: no per-ballot choice and no seat list survive account deletion.
+   - Keep `RestVoteClosed` tally unchanged in all cases. If the deleted account was the only seat in the session, apply ADR-017 session redaction: remove all ballot events and choices, while keeping the tally.
+3. **Only the tally survives.** For shared sessions, other seats’ ballot choices remain until their own deletion or retention expiry; the deleted seat’s choice and seat reference do not survive. For a session whose only seat was deleted, no ballot choice survives. In every case, `RestVoteClosed{voteId, outcome, reason, yes, no}` remains unchanged.
 
 ### 8. Failed or expired vote
 
@@ -153,7 +153,10 @@ Decided by Chris's delegate in review:
   - All-cast tie: every seat in N has cast and yes equals no. No early close fires. The host window opens (§3.3). A host tie-break closes the vote with `host-tiebreak`; with no tie-break by the deadline, it closes with `tie-failed`.
   - Early-fail boundary: N = 4, yes = 1, two seats cast no, one seat uncast. Yes plus uncast equals N / 2, so no early fail fires and the vote stays open.
   - Early fail fires: N = 4, yes = 0, three seats cast no, one seat uncast. Yes plus uncast is 1, strictly less than N / 2, so the vote closes as failed with `no-majority-early` (§4.5).
-  - Away host: the host seat is away when a tie appears. The host window never opens, because the all-cast condition cannot hold while the host cannot cast. The tie fails at expiry with `tie-failed` (§3.4).
+  - Away host before casting: a tie is possible but the host has not cast, so the host window does not open; the tie fails at expiry with `tie-failed` (§3.4).
+  - Host casts before going away: the all-cast tie opens the host window normally; if the host has not acted by expiry, the tie-break is rejected and the vote fails with `tie-failed` (§3.4).
+- Multiplayer rest endpoint: a request to `POST /session/:id/rest` on a multiplayer session is rejected server-side with `rest-not-allowed`; no rest is applied and no vote is bypassed.
+- Shared-session deletion: the deleted seat’s vote events are scrubbed while other seats’ ballot events remain; the tally is unchanged. Deleting the only seat redacts all ballots but keeps the tally.
 - Revoked host: the host seat is revoked when a tie appears. The tie fails at once with `tie-failed` (§3.4).
 - Departed after casting: N = 4. Seats A and B cast yes, seat C casts no, and seat D casts no and then departs (revoked). N stays 4, D's no is kept, and the result is the same as if D had stayed connected: an all-cast tie, so the host window opens.
-- Run by the author before push: prettier and the stale-sentence sweep.
+- Run by the author before push: `pnpm exec prettier --check` and the stale-sentence sweep.
