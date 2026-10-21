@@ -23,12 +23,13 @@ ADR-005 (Proposed) sets the round shape: collect one editable action per active 
 1. **Receipt sequence.** Every inbound command (action, edit, withdraw, chat, host control) gets, at ingress, a server monotonic receipt time `receivedAt` (ms) and an integer `receiptSeq` that is unique and increasing within the Room. Clients never set either value.
 2. **Per-socket serialization.** Each socket has a FIFO chain. A command from a socket enters the input gate (§7) only after the previous command from that same socket has a final gate decision. A slow judge call therefore delays only that socket's own later messages.
 3. **Round ordering.** A round batch is built from accepted submissions sorted by `receiptSeq`. Gate decisions may arrive in any order; the batch order does not depend on when a decision returns. This is the spec §6.2 rule ("by receipt timestamp") applied to round actions.
-4. **Chat commit order.** Chat commits (persist plus broadcast) in `receiptSeq` order within the Room. A decided message waits only for earlier-received chat messages that are still undecided, and only until each of those reaches its own receipt-plus-5 s deadline. A message still undecided at its deadline is treated as BLOCK and is not committed; its sender gets the neutral rejection. Each gate call has a hard 5 s timeout (§8; ADR-023 measured the judge at 1.0–1.9 s), aborted on expiry, and a timeout returns BLOCK for chat (§7). The bounds, measured from receipt, are:
+4. **Chat commit order and latency bound.** Chat commits (persist plus broadcast) in `receiptSeq` order within the Room. One rule sets the bound: **every chat message is committed or rejected within 10 s of its receipt.** Its gate time is at most 5 s, and the clock starts when the message reaches the head of its socket's queue, not at receipt. A message's own deadline is therefore receipt plus 10 s, and it is rejected if still undecided then.
 
-- Any chat message commits or is rejected within 5 s of its receipt. Its gate and the barrier wait are both capped at that deadline, and an earlier message's deadline is never later than its own.
-- A same-socket follow-up commits or is rejected within 10 s of its receipt in the worst case. It waits for the prior message from the same socket (which is itself due by the follow-up's receipt plus 5 s), then runs its own gate (up to 5 s).
+- Each socket's chat queue holds at most 2 messages in flight. A third message is rejected immediately with the neutral private rejection and is not queued.
+- A decided message waits for earlier-received chat messages that are still undecided, but only until each of those reaches its own receipt-plus-10 s deadline. An earlier message's deadline is never later than the waiting message's own deadline, so the barrier cannot push a commit past receipt plus 10 s.
+- Each gate call has a hard 5 s timeout (§8; ADR-023 measured the judge at 1.0–1.9 s), aborted on expiry. A timeout returns BLOCK for chat (§7).
 
-The 5 s bound is the deadline for any chat message. The 10 s bound applies only to a same-socket follow-up.
+Worst case for a same-socket follow-up: its predecessor is decided by the predecessor's receipt plus 10 s at most, and the follow-up then gets up to 5 s of gate time, so the follow-up is decided by its own receipt plus 10 s, not later.
 5. **Mailbox.** All state transitions run inside the Room's serial mailbox (ADR-002). Gate calls run outside the mailbox and re-enter it with their decision.
 
 Ordering rule summary: round actions are gated in parallel and ordered by receipt. Chat is gated per socket and committed in receipt order behind a barrier. Neither waits for DM generation.
@@ -126,12 +127,17 @@ Buckets. There are three separate per-seat budgets and they never share counters
 
 Chat bucket:
 
+- **Per-socket queue** (not a bucket; no token cost): at most 2 chat messages in flight per socket. A third is rejected immediately with the neutral private rejection. Rationale: bounds the ordering delay one socket can add to the barrier (§1.4).
 - **Burst** (chat bucket): token bucket, capacity 5, one token refilled every 2 s. Allows a paste-and-reply burst of 5 submissions. The refill alone would permit up to 30 per minute, so it is not the binding sustained limit.
 - **Sustained** (chat bucket): 40 submissions per 10 min, which is 4 per minute on average. This is the binding sustained limit and it binds before the bucket refill does. Rationale: about one message every 15 s over a session, above normal table chat.
 - **Duplicates** (chat bucket): the same normalized text from the same seat within 60 s is dropped before the gate. It still consumes one token. Rationale: stops repeat-spam from reaching the judge.
 - **Per table** (judge budget, chat-gate calls only): 120 chat gate calls per minute across all seats. Over the limit returns a neutral "chat is busy" rejection without a judge call. Rationale: caps chat judge spend for a six-seat table at about 2 per second. Action-input gate calls are not counted here; they are bounded by their own budget above and by the global cap below.
 - **Non-allow streak** (chat bucket; mutes chat only, not actions): 3 non-allow decisions from one seat within 5 min mutes that seat's chat for 5 min. The host can lift it early. Rationale: stops probing of the filter. The mute is recorded in `moderation_log`. Only judge verdicts and denylist or hard-floor matches count. BLOCKs caused by judge outage, judge timeout, judge parse failure (`judge_error`), or a hard-floor evaluation error do not count, so an outage cannot mute every seat.
-- **Global judge budget** (judge budget, all tables, chat-gate and action-input-gate calls): at most 4 calls in flight at once, and 240 calls per minute across all tables. Calls beyond either cap return the neutral "chat is busy" rejection without a judge call. Rationale: the `moderate` endpoint also serves DM output gating (ADR-023), so chat must not take all of its capacity. When the judge is slow the in-flight cap binds; when it is fast the 240 per minute cap binds.
+- **Global judge budget** (judge budget, all tables): 4 calls in flight at once and 240 calls per minute, split in two:
+  - **Reserved for DM output gating:** 1 in-flight slot and 40 calls per minute. Chat and action-input gate calls never use it.
+  - **Shared by chat and action-input gate calls:** the remaining 3 in-flight slots and 200 calls per minute.
+
+  Calls beyond a cap return the neutral "chat is busy" rejection without a judge call. Rationale: the `moderate` endpoint also serves DM output gating (ADR-023). Because DM output has its own reserved slot and rate, a chat or action-input burst cannot starve DM output gating. When the judge is slow the in-flight caps bind; when it is fast the per-minute caps bind.
 - **Timeouts abort:** each judge call carries an AbortController set to the 5 s timeout. On timeout the request is aborted, its in-flight slot is released, and any late response is discarded.
 
 Round actions (submit, edit, withdraw, `ask_dm`), all on the action-input budget:
@@ -170,7 +176,7 @@ Counting is after NFC normalization and trimming. Empty text is rejected.
 - The DM prompt assembler reads an **allowlist** of event types (`round.action.accepted`, `round.resolved`, state and map events, recap). Chat is not on the list. An allowlist is used because a new event type must be added on purpose.
 - Summaries, recaps, and memory (architecture §4, R-M1..M3) read only the same allowlist. OOC text is never quoted or echoed in narration.
 - M4 item 9 verifies this with a test: a generated set of committed chat messages (including injection-style strings) must produce DM prompts that contain none of them.
-- **Ask the DM and prefixed messages.** Spec §6.1 lets OOC text reach the DM when it is prefixed or sent via the "ask the DM" button. This ADR does not add that path to chat. Either route creates a round action of kind `ask_dm`, with the text as its body. It is submitted through the action gate (hard floor, denylist, judge) and included in the round batch. It is never a `ChatMessage`, and the DM prompt assembler never reads chat records. M4 item 9 asserts that committed `ChatMessage` text is absent from DM prompts, and separately that `ask_dm` actions appear only as round actions. Reading "prefixed" as `ask_dm` is an interpretation of spec §6.1 for Atlas to confirm.
+- **Ask the DM and prefixed messages.** Spec §6.1 lets OOC text reach the DM when it is prefixed or sent via the "ask the DM" button. This ADR does not add that path to chat. Either route creates a round action of kind `ask_dm`, with the text as its body. It is submitted through the action gate (hard floor, denylist, judge) and included in the round batch. It is never a `ChatMessage`, and the DM prompt assembler never reads chat records. M4 item 9 asserts that committed `ChatMessage` text is absent from DM prompts, and separately that `ask_dm` actions appear only as round actions.
 
 ## Answers to the brief
 
@@ -191,7 +197,7 @@ Neither focused ADR is written here. This ADR states what it needs from them: ro
 ## Consequences
 
 - M4 item 1 can start once this ADR is accepted: the `ChatMessage` type (§6) and gate order (§7) are fixed.
-- Chat commits within 5 s of receipt, or within 10 s for a same-socket follow-up (§1.4). Accepted as the cost of one order for everyone.
+- Chat is committed or rejected within 10 s of receipt (§1.4). Accepted as the cost of one order for everyone.
 - Chat judge calls share the moderation endpoint with DM output. The per-table bucket (§8) protects DM narration from chat load. The DM's own gate budget is not reduced by this ADR and is measured in M4 item 9.
 - Thresholds in §8 are proposals with stated reasons. They will need tuning from M4 evidence. Changing them is a config change, not an ADR change, unless the rationale changes.
 - ADR-022 is unchanged. Its T2 ordering and §4.2 fallback are preserved by §2.
@@ -201,7 +207,7 @@ Neither focused ADR is written here. This ADR states what it needs from them: ro
 From Atlas (routine within delegation, flagged because they set behavior):
 
 1. **Chat judge outage = BLOCK (neutral rejection), not HOLD.** This narrows ADR-023's HOLD rule for chat only. Recommendation: accept.
-2. **Chat commit barrier (§1.4)**, instead of per-socket order only. Bounds: 5 s per message, 10 s for a same-socket follow-up. Recommendation: accept; the cost is one bounded delay for one consistent order.
+2. **Chat commit barrier (§1.4)**, instead of per-socket order only. Bound: committed or rejected within 10 s of receipt, with at most 5 s of gate time per message. Recommendation: accept; the cost is one bounded delay for one consistent order.
 3. **§8 numbers** (burst 5 / 10 s, sustained 40 / 10 min, table 120 / min, non-allow mute at 3 in 5 min). Recommendation: accept as starting values for M4 item 1.
 
 From Chris (scope):
