@@ -51,7 +51,14 @@ export type InputDecision = 'allow' | 'block' | 'limited';
 export interface InputGate {
   check(input: InputCheck): Promise<InputDecision>;
   checkChat?(input: InputCheck): Promise<ChatInputResult>;
+  logChatRejection?(input: ChatRejectionLog): Promise<string | undefined>;
+  logChatFailure?(input: ChatRejectionLog): Promise<string | undefined>;
 }
+
+export type ChatRejectionLog = Pick<
+  InputCheck,
+  'surface' | 'accountId' | 'ip' | 'sessionId'
+>;
 
 export interface ChatInputResult {
   decision: InputDecision;
@@ -112,9 +119,9 @@ export function createInputGate({
 
   // Stores IDs, the category and the source only. The text is never written (ADR-017).
   async function record(
-    input: InputCheck,
+    input: ChatRejectionLog,
     category: Category,
-    source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed',
+    source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed' | 'rate-limit',
     failClosedRow?: 'hard-floor' | 'tier' | 'boundaries',
   ): Promise<string | undefined> {
     const key = input.accountId ?? input.ip ?? 'anonymous';
@@ -217,6 +224,7 @@ export function createInputGate({
           ]
         : undefined,
       direction: 'input',
+      budgetClass: input.surface === 'chat' ? 'chat' : 'action-input',
       signal: input.signal,
     });
     if (verdict.verdict === 'allow') {
@@ -225,12 +233,11 @@ export function createInputGate({
           ? await record(input, 'none', 'judge')
           : undefined;
       return {
-        decision:
-          moderationLogId || input.surface !== 'chat' ? 'allow' : 'block',
+        decision: 'allow',
         moderationLogId,
         category: 'none',
         source: 'judge',
-        attributable: true,
+        attributable: input.surface !== 'chat' || moderationLogId !== undefined,
       };
     }
     const moderationLogId = await record(
@@ -254,6 +261,12 @@ export function createInputGate({
     },
     checkChat(input) {
       return evaluate({ ...input, surface: 'chat' });
+    },
+    logChatRejection(input) {
+      return record(input, 'other', 'rate-limit');
+    },
+    logChatFailure(input) {
+      return record(input, 'other', 'failclosed', 'tier');
     },
   };
 }
@@ -295,8 +308,17 @@ declare module 'fastify' {
 export function createEndpointJudge(db: InputGateDb): JudgeModerator {
   const egress = createEndpointEgress();
   return createModerationJudge({
-    chat: async ({ messages, max_tokens, temperature, signal, direction }) => {
-      const release = endpointJudgeBudget.acquire(direction);
+    chat: async ({
+      messages,
+      max_tokens,
+      temperature,
+      signal,
+      direction,
+      budgetClass,
+    }) => {
+      const release = endpointJudgeBudget.acquire(
+        direction === 'output' ? 'output' : (budgetClass ?? 'action-input'),
+      );
       if (!release) return 'judge capacity unavailable';
       signal.addEventListener('abort', release, { once: true });
       try {

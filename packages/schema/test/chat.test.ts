@@ -46,4 +46,19 @@ describe('OOC chat wire contract', () => {
       }).success,
     ).toBe(true);
   });
+
+  it('allows an unattributed allow when best-effort moderation logging is unavailable', () => {
+    expect(
+      ChatMessageSchema.safeParse({
+        messageId: '9a5a582d-9b8b-4fd1-9d10-fc3de85e98e5',
+        roomId: '9a5a582d-9b8b-4fd1-9d10-fc3de85e98e5',
+        seatId: '9a5a582d-9b8b-4fd1-9d10-fc3de85e98e5',
+        receiptSeq: 1,
+        receivedAt: 1,
+        text: 'hello',
+        channel: 'ooc',
+        gateDecision: { verdict: 'allow' },
+      }).success,
+    ).toBe(true);
+  });
 });

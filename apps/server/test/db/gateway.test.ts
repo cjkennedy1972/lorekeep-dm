@@ -37,6 +37,12 @@ function next(ws: WebSocket): Promise<{
     });
   });
 }
+async function nextOfType(ws: WebSocket, type: string) {
+  for (;;) {
+    const message = await next(ws);
+    if (message.type === type) return message;
+  }
+}
 function closed(ws: WebSocket): Promise<number> {
   return new Promise((resolve) => ws.once('close', (code) => resolve(code)));
 }
@@ -130,5 +136,81 @@ describe('one-time gateway', () => {
     const denied = connect(badTicket);
     expect(await closed(denied)).toBe(1008);
     first.close();
+  });
+
+  it('rejects player chat while paused without persisting or broadcasting it', async () => {
+    const room = await rooms.get(sessionId);
+    await room.setPaused(accounts[0], true, true);
+    expect(room.state.paused).toBe(true);
+    app.inputGate.checkChat = async () => ({
+      decision: 'allow',
+      category: 'none',
+      source: 'judge',
+      attributable: false,
+    });
+
+    const host = connect(await ticket(tokens[0]));
+    await nextOfType(host, 'StateSync').catch((error) => {
+      throw new Error(`waiting for host sync: ${String(error)}`);
+    });
+    const guest = connect(await ticket(tokens[1]));
+    await nextOfType(guest, 'StateSync').catch((error) => {
+      throw new Error(`waiting for guest sync: ${String(error)}`);
+    });
+    const before = await db.query(
+      "SELECT count(*)::int AS count FROM events WHERE session_id=$1 AND type IN ('chat.committed','chat.rejected')",
+      [sessionId],
+    );
+
+    guest.send(
+      JSON.stringify({
+        actionId: randomUUID(),
+        type: 'ChatSend',
+        payload: { text: 'This should not be delivered.' },
+        lastSeq: room.seq,
+      }),
+    );
+    const rejected = await nextOfType(guest, 'Error').catch((error) => {
+      throw new Error(`waiting for paused-chat rejection: ${String(error)}`);
+    });
+    expect(rejected).toMatchObject({
+      type: 'Error',
+      payload: { code: 'CHAT_REJECTED', message: 'The table is paused.' },
+    });
+
+    host.send(
+      JSON.stringify({
+        actionId: randomUUID(),
+        type: 'ChatSend',
+        payload: { text: 'Host message while paused.' },
+        lastSeq: room.seq,
+      }),
+    );
+    const hostMessage = await nextOfType(host, 'ChatMessage').catch((error) => {
+      throw new Error(`waiting for host chat: ${String(error)}`);
+    });
+    expect(hostMessage).toMatchObject({
+      type: 'ChatMessage',
+      payload: { text: 'Host message while paused.' },
+    });
+    const after = await db.query(
+      "SELECT count(*)::int AS count FROM events WHERE session_id=$1 AND type IN ('chat.committed','chat.rejected')",
+      [sessionId],
+    );
+    expect(after.rows[0]?.count).toBe(Number(before.rows[0]?.count) + 1);
+    const privateMessages = await db.query(
+      "SELECT payload->>'text' AS text FROM events WHERE session_id=$1 AND type='chat.committed'",
+      [sessionId],
+    );
+    expect(privateMessages.rows.map((row) => row.text)).not.toContain(
+      'This should not be delivered.',
+    );
+    expect(
+      await db.query('SELECT 1 FROM chat_mutes WHERE session_id=$1', [
+        sessionId,
+      ]),
+    ).toMatchObject({ rowCount: 0 });
+    host.close();
+    guest.close();
   });
 });

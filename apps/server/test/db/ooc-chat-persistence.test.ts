@@ -5,6 +5,7 @@ import {
   Persistence,
   ChatSeatRevokedError,
 } from '../../src/persistence/index.js';
+import { applyAutomaticChatMute } from '../../src/chat/mutes.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
 
 async function migrate(database: TestDatabase) {
@@ -124,5 +125,74 @@ describe('OOC chat persistence (postgres)', () => {
         [sessionId],
       ),
     ).toMatchObject({ rowCount: 0 });
+  });
+
+  it('does not replace an existing host mute with an automatic mute', async () => {
+    await database.pool.query(
+      `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
+       VALUES($1,$2,NULL,'host',$3)`,
+      [sessionId, seatId, accountId],
+    );
+
+    await applyAutomaticChatMute(database.pool, sessionId, seatId);
+
+    expect(
+      await database.pool.query(
+        'SELECT source,muted_until,updated_by FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
+        [sessionId, seatId],
+      ),
+    ).toMatchObject({
+      rows: [{ source: 'host', muted_until: null, updated_by: accountId }],
+    });
+  });
+
+  it('preserves host mute precedence when host and automatic mute writes race', async () => {
+    for (let i = 0; i < 10; i++) {
+      await database.pool.query(
+        'DELETE FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
+        [sessionId, seatId],
+      );
+      await Promise.all([
+        database.pool.query(
+          `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
+           VALUES($1,$2,NULL,'host',$3)
+           ON CONFLICT(session_id,seat_id) DO UPDATE
+           SET muted_until=NULL,source='host',updated_at=now(),updated_by=EXCLUDED.updated_by`,
+          [sessionId, seatId, accountId],
+        ),
+        applyAutomaticChatMute(database.pool, sessionId, seatId),
+      ]);
+      expect(
+        await database.pool.query(
+          'SELECT source,muted_until,updated_by FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
+          [sessionId, seatId],
+        ),
+      ).toMatchObject({
+        rows: [{ source: 'host', muted_until: null, updated_by: accountId }],
+      });
+    }
+  });
+
+  it('exercises migration 0035 down and up paths', async () => {
+    const migration = await import(
+      '../../migrations/0035_ooc_chat_moderation.js'
+    );
+    const down: string[] = [];
+    migration.down({ sql: (statement: string) => down.push(statement) });
+    for (const statement of down) await database.pool.query(statement);
+    expect(
+      await database.pool.query('SELECT to_regclass($1) AS table', [
+        `"${database.schema}".chat_mutes`,
+      ]),
+    ).toMatchObject({ rows: [{ table: null }] });
+
+    const up: string[] = [];
+    migration.up({ sql: (statement: string) => up.push(statement) });
+    for (const statement of up) await database.pool.query(statement);
+    expect(
+      await database.pool.query('SELECT to_regclass($1) AS table', [
+        `"${database.schema}".chat_mutes`,
+      ]),
+    ).toMatchObject({ rows: [{ table: 'chat_mutes' }] });
   });
 });

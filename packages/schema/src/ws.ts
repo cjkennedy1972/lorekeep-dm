@@ -76,7 +76,7 @@ export const ChatMessageSchema = z
     gateDecision: z
       .object({
         verdict: z.literal('allow'),
-        moderationLogId: z.uuid(),
+        moderationLogId: z.uuid().optional(),
       })
       .strict(),
   })

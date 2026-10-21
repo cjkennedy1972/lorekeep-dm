@@ -10,16 +10,6 @@ export const up = (pgm) =>
 
 export const down = (pgm) => {
   pgm.sql('DROP TABLE chat_mutes;');
-  pgm.sql(
-    'ALTER TABLE moderation_log DROP CONSTRAINT moderation_log_source_check;',
-  );
-  pgm.sql(`ALTER TABLE moderation_log
-    ADD CONSTRAINT moderation_log_source_check
-    CHECK (source IN ('hardfloor','denylist','judge','failclosed'));`);
-  pgm.sql(
-    'ALTER TABLE moderation_log DROP CONSTRAINT moderation_log_surface_check;',
-  );
-  pgm.sql(`ALTER TABLE moderation_log
-    ADD CONSTRAINT moderation_log_surface_check
-    CHECK (surface IN ('player-action','clarification','character','table-name','room-name','display-name','report-reason'));`);
+  // Keep the widened checks: chat moderation rows are retained for 30 days,
+  // and a rollback must not fail (or delete audit rows) while they exist.
 };

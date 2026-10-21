@@ -48,6 +48,8 @@ export interface ModerationRequest {
   /** Turn-scoped deterministic scanner. When set, it judges `text` in place of `context + text`; message-level rules need the whole turn, not a carry. */
   turn?: DeterministicTurn;
   direction: Direction;
+  /** Chat has an explicit budget class while sharing input capacity with actions. */
+  budgetClass?: 'action-input' | 'chat';
   /** Optional caller deadline (chat receipt bound); aborts the in-flight judge request. */
   signal?: AbortSignal;
 }
@@ -96,6 +98,7 @@ export interface JudgeChatRequest {
   max_tokens: number;
   signal: AbortSignal;
   direction: Direction;
+  budgetClass?: 'action-input' | 'chat' | 'output';
 }
 
 /** OpenAI-compatible chat call returning the assistant message content. */
@@ -280,6 +283,7 @@ export class JudgeModerator implements Moderator {
           max_tokens: JUDGE_MAX_TOKENS,
           signal: controller.signal,
           direction: req.direction,
+          budgetClass: req.budgetClass,
         }),
       )
       .then(

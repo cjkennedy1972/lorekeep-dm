@@ -32,6 +32,7 @@ import {
 } from './tickets.js';
 import { ConnectionRegistry } from './connections.js';
 import { ChatPolicy } from '../chat/policy.js';
+import { applyAutomaticChatMute } from '../chat/mutes.js';
 import { randomUUID } from 'node:crypto';
 import {
   currentMemberEventsSql,
@@ -393,18 +394,12 @@ export function installGateway(
         const writeChatGateLog = async (
           accountId: string,
           sessionId: string,
-        ): Promise<string | undefined> => {
-          try {
-            const result = await db.query<{ id: string }>(
-              `INSERT INTO moderation_log(surface,account_id,session_id,category,source,expires_at)
-               VALUES('chat',$1,$2,'other','rate-limit',now() + interval '30 days') RETURNING id`,
-              [accountId, sessionId],
-            );
-            return result.rows[0]?.id;
-          } catch {
-            return undefined;
-          }
-        };
+        ): Promise<string | undefined> =>
+          app.inputGate.logChatRejection?.({
+            surface: 'chat',
+            accountId,
+            sessionId,
+          });
         const sendChatHistory = async (
           messages: import('@game/schema').ChatHistoryEntry[],
         ) => {
@@ -928,6 +923,31 @@ export function installGateway(
             await reject('authorization', action.actionId);
             return;
           }
+          if (room.state.paused) {
+            const isHost = await db
+              .query<{ host: boolean }>(
+                'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
+                [identity.sessionId, identity.accountId],
+              )
+              .then((result) => result.rows[0]?.host === true)
+              .catch(() => false);
+            if (!isHost) {
+              if (receipt.decide('paused')) {
+                clearChatDeadline(receipt);
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'CHAT_REJECTED',
+                    message: 'The table is paused.',
+                    actionId: action.actionId,
+                  },
+                });
+                receipt.finish();
+              }
+              return;
+            }
+          }
           let muted = false;
           try {
             const mute = await db.query<{ muted: boolean }>(
@@ -974,14 +994,11 @@ export function installGateway(
           if (receipt.decision !== undefined) return;
 
           const failureLog = async () =>
-            db
-              .query<{ id: string }>(
-                `INSERT INTO moderation_log(surface,account_id,session_id,category,source,fail_closed_row,expires_at)
-                 VALUES('chat',$1,$2,'other','failclosed','tier',now() + interval '30 days') RETURNING id`,
-                [identity.accountId, identity.sessionId],
-              )
-              .then((result) => result.rows[0]?.id)
-              .catch(() => undefined);
+            app.inputGate.logChatFailure?.({
+              surface: 'chat',
+              accountId: identity.accountId,
+              sessionId: identity.sessionId,
+            });
           const check = app.inputGate.checkChat;
           if (!check) {
             await reject('judge_error', action.actionId, await failureLog());
@@ -1026,7 +1043,7 @@ export function installGateway(
             return;
           }
           const decision = gated.result;
-          if (decision.decision !== 'allow' || !decision.moderationLogId) {
+          if (decision.decision !== 'allow') {
             const attributable =
               decision.decision === 'block' && decision.attributable;
             if (
@@ -1038,15 +1055,11 @@ export function installGateway(
                 true,
               )
             )
-              await db
-                .query(
-                  `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source)
-                   VALUES($1,$2,now() + interval '5 minutes','automatic')
-                   ON CONFLICT(session_id,seat_id) DO UPDATE
-                   SET muted_until=EXCLUDED.muted_until,source='automatic',updated_at=now(),updated_by=NULL`,
-                  [identity.sessionId, seat.seatId],
-                )
-                .catch(() => {});
+              await applyAutomaticChatMute(
+                db,
+                identity.sessionId,
+                seat.seatId,
+              ).catch(() => {});
             const logId =
               decision.moderationLogId ??
               (await writeChatGateLog(identity.accountId, identity.sessionId));
@@ -1100,7 +1113,9 @@ export function installGateway(
             channel: 'ooc',
             gateDecision: {
               verdict: 'allow',
-              moderationLogId: decision.moderationLogId,
+              ...(decision.moderationLogId
+                ? { moderationLogId: decision.moderationLogId }
+                : {}),
             },
           });
           try {

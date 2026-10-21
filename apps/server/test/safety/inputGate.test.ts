@@ -104,6 +104,24 @@ describe('createInputGate', () => {
     expect(JSON.stringify(queries)).not.toContain(innocent);
   });
 
+  it('allows a judge-approved chat message when the log insert fails, without attribution', async () => {
+    const db: InputGateDb = {
+      async query() {
+        throw new Error('database unavailable');
+      },
+    };
+    const { moderator } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkChat({ text: innocent, surface: 'chat', accountId: 'a1' }),
+    ).resolves.toMatchObject({
+      decision: 'allow',
+      moderationLogId: undefined,
+      attributable: false,
+    });
+  });
+
   it('allows text the judge allows and writes no log row', async () => {
     const { db, queries } = fakeDb();
     const { moderator, calls } = stubModerator(allowVerdict());
@@ -426,6 +444,67 @@ describe('moderation call budget', () => {
           (w.obj as { event?: string }).event === 'moderation_log_cap_reached',
       ),
     ).toHaveLength(1);
+  });
+
+  it('allows a judge-approved chat message after the daily log cap without attribution', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
+    const { db, queries } = fakeDb();
+    const { moderator } = stubModerator(
+      (() => {
+        let judged = 0;
+        return () =>
+          judged++ < MODERATION_LOG_ROWS_PER_DAY
+            ? blockVerdict('violence')
+            : allowVerdict();
+      })(),
+    );
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+    for (let i = 0; i < MODERATION_LOG_ROWS_PER_DAY; i++) {
+      if (i > 0 && i % MODERATION_CALLS_PER_MINUTE.account === 0)
+        vi.setSystemTime(Date.now() + 60_000);
+      await gate.check({
+        text: 'blocked',
+        surface: 'player-action',
+        accountId: 'cap-account',
+      });
+    }
+    const result = await gate.checkChat({
+      text: innocent,
+      surface: 'chat',
+      accountId: 'cap-account',
+    });
+    expect(result).toMatchObject({ decision: 'allow', attributable: false });
+    expect(result.moderationLogId).toBeUndefined();
+    expect(
+      queries.filter((q) => /INSERT INTO moderation_log/.test(q.sql)),
+    ).toHaveLength(MODERATION_LOG_ROWS_PER_DAY);
+  });
+
+  it('uses the same daily cap for chat queue and deadline rejection logs', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
+    const { db, queries } = fakeDb();
+    const { moderator } = stubModerator(blockVerdict('violence'));
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+    expect(gate.logChatRejection).toBeTypeOf('function');
+    for (let i = 0; i < MODERATION_LOG_ROWS_PER_DAY; i++) {
+      if (i > 0 && i % MODERATION_CALLS_PER_MINUTE.account === 0)
+        vi.setSystemTime(Date.now() + 60_000);
+      await gate.check({
+        text: 'blocked',
+        surface: 'player-action',
+        accountId: 'rejection-cap-account',
+      });
+    }
+    await gate.logChatRejection?.({
+      surface: 'chat',
+      accountId: 'rejection-cap-account',
+      sessionId: 'session-1',
+    });
+    expect(
+      queries.filter((q) => /INSERT INTO moderation_log/.test(q.sql)),
+    ).toHaveLength(MODERATION_LOG_ROWS_PER_DAY);
   });
 });
 

@@ -148,7 +148,8 @@ export function ChatPanel(props: ChatPanelProps) {
         {props.error || status}
       </p>
       <p>
-        Use the safety controls above to X-card or pause; they apply here too.
+        Pause stops chat for players; use Report or ask the host to mute for
+        individual messages; X-card is an anonymous signal to the table.
       </p>
     </section>
   );
