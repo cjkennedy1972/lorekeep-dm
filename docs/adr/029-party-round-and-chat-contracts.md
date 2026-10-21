@@ -118,21 +118,27 @@ Latency is not a gate for this slice. The breakdown states that M4 does not requ
 
 All values are proposed defaults, set per Room and tunable only by the operator config. Counts are per seat unless marked per table.
 
-Chat:
+Buckets. There are three separate per-seat budgets and they never share counters:
 
-- **Burst:** token bucket, capacity 5, one token refilled every 2 s. Allows a paste-and-reply burst of 5 submissions. The refill alone would permit up to 30 per minute, so it is not the binding sustained limit.
-- **Sustained:** 40 submissions per 10 min, which is 4 per minute on average. This is the binding sustained limit and it binds before the bucket refill does. Rationale: about one message every 15 s over a session, above normal table chat.
-- **Duplicates:** the same normalized text from the same seat within 60 s is dropped before the gate. It still consumes one token. Rationale: stops repeat-spam from reaching the judge.
-- **Per table:** 120 gate calls per minute across all seats. Over the limit returns a neutral "chat is busy" rejection without a judge call. Rationale: caps total judge spend for a six-seat table at about 2 per second.
-- **Non-allow streak:** 3 non-allow decisions from one seat within 5 min mutes that seat's chat for 5 min. The host can lift it early. Rationale: stops probing of the filter. The mute is recorded in `moderation_log`. Only judge verdicts and denylist or hard-floor matches count. BLOCKs caused by judge outage, judge timeout, judge parse failure (`judge_error`), or a hard-floor evaluation error do not count, so an outage cannot mute every seat.
-- **Global judge budget (all tables):** at most 4 chat judge calls in flight at once, and 240 calls per minute across all tables. Calls beyond either cap return the neutral "chat is busy" rejection without a judge call. Rationale: the `moderate` endpoint also serves DM output gating (ADR-023), so chat must not take all of its capacity. When the judge is slow the in-flight cap binds; when it is fast the 240 per minute cap binds.
+1. **Chat bucket** (chat messages only): the Burst, Sustained, and Duplicates limits below.
+2. **Action-input budget** (round submit, edit, withdraw, and `ask_dm`): the Mutations and Edits limits below. Action-input gate calls do not draw from the chat bucket, so a chat burst cannot starve a player's action and an action cannot use up chat capacity.
+3. **Judge budgets** (shared, all tables): the per-table and global caps below. These count gate calls, not seats: chat-gate calls count toward the per-table cap, and both chat-gate and action-input-gate calls count toward the global cap. DM output gating is not counted (ADR-023).
+
+Chat bucket:
+
+- **Burst** (chat bucket): token bucket, capacity 5, one token refilled every 2 s. Allows a paste-and-reply burst of 5 submissions. The refill alone would permit up to 30 per minute, so it is not the binding sustained limit.
+- **Sustained** (chat bucket): 40 submissions per 10 min, which is 4 per minute on average. This is the binding sustained limit and it binds before the bucket refill does. Rationale: about one message every 15 s over a session, above normal table chat.
+- **Duplicates** (chat bucket): the same normalized text from the same seat within 60 s is dropped before the gate. It still consumes one token. Rationale: stops repeat-spam from reaching the judge.
+- **Per table** (judge budget, chat-gate calls only): 120 chat gate calls per minute across all seats. Over the limit returns a neutral "chat is busy" rejection without a judge call. Rationale: caps chat judge spend for a six-seat table at about 2 per second. Action-input gate calls are not counted here; they are bounded by their own budget above and by the global cap below.
+- **Non-allow streak** (chat bucket; mutes chat only, not actions): 3 non-allow decisions from one seat within 5 min mutes that seat's chat for 5 min. The host can lift it early. Rationale: stops probing of the filter. The mute is recorded in `moderation_log`. Only judge verdicts and denylist or hard-floor matches count. BLOCKs caused by judge outage, judge timeout, judge parse failure (`judge_error`), or a hard-floor evaluation error do not count, so an outage cannot mute every seat.
+- **Global judge budget** (judge budget, all tables, chat-gate and action-input-gate calls): at most 4 calls in flight at once, and 240 calls per minute across all tables. Calls beyond either cap return the neutral "chat is busy" rejection without a judge call. Rationale: the `moderate` endpoint also serves DM output gating (ADR-023), so chat must not take all of its capacity. When the judge is slow the in-flight cap binds; when it is fast the 240 per minute cap binds.
 - **Timeouts abort:** each judge call carries an AbortController set to the 5 s timeout. On timeout the request is aborted, its in-flight slot is released, and any late response is discarded.
 
-Round actions (submit, edit, withdraw):
+Round actions (submit, edit, withdraw, `ask_dm`), all on the action-input budget:
 
-- **Mutations:** 6 per 60 s per seat (edits and withdraws count). Rationale: a seat can revise a plan several times in a round without flooding gate calls.
-- **Edits per round:** 10 per seat. Rationale: bounds churn in a 120 s round.
-- Action text passes the same gate as chat (ADR-023), with the same burst bucket applied to gate calls.
+- **Mutations** (action-input budget): 6 per 60 s per seat (edits and withdraws count). Rationale: a seat can revise a plan several times in a round without flooding gate calls.
+- **Edits per round** (action-input budget): 10 per seat. Rationale: bounds churn in a 120 s round.
+- Action text passes the same gate as chat (ADR-023). It draws only on the action-input budget and the judge budgets above, never on the chat bucket.
 
 Connection:
 
