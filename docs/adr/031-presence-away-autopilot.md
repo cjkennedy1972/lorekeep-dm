@@ -66,7 +66,7 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 2. **Rest-vote quorum (ADR-030 §2.3).** An `away` or `revoked` seat leaves the quorum denominator at that moment. `disconnected`, `returning`, and `unknown` seats stay in it.
    - An `away` seat's cast ballot is kept. If the seat reaches `connected` again before close, the ballot counts again.
    - An `away` seat cannot cast. A cast needs control (§3.1).
-   - A `revoked` seat's ballot is voided, and the seat does not re-enter the denominator.
+   - A seat that is `revoked` by departure, retirement, kick, or ban has its cast ballot voided, and it does not re-enter the denominator. This matches ADR-030 §2.3. An `away` seat keeps its ballot (above), so `away` and `revoked` are treated differently.
 3. **Submissions kept.** A submission accepted before the seat went away is kept. A queued submission is kept and promoted to `accepted` at the next round open, in `receiptSeq` order (ADR-029 §4, Promotion). Its away state does not change that.
 4. **No edits without control.** A seat without control cannot edit or withdraw. A `returning` seat has control from 2 s. `disconnected` and `unknown` seats do not.
 5. **Exploration.** An away PC does not submit an action. The party's PC follows the party. Spotlight prompts (A8) go only to connected seats. `away`, `revoked`, and `unknown` seats are excluded.
