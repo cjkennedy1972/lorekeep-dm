@@ -382,6 +382,7 @@ export function createEndpointJudge(
       let callerLostTimer: ReturnType<typeof setTimeout> | undefined;
       const onCallerAbort = () => {
         if (callerLostTimer !== undefined) return;
+        // Keep a slot in flight for 10 s after abort; then count unsettled work as lost until settlement or the 60 s hard cap.
         callerLostTimer = setTimeout(() => budget.markLost(), 10_000);
       };
       signal.addEventListener('abort', onCallerAbort, { once: true });

@@ -159,7 +159,7 @@ describe('OpenAI-compatible LLM adapter', () => {
     await expect(pending).rejects.toMatchObject({ code: 'stream-aborted' });
   });
 
-  it('destroys active transport connections when the adapter is destroyed', async () => {
+  it('rejects a pending OpenAI stream when adapter destruction cancels its request', async () => {
     server = await startFakeOpenAIServer({ delayMs: 200 });
     const adapter = adapterFor();
     const pending = collect(adapter);

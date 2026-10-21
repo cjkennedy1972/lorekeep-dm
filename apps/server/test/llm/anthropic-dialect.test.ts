@@ -115,7 +115,7 @@ describe('Anthropic Messages adapter', () => {
       'cache_control',
     );
   });
-  it('closes active Anthropic transport connections on adapter teardown', async () => {
+  it('rejects a pending Anthropic Messages stream when teardown closes its connection', async () => {
     server = await startFakeAnthropicServer({ delayMs: 200 });
     const adapter = adapterFor();
     const pending = collect(adapter);

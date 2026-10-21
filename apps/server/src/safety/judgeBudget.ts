@@ -86,7 +86,7 @@ export class JudgeBudget {
   }
 }
 
-/** ADR-032 §4: lost calls retain capacity until settlement or 60 s transport destruction. */
+/** ADR-032 §4: after a 10 s abort grace, unsettled calls count as lost until settlement or the 60 s hard cap. */
 export async function withJudgeHardCap<T>(
   operation: Promise<T>,
   release: () => void,

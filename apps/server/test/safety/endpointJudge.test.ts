@@ -173,6 +173,148 @@ describe('production endpoint judge wrapper', () => {
     expect(endpointJudgeBudget).toBeDefined();
   });
 
+  it('holds an aborted chat slot for 10 seconds, then counts it lost', async () => {
+    vi.useFakeTimers();
+    const adapter = setupAdapter();
+    const judge = createEndpointJudge(dbStub());
+    const abort = new AbortController();
+    const chatRequest = (text: string, signal?: AbortSignal) =>
+      judge.moderate({
+        text,
+        tier: 'standard',
+        direction: 'input',
+        budgetClass: 'chat',
+        signal,
+      });
+
+    const first = chatRequest('Caller-aborted chat.', abort.signal);
+    const second = chatRequest('A second chat fills the other in-flight slot.');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(adapter.complete).toHaveBeenCalledTimes(2);
+    abort.abort();
+    await expect(first).resolves.toMatchObject({ unavailable: true });
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    await expect(second).resolves.toMatchObject({ unavailable: true });
+    await expect(
+      chatRequest('Still at the in-flight limit.'),
+    ).resolves.toMatchObject({
+      capacityLimited: 'chat',
+      unavailable: true,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    const third = chatRequest(
+      'The first call moved out of in-flight capacity.',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(adapter.complete).toHaveBeenCalledTimes(3);
+    adapter.pending[2]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(third).resolves.toMatchObject({ verdict: 'allow' });
+
+    await vi.advanceTimersByTimeAsync(4_500);
+    await expect(
+      chatRequest('Both unsettled calls are now counted as lost.'),
+    ).resolves.toMatchObject({
+      capacityLimited: 'chat',
+      unavailable: true,
+    });
+
+    adapter.pending[0]!.resolve();
+    adapter.pending[1]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('clears the caller-abort grace timer and releases the slot when upstream settles early', async () => {
+    vi.useFakeTimers();
+    const adapter = setupAdapter();
+    const judge = createEndpointJudge(dbStub());
+    const abort = new AbortController();
+    const request = judge.moderate({
+      text: 'Caller-aborted but promptly settled.',
+      tier: 'standard',
+      direction: 'input',
+      budgetClass: 'chat',
+      signal: abort.signal,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    abort.abort();
+    await expect(request).resolves.toMatchObject({ unavailable: true });
+    adapter.pending[0]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const recovered = judge.moderate({
+      text: 'The settled slot is available immediately.',
+      tier: 'standard',
+      direction: 'input',
+      budgetClass: 'chat',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(adapter.complete).toHaveBeenCalledTimes(2);
+    adapter.pending[1]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(recovered).resolves.toMatchObject({ verdict: 'allow' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const afterGrace = judge.moderate({
+      text: 'No stale lost-call count remains.',
+      tier: 'standard',
+      direction: 'input',
+      budgetClass: 'chat',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    adapter.pending[2]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(afterGrace).resolves.toMatchObject({ verdict: 'allow' });
+  });
+
+  it('destroys an aborted unsettled upstream at 60 seconds and releases its lost-call count', async () => {
+    vi.useFakeTimers();
+    const adapter = setupAdapter();
+    const judge = createEndpointJudge(dbStub());
+    const firstAbort = new AbortController();
+    const secondAbort = new AbortController();
+    const request = (text: string, signal?: AbortSignal) =>
+      judge.moderate({
+        text,
+        tier: 'standard',
+        direction: 'input',
+        budgetClass: 'chat',
+        signal,
+      });
+    const result = request(
+      'First caller aborts while upstream remains unsettled.',
+      firstAbort.signal,
+    );
+    const second = request(
+      'Second caller aborts while upstream remains unsettled.',
+      secondAbort.signal,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    firstAbort.abort();
+    secondAbort.abort();
+    await expect(result).resolves.toMatchObject({ unavailable: true });
+    await expect(second).resolves.toMatchObject({ unavailable: true });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(
+      request('Lost-call capacity is still held.'),
+    ).resolves.toMatchObject({
+      capacityLimited: 'chat',
+      unavailable: true,
+    });
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(adapter.destroy).toHaveBeenCalledTimes(2);
+
+    const recovered = request('Capacity returns after transport destruction.');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(adapter.complete).toHaveBeenCalledTimes(3);
+    adapter.pending[2]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(recovered).resolves.toMatchObject({ verdict: 'allow' });
+    adapter.pending[0]!.resolve();
+    adapter.pending[1]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
   it('keeps action and output verdicts available after chat lost-call capacity is full', async () => {
     vi.useFakeTimers();
     const adapter = setupAdapter();

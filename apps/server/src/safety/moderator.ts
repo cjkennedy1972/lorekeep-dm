@@ -118,7 +118,7 @@ export type JudgeChat = (
 ) => Promise<string | JudgeChatLimited>;
 
 export const JUDGE_MAX_TOKENS = 1024;
-// ADR-032 §4: caller deadline is 4.5 s; an aborted upstream retains capacity until settle or 10 s unsettled.
+// ADR-032 §4: after the 4.5 s caller deadline, work stays in flight for 10 s, then counts as lost until settlement or the 60 s hard cap.
 export const DEFAULT_JUDGE_TIMEOUT_MS = 4_500;
 
 const RUBRIC_TAG = {
