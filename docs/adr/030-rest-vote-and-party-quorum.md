@@ -38,14 +38,14 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 2. Eligible voters and the count N
 
-1. **Eligible set at open.** The eligible set is the seated, non-retired, non-away, non-muted seats at open. A seat that joins after open is not eligible for that vote.
+1. **Eligible set at open.** The eligible set is the seated, non-retired, non-away seats at open. Mute is a chat restriction (ADR-031 §3.5), so it does not affect eligibility. A seat that joins after open is not eligible for that vote.
 2. **N is fixed at open,** and is the size of the eligible set at open. N changes only when a seat is revoked (item 3).
 3. **Seats that leave N.** An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. While away it cannot cast, because a cast requires control (ADR-031 §3.1, §4.2).
    - A seat that is `revoked` by departure, retirement, kick, or ban (ADR-031 §2.7) leaves N, and its cast ballot, if any, is voided. It does not re-enter N.
 4. **Early-close arithmetic uses the N in force.** Every threshold in §4 is computed with the N in force at that moment, which differs from N at open only after a revocation under item 3.
 5. **Non-cast seats count as no.** A seat in the N in force that has not cast counts as `no` in the pass test. There is no abstention.
 6. **Two choices only.** A ballot is `yes` or `no`. There is no abstain option.
-7. **A muted seat in N** cannot cast (§5.1). Its non-cast counts as `no`.
+7. **A muted seat in N** can cast, because mute restricts chat only (ADR-031 §3.5). It is counted like any other seat.
 
 ### 3. Pass, tie, and host break
 
@@ -77,7 +77,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 5. Casting ballots
 
-1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, the seat has control (ADR-031 §3.1), and the seat is eligible (in the N in force, not muted, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
+1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, the seat has control (ADR-031 §3.1), and the seat is eligible (in the N in force, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
 2. **Idempotency key.** Each cast carries the key `(voteId, seat)`. A replayed cast with the same key returns the stored result and records nothing new.
 3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected. There is no change after a cast.
 4. **Casts skip the judge budgets.** A cast is an enum with no free text, so it makes no judge call. It is not subject to the ADR-029 §7 or §8 judge budgets. Each cast counts toward the per-seat mutation budget of 6 per 60 s (ADR-029 §8).
