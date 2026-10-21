@@ -30,6 +30,8 @@ For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-p
 | `WS_ALLOWED_ORIGINS` | Only for cross-origin web clients | unset (same-host origins only) | Not in the config schema; read raw. | Comma-separated full origins (e.g. `https://app.example`). A trailing slash or path never matches. |
 | `LLM_API_KEY` | Do not set | none | Parsed and redacted, but no server code path reads it. | Endpoint keys are stored per slot (encrypted), not from this variable. |
 
+`POST /api/ws-ticket` checks the `Origin` header. Without `WS_ALLOWED_ORIGINS`, the origin must match the request's scheme and host (`apps/server/src/middleware/origin.ts:12-25`, used at `apps/server/src/gateway/ws.ts:55-66`). An origin listed in `WS_ALLOWED_ORIGINS` is allowed by design, so the cross-origin web clients described in the table above can get a ticket. The trade-off: a listed origin that is compromised or hostile can request WebSocket tickets from a visitor's browser. List only origins you control and trust, as exact full origins with scheme and port (`https://app.example`). Do not use wildcards: the check is an exact string match, so `*` matches nothing. Do not add a trailing slash or path, because those never match.
+
 Generate a master key locally (output is a secret; put it in your secret manager, not in the repo):
 
 ```sh
