@@ -34,17 +34,16 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 **Error codes.** This ADR extends the closed reason enum of ADR-022 §2.4 with the codes below. ADR-022 is not edited.
 - `rest-not-allowed`, with a `reason` of `precondition`, `cooldown`, or `session-limit`.
 - `vote-closed`, returned when a cast arrives after close (§5.5).
-- `ballot-not-allowed`, returned when a cast fails the re-check in §5.1. This code is an addition beyond the two named in the review; see Decisions needed.
+- `ballot-not-allowed`, returned when a cast fails the re-check in §5.1. This code is declared here as an addition to the ADR-022 §2.4 set; ADR-022 is not edited.
 
 ### 2. Eligible voters and the count N
 
 1. **Eligible set at open.** The eligible set is the seated, non-retired, non-away, non-muted seats at open. A seat that joins after open is not eligible for that vote.
-2. **N is fixed at open,** and is the size of the eligible set at open. N changes only under item 3.
-3. **Seats that leave N.**
-   - An `away` seat leaves N when it goes away (ADR-031 §4.2). If it had already cast, its ballot is kept. It re-enters N if it reaches `connected` (ADR-031 §2.4, after the 10 s hold) before close, and its kept ballot counts again. While away it cannot cast, because a cast requires control (ADR-031 §3.1).
-   - A seat in `revoked` (ADR-031 §2.7, which covers kicked, banned, retired, and departed seats) leaves N, and its ballot, if any, is voided. It does not re-enter N.
-4. **Early-close arithmetic uses the current N.** Every threshold in §4 is computed with the N in force at that moment.
-5. **Non-cast seats count as no.** A seat in the current N that has not cast counts as `no` in the pass test. There is no abstention.
+2. **N is fixed at open,** and is the size of the eligible set at open. N changes only when a seat is revoked (item 3).
+3. **Seats that leave N.** An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. While away it cannot cast, because a cast requires control (ADR-031 §3.1, §4.2).
+   - A seat that is `revoked` by departure, retirement, kick, or ban (ADR-031 §2.7) leaves N, and its cast ballot, if any, is voided. It does not re-enter N.
+4. **Early-close arithmetic uses the N in force.** Every threshold in §4 is computed with the N in force at that moment, which differs from N at open only after a revocation under item 3.
+5. **Non-cast seats count as no.** A seat in the N in force that has not cast counts as `no` in the pass test. There is no abstention.
 6. **Two choices only.** A ballot is `yes` or `no`. There is no abstain option.
 7. **A muted seat in N** cannot cast (§5.1). Its non-cast counts as `no`.
 
@@ -52,7 +51,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 1. **Pass test.** The vote passes when yes is more than N / 2.
 2. **Tie is failed unless the host acts.** A tie is yes equal to no, counting non-cast seats in N as no. A tie fails at the deadline with reason `tie-failed` unless the host tie-break in §3.3 has resolved it. A tie cannot be resolved by anyone else.
-3. **Host window.** The host window opens only when every seat in the current N has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline.
+3. **Host window.** The host window opens only when every seat in the N in force has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline.
 4. **Host eligibility.** The tie-break needs the host to be in N and to have cast a ballot. If the host is not in N when a tie appears, the vote fails at once with reason `tie-failed`.
 5. **Host outcome.** The host's choice is final. `yes` passes the vote with reason `host-tiebreak`. `no` fails it with reason `host-tiebreak`.
 6. **No host action by deadline.** The vote fails with reason `tie-failed` (§4.6). This matches §4.6.
@@ -63,10 +62,10 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 1. **Timer.** The vote timer is 120 s. It is fixed for M4 and is not host-configurable. It is separate from the exploration round timer in spec §6.1, which the host can change.
 2. **Deadline is wall-clock.** At open the engine stores `deadlineAt` as a UTC timestamp. A monotonic clock is not used, because it does not survive a restart.
 3. **Pause.** On pause the engine stores the remaining milliseconds. On resume it writes a new `deadlineAt` from the remaining milliseconds (ADR-029 §5). A ballot sent while paused is rejected and not queued (ADR-029 §4, "Not queued").
-4. **Early pass.** The vote closes as passed as soon as yes is more than N / 2. Reason `majority`.
-5. **Early fail.** The vote closes as failed as soon as yes plus the number of seats in N that have not cast is at most N / 2. Reason `no-majority`.
-6. **Expiry.** At `deadlineAt` the vote closes, using the current N. If yes is more than N / 2 it passes, reason `majority`. If yes equals no, it fails with reason `tie-failed` (§3.2, §3.6). Otherwise it fails with reason `expired`.
-7. **All cast.** When every seat in the current N has cast and the result is not a tie, the vote closes at once. A pass is reason `majority`; a fail is reason `no-majority`. A tie opens the host window in §3.3.
+4. **Early pass.** The vote closes as passed as soon as yes is more than N / 2. Reason `majority`. Seats in N that have not cast, including `away` seats, count as `no` here, so presence cannot lower the pass bar.
+5. **Early fail.** The vote closes as failed as soon as yes plus the number of seats in N that have not cast is at most N / 2. Reason `no-majority`. `away` seats in N count as not cast.
+6. **Expiry.** At `deadlineAt` the vote closes, using the N in force. If yes is more than N / 2 it passes, reason `majority`. If yes equals no, it fails with reason `tie-failed` (§3.2, §3.6). Otherwise it fails with reason `expired`.
+7. **All cast.** When every seat in the N in force has cast and the result is not a tie, the vote closes at once. A pass is reason `majority`; a fail is reason `no-majority`. A tie opens the host window in §3.3.
 8. **Reason mapping.** `RestVoteClosed` records one of the following:
    - `majority`: a pass by early pass (§4.4), at all-cast (§4.7), or at expiry (§4.6).
    - `no-majority`: an early fail (§4.5) or an all-cast fail (§4.7).
@@ -78,7 +77,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 5. Casting ballots
 
-1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, the seat has control (ADR-031 §3.1), and the seat is eligible (in the current N, not muted, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
+1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, the seat has control (ADR-031 §3.1), and the seat is eligible (in the N in force, not muted, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
 2. **Idempotency key.** Each cast carries the key `(voteId, seat)`. A replayed cast with the same key returns the stored result and records nothing new.
 3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected. There is no change after a cast.
 4. **Casts skip the judge budgets.** A cast is an enum with no free text, so it makes no judge call. It is not subject to the ADR-029 §7 or §8 judge budgets. Each cast counts toward the per-seat mutation budget of 6 per 60 s (ADR-029 §8).
@@ -108,7 +107,7 @@ A failed, expired, cancelled, or `tie-failed` vote emits `RestVoteClosed` only. 
 ## Alternatives considered
 
 - **Simple majority of ballots cast, abstentions excluded.** Rejected: two of six seats could decide a rest.
-- **Denominator fixed at close, with away seats kept.** Rejected: an away seat could hold a vote open. Away seats leave N instead (§2.3).
+- **Away seats leave N.** Rejected: a seat going away would lower N and so lower the pass bar, letting presence decide a rest. Away seats stay in N and count as `no` until they cast (§2.3).
 - **Host decides ties at expiry.** Rejected: it lets the host override the count at the last moment. Ties at expiry fail (§3.2).
 - **Ballots can be changed until close.** Rejected: one ballot per seat, first cast wins (§5.3), so the count cannot be moved by re-voting.
 - **Choices shown live.** Rejected: a visible running tally creates pressure on seats that have not voted (§6.4).
@@ -133,9 +132,9 @@ Decided by Chris's delegate in review:
 5. **No vote during combat.**
 6. **Cooldown 10 min after any close, cap 6 opened votes per session.**
 7. **Host tie-break window within the vote deadline; ties at expiry fail.**
-8. **Quorum.** Abstain counts as `no`. The denominator is the current N (§2.2). Pass requires yes more than N / 2.
-9. **Away seats leave N and keep a cast ballot, which counts again if the seat reaches `connected` before close (ADR-031 §2.4). Revoked seats, which cover kicked, banned, retired, and departed seats, leave N and void their ballot (§2.3).** This matches ADR-031 §4.2.
-10. **`ballot-not-allowed` is an error code added beyond the two named in review.** Atlas to confirm, or fold it into `vote-closed`.
+8. **Quorum.** Abstain counts as `no`. The denominator is N in force (§2.2). Pass requires yes more than N / 2.
+9. **N is fixed at vote open. An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A `revoked` seat (kicked, banned, retired, or departed) leaves N, and its cast ballot, if any, is voided (§2.3).** This matches ADR-031 §4.2, and it supersedes the earlier rule that away seats leave N.
+10. **`ballot-not-allowed` is an error code declared here as an addition to the ADR-022 §2.4 set**, alongside `rest-not-allowed` and `vote-closed`. ADR-022 is not edited.
 
 ## Verification
 
