@@ -29,7 +29,7 @@ ADR-005 (Proposed) sets the round shape: collect one editable action per active 
 - A decided message waits for earlier-received chat messages that are still undecided, but only until each of those reaches its own receipt-plus-10 s deadline. An earlier message's deadline is never later than the waiting message's own deadline, so the barrier cannot push a commit past receipt plus 10 s.
 - Each gate call has a hard 5 s timeout (§8; ADR-023 measured the judge at 1.0–1.9 s), aborted on expiry. A timeout returns BLOCK for chat (§7).
 
-Worst case for a same-socket follow-up: its predecessor is decided by the predecessor's receipt plus 10 s at most, and the follow-up then gets up to 5 s of gate time, so the follow-up is decided by its own receipt plus 10 s, not later.
+Worst case for a same-socket follow-up: its predecessor is decided by the predecessor's receipt plus 10 s at most (the deadline rule in item 4 above), and the follow-up then gets up to 5 s of gate time, so the follow-up is decided by its own receipt plus 10 s, not later.
 5. **Mailbox.** All state transitions run inside the Room's serial mailbox (ADR-002). Gate calls run outside the mailbox and re-enter it with their decision.
 
 Ordering rule summary: round actions are gated in parallel and ordered by receipt. Chat is gated per socket and committed in receipt order behind a barrier. Neither waits for DM generation.
@@ -208,7 +208,7 @@ From Atlas (routine within delegation, flagged because they set behavior):
 
 1. **Chat judge outage = BLOCK (neutral rejection), not HOLD.** This narrows ADR-023's HOLD rule for chat only. Recommendation: accept.
 2. **Chat commit barrier (§1.4)**, instead of per-socket order only. Bound: committed or rejected within 10 s of receipt, with at most 5 s of gate time per message. Recommendation: accept; the cost is one bounded delay for one consistent order.
-3. **§8 numbers** (burst 5 / 10 s, sustained 40 / 10 min, table 120 / min, non-allow mute at 3 in 5 min). Recommendation: accept as starting values for M4 item 1.
+3. **§8 numbers** (burst capacity 5 with refill 1 per 2 s, sustained 40 / 10 min, table 120 / min, non-allow mute at 3 in 5 min). Recommendation: accept as starting values for M4 item 1.
 
 From Chris (scope):
 
