@@ -2,6 +2,8 @@
 
 Status: Proposed (draft PR for Atlas review) · Date: 2026-10-21 · Owner: Sage · Work item: M4 item 5 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-017, ADR-022, ADR-029 (round states, timers, pause, judge budgets, OOC), ADR-031 (away state; ADR-031 merges first). M4 item 5 is blocked on the ADR-031 merge.
 
+Citation convention: a reference such as §3.5 cites item 5 of section 3 of the same document, and a reference such as ADR-031 §2.4 cites item 4 of section 2 of that ADR.
+
 Append-only: this ADR defines the rest vote. It does not edit ADR-001 through ADR-029, and it does not edit `docs/architecture.md`. It fills the `call_for_rest` row that ADR-022 §2 deferred to M4. It adds five event types, listed in §6.1 as additions to the architecture §15.6 event list. It extends the ADR-022 §2.4 closed reason enum, listed in §1. ADR-022 is not edited.
 
 ## Context
@@ -22,9 +24,9 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 1. **Trigger.** In M4, only the DM opens a vote, by calling `call_for_rest`. The server validates every call against §1.6 and §1.2; player text is never itself a trigger. Players cannot open a vote (see Decisions needed).
 2. **Arguments.** `{type: "short" | "long"}`. Any other value is rejected and no vote opens.
 3. **Timing.** The vote opens when the DM turn that called the tool commits. It does not open mid-turn, so the T2 ordering in ADR-022 holds and the Room's single writer (ADR-002) applies the change.
-4. **Fallback turns never open a vote.** A turn that ADR-022 §4.2 resolves through a fallback cannot call `call_for_rest`, even if the DM's output contained the call.
+4. **Fallback turns never open a vote.** A turn that ADR-022 §4.2 resolves through a fallback cannot call `call_for_rest`, even if the DM's output contained the call. Likewise, a vote opens only when the committing turn's output passed the output gate (ADR-023). A turn whose output the gate refused, blocked, or held cannot open a vote, even if the output contained the call. This stops a prompt-injected DM turn from opening a vote.
 5. **Idempotent on turnId.** The open is keyed by the committing turn's `turnId`. A replayed or retried commit for the same turn does not open a second vote.
-6. **Preconditions.** The table is `active` and not paused (ADR-029 §5). The table is in the exploration state (architecture §2.2). No round is `open`, `closing`, or `resolving`. No other vote is open. If a precondition fails, no vote opens and the DM receives `rest-not-allowed` with reason `precondition`.
+6. **Preconditions.** The table is `active` and not paused (ADR-029 §5). The committing turn's output passed the output gate (item 4). The table is in the exploration state (architecture §2.2). No round is `open`, `closing`, or `resolving`. No other vote is open. If a precondition fails, no vote opens and the DM receives `rest-not-allowed` with reason `precondition`.
 7. **Rate limits on opening.** At most one vote may open per 10 min per table, measured from the close of the previous vote, whatever its outcome. At most 6 votes may be opened per table. The count is persisted with the table, so closing and reopening the Room does not reset it. If either limit binds, no vote opens and the DM receives `rest-not-allowed` with reason `cooldown` or `session-limit`.
 8. **A vote is a sub-state of exploration.** An open vote lives inside the exploration state (architecture §2.2). `rest` is entered only inside the closing step (§6.3).
 9. **A vote blocks round opening.** While a vote is open, no round can open. A vote therefore delays a round by at most its timer length (§4).
@@ -144,7 +146,7 @@ Decided by Chris's delegate in review:
 8. **Quorum.** Abstain counts as `no`. The denominator is N fixed at open (§2.2). Pass requires yes more than N / 2. Early fail is strict: it fires only when yes plus uncast seats in N is strictly less than N / 2 (§4.5). A tie at N / 2 stays reachable and goes to the host window (§3.3) when all seats have cast.
 9. **N is fixed at vote open for every cause.** An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A `revoked` seat (kick, ban, retirement, or departure) stays in N and keeps its counted ballot, or counts as `no` if it had not cast. It can cast nothing further. Revocation removes control and chat only; it never changes N or the result (§2.3). This matches ADR-031 §4.2.
 10. **`ballot-not-allowed`: ACCEPTED.** This ADR declares it, alongside `rest-not-allowed` and `vote-closed`, as an extension of the ADR-022 §2.4 enum. ADR-022 is not edited.
-11. **Host tie-break after host deletion.** Accepted privacy trade-off, decided by Chris's delegate: when the deleted account is the host seat and the vote closed `host-tiebreak`, the public outcome (which equals the host's tie-break choice) is kept, with the seat reference scrubbed (§7.2).
+11. **Host tie-break after host deletion.** Accepted privacy trade-off. Decided by Atlas as Chris's delegate, under Chris's standing authorization of 2026-10-21 to decide the items Atlas had listed for him. Chris may override it. When the deleted account is the host seat and the vote closed `host-tiebreak`, the public outcome, which equals the host's tie-break choice, is kept with the seat reference scrubbed (§7.2). The outcome cannot be hidden, because the `RestApplied` event shows the effect on game state.
 
 ## Verification
 
@@ -161,5 +163,6 @@ Decided by Chris's delegate in review:
   - Subtraction after account deletion: N = 4, closed with yes = 2 and no = 2. The account of seat D, which cast a counted ballot, is deleted. `RestVoteClosed` keeps the outcome and reason with yes and no set to null, the `RestVoteCast` and `RestVoteCastNotice` events are removed, and `eligibleSeats` is removed. Nothing that remains lets anyone derive D's choice by subtraction (§7.2). The only choice that remains derivable is a deleted host's tie-break choice, because it equals the public outcome (§7.2, item 2, last bullet); this is the accepted exception.
   - Host deleted after a tie-break: the vote closed `host-tiebreak`, and the host's account is deleted. The seat reference is scrubbed and the outcome and reason are kept, so the host's tie-break choice remains derivable from the outcome. This is the accepted exception in §7.2, and the test asserts exactly that: no seat link remains, and no other choice is derivable.
   - Multiplayer check and revoked seats: a session with one active seat and one revoked seat is treated as solo for §1.11, and `POST /session/:id/rest` is allowed; a session with two seated, non-retired seats (one of them away) is multiplayer and the request is rejected with `multiplayer` (§1.11).
+  - Output gate precondition: a DM turn whose output the output gate refused, blocked, or held contains a `call_for_rest` call. No vote opens and the DM receives `rest-not-allowed` with reason `precondition` (§1.4, §1.6).
   - Solo-rest endpoint on a multiplayer session: `POST /session/:id/rest` returns `rest-not-allowed` with reason `multiplayer` (§1.11).
 - Run by the author before push: prettier and the stale-sentence sweep.
