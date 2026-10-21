@@ -25,7 +25,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 4. **Fallback turns never open a vote.** A turn that ADR-022 §4.2 resolves through a fallback cannot call `call_for_rest`, even if the DM's output contained the call.
 5. **Idempotent on turnId.** The open is keyed by the committing turn's `turnId`. A replayed or retried commit for the same turn does not open a second vote.
 6. **Preconditions.** The table is `active` and not paused (ADR-029 §5). The table is in the exploration state (architecture §2.2). No round is `open`, `closing`, or `resolving`. No other vote is open. If a precondition fails, no vote opens and the DM receives `rest-not-allowed` with reason `precondition`.
-7. **Rate limits on opening.** At most one vote may open per 10 min per table, measured from the close of the previous vote, whatever its outcome. At most 6 votes may be opened per session. If either limit binds, no vote opens and the DM receives `rest-not-allowed` with reason `cooldown` or `session-limit`.
+7. **Rate limits on opening.** At most one vote may open per 10 min per table, measured from the close of the previous vote, whatever its outcome. At most 6 votes may be opened per session, where session means the table session, from first connect to Room close. If either limit binds, no vote opens and the DM receives `rest-not-allowed` with reason `cooldown` or `session-limit`.
 8. **A vote is a sub-state of exploration.** An open vote lives inside the exploration state (architecture §2.2). `rest` is entered only inside the closing step (§6.3).
 9. **A vote blocks round opening.** While a vote is open, no round can open. A vote therefore delays a round by at most its timer length (§4).
 10. **Player actions during a vote.** While a vote is open, player round actions are accepted and queued for the next round, under the ADR-029 §4 queued-input rules. A queued action may be edited. OOC chat is unaffected by the vote.
@@ -52,7 +52,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 1. **Pass test.** The vote passes when yes is more than N / 2.
 2. **Tie is failed unless the host acts.** A tie is yes equal to no, counting non-cast seats in N as no. A tie fails at the deadline with reason `tie-failed` unless the host tie-break in §3.3 has resolved it. A tie cannot be resolved by anyone else.
 3. **Host window.** The host window opens only when every seat in the N in force has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline.
-4. **Host eligibility.** The tie-break needs the host to be in N and to have cast a ballot. If the host is not in N when a tie appears, the vote fails at once with reason `tie-failed`.
+4. **Host eligibility.** The tie-break needs the host to be in N and to have cast a ballot. If the host is not in N when a tie appears, the vote fails at once with reason `tie-failed`. An `away` host stays in N but cannot cast (ADR-031 §3.1), so the all-cast condition in §3.3 never holds while the host is away. The tie then fails at expiry with `tie-failed` (§4.6). This is intended: an away host blocks the tie-break, and the tie fails (ADR-031 §4.9).
 5. **Host outcome.** The host's choice is final. `yes` passes the vote with reason `host-tiebreak`. `no` fails it with reason `host-tiebreak`.
 6. **No host action by deadline.** The vote fails with reason `tie-failed` (§4.6). This matches §4.6.
 7. **The tie-break is a cast.** It passes the same re-check as §5.1, uses the key `(voteId, hostSeat, "tiebreak")`, and counts toward the per-seat mutation budget (§5.4).
@@ -93,12 +93,16 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 6. **DM prompt exclusion.** `RestVoteCast` events are excluded from the DM prompt allowlist. ADR-029 §11 keeps OOC content out of DM prompts; this ADR applies the same kind of exclusion to ballot choices. The DM sees only the close outcome, through `RestVoteClosed`.
 7. **Persistence.** The events go to the append-only log (ADR-003). A reconnecting client gets an open vote from snapshot plus replay, with choices omitted as in §6.4.
 8. **Rewind.** If a `TurnReverted` removes the turn that opened a vote, the vote closes as `cancelled` and applies nothing. If the reverted turn's rest effects were applied, the restored snapshot undoes them (ADR-003).
+9. **Small tables.** For N ≤ 3, a published tally can reveal a seat's choice, because the other counts are known. This is accepted. The tally publishes counts only, never a seat-linked choice.
 
 ### 7. Retention and account deletion
 
 1. **Class.** Vote events (`RestVoteOpened`, `RestVoteCast`, `RestVoteClosed`, `RestApplied`) are in the ADR-017 gameplay class, the same class as events and snapshots. They are live while the session is active, archived after 14 days idle, and deleted 90 days after archive unless claimed.
-2. **Account deletion.** When a seat's account is deleted, the seat reference in vote events is scrubbed by the existing deletion behaviour in ADR-017 (seat-only sessions are redacted).
-3. **Anonymised tally.** After scrubbing, a ballot keeps only its `choice`, with no seat. The `RestVoteClosed` tally is unchanged.
+2. **Account deletion.** ADR-017's account-deletion rule is quoted here, not only cited: "Sessions where the deleted account is only a seat are redacted, not purged." Redaction is the only change made to the log. For every vote in such a session, the vote's data is scrubbed as follows:
+   - All `RestVoteCast` events for that vote are removed. This removes each per-ballot choice and each seat.
+   - `eligibleSeats` is removed from `RestVoteOpened`. Its other fields (`voteId`, `type`, `deadlineAt`, `openedByTurnId`) carry no seat or choice and are kept.
+   - The `RestVoteClosed` tally is kept unchanged.
+3. **Only the tally survives.** After scrubbing, the vote's outcome survives only as the anonymous `RestVoteClosed{voteId, outcome, reason, yes, no}` tally. Item 2 is the rule that produces it. Items 2 and 3 agree: no per-ballot choice and no seat list survive account deletion.
 
 ### 8. Failed or expired vote
 
@@ -140,4 +144,8 @@ Decided by Chris's delegate in review:
 
 - Docs-only change: one file, `docs/adr/030-rest-vote-and-party-quorum.md`. No existing ADR is edited, and `docs/architecture.md` is not edited.
 - Citations checked against `docs/spec.md` §3.6 AC2 and §6.1, `docs/architecture.md` §2.2, §3.2, and §15.6, ADR-002, ADR-003, ADR-004, ADR-017 (gameplay class and account deletion), ADR-022 §2, §2.4, §3, §4.2, ADR-029 §1, §2, §4, §5, §8, §11, and ADR-031 §2.4, §2.7, §3.1, and §4.2.
+- Test cases for M4 item 5:
+  - All-cast tie: every seat in N has cast and yes equals no. No early close fires. The host window opens (§3.3). A host tie-break closes the vote with `host-tiebreak`; with no tie-break by the deadline, it closes with `tie-failed`.
+  - Early-fail boundary: N = 4, yes = 1, two seats cast no, one seat uncast. Yes plus uncast equals N / 2, so no early fail fires and the vote stays open.
+  - Away host: the host is away when a tie appears. The tie fails at expiry with `tie-failed` (§3.4).
 - `prettier --check` run against the branch head. Result recorded in the PR.
