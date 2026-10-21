@@ -169,4 +169,66 @@ describe('production endpoint judge wrapper', () => {
     await expect(third).resolves.toMatchObject({ verdict: 'allow' });
     expect(endpointJudgeBudget).toBeDefined();
   });
+
+  it('keeps action and output verdicts available after chat lost-call capacity is full', async () => {
+    vi.useFakeTimers();
+    const adapter = setupAdapter();
+    const judge = createEndpointJudge(dbStub());
+    const chat = (text: string) =>
+      judge.moderate({
+        text,
+        tier: 'standard',
+        direction: 'input',
+        budgetClass: 'chat',
+      });
+    const first = chat('First chat request.');
+    const second = chat('Second chat request.');
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(first).resolves.toMatchObject({ unavailable: true });
+    await expect(second).resolves.toMatchObject({ unavailable: true });
+
+    const action = judge.moderate({
+      text: 'I open the door.',
+      tier: 'standard',
+      direction: 'input',
+      budgetClass: 'action-input',
+    });
+    const output = judge.moderate({
+      text: 'The door opens.',
+      tier: 'standard',
+      direction: 'output',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(adapter.complete).toHaveBeenCalledTimes(4);
+    adapter.pending[2]!.resolve();
+    adapter.pending[3]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(action).resolves.toMatchObject({ verdict: 'allow' });
+    await expect(output).resolves.toMatchObject({ verdict: 'allow' });
+    adapter.pending[0]!.resolve();
+    adapter.pending[1]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('discards a verdict that arrives after the upstream hard cap', async () => {
+    vi.useFakeTimers();
+    const adapter = setupAdapter();
+    const parser = vi.fn(parseVerdictReply);
+    const judge = createEndpointJudge(dbStub(), parser);
+    const result = judge.moderate({
+      text: 'A slow chat request.',
+      tier: 'standard',
+      direction: 'input',
+      budgetClass: 'chat',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(4_500);
+    await expect(result).resolves.toMatchObject({ unavailable: true });
+    expect(parser).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_500);
+    adapter.pending[0]!.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parser).not.toHaveBeenCalled();
+  });
 });

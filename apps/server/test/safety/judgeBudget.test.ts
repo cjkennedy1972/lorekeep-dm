@@ -23,6 +23,30 @@ describe('shared judge budget', () => {
     for (const item of chat) if (item.kind === 'acquired') item.release();
   });
 
+  it('limits lost calls per class and leaves other classes available', () => {
+    const budget = new JudgeBudget();
+    for (let i = 0; i < 2; i++) {
+      const slot = budget.acquire('chat');
+      expect(slot.kind).toBe('acquired');
+      if (slot.kind === 'acquired') slot.markLost();
+    }
+    expect(budget.acquire('chat')).toEqual({ kind: 'limited', class: 'chat' });
+    const action = budget.acquire('action-input');
+    const output = budget.acquire('output');
+    expect(action.kind).toBe('acquired');
+    expect(output.kind).toBe('acquired');
+    if (action.kind === 'acquired') action.markLost();
+    if (output.kind === 'acquired') output.markLost();
+    expect(budget.acquire('action-input')).toEqual({
+      kind: 'limited',
+      class: 'action-input',
+    });
+    expect(budget.acquire('output')).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
+  });
+
   it('caps chat at 120/min, actions at 80/min and reserves output at 40/min', () => {
     const budget = new JudgeBudget();
     for (let i = 0; i < 120; i++) {

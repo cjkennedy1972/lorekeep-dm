@@ -682,7 +682,7 @@ describe('judge slot hard cap', () => {
     });
     deferred[0]!.resolve('late verdict');
     await Promise.resolve();
-    const afterLateSettle = budget.acquire('output');
+    const afterLateSettle = budget.acquire('chat');
     expect(afterLateSettle.kind).toBe('acquired');
     if (afterLateSettle.kind === 'acquired') afterLateSettle.release();
     for (const item of deferred.slice(1)) item.resolve('late verdict');

@@ -13,7 +13,11 @@ const PER_MINUTE_LIMITS: Record<CapacityClass, number> = {
 };
 const WINDOW_MS = 60_000;
 export const JUDGE_UPSTREAM_HARD_CAP_MS = 10_000;
-const LOST_CALL_LIMIT = 4;
+const LOST_CALL_LIMITS: Record<CapacityClass, number> = {
+  'action-input': 1,
+  chat: 2,
+  output: 1,
+};
 
 export type JudgeBudgetResult =
   | { kind: 'acquired'; release: () => void; markLost: () => void }
@@ -31,13 +35,17 @@ export class JudgeBudget {
     chat: [],
     output: [],
   };
-  private unsettledLost = 0;
+  private readonly unsettledLost: Record<CapacityClass, number> = {
+    'action-input': 0,
+    chat: 0,
+    output: 0,
+  };
 
   acquire(budgetClass: BudgetClass, now = Date.now()): JudgeBudgetResult {
     const recent = this.calls[budgetClass].filter((at) => at > now - WINDOW_MS);
     this.calls[budgetClass] = recent;
     if (
-      this.unsettledLost >= LOST_CALL_LIMIT ||
+      this.unsettledLost[budgetClass] >= LOST_CALL_LIMITS[budgetClass] ||
       recent.length >= PER_MINUTE_LIMITS[budgetClass] ||
       this.inFlight[budgetClass] >= IN_FLIGHT_LIMITS[budgetClass]
     )
@@ -50,13 +58,13 @@ export class JudgeBudget {
       release: () => {
         if (state === 'settled') return;
         if (state === 'in-flight') this.inFlight[budgetClass] -= 1;
-        else this.unsettledLost -= 1;
+        else this.unsettledLost[budgetClass] -= 1;
         state = 'settled';
       },
       markLost: () => {
         if (state !== 'in-flight') return;
         this.inFlight[budgetClass] -= 1;
-        this.unsettledLost += 1;
+        this.unsettledLost[budgetClass] += 1;
         state = 'lost';
       },
     };
