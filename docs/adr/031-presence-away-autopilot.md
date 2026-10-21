@@ -14,6 +14,7 @@ Append-only: this ADR defines presence and autopilot contracts. It does not edit
 - Spec §6.4: a seat drops out after 30 s and is excluded from the spotlight. Drop-in is governed by §6.4. Zero connected seats pauses the table.
 - Spec §6.5: the host approves or denies late joiners.
 - Spec A7: autopilot is defensive only. Spec A8: the spotlight gives every active player at least one direct prompt per 10 DM turns.
+- Narrowings of the spec, all made by decision in this ADR and not by reading the spec: (1) the §6.3 autopilot list is narrowed to Dodge or hold only for M4 (§5.4); (2) autopilot declines all reactions, including opportunity attacks (§6); (3) control restore stays within 2 s of reconnect (US-P5 AC1) but is timed from authenticated reconnect to the control grant (§3.1). Where this ADR and the spec differ, this ADR governs for M4.
 - Spec §13 Q7 asks whether autopilot may take part in votes. Chris's delegate decided it does not (§5.1). Q7 stays open for Chris to close.
 - Architecture §2.2: active → paused on host pause or zero confirmed-connected seats.
 - ADR-029 §7: every chat send re-checks the socket's ticket, the seat, and its retirement and mute state.
@@ -91,7 +92,7 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 
 ### 6. Reaction window
 
-Reactions use the 15 s window in spec §6.3. When the reacting seat is `away`, `revoked`, or `unknown`, the window is auto-declined at once. A `returning` seat keeps its window. No reaction is taken on the away PC's behalf except the decline.
+Reactions use the 15 s window in spec §6.3. When the reacting seat is `away`, `revoked`, or `unknown`, the window is auto-declined at once. A `returning` seat keeps its window. Defensive autopilot declines every reaction, so an away seat never takes an opportunity attack or any other reaction. This is consistent with the 15 s auto-decline in spec §6.3, and it is this ADR's decision, not a reading of the spec.
 
 ### 7. Timer and threshold defaults
 
