@@ -1,6 +1,6 @@
 # M3 exit-criteria proof report (refresh)
 
-Status: **M3 is not complete.** Met: rows 1, 2, 3, 5, 6, 7, and 8 (row 8 dispositions are on `origin/main`; R2–R5 are accepted Medium gaps; row 3's xc-017 reclassification was confirmed by Chris Kennedy personally on 2026-10-19). Open: rows 4 (8,051 ms first-visible) and 4a (811 ms input judge) are measured misses, accepted by owner disposition but not passes; that disposition is on Workboard card 62400d89, which is not verifiable from the repo. Row 4b (per-chunk output-gate latency) is a measured miss on the buffered path (p95 794 ms against <=500 ms; judge latency per gate chunk, N=30, 2026-10-21; production streaming chunking untested). No claim is made that Chris personally approved a latency decision; see “Owner decisions and approvals.”
+Status: **M3 closed with documented exceptions (owner-delegate decision 2026-10-21): rows 4, 4a, 4b are measured misses, not passes, carried to M5; per streamed production chunk remains unmeasured.** Met: rows 1, 2, 3, 5, 6, 7, and 8 (row 8 dispositions are on `origin/main`; R2–R5 are accepted Medium gaps; row 3's xc-017 reclassification was confirmed by Chris Kennedy personally on 2026-10-19). Carried-to-M5 exceptions: rows 4 (8,051 ms first-visible) and 4a (811 ms input judge) are measured misses against the <=3 s and <=0.4 s targets; that disposition is on Workboard cards 62400d89 (rows 4, 4a) and b576951d (row 4b), which are not verifiable from the repo. Row 4b (per-chunk output-gate latency) is a measured miss on the buffered path (p95 794 ms against <=500 ms; judge latency per gate chunk, N=30, 2026-10-21; production streaming chunking untested). No claim is made that Chris personally approved a latency decision; see “Owner decisions and approvals.”
 
 Base: `origin/main` at `b48f4af` (M3-41, #250). Supersedes the stale report from `7df49ea`.
 
@@ -41,8 +41,10 @@ Base: `origin/main` at `b48f4af` (M3-41, #250). Supersedes the stale report from
 
 ## Remaining to close M3
 
-- Rows 4 and 4a: measured misses against the <=3 s and <=0.4 s targets. The owner disposition on card 62400d89 accepts them as unmet; they are not passes.
-- Row 4b: per-chunk <=0.5 s output-gate latency is a measured miss (p95 794 ms vs <=500 ms, not a pass). Measured on gate forced cuts over a replayed buffered response, NOT production streaming chunks; per streamed production chunk is unmeasured.
+M3 closed with documented exceptions (owner-delegate decision 2026-10-21): rows 4, 4a, 4b are measured misses, not passes, carried to M5; per streamed production chunk remains unmeasured.
+
+- Rows 4 and 4a: measured misses against the <=3 s and <=0.4 s targets. The owner disposition on card 62400d89 accepts them as unmet and carried to M5; they are not passes.
+- Row 4b: per-chunk <=0.5 s output-gate latency is a measured miss (p95 794 ms vs <=500 ms, not a pass), carried to M5 on card b576951d. Measured on gate forced cuts over a replayed buffered response, NOT production streaming chunks; per streamed production chunk is unmeasured.
 - Nothing else is open.
 
 ## Evidence index
