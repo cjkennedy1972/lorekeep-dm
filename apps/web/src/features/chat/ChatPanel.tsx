@@ -7,12 +7,9 @@ interface ChatPanelProps {
   messages: ChatHistoryEntry[];
   room: RoomState;
   isHost: boolean;
-  paused: boolean;
   connected: boolean;
   error: string;
   onSend(text: string): boolean;
-  onXCard(): boolean;
-  onPause(paused: boolean): boolean;
   onMute(seatId: string, muted: boolean): boolean;
 }
 
@@ -150,24 +147,9 @@ export function ChatPanel(props: ChatPanelProps) {
       <p role="status" aria-live="polite">
         {props.error || status}
       </p>
-      <div aria-label="Chat safety controls">
-        <button
-          type="button"
-          onClick={() =>
-            props.onXCard() && setStatus('X-card sent anonymously.')
-          }
-          disabled={!props.connected}
-        >
-          X-card for chat
-        </button>
-        <button
-          type="button"
-          onClick={() => props.onPause(!props.paused)}
-          disabled={!props.connected || (props.paused && !props.isHost)}
-        >
-          {props.paused ? 'Resume table for chat' : 'Pause table for chat'}
-        </button>
-      </div>
+      <p>
+        Use the safety controls above to X-card or pause; they apply here too.
+      </p>
     </section>
   );
 }

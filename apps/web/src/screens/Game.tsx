@@ -528,9 +528,52 @@ export function Game() {
           {safetyNotice ||
             (room.paused ? 'The table is paused.' : 'The table is active.')}
         </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (live.send('XCard'))
+              setSafetyNotice(
+                'X-card sent anonymously. The DM will steer away next turn.',
+              );
+            else
+              setError('Not connected, so the X-card was not sent. Try again.');
+          }}
+          disabled={live.status !== 'connected'}
+        >
+          X-card (anonymous)
+        </button>
+        {!room.paused ? (
+          <button
+            type="button"
+            disabled={live.status !== 'connected'}
+            onClick={() => {
+              if (!live.send('PauseTable', { paused: true }))
+                setError(
+                  'Not connected, so the table was not paused. Try again.',
+                );
+            }}
+          >
+            Pause table
+          </button>
+        ) : isHost ? (
+          <button
+            type="button"
+            disabled={live.status !== 'connected'}
+            onClick={() => {
+              if (!live.send('PauseTable', { paused: false }))
+                setError(
+                  'Not connected, so the table was not resumed. Try again.',
+                );
+            }}
+          >
+            Resume table
+          </button>
+        ) : (
+          <p>Only the host can resume the table.</p>
+        )}
         <p>
-          X-card and pause apply to the whole table, including party chat. No
-          explanation is needed.
+          Pause stops new narration after the current turn. X-card and pause
+          also apply to party chat. No explanation is needed.
         </p>
       </section>
       <ChatPanel
@@ -538,19 +581,9 @@ export function Game() {
         messages={chatMessages}
         room={room}
         isHost={isHost}
-        paused={room.paused === true}
         connected={live.status === 'connected'}
         error={chatError}
         onSend={(text) => live.send('ChatSend', { text })}
-        onXCard={() => {
-          const sent = live.send('XCard');
-          if (sent)
-            setSafetyNotice(
-              'X-card sent anonymously. The DM will steer away next turn.',
-            );
-          return sent;
-        }}
-        onPause={(paused) => live.send('PauseTable', { paused })}
         onMute={(seatId, muted) => live.send('MuteChat', { seatId, muted })}
       />
       <ActionInput
