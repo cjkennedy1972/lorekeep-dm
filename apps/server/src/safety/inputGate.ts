@@ -45,7 +45,7 @@ export interface InputCheck {
 }
 
 /** `limited`: over the moderation-call budget; the judge was not called and nothing was logged. */
-export type InputDecision = 'allow' | 'block' | 'limited';
+export type InputDecision = 'allow' | 'block' | 'limited' | 'busy';
 
 /** Never throws. */
 export interface InputGate {
@@ -240,6 +240,17 @@ export function createInputGate({
         attributable: input.surface !== 'chat' || moderationLogId !== undefined,
       };
     }
+    if (verdict.capacityLimited) {
+      const actionSurface =
+        input.surface === 'player-action' || input.surface === 'clarification';
+      return {
+        decision:
+          actionSurface && verdict.capacityLimited === 'action-input'
+            ? 'busy'
+            : 'limited',
+        attributable: false,
+      };
+    }
     const moderationLogId = await record(
       input,
       verdict.category,
@@ -316,11 +327,11 @@ export function createEndpointJudge(db: InputGateDb): JudgeModerator {
       direction,
       budgetClass,
     }) => {
-      const release = endpointJudgeBudget.acquire(
+      const budget = endpointJudgeBudget.acquire(
         direction === 'output' ? 'output' : (budgetClass ?? 'action-input'),
       );
-      if (!release) return 'judge capacity unavailable';
-      signal.addEventListener('abort', release, { once: true });
+      if (budget.kind === 'limited')
+        return { kind: 'limited', class: budget.class };
       try {
         const adapter: LlmAdapter = await createConfiguredAdapter(
           db,
@@ -336,8 +347,7 @@ export function createEndpointJudge(db: InputGateDb): JudgeModerator {
           }),
         );
       } finally {
-        signal.removeEventListener('abort', release);
-        release();
+        budget.release();
       }
     },
   });

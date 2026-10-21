@@ -1,52 +1,56 @@
 type BudgetClass = 'action-input' | 'chat' | 'output';
-type CapacityClass = 'shared' | 'output';
+type CapacityClass = BudgetClass;
 
 const IN_FLIGHT_LIMITS: Record<CapacityClass, number> = {
-  shared: 3,
+  'action-input': 1,
+  chat: 2,
   output: 1,
 };
 const PER_MINUTE_LIMITS: Record<CapacityClass, number> = {
-  shared: 200,
+  'action-input': 80,
+  chat: 120,
   output: 40,
 };
 const WINDOW_MS = 60_000;
 
-/** Process-wide shared judge capacity; output has an independent reserved share. */
+export type JudgeBudgetResult =
+  | { kind: 'acquired'; release: () => void }
+  | { kind: 'limited'; class: BudgetClass };
+
+/** Process-wide judge capacity partitioned across chat, actions, and output. */
 export class JudgeBudget {
   private readonly inFlight: Record<CapacityClass, number> = {
-    shared: 0,
+    'action-input': 0,
+    chat: 0,
     output: 0,
   };
   private readonly calls: Record<CapacityClass, number[]> = {
-    shared: [],
+    'action-input': [],
+    chat: [],
     output: [],
   };
 
-  acquire(
-    budgetClass: BudgetClass,
-    now = Date.now(),
-  ): (() => void) | undefined {
-    const capacityClass: CapacityClass =
-      budgetClass === 'output' ? 'output' : 'shared';
-    const recent = this.calls[capacityClass].filter(
-      (at) => at > now - WINDOW_MS,
-    );
-    this.calls[capacityClass] = recent;
+  acquire(budgetClass: BudgetClass, now = Date.now()): JudgeBudgetResult {
+    const recent = this.calls[budgetClass].filter((at) => at > now - WINDOW_MS);
+    this.calls[budgetClass] = recent;
     if (
-      recent.length >= PER_MINUTE_LIMITS[capacityClass] ||
-      this.inFlight[capacityClass] >= IN_FLIGHT_LIMITS[capacityClass]
+      recent.length >= PER_MINUTE_LIMITS[budgetClass] ||
+      this.inFlight[budgetClass] >= IN_FLIGHT_LIMITS[budgetClass]
     )
-      return undefined;
+      return { kind: 'limited', class: budgetClass };
     recent.push(now);
-    this.inFlight[capacityClass] += 1;
+    this.inFlight[budgetClass] += 1;
     let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.inFlight[capacityClass] = Math.max(
-        0,
-        this.inFlight[capacityClass] - 1,
-      );
+    return {
+      kind: 'acquired',
+      release: () => {
+        if (released) return;
+        released = true;
+        this.inFlight[budgetClass] = Math.max(
+          0,
+          this.inFlight[budgetClass] - 1,
+        );
+      },
     };
   }
 }

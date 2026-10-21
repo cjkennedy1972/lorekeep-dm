@@ -746,6 +746,16 @@ export function installGateway(
                 sessionId: identity.sessionId,
               })
               .then((decision) => {
+                if (decision === 'busy')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'BUSY',
+                      message: 'The game is busy. Try again shortly.',
+                      actionId: answer.data.payload.actionId,
+                    },
+                  });
                 if (decision === 'limited')
                   return send({
                     seq: room.seq,
@@ -813,6 +823,7 @@ export function installGateway(
               ),
             ])
               .then(async ([allowed, name]) => {
+                if (allowed === 'busy') return 'busy' as const;
                 if (allowed === 'limited') return 'limited' as const;
                 if (allowed === 'block') return 'rejected' as const;
                 return room.submitAction(
@@ -823,6 +834,16 @@ export function installGateway(
                 );
               })
               .then((accepted) => {
+                if (accepted === 'busy')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'BUSY',
+                      message: 'The game is busy. Try again shortly.',
+                      actionId: msg.actionId,
+                    },
+                  });
                 if (accepted === 'limited')
                   return send({
                     seq: room.seq,

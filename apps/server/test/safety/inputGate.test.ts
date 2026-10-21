@@ -8,6 +8,7 @@ import {
   MODERATION_LOG_ROWS_PER_DAY,
   type InputGateDb,
 } from '../../src/safety/inputGate.js';
+import { JudgeBudget } from '../../src/safety/judgeBudget.js';
 import {
   buildJudgeMessages,
   failClosedVerdict,
@@ -68,6 +69,72 @@ const innocent = 'The innkeeper pours ale and nods at the table.';
 const minorSexual = 'the 14yo girl had sex with the guard';
 
 describe('createInputGate', () => {
+  it('fails closed with a retryable limited decision for action capacity', async () => {
+    const chat = vi.fn(async () => ({
+      kind: 'limited' as const,
+      class: 'action-input' as const,
+    }));
+    const moderator = createModerationJudge({ chat });
+    const { db } = fakeDb();
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.check({ text: innocent, surface: 'player-action', accountId: 'a1' }),
+    ).resolves.toBe('busy');
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(chat.mock.calls[0]?.[0].direction).toBe('input');
+  });
+
+  it('keeps chat capacity limits on the existing busy rejection path', async () => {
+    const chat = vi.fn(async () => ({
+      kind: 'limited' as const,
+      class: 'chat' as const,
+    }));
+    const moderator = createModerationJudge({ chat });
+    const { db } = fakeDb();
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkChat({ text: innocent, surface: 'chat', accountId: 'a1' }),
+    ).resolves.toMatchObject({ decision: 'limited', attributable: false });
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps DM output judge calls explicitly on the output direction', async () => {
+    const budget = new JudgeBudget();
+    const chatSlots = [budget.acquire('chat'), budget.acquire('chat')];
+    const actionSlot = budget.acquire('action-input');
+    const chat = vi.fn(async ({ direction, budgetClass }) => {
+      const slot = budget.acquire(
+        direction === 'output' ? 'output' : (budgetClass ?? 'action-input'),
+      );
+      if (slot.kind === 'limited') return slot;
+      try {
+        return '{"verdict":"allow","category":"none"}';
+      } finally {
+        slot.release();
+      }
+    });
+    const moderator = createModerationJudge({ chat });
+
+    for (let i = 0; i < 3; i++) {
+      await expect(
+        moderator.moderate({
+          text: innocent,
+          tier: 'standard',
+          direction: 'output',
+        }),
+      ).resolves.toMatchObject({ verdict: 'allow' });
+    }
+
+    expect(chat).toHaveBeenCalledTimes(3);
+    expect(
+      chat.mock.calls.every(([request]) => request.direction === 'output'),
+    ).toBe(true);
+    for (const slot of chatSlots) if (slot.kind === 'acquired') slot.release();
+    if (actionSlot.kind === 'acquired') actionSlot.release();
+  });
+
   it('returns a moderation-log reference for an allowed chat message without storing its text', async () => {
     const queries: { sql: string; params: unknown[] }[] = [];
     const db: InputGateDb = {

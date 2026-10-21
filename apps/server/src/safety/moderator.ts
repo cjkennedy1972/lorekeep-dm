@@ -19,6 +19,8 @@ interface VerdictBase {
   category: Category;
   source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed';
   latencyMs: number;
+  /** Capacity refusal is distinct from a malformed or failed judge response. */
+  capacityLimited?: 'action-input' | 'chat' | 'output';
 }
 
 /** `unavailable` is true when the judge could not produce a usable verdict (fail-closed). */
@@ -28,7 +30,10 @@ export type Verdict = VerdictBase &
     | { unavailable: true; failClosedRow: FailClosedRow }
   );
 
-export function failClosedVerdict(latencyMs: number): Verdict {
+export function failClosedVerdict(
+  latencyMs: number,
+  capacityLimited?: 'action-input' | 'chat' | 'output',
+): Verdict {
   return {
     verdict: 'block',
     category: 'other',
@@ -36,6 +41,7 @@ export function failClosedVerdict(latencyMs: number): Verdict {
     latencyMs,
     unavailable: true,
     failClosedRow: 'hard-floor',
+    ...(capacityLimited ? { capacityLimited } : {}),
   };
 }
 
@@ -101,8 +107,14 @@ export interface JudgeChatRequest {
   budgetClass?: 'action-input' | 'chat' | 'output';
 }
 
-/** OpenAI-compatible chat call returning the assistant message content. */
-export type JudgeChat = (req: JudgeChatRequest) => Promise<string>;
+/** Judge endpoint call; capacity refusals are typed and never enter verdict parsing. */
+export type JudgeChatLimited = {
+  kind: 'limited';
+  class: 'action-input' | 'chat' | 'output';
+};
+export type JudgeChat = (
+  req: JudgeChatRequest,
+) => Promise<string | JudgeChatLimited>;
 
 export const JUDGE_MAX_TOKENS = 1024;
 export const DEFAULT_JUDGE_TIMEOUT_MS = 4_500;
@@ -245,6 +257,7 @@ export class JudgeModerator implements Moderator {
 
     const judged = await this.judge(req);
     if (judged === null) return failClosedVerdict(elapsed());
+    if ('kind' in judged) return failClosedVerdict(elapsed(), judged.class);
     return {
       ...judged,
       source: 'judge',
@@ -293,6 +306,7 @@ export class JudgeModerator implements Moderator {
     try {
       const result = await Promise.race([call, timeout, callerAbort]);
       if (!result.ok) return null;
+      if (typeof result.raw !== 'string') return result.raw;
       return parseVerdictReply(result.raw);
     } finally {
       clearTimeout(timer);
