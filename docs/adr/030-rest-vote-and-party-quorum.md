@@ -54,11 +54,11 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
 
 1. **Pass test.** The vote passes when yes is more than N / 2.
 2. **Tie is failed unless the host acts.** A tie is yes equal to no, counting non-cast seats in N as no. A tie fails at the deadline with reason `tie-failed` unless the host tie-break in §3.3 has resolved it. A tie cannot be resolved by anyone else.
-3. **Host window.** The host window opens only when every seat in N has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline. The tie-break is one cast, first wins, keyed `(voteId, hostSeat, "tiebreak")`. A second tie-break is rejected. There is no host reassignment in M4.
+3. **Host window.** The host window opens only when every seat in N has cast and yes equals no. The host's own ballot counts once, as a normal ballot. The host then gets one separate tie-break action, a choice of `yes` or `no`, which must arrive before the deadline. The tie-break is one cast, first wins, keyed `(voteId, hostSeat, tiebreak)`. A second tie-break is rejected. There is no host reassignment in M4.
 4. **Host eligibility.** The tie-break needs the host seat to be in N, to hold control, and to have cast a ballot. The tie fails with reason `tie-failed`: at once when the host seat is revoked, and at expiry when it is away (§4.6). An `away` host cannot cast (ADR-031 §3.1), so the all-cast condition in §3.3 never holds while the host is away. This is intended: an away host blocks the tie-break, and the tie fails (ADR-031 §4.9).
 5. **Host outcome.** The host's choice is final. `yes` passes the vote with reason `host-tiebreak`. `no` fails it with reason `host-tiebreak`.
 6. **No host action by deadline.** The vote fails with reason `tie-failed` (§4.6). This matches §4.6.
-7. **The tie-break is a cast.** It passes the same re-check as §5.1, uses the key `(voteId, hostSeat, "tiebreak")`, and counts toward the per-seat mutation budget (§5.4).
+7. **The tie-break is a cast.** It passes the same re-check as §5.1, uses the key `(voteId, hostSeat, tiebreak)`, and counts toward the per-seat mutation budget (§5.4).
 
 ### 4. Timing and closing
 
@@ -82,8 +82,8 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
 ### 5. Casting ballots
 
 1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is in N, the seat is not retired, and the seat holds control (ADR-031 §3.1). A revoked seat has no control, so it fails this check, and an away seat fails it too. A failed check returns `ballot-not-allowed` and records nothing.
-2. **Idempotency key.** Each cast carries the key `(voteId, seat)`. A replayed cast with the same key returns the stored result and records nothing new.
-3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected, except for the host tie-break cast keyed `(voteId, hostSeat, "tiebreak")` under §3.3. The separate tie-break is allowed only once. There is no change to the original ballot after a cast.
+2. **Idempotency key.** Each cast carries the three-part key `(voteId, seat, kind)`, where `kind` is `ballot` or `tiebreak`. A replayed cast with the same key returns the stored result for that `kind` only and records nothing new. A `ballot` key never matches a `tiebreak` key, so the host's tie-break is never returned as a replay of the host's ballot, and a host ballot is never returned as a replay of the tie-break.
+3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected, except for the host tie-break cast keyed `(voteId, hostSeat, tiebreak)` under §3.3. The separate tie-break is allowed only once. There is no change to the original ballot after a cast.
 4. **Casts skip the judge budgets.** A cast is an enum with no free text, so it makes no judge call. It is not subject to the ADR-029 §7 or §8 judge budgets. Each cast counts toward the per-seat mutation budget of 6 per 60 s (ADR-029 §8).
 5. **Late casts** after close are rejected with `vote-closed`. A replay of a cast after close returns the stored status only, never the choice.
 
@@ -106,6 +106,7 @@ This section narrows spec §3.6 AC2, which says "majority vote, host tiebreak". 
    - All `RestVoteCast` and `RestVoteCastNotice` events for that vote are removed. This removes each per-ballot choice and each seat.
    - `eligibleSeats` is removed from `RestVoteOpened`. Its other fields (`voteId`, `type`, `deadlineAt`, `openedByTurnId`) carry no seat or choice and are kept.
    - The `RestVoteClosed` outcome and reason are kept; its yes and no counts are set to null whenever the deleted seat cast a counted ballot in that vote. Otherwise, the tally is kept unchanged. This prevents recovering the deleted seat's choice by subtracting remaining ballots from the tally.
+   - A host tie-break outcome is the vote's public result. When the deleted account is the host seat and the vote closed with reason `host-tiebreak`, the outcome equals the host's tie-break choice, so that one choice remains derivable from the outcome. This is accepted: the outcome is the public result of the vote, and once the seat reference is scrubbed it is not linked to the deleted account.
 3. **Only the scrubbed outcome survives.** After scrubbing, the vote's outcome survives as `RestVoteClosed{voteId, outcome, reason, yes, no}`; when a deleted seat cast a counted ballot, yes and no are null. Item 2 is the rule that produces it. No per-ballot choice or seat list survives account deletion.
 
 ### 8. Failed or expired vote
