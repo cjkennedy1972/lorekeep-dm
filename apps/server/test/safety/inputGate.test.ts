@@ -6,9 +6,10 @@ import {
   JUDGE_MAX_RESPONSE_BYTES,
   MODERATION_CALLS_PER_MINUTE,
   MODERATION_LOG_ROWS_PER_DAY,
+  CHAT_CALLS_PER_TABLE_PER_MINUTE,
   type InputGateDb,
 } from '../../src/safety/inputGate.js';
-import { JudgeBudget } from '../../src/safety/judgeBudget.js';
+import { JudgeBudget, withJudgeHardCap } from '../../src/safety/judgeBudget.js';
 import {
   buildJudgeMessages,
   failClosedVerdict,
@@ -482,6 +483,35 @@ describe('moderation call budget', () => {
     expect(calls).toHaveLength(MODERATION_CALLS_PER_MINUTE.ip);
   });
 
+  it('caps chat judge calls per table without limiting another table', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-21T12:00:00Z'));
+    const { db } = fakeDb();
+    const { moderator, calls } = stubModerator(allowVerdict());
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    for (let i = 0; i < CHAT_CALLS_PER_TABLE_PER_MINUTE + 1; i++) {
+      await expect(
+        gate.checkChat({
+          text: innocent,
+          surface: 'chat',
+          sessionId: 'table-one',
+        }),
+      ).resolves.toMatchObject({
+        decision: i < CHAT_CALLS_PER_TABLE_PER_MINUTE ? 'allow' : 'limited',
+      });
+    }
+
+    await expect(
+      gate.checkChat({
+        text: innocent,
+        surface: 'chat',
+        sessionId: 'table-two',
+      }),
+    ).resolves.toMatchObject({ decision: 'allow' });
+    expect(calls).toHaveLength(CHAT_CALLS_PER_TABLE_PER_MINUTE + 1);
+  });
+
   it('caps moderation_log rows per account per day and logs the cap once', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
@@ -572,6 +602,47 @@ describe('moderation call budget', () => {
     expect(
       queries.filter((q) => /INSERT INTO moderation_log/.test(q.sql)),
     ).toHaveLength(MODERATION_LOG_ROWS_PER_DAY);
+  });
+});
+
+describe('judge slot hard cap', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('releases an aborted upstream slot at 10 seconds even if it never settles', async () => {
+    vi.useFakeTimers();
+    const budget = new JudgeBudget();
+    const slot = budget.acquire('chat');
+    const secondSlot = budget.acquire('chat');
+    expect(slot.kind).toBe('acquired');
+    expect(secondSlot.kind).toBe('acquired');
+    if (slot.kind !== 'acquired' || secondSlot.kind !== 'acquired') return;
+    const pending = withJudgeHardCap(
+      new Promise<string>(() => {}),
+      slot.release,
+    );
+    const rejectedAtHardCap = expect(pending).rejects.toThrow(
+      'judge upstream hard cap exceeded',
+    );
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(budget.acquire('chat').kind).toBe('limited');
+    await vi.advanceTimersByTimeAsync(1);
+    await rejectedAtHardCap;
+    const releasedSlot = budget.acquire('chat');
+    expect(releasedSlot.kind).toBe('acquired');
+    if (releasedSlot.kind === 'acquired') releasedSlot.release();
+    secondSlot.release();
+  });
+
+  it('releases the slot as soon as the upstream settles before the hard cap', async () => {
+    vi.useFakeTimers();
+    const budget = new JudgeBudget();
+    const slot = budget.acquire('chat');
+    expect(slot.kind).toBe('acquired');
+    if (slot.kind !== 'acquired') return;
+    await expect(
+      withJudgeHardCap(Promise.resolve('verdict'), slot.release),
+    ).resolves.toBe('verdict');
+    expect(budget.acquire('chat').kind).toBe('acquired');
   });
 });
 

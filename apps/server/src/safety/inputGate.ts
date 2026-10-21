@@ -16,7 +16,7 @@ import {
 } from './moderator.js';
 import type { ContentTier } from './tier.js';
 import { loadContentTierState } from './tierLoader.js';
-import { endpointJudgeBudget } from './judgeBudget.js';
+import { endpointJudgeBudget, withJudgeHardCap } from './judgeBudget.js';
 
 export const INPUT_SURFACES = [
   'player-action',
@@ -69,6 +69,7 @@ export interface ChatInputResult {
 }
 
 export const MODERATION_CALLS_PER_MINUTE = { account: 30, ip: 20 } as const;
+export const CHAT_CALLS_PER_TABLE_PER_MINUTE = 120;
 export const MODERATION_LOG_ROWS_PER_DAY = 100;
 export const JUDGE_MAX_RESPONSE_BYTES = 16 * 1024;
 export const HARD_FLOOR_LOG_RETENTION_MS = 30 * 86_400_000;
@@ -100,6 +101,7 @@ export function createInputGate({
 
   const callsByAccount = new BoundedCounter(MINUTE_MS);
   const callsByIp = new BoundedCounter(MINUTE_MS);
+  const chatCallsByTable = new BoundedCounter(MINUTE_MS);
   const rowsByKey = new BoundedCounter(DAY_MS);
 
   function overBudget(input: InputCheck): boolean {
@@ -158,6 +160,12 @@ export function createInputGate({
   }
 
   async function evaluate(input: InputCheck): Promise<ChatInputResult> {
+    if (
+      input.surface === 'chat' &&
+      input.sessionId !== undefined &&
+      chatCallsByTable.hit(input.sessionId) > CHAT_CALLS_PER_TABLE_PER_MINUTE
+    )
+      return { decision: 'limited', attributable: false };
     if (overBudget(input)) return { decision: 'limited', attributable: false };
     const hard = checkHardFloor(input.text);
     if (hard.blocked) {
@@ -332,23 +340,24 @@ export function createEndpointJudge(db: InputGateDb): JudgeModerator {
       );
       if (budget.kind === 'limited')
         return { kind: 'limited', class: budget.class };
-      try {
-        const adapter: LlmAdapter = await createConfiguredAdapter(
-          db,
-          'moderate',
-          egress,
-        );
-        return await collectJudgeText(
-          adapter.complete({
-            messages,
-            maxTokens: max_tokens,
-            temperature,
-            signal,
-          }),
-        );
-      } finally {
-        budget.release();
-      }
+      return withJudgeHardCap(
+        (async () => {
+          const adapter: LlmAdapter = await createConfiguredAdapter(
+            db,
+            'moderate',
+            egress,
+          );
+          return await collectJudgeText(
+            adapter.complete({
+              messages,
+              maxTokens: max_tokens,
+              temperature,
+              signal,
+            }),
+          );
+        })(),
+        budget.release,
+      );
     },
   });
 }

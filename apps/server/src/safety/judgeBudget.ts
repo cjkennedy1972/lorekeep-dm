@@ -12,6 +12,7 @@ const PER_MINUTE_LIMITS: Record<CapacityClass, number> = {
   output: 40,
 };
 const WINDOW_MS = 60_000;
+export const JUDGE_UPSTREAM_HARD_CAP_MS = 10_000;
 
 export type JudgeBudgetResult =
   | { kind: 'acquired'; release: () => void }
@@ -52,6 +53,27 @@ export class JudgeBudget {
         );
       },
     };
+  }
+}
+
+/** Releases a judge slot when its upstream settles or reaches the hard cap. */
+export async function withJudgeHardCap<T>(
+  operation: Promise<T>,
+  release: () => void,
+  hardCapMs = JUDGE_UPSTREAM_HARD_CAP_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hardCap = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('judge upstream hard cap exceeded')),
+      hardCapMs,
+    );
+  });
+  try {
+    return await Promise.race([operation, hardCap]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    release();
   }
 }
 

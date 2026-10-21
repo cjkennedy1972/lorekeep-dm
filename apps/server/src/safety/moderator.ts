@@ -117,6 +117,7 @@ export type JudgeChat = (
 ) => Promise<string | JudgeChatLimited>;
 
 export const JUDGE_MAX_TOKENS = 1024;
+// ADR-032 §4 fixes this below the 5 s gate deadline to leave commit time.
 export const DEFAULT_JUDGE_TIMEOUT_MS = 4_500;
 
 const RUBRIC_TAG = {
