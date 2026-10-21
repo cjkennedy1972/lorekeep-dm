@@ -41,8 +41,8 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 1. **Eligible set at open.** The eligible set is the seated, non-retired, non-away, non-muted seats at open. A seat that joins after open is not eligible for that vote.
 2. **N is fixed at open,** and is the size of the eligible set at open. N changes only under item 3.
 3. **Seats that leave N.**
-   - An `away` seat leaves N when it goes away (ADR-031 §4.1a). If it had already cast, its ballot is kept. It re-enters N if it returns before close, and its kept ballot counts again. While away it cannot cast.
-   - A revoked, retired, or departed seat leaves N, and its ballot, if any, is voided. It does not re-enter N.
+   - An `away` seat leaves N when it goes away (ADR-031 §4.2). If it had already cast, its ballot is kept. It re-enters N if it reaches `connected` (ADR-031 §2.4, after the 10 s hold) before close, and its kept ballot counts again. While away it cannot cast, because a cast requires control (ADR-031 §3.1).
+   - A seat in `revoked` (ADR-031 §2.7, which covers kicked, banned, retired, and departed seats) leaves N, and its ballot, if any, is voided. It does not re-enter N.
 4. **Early-close arithmetic uses the current N.** Every threshold in §4 is computed with the N in force at that moment.
 5. **Non-cast seats count as no.** A seat in the current N that has not cast counts as `no` in the pass test. There is no abstention.
 6. **Two choices only.** A ballot is `yes` or `no`. There is no abstain option.
@@ -78,7 +78,7 @@ Append-only: this ADR defines the rest vote. It does not edit ADR-001 through AD
 
 ### 5. Casting ballots
 
-1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, and the seat is eligible (in the current N, not muted, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
+1. **Re-check at cast.** Every cast re-checks, at cast time: the seat's ticket is valid, the seat is not revoked, the seat has control (ADR-031 §3.1), and the seat is eligible (in the current N, not muted, not retired, not away). A failed check returns `ballot-not-allowed` and records nothing.
 2. **Idempotency key.** Each cast carries the key `(voteId, seat)`. A replayed cast with the same key returns the stored result and records nothing new.
 3. **One ballot per seat, first cast wins.** A second, different ballot from a seat is rejected. There is no change after a cast.
 4. **Casts skip the judge budgets.** A cast is an enum with no free text, so it makes no judge call. It is not subject to the ADR-029 §7 or §8 judge budgets. Each cast counts toward the per-seat mutation budget of 6 per 60 s (ADR-029 §8).
@@ -134,11 +134,11 @@ Decided by Chris's delegate in review:
 6. **Cooldown 10 min after any close, cap 6 opened votes per session.**
 7. **Host tie-break window within the vote deadline; ties at expiry fail.**
 8. **Quorum.** Abstain counts as `no`. The denominator is the current N (§2.2). Pass requires yes more than N / 2.
-9. **Away seats leave N and keep a cast ballot, which counts again if the seat returns before close. Revoked, retired, and departed seats leave N and void their ballot (§2.3).** This matches ADR-031 §4.1a.
+9. **Away seats leave N and keep a cast ballot, which counts again if the seat reaches `connected` before close (ADR-031 §2.4). Revoked seats, which cover kicked, banned, retired, and departed seats, leave N and void their ballot (§2.3).** This matches ADR-031 §4.2.
 10. **`ballot-not-allowed` is an error code added beyond the two named in review.** Atlas to confirm, or fold it into `vote-closed`.
 
 ## Verification
 
 - Docs-only change: one file, `docs/adr/030-rest-vote-and-party-quorum.md`. No existing ADR is edited, and `docs/architecture.md` is not edited.
-- Citations checked against `docs/spec.md` §3.6 AC2 and §6.1, `docs/architecture.md` §2.2, §3.2, and §15.6, ADR-002, ADR-003, ADR-004, ADR-017 (gameplay class and account deletion), ADR-022 §2, §2.4, §3, §4.2, ADR-029 §1, §2, §4, §5, §8, §11, and ADR-031 §4.1a.
+- Citations checked against `docs/spec.md` §3.6 AC2 and §6.1, `docs/architecture.md` §2.2, §3.2, and §15.6, ADR-002, ADR-003, ADR-004, ADR-017 (gameplay class and account deletion), ADR-022 §2, §2.4, §3, §4.2, ADR-029 §1, §2, §4, §5, §8, §11, and ADR-031 §2.4, §2.7, §3.1, and §4.2.
 - `prettier --check` run against the branch head. Result recorded in the PR.
