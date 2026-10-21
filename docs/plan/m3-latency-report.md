@@ -93,4 +93,4 @@ Method: the same probe, extended to record `end.metrics.chunks[*].judgeLatencyMs
 
 Same run, unscored: input judge 418 / 470 ms; whole-response output gate after model completion 3,289 / 4,988 ms; first visible from model request 5,843 / 7,652 ms.
 
-Limits: buffered-path replay of a synthetic response; chunk boundaries are gate forced cuts, not production streaming chunks; judge latency excludes hold-back and stream arrival; cache state is attested, not observed; one model, one endpoint, one synthetic prompt. Raw record: `docs/plan/evidence/m3-row4b-per-chunk-qwen-2026-10-21.txt`. This is not a pass and does not relax the <= 500 ms target.
+Limits: measured on gate forced cuts over a replayed buffered response, NOT production streaming chunks; per streamed production chunk is unmeasured; judge latency excludes hold-back and stream arrival; cache state is attested, not observed; one model, one endpoint, one synthetic prompt. Raw record: `docs/plan/evidence/m3-row4b-per-chunk-qwen-2026-10-21.txt`. This is not a pass and does not relax the <= 500 ms target.
