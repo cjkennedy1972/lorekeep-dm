@@ -18,7 +18,7 @@ Append-only: this ADR defines presence and autopilot contracts. It does not edit
 - Spec §13 Q7 asks whether autopilot may take part in votes. Chris's delegate decided it does not (§5.1). Q7 stays open for Chris to close.
 - Architecture §2.2: active → paused on host pause or zero confirmed-connected seats.
 - ADR-029 §7: every chat send re-checks the socket's ticket, the seat, and its retirement and mute state.
-- ADR-005 (Proposed): a 120 s party round default; a 90 s combat turn timer; away seats excluded from quorum; autopilot as a pure engine function.
+- ADR-005 (Proposed): a 120 s party round default; a 90 s combat turn timer; away seats excluded from quorum (superseded for rest-vote N by §4.2); autopilot as a pure engine function.
 - ADR-029 §8 refers to a "120 s round" that is not set anywhere. §7 below sets it.
 - ADR-030 defines the rest vote and reads away state from this ADR.
 
@@ -33,7 +33,7 @@ Each seat is in exactly one presence state. Presence is engine state in the Room
 | `connected` | Authenticated (§3.5 check passed) and held for 10 s (§2.4). | Yes | Yes |
 | `returning` | Authenticated (§3.5 check passed), held less than 10 s. | Yes, from 2 s (§3.1) | No |
 | `disconnected` | Socket closed. The 30 s away clock is running. | No | No |
-| `away` | Disconnected for 30 s on a running server. Excluded from required sets and quorum. | No | No |
+| `away` | Disconnected for 30 s on a running server. Excluded from round required sets. Stays in rest-vote N and counts as `no` unless its ballot was cast (§4.2). | No | No |
 | `unknown` | Presence not known after a server restart or a missed heartbeat (§2.6). | No | No |
 | `revoked` | Seat removed by kick, ban, retirement, or departure (§2.7). Terminal for that seat. | No | No |
 
@@ -49,6 +49,7 @@ A seat gets control only after the re-check in §3.5 passes. Only confirmed-conn
 6. **Unknown.** At server restart every seat moves to `unknown`, and no away clock runs. A `connected` or `returning` seat whose heartbeat is missing past the limit (Decision item 6) moves to `unknown`. A seat leaves `unknown` only through point 3. `unknown` never becomes `away` by time, so autopilot never acts on it (§5.1).
 7. **Revoked.** Removal moves the seat to `revoked` at once, with no clock. It emits `SeatRevoked{seat, at, cause}`, where `cause` is `kick`, `ban`, `retired`, or `departed`. A revoked seat returns only through a new authorization under Seat claim and entry, item 2.
 8. **Event rate limit.** At most one presence event per seat per 10 s. A transition inside that window is merged into the next event, and the log records the state that holds at the window's end. State changes apply immediately and only event emission is coalesced. The snapshot always holds the current state.
+9. **Retention.** Presence events (`SeatDisconnected`, `SeatReconnected`, `SeatRevoked`, `AutopilotActed`, and the other presence events in §2) are in the ADR-017 gameplay class, the same class as the vote events in ADR-030 §7. They are live while the session is active, archived after 14 days idle, and deleted 90 days after archive unless claimed.
 
 Event types declared as additions to the v0.2 event list in architecture §15.6: `SeatDisconnected`, `SeatAway`, `SeatReconnected`, `SeatRevoked`, `SeatTakenOver`, `AutopilotActed`. This ADR declares them. Neither `docs/architecture.md` nor ADR-022 is edited. All are appended to the log (ADR-003) and visible to all seats.
 
@@ -63,30 +64,28 @@ Event types declared as additions to the v0.2 event list in architecture §15.6:
 
 ### 4. Effect of presence on rounds and combat
 
-1. **Required sets.** `away` and `revoked` seats are excluded from the required set of any round. `disconnected`, `returning`, and `unknown` seats stay in it, so a 30 s blip does not change a round.
-2. **Rest-vote quorum (ADR-030 §2.3).** An `away` or `revoked` seat leaves the quorum denominator at that moment. `disconnected`, `returning`, and `unknown` seats stay in it.
-   - An `away` seat's cast ballot is kept. If the seat reaches `connected` again before close, the ballot counts again.
+1. **Required sets.** For round completion only (not rest-vote N, item 2), `away` and `revoked` seats are excluded from the required set of any round. `disconnected`, `returning`, and `unknown` seats stay in it, so a 30 s blip does not change a round.
+2. **Rest-vote N (ADR-030 §2.3).** N is fixed when a vote opens. An `away` seat stays in N. If it had cast, its ballot is kept and counts. If it had not cast, it counts as `no`. A seat that is `revoked` by departure, retirement, kick, or ban leaves N, and its cast ballot, if any, is voided. `disconnected`, `returning`, `unknown`, and `away` seats are never removed from N by going away. Presence never lowers the pass bar.
    - An `away` seat cannot cast. A cast needs control (§3.1).
-   - A seat that is `revoked` by departure, retirement, kick, or ban has its cast ballot voided, and it does not re-enter the denominator. This matches ADR-030 §2.3. An `away` seat keeps its ballot (above), so `away` and `revoked` are treated differently.
 3. **Submissions kept.** A submission accepted before the seat went away is kept. A queued submission is kept and promoted to `accepted` at the next round open, in `receiptSeq` order (ADR-029 §4, Promotion). Its away state does not change that.
 4. **No edits without control.** A seat without control cannot edit or withdraw. A `returning` seat has control from 2 s. `disconnected` and `unknown` seats do not.
 5. **Exploration.** An away PC does not submit an action. The party's PC follows the party. Spotlight prompts (A8) go only to connected seats. `away`, `revoked`, and `unknown` seats are excluded.
 6. **Combat.** A confirmed `away` PC's turn is taken by autopilot (§5). A committed action stays committed when the seat returns, unless the returning seat replaces it (item 8).
 7. **Zero confirmed-connected seats.** When no seat is `connected`, the table moves from `active` to `paused` (architecture §2.2). `returning`, `disconnected`, `away`, `unknown`, and `revoked` do not count. Pause freezes all timers (ADR-029 §5). Resume follows ADR-029 §5.
 8. **Replacement of autopilot commands.** Until the turn resolves, a returning seat's command replaces an autopilot-committed command. The replacement is a normal player command. It counts against the ADR-029 §8 per-seat budget and is applied in receipt order. The log keeps the `AutopilotActed` event followed by the seat's command.
-9. **Host.** When the host is `away`, the table keeps running and nothing transfers automatically. An `away` or `revoked` host is ineligible as tie-breaker. The host has left N, so under ADR-030 §3.4 a tie with no eligible host fails as `tie-failed`. When the host is `revoked`, host actions are unavailable until a manual host reassignment outside this ADR. Host actions, including pause, use the host's recorded presence state as it stands.
+9. **Host.** When the host is `away`, the table keeps running and nothing transfers automatically. An `away` or `revoked` host is ineligible as tie-breaker. A `revoked` host has also left N, so under ADR-030 §3.4 a tie with no eligible host fails as `tie-failed`. When the host is `revoked`, host actions are unavailable until a manual host reassignment outside this ADR. Host actions, including pause, use the host's recorded presence state as it stands.
 
 ### 5. Defensive autopilot
 
 1. **Scope.** Autopilot acts only for a confirmed `away` PC, during combat, on that PC's turn (A7). It never acts for `unknown`, `disconnected`, `returning`, or `revoked` seats. It never acts in exploration, never casts a rest vote, never submits a non-defensive action, and never speaks.
-2. **Trigger.** It acts when the away PC's combat turn begins, and only if the seat is confirmed `away` at that point. If the seat becomes `away` during its own turn, that turn is not replaced mid-turn. It resolves by the 90 s timer as Dodge (spec US-B2 AC2). Autopilot acts for the seat from its next turn prompt, once it is confirmed `away`.
+2. **Trigger.** A deliberate away gains nothing. A seat that goes away on purpose gets no extra turn, action, or vote weight; its ballot and its autopilot turn follow §4.2 and this section exactly as an accidental away does. It acts when the away PC's combat turn begins, and only if the seat is confirmed `away` at that point. If the seat becomes `away` during its own turn, that turn is not replaced mid-turn. It resolves by the 90 s timer as Dodge (spec US-B2 AC2). Autopilot acts for the seat from its next turn prompt, once it is confirmed `away`.
 3. **Engine function.** `autopilot(state, seat) -> command`. It is a pure function of the Room state and the seat. It reads only engine state: positions, HP, turn order, conditions, and concentration. It never reads chat, player text, or LLM output. It uses no LLM and no judge call.
 4. **Policy: Dodge or hold only.** Spec §6.3 gives the defensive autopilot list: Dodge, move to cover within speed, use a healing potion below 25% HP, and never spend consumables otherwise, initiate risky actions, or move into hazards. This ADR narrows that list for M4, as decided here: autopilot takes no movement, so no move to cover, no opportunity attack, and no consumable (including the healing potion), spell, or hazard action. The narrowing is an explicit decision of this ADR, not a reading of the spec.
    1. Dodge is the default and only action.
    2. If Dodge cannot be taken, hold: end the turn with no action.
    3. Reactions are declined (§6).
 5. **Concentration.** Dodge does not break concentration. Autopilot never starts, ends, or changes a concentration effect.
-6. **Output.** The command goes through the same rules engine path as a player command and emits `AutopilotActed{seat, action, reason}`. `action` is `dodge` or `hold`. `reason` is a fixed enum with one value, `away-at-turn-start`. There is no mid-turn autopilot action (§5.2), so no mid-turn reason exists.
+6. **Output.** The command goes through the same rules engine path as a player command and emits `AutopilotActed{seat, action, reason}`. `action` is `dodge` or `hold`. `reason` is a fixed enum with one value, `away-at-turn-start`. There is no mid-turn autopilot action (§5.2), so no mid-turn reason exists. Consumable use is recorded explicitly: the event carries `consumable: none` on every `AutopilotActed`, because M4 autopilot uses no consumables (item 4).
 7. **No speaking.** Autopilot never produces chat, narration, or DM-facing text.
 8. **Unknown seats.** Autopilot does not act for an `unknown` seat. The 90 s turn timer resolves its turn as Dodge (spec §3.5). If no seat is connected, the table is paused (§4.7).
 
@@ -121,7 +120,7 @@ Pause freezes every timer in this table (ADR-029 §5).
 
 - **Auto-kick after 30 s.** Rejected: the spec defines away and drop-out, not removal. Removal needs a separate ADR.
 - **Autopilot submits exploration actions.** Rejected: exploration choices are the player's. A defensive policy has no good default there (A7).
-- **Autopilot votes on rest.** Rejected: autopilot never casts a vote (§5.1). Away seats leave the denominator instead (§4.2).
+- **Autopilot votes on rest.** Rejected: autopilot never casts a vote (§5.1). Away seats stay in N and count as `no` until they cast (§4.2).
 - **Autopilot moves to cover or uses consumables in M4.** Rejected: M4 has no movement and no consumable use by autopilot (§5.4).
 - **Autopilot uses an LLM.** Rejected: a pure engine function is deterministic, testable, and needs no judge budget (ADR-005).
 - **Host transfer on host away.** Rejected: not in the spec, and it changes who owns pause and tie-break. Needs a separate decision.
@@ -140,7 +139,7 @@ Routine within delegation, flagged because they set behavior:
 
 1. **Reconnect targets: 2 s control and 3 s state.** Decided by Chris's delegate: both stand as separate measures.
 2. **10 s hysteresis on both edges.** Accepted by Chris's delegate as a starting value, tunable by amendment.
-3. **Q7, autopilot and votes.** Decided by Chris's delegate: autopilot never votes or submits a non-defensive action, and away seats leave the rest-vote denominator. Spec §13 Q7 remains open for Chris to close.
+3. **Q7, autopilot and votes.** Decided by Chris's delegate: autopilot never votes or submits a non-defensive action, and away seats stay in the rest-vote N and count as `no` until they cast. Spec §13 Q7 remains open for Chris to close.
 4. **Host away and host revoked have no automatic transfer.** Recommendation: accept, and track host reassignment as a separate ADR.
 5. **Autopilot is Dodge or hold only.** Decided by Atlas for M4: no movement, no cover moves, no opportunity attacks, no consumables.
 6. **Heartbeat interval and missed-heartbeat limit.** Not set in ADR-029 or any transport ADR, and needed before M4 item 4 can be built. Recommendation: set both in the transport ADR. This ADR names only the condition.
