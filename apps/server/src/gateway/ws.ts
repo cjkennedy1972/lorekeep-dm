@@ -10,6 +10,7 @@ import {
   type ActionId,
   CombatCommandSchema,
   PlayerActionSchema,
+  EditActionSchema,
   ClarificationAnswerSchema,
   WithdrawActionSchema,
   XCardSchema,
@@ -709,6 +710,71 @@ export function installGateway(
                     actionId: msg.actionId,
                   },
                 });
+              });
+          }
+          if (msg.type === 'EditAction') {
+            const edit = EditActionSchema.safeParse(msg);
+            if (!edit.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Edit request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            // A retry of a committed edit is an idempotent no-op; do not invoke the judge again.
+            if (room.hasActionId(edit.data.actionId)) return;
+            return app.inputGate
+              .check({
+                text: edit.data.payload.text,
+                surface: 'player-action',
+                accountId: identity.accountId,
+                sessionId: identity.sessionId,
+              })
+              .then((decision) => {
+                if (decision === 'busy' || decision === 'limited')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: decision === 'limited' ? 'RATE_LIMITED' : 'BUSY',
+                      message: 'The game is busy. Try again shortly.',
+                      actionId: edit.data.actionId,
+                    },
+                  });
+                if (decision === 'block')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'CONTENT_REJECTED',
+                      message: 'That action cannot be sent.',
+                      actionId: edit.data.actionId,
+                    },
+                  });
+                return room
+                  .editAction(
+                    identity.accountId,
+                    edit.data.actionId,
+                    edit.data.payload.editedActionId,
+                    edit.data.payload.text,
+                  )
+                  .then((result) => {
+                    if (result === 'unknown_submission')
+                      send({
+                        seq: room.seq,
+                        type: 'Error',
+                        payload: {
+                          code: 'unknown_submission',
+                          message: 'This submission can no longer be edited.',
+                          actionId: edit.data.actionId,
+                        },
+                      });
+                  });
               });
           }
           if (msg.type === 'WithdrawAction') {

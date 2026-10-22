@@ -136,6 +136,43 @@ describe('room actor', () => {
     expect(stale).toMatchObject([{ type: 'StateSync', seq: 1 }]);
     expect(current).toEqual([]);
   });
+  it('edits a queued submission without moving its receipt position and scopes it to its seat', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return new Promise(() => {});
+      },
+    });
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+    await room.seat(accountA, 'A');
+    await room.seat(accountB, 'B');
+    const first = randomUUID();
+    const second = randomUUID();
+    await room.submitAction(accountA, first, 'first');
+    await room.submitAction(accountA, second, 'second');
+
+    expect(
+      await room.editAction(accountB, randomUUID(), second, 'cross-seat'),
+    ).toBe('unknown_submission');
+    const editId = randomUUID();
+    expect(await room.editAction(accountA, editId, second, 'revised')).toBe(
+      'edited',
+    );
+    expect(
+      await room.editAction(accountA, editId, second, 'changed again'),
+    ).toBe('duplicate');
+    const edit = events.find((event) => event.type === 'ActionEdited');
+    expect(edit?.payload).toMatchObject({
+      actionId: editId,
+      editedActionId: second,
+      text: 'revised',
+      receiptSeq: 2,
+    });
+    expect(
+      events.filter((event) => event.type === 'ActionEdited'),
+    ).toHaveLength(1);
+  });
   it('rejects a missing lease and commands after drain', async () => {
     const { store } = fixture();
     expect(

@@ -155,10 +155,15 @@ export class Room {
   private readonly queuedActions: {
     accountId: string;
     actionId: string;
+    originalActionId: string;
+    editActionIds: string[];
     text: string;
     playerName: string;
+    receiptSeq: number;
+    editedAt?: number;
     clarificationAsked?: boolean;
   }[] = [];
+  private nextActionReceiptSeq = 0;
   private readonly clarificationTimers = new Map<string, NodeJS.Timeout>();
   readonly sessionId: string;
   state: RoomState;
@@ -221,7 +226,7 @@ export class Room {
     };
     const state = reduceRoom(this.state, event);
     const actionIds =
-      type === 'ActionAccepted'
+      type === 'ActionAccepted' || type === 'ActionEdited'
         ? [...this.actionIds, (payload as { actionId: string }).actionId]
         : [...this.actionIds];
     const stored = await this.writeTurn(
@@ -944,6 +949,10 @@ export class Room {
     });
   }
 
+  hasActionId(actionId: string): boolean {
+    return this.actionIds.has(actionId) || this.pendingActions.has(actionId);
+  }
+
   submitAction(
     accountId: string,
     actionId: string,
@@ -977,11 +986,49 @@ export class Room {
       this.queuedActions.push({
         accountId,
         actionId,
+        originalActionId: actionId,
+        editActionIds: [],
         text,
         playerName: playerName ?? seat.displayName,
+        receiptSeq: ++this.nextActionReceiptSeq,
       });
       this.kickQueue();
       return true;
+    });
+  }
+
+  /** Replace a still-queued submission without changing its batch position. */
+  editAction(
+    accountId: string,
+    actionId: string,
+    editedActionId: string,
+    text: string,
+  ): Promise<'edited' | 'duplicate' | 'unknown_submission'> {
+    return this.enqueuePlayer(async () => {
+      if (this.actionIds.has(actionId) || this.pendingActions.has(actionId))
+        return 'duplicate';
+      const action = this.queuedActions.find(
+        (item) =>
+          item.accountId === accountId &&
+          (item.actionId === editedActionId ||
+            item.originalActionId === editedActionId ||
+            item.editActionIds.includes(editedActionId)),
+      );
+      if (!action) return 'unknown_submission';
+      const editedAt = Date.now();
+      await this.persist('ActionEdited', {
+        actionId,
+        editedActionId,
+        originalActionId: action.originalActionId,
+        text,
+        receiptSeq: action.receiptSeq,
+        editedAt,
+      });
+      this.actionIds.add(actionId);
+      action.editActionIds.push(actionId);
+      action.text = text;
+      action.editedAt = editedAt;
+      return 'edited';
     });
   }
 
@@ -997,8 +1044,11 @@ export class Room {
       this.queuedActions.unshift({
         accountId,
         actionId,
+        originalActionId: actionId,
+        editActionIds: [],
         text: `${open.text}\n[Clarifying question: ${open.question}] Player answers: ${answer}`,
         playerName: open.playerName,
+        receiptSeq: ++this.nextActionReceiptSeq,
         clarificationAsked: true,
       });
       this.broadcast({
@@ -1075,7 +1125,10 @@ export class Room {
     return this.enqueue(async () => {
       const index = this.queuedActions.findIndex(
         (action) =>
-          action.accountId === accountId && action.actionId === actionId,
+          action.accountId === accountId &&
+          (action.actionId === actionId ||
+            action.originalActionId === actionId ||
+            action.editActionIds.includes(actionId)),
       );
       if (index === -1) return false;
       this.queuedActions.splice(index, 1);
@@ -1646,8 +1699,11 @@ export class Room {
     this.queuedActions.push({
       accountId: owner,
       actionId,
+      originalActionId: actionId,
+      editActionIds: [],
       text: `[Combat resolved by the engine; narrate it, do not change it] ${facts.join(' ')}`,
       playerName: 'Combat',
+      receiptSeq: ++this.nextActionReceiptSeq,
     });
     if (!this.turnInFlight) {
       this.turnInFlight = true;

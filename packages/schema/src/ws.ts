@@ -25,6 +25,17 @@ export const WithdrawActionSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const EditActionSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('EditAction'),
+    payload: z.object({
+      editedActionId: ActionIdSchema,
+      text: z.string().trim().min(1).max(4000),
+    }),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const ClarificationAnswerSchema = z
   .object({
     actionId: ActionIdSchema,
