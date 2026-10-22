@@ -16,6 +16,7 @@ import {
   XCardSchema,
   PauseTableSchema,
   ResolveNowSchema,
+  ConfigureRoundTimerSchema,
   RewindTurnSchema,
   type ServerMessage,
 } from '@game/schema';
@@ -386,9 +387,10 @@ export function installGateway(
           }
           const playerAction = PlayerActionSchema.safeParse(envelope);
           const editAction = EditActionSchema.safeParse(envelope);
-          const actionReceiptSeq =
-            playerAction.success || editAction.success
-              ? room.registerActionReceipt()
+          const actionReceiptCommandId = playerAction.success
+            ? playerAction.data.actionId
+            : editAction.success
+              ? editAction.data.actionId
               : undefined;
           // Rate-limit before queueing: a flood must not grow the promise chain.
           if (!consumeMessageToken(messageBucket)) {
@@ -403,13 +405,51 @@ export function installGateway(
               });
             return;
           }
+          if (
+            actionReceiptCommandId &&
+            room.hasActionId(actionReceiptCommandId)
+          ) {
+            send({
+              seq: room.seq,
+              type: 'Error',
+              payload: {
+                code: 'DUPLICATE_ACTION',
+                message: 'This action was already received.',
+                actionId: actionReceiptCommandId,
+              },
+            });
+            return;
+          }
+          if (
+            actionReceiptCommandId &&
+            !room.reserveActionMutation(
+              identity.accountId,
+              playerAction.success ? 'submit' : 'edit',
+            )
+          ) {
+            send({
+              seq: room.seq,
+              type: 'Error',
+              payload: {
+                code: 'RATE_LIMITED',
+                message: 'Too many requests. Try again later.',
+                actionId: actionReceiptCommandId,
+              },
+            });
+            return;
+          }
+          const actionReceiptSeq = actionReceiptCommandId
+            ? room.registerActionReceipt(actionReceiptCommandId)
+            : undefined;
           chain = chain
             .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
               if (ws.readyState === WebSocket.OPEN)
                 return handle(data, undefined, actionReceiptSeq);
             })
-            .catch(() => {});
+            .catch(() => {
+              room.completeActionReceipt(actionReceiptSeq);
+            });
         };
         const writeChatGateLog = async (
           accountId: string,
@@ -755,6 +795,43 @@ export function installGateway(
                 });
               });
           }
+          if (msg.type === 'ConfigureRoundTimer') {
+            const config = ConfigureRoundTimerSchema.safeParse(msg);
+            if (!config.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Round timer setting is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .configureRoundTimer(
+                identity.accountId,
+                config.data.payload.durationMs,
+              )
+              .catch((error: unknown) => {
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can configure the round timer.'
+                        : 'Round timer setting could not be accepted.',
+                    actionId: config.data.actionId,
+                  },
+                });
+              });
+          }
           if (msg.type === 'EditAction') {
             const edit = EditActionSchema.safeParse(msg);
             if (!edit.success) {
@@ -779,7 +856,8 @@ export function installGateway(
                 sessionId: identity.sessionId,
               })
               .then((decision) => {
-                if (decision === 'busy' || decision === 'limited')
+                if (decision === 'busy' || decision === 'limited') {
+                  room.completeActionReceipt(actionReceiptSeq);
                   return send({
                     seq: room.seq,
                     type: 'Error',
@@ -789,7 +867,9 @@ export function installGateway(
                       actionId: edit.data.actionId,
                     },
                   });
-                if (decision === 'block')
+                }
+                if (decision === 'block') {
+                  room.completeActionReceipt(actionReceiptSeq);
                   return send({
                     seq: room.seq,
                     type: 'Error',
@@ -799,12 +879,14 @@ export function installGateway(
                       actionId: edit.data.actionId,
                     },
                   });
+                }
                 return room
                   .editAction(
                     identity.accountId,
                     edit.data.actionId,
                     edit.data.payload.editedActionId,
                     edit.data.payload.text,
+                    actionReceiptSeq,
                   )
                   .then((result) => {
                     if (
@@ -849,17 +931,20 @@ export function installGateway(
               .then((result) => {
                 if (
                   result === 'unknown_submission' ||
-                  result === 'round_closed'
+                  result === 'round_closed' ||
+                  result === 'limited'
                 )
                   send({
                     seq: room.seq,
                     type: 'Error',
                     payload: {
-                      code: result,
+                      code: result === 'limited' ? 'RATE_LIMITED' : result,
                       message:
-                        result === 'round_closed'
-                          ? 'This round is already closed.'
-                          : 'This submission is no longer available.',
+                        result === 'limited'
+                          ? 'Too many requests. Try again later.'
+                          : result === 'round_closed'
+                            ? 'This round is already closed.'
+                            : 'This submission is no longer available.',
                       actionId: withdraw.data.actionId,
                     },
                   });
@@ -964,9 +1049,18 @@ export function installGateway(
               ),
             ])
               .then(async ([allowed, name]) => {
-                if (allowed === 'busy') return 'busy' as const;
-                if (allowed === 'limited') return 'limited' as const;
-                if (allowed === 'block') return 'rejected' as const;
+                if (allowed === 'busy') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return 'busy' as const;
+                }
+                if (allowed === 'limited') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return 'limited' as const;
+                }
+                if (allowed === 'block') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return 'rejected' as const;
+                }
                 return room.submitAction(
                   identity.accountId,
                   action.data.actionId,

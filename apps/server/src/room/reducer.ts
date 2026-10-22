@@ -7,9 +7,17 @@ export function emptyRoom(sessionId: string): RoomState {
 
 export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
   if (event.type === 'RoundOpened') {
+    const closedRoundSubmissions = [
+      ...(state.closedRoundSubmissions ?? []),
+      ...(state.round?.submissions ?? []).map((submission) => ({
+        accountId: submission.accountId,
+        actionIds: submission.actionIds,
+      })),
+    ].slice(-120);
     return RoomStateSchema.parse({
       ...state,
       round: event.payload,
+      closedRoundSubmissions,
     });
   }
   if (event.type === 'RoundActionAccepted') {
@@ -90,6 +98,35 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     return RoomStateSchema.parse({
       ...state,
       round: { ...state.round, status: 'resolved' },
+    });
+  }
+  if (event.type === 'RoundTimerPaused') {
+    if (!state.round) return state;
+    return RoomStateSchema.parse({
+      ...state,
+      round: {
+        ...state.round,
+        deadlineAt: null,
+        remainingMs: (event.payload as { remainingMs: number }).remainingMs,
+      },
+    });
+  }
+  if (event.type === 'RoundTimerResumed') {
+    if (!state.round) return state;
+    return RoomStateSchema.parse({
+      ...state,
+      round: {
+        ...state.round,
+        deadlineAt: (event.payload as { deadlineAt: number }).deadlineAt,
+        remainingMs: undefined,
+      },
+    });
+  }
+  if (event.type === 'RoundTimerConfigured') {
+    return RoomStateSchema.parse({
+      ...state,
+      roundDurationMs: (event.payload as { durationMs: number | null })
+        .durationMs,
     });
   }
   if (event.type === 'SeatJoined') {

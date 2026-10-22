@@ -166,6 +166,16 @@ export const ResolveNowSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const ConfigureRoundTimerSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ConfigureRoundTimer'),
+    payload: z
+      .object({ durationMs: z.number().int().nonnegative().nullable() })
+      .strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const RewindTurnSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -217,6 +227,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RoundResolved',
       'RoundCompleted',
       'RoundClosedEmpty',
+      'RoundTimerConfigured',
       'ActionWithdrawn',
       'ClarificationRequested',
       'TurnThinking',

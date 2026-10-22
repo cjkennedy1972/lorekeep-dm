@@ -26,15 +26,23 @@ export const RoundStateSchema = z.object({
   status: z.enum(['open', 'closing', 'resolving', 'resolved']),
   eligibleSeatIds: z.array(SeatIdSchema),
   deadlineAt: z.number().nullable(),
+  remainingMs: z.number().nonnegative().optional(),
   closeReason: z.enum(['all-submitted', 'timer', 'resolve-now']).optional(),
   submissions: z.array(RoundSubmissionSchema),
   queuedSubmissions: z.array(RoundSubmissionSchema),
+});
+export const ClosedRoundSubmissionSchema = z.object({
+  accountId: AccountIdSchema,
+  actionIds: z.array(z.uuid()),
 });
 export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
   round: RoundStateSchema.optional(),
+  /** Host setting for rounds opened after the current one; null disables the deadline. */
+  roundDurationMs: z.number().int().nonnegative().nullable().optional(),
+  closedRoundSubmissions: z.array(ClosedRoundSubmissionSchema).optional(),
   gameState: z.unknown().optional(),
   /** X-card presses so far, and the count the DM has already steered away from. */
   xCard: z

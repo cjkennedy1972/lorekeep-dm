@@ -229,6 +229,273 @@ describe('room actor', () => {
     ).toEqual([11, 22]);
     expect(room.state.round?.status).toBe('open');
   });
+  it('includes an allowed action whose gate was pending when Resolve now began', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    const guest = randomUUID();
+    await room.seat(host, 'Host');
+    await room.seat(guest, 'Guest');
+    await room.persistGameState({});
+    const first = randomUUID();
+    const second = randomUUID();
+    await room.submitAction(host, first, 'Host action', 'Host');
+    const receiptSeq = room.registerActionReceipt(second);
+    const closing = room.resolveNow(host);
+    const gatedSubmission = room.submitAction(
+      guest,
+      second,
+      'Guest action',
+      'Guest',
+      receiptSeq,
+    );
+    await Promise.all([closing, gatedSubmission]);
+    const resolved = events.find((event) => event.type === 'RoundResolved');
+    expect(
+      (resolved?.payload as { actions: { actionId: string }[] }).actions.map(
+        (action) => action.actionId,
+      ),
+    ).toEqual([first, second]);
+  });
+  it('keeps the previous version when an edit gate blocks during close and rejects later edits', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    const original = randomUUID();
+    await room.submitAction(host, original, 'Original text', 'Host');
+    const editId = randomUUID();
+    const receiptSeq = room.registerActionReceipt(editId);
+    const closing = room.resolveNow(host);
+    // BLOCK is represented by completing the gate with no allow decision.
+    room.completeActionReceipt(receiptSeq);
+    await closing;
+    const editResult = await room.editAction(
+      host,
+      randomUUID(),
+      original,
+      'blocked replacement',
+    );
+    expect(editResult).toBe('round_closed');
+    const resolved = events.find((event) => event.type === 'RoundResolved');
+    expect(
+      (resolved?.payload as { actions: { text: string }[] }).actions[0]?.text,
+    ).toBe('Original text');
+  });
+  it('accepts an allowed edit that reaches the close decision before the gate grace expires', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    const original = randomUUID();
+    await room.submitAction(host, original, 'Original text', 'Host', 42);
+    const editId = randomUUID();
+    const receiptSeq = room.registerActionReceipt(editId);
+    const closing = room.resolveNow(host);
+    const edit = room.editAction(
+      host,
+      editId,
+      original,
+      'Allowed replacement',
+      receiptSeq,
+    );
+    await Promise.all([closing, edit]);
+    const resolved = events.find((event) => event.type === 'RoundResolved');
+    expect(
+      (resolved?.payload as { actions: { text: string; receiptSeq: number }[] })
+        .actions[0],
+    ).toMatchObject({ text: 'Allowed replacement', receiptSeq: 42 });
+  });
+  it('serializes all-in and host resolve races to one resolution', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    const guest = randomUUID();
+    await room.seat(host, 'Host');
+    await room.seat(guest, 'Guest');
+    await room.persistGameState({});
+    await room.submitAction(host, randomUUID(), 'Host action', 'Host');
+    await Promise.all([
+      room.submitAction(guest, randomUUID(), 'Guest action', 'Guest'),
+      room.resolveNow(host),
+    ]);
+    expect(
+      events.filter((event) => event.type === 'RoundResolved'),
+    ).toHaveLength(1);
+  });
+  it('applies a host timer change only to the next round and supports off', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    const currentDeadline = room.state.round?.deadlineAt;
+    await room.configureRoundTimer(host, null);
+    expect(room.state.round?.deadlineAt).toBe(currentDeadline);
+    expect(room.state.roundDurationMs).toBeNull();
+    await room.submitAction(host, randomUUID(), 'I act.', 'Host');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(room.state.round?.status).toBe('open');
+    expect(room.state.round?.deadlineAt).toBeNull();
+    expect(
+      events.filter((event) => event.type === 'RoundResolved'),
+    ).toHaveLength(1);
+  });
+  it('closes a timer/resolve-now race exactly once', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.configureRoundTimer(host, 1);
+    await room.persistGameState({});
+    const roundId = room.state.round!.roundId;
+    await new Promise((resolve) => setTimeout(resolve, 3));
+    await room.resolveNow(host);
+    const closures = events.filter(
+      (event) =>
+        (event.type === 'RoundResolved' || event.type === 'RoundClosedEmpty') &&
+        (event.payload as { roundId?: string }).roundId === roundId,
+    );
+    expect(closures).toHaveLength(1);
+    await room.drain(20);
+  });
+  it('keeps a blocked gated submission out of the round batch', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const requests: string[] = [];
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run(request) {
+        requests.push(request.text);
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    const blockedSeat = randomUUID();
+    await room.seat(host, 'Host');
+    await room.seat(blockedSeat, 'Blocked');
+    await room.persistGameState({});
+    await room.submitAction(host, randomUUID(), 'Allowed action', 'Host');
+    const blockedActionId = randomUUID();
+    const receiptSeq = room.registerActionReceipt(blockedActionId);
+    const closing = room.resolveNow(host);
+    room.completeActionReceipt(receiptSeq);
+    await closing;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(requests).toEqual(['Allowed action']);
+    expect(
+      JSON.stringify(
+        events.find((event) => event.type === 'RoundResolved')?.payload,
+      ),
+    ).not.toContain('Blocked action');
+  });
+  it('withdraws before close or leaves the frozen batch unchanged, never both', async () => {
+    const { store, events } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    const actionId = randomUUID();
+    await room.submitAction(host, actionId, 'Withdraw me', 'Host');
+    const close = room.resolveNow(host);
+    const withdraw = room.withdrawRoundAction(host, randomUUID(), actionId);
+    await Promise.all([close, withdraw]);
+    const resolved = events.filter((event) => event.type === 'RoundResolved');
+    const empty = events.filter((event) => event.type === 'RoundClosedEmpty');
+    expect(resolved.length + empty.length).toBe(1);
+    if (resolved.length)
+      expect(
+        (resolved[0]!.payload as { actions: { text: string }[] }).actions,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ text: 'Withdraw me' }),
+        ]),
+      );
+  });
   it('rejects a missing lease and commands after drain', async () => {
     const { store } = fixture();
     expect(

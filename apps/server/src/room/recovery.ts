@@ -20,9 +20,8 @@ export function recoverRoom(
     if (
       event.type === 'ActionAccepted' ||
       event.type === 'ActionEdited' ||
-      event.type === 'RoundActionAccepted' ||
-      event.type === 'RoundActionEdited' ||
-      event.type === 'RoundActionWithdrawn'
+      event.type === 'RoundActionWithdrawn' ||
+      event.type === 'RoundCompleted'
     ) {
       const payload = event.payload as {
         actionId?: string;
