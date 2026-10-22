@@ -46,6 +46,16 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'ClarificationRequested':
     case 'ContentTierChanged':
     case 'SafetyFlag':
+    case 'RoundOpened':
+    case 'RoundActionAccepted':
+    case 'RoundActionQueued':
+    case 'RoundActionEdited':
+    case 'RoundActionWithdrawn':
+    case 'RoundClosing':
+    case 'RoundResolved':
+    case 'RoundCompleted':
+    case 'RoundClosedEmpty':
+    case 'RoundTimerConfigured':
       return view; // surfaced by the client, not part of room state
     case 'CombatTracker':
     case 'ReactionPrompt':

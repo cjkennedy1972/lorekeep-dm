@@ -182,6 +182,16 @@ export function narrationLogReducer(
     case 'ClarificationRequested':
     case 'ContentTierChanged':
     case 'SafetyFlag':
+    case 'RoundOpened':
+    case 'RoundActionAccepted':
+    case 'RoundActionQueued':
+    case 'RoundActionEdited':
+    case 'RoundActionWithdrawn':
+    case 'RoundClosing':
+    case 'RoundResolved':
+    case 'RoundCompleted':
+    case 'RoundClosedEmpty':
+    case 'RoundTimerConfigured':
     case 'CombatTracker':
     case 'ReactionPrompt':
     case 'CombatOptions':
