@@ -40,6 +40,7 @@ export const RoomStateSchema = z.object({
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
   round: RoundStateSchema.optional(),
+  roundsEnabled: z.boolean().optional(),
   /** Host setting for rounds opened after the current one; null disables the deadline. */
   roundDurationMs: z.number().int().nonnegative().nullable().optional(),
   closedRoundSubmissions: z.array(ClosedRoundSubmissionSchema).optional(),

@@ -682,7 +682,11 @@ export class Room {
   persistGameState(gameState: unknown): Promise<void> {
     return this.enqueue(async () => {
       this.assertNotNarrating();
-      const nextState = RoomStateSchema.parse({ ...this.state, gameState });
+      const nextState = RoomStateSchema.parse({
+        ...this.state,
+        gameState,
+        roundsEnabled: true,
+      });
       const stored = await this.writeTurn(
         this.sessionId,
         [
@@ -1223,7 +1227,8 @@ export class Room {
   }
 
   private async openRound(): Promise<void> {
-    if (!this.state.gameState || this.state.paused) return;
+    if (!this.state.roundsEnabled || !this.state.gameState || this.state.paused)
+      return;
     if (this.state.round?.status === 'open') return;
     const previousQueue = [...(this.state.round?.queuedSubmissions ?? [])].sort(
       (a, b) => a.receiptSeq - b.receiptSeq,
@@ -1528,7 +1533,7 @@ export class Room {
     playerName?: string,
     receiptSeq?: number,
   ): Promise<boolean> {
-    if (!this.state.gameState) {
+    if (!this.state.roundsEnabled) {
       this.completeActionReceipt(receiptSeq);
       return this.submitLegacyAction(
         accountId,
