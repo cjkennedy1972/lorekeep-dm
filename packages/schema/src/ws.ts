@@ -158,6 +158,14 @@ export const PauseTableSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const ResolveNowSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ResolveNow'),
+    payload: z.object({}).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const RewindTurnSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -200,6 +208,15 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     seq: z.int().nonnegative(),
     type: z.enum([
       'ActionQueued',
+      'RoundOpened',
+      'RoundActionAccepted',
+      'RoundActionQueued',
+      'RoundActionEdited',
+      'RoundActionWithdrawn',
+      'RoundClosing',
+      'RoundResolved',
+      'RoundCompleted',
+      'RoundClosedEmpty',
       'ActionWithdrawn',
       'ClarificationRequested',
       'TurnThinking',

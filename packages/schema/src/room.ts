@@ -10,10 +10,31 @@ export const SeatSchema = z.object({
   // Private account preference; omitted from the shared room-state wire view.
   matureOptOut: z.boolean().optional(),
 });
+export const RoundSubmissionSchema = z.object({
+  seatId: SeatIdSchema,
+  accountId: AccountIdSchema,
+  actionId: z.uuid(),
+  originalActionId: z.uuid(),
+  actionIds: z.array(z.uuid()),
+  text: z.string().min(1).max(4000),
+  playerName: z.string().min(1),
+  receiptSeq: z.int().positive(),
+  editedAt: z.number().optional(),
+});
+export const RoundStateSchema = z.object({
+  roundId: z.uuid(),
+  status: z.enum(['open', 'closing', 'resolving', 'resolved']),
+  eligibleSeatIds: z.array(SeatIdSchema),
+  deadlineAt: z.number().nullable(),
+  closeReason: z.enum(['all-submitted', 'timer', 'resolve-now']).optional(),
+  submissions: z.array(RoundSubmissionSchema),
+  queuedSubmissions: z.array(RoundSubmissionSchema),
+});
 export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
+  round: RoundStateSchema.optional(),
   gameState: z.unknown().optional(),
   /** X-card presses so far, and the count the DM has already steered away from. */
   xCard: z

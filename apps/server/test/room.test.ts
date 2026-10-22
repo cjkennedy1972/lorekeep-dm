@@ -147,31 +147,87 @@ describe('room actor', () => {
     const accountB = randomUUID();
     await room.seat(accountA, 'A');
     await room.seat(accountB, 'B');
+    await room.persistGameState({});
     const first = randomUUID();
-    const second = randomUUID();
     await room.submitAction(accountA, first, 'first');
-    await room.submitAction(accountA, second, 'second');
 
     expect(
-      await room.editAction(accountB, randomUUID(), second, 'cross-seat'),
+      await room.editAction(accountB, randomUUID(), first, 'cross-seat'),
     ).toBe('unknown_submission');
     const editId = randomUUID();
-    expect(await room.editAction(accountA, editId, second, 'revised')).toBe(
+    expect(await room.editAction(accountA, editId, first, 'revised')).toBe(
       'edited',
     );
     expect(
-      await room.editAction(accountA, editId, second, 'changed again'),
+      await room.editAction(accountA, editId, first, 'changed again'),
     ).toBe('duplicate');
-    const edit = events.find((event) => event.type === 'ActionEdited');
+    const edit = events.find((event) => event.type === 'RoundActionEdited');
     expect(edit?.payload).toMatchObject({
-      actionId: editId,
-      editedActionId: second,
-      text: 'revised',
-      receiptSeq: 2,
+      submission: {
+        actionId: editId,
+        originalActionId: first,
+        text: 'revised',
+        receiptSeq: 1,
+      },
     });
     expect(
-      events.filter((event) => event.type === 'ActionEdited'),
+      events.filter((event) => event.type === 'RoundActionEdited'),
     ).toHaveLength(1);
+  });
+  it('resolves one receipt-ordered batch even when gate decisions arrive out of order', async () => {
+    const { store, events } = fixture();
+    const requests: { text: string }[] = [];
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run(request) {
+        requests.push({ text: request.text });
+        return {
+          narration: 'The party acts.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+    await room.seat(accountA, 'A');
+    await room.seat(accountB, 'B');
+    await room.persistGameState({});
+    expect(
+      await room.submitAction(
+        accountA,
+        randomUUID(),
+        'first by receipt',
+        'A',
+        22,
+      ),
+    ).toBe(true);
+    expect(
+      await room.submitAction(
+        accountB,
+        randomUUID(),
+        'second by receipt',
+        'B',
+        11,
+      ),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(
+      events.filter((event) => event.type === 'RoundResolved'),
+    ).toHaveLength(1);
+    expect(requests).toEqual([
+      { text: 'B: second by receipt\n\nA: first by receipt' },
+    ]);
+    const resolved = events.filter((event) => event.type === 'RoundResolved');
+    expect(resolved).toHaveLength(1);
+    expect(
+      (
+        resolved[0]?.payload as { actions: { receiptSeq: number }[] }
+      ).actions.map((action) => action.receiptSeq),
+    ).toEqual([11, 22]);
+    expect(room.state.round?.status).toBe('open');
   });
   it('rejects a missing lease and commands after drain', async () => {
     const { store } = fixture();

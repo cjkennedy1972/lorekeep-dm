@@ -15,6 +15,7 @@ import {
   WithdrawActionSchema,
   XCardSchema,
   PauseTableSchema,
+  ResolveNowSchema,
   RewindTurnSchema,
   type ServerMessage,
 } from '@game/schema';
@@ -383,6 +384,12 @@ export function installGateway(
               });
             return;
           }
+          const playerAction = PlayerActionSchema.safeParse(envelope);
+          const editAction = EditActionSchema.safeParse(envelope);
+          const actionReceiptSeq =
+            playerAction.success || editAction.success
+              ? room.registerActionReceipt()
+              : undefined;
           // Rate-limit before queueing: a flood must not grow the promise chain.
           if (!consumeMessageToken(messageBucket)) {
             if (ws.readyState === WebSocket.OPEN)
@@ -399,7 +406,8 @@ export function installGateway(
           chain = chain
             .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
-              if (ws.readyState === WebSocket.OPEN) return handle(data);
+              if (ws.readyState === WebSocket.OPEN)
+                return handle(data, undefined, actionReceiptSeq);
             })
             .catch(() => {});
         };
@@ -443,6 +451,7 @@ export function installGateway(
         const handle = (
           data: import('ws').RawData,
           chatReceipt?: import('../room/Room.js').ChatReceipt,
+          actionReceiptSeq?: number,
         ) => {
           let parsed;
           try {
@@ -712,6 +721,40 @@ export function installGateway(
                 });
               });
           }
+          if (msg.type === 'ResolveNow') {
+            const resolve = ResolveNowSchema.safeParse(msg);
+            if (!resolve.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Resolve request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .resolveNow(identity.accountId)
+              .catch((error: unknown) => {
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can resolve now.'
+                        : 'Resolve request could not be accepted.',
+                    actionId: resolve.data.actionId,
+                  },
+                });
+              });
+          }
           if (msg.type === 'EditAction') {
             const edit = EditActionSchema.safeParse(msg);
             if (!edit.success) {
@@ -764,13 +807,19 @@ export function installGateway(
                     edit.data.payload.text,
                   )
                   .then((result) => {
-                    if (result === 'unknown_submission')
+                    if (
+                      result === 'unknown_submission' ||
+                      result === 'round_closed'
+                    )
                       send({
                         seq: room.seq,
                         type: 'Error',
                         payload: {
                           code: 'unknown_submission',
-                          message: 'This submission can no longer be edited.',
+                          message:
+                            result === 'round_closed'
+                              ? 'This round is already closed.'
+                              : 'This submission is no longer available.',
                           actionId: edit.data.actionId,
                         },
                       });
@@ -792,19 +841,26 @@ export function installGateway(
               return;
             }
             return room
-              .withdrawAction(
+              .withdrawRoundAction(
                 identity.accountId,
+                withdraw.data.actionId,
                 withdraw.data.payload.withdrawnActionId,
               )
-              .then((withdrawn) => {
-                if (!withdrawn)
+              .then((result) => {
+                if (
+                  result === 'unknown_submission' ||
+                  result === 'round_closed'
+                )
                   send({
                     seq: room.seq,
                     type: 'Error',
                     payload: {
-                      code: 'NOT_WITHDRAWABLE',
-                      message: 'This action can no longer be withdrawn.',
-                      actionId: withdraw.data.payload.withdrawnActionId,
+                      code: result,
+                      message:
+                        result === 'round_closed'
+                          ? 'This round is already closed.'
+                          : 'This submission is no longer available.',
+                      actionId: withdraw.data.actionId,
                     },
                   });
               });
@@ -916,6 +972,7 @@ export function installGateway(
                   action.data.actionId,
                   action.data.payload.text,
                   name.rows[0]?.display_name ?? identity.accountId,
+                  actionReceiptSeq,
                 );
               })
               .then((accepted) => {

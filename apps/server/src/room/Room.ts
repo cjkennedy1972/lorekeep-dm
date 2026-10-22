@@ -61,6 +61,22 @@ function clientGameState(value: unknown): Record<string, unknown> {
 const MAX_QUEUED_ACTIONS_PER_SEAT = 3;
 const MAX_QUEUED_ACTIONS_PER_ROOM = 12;
 
+function publicRoundSubmission(
+  submission: NonNullable<RoomState['round']>['submissions'][number],
+) {
+  return {
+    seatId: submission.seatId,
+    actionId: submission.actionId,
+    originalActionId: submission.originalActionId,
+    actionIds: submission.actionIds,
+    playerName: submission.playerName,
+    receiptSeq: submission.receiptSeq,
+    ...(submission.editedAt !== undefined
+      ? { editedAt: submission.editedAt }
+      : {}),
+  };
+}
+
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
   persistRegistryEvents?(
@@ -117,6 +133,7 @@ export interface Connection {
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 const DRAIN_DEADLINE_MS = 30_000;
+const DEFAULT_ROUND_MS = 120_000;
 
 export { RewindRefusedError };
 
@@ -165,6 +182,8 @@ export class Room {
   }[] = [];
   private nextActionReceiptSeq = 0;
   private readonly clarificationTimers = new Map<string, NodeJS.Timeout>();
+  private roundTimer?: NodeJS.Timeout;
+  private roundReceiptSeq = 0;
   readonly sessionId: string;
   state: RoomState;
   seq: number;
@@ -192,6 +211,13 @@ export class Room {
       }),
     );
     this.actionIds = recovered.actionIds;
+    this.roundReceiptSeq = Math.max(
+      0,
+      ...(this.state.round?.submissions.map((item) => item.receiptSeq) ?? []),
+      ...(this.state.round?.queuedSubmissions.map((item) => item.receiptSeq) ??
+        []),
+    );
+    this.scheduleRoundTimer();
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     this.scheduleReaction();
     for (const [actionId, open] of Object.entries(
@@ -225,10 +251,33 @@ export class Room {
       ts: new Date(),
     };
     const state = reduceRoom(this.state, event);
-    const actionIds =
-      type === 'ActionAccepted' || type === 'ActionEdited'
-        ? [...this.actionIds, (payload as { actionId: string }).actionId]
-        : [...this.actionIds];
+    const actionPayload = payload as {
+      actionId?: string;
+      commandActionId?: string;
+      actionIds?: string[];
+      submission?: { actionId?: string; actionIds?: string[] };
+    };
+    const committedActionIds =
+      type === 'ActionAccepted' ||
+      type === 'ActionEdited' ||
+      type === 'RoundActionAccepted' ||
+      type === 'RoundActionEdited' ||
+      type === 'RoundActionWithdrawn'
+        ? [
+            ...(actionPayload.actionIds ?? []),
+            ...(actionPayload.submission?.actionIds ?? []),
+            ...((actionPayload.actionId ?? actionPayload.submission?.actionId)
+              ? [
+                  (actionPayload.actionId ??
+                    actionPayload.submission?.actionId) as string,
+                ]
+              : []),
+            ...(actionPayload.commandActionId
+              ? [actionPayload.commandActionId]
+              : []),
+          ]
+        : [];
+    const actionIds = [...new Set([...this.actionIds, ...committedActionIds])];
     const stored = await this.writeTurn(
       this.sessionId,
       [{ seq: next, turnId: event.turnId, type, payload }],
@@ -239,6 +288,7 @@ export class Room {
     if (!committed) throw new Error('Persistence returned no event');
     this.seq = committed.seq;
     this.state = state;
+    for (const actionId of committedActionIds) this.actionIds.add(actionId);
     return committed;
   }
 
@@ -427,9 +477,11 @@ export class Room {
       delete clientSeat.matureOptOut;
       return clientSeat;
     });
-    if (!this.state.gameState) return { ...this.state, seats };
+    const clientVisibleState = { ...this.state };
+    delete clientVisibleState.round;
+    if (!this.state.gameState) return { ...clientVisibleState, seats };
     const gameState = clientGameState(this.state.gameState);
-    return { ...this.state, seats, gameState };
+    return { ...clientVisibleState, seats, gameState };
   }
 
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */
@@ -439,6 +491,23 @@ export class Room {
     connection.send(trackerMessage(this.seq, combat));
     if (combat.pendingReaction)
       connection.send(reactionMessage(this.seq, combat.pendingReaction));
+  }
+
+  private sendRoundSnapshot(connection: Connection): void {
+    const round = this.state.round;
+    if (!round) return;
+    connection.send({
+      seq: this.seq,
+      type: 'RoundOpened',
+      payload: {
+        roundId: round.roundId,
+        status: round.status,
+        eligibleSeatIds: round.eligibleSeatIds,
+        deadlineAt: round.deadlineAt,
+        submissions: round.submissions.map(publicRoundSubmission),
+        queuedSubmissions: round.queuedSubmissions.map(publicRoundSubmission),
+      },
+    } as ServerMessage);
   }
 
   join(
@@ -476,6 +545,7 @@ export class Room {
           payload: { state: this.clientState() },
         });
       this.sendCombatSnapshot(connection);
+      this.sendRoundSnapshot(connection);
       if (seat.presence !== 'online') {
         const event = await this.persist('PresenceChanged', {
           seatId: seat.seatId,
@@ -487,6 +557,7 @@ export class Room {
           payload: { seatId: seat.seatId, presence: 'online' },
         });
       }
+      await this.ensureRoundOpen();
     });
   }
 
@@ -589,6 +660,7 @@ export class Room {
       );
       this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
       this.state = nextState;
+      await this.ensureRoundOpen();
     });
   }
 
@@ -949,6 +1021,207 @@ export class Room {
     });
   }
 
+  /** Receipt ordering is allocated synchronously at WebSocket ingress, before moderation. */
+  registerActionReceipt(): number {
+    this.roundReceiptSeq += 1;
+    return this.roundReceiptSeq;
+  }
+
+  private async openRound(): Promise<void> {
+    if (!this.state.gameState || this.state.paused) return;
+    if (this.state.round?.status === 'open') return;
+    const previousQueue = [...(this.state.round?.queuedSubmissions ?? [])].sort(
+      (a, b) => a.receiptSeq - b.receiptSeq,
+    );
+    const round = {
+      roundId: randomUUID(),
+      status: 'open' as const,
+      eligibleSeatIds: this.state.seats
+        .filter((seat) => seat.presence !== 'away')
+        .map((seat) => seat.seatId),
+      deadlineAt: Date.now() + DEFAULT_ROUND_MS,
+      submissions: previousQueue,
+      queuedSubmissions: [],
+    } satisfies NonNullable<RoomState['round']>;
+    await this.persist('RoundOpened', round);
+    this.broadcast({
+      seq: this.seq,
+      type: 'RoundOpened',
+      payload: {
+        roundId: round.roundId,
+        eligibleSeatIds: round.eligibleSeatIds,
+        deadlineAt: round.deadlineAt,
+        promoted: previousQueue.map(publicRoundSubmission),
+      },
+    } as ServerMessage);
+    this.scheduleRoundTimer();
+  }
+
+  private scheduleRoundTimer(): void {
+    if (this.roundTimer) clearTimeout(this.roundTimer);
+    this.roundTimer = undefined;
+    const round = this.state.round;
+    if (!round || round.status !== 'open' || round.deadlineAt === null) return;
+    this.roundTimer = setTimeout(
+      () => {
+        void this.resolveRound('timer').catch(() => undefined);
+      },
+      Math.max(0, round.deadlineAt - Date.now()),
+    );
+    this.roundTimer.unref?.();
+  }
+
+  private async ensureRoundOpen(): Promise<void> {
+    if (!this.state.round) await this.openRound();
+  }
+
+  resolveNow(accountId: string): Promise<void> {
+    return this.resolveRound('resolve-now', accountId);
+  }
+
+  private resolveRound(
+    reason: 'all-submitted' | 'timer' | 'resolve-now',
+    requesterAccountId?: string,
+  ): Promise<void> {
+    let resolvingRoundId: string | undefined;
+    return this.enqueuePlayer(async () => {
+      if (reason === 'resolve-now') {
+        if (
+          !requesterAccountId ||
+          !this.store.isTableHost ||
+          !(await this.store.isTableHost(this.sessionId, requesterAccountId))
+        )
+          throw new NotTableHostError('Only the table host can resolve now');
+      }
+      const round = this.state.round;
+      if (!round || round.status !== 'open') return;
+      resolvingRoundId = round.roundId;
+      const currentEligible = new Set(
+        this.state.seats
+          .filter((seat) => seat.presence !== 'away')
+          .map((seat) => seat.seatId),
+      );
+      const required = round.eligibleSeatIds.filter((seatId) =>
+        currentEligible.has(seatId),
+      );
+      const acceptedSeatIds = new Set(
+        round.submissions.map((item) => item.seatId),
+      );
+      if (
+        reason === 'all-submitted' &&
+        !required.every((seatId) => acceptedSeatIds.has(seatId))
+      )
+        return;
+      if (this.roundTimer) clearTimeout(this.roundTimer);
+      this.roundTimer = undefined;
+      await this.persist('RoundClosing', {
+        roundId: round.roundId,
+        closeReason: reason,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'RoundClosing',
+        payload: { roundId: round.roundId, closeReason: reason },
+      } as ServerMessage);
+      const batch = [...round.submissions].sort(
+        (a, b) => a.receiptSeq - b.receiptSeq,
+      );
+      if (batch.length === 0) {
+        await this.persist('RoundClosedEmpty', { roundId: round.roundId });
+        this.broadcast({
+          seq: this.seq,
+          type: 'RoundClosedEmpty',
+          payload: { roundId: round.roundId },
+        } as ServerMessage);
+        await this.openRound();
+        return;
+      }
+      // Re-check eligibility at close; accepted submissions from seats that became away stay in the batch.
+      await this.persist('RoundResolved', {
+        roundId: round.roundId,
+        actions: batch,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'RoundResolved',
+        payload: {
+          roundId: round.roundId,
+          actions: batch.map(publicRoundSubmission),
+        },
+      } as ServerMessage);
+      this.turnInFlight = true;
+      return batch;
+    }).then(async (batch) => {
+      if (!Array.isArray(batch)) return;
+      await this.executeRoundBatch(
+        batch as NonNullable<RoomState['round']>['submissions'],
+        resolvingRoundId!,
+      );
+    });
+  }
+
+  private async executeRoundBatch(
+    actions: NonNullable<RoomState['round']>['submissions'],
+    roundId: string,
+  ): Promise<void> {
+    const first = actions[0];
+    if (!first) return;
+    const text =
+      actions.length === 1
+        ? first.text
+        : actions
+            .map((action) => `${action.playerName}: ${action.text}`)
+            .join('\n\n');
+    try {
+      this.broadcast({
+        seq: this.seq,
+        type: 'TurnThinking',
+        payload: { actionId: roundId },
+      } as ServerMessage);
+      await this.resolveTurn(
+        first.accountId,
+        roundId,
+        text,
+        actions.length === 1 ? first.playerName : 'Party',
+        false,
+        roundId,
+      );
+    } catch (error) {
+      const restricted = error instanceof LiveDmRestrictedError;
+      this.broadcast({
+        seq: this.seq,
+        type: 'Error',
+        payload: {
+          code: restricted ? 'LIVE_DM_RESTRICTED' : 'TURN_FAILED',
+          message: 'The DM could not complete that round. Try again.',
+          actionId: roundId,
+        },
+      } as ServerMessage);
+    } finally {
+      await this.enqueue(async () => {
+        for (const action of actions)
+          for (const id of action.actionIds) this.pendingActions.delete(id);
+        this.turnInFlight = false;
+        if (
+          this.state.round?.roundId === roundId &&
+          this.state.round.status === 'resolving'
+        )
+          await this.persist('RoundCompleted', { roundId });
+        await this.openRound();
+        const next = this.state.round?.submissions ?? [];
+        if (
+          next.length > 0 &&
+          this.state.round?.eligibleSeatIds.every((seatId) =>
+            next.some((item) => item.seatId === seatId),
+          )
+        )
+          queueMicrotask(() => {
+            void this.resolveRound('all-submitted').catch(() => undefined);
+          });
+      });
+    }
+  }
+
   hasActionId(actionId: string): boolean {
     return this.actionIds.has(actionId) || this.pendingActions.has(actionId);
   }
@@ -958,6 +1231,92 @@ export class Room {
     actionId: string,
     text: string,
     playerName?: string,
+    receiptSeq?: number,
+  ): Promise<boolean> {
+    if (!this.state.gameState)
+      return this.submitLegacyAction(
+        accountId,
+        actionId,
+        text,
+        playerName,
+        receiptSeq,
+      );
+    let closeAllIn = false;
+    return this.enqueuePlayer(async () => {
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat) throw new Error('Account is not seated');
+      if (!this.turnRunner) throw new Error('Solo turn runner unavailable');
+      if (this.actionIds.has(actionId) || this.pendingActions.has(actionId))
+        return false;
+      await this.ensureRoundOpen();
+      const round = this.state.round;
+      if (!round) return false;
+      const queued = round.status === 'resolving';
+      if (!queued && round.status !== 'open') return false;
+      const submissions = queued ? round.queuedSubmissions : round.submissions;
+      if (submissions.some((item) => item.seatId === seat.seatId)) return false;
+      if (
+        round.queuedSubmissions.filter((item) => item.accountId === accountId)
+          .length >= MAX_QUEUED_ACTIONS_PER_SEAT ||
+        round.queuedSubmissions.length >= MAX_QUEUED_ACTIONS_PER_ROOM
+      )
+        throw new Error('ACTION_REJECTED');
+      const order = receiptSeq ?? this.registerActionReceipt();
+      const submission = {
+        seatId: seat.seatId,
+        accountId: seat.accountId,
+        actionId,
+        originalActionId: actionId,
+        actionIds: [actionId],
+        text,
+        playerName: playerName ?? seat.displayName,
+        receiptSeq: order,
+      } satisfies NonNullable<RoomState['round']>['submissions'][number];
+      this.pendingActions.add(actionId);
+      await this.persist('RoundActionAccepted', {
+        submission,
+        queued,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: queued ? 'RoundActionQueued' : 'RoundActionAccepted',
+        payload: {
+          roundId: round.roundId,
+          seatId: seat.seatId,
+          actionId,
+          receiptSeq: order,
+        },
+      } as ServerMessage);
+      if (!queued) {
+        const required = this.state.round!.eligibleSeatIds.filter((seatId) =>
+          this.state.seats.some(
+            (current) =>
+              current.seatId === seatId && current.presence !== 'away',
+          ),
+        );
+        const accepted = new Set(
+          this.state.round!.submissions.map((item) => item.seatId),
+        );
+        closeAllIn = required.every((seatId) => accepted.has(seatId));
+      }
+      return true;
+    }).then(async (accepted) => {
+      if (accepted && closeAllIn)
+        queueMicrotask(() => {
+          void this.resolveRound('all-submitted').catch(() => undefined);
+        });
+      return accepted;
+    });
+  }
+
+  private submitLegacyAction(
+    accountId: string,
+    actionId: string,
+    text: string,
+    playerName?: string,
+    receiptSeq?: number,
   ): Promise<boolean> {
     return this.enqueuePlayer(async () => {
       const seat = this.state.seats.find(
@@ -974,9 +1333,8 @@ export class Room {
         queuedForSeat >= MAX_QUEUED_ACTIONS_PER_SEAT ||
         this.queuedActions.length + (this.turnInFlight ? 1 : 0) >=
           MAX_QUEUED_ACTIONS_PER_ROOM
-      ) {
+      )
         throw new Error('ACTION_REJECTED');
-      }
       this.pendingActions.add(actionId);
       this.broadcast({
         seq: this.seq,
@@ -990,7 +1348,7 @@ export class Room {
         editActionIds: [],
         text,
         playerName: playerName ?? seat.displayName,
-        receiptSeq: ++this.nextActionReceiptSeq,
+        receiptSeq: receiptSeq ?? this.registerActionReceipt(),
       });
       this.kickQueue();
       return true;
@@ -1003,31 +1361,42 @@ export class Room {
     actionId: string,
     editedActionId: string,
     text: string,
-  ): Promise<'edited' | 'duplicate' | 'unknown_submission'> {
+  ): Promise<'edited' | 'duplicate' | 'unknown_submission' | 'round_closed'> {
     return this.enqueuePlayer(async () => {
       if (this.actionIds.has(actionId) || this.pendingActions.has(actionId))
         return 'duplicate';
-      const action = this.queuedActions.find(
+      const round = this.state.round;
+      if (!round) return 'unknown_submission';
+      if (round.status !== 'open' && round.status !== 'resolving')
+        return 'round_closed';
+      const queued = round.status === 'resolving';
+      const list = queued ? round.queuedSubmissions : round.submissions;
+      const action = list.find(
         (item) =>
           item.accountId === accountId &&
           (item.actionId === editedActionId ||
             item.originalActionId === editedActionId ||
-            item.editActionIds.includes(editedActionId)),
+            item.actionIds.includes(editedActionId)),
       );
-      if (!action) return 'unknown_submission';
+      if (!action) {
+        const closedSubmission = round.submissions.some(
+          (item) =>
+            item.accountId === accountId &&
+            (item.actionId === editedActionId ||
+              item.originalActionId === editedActionId ||
+              item.actionIds.includes(editedActionId)),
+        );
+        return closedSubmission ? 'round_closed' : 'unknown_submission';
+      }
       const editedAt = Date.now();
-      await this.persist('ActionEdited', {
+      const updated = {
+        ...action,
         actionId,
-        editedActionId,
-        originalActionId: action.originalActionId,
         text,
-        receiptSeq: action.receiptSeq,
+        actionIds: [...new Set([...action.actionIds, actionId])],
         editedAt,
-      });
-      this.actionIds.add(actionId);
-      action.editActionIds.push(actionId);
-      action.text = text;
-      action.editedAt = editedAt;
+      };
+      await this.persist('RoundActionEdited', { submission: updated, queued });
       return 'edited';
     });
   }
@@ -1122,15 +1491,71 @@ export class Room {
   }
 
   withdrawAction(accountId: string, actionId: string): Promise<boolean> {
+    return this.withdrawRoundAction(accountId, randomUUID(), actionId).then(
+      (result) => result === 'withdrawn',
+    );
+  }
+
+  withdrawRoundAction(
+    accountId: string,
+    commandActionId: string,
+    actionId: string,
+  ): Promise<
+    'withdrawn' | 'duplicate' | 'unknown_submission' | 'round_closed'
+  > {
     return this.enqueue(async () => {
+      if (this.actionIds.has(commandActionId)) return 'duplicate';
+      const round = this.state.round;
+      if (round) {
+        if (round.status === 'closing') return 'round_closed';
+        const queued = round.status === 'resolving';
+        const list = queued ? round.queuedSubmissions : round.submissions;
+        const index = list.findIndex(
+          (item) =>
+            item.accountId === accountId &&
+            (item.actionId === actionId ||
+              item.originalActionId === actionId ||
+              item.actionIds.includes(actionId)),
+        );
+        if (index === -1) {
+          const existsInBatch = round.submissions.some(
+            (item) =>
+              item.accountId === accountId && item.actionIds.includes(actionId),
+          );
+          return existsInBatch ? 'round_closed' : 'unknown_submission';
+        }
+        const submission = list[index]!;
+        await this.persist('RoundActionWithdrawn', {
+          roundId: round.roundId,
+          seatId: submission.seatId,
+          commandActionId,
+          actionId,
+          queued,
+        });
+        for (const id of submission.actionIds) this.pendingActions.delete(id);
+        this.broadcast({
+          seq: this.seq,
+          type: 'RoundActionWithdrawn',
+          payload: { roundId: round.roundId, seatId: submission.seatId },
+        } as ServerMessage);
+        if (
+          !queued &&
+          round.eligibleSeatIds.every((seatId) =>
+            this.state.round!.submissions.some(
+              (item) => item.seatId === seatId,
+            ),
+          )
+        )
+          queueMicrotask(() => {
+            void this.resolveRound('all-submitted').catch(() => undefined);
+          });
+        return 'withdrawn';
+      }
       const index = this.queuedActions.findIndex(
         (action) =>
-          action.accountId === accountId &&
-          (action.actionId === actionId ||
-            action.originalActionId === actionId ||
-            action.editActionIds.includes(actionId)),
+          action.accountId === accountId && action.actionId === actionId,
       );
-      if (index === -1) return false;
+      if (index === -1) return 'unknown_submission';
       this.queuedActions.splice(index, 1);
       this.pendingActions.delete(actionId);
       this.broadcast({
@@ -1138,7 +1563,7 @@ export class Room {
         type: 'ActionWithdrawn',
         payload: { actionId },
       } as ServerMessage);
-      return true;
+      return 'withdrawn';
     });
   }
 
@@ -1243,6 +1668,7 @@ export class Room {
     text: string,
     playerName: string,
     clarificationAsked: boolean,
+    roundId?: string,
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
     const startGame = structuredClone(this.state.gameState ?? {}) as Record<
@@ -1369,6 +1795,13 @@ export class Room {
             payload: { actionId },
           });
         }
+        if (roundId)
+          writes.push({
+            seq: undefined,
+            turnId: id,
+            type: 'RoundCompleted',
+            payload: { roundId },
+          });
         const nextSeq = this.seq + writes.length;
         const live = this.state.gameState as
           | Record<string, unknown>
@@ -1452,6 +1885,9 @@ export class Room {
         const nextState = {
           ...this.state,
           gameState: settleEngine(turnGameState),
+          ...(roundId && this.state.round?.roundId === roundId
+            ? { round: { ...this.state.round, status: 'resolved' as const } }
+            : {}),
           ...(!clarification && {
             xCard: {
               requested: this.state.xCard?.requested ?? 0,
