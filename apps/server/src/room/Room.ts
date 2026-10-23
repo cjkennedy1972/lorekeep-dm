@@ -1322,7 +1322,11 @@ export class Room {
     }
     if (round.status === 'resolving' && round.submissions.length > 0) {
       this.turnInFlight = true;
-      void this.executeRoundBatch(round.submissions, round.roundId);
+      this.activeTurn = this.executeRoundBatch(
+        round.submissions,
+        round.roundId,
+      );
+      void this.activeTurn.catch(() => undefined);
     }
   }
 
@@ -1358,7 +1362,7 @@ export class Room {
       ? this.waitForRoundActionGates(initialRoundId)
       : Promise.resolve();
     let resolvingRoundId: string | undefined;
-    return settleGates.then(() =>
+    const resolution = settleGates.then(() =>
       this.enqueuePlayer(async () => {
         if (reason === 'resolve-now') {
           if (
@@ -1439,6 +1443,9 @@ export class Room {
         );
       }),
     );
+    this.activeTurn = resolution;
+    void resolution.catch(() => undefined);
+    return resolution;
   }
 
   private async executeRoundBatch(
