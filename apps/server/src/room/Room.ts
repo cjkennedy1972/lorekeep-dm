@@ -133,6 +133,7 @@ export interface RoomStore {
   ): Promise<ChatHistoryEntry[]>;
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
+  isAccountActive(accountId: string): Promise<boolean>;
   loadRewindPlan?(sessionId: string): Promise<RewindPlan | null>;
   isTableHost?(sessionId: string, accountId: string): Promise<boolean>;
   tableHostAccountId?(sessionId: string): Promise<string | undefined>;
@@ -256,7 +257,7 @@ export class Room {
     this.combatRuntime = combatRuntime;
     const recovered = recoverRoom(this.sessionId, latest);
     this.state = recovered.state;
-    this.combatRoundForLateJoin = roomGameState(this.state)?.combat.round ?? 0;
+    this.combatRoundForLateJoin = roomGameState(this.state)?.combat?.round ?? 0;
     this.seq = recovered.seq;
     this.chatReceiptSeq = Math.max(
       this.seq,
@@ -1856,7 +1857,7 @@ export class Room {
       const combat = roomGameState(this.state);
       if (
         !this.turnInFlight &&
-        (!combat || combat.ended || !combat.combat.activeEntityId) &&
+        (!combat || combat.ended || !combat.combat?.activeEntityId) &&
         (!this.state.round || this.state.round.status === 'resolved')
       )
         await this.admitApprovedLateJoins();
@@ -1899,6 +1900,7 @@ export class Room {
     );
     for (const request of approved) {
       if (this.state.seats.length >= 6) break;
+      if (!(await this.store.isAccountActive(request.accountId))) continue;
       const seat = {
         seatId: randomUUID(),
         accountId: request.accountId,

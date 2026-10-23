@@ -29,6 +29,9 @@ function setup(runner: SoloTurnRunner) {
   const events: StoredEvent[] = [];
   let snapshot: LatestState['snapshot'] = null;
   const store: RoomStore = {
+    async isAccountActive() {
+      return true;
+    },
     async loadLatest() {
       return { snapshot, events: [] };
     },
@@ -605,6 +608,26 @@ describe('Room solo DM turn lifecycle', () => {
 });
 
 describe('Room commit safety', () => {
+  it('recovers persisted combat-room data without a combat tracker', async () => {
+    const { room, store, latestSnapshot } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    await room.persistGameState({
+      combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+    });
+
+    const recovered = new Room(store, lease, {
+      snapshot: latestSnapshot(),
+      events: [],
+    });
+
+    expect(recovered.clientState().gameState).toMatchObject({
+      combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+    });
+  });
+
   it('tolerates a persisted combat room without a combat tracker', async () => {
     const { room } = setup({
       async run() {

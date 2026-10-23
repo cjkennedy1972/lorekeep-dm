@@ -14,8 +14,12 @@ const lease = {
 function fixture() {
   const events: StoredEvent[] = [];
   const registryWrites: RegistryEvent[][] = [];
+  const inactiveAccounts = new Set<string>();
   let snapshot: LatestState['snapshot'] = null;
   const store: RoomStore = {
+    async isAccountActive(accountId) {
+      return !inactiveAccounts.has(accountId);
+    },
     async persistRegistryEvents(_sessionId, registryEvents) {
       registryWrites.push([...registryEvents]);
     },
@@ -43,7 +47,13 @@ function fixture() {
       return { events: stored };
     },
   };
-  return { store, events, registryWrites, latest: () => store.loadLatest(id) };
+  return {
+    store,
+    events,
+    registryWrites,
+    inactiveAccounts,
+    latest: () => store.loadLatest(id),
+  };
 }
 
 describe('room actor', () => {
@@ -177,6 +187,44 @@ describe('room actor', () => {
       );
       expect(room.state.ended).not.toBe(true);
       expect(events.some((event) => event.type === 'TableEnded')).toBe(false);
+    });
+
+    it('approves a late join when persisted combat state has no tracker', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({
+        combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+      });
+      const requestId = await room.requestLateJoin(randomUUID(), 'Late');
+
+      await expect(
+        room.approveLateJoin(host, randomUUID(), requestId),
+      ).resolves.toBeUndefined();
+    });
+
+    it('does not admit an approved late join after their account becomes inactive', async () => {
+      const { store, events, inactiveAccounts } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({});
+      const requester = randomUUID();
+      const requestId = await room.requestLateJoin(requester, 'Late');
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      inactiveAccounts.add(requester);
+
+      await room.resolveNow(host);
+
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(false);
+      expect(events.map((event) => event.type)).not.toContain(
+        'LateJoinAdmitted',
+      );
     });
 
     it('stores late-join requests and only seats a host-approved requester at the next scene boundary', async () => {

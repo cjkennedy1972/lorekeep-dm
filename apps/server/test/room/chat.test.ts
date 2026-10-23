@@ -18,6 +18,9 @@ const lease = {
 function setup(runner?: SoloTurnRunner) {
   const events: StoredEvent[] = [];
   const store: RoomStore = {
+    async isAccountActive() {
+      return true;
+    },
     async loadLatest(): Promise<LatestState> {
       return { snapshot: null, events: [] };
     },

@@ -408,6 +408,14 @@ export class Persistence {
     });
   }
 
+  async isAccountActive(accountId: string): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
+      "SELECT 1 FROM accounts WHERE id=$1 AND status='active'",
+      [accountId],
+    );
+    return rowCount === 1;
+  }
+
   async matureEligibleAccounts(accountIds: string[]): Promise<string[]> {
     const { rows } = await this.pool.query<{ id: string }>(
       `SELECT id::text AS id FROM accounts
