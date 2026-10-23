@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { on } from 'node:events';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -38,16 +39,26 @@ installGateway(app, db, rooms);
 let base: string;
 let tokens: string[];
 
-function nextMessage(
+// ws can emit several frames synchronously from one TCP chunk, so a once('message')
+// registered after an await drops every frame that lands before it. Each socket gets
+// a buffering iterator attached at creation instead; nextMessage drains it in order.
+const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
+
+async function nextMessage(
   ws: WebSocket,
 ): Promise<{ type: string; payload: Record<string, unknown> }> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('socket timeout')), 15_000);
-    ws.once('message', (data) => {
-      clearTimeout(timer);
-      resolve(JSON.parse(data.toString()));
-    });
-  });
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const { value } = await Promise.race([
+      inboxes.get(ws)!.next(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('socket timeout')), 15_000);
+      }),
+    ]);
+    return JSON.parse(String(value[0]));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function openSocket(token: string) {
@@ -62,6 +73,7 @@ async function openSocket(token: string) {
       origin: base,
     },
   );
+  inboxes.set(ws, on(ws, 'message'));
   await nextMessage(ws);
   return ws;
 }
