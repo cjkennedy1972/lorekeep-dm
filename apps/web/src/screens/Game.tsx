@@ -593,6 +593,7 @@ export function Game() {
           round={room.round}
           roundDurationMs={room.roundDurationMs ?? null}
           connected={live.status === 'connected'}
+          paused={room.paused === true}
           send={live.send}
         />
       )}

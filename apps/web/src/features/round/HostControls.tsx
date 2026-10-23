@@ -35,6 +35,7 @@ type Props = {
   round: RoomState['round'];
   roundDurationMs: RoomState['roundDurationMs'];
   connected: boolean;
+  paused?: boolean;
   send: RoomSend;
 };
 
@@ -42,6 +43,7 @@ export function HostControls({
   round,
   roundDurationMs,
   connected,
+  paused = false,
   send,
 }: Props) {
   const [noLimit, setNoLimit] = useState(roundDurationMs === null);
@@ -50,7 +52,7 @@ export function HostControls({
   );
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
-  const canResolve = connected && round?.status === 'open';
+  const canResolve = connected && round?.status === 'open' && !paused;
 
   function sendHost(
     type: string,
@@ -103,6 +105,7 @@ export function HostControls({
         >
           Resolve round now
         </button>
+        {paused && <span>Resume the table to resolve the round.</span>}
         <button
           type="button"
           disabled={!connected}

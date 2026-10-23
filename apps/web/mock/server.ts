@@ -16,7 +16,7 @@ import {
   type Account,
   type ExportJob,
 } from '@game/schema';
-import { Room } from './room.js';
+import { Room, type RoundScript } from './room.js';
 
 // The contract has no HTTP error schema yet; reuse the WS Error payload shape {code, message}.
 const MIN_AGE = 18;
@@ -279,6 +279,21 @@ export function createMock(
       return err(res, 401, 'UNAUTHENTICATED', 'Sign in required.');
     if (!account) return err(res, 404, 'NOT_FOUND', 'Not found.');
 
+    // Test-only round driver (dev mock, never the real server): members of a table can script its round.
+    const scriptRoute = /^\/api\/test\/tables\/([^/]+)\/round$/.exec(
+      url.pathname,
+    );
+    if (req.method === 'POST' && scriptRoute) {
+      const table = rooms.get(scriptRoute[1]!);
+      if (!table?.members.has(account.id))
+        return err(res, 404, 'NOT_FOUND', 'Not found.');
+      try {
+        roomFor(table.id).script((await readBody(req)) as RoundScript);
+      } catch (e) {
+        return err(res, 400, 'INVALID_INPUT', (e as Error).message);
+      }
+      return json(res, 200, {});
+    }
     if (url.pathname.startsWith('/api/operator/'))
       return err(res, 404, 'NOT_FOUND', 'Not found.');
     if (route === 'GET /api/me')

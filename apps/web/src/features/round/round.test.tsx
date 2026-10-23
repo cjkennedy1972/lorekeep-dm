@@ -215,6 +215,41 @@ describe('HostControls', () => {
     expect(screen.getByRole('alert').textContent).toContain('Enter a number');
   });
 
+  it('disables resolve-now while the table is paused', () => {
+    const open = round();
+    const { rerender } = render(
+      <HostControls
+        round={open}
+        roundDurationMs={null}
+        connected
+        send={vi.fn()}
+      />,
+    );
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Resolve round now',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    rerender(
+      <HostControls
+        round={open}
+        roundDurationMs={null}
+        connected
+        paused
+        send={vi.fn()}
+      />,
+    );
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Resolve round now',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
   it('keeps unsupported host actions disabled', () => {
     render(
       <HostControls
