@@ -478,7 +478,9 @@ async function deleteAccount(
         SET account_id=NULL, character_id=NULL, character_revision=NULL,
             character_snapshot=jsonb_set(character_snapshot - 'id' - 'name', '{name}', '"Deleted player"'::jsonb),
             binding_status='redacted', unbound_at=COALESCE(unbound_at,now())
-      WHERE account_id=$1`, [accountId]);
+      WHERE account_id=$1`,
+    [accountId],
+  );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }
