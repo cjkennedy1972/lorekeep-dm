@@ -20,11 +20,16 @@ afterEach(async () => {
   await table?.stop();
   table = undefined;
 });
+// Pin NODE_ENV so the moderator uses the scripted gate, never the endpoint judge.
+const savedNodeEnv = process.env.NODE_ENV;
 afterAll(async () => {
   await db.end();
+  if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = savedNodeEnv;
 });
 beforeAll(() => {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+  process.env.NODE_ENV = 'test';
 });
 
 async function startTable(players: number, dm = new CapturingDm()) {
@@ -47,27 +52,30 @@ async function resolvedFor(t: SimTable, roundId: string) {
 }
 
 describe('simultaneous submission ordering', () => {
-  it('orders a batch by receiptSeq and matches acceptance order', async () => {
+  it('sorts a batch by receiptSeq and includes every submitted action', async () => {
+    // ADR-029 §1.3: gate decisions may complete in any order, so acceptance order is not
+    // the contract. The contract is that the batch is sorted by receiptSeq.
     const { table: t } = await startTable(3);
     const [a, b, c] = t.clients as [SimClient, SimClient, SimClient];
-    a.submit('alpha');
-    b.submit('bravo');
-    c.submit('charlie');
+    const submitted = [
+      a.submit('alpha'),
+      b.submit('bravo'),
+      c.submit('charlie'),
+    ];
     await eventually(
       async () => (await t.events('RoundResolved')).length === 1,
     );
     const [resolved] = await t.events('RoundResolved');
     const batch = resolved!.payload.actions as {
+      actionId: string;
       receiptSeq: number;
-      accountId: string;
     }[];
     expect(batch).toHaveLength(3);
     const seqs = batch.map((item) => item.receiptSeq);
     expect(seqs).toEqual([...seqs].sort((x, y) => x - y));
-    const accepted = (await t.events('RoundActionAccepted')).map(
-      (e) => e.payload.submission.receiptSeq as number,
+    expect(batch.map((item) => item.actionId).sort()).toEqual(
+      [...submitted].sort(),
     );
-    expect(seqs).toEqual(accepted.slice(0, 3));
   });
 });
 
