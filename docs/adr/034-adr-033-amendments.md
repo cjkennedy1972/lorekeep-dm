@@ -18,36 +18,37 @@ ADR-033 (combat turn and reaction orchestration) merged in `1a0a1db`. Review lef
 
 ### 1. ADR-030 amendment: open rest vote at combat start
 
-This amends ADR-030 §1.6 (preconditions) and the combat rule at ADR-030 §5 "No vote during combat" (the combat line at merged line 143). ADR-030 is not edited.
+This amends ADR-030 §1.6 (preconditions), §4.8 (close reasons), §6.1 (event shape), and §8 (failed vote). The combat rule itself is ADR-030 "Decisions needed" item 5, "No vote during combat" (merged line 143). No normative ADR-030 section states it, and the §1.6 precondition list has no combat check. ADR-030 is not edited.
 
-1. Combat start cancels any open rest vote immediately. The vote closes with `closeReason: cancelled-combat`, the same moment `CombatStarted` is applied, in the same mailbox pass.
-2. A `cancelled-combat` close is a failed vote under ADR-030: it applies no outcome and changes no rest state. It is not counted as a yes or a no in the tally, and no seat is marked as having voted.
-3. Combat start is not delayed by the vote.
-4. No vote can open until `CombatEnded`.
-5. **Field name.** ADR-030 §6.1 names the close reason field `reason` in `RestVoteClosed{voteId, outcome, reason, yes, no}`. This ADR renames that field to `closeReason` for every rest-vote close, and adds `cancelled-combat` to the close enum. The rename applies to ADR-030 §3, §4, §6.1, and §7.2, which all say `reason`. Other ADR-030 uses of `reason` for `rest-not-allowed` and `vote-closed` are ADR-022 §2.4 error reasons and are unchanged.
-6. The close enum gains `cancelled-combat`. Its meaning is the one in item 2.
+1. Combat start cancels any open rest vote immediately. The vote closes in the same mailbox pass as `CombatStarted`, and combat start is not delayed by the vote.
+2. The cancelled close is a failed vote under ADR-030 §8. It emits `RestVoteClosed` only, applies no effects, emits no `RestApplied`, and changes no rest state. Its ballots are not counted in the tally. The §1.7 cooldown still starts, as for any close.
+3. No vote can open until `CombatEnded`.
+4. **One close mechanism.** The close is recorded by `closeReason`, not by a separate field. ADR-030 §6.1 names the close reason field `reason` in `RestVoteClosed{voteId, outcome, reason, yes, no}`. This ADR renames that field to `closeReason` for every rest-vote close. The rename applies to every ADR-030 use of `reason` for a vote close (§3, §4.8, §6.1, §7.2). Uses of `reason` for `rest-not-allowed` and `vote-closed` are error reasons under ADR-022 §2.4 and are unchanged.
+5. **Close enum.** The ADR-030 §4.8 close enum gains `cancelled-combat` as a `closeReason`. The vote's `outcome` is `failed`, the existing failed value that §8 uses. No outcome is applied to the rest state.
+6. ADR-033 D12 and D20 wrote the close as "outcome `cancelled-combat`". That wording is superseded by items 4 and 5 (see §6 item 3).
 
 ### 2. ADR-022 amendment: combat narration tool scope
 
-This amends ADR-022 §2.3 and §4.1 for one turn class. ADR-022 is not edited.
+This sets the tool scope for one turn class, using the ADR-022 sections it touches: §2 (the M2 tool set), §2.3 (tool list), §2.4 (error codes), §1 T5 (writes boundary), and §4.2 (turn-level fallback). ADR-022 is not edited.
 
-1. A combat narration turn (ADR-033 §6.2, `phase: narrating`) exposes read-only tools only: the two read-only entries in ADR-022 §2.3 (items 10 and 17, `rules_lookup` among them). No state-changing tool is offered.
-2. ADR-022 T3 (eight calls) and T4 apply unchanged to that turn.
-3. This restriction is a new contract. ADR-022 sets no tool scope. Mechanics are already applied by the engine (ADR-033 §6.7), so the restriction costs the narration nothing it needs.
+1. A combat narration turn (ADR-033 §6.2, `phase: narrating`) exposes read-only tools only: the two read-only entries in ADR-022 §2.3, item 10 and item 17 (`rules_lookup`). No state-changing tool is offered (ADR-033 §6.7).
+2. If the model still emits a state-changing call on that turn, the engine rejects it with a §2.4 code and does not apply it. ADR-022 §1 T5 holds: only `apply()` writes state.
+3. ADR-022 §1 T3 (eight calls) and T4 (two retries) apply unchanged. A turn that falls back uses §4.2.
+4. This scope is a new contract. ADR-022 sets no tool scope for the narration turn. The engine has already applied the mechanics (ADR-033 §6.7), so read-only tools cost the narration nothing it needs.
 
 ### 3. Hidden (stealthed) entities in reaction prompts
 
 This amends ADR-033 §3.1 and §3.2 for hidden entities.
 
-1. If the reacting entity is hidden from a seat (ADR-033 §3.2, visibility split), the reaction prompt and `reactorEntityId` go only to the controlling seat. Other seats see nothing about the prompt: no "prompt open", no deadline.
+1. If the reacting entity is hidden from a seat (ADR-033 §7.3, visibility split), the reaction prompt and `reactorEntityId` go only to the controlling seat. Other seats see nothing about the prompt: no "prompt open", no deadline.
 2. The log keeps the full record. The engine appends `ReactionPromptOpened`, `ReactionAnswered`, or `ReactionDeclined` with the full payload, and the server applies this visibility rule to every seat's broadcast, snapshot, and replay.
-3. A hidden reactor's prompt does not change phase timing. Its window runs as §3.4 of ADR-033 says.
+3. A hidden reactor's prompt does not change phase timing. Its window runs under ADR-033 §3.5 (expiry) and §3.7 (pause).
 
 ### 4. Host revoke can cost a turn (intended)
 
 1. If the host revokes the controlling seat of the active combatant, the turn's bounded resolution (ADR-033 §5.5) applies at once. The timeout action (Dodge or hold, §5.3) is applied, so the turn is spent.
 2. This is intended. A revoked seat cannot act, and the table does not wait for it.
-3. The host revoke is not a combat command. It is a membership action under ADR-029 §7 and is not subject to the admission table.
+3. The host revoke is not a combat command. It is a seat revocation (ADR-031 §4.2), so the admission table in ADR-033 §1 does not gate it.
 
 ### 5. Event names for architecture §15.6
 
@@ -66,7 +67,7 @@ These are the combat and rest events declared for §15.6. ADR-033 §7.1 declares
 | `ReactionAnswered` | `{promptId, answer}` | ADR-033 §7.1 | all seats, unless hidden (§3 of this ADR) |
 | `ReactionDeclined` | `{promptId, cause}`, `cause` ∈ `timeout`, `presence`, `no-controller`, `cap`, `restart` | ADR-033 §7.1 | all seats, unless hidden |
 | `NarrationCommitted` | `{turnId, narrationId}` | ADR-033 §7.1 | all seats |
-| `RestVoteClosed` | `{voteId, outcome, closeReason, yes, no}` | ADR-030 §6.1, field renamed by §1.5 | all seats |
+| `RestVoteClosed` | `{voteId, outcome, closeReason, yes, no}` | ADR-030 §6.1, field renamed by §1 item 4 | all seats |
 
 `RestVoteOpened`, `RestVoteCast`, `RestVoteCastNotice`, and `RestApplied` keep ADR-030 §6.1 payloads unchanged. `ReactionAvailable` is an M1 engine event and is not declared here.
 
@@ -79,8 +80,8 @@ These codes are declared here as an extension of the ADR-022 §2.4 enum, as ADR-
 | Phase | Accepted | Rejected code |
 |---|---|---|
 | `awaiting-command` | Controlling seat: move, action, bonus action, `end-turn` | Other seats: `not-your-turn`. Chat is always allowed. |
-| `moving` | Engine continuation only. Bounded resolution (ADR-033 §5.5) and timer expiry (§5.3) apply. | Controlling seat: `move-in-progress` |
-| `reaction-pending` | Reacting entity's controlling seat: `use{handle}` or `decline`. Bounded resolution and timer expiry still apply. | Every other command: `reaction-pending`. Not queued. |
+| `moving` | Engine continuation only. Bounded resolution (ADR-033 §5.5) and timer expiry (§5.3) apply. | Controlling seat: `move-in-progress`. Other seats: `not-your-turn`. Not queued. |
+| `reaction-pending` | Reaction answers only: `use{handle}` or `decline`, from the controlling seat of the reacting entity. Bounded resolution and timer expiry still apply. | Every other command: `reaction-pending`. Not queued. |
 | `narrating` | Pause only (ADR-029 §5) | Every combat command: `narration-in-progress`. Not queued. |
 
 2. Codes new to this ADR: `move-in-progress`, `reaction-pending`, `narration-in-progress`, `not-your-turn`, `combat-active`, `prompt-closed`, `seat-mismatch`, `rate-limited`.
@@ -90,8 +91,10 @@ These codes are declared here as an extension of the ADR-022 §2.4 enum, as ADR-
    - §1 admission rule 1, which says the turn commands are "accepted only in `awaiting-command`". That is still true, and the table governs.
    - §3.1, `ReactionPromptOpened` payload. §3.1 and §7.1 are replaced by §5 of this ADR.
    - §8 "Rest votes" bullet, replaced by §1 of this ADR.
-   - D12, replaced by §1 of this ADR.
-4. **Clarification of D19.** Reaction windows open by moving the Room to `reaction-pending` (ADR-033 §4.2). This is the only way a window opens. The `moving` phase runs the path to its end or to the §4 stop, and no command interrupts it. The window opens within the same mailbox pass as the triggering step.
+   - D12, replaced by §1 of this ADR. Its "outcome `cancelled-combat`" wording is replaced by `closeReason: cancelled-combat` with `outcome: failed` (§1 items 4 and 5).
+   - D20, same replacement as D12.
+4. **Corrected D19.** ADR-033 D19 says "the only inputs honored are reaction answers when a window opens". Replace that sentence with: reaction answers are accepted only in `reaction-pending`, from the controlling seat of the reacting entity. Bounded-resolution paths (ADR-033 §5.5) and timer expiry (§5.3) apply in any phase where a turn is open. Reaction windows open only by moving the Room to `reaction-pending` (ADR-033 §4.2), in the same mailbox pass as the triggering step. The `moving` phase runs the path to its end or to a §4 stop, and no command interrupts it.
+5. **Combat start authority.** An encounter starts only from an engine-validated DM tool call, `start_combat` (ADR-022 §2.3 item 7), made during an active round. The engine validates it and rejects it with the codes ADR-022 §2.3 item 7 lists (`unknown-monster`, `already-in-combat`, `no-spawn-space`, `enemy-cap-exceeded`). Player text and host text never start combat. The host has no command that starts combat. A host request reaches the DM only as input text, and the DM may or may not call `start_combat`.
 
 ## Alternatives considered
 
@@ -108,6 +111,6 @@ These codes are declared here as an extension of the ADR-022 §2.4 enum, as ADR-
 ## Verification
 
 - Docs-only change: one new file, `docs/adr/034-adr-033-amendments.md`. No existing ADR or `docs/architecture.md` is edited.
-- Read: ADR-030 (§§1.6, 3, 4, 5, 6.1, 7.2, and the combat line at merged line 143), ADR-022 (§§2.3, 2.4, 4.1), ADR-033 as merged in `1a0a1db` (§§1, 3, 4, 5, 6, 7, 8, D12, D19).
+- Read: ADR-030 (§§1.6, 1.7, 4.8, 6.1, 7.2, 8, "Decisions needed" item 5 at merged line 143), ADR-022 (§§1 T3–T5, 2.3 items 7, 10, 17, 2.4, 4.2), ADR-033 as merged in `1a0a1db` (§§1, 3, 4, 5, 6, 7, 8, D12, D19, D20).
 - Not verified: the full ADR-031 text on hidden-entity presence; the architecture §15.6 current event list. §5 of this ADR states the complete set for this decision.
 - Prettier is run on this file before commit.
