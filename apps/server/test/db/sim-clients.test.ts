@@ -247,6 +247,12 @@ describe('OOC chat isolation', () => {
     );
     // The DM request is made after RoundResolved is written, so wait for it.
     await eventually(async () => dm.requests.length > 0);
+    // Player text is base64 inside PLAYER_DATA blocks, so decode them before the substring check.
+    const decoded = dm.decodedPlayerText();
+    // Positive control: the decoder sees the player actions, so an empty result cannot pass.
+    expect(decoded).toContain('I open the door');
+    expect(decoded).toContain('I wait by the wall');
+    expect(decoded).not.toContain(marker);
     expect(dm.promptText()).not.toContain(marker);
     for (const client of t.clients)
       for (const frame of client.inbox)
