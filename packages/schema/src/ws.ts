@@ -25,6 +25,17 @@ export const WithdrawActionSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const EditActionSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('EditAction'),
+    payload: z.object({
+      editedActionId: ActionIdSchema,
+      text: z.string().trim().min(1).max(4000),
+    }),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const ClarificationAnswerSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -147,6 +158,24 @@ export const PauseTableSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const ResolveNowSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ResolveNow'),
+    payload: z.object({}).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
+export const ConfigureRoundTimerSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ConfigureRoundTimer'),
+    payload: z
+      .object({ durationMs: z.number().int().nonnegative().nullable() })
+      .strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const RewindTurnSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -189,6 +218,16 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     seq: z.int().nonnegative(),
     type: z.enum([
       'ActionQueued',
+      'RoundOpened',
+      'RoundActionAccepted',
+      'RoundActionQueued',
+      'RoundActionEdited',
+      'RoundActionWithdrawn',
+      'RoundClosing',
+      'RoundResolved',
+      'RoundCompleted',
+      'RoundClosedEmpty',
+      'RoundTimerConfigured',
       'ActionWithdrawn',
       'ClarificationRequested',
       'TurnThinking',

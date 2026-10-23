@@ -10,10 +10,13 @@ import {
   type ActionId,
   CombatCommandSchema,
   PlayerActionSchema,
+  EditActionSchema,
   ClarificationAnswerSchema,
   WithdrawActionSchema,
   XCardSchema,
   PauseTableSchema,
+  ResolveNowSchema,
+  ConfigureRoundTimerSchema,
   RewindTurnSchema,
   type ServerMessage,
 } from '@game/schema';
@@ -22,6 +25,7 @@ import { validOrigin as validRequestOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
   NotTableHostError,
+  RoomPausedError,
   RewindRefusedError,
   RoomSeatRequiredError,
 } from '../room/Room.js';
@@ -382,6 +386,13 @@ export function installGateway(
               });
             return;
           }
+          const playerAction = PlayerActionSchema.safeParse(envelope);
+          const editAction = EditActionSchema.safeParse(envelope);
+          const actionReceiptCommandId = playerAction.success
+            ? playerAction.data.actionId
+            : editAction.success
+              ? editAction.data.actionId
+              : undefined;
           // Rate-limit before queueing: a flood must not grow the promise chain.
           if (!consumeMessageToken(messageBucket)) {
             if (ws.readyState === WebSocket.OPEN)
@@ -395,12 +406,54 @@ export function installGateway(
               });
             return;
           }
+          if (
+            actionReceiptCommandId &&
+            room.hasActionId(actionReceiptCommandId)
+          ) {
+            send({
+              seq: room.seq,
+              type: 'Error',
+              payload: {
+                code: 'DUPLICATE_ACTION',
+                message: 'This action was already received.',
+                actionId: actionReceiptCommandId,
+              },
+            });
+            return;
+          }
+          if (
+            actionReceiptCommandId &&
+            !room.reserveActionMutation(
+              identity.accountId,
+              playerAction.success ? 'submit' : 'edit',
+            )
+          ) {
+            send({
+              seq: room.seq,
+              type: 'Error',
+              payload: {
+                code: 'RATE_LIMITED',
+                message: 'Too many requests. Try again later.',
+                actionId: actionReceiptCommandId,
+              },
+            });
+            return;
+          }
+          const actionReceiptSeq = actionReceiptCommandId
+            ? room.registerActionReceipt(
+                actionReceiptCommandId,
+                identity.accountId,
+              )
+            : undefined;
           chain = chain
             .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
-              if (ws.readyState === WebSocket.OPEN) return handle(data);
+              if (ws.readyState === WebSocket.OPEN)
+                return handle(data, undefined, actionReceiptSeq);
             })
-            .catch(() => {});
+            .catch(() => {
+              room.completeActionReceipt(actionReceiptSeq);
+            });
         };
         const writeChatGateLog = async (
           accountId: string,
@@ -442,6 +495,7 @@ export function installGateway(
         const handle = (
           data: import('ws').RawData,
           chatReceipt?: import('../room/Room.js').ChatReceipt,
+          actionReceiptSeq?: number,
         ) => {
           let parsed;
           try {
@@ -711,6 +765,157 @@ export function installGateway(
                 });
               });
           }
+          if (msg.type === 'ResolveNow') {
+            const resolve = ResolveNowSchema.safeParse(msg);
+            if (!resolve.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Resolve request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .resolveNow(identity.accountId)
+              .catch((error: unknown) => {
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : error instanceof RoomPausedError
+                          ? 'TABLE_PAUSED'
+                          : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can resolve now.'
+                        : error instanceof RoomPausedError
+                          ? 'Resume the table before resolving the round.'
+                          : 'Resolve request could not be accepted.',
+                    actionId: resolve.data.actionId,
+                  },
+                });
+              });
+          }
+          if (msg.type === 'ConfigureRoundTimer') {
+            const config = ConfigureRoundTimerSchema.safeParse(msg);
+            if (!config.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Round timer setting is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .configureRoundTimer(
+                identity.accountId,
+                config.data.payload.durationMs,
+              )
+              .catch((error: unknown) => {
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can configure the round timer.'
+                        : 'Round timer setting could not be accepted.',
+                    actionId: config.data.actionId,
+                  },
+                });
+              });
+          }
+          if (msg.type === 'EditAction') {
+            const edit = EditActionSchema.safeParse(msg);
+            if (!edit.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Edit request is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            // A retry of a committed edit is an idempotent no-op; do not invoke the judge again.
+            if (room.hasActionId(edit.data.actionId)) return;
+            return app.inputGate
+              .check({
+                text: edit.data.payload.text,
+                surface: 'player-action',
+                accountId: identity.accountId,
+                sessionId: identity.sessionId,
+              })
+              .then((decision) => {
+                if (decision === 'busy' || decision === 'limited') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: decision === 'limited' ? 'RATE_LIMITED' : 'BUSY',
+                      message: 'The game is busy. Try again shortly.',
+                      actionId: edit.data.actionId,
+                    },
+                  });
+                }
+                if (decision === 'block') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'CONTENT_REJECTED',
+                      message: 'That action cannot be sent.',
+                      actionId: edit.data.actionId,
+                    },
+                  });
+                }
+                return room
+                  .editAction(
+                    identity.accountId,
+                    edit.data.actionId,
+                    edit.data.payload.editedActionId,
+                    edit.data.payload.text,
+                    actionReceiptSeq,
+                  )
+                  .then((result) => {
+                    if (
+                      result === 'unknown_submission' ||
+                      result === 'round_closed'
+                    )
+                      send({
+                        seq: room.seq,
+                        type: 'Error',
+                        payload: {
+                          code: 'unknown_submission',
+                          message:
+                            result === 'round_closed'
+                              ? 'This round is already closed.'
+                              : 'This submission is no longer available.',
+                          actionId: edit.data.actionId,
+                        },
+                      });
+                  });
+              });
+          }
           if (msg.type === 'WithdrawAction') {
             const withdraw = WithdrawActionSchema.safeParse(msg);
             if (!withdraw.success) {
@@ -726,19 +931,29 @@ export function installGateway(
               return;
             }
             return room
-              .withdrawAction(
+              .withdrawRoundAction(
                 identity.accountId,
+                withdraw.data.actionId,
                 withdraw.data.payload.withdrawnActionId,
               )
-              .then((withdrawn) => {
-                if (!withdrawn)
+              .then((result) => {
+                if (
+                  result === 'unknown_submission' ||
+                  result === 'round_closed' ||
+                  result === 'limited'
+                )
                   send({
                     seq: room.seq,
                     type: 'Error',
                     payload: {
-                      code: 'NOT_WITHDRAWABLE',
-                      message: 'This action can no longer be withdrawn.',
-                      actionId: withdraw.data.payload.withdrawnActionId,
+                      code: result === 'limited' ? 'RATE_LIMITED' : result,
+                      message:
+                        result === 'limited'
+                          ? 'Too many requests. Try again later.'
+                          : result === 'round_closed'
+                            ? 'This round is already closed.'
+                            : 'This submission is no longer available.',
+                      actionId: withdraw.data.actionId,
                     },
                   });
               });
@@ -842,14 +1057,24 @@ export function installGateway(
               ),
             ])
               .then(async ([allowed, name]) => {
-                if (allowed === 'busy') return 'busy' as const;
-                if (allowed === 'limited') return 'limited' as const;
-                if (allowed === 'block') return 'rejected' as const;
+                if (allowed === 'busy') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return 'busy' as const;
+                }
+                if (allowed === 'limited') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return 'limited' as const;
+                }
+                if (allowed === 'block') {
+                  room.completeActionReceipt(actionReceiptSeq);
+                  return 'rejected' as const;
+                }
                 return room.submitAction(
                   identity.accountId,
                   action.data.actionId,
                   action.data.payload.text,
                   name.rows[0]?.display_name ?? identity.accountId,
+                  actionReceiptSeq,
                 );
               })
               .then((accepted) => {
