@@ -605,6 +605,23 @@ describe('Room solo DM turn lifecycle', () => {
 });
 
 describe('Room commit safety', () => {
+  it('tolerates a persisted combat room without a combat tracker', async () => {
+    const { room } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+
+    await expect(
+      room.persistGameState({
+        combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+      }),
+    ).resolves.toBeUndefined();
+    expect(room.clientState().gameState).toMatchObject({
+      combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+    });
+  });
+
   it('redacts private opt-outs from StateSync in a lobby without game state', async () => {
     const { room } = setup({
       async run() {

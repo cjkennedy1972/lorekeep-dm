@@ -1676,7 +1676,7 @@ export class Room {
       !this.turnInFlight &&
       (!activeCombat ||
         activeCombat.ended ||
-        !activeCombat.combat.activeEntityId) &&
+        !activeCombat.combat?.activeEntityId) &&
       (!this.state.round || this.state.round.status === 'resolved')
     )
       await this.admitApprovedLateJoins();
