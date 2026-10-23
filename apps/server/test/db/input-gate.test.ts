@@ -72,7 +72,8 @@ async function openSocket(token: string) {
     },
     body: JSON.stringify({ sessionId }),
   });
-  const result = (await res.json()) as { ticket: string };
+  const result = (await res.json()) as { ticket: string; resumeToken?: string };
+  if (result.resumeToken) resumeTokens.set(token, result.resumeToken);
   const ticket = result.ticket;
   const ws = new WebSocket(
     `${base.replace('http', 'ws')}/ws?ticket=${ticket}`,

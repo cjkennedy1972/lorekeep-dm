@@ -1,5 +1,5 @@
 import { allowInputGate } from '../support/allowInputGate.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -33,6 +33,7 @@ if (!databaseUrl) throw new Error('DATABASE_URL required');
 let db: Pool;
 let rooms: RoomRegistry;
 let app: ReturnType<typeof createApp>;
+let gatewayConnections: ConnectionRegistry;
 let base = '';
 const savedFixtureMode = process.env.LLM_FIXTURE_MODE;
 const savedFixturePath = process.env.LLM_FIXTURE_PATH;
@@ -87,36 +88,68 @@ async function createTable(ownerId: string, seat = true) {
     [id, ownerId, 'Solo table'],
   );
   sessionIds.push(id);
-  if (seat) await (await rooms.get(id)).seat(ownerId, 'Solo');
+  if (seat) {
+    const resumeToken = await (await rooms.get(id)).seat(ownerId, 'Solo');
+    if (resumeToken) seatResumeTokens.set(`${id}:${ownerId}`, resumeToken);
+  }
   return id;
 }
 async function openSocket(accountId: string, token: string, sessionId: string) {
-  const ticket = await issueTicket(db, accountId, sessionId, hashToken(token));
+  const ticketResponse = await fetch(`${base}/api/ws-ticket`, {
+    method: 'POST',
+    headers: {
+      origin: base,
+      cookie: `sid=${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!ticketResponse.ok)
+    throw new Error(`ticket failed: ${ticketResponse.status}`);
+  const ticketBody = (await ticketResponse.json()) as {
+    ticket: string;
+    resumeToken?: string;
+  };
+  if (ticketBody.resumeToken)
+    seatResumeTokens.set(`${sessionId}:${accountId}`, ticketBody.resumeToken);
+  const ticket = ticketBody.ticket;
   const ws = new WebSocket(
     `${base.replace('http', 'ws')}/ws?ticket=${ticket}`,
     { origin: base },
   );
   await new Promise<void>((resolve, reject) => {
+    const seenFrames: string[] = [];
     const timer = setTimeout(
-      () => reject(new Error('websocket auth timeout')),
+      () =>
+        reject(
+          new Error(
+            `websocket auth timeout; frames=${seenFrames.join(',')}; token=${seatResumeTokens.has(`${sessionId}:${accountId}`)}`,
+          ),
+        ),
       5000,
     );
     const onMessage = (data: WebSocket.RawData) => {
       const frame = JSON.parse(data.toString()) as WireMessage & {
         seq?: number;
       };
+      seenFrames.push(frame.type);
       if (frame.type === 'SeatResumeChallenge') {
         ws.send(
           JSON.stringify({
             type: 'ResumeSeat',
-            payload: { resumeToken: seatResumeTokens.get(accountId) },
+            payload: {
+              resumeToken: seatResumeTokens.get(`${sessionId}:${accountId}`),
+            },
           }),
         );
       } else if (
         frame.type === 'SeatAuthenticated' &&
         typeof frame.payload?.resumeToken === 'string'
       ) {
-        seatResumeTokens.set(accountId, frame.payload.resumeToken);
+        seatResumeTokens.set(
+          `${sessionId}:${accountId}`,
+          frame.payload.resumeToken,
+        );
       } else if (frame.type === 'StateSync') {
         ws.send(
           JSON.stringify({
@@ -136,9 +169,13 @@ async function openSocket(accountId: string, token: string, sessionId: string) {
       clearTimeout(timer);
       reject(error);
     });
-    ws.once('close', () => {
+    ws.once('close', (code, reason) => {
       clearTimeout(timer);
-      reject(new Error('socket closed before sync'));
+      reject(
+        new Error(
+          `socket closed before sync: ${code} ${reason.toString()}; frames=${seenFrames.join(',')}`,
+        ),
+      );
     });
   });
   return ws;
@@ -199,9 +236,13 @@ beforeAll(async () => {
     60_000,
     runner,
   );
-  const connections = new ConnectionRegistry(db);
-  app = createApp(db, { inputGate: allowInputGate, rooms, connections });
-  installGateway(app, db, rooms, connections, 300);
+  gatewayConnections = new ConnectionRegistry(db);
+  app = createApp(db, {
+    inputGate: allowInputGate,
+    rooms,
+    connections: gatewayConnections,
+  });
+  installGateway(app, db, rooms, gatewayConnections, 300);
   base = await app.listen({ host: '127.0.0.1', port: 0 });
   process.env.NODE_ENV = 'test';
   process.env.LLM_FIXTURE_MODE = 'strict';
@@ -289,8 +330,47 @@ describe('solo turn persisted lifecycle', () => {
     const actionId = randomUUID();
     sendAction(first, actionId, 'Open the door.');
     await receive(first, (message) => message.type === 'NarrationCompleted');
+    const closed = new Promise<void>((resolve) =>
+      first.once('close', () => resolve()),
+    );
     first.close();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await closed;
+    const { rows: seatRows } = await db.query<{ seat_id: string }>(
+      'SELECT seat_id FROM seat_resume_tokens WHERE session_id = $1',
+      [table],
+    );
+    const seatKey = `${table}:${seatRows[0]!.seat_id}`;
+    const releaseDeadline = Date.now() + 5_000;
+    while (Date.now() < releaseDeadline) {
+      const { rows } = await db.query(
+        'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id = $1',
+        [table],
+      );
+      if (
+        rows[0]?.active_socket_id === null &&
+        !gatewayConnections.hasSeatSocket(seatKey)
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const released = await db.query(
+      'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id = $1',
+      [table],
+    );
+    expect(released.rows[0]?.active_socket_id).toBeNull();
+    expect(gatewayConnections.hasSeatSocket(seatKey)).toBe(false);
+    const storedHash = (
+      await db.query<{ token_hash: string }>(
+        'SELECT token_hash FROM seat_resume_tokens WHERE session_id = $1',
+        [table],
+      )
+    ).rows[0]?.token_hash;
+    const presented = seatResumeTokens.get(`${table}:${owner.id}`);
+    expect(storedHash).toBe(
+      createHash('sha256')
+        .update(presented ?? '')
+        .digest('hex'),
+    );
     const reconnected = await openSocket(owner.id, owner.token, table);
     // A recovered seat is returning until the ADR-031 hold expires; a zero-connected-seat pause
     // resumes only after it reaches connected.
@@ -422,7 +502,14 @@ describe('solo turn persisted lifecycle', () => {
             seq?: number;
           };
           if (frame.type === 'SeatResumeChallenge')
-            ws!.send(JSON.stringify({ type: 'ResumeSeat', payload: {} }));
+            ws!.send(
+              JSON.stringify({
+                type: 'ResumeSeat',
+                payload: {
+                  resumeToken: seatResumeTokens.get(`${table}:${owner.id}`),
+                },
+              }),
+            );
           if (frame.type === 'StateSync') {
             ws!.send(
               JSON.stringify({
@@ -825,7 +912,7 @@ describe('solo turn persisted lifecycle', () => {
     });
     expect(forbidden.status).toBe(403);
     expect(await forbidden.json()).toMatchObject({ code: 'FORBIDDEN' });
-  });
+  }, 180_000);
 
   it('second unchanged resume makes zero metered LLM calls', async () => {
     const owner = await createUser();

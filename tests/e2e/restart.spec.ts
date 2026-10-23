@@ -35,8 +35,8 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
   );
   try {
     const sync = await recovered.waitFor((m) => m.type === 'StateSync', 3_000);
-    // Successful authentication records SeatTakenOver after the durable snapshot.
-    expect(sync.seq).toBe(Number(expected.seq) + 1);
+    // A normal restart return is not a displacement, so it adds no takeover event.
+    expect(sync.seq).toBe(Number(expected.seq));
     const clientSeat = (seat: Record<string, unknown>) =>
       Object.fromEntries(
         Object.entries(seat).filter(([key]) => key !== 'matureOptOut'),

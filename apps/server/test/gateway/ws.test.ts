@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { WebSocket } from 'ws';
 import {
   ClientEnvelopeSchema,
   KickSeatSchema,
@@ -71,6 +72,36 @@ describe('gateway envelope', () => {
     expect(consumeMessageToken(bucket, 1000)).toBe(false);
     expect(consumeMessageToken(bucket, 1100)).toBe(true);
     expect(consumeMessageToken(bucket, 1100)).toBe(false);
+  });
+
+  it('replaces an in-memory socket only after the caller validates the seat token', () => {
+    const registry = new ConnectionRegistry({
+      query: async () => ({ rows: [] }),
+    } as never);
+    const oldSocket = {
+      readyState: 1,
+      close: vi.fn(),
+    } as unknown as WebSocket;
+    const newSocket = {
+      readyState: 1,
+      close: vi.fn(),
+    } as unknown as WebSocket;
+    expect(registry.reserveSeat('session:seat', oldSocket)).toEqual({
+      reserved: true,
+      takenOver: false,
+    });
+    registry.add(oldSocket, 'auth-hash', 'session:seat');
+    expect(registry.reserveSeat('session:seat', newSocket)).toEqual({
+      reserved: false,
+      takenOver: false,
+    });
+    expect(oldSocket.close).not.toHaveBeenCalled();
+    expect(registry.reserveSeat('session:seat', newSocket, true)).toEqual({
+      reserved: true,
+      takenOver: true,
+    });
+    expect(oldSocket.close).toHaveBeenCalledOnce();
+    expect(registry.hasSeatSocket('session:seat')).toBe(false);
   });
   it('limits socket authentication attempts per seat, account, and IP', () => {
     const registry = new ConnectionRegistry({

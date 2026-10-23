@@ -61,6 +61,7 @@ export function createRoomClient(opts: RoomClientOptions) {
   let attempt = 0;
   let resumeToken: string | undefined;
   let pendingClaimId: string | undefined;
+  let authenticatedSeatId: string | undefined;
   try {
     resumeToken =
       globalThis.localStorage?.getItem(
@@ -112,6 +113,8 @@ export function createRoomClient(opts: RoomClientOptions) {
       return;
     }
     if (msg.type === 'SeatAuthenticated') {
+      if (typeof msg.payload.seatId === 'string')
+        authenticatedSeatId = msg.payload.seatId;
       const nextToken = msg.payload.resumeToken;
       if (typeof nextToken === 'string') {
         resumeToken = nextToken;
@@ -138,6 +141,14 @@ export function createRoomClient(opts: RoomClientOptions) {
     ) {
       stopped = true;
       pendingClaimId = undefined;
+      resumeToken = undefined;
+      try {
+        globalThis.localStorage?.removeItem(
+          `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+        );
+      } catch {
+        /* The denied claim is closed even if browser storage is unavailable. */
+      }
       set({
         status: 'closed',
         error: 'The host did not approve this device claim.',
@@ -148,6 +159,22 @@ export function createRoomClient(opts: RoomClientOptions) {
     opts.onMessage?.(msg);
     const wasResync = snap.needsResync;
     const next = roomReducer(snap, msg);
+    if (
+      msg.type === 'StateSync' &&
+      authenticatedSeatId &&
+      !next.room?.seats.some((seat) => seat.seatId === authenticatedSeatId)
+    ) {
+      resumeToken = undefined;
+      try {
+        globalThis.localStorage?.removeItem(
+          `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+        );
+      } catch {
+        /* Revocation is enforced by the server even when storage is unavailable. */
+      }
+      stopped = true;
+      socket?.close();
+    }
     set({
       ...next,
       error: msg.type === 'Error' ? msg.payload.message : snap.error,
@@ -175,8 +202,26 @@ export function createRoomClient(opts: RoomClientOptions) {
         }),
       });
       if (!res.ok) throw new Error(`ticket ${res.status}`);
-      const body = (await res.json()) as { ticket: string };
+      const body = (await res.json()) as {
+        ticket: string;
+        resumeToken?: string;
+      };
       const { ticket } = body;
+      const ticketResumeToken = body.resumeToken;
+      if (
+        typeof ticketResumeToken === 'string' &&
+        ticketResumeToken.length > 0
+      ) {
+        resumeToken = ticketResumeToken;
+        try {
+          globalThis.localStorage?.setItem(
+            `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+            ticketResumeToken,
+          );
+        } catch {
+          /* The current attempt still carries the token in memory. */
+        }
+      }
       if (stopped) return;
       const url = new URL('/ws', opts.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';

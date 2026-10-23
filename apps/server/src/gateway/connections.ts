@@ -2,6 +2,11 @@ import type { Pool } from 'pg';
 import type { WebSocket } from 'ws';
 
 export const REVOKED_CODE = 4401;
+
+export interface SeatReservationResult {
+  reserved: boolean;
+  takenOver: boolean;
+}
 /** Open sockets keyed by the auth session that minted their ticket. `sweep` closes any whose session/account is no longer valid. */
 export class ConnectionRegistry {
   private readonly sockets = new Map<
@@ -15,17 +20,28 @@ export class ConnectionRegistry {
   private readonly ipAuthAttempts = new Map<string, number[]>();
   private lastSweep = 0;
   constructor(private readonly db: Pick<Pool, 'query'>) {}
-  reserveSeat(seatKey: string, ws: WebSocket): boolean {
+  reserveSeat(
+    seatKey: string,
+    ws: WebSocket,
+    tokenValidated = false,
+  ): SeatReservationResult {
+    let takenOver = false;
     const current = this.seatSockets.get(seatKey);
     if (current) {
       const details = this.sockets.get(current);
-      if (details && Date.now() - details.lastPongAt < 15_000) return false;
+      const live =
+        current.readyState === 1 &&
+        details !== undefined &&
+        Date.now() - details.lastPongAt < 15_000;
+      if (live && !tokenValidated) return { reserved: false, takenOver: false };
+      takenOver = live && tokenValidated;
       current.close(REVOKED_CODE, 'Seat socket declared lost');
       this.remove(current);
     }
-    if (this.seatReservations.has(seatKey)) return false;
+    if (this.seatReservations.has(seatKey))
+      return { reserved: false, takenOver: false };
     this.seatReservations.set(seatKey, ws);
-    return true;
+    return { reserved: true, takenOver };
   }
   consumeSeatAuthAttempt(seatKey: string, now = Date.now()): boolean {
     const active = (this.seatAuthAttempts.get(seatKey) ?? []).filter(

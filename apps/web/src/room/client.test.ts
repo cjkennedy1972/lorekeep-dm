@@ -171,3 +171,50 @@ test('a not-seated close is neutral: no removal, no reconnect loop, manual rejoi
   expect(sockets.length).toBe(opened + 1);
   client.stop();
 });
+
+test('clears a stored resume token after the host denies its claim', async () => {
+  const values = new Map<string, string>([
+    ['lorekeep.seat-resume-token:denied-claim', 'stale-token'],
+  ]);
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  });
+  const client = createRoomClient({
+    baseUrl: base,
+    sessionId: 'denied-claim',
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+  });
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  const ws = sockets.at(-1)!;
+  ws.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        seq: client.getSnapshot().lastSeq,
+        type: 'SeatClaimPending',
+        payload: { claimId: 'claim-1' },
+      }),
+    ),
+    false,
+  );
+  ws.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        seq: client.getSnapshot().lastSeq,
+        type: 'SeatClaimDenied',
+        payload: { claimId: 'claim-1' },
+      }),
+    ),
+    false,
+  );
+  await vi.waitFor(() =>
+    expect(values.has('lorekeep.seat-resume-token:denied-claim')).toBe(false),
+  );
+  client.stop();
+  vi.unstubAllGlobals();
+});

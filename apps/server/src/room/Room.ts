@@ -105,6 +105,7 @@ type GatedRoundMutation =
 
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
+  createSeatResumeToken?(sessionId: string, seatId: string): Promise<string>;
   persistRegistryEvents?(
     sessionId: string,
     events: readonly RegistryEvent[],
@@ -227,6 +228,7 @@ export class RoomSeatRequiredError extends Error {
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
+  private readonly pendingSeatResumeTokens = new Map<string, string>();
   private readonly presenceTimers = new Map<string, NodeJS.Timeout>();
   private readonly pendingPresenceEvents = new Map<
     string,
@@ -590,7 +592,10 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: this.clientSyncPayload(),
+          payload: {
+            ...this.clientSyncPayload(),
+            state: this.clientState(accountId),
+          },
         });
       this.sendCombatSnapshot(connection);
       for (const [actionId, open] of Object.entries(
@@ -729,7 +734,7 @@ export class Room {
   }
 
   /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */
-  clientState(): RoomState {
+  clientState(viewerAccountId?: string): RoomState {
     const seats = this.state.seats.map((seat) => {
       const clientSeat = { ...seat };
       if (
@@ -748,6 +753,13 @@ export class Room {
       return clientSeat;
     });
     const clientVisibleState = { ...this.state, revokedSeats };
+    if (
+      viewerAccountId !== undefined &&
+      !this.state.seats.some(
+        (seat) => seat.accountId === viewerAccountId && seat.isHost,
+      )
+    )
+      delete clientVisibleState.lateJoinRequests;
     delete clientVisibleState.round;
     delete clientVisibleState.closedRoundSubmissions;
     if (clientVisibleState.restVote) {
@@ -855,6 +867,12 @@ export class Room {
           matureOptOut,
         };
         await this.persist('SeatJoined', seat);
+        const resumeToken = await this.store.createSeatResumeToken?.(
+          this.sessionId,
+          seat.seatId,
+        );
+        if (resumeToken)
+          this.pendingSeatResumeTokens.set(accountId, resumeToken);
         this.broadcast({
           seq: this.seq,
           type: 'StateSync',
@@ -906,7 +924,7 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.clientState() },
+          payload: { state: this.clientState(accountId) },
         });
       this.sendCombatSnapshot(connection);
       this.sendRoundSnapshot(connection);
@@ -918,12 +936,16 @@ export class Room {
     accountId: string,
     displayName: string,
     matureOptOut = false,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     return this.enqueue(async () => {
-      if (this.state.seats.some((item) => item.accountId === accountId)) return;
+      const existing = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (existing) return this.pendingSeatResumeTokens.get(accountId);
       if (this.state.seats.length >= 6) throw new Error('Room is full');
+      const seatId = randomUUID();
       await this.persist('SeatJoined', {
-        seatId: randomUUID(),
+        seatId,
         accountId,
         displayName,
         presence: 'offline',
@@ -933,12 +955,26 @@ export class Room {
         chatMuted: false,
         matureOptOut,
       });
+      const resumeToken = await this.store.createSeatResumeToken?.(
+        this.sessionId,
+        seatId,
+      );
+      if (resumeToken) this.pendingSeatResumeTokens.set(accountId, resumeToken);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
         payload: this.clientSyncPayload(),
       });
+      return resumeToken;
     });
+  }
+
+  pendingSeatResumeToken(accountId: string): string | undefined {
+    return this.pendingSeatResumeTokens.get(accountId);
+  }
+
+  completeSeatResumeTokenDelivery(accountId: string): void {
+    this.pendingSeatResumeTokens.delete(accountId);
   }
 
   isCurrentConnection(accountId: string, connection: Connection): boolean {
@@ -2308,6 +2344,12 @@ export class Room {
         matureOptOut: request.matureOptOut ?? false,
       };
       await this.persist('SeatJoined', seat);
+      const resumeToken = await this.store.createSeatResumeToken?.(
+        this.sessionId,
+        seat.seatId,
+      );
+      if (resumeToken)
+        this.pendingSeatResumeTokens.set(request.accountId, resumeToken);
       await this.persist('LateJoinAdmitted', {
         requestId: request.requestId,
         seatId: seat.seatId,
@@ -4037,6 +4079,14 @@ export class Room {
   }
 
   private broadcast(message: ServerMessage): void {
+    if (message.type === 'StateSync') {
+      for (const [accountId, connection] of this.connections)
+        connection.send({
+          ...message,
+          payload: { state: this.clientState(accountId) },
+        });
+      return;
+    }
     for (const connection of this.connections.values())
       connection.send(message);
   }

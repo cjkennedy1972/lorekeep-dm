@@ -79,10 +79,11 @@ class Stack {
 
 class Client {
   log: Wire[] = [];
-  private static resumeTokens = new Map<string, string>();
+  static resumeTokens = new Map<string, string>();
   private constructor(
     readonly ws: WebSocket,
     private readonly accountId: string,
+    private readonly tableId: string,
   ) {
     ws.on('message', (data) => {
       const frame = JSON.parse(data.toString()) as Wire;
@@ -91,14 +92,19 @@ class Client {
         ws.send(
           JSON.stringify({
             type: 'ResumeSeat',
-            payload: { resumeToken: Client.resumeTokens.get(accountId) },
+            payload: {
+              resumeToken: Client.resumeTokens.get(`${tableId}:${accountId}`),
+            },
           }),
         );
       if (
         frame.type === 'SeatAuthenticated' &&
         typeof frame.payload?.resumeToken === 'string'
       )
-        Client.resumeTokens.set(accountId, frame.payload.resumeToken);
+        Client.resumeTokens.set(
+          `${this.tableId}:${accountId}`,
+          frame.payload.resumeToken,
+        );
       if (frame.type === 'StateSync')
         ws.send(
           JSON.stringify({
@@ -122,7 +128,7 @@ class Client {
         origin: s.base,
       },
     );
-    const client = new Client(ws, user.id);
+    const client = new Client(ws, user.id, table);
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => resolve());
       ws.once('error', reject);
@@ -227,7 +233,8 @@ async function seedTable(
   );
   sessionIds.push(table);
   const room = await s.rooms.get(table);
-  await room.seat(owner.id, 'Aria');
+  const resumeToken = await room.seat(owner.id, 'Aria');
+  if (resumeToken) Client.resumeTokens.set(`${table}:${owner.id}`, resumeToken);
   const gameState = game(owner.id);
   await room.persistGameState(gameState);
   return table;
@@ -277,7 +284,10 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     const host = await newUser();
     const guest = await newUser();
     const table = await seedTable(stack, host, preCombat);
-    await (await stack.rooms.get(table)).seat(guest.id, 'Guest');
+    const guestToken = await (
+      await stack.rooms.get(table)
+    ).seat(guest.id, 'Guest');
+    if (guestToken) Client.resumeTokens.set(`${table}:${guest.id}`, guestToken);
     const h = await Client.open(stack, host, table);
     const g = await Client.open(stack, guest, table);
 

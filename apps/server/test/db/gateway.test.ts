@@ -8,7 +8,11 @@ import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { consumeTicket, issueTicket } from '../../src/gateway/tickets.js';
-import { authorizeSeatSocket } from '../../src/gateway/resumeTokens.js';
+import {
+  authorizeSeatSocket,
+  commitSeatResumeToken,
+  releaseSeatSocket,
+} from '../../src/gateway/resumeTokens.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
@@ -33,6 +37,7 @@ let tokens: string[];
 const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
 const resumeTokens = new Map<string, string>();
 const ticketOwners = new Map<string, string>();
+const seenMessageTypes = new WeakMap<WebSocket, string[]>();
 async function next(
   ws: WebSocket,
   timeoutMs = 3000,
@@ -103,17 +108,19 @@ async function ticket(token: string) {
   ticketOwners.set(body.ticket, token);
   return body.ticket;
 }
-function connect(t: string, proofOverride?: string) {
+function connect(t: string, proofOverride?: string, saveResumeToken = true) {
   const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
     origin: base,
   });
   inboxes.set(ws, on(ws, 'message'));
+  seenMessageTypes.set(ws, []);
   ws.on('message', (raw) => {
     const message = JSON.parse(String(raw)) as {
       type?: string;
       seq?: number;
       payload?: { resumeToken?: string };
     };
+    seenMessageTypes.get(ws)!.push(message.type ?? 'unknown');
     if (message.type === 'SeatResumeChallenge')
       ws.send(
         JSON.stringify({
@@ -126,7 +133,8 @@ function connect(t: string, proofOverride?: string) {
       );
     if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken) {
       const owner = ticketOwners.get(t);
-      if (owner) resumeTokens.set(owner, message.payload.resumeToken);
+      if (saveResumeToken && owner)
+        resumeTokens.set(owner, message.payload.resumeToken);
     }
     if (message.type === 'StateSync')
       ws.send(
@@ -159,6 +167,31 @@ beforeAll(async () => {
   tokens = await Promise.all(
     accounts.map((id) => createSession(db, id, 'test')),
   );
+  for (let i = 0; i < accounts.length; i++) {
+    const seat = (await rooms.get(sessionId)).state.seats.find(
+      (candidate) => candidate.accountId === accounts[i],
+    )!;
+    const socketId = randomUUID();
+    const authorization = await authorizeSeatSocket(
+      db,
+      sessionId,
+      seat.seatId,
+      socketId,
+      undefined,
+      true,
+    );
+    if (authorization.status !== 'authorized')
+      throw new Error('failed to prepare approved test seat');
+    resumeTokens.set(tokens[i]!, authorization.resumeToken);
+    await commitSeatResumeToken(
+      db,
+      sessionId,
+      seat.seatId,
+      socketId,
+      authorization.resumeToken,
+    );
+    await releaseSeatSocket(db, sessionId, seat.seatId, socketId);
+  }
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   base = address;
 });
@@ -169,6 +202,82 @@ afterAll(async () => {
   await db.end();
 });
 describe('one-time gateway', () => {
+  it('creates a resume-token row whenever a seat is created', async () => {
+    const createdSession = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      createdSession,
+      accounts[0],
+    ]);
+    const room = await rooms.get(createdSession);
+    const issuedToken = await room.seat(accounts[0], 'Token row player');
+    expect(issuedToken).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    const seatId = room.state.seats[0]!.seatId;
+    const result = await db.query<{ token_hash: string }>(
+      'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [createdSession, seatId],
+    );
+    expect(result.rowCount).toBe(1);
+    expect(result.rows[0]?.token_hash).toBe(
+      createHash('sha256').update(issuedToken!).digest('hex'),
+    );
+    expect(room.pendingSeatResumeToken(accounts[0])).toBe(issuedToken);
+    expect(
+      await authorizeSeatSocket(
+        db,
+        createdSession,
+        seatId,
+        randomUUID(),
+        undefined,
+      ),
+    ).toEqual({ status: 'invalid-token' });
+    const accepted = await authorizeSeatSocket(
+      db,
+      createdSession,
+      seatId,
+      randomUUID(),
+      issuedToken,
+    );
+    expect(accepted).toMatchObject({ status: 'authorized' });
+  });
+  it('refuses a ticket-only socket for a seat without a resume-token row', async () => {
+    const seatId = (await rooms.get(sessionId)).state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    await db.query(
+      'DELETE FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [sessionId, seatId],
+    );
+    const result = await authorizeSeatSocket(
+      db,
+      sessionId,
+      seatId,
+      randomUUID(),
+      undefined,
+    );
+    expect(result).toEqual({ status: 'invalid-token' });
+    // Restore fixture state through the same host-approved recovery path.
+    const socketId = randomUUID();
+    const recovered = await authorizeSeatSocket(
+      db,
+      sessionId,
+      seatId,
+      socketId,
+      undefined,
+      true,
+    );
+    expect(recovered).toMatchObject({ status: 'authorized' });
+    if (recovered.status === 'authorized') {
+      resumeTokens.set(tokens[0]!, recovered.resumeToken);
+      await commitSeatResumeToken(
+        db,
+        sessionId,
+        seatId,
+        socketId,
+        recovered.resumeToken,
+      );
+    }
+    await releaseSeatSocket(db, sessionId, seatId, socketId);
+  });
   it('requires and rotates the per-seat resume token', async () => {
     const firstTicket = await ticket(tokens[0]);
     expect(firstTicket).toBeTruthy();
@@ -188,6 +297,7 @@ describe('one-time gateway', () => {
     const second = connect(secondTicket);
     await nextOfType(second, 'SeatAuthenticated');
     await nextOfType(second, 'StateSync');
+    expect(seenMessageTypes.get(second)).not.toContain('SeatTakenOver');
     const rotated = resumeTokens.get(tokens[0])!;
     expect(rotated).not.toBe(current);
     await closeSocket(second);
@@ -203,6 +313,36 @@ describe('one-time gateway', () => {
     );
     expect(staleAuth).toMatchObject({ status: 'invalid-token' });
   });
+  it('keeps pending late-join identity details host-only', async () => {
+    const host = connect(await ticket(tokens[0]));
+    const guest = connect(await ticket(tokens[1]));
+    await nextOfType(host, 'StateSync');
+    await nextOfType(guest, 'StateSync');
+    const requestAccountId = randomUUID();
+    await (
+      await rooms.get(sessionId)
+    ).requestLateJoin(requestAccountId, 'Private requester name');
+    let hostSync: Awaited<ReturnType<typeof nextOfType>>;
+    do {
+      hostSync = await nextOfType(host, 'StateSync');
+    } while (
+      !hostSync.payload.state.lateJoinRequests?.some(
+        (request) => request.accountId === requestAccountId,
+      )
+    );
+    const guestSync = await nextOfType(guest, 'StateSync');
+    expect(guestSync.payload.state).not.toHaveProperty('lateJoinRequests');
+    await Promise.all([closeSocket(host), closeSocket(guest)]);
+    await Promise.all(
+      [accounts[0], accounts[1]].map(async (accountId) => {
+        const seatId = (await rooms.get(sessionId)).state.seats.find(
+          (seat) => seat.accountId === accountId,
+        )!.seatId;
+        await waitForReleasedSocket(seatId);
+      }),
+    );
+  });
+
   it('requires live host approval for a lost-token claim and rotates on grant', async () => {
     const host = connect(await ticket(tokens[0]));
     await nextOfType(host, 'StateSync');
@@ -231,7 +371,14 @@ describe('one-time gateway', () => {
     await nextOfType(claimant, 'SeatAuthenticated');
     expect(resumeTokens.get(tokens[1])).not.toBe(previous);
     await Promise.all([closeSocket(claimant), closeSocket(host)]);
-    await waitForReleasedSocket(claimantSeatId);
+    await Promise.all([
+      waitForReleasedSocket(claimantSeatId),
+      waitForReleasedSocket(
+        (await rooms.get(sessionId)).state.seats.find(
+          (seat) => seat.accountId === accounts[0],
+        )!.seatId,
+      ),
+    ]);
   });
   it('enforces expiry, scope and atomic reuse', async () => {
     const t = await issueTicket(
@@ -336,14 +483,16 @@ describe('one-time gateway', () => {
       accounts[0],
     ]);
     const room = await rooms.get(revokedSessionId);
-    await room.seat(accounts[0], 'Player 0');
+    const initialResumeToken = await room.seat(accounts[0], 'Player 0');
+    expect(initialResumeToken).toBeTruthy();
     const revokedTicket = await issueTicket(
       db,
       accounts[0],
       revokedSessionId,
       hashToken(tokens[0]),
     );
-    const host = connect(revokedTicket);
+    ticketOwners.set(revokedTicket, tokens[0]);
+    const host = connect(revokedTicket, initialResumeToken, false);
     await nextOfType(host, 'StateSync');
     const seat = room.state.seats.find(
       (candidate) => candidate.accountId === accounts[0],
@@ -476,5 +625,13 @@ describe('one-time gateway', () => {
       ]),
     ).toMatchObject({ rowCount: 0 });
     await Promise.all([closeSocket(host), closeSocket(guest)]);
+    await Promise.all(
+      [accounts[0], accounts[1]].map(async (accountId) => {
+        const seatId = (await rooms.get(sessionId)).state.seats.find(
+          (seat) => seat.accountId === accountId,
+        )!.seatId;
+        await waitForReleasedSocket(seatId);
+      }),
+    );
   });
 });

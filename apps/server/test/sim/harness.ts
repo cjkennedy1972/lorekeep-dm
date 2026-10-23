@@ -173,7 +173,7 @@ export class SimTable {
   async ticket(
     token: string,
     sessionId: string,
-  ): Promise<{ ticket: string } | undefined> {
+  ): Promise<{ ticket: string; resumeToken?: string } | undefined> {
     const res = await fetch(`${this.base}/api/ws-ticket`, {
       method: 'POST',
       headers: {
@@ -184,7 +184,7 @@ export class SimTable {
       body: JSON.stringify({ sessionId }),
     });
     if (res.status !== 200) return undefined;
-    return (await res.json()) as { ticket: string };
+    return (await res.json()) as { ticket: string; resumeToken?: string };
   }
 
   async stop(): Promise<void> {
@@ -224,6 +224,7 @@ export class SimClient {
       this.table.sessionId,
     );
     if (!ticketResult) return 1008;
+    if (ticketResult.resumeToken) this.resumeToken = ticketResult.resumeToken;
     const socket = new WebSocket(
       `${this.table.wsBase}/ws?ticket=${ticketResult.ticket}`,
       {

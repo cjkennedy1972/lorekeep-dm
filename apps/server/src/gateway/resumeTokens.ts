@@ -5,7 +5,7 @@ const hash = (token: string) =>
   createHash('sha256').update(token).digest('hex');
 
 export type SeatSocketAuthorization =
-  | { status: 'authorized'; resumeToken: string; takenOver: boolean }
+  | { status: 'authorized'; resumeToken: string }
   | { status: 'active-socket' | 'invalid-token' };
 
 /** Atomically checks the current seat token and claims its sole controlling socket. */
@@ -29,24 +29,23 @@ export async function authorizeSeatSocket(
       token_hash: string;
       active_socket_id: string | null;
       heartbeat_at: Date | null;
+      socket_live: boolean;
     }>(
-      `SELECT token_hash,active_socket_id,heartbeat_at
+      `SELECT token_hash,active_socket_id,heartbeat_at,
+              (active_socket_id IS NOT NULL AND heartbeat_at > clock_timestamp() - interval '15 seconds') AS socket_live
          FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2 FOR UPDATE`,
       [sessionId, seatId],
     );
     const row = result.rows[0];
-    if (
-      row?.active_socket_id &&
-      row.heartbeat_at &&
-      Date.now() - row.heartbeat_at.getTime() < 15_000
-    ) {
+    if (row?.socket_live) {
       await client.query('ROLLBACK');
       return { status: 'active-socket' };
     }
+    // A missing row is not a first-use bootstrap path: legacy or otherwise
+    // uninitialized seats must use the host-approved recovery flow.
     if (
-      row &&
       !hostApprovedClaim &&
-      (!presentedToken || hash(presentedToken) !== row.token_hash)
+      (!row || !presentedToken || hash(presentedToken) !== row.token_hash)
     ) {
       await client.query('ROLLBACK');
       return { status: 'invalid-token' };
@@ -55,22 +54,37 @@ export async function authorizeSeatSocket(
     await client.query(
       `INSERT INTO seat_resume_tokens
          (session_id,seat_id,token_hash,rotated_at,active_socket_id,heartbeat_at)
-       VALUES($1,$2,$3,clock_timestamp(),$4,clock_timestamp())
+       VALUES($1,$2,md5(random()::text || clock_timestamp()::text),clock_timestamp(),$3,clock_timestamp())
        ON CONFLICT(session_id,seat_id) DO UPDATE SET
-         token_hash=EXCLUDED.token_hash,
-         rotated_at=EXCLUDED.rotated_at,
          active_socket_id=EXCLUDED.active_socket_id,
          heartbeat_at=EXCLUDED.heartbeat_at`,
-      [sessionId, seatId, hash(resumeToken), socketId],
+      [sessionId, seatId, socketId],
     );
     await client.query('COMMIT');
-    return { status: 'authorized', resumeToken, takenOver: Boolean(row) };
+    return { status: 'authorized', resumeToken };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
     throw error;
   } finally {
     client.release();
   }
+}
+
+/** Rotates only after the authenticated frame has been accepted by the socket. */
+export async function commitSeatResumeToken(
+  db: Pool,
+  sessionId: string,
+  seatId: string,
+  socketId: string,
+  resumeToken: string,
+): Promise<boolean> {
+  const result = await db.query(
+    `UPDATE seat_resume_tokens
+        SET token_hash=$4,rotated_at=clock_timestamp()
+      WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$3`,
+    [sessionId, seatId, socketId, hash(resumeToken)],
+  );
+  return result.rowCount === 1;
 }
 
 export async function releaseSeatSocket(

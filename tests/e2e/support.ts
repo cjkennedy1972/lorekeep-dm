@@ -298,8 +298,13 @@ export async function connectRoom(
   });
   if (!ticketResponse.ok)
     throw new Error(`Ticket request failed: ${ticketResponse.status}`);
-  const ticketBody = (await ticketResponse.json()) as { ticket: string };
+  const ticketBody = (await ticketResponse.json()) as {
+    ticket: string;
+    resumeToken?: string;
+  };
   const { ticket } = ticketBody;
+  if (ticketBody.resumeToken)
+    resumeTokens.set(resumeKey, ticketBody.resumeToken);
   const socketUrl =
     url.replace(/^http/, 'ws') + `/ws?sessionId=${roomId}&ticket=${ticket}`;
   const socket = new WebSocket(socketUrl, {

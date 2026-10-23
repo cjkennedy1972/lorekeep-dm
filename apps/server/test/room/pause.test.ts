@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Room, type Connection, type RoomStore } from '../../src/room/Room.js';
 import type { SoloTurnRequest, SoloTurnRunner } from '../../src/room/dmTurn.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
@@ -60,6 +60,35 @@ function setup(requests: SoloTurnRequest[], firstTurnGate?: Promise<void>) {
 }
 
 describe('table pause', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('restores control immediately while retaining the ten-second returning hold', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
+    const requests: SoloTurnRequest[] = [];
+    const { room } = setup(requests);
+    const owner = randomUUID();
+    const firstConnection = recorder();
+    await joinSeated(room, owner, firstConnection, 'Owner');
+    await room.disconnect(owner);
+
+    const returnedConnection = recorder();
+    const restore = room.join(owner, returnedConnection, 'Owner', false, -1, {
+      requireExistingSeat: true,
+    });
+    await restore;
+    expect(room.isCurrentConnection(owner, returnedConnection)).toBe(true);
+    expect(room.state.seats[0]?.presence).toBe('returning');
+
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(room.isCurrentConnection(owner, returnedConnection)).toBe(true);
+    expect(room.state.seats[0]?.presence).toBe('returning');
+    await vi.advanceTimersByTimeAsync(8_001);
+    expect(room.isCurrentConnection(owner, returnedConnection)).toBe(true);
+    expect(room.state.seats[0]?.presence).toBe('connected');
+    await room.drain();
+  });
+
   it('blocks the next narration while paused, across tiers', async () => {
     const requests: SoloTurnRequest[] = [];
     const { room } = setup(requests);

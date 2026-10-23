@@ -64,8 +64,9 @@ async function ticket(token: string) {
     body: JSON.stringify({ sessionId }),
   });
   expect(res.status).toBe(200);
-  const result = (await res.json()) as { ticket: string };
+  const result = (await res.json()) as { ticket: string; resumeToken?: string };
   ticketOwners.set(result.ticket, token);
+  if (result.resumeToken) resumeTokens.set(token, result.resumeToken);
   return result.ticket;
 }
 
