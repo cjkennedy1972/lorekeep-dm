@@ -45,16 +45,18 @@ export function createRoomClient(opts: RoomClientOptions) {
     listeners.forEach((l) => l());
   };
 
+  /** Returns the wire actionId so callers can match their own submission in round state, or false when offline. */
   const send = (type: string, payload: Record<string, unknown> = {}) => {
     if (socket?.readyState !== WS.OPEN) return false;
+    const actionId = crypto.randomUUID() as ClientEnvelope['actionId'];
     const env: ClientEnvelope = {
-      actionId: crypto.randomUUID() as ClientEnvelope['actionId'],
+      actionId,
       type,
       payload,
       lastSeq: snap.lastSeq,
     };
     socket.send(JSON.stringify(env));
-    return true;
+    return actionId;
   };
 
   const onMessage = (data: unknown) => {
