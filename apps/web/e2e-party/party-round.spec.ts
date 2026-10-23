@@ -365,6 +365,9 @@ test.describe.serial('party round and host panels (real server)', () => {
   test('host approves a pending late join and the player is seated', async ({
     browser,
   }) => {
+    // The invite join throttle allows 10 hits per IP and invite per 60 s, and the earlier specs in
+    // this serial suite share that budget. Wait for the window to clear so this join is not 429.
+    await new Promise((resolve) => setTimeout(resolve, 61_000));
     const { table, invite, outsider, guest } = state();
     const path = `/rooms/${table}/game`;
     const hostView = await openAs(browser, guest, table, path);
@@ -381,12 +384,18 @@ test.describe.serial('party round and host panels (real server)', () => {
       const controls = hostView.page.getByRole('region', {
         name: 'Host controls',
       });
-      await controls
-        .getByRole('button', { name: 'Approve Latecomer', exact: true })
-        .click();
-      await controls
-        .getByRole('button', { name: 'Resolve round now', exact: true })
-        .click();
+      const approve = controls.getByRole('button', {
+        name: 'Approve Latecomer',
+        exact: true,
+      });
+      await expect(approve).toBeEnabled({ timeout: 10_000 });
+      await approve.click();
+      const resolve = controls.getByRole('button', {
+        name: 'Resolve round now',
+        exact: true,
+      });
+      await expect(resolve).toBeEnabled({ timeout: 10_000 });
+      await resolve.click();
 
       // Seated players appear in the host's seat list; the approved latecomer is one of them.
       await expect(
