@@ -1,0 +1,293 @@
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { CapturingDm } from '../sim/dm.js';
+import {
+  BLOCKED_MARKER,
+  eventually,
+  SimTable,
+  type SimClient,
+} from '../sim/harness.js';
+import { spotlight } from '../sim/spotlight.js';
+
+// Scripted-table scenarios over real Postgres, the real WS ticket gate, and the production
+// RoomRegistry. The DM is scripted (CapturingDm); no network or model is used.
+
+const db = new Pool({ connectionString: process.env.DATABASE_URL });
+let table: SimTable | undefined;
+
+afterEach(async () => {
+  await table?.stop();
+  table = undefined;
+});
+afterAll(async () => {
+  await db.end();
+});
+beforeAll(() => {
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+});
+
+async function startTable(players: number, dm = new CapturingDm()) {
+  table = await SimTable.start(db, { players, dm: dm.adapter() });
+  for (const client of table.clients) {
+    const closed = await client.connect();
+    expect(closed).toBeUndefined();
+  }
+  return { table, dm };
+}
+
+async function roundIds(t: SimTable): Promise<string[]> {
+  return (await t.events('RoundOpened')).map((e) => e.payload.roundId);
+}
+
+async function resolvedFor(t: SimTable, roundId: string) {
+  return (await t.events('RoundResolved')).filter(
+    (e) => e.payload.roundId === roundId,
+  );
+}
+
+describe('simultaneous submission ordering', () => {
+  it('orders a batch by receiptSeq and matches acceptance order', async () => {
+    const { table: t } = await startTable(3);
+    const [a, b, c] = t.clients as [SimClient, SimClient, SimClient];
+    a.submit('alpha');
+    b.submit('bravo');
+    c.submit('charlie');
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 1,
+    );
+    const [resolved] = await t.events('RoundResolved');
+    const batch = resolved!.payload.actions as {
+      receiptSeq: number;
+      accountId: string;
+    }[];
+    expect(batch).toHaveLength(3);
+    const seqs = batch.map((item) => item.receiptSeq);
+    expect(seqs).toEqual([...seqs].sort((x, y) => x - y));
+    const accepted = (await t.events('RoundActionAccepted')).map(
+      (e) => e.payload.submission.receiptSeq as number,
+    );
+    expect(seqs).toEqual(accepted.slice(0, 3));
+  });
+});
+
+describe('round resolution races', () => {
+  it('timer, all-in, and resolve-now give exactly one resolution', async () => {
+    const { table: t } = await startTable(2);
+    const [host, p2] = t.clients as [SimClient, SimClient];
+    host.configureTimer(120);
+    host.submit('host acts');
+    p2.submit('p2 acts');
+    host.resolveNow();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const [round] = await roundIds(t);
+    expect(await resolvedFor(t, round!)).toHaveLength(1);
+    expect(
+      (await t.events('RoundClosedEmpty')).filter(
+        (e) => e.payload.roundId === round,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('a withdrawn action never reaches the batch and the round resolves once', async () => {
+    const { table: t } = await startTable(2);
+    const [p1, p2] = t.clients as [SimClient, SimClient];
+    const first = p1.submit('will withdraw');
+    p1.withdraw(first);
+    await eventually(
+      async () => (await t.events('RoundActionWithdrawn')).length === 1,
+    );
+    // Withdrawn seat is no longer submitted, so the round must still be open.
+    expect(await t.events('RoundResolved')).toHaveLength(0);
+    const replacement = p1.submit('replacement');
+    p2.submit('stays');
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 1,
+    );
+    const [resolved] = await t.events('RoundResolved');
+    const batchIds = (resolved!.payload.actions as { actionId: string }[]).map(
+      (item) => item.actionId,
+    );
+    expect(batchIds).not.toContain(first);
+    expect(batchIds).toContain(replacement);
+    expect(batchIds).toHaveLength(2);
+  });
+});
+
+describe('queueing during resolving', () => {
+  it('queues an action sent while the batch is resolving and promotes it', async () => {
+    const dm = new CapturingDm();
+    const { table: t } = await startTable(2, dm);
+    const [p1, p2] = t.clients as [SimClient, SimClient];
+    dm.hold();
+    p1.submit('first');
+    p2.submit('second');
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 1,
+    );
+    const queued = p1.submit('queued during resolve');
+    await eventually(async () =>
+      (await t.events('RoundActionAccepted')).some(
+        (e) =>
+          e.payload.queued === true && e.payload.submission.actionId === queued,
+      ),
+    );
+    dm.release();
+    await eventually(async () => (await roundIds(t)).length >= 2);
+    // The durable RoundOpened payload is the round object; promoted items sit in submissions.
+    const opened = (await t.events('RoundOpened'))[1]!;
+    expect(
+      (opened.payload.submissions as { actionId: string }[]).map(
+        (x) => x.actionId,
+      ),
+    ).toContain(queued);
+    p2.submit('second round');
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 2,
+    );
+    const [, second] = await t.events('RoundResolved');
+    expect(
+      (second!.payload.actions as { actionId: string }[]).map(
+        (x) => x.actionId,
+      ),
+    ).toContain(queued);
+  });
+});
+
+describe('reconnect', () => {
+  it('re-syncs an in-flight submission and keeps it in the next batch', async () => {
+    const { table: t } = await startTable(2);
+    const [p1, p2] = t.clients as [SimClient, SimClient];
+    const mine = p1.submit('before drop');
+    await eventually(
+      async () => (await t.events('RoundActionAccepted')).length === 1,
+    );
+    const syncsBefore = p1.messages('StateSync').length;
+    expect(await p1.reconnect()).toBeUndefined();
+    expect(p1.messages('StateSync').length).toBeGreaterThan(syncsBefore);
+    p2.submit('after');
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 1,
+    );
+    const [resolved] = await t.events('RoundResolved');
+    expect(
+      (resolved!.payload.actions as { actionId: string }[]).map(
+        (x) => x.actionId,
+      ),
+    ).toContain(mine);
+  });
+});
+
+describe('host-only actions', () => {
+  it('lets only the host configure the timer or resolve now', async () => {
+    const { table: t } = await startTable(2);
+    const [host, p2] = t.clients as [SimClient, SimClient];
+    p2.configureTimer(50);
+    p2.resolveNow();
+    await p2.waitForType('Error', 1);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(await t.events('RoundTimerConfigured')).toHaveLength(0);
+    expect(await t.events('RoundResolved')).toHaveLength(0);
+
+    host.configureTimer(null);
+    await eventually(
+      async () => (await t.events('RoundTimerConfigured')).length === 1,
+    );
+    host.submit('host only');
+    host.resolveNow();
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 1,
+    );
+  });
+});
+
+describe('moderation', () => {
+  it('gives a sender a neutral private rejection and leaks nothing to others', async () => {
+    const { table: t } = await startTable(2);
+    const [p1, p2] = t.clients as [SimClient, SimClient];
+    const id = p1.submit(`${BLOCKED_MARKER} bad text`);
+    const error = await p1.waitFor(
+      (f) => f.type === 'Error' && f.payload.actionId === id,
+    );
+    expect(error.payload.code).toBe('CONTENT_REJECTED');
+    expect(error.payload.message).toBe('That action cannot be sent.');
+    p1.chat(`${BLOCKED_MARKER} chat`);
+    await p1.waitFor(
+      (f) => f.type === 'Error' && f.payload.code === 'CHAT_REJECTED',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    for (const frame of p2.inbox)
+      expect(JSON.stringify(frame)).not.toContain(BLOCKED_MARKER);
+    expect(JSON.stringify(await t.events())).not.toContain(BLOCKED_MARKER);
+  });
+});
+
+describe('OOC chat isolation', () => {
+  it('never reaches a DM prompt or narration', async () => {
+    const marker = `OOC-MARKER-${randomUUID()}`;
+    const dm = new CapturingDm();
+    const { table: t } = await startTable(2, dm);
+    const [p1, p2] = t.clients as [SimClient, SimClient];
+    p1.chat(`${marker} out of character`);
+    await p2.waitFor(
+      (f) => f.type === 'ChatMessage' && f.payload.text?.includes(marker),
+    );
+    p1.submit('I open the door');
+    p2.submit('I wait by the wall');
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 1,
+    );
+    // The DM request is made after RoundResolved is written, so wait for it.
+    await eventually(async () => dm.requests.length > 0);
+    expect(dm.promptText()).not.toContain(marker);
+    for (const client of t.clients)
+      for (const frame of client.inbox)
+        if (frame.type !== 'ChatMessage' && frame.type !== 'ChatHistory')
+          expect(JSON.stringify(frame)).not.toContain(marker);
+    expect(JSON.stringify(await t.events('RoundResolved'))).not.toContain(
+      marker,
+    );
+  });
+});
+
+describe('revoked seat', () => {
+  it('cannot reconnect, submit, or read chat after leaving', async () => {
+    const { table: t } = await startTable(3);
+    const [, , p3] = t.clients as [SimClient, SimClient, SimClient];
+    const room = await t.room();
+    await room.leave(p3.accountId);
+    await eventually(async () => p3.closeCode !== undefined);
+    expect(await p3.reconnect()).toBe(1008);
+    await expect(
+      room.submitAction(p3.accountId, randomUUID(), 'late'),
+    ).rejects.toThrow('Account is not seated');
+    await expect(room.loadChatHistory(p3.accountId)).rejects.toThrow();
+    expect(
+      (await t.events('RoundActionAccepted')).filter(
+        (e) => e.payload.submission.accountId === p3.accountId,
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe('spotlight from the event log', () => {
+  it('gives every active player at least one direct prompt over 6 players and 10 turns', async () => {
+    const dm = new CapturingDm();
+    const { table: t } = await startTable(6, dm);
+    for (let turn = 0; turn < 10; turn++) {
+      // The gateway allows 6 submit/edit/withdraw mutations per seat per 60s
+      // (Room.reserveActionMutation). Space turns at 11s so 10 turns stay under it.
+      if (turn > 0) await new Promise((resolve) => setTimeout(resolve, 11_000));
+      await eventually(async () => (await roundIds(t)).length >= turn + 1);
+      t.clients.forEach((client, i) => client.submit(`turn ${turn} seat ${i}`));
+      await eventually(
+        async () => (await t.events('RoundResolved')).length >= turn + 1,
+        10000,
+      );
+    }
+    const report = await spotlight(t);
+    console.log('spotlight', JSON.stringify(report));
+    expect(report.activePlayers).toHaveLength(6);
+    expect(report.unspotlit).toEqual([]);
+  }, 180000);
+});
