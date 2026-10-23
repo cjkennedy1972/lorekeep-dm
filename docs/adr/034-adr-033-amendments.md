@@ -66,7 +66,6 @@ These are the combat and rest events declared for §15.6. ADR-033 §7.1 declares
 | `ReactionPromptOpened`, non-controlling seats, visible reactor | `{promptId, reactorEntityId, reactorSeat, deadline}` | ADR-033 §3.1 | non-controlling seats |
 | `ReactionPromptOpened`, non-controlling seats, hidden reactor | nothing is sent (§3 item 1) | this ADR §3 | none |
 | `ReactionPromptOpened`, controlling seat | full form: `{promptId, reactorEntityId, reactorSeat, deadline, trigger, options}` | ADR-033 §3.1, §3.2 | controlling seat only |
-
 | `ReactionAnswered` | `{promptId, answer}` | ADR-033 §7.1 | all seats, unless hidden (§3 of this ADR) |
 | `ReactionDeclined` | `{promptId, cause}`, `cause` ∈ `timeout`, `presence`, `no-controller`, `cap`, `restart` | ADR-033 §7.1 | all seats, unless hidden |
 | `NarrationCommitted` | `{turnId, narrationId}` | ADR-033 §7.1 | all seats |
