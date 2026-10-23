@@ -47,6 +47,78 @@ function fixture() {
 }
 
 describe('room actor', () => {
+  it('preserves the frozen action when editing and withdrawing queued actions during resolution', async () => {
+    const { store } = fixture();
+    let startTurn!: () => void;
+    let finishTurn!: () => void;
+    const started = new Promise<void>((resolve) => (startTurn = resolve));
+    const hold = new Promise<void>((resolve) => (finishTurn = resolve));
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        startTurn();
+        await hold;
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    const executedAction = randomUUID();
+    const queuedAction = randomUUID();
+    const editedQueuedAction = randomUUID();
+    await room.submitAction(host, executedAction, 'Executed action', 'Host');
+    await started;
+    await room.submitAction(host, queuedAction, 'Queued action', 'Host');
+    expect(
+      await room.editAction(
+        host,
+        editedQueuedAction,
+        queuedAction,
+        'Edited queued action',
+      ),
+    ).toBe('edited');
+    expect(room.state.round?.submissions).toMatchObject([
+      { actionId: executedAction, text: 'Executed action' },
+    ]);
+    const withdrawActionId = randomUUID();
+    expect(
+      await room.withdrawRoundAction(
+        host,
+        withdrawActionId,
+        editedQueuedAction,
+      ),
+    ).toBe('withdrawn');
+    expect(
+      await room.withdrawRoundAction(
+        host,
+        withdrawActionId,
+        editedQueuedAction,
+      ),
+    ).toBe('duplicate');
+    expect(
+      room.state.round?.submissions.map((item) => item.actionId),
+    ).toContain(executedAction);
+    finishTurn();
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if (
+        room.state.round?.status === 'open' &&
+        room.state.round.submissions.length === 0 &&
+        room.state.round.queuedSubmissions.length === 0
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    expect(await room.submitAction(host, executedAction, 'Retry', 'Host')).toBe(
+      false,
+    );
+    await room.drain(100);
+  });
   it('serializes interleaved joins and broadcasts increasing presence seq', async () => {
     const { store, events } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id));
@@ -229,6 +301,48 @@ describe('room actor', () => {
     ).toEqual([11, 22]);
     expect(room.state.round?.status).toBe('open');
   });
+  it('scopes party action idempotency to the submitting seat', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+    const sharedActionId = randomUUID();
+    await room.seat(accountA, 'A');
+    await room.seat(accountB, 'B');
+    await room.persistGameState({});
+    expect(
+      await room.submitAction(accountA, sharedActionId, 'A action', 'A'),
+    ).toBe(true);
+    expect(
+      await room.submitAction(accountB, sharedActionId, 'B action', 'B'),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      events
+        .filter((event) => event.type === 'RoundActionAccepted')
+        .map((event) => {
+          const { accountId, actionId } = (
+            event.payload as {
+              submission: { accountId: string; actionId: string };
+            }
+          ).submission;
+          return { accountId, actionId };
+        }),
+    ).toEqual([
+      { accountId: accountA, actionId: sharedActionId },
+      { accountId: accountB, actionId: sharedActionId },
+    ]);
+  });
   it('includes an allowed action whose gate was pending when Resolve now began', async () => {
     const { store, events } = fixture();
     store.isTableHost = async () => true;
@@ -267,6 +381,28 @@ describe('room actor', () => {
         (action) => action.actionId,
       ),
     ).toEqual([first, second]);
+  });
+  it('rejects Resolve now while the table is paused', async () => {
+    const { store } = fixture();
+    store.isTableHost = async () => true;
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    await room.setPaused(host, true, true);
+    await expect(room.resolveNow(host)).rejects.toMatchObject({
+      name: 'RoomPausedError',
+    });
   });
   it('keeps the previous version when an edit gate blocks during close and rejects later edits', async () => {
     const { store, events } = fixture();

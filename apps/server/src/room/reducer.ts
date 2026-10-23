@@ -40,8 +40,9 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
   if (event.type === 'RoundActionEdited') {
     const round = state.round;
     if (!round) return state;
-    const { submission } = event.payload as {
+    const { submission, queued } = event.payload as {
       submission: NonNullable<RoomState['round']>['submissions'][number];
+      queued: boolean;
     };
     const replace = (items: typeof round.submissions) =>
       items.map((item) =>
@@ -51,24 +52,41 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       ...state,
       round: {
         ...round,
-        submissions: replace(round.submissions),
-        queuedSubmissions: replace(round.queuedSubmissions),
+        submissions: queued ? round.submissions : replace(round.submissions),
+        queuedSubmissions: queued
+          ? replace(round.queuedSubmissions)
+          : round.queuedSubmissions,
       },
     });
   }
   if (event.type === 'RoundActionWithdrawn') {
     const round = state.round;
     if (!round) return state;
-    const { seatId } = event.payload as { seatId: string };
+    const { seatId, queued, accountId, commandActionId } = event.payload as {
+      seatId: string;
+      queued: boolean;
+      accountId?: string;
+      commandActionId?: string;
+    };
     return RoomStateSchema.parse({
       ...state,
       round: {
         ...round,
-        submissions: round.submissions.filter((item) => item.seatId !== seatId),
-        queuedSubmissions: round.queuedSubmissions.filter(
-          (item) => item.seatId !== seatId,
-        ),
+        submissions: queued
+          ? round.submissions
+          : round.submissions.filter((item) => item.seatId !== seatId),
+        queuedSubmissions: queued
+          ? round.queuedSubmissions.filter((item) => item.seatId !== seatId)
+          : round.queuedSubmissions,
       },
+      ...(accountId && commandActionId
+        ? {
+            closedRoundSubmissions: [
+              ...(state.closedRoundSubmissions ?? []),
+              { accountId, actionIds: [commandActionId] },
+            ].slice(-120),
+          }
+        : {}),
     });
   }
   if (event.type === 'RoundClosing') {

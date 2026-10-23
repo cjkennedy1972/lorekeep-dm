@@ -161,6 +161,13 @@ export class NotTableHostError extends Error {
   }
 }
 
+export class RoomPausedError extends Error {
+  constructor() {
+    super('Resolve now is unavailable while the table is paused');
+    this.name = 'RoomPausedError';
+  }
+}
+
 export class RoomSeatRequiredError extends Error {
   constructor() {
     super('Player is not seated at this table');
@@ -203,7 +210,7 @@ export class Room {
   private roundReceiptSeq = 0;
   private readonly pendingActionReceipts = new Map<
     number,
-    { roundId?: string; actionId?: string }
+    { roundId?: string; actionId?: string; accountId?: string }
   >();
   private readonly completedActionDecisions = new Map<
     number,
@@ -307,13 +314,7 @@ export class Room {
               ? [actionPayload.commandActionId]
               : []),
           ]
-        : type === 'RoundActionWithdrawn'
-          ? actionPayload.commandActionId
-            ? [actionPayload.commandActionId]
-            : []
-          : type === 'RoundCompleted'
-            ? ((payload as { actionIds?: string[] }).actionIds ?? [])
-            : [];
+        : [];
     const actionIds = [...new Set([...this.actionIds, ...committedActionIds])];
     const stored = await this.writeTurn(
       this.sessionId,
@@ -1066,11 +1067,12 @@ export class Room {
   }
 
   /** Receipt ordering is allocated synchronously at WebSocket ingress, before moderation. */
-  registerActionReceipt(actionId?: string): number {
+  registerActionReceipt(actionId?: string, accountId?: string): number {
     this.roundReceiptSeq += 1;
     this.pendingActionReceipts.set(this.roundReceiptSeq, {
       roundId: this.state.round?.roundId,
       actionId,
+      accountId,
     });
     return this.roundReceiptSeq;
   }
@@ -1372,6 +1374,8 @@ export class Room {
           )
             throw new NotTableHostError('Only the table host can resolve now');
         }
+        if (this.state.paused && reason === 'resolve-now')
+          throw new RoomPausedError();
         if (this.state.paused) return;
         const round = this.state.round;
         if (!round || (round.status !== 'open' && round.status !== 'closing'))
@@ -1407,6 +1411,12 @@ export class Room {
           } as ServerMessage);
         }
         await this.flushCompletedActionDecisions(round.roundId);
+        for (const [receiptSeq, decision] of this.completedActionDecisions)
+          if (decision.roundId === round.roundId)
+            this.completedActionDecisions.delete(receiptSeq);
+        for (const key of this.editsPerRound.keys())
+          if (key.startsWith(`${round.roundId}:`))
+            this.editsPerRound.delete(key);
         const batch = [...(this.state.round?.submissions ?? [])].sort(
           (a, b) => a.receiptSeq - b.receiptSeq,
         );
@@ -1514,21 +1524,33 @@ export class Room {
     }
   }
 
-  hasActionId(actionId: string, exceptReceiptSeq?: number): boolean {
+  hasActionId(
+    actionId: string,
+    exceptReceiptSeq?: number,
+    accountId?: string,
+  ): boolean {
     return (
-      this.actionIds.has(actionId) ||
-      this.pendingActions.has(actionId) ||
+      (accountId === undefined && this.actionIds.has(actionId)) ||
+      (accountId === undefined && this.pendingActions.has(actionId)) ||
       [
         ...(this.state.round?.submissions ?? []),
         ...(this.state.round?.queuedSubmissions ?? []),
         ...(this.state.closedRoundSubmissions ?? []),
-      ].some((submission) => submission.actionIds.includes(actionId)) ||
+      ].some(
+        (submission) =>
+          submission.actionIds.includes(actionId) &&
+          (accountId === undefined || submission.accountId === accountId),
+      ) ||
       [...this.pendingActionReceipts].some(
         ([seq, receipt]) =>
-          seq !== exceptReceiptSeq && receipt.actionId === actionId,
+          seq !== exceptReceiptSeq &&
+          receipt.actionId === actionId &&
+          (accountId === undefined || receipt.accountId === accountId),
       ) ||
       [...this.completedActionDecisions.values()].some(
-        (entry) => entry.mutation.actionId === actionId,
+        (entry) =>
+          entry.mutation.actionId === actionId &&
+          (accountId === undefined || entry.mutation.accountId === accountId),
       )
     );
   }
@@ -1552,7 +1574,10 @@ export class Room {
     }
     if (receiptSeq !== undefined && this.expiredActionReceipts.has(receiptSeq))
       return Promise.resolve(false);
-    if (receiptSeq !== undefined && !this.hasActionId(actionId, receiptSeq))
+    if (
+      receiptSeq !== undefined &&
+      !this.hasActionId(actionId, receiptSeq, accountId)
+    )
       this.completeActionReceipt(receiptSeq, {
         kind: 'submit',
         accountId,
@@ -1569,7 +1594,7 @@ export class Room {
       if (!this.turnRunner) throw new Error('Solo turn runner unavailable');
       if (receiptSeq !== undefined)
         this.completedActionDecisions.delete(receiptSeq);
-      if (this.hasActionId(actionId, receiptSeq)) return false;
+      if (this.hasActionId(actionId, receiptSeq, accountId)) return false;
       await this.ensureRoundOpen();
       const round = this.state.round;
       if (!round) return false;
@@ -1692,7 +1717,10 @@ export class Room {
   ): Promise<'edited' | 'duplicate' | 'unknown_submission' | 'round_closed'> {
     if (receiptSeq !== undefined && this.expiredActionReceipts.has(receiptSeq))
       return Promise.resolve('round_closed');
-    if (receiptSeq !== undefined && !this.hasActionId(actionId, receiptSeq))
+    if (
+      receiptSeq !== undefined &&
+      !this.hasActionId(actionId, receiptSeq, accountId)
+    )
       this.completeActionReceipt(receiptSeq, {
         kind: 'edit',
         accountId,
@@ -1703,7 +1731,7 @@ export class Room {
     return this.enqueuePlayer(async () => {
       if (receiptSeq !== undefined)
         this.completedActionDecisions.delete(receiptSeq);
-      if (this.hasActionId(actionId, receiptSeq)) return 'duplicate';
+      if (this.hasActionId(actionId, receiptSeq, accountId)) return 'duplicate';
       const round = this.state.round;
       if (!round) return 'unknown_submission';
       if (round.status !== 'open' && round.status !== 'resolving')
@@ -1853,7 +1881,8 @@ export class Room {
     | 'limited'
   > {
     return this.enqueue(async () => {
-      if (this.actionIds.has(commandActionId)) return 'duplicate';
+      if (this.hasActionId(commandActionId, undefined, accountId))
+        return 'duplicate';
       if (!this.reserveActionMutation(accountId, 'withdraw')) return 'limited';
       const round = this.state.round;
       if (round) {
@@ -1885,6 +1914,7 @@ export class Room {
         await this.persist('RoundActionWithdrawn', {
           roundId: round.roundId,
           seatId: submission.seatId,
+          accountId,
           commandActionId,
           actionId,
           queued,

@@ -25,6 +25,7 @@ import { validOrigin as validRequestOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
   NotTableHostError,
+  RoomPausedError,
   RewindRefusedError,
   RoomSeatRequiredError,
 } from '../room/Room.js';
@@ -439,7 +440,10 @@ export function installGateway(
             return;
           }
           const actionReceiptSeq = actionReceiptCommandId
-            ? room.registerActionReceipt(actionReceiptCommandId)
+            ? room.registerActionReceipt(
+                actionReceiptCommandId,
+                identity.accountId,
+              )
             : undefined;
           chain = chain
             .then(() => connections.sweepIfStale().catch(() => {}))
@@ -785,11 +789,15 @@ export function installGateway(
                     code:
                       error instanceof NotTableHostError
                         ? 'NOT_HOST'
-                        : 'ACTION_REJECTED',
+                        : error instanceof RoomPausedError
+                          ? 'TABLE_PAUSED'
+                          : 'ACTION_REJECTED',
                     message:
                       error instanceof NotTableHostError
                         ? 'Only the table host can resolve now.'
-                        : 'Resolve request could not be accepted.',
+                        : error instanceof RoomPausedError
+                          ? 'Resume the table before resolving the round.'
+                          : 'Resolve request could not be accepted.',
                     actionId: resolve.data.actionId,
                   },
                 });

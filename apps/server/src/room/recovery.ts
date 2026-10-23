@@ -17,12 +17,7 @@ export function recoverRoom(
   for (const event of latest.events) {
     if (event.seq !== seq + 1) throw new Error('Non-contiguous room log');
     state = reduceRoom(state, event);
-    if (
-      event.type === 'ActionAccepted' ||
-      event.type === 'ActionEdited' ||
-      event.type === 'RoundActionWithdrawn' ||
-      event.type === 'RoundCompleted'
-    ) {
+    if (event.type === 'ActionAccepted' || event.type === 'ActionEdited') {
       const payload = event.payload as {
         actionId?: string;
         commandActionId?: string;
