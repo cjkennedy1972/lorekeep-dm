@@ -1,5 +1,6 @@
 import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID } from 'node:crypto';
+import { on } from 'node:events';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -24,14 +25,22 @@ const sessionId = randomUUID();
 let base: string;
 let tokens: string[];
 
-function next(ws: WebSocket): Promise<{ type: string }> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('socket timeout')), 3000);
-    ws.once('message', (data) => {
-      clearTimeout(timer);
-      resolve(JSON.parse(data.toString()));
-    });
-  });
+// Buffered per socket from creation: ws can emit several frames from one TCP chunk,
+// and a once('message') registered after an await drops those frames.
+const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
+async function next(ws: WebSocket): Promise<{ type: string }> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const { value } = await Promise.race([
+      inboxes.get(ws)!.next(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('socket timeout')), 3000);
+      }),
+    ]);
+    return JSON.parse(String(value[0]));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Resolves with the close code, or 'open' if the socket is still attached after `ms`. */
@@ -52,9 +61,11 @@ async function ticket(token: string) {
 }
 
 function connect(t: string) {
-  return new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
+  const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
     origin: base,
   });
+  inboxes.set(ws, on(ws, 'message'));
+  return ws;
 }
 
 beforeAll(async () => {

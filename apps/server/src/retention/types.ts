@@ -18,13 +18,14 @@ export async function skipIfHeld(
   job: string,
   kind: 'account' | 'export' | 'session',
   id: string,
+  db: Pick<Pool, 'query'> = ctx.db,
 ): Promise<boolean> {
-  const held = await ctx.db.query(
+  const held = await db.query(
     'SELECT 1 FROM legal_holds WHERE kind=$1 AND item_id=$2',
     [kind, id],
   );
   if (!held.rowCount) return false;
-  await ctx.db.query(
+  await db.query(
     "INSERT INTO retention_audit(job,item_kind,item_id,action) VALUES($1,$2,$3,'skipped_legal_hold')",
     [job, kind, id],
   );
