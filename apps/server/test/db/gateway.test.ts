@@ -1,5 +1,6 @@
 import { allowInputGate } from '../support/allowInputGate.js';
 import { randomUUID, createHash } from 'node:crypto';
+import { on } from 'node:events';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -24,18 +25,26 @@ let base: string;
 const accounts = [randomUUID(), randomUUID()];
 const sessionId = randomUUID();
 let tokens: string[];
-function next(ws: WebSocket): Promise<{
+// Buffered per socket from creation: ws can emit several frames from one TCP chunk,
+// and a once('message') registered after an await drops those frames.
+const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
+async function next(ws: WebSocket): Promise<{
   type: string;
   seq: number;
   payload: { state: { seats: unknown[] }; presence?: string };
 }> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('socket timeout')), 3000);
-    ws.once('message', (data) => {
-      clearTimeout(timer);
-      resolve(JSON.parse(data.toString()));
-    });
-  });
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const { value } = await Promise.race([
+      inboxes.get(ws)!.next(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('socket timeout')), 3000);
+      }),
+    ]);
+    return JSON.parse(String(value[0]));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 async function nextOfType(ws: WebSocket, type: string) {
   for (;;) {
@@ -55,9 +64,11 @@ async function ticket(token: string) {
   return (await res.json()).ticket as string;
 }
 function connect(t: string) {
-  return new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
+  const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
     origin: base,
   });
+  inboxes.set(ws, on(ws, 'message'));
+  return ws;
 }
 beforeAll(async () => {
   for (const [i, id] of accounts.entries())
@@ -124,7 +135,12 @@ describe('one-time gateway', () => {
     )
       message = await next(first);
     second.close();
-    const leave = await next(first);
+    let leave = await next(first);
+    while (
+      leave.type !== 'PresenceChanged' ||
+      leave.payload.presence !== 'offline'
+    )
+      leave = await next(first);
     expect(leave).toMatchObject({
       type: 'PresenceChanged',
       payload: { presence: 'offline' },
