@@ -86,6 +86,38 @@ const cases = [
     { seq: 0, type: 'StateSync', payload: {} },
   ],
   [
+    StateSyncSchema,
+    {
+      seq: 0,
+      type: 'StateSync',
+      payload: {
+        state: room,
+        round: {
+          roundId: uuid,
+          status: 'open',
+          eligibleSeatIds: [uuid],
+          deadlineAt: null,
+          submissions: [
+            {
+              seatId: uuid,
+              actionId: uuid,
+              originalActionId: uuid,
+              actionIds: [uuid],
+              playerName: 'A',
+              receiptSeq: 1,
+            },
+          ],
+          queuedSubmissions: [],
+        },
+      },
+    },
+    {
+      seq: 0,
+      type: 'StateSync',
+      payload: { state: room, round: { roundId: 'bad' } },
+    },
+  ],
+  [
     PresenceChangedSchema,
     {
       seq: 1,
@@ -162,6 +194,35 @@ for (const [schema, valid, invalid] of cases) {
     expect(schema.safeParse(invalid).success).toBe(false);
   });
 }
+test('round snapshot submissions reject private fields', () => {
+  const result = StateSyncSchema.safeParse({
+    seq: 0,
+    type: 'StateSync',
+    payload: {
+      state: room,
+      round: {
+        roundId: uuid,
+        status: 'open',
+        eligibleSeatIds: [uuid],
+        deadlineAt: null,
+        submissions: [
+          {
+            seatId: uuid,
+            actionId: uuid,
+            originalActionId: uuid,
+            actionIds: [uuid],
+            playerName: 'A',
+            receiptSeq: 1,
+            accountId: uuid,
+            text: 'private action',
+          },
+        ],
+        queuedSubmissions: [],
+      },
+    },
+  });
+  expect(result.success).toBe(false);
+});
 test('room state round-trips JSON', () => {
   expect(
     RoomStateSchema.parse(

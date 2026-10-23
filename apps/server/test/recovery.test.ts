@@ -63,7 +63,7 @@ describe('room recovery', () => {
       state: {
         sessionId: id,
         phase: 'lobby',
-        seats: [],
+        seats: [seat],
         actionIds: [actionId],
       },
       createdAt: new Date(),
@@ -77,7 +77,7 @@ describe('room recovery', () => {
     const room = new Room(store, lease, await store.loadLatest(id));
     const sent: unknown[] = [];
     await room.subscribe(
-      randomUUID(),
+      seat.accountId,
       { send: (message) => sent.push(message) },
       0,
     );

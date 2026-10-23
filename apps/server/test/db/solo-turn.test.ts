@@ -16,6 +16,7 @@ import { SessionLease } from '../../src/room/lease.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
 import { SAFE_RECAP_FALLBACK } from '../../src/dm/recap.js';
+import { quickBuild } from '@game/rules-engine';
 import { loadCatalog, catalogVersionOf } from '@game/rules-engine/catalog-node';
 import type { TurnResult } from '../../src/dm/orchestrator.js';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -190,6 +191,55 @@ afterAll(async () => {
 });
 
 describe('solo turn persisted lifecycle', () => {
+  it('resumes an active party table for current seats only', async () => {
+    const owner = await createUser();
+    const member = await createUser();
+    const outsider = await createUser();
+    const id = randomUUID();
+    sessionIds.push(id);
+    const catalog = loadCatalog();
+    const character = {
+      ...quickBuild(catalog, 'class:fighter', 0x31, 1).character,
+      id: randomUUID(),
+    };
+    await db.query(
+      `INSERT INTO catalog_snapshots(catalog_version,entries) VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
+      [catalog.catalogVersion, JSON.stringify(catalog.entries)],
+    );
+    await db.query(
+      `INSERT INTO sessions(id,owner_account_id,name,status,mode,adventure_id,difficulty,catalog_version,character_id,character)
+       VALUES($1,$2,'Party resume','active','party','adventure:01-hollow-under-marrowfell','moderate',$3,$4,$5::jsonb)`,
+      [
+        id,
+        owner.id,
+        catalog.catalogVersion,
+        character.id,
+        JSON.stringify(character),
+      ],
+    );
+    const room = await rooms.get(id);
+    await room.seat(member.id, 'Member');
+    const memberResponse = await fetch(`${base}/api/tables/${id}`, {
+      headers: { cookie: `sid=${member.token}` },
+    });
+    expect(memberResponse.status).toBe(200);
+    expect((await memberResponse.json()).game).toMatchObject({
+      id,
+      name: 'Party resume',
+      character,
+      state: { sessionId: id },
+    });
+    const outsiderResponse = await fetch(`${base}/api/tables/${id}`, {
+      headers: { cookie: `sid=${outsider.token}` },
+    });
+    expect(outsiderResponse.status).toBe(404);
+    await room.leave(member.id);
+    const revokedResponse = await fetch(`${base}/api/tables/${id}`, {
+      headers: { cookie: `sid=${member.token}` },
+    });
+    expect(revokedResponse.status).toBe(404);
+  });
+
   it('deduplicates across reconnect and serializes one in-flight turn per table', async () => {
     const owner = await createUser();
     const table = await createTable(owner.id);
