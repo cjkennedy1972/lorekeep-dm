@@ -50,7 +50,7 @@ describe('seat membership lookup', () => {
 
   it('is served by an index on seat-joined events', async () => {
     const index = await db.query(
-      `SELECT indexname FROM pg_indexes WHERE tablename='events' AND indexname='events_seat_joined_account_idx'`,
+      `SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename='events' AND indexname='events_seat_joined_account_idx'`,
     );
     expect(index.rowCount).toBe(1);
     const client = await db.connect();
