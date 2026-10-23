@@ -31,6 +31,9 @@ The Room holds one combat state per encounter. It has three parts:
 Command admission in combat:
 
 1. The active combatant's controlling seat may submit move, action, bonus action, and `end-turn`. These are accepted only in `awaiting-command`.
+   - A path in progress is not a command. In `moving`, the controlling seat may submit only `end-path`, which ends the path at the current square with `MoveEnded{reason: complete}`.
+   - Every other turn command in `moving` (move, action, bonus action, `end-turn`) is rejected with `move-in-progress`. It is not queued. The player ends the path first, then acts.
+   - A timer expiry in `moving` ends the path with `MoveEnded{reason: timed-out}` and applies the timeout action (§5.3).
 2. Any other seat that submits a turn command receives `not-your-turn` (US-B2 AC1). It is not queued.
 3. A reaction answer (§3) is accepted only from the controlling seat of the reacting entity, in `reaction-pending`.
 4. OOC chat is accepted from all seats under ADR-029 §§6–7. It does not affect phase, timers, or turn order, and it is not in the combat log.
@@ -66,7 +69,7 @@ Command admission in combat:
 1. A move is one path command (ADR-018). The engine computes the full path at command time and spends movement per step. Phase is `moving` until the path ends or is ended.
 2. A step that departs a square threatened by an enemy's reach (ADR-018 `threatenedBy`) is applied first. The mover stands on the step's destination. The path then pauses and the trigger opens (§3). The step is not undone.
 3. When every prompt from that step has closed, the engine re-checks the remaining steps against current state: each destination is unoccupied, within remaining speed (ADR-018 `reachable`), and the mover is still able to move (conscious, not restrained, not grappled, not incapacitated per the engine's condition state). This check runs whatever the outcome was, including decline, expiry, cap, or a reaction that dropped the mover to 0 HP.
-4. If every remaining step is legal, movement resumes along the original path. If any step is illegal, movement ends at the current square with `MoveEnded{reason}`.
+4. If every remaining step is legal, movement resumes along the original path and phase returns to `moving`. If any step is illegal, movement ends at the current square with `MoveEnded{reason}`.
 5. Movement is never re-routed. The player sees the path they chose or a shorter one. Remaining speed is forfeited, not refunded. Movement already spent stays spent.
 6. `MoveEnded.reason` is one of `complete`, `blocked`, `incapacitated`, or `timed-out`. The enum is closed; extending it needs an amendment.
 
@@ -91,7 +94,7 @@ Command admission in combat:
 4. A turn with no player-visible event, such as a hold or a turn ended with no action after both Dodge and hold were rejected, still gets its one narration under ADR-022 T6 (D14).
 5. While `narrating`, combat commands from every seat are rejected with `narrating`. They are not queued (D2). Pause is accepted and takes effect after the narration commits (ADR-029 §5).
 6. On `NarrationCommitted{turnId, narrationId}` the engine advances initiative and emits `TurnOpened{turnId, entityId, deadline}` for the next combatant. If the narration fails, the ADR-022 §4.2 fallback is the narration. The turn still counts as resolved, and the next turn opens after the fallback commits. The narration DM call has the ADR-032 60 s hard cap, so a hung call cannot freeze the table.
-7. The combat narration turn exposes read-only tools only (D8). Mechanics are already applied by the engine, so the narration cannot write state (ADR-022 T5).
+7. The combat narration turn exposes read-only tools only (D8). Mechanics are already applied by the engine, so the narration cannot write state (ADR-022 T5). ADR-022 sets no tool scope, so D8 is a new contract. It needs an ADR-022 amendment note to match.
 8. **Input boundary.** Free text from players never reaches the combat DM input. Only engine-issued enum values, engine handles' resolved effects, and sanitized display names may. Chat is excluded (D7). ADR-022 T5 limits writes; this rule limits what enters the prompt.
 9. **Output reservation.** Each turn's narration draws from the ADR-032 DM output reservation (one in flight, 40 per minute per table). Turns queue behind it and never bypass it.
 
@@ -112,7 +115,7 @@ Command admission in combat:
 - **Away and autopilot (ADR-031).** Autopilot acts only at turn start (§5). Away reactors are declined at once (§3.6). Timeout on an away seat is Dodge, applied after the bound in §5.5.
 - **Rate limits (ADR-029 §8).** Combat commands use the same per-seat buckets as other commands. No combat command is exempt. A combat command that exceeds its bucket is rejected `rate-limited` and does not change phase.
 - **Idempotency (ADR-029 §3, §4).** `actionId` is keyed by `(seat, actionId)`. A seat that replays another seat's `actionId` gets its own result space and never another seat's result.
-- **Rest votes (ADR-030).** No vote opens during combat. This ADR does not change what happens to a vote already open when combat begins. That needs ADR-030's own rules, which this ADR did not re-read (see Verification).
+- **Rest votes (ADR-030).** No vote opens during combat. A vote already open when `CombatStarted` is applied closes at once with `closeReason: cancelled-combat`. It is not resolved, no rest outcome is applied, and its members are not counted as having voted. This ADR decides the rule because ADR-030 does not say. ADR-033 cannot edit ADR-030, so ADR-030 needs an append-only amendment that states the same rule.
 - **Round lifecycle (ADR-029 §§2–4, PR #268).** When an encounter starts, an open exploration round closes with `closeReason: combat-start` and resolves in one DM turn before `CombatStarted`. No round opens during combat. The accepted and queued rules of ADR-029 §4 do not apply to combat commands.
 - **OOC chat (ADR-029 §§6–7, §11).** Chat works during combat, under the same gate. Chat does not affect turn order or timers. The DM allowlist gains the combat events above. Chat is never on it.
 - **Geometry and movement (ADR-018).** Path, reach, and handle rules are unchanged. This ADR only adds the pause and resume points in §4.
@@ -146,6 +149,8 @@ Command admission in combat:
   - a server-side seat derived from the socket, with a mismatched payload seat rejected;
   - movement re-check after a reaction;
   - timer frozen during reaction and pause;
+  - `move-in-progress` rejects every turn command except `end-path` while phase is `moving`, and timer expiry ends the path with `timed-out`;
+  - a rest vote open at `CombatStarted` closes with `cancelled-combat` and applies no outcome;
   - revoked controller resolves at once, and away controller resolves after 90 s with the timer off;
   - configured timer below 30 s rejected;
   - restart re-runs an uncommitted narration once, never re-runs a committed one, and commits the fallback when the attempt counter is at 2;
@@ -164,7 +169,7 @@ Command admission in combat:
 - **D9.** On restart, open prompts close as declined, movement is re-checked, and an uncommitted narration re-runs once, bounded by a persisted attempt counter.
 - **D10.** Several triggers from one step open one at a time, ordered by reactor initiative and then seat id.
 - **D11.** Expiry is recorded as `ReactionDeclined{cause: timeout}`, not as a separate event. This keeps the event set smaller.
-- **D12.** No rest vote opens during combat.
+- **D12.** No rest vote opens during combat. A vote open when combat starts closes with `closeReason: cancelled-combat` and applies no outcome.
 - **D13.** Host reassignment stays out of M4. The host cannot act for other seats in combat.
 - **D14.** Every resolved turn gets a DM narration, including holds. ADR-022 T6 applies unchanged.
 - **D15.** The acting seat is server-side, derived from the socket and ticket. Payload seats are never trusted.
@@ -178,7 +183,7 @@ Command admission in combat:
 - Sources read: `docs/spec.md` §6.2–§6.5, US-B2 AC1–AC2, the opportunity-attack criterion at line 187; `docs/plan/m4-breakdown.md` item 6; ADR-005, ADR-018 (path, reach, handles), ADR-022 (T1–T6 table, tool boundaries), ADR-029 (§§1–8, §11), ADR-030 (the "no vote during combat" rule), ADR-031 (§§1–7), ADR-032 (scope only).
 - Not verified:
   - PR #268 contents. §§2–4 are cited as they stand on this branch.
-  - Full ADR-030 text on votes that are already open when combat begins. §8 leaves that unchanged.
+  - Full ADR-030 text on votes that are already open when combat begins. §8 and D12 set the rule here; ADR-030 has no matching text yet.
   - Full ADR-032 text on pause mechanics and the output reservation numbers. §§6.9 and 8 rely on the figures cited from ADR-032 scope.
   - The M1 engine's current list of trigger types. §2.5 assumes only opportunity attacks are emitted in M4.
   - The M4 item 3 upper bound on the turn timer.
