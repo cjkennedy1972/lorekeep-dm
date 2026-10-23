@@ -61,18 +61,14 @@ function setup(deadlineAt: number, runner?: SoloTurnRunner) {
     },
     events: [],
   } as unknown as LatestState;
-  const room = new Room(
-    store,
-    {
-      sessionId,
-      nodeId: 'test',
-      epoch: 1,
-      expiresAt: new Date(Date.now() + 60_000),
-    },
-    latest,
-    runner,
-  );
-  return { room, events, accounts, seats, voteId };
+  const lease = {
+    sessionId,
+    nodeId: 'test',
+    epoch: 1,
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+  const room = new Room(store, lease, latest, runner);
+  return { room, events, accounts, seats, voteId, store, lease, latest };
 }
 
 const connectAll = async (room: Room, accounts: string[]) => {
@@ -80,6 +76,53 @@ const connectAll = async (room: Room, accounts: string[]) => {
     accounts.map((accountId) => room.subscribe(accountId, { send() {} })),
   );
 };
+
+async function commitCombatTurnWhileVotePaused() {
+  vi.useFakeTimers();
+  let signalTurnStarted!: () => void;
+  const turnStarted = new Promise<void>((resolve) => {
+    signalTurnStarted = resolve;
+  });
+  let releaseTurn!: () => void;
+  const turnGate = new Promise<void>((resolve) => {
+    releaseTurn = resolve;
+  });
+  const runner: SoloTurnRunner = {
+    async run() {
+      signalTurnStarted();
+      await turnGate;
+      return {
+        narration: 'Combat begins.',
+        events: [
+          { type: 'TurnStarted', turnId: randomUUID() },
+          { type: 'CombatStarted', combatId: 'combat-1', entityIds: [] },
+        ],
+        state: {},
+        turnSeed: '0x0000000000000001',
+        usage: { in: 1, out: 1 },
+      };
+    },
+  };
+  const result = setup(Date.now() + 60_000, runner);
+  await connectAll(result.room, result.accounts);
+
+  await result.room.submitAction(
+    result.accounts[0]!,
+    randomUUID(),
+    'The ambush starts.',
+  );
+  await turnStarted;
+  await result.room.setPaused(result.accounts[0]!, true, true);
+  expect(result.room.state.restVote?.deadlineAt).toBeNull();
+
+  releaseTurn();
+  await vi.waitFor(() => {
+    expect(result.events.some((event) => event.type === 'CombatStarted')).toBe(
+      true,
+    );
+  });
+  return result;
+}
 
 describe('rest vote close races through the Room mailbox', () => {
   it('final quorum cast wins before the deadline timer and persists one no-majority close', async () => {
@@ -229,5 +272,39 @@ describe('rest vote close races through the Room mailbox', () => {
     });
     expect(events.some((event) => event.type === 'RestApplied')).toBe(false);
     expect(room.state.restVote).toBeUndefined();
+  });
+
+  it('cancels a paused vote before committing CombatStarted from an in-flight turn', async () => {
+    const { room, events, voteId } = await commitCombatTurnWhileVotePaused();
+    const close = events.find((event) => event.type === 'RestVoteClosed');
+    const combatStart = events.find((event) => event.type === 'CombatStarted');
+    expect(close).toBeDefined();
+    expect(combatStart).toBeDefined();
+    expect(close!.seq).toBeLessThan(combatStart!.seq);
+    expect(close!.payload).toMatchObject({
+      voteId,
+      outcome: 'failed',
+      closeReason: 'cancelled-combat',
+    });
+    expect(events.some((event) => event.type === 'RestApplied')).toBe(false);
+    expect(room.state.restVote).toBeUndefined();
+  });
+
+  it('keeps a paused vote closed after the combat cancellation is recovered on restart', async () => {
+    const { events, voteId, store, lease, latest } =
+      await commitCombatTurnWhileVotePaused();
+
+    const restarted = new Room(store, lease, {
+      snapshot: latest.snapshot,
+      events,
+    });
+
+    expect(restarted.state.restVote).toBeUndefined();
+    expect(restarted.state.paused).toBe(true);
+    expect(restarted.state.lastRestVoteResult).toMatchObject({
+      voteId,
+      outcome: 'failed',
+      closeReason: 'cancelled-combat',
+    });
   });
 });

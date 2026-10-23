@@ -2597,10 +2597,9 @@ export class Room {
         const combatStartAt = result.events.findIndex(
           (event) => (event as { type?: string }).type === 'CombatStarted',
         );
-        if (combatStartAt >= 0 && this.asRestVote()) {
-          const vote = this.asRestVote()!;
+        if (combatStartAt >= 0 && this.state.restVote) {
           const closePayload = {
-            voteId: vote.voteId,
+            voteId: this.state.restVote.voteId,
             ...cancelRestVoteForCombat(),
           };
           const insertAt = writes.findIndex(
