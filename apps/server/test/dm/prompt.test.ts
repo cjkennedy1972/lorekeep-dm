@@ -310,6 +310,29 @@ describe('DM prompt builder', () => {
         ),
     );
   });
+  it('provides the latest rest vote result as quoted context on the next turn', () => {
+    const value = input();
+    const result = buildPrompt({
+      ...value,
+      turn: {
+        ...value.turn,
+        lastRestVoteResult: {
+          voteId: '00000000-0000-4000-8000-000000000002',
+          type: 'long',
+          outcome: 'failed',
+          closeReason: 'cancelled-combat',
+        },
+      },
+    });
+    expect(result.blocks[2]).toContain('LAST REST VOTE');
+    const encoded = result.blocks[2].match(
+      /EVENT_DATA encoding=base64>>>\n([A-Za-z0-9+/=]+)/,
+    )?.[1];
+    expect(encoded).toBeDefined();
+    expect(Buffer.from(encoded!, 'base64').toString('utf8')).toContain(
+      'cancelled-combat',
+    );
+  });
 });
 
 describe('state projection names', () => {

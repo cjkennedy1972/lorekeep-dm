@@ -17,6 +17,12 @@ export interface PromptSession {
 }
 export interface PromptTurn {
   state: Parameters<typeof projectState>[0];
+  lastRestVoteResult?: {
+    voteId: string;
+    type: 'short' | 'long';
+    outcome: 'passed' | 'failed';
+    closeReason: string;
+  };
   registryFacts?: readonly {
     entityId: string;
     text: string;
@@ -214,6 +220,9 @@ function makeDynamic(
       : '',
     `REGISTRY FACTS\n${stableJson(registry)}`,
     `RECENT TURNS\n${recent.join('\n')}`,
+    input.turn.lastRestVoteResult
+      ? `LAST REST VOTE\n${quoteData('EVENT', stableJson(input.turn.lastRestVoteResult))}`
+      : '',
     `THIS ROUND\n${stableJson((input.turn.roundInputs ?? []).map((item) => quoteData('INPUT', stableJson(item))))}`,
     `CURRENT PLAYER\n${quoteData('PLAYER', input.turn.playerText)}`,
   ]

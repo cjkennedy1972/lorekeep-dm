@@ -176,6 +176,20 @@ export const ConfigureRoundTimerSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const CastRestVoteSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('CastRestVote'),
+    payload: z
+      .object({
+        voteId: z.uuid(),
+        choice: z.enum(['yes', 'no']),
+        kind: z.enum(['ballot', 'tiebreak']).default('ballot'),
+      })
+      .strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const RewindTurnSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -228,6 +242,10 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RoundCompleted',
       'RoundClosedEmpty',
       'RoundTimerConfigured',
+      'RestVoteOpened',
+      'RestVoteCastNotice',
+      'RestVoteClosed',
+      'RestApplied',
       'ActionWithdrawn',
       'ClarificationRequested',
       'TurnThinking',

@@ -588,6 +588,23 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       async engineExecute(prior, call, seed) {
         const current = prior as ToolExecutorState & { world: WorldRegistry };
         const request = call as { name?: string; args?: unknown };
+        if (request.name === 'call_for_rest') {
+          const args = request.args as { kind?: unknown } | undefined;
+          if (args?.kind !== 'short' && args?.kind !== 'long')
+            return {
+              ok: false,
+              error: 'schema-violation',
+              hint: 'Choose a short or long rest.',
+              events: [],
+            };
+          const event = { type: 'RestVoteRequested', kind: args.kind };
+          return {
+            ok: true,
+            summary: 'A party rest vote was requested.',
+            events: ['RestVoteRequested'],
+            value: { state: current, events: [event], rng: seed },
+          };
+        }
         const serializedArgs = JSON.stringify(request.args ?? {});
         if (otherSeatIds.some((id) => serializedArgs.includes(id)))
           return {
@@ -812,6 +829,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               : 'exploration',
           turn: {
             state: { characters: Object.values(actors) },
+            lastRestVoteResult: request.lastRestVoteResult,
             activeActorId: liveTurnActorId(state),
             registryFacts: memoryContext.registryFacts,
             retrievedMemory: memoryContext.retrievedMemory,

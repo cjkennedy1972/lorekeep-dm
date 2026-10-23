@@ -192,6 +192,10 @@ export function narrationLogReducer(
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':
+    case 'RestVoteOpened':
+    case 'RestVoteCastNotice':
+    case 'RestVoteClosed':
+    case 'RestApplied':
     case 'CombatTracker':
     case 'ReactionPrompt':
     case 'CombatOptions':

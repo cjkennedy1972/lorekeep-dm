@@ -9,6 +9,7 @@ import {
   MuteChatSchema,
   type ActionId,
   CombatCommandSchema,
+  CastRestVoteSchema,
   PlayerActionSchema,
   EditActionSchema,
   ClarificationAnswerSchema,
@@ -517,6 +518,65 @@ export function installGateway(
             return;
           }
           const msg = parsed.data;
+          if (msg.type === 'CastRestVote') {
+            const action = CastRestVoteSchema.safeParse(msg);
+            if (!action.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Rest vote cast is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return db
+              .query<{ eligible: boolean }>(
+                `SELECT a.status='active' AND s.expires_at>clock_timestamp()
+                    AND s.absolute_expires_at>clock_timestamp()
+                    AND EXISTS (
+                      SELECT 1 FROM events j
+                       WHERE j.session_id=$3 AND j.type='SeatJoined'
+                         AND j.payload->>'accountId'=$1::text
+                         AND NOT EXISTS (
+                           SELECT 1 FROM events r WHERE r.session_id=j.session_id
+                             AND r.type='SeatRevoked'
+                             AND r.payload->>'seatId'=j.payload->>'seatId'
+                             AND r.seq>j.seq
+                         )
+                    ) AS eligible
+                 FROM accounts a JOIN auth_sessions s ON s.account_id=a.id
+                WHERE a.id=$1 AND s.token_hash=$2`,
+                [
+                  identity.accountId,
+                  identity.authTokenHash,
+                  identity.sessionId,
+                ],
+              )
+              .then(({ rows }) => {
+                if (!rows[0]?.eligible) throw new RoomSeatRequiredError();
+                return room.castRestVote(
+                  identity.accountId,
+                  action.data.payload.voteId,
+                  action.data.payload.choice,
+                  action.data.payload.kind,
+                  action.data.actionId,
+                );
+              })
+              .catch(() => {
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ballot-not-allowed',
+                    message: 'Your seat cannot cast a ballot right now.',
+                    actionId: msg.actionId,
+                  },
+                });
+              });
+          }
           if (msg.type === 'ChatSend') {
             const action = ChatSendSchema.safeParse(msg);
             if (!action.success || !chatReceipt) return;

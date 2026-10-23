@@ -46,9 +46,10 @@ afterEach(async () => {
 afterAll(async () => {
   for (const id of sessionIds.splice(0))
     await q('SELECT purge_session($1)', [id]);
-  for (const id of accountIds.splice(0))
+  const createdAccountIds = accountIds.splice(0);
+  for (const id of createdAccountIds)
     await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
-  for (const id of accountIds.splice(0))
+  for (const id of createdAccountIds)
     await q('DELETE FROM accounts WHERE id=$1', [id]);
   await pool.end();
 });
@@ -67,6 +68,8 @@ async function account(status: string, name: string) {
 async function seedCombatRoom(opts: {
   clarification: boolean;
   shape?: 'only-entry' | 'no-party';
+  restVote?: boolean;
+  closedRestVote?: boolean;
 }) {
   const gone = await account('deleting', 'SecretName');
   const heir = await account('active', 'Heir');
@@ -151,6 +154,7 @@ async function seedCombatRoom(opts: {
         },
       }
     : undefined;
+  const restVoteId = randomUUID();
   const state = {
     ...gameState,
     lastPlayerText: 'SecretText',
@@ -163,6 +167,23 @@ async function seedCombatRoom(opts: {
     gameState: state,
     actionIds: [],
     ...(openClarifications ? { openClarifications } : {}),
+    ...(opts.restVote && !opts.closedRestVote
+      ? {
+          restVoteCount: 1,
+          restVote: {
+            voteId: restVoteId,
+            type: 'short',
+            eligibleSeats: seats.map((seat) => seat.seatId),
+            ballots: [
+              { seat: seats[0]!.seatId, choice: 'yes' },
+              { seat: seats[1]!.seatId, choice: 'no' },
+            ],
+            castSeatIds: seats.slice(0, 2).map((seat) => seat.seatId),
+            openedByTurnId: randomUUID(),
+            deadlineAt: Date.now() + 120_000,
+          },
+        }
+      : {}),
   };
   await q('INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)', [
     session,
@@ -187,6 +208,54 @@ async function seedCombatRoom(opts: {
         question: 'Which door?',
       },
     ]);
+  if (opts.restVote || opts.closedRestVote) {
+    const voteId = restVoteId;
+    events.push(
+      [
+        events.length + 1,
+        'RestVoteOpened',
+        {
+          voteId,
+          type: 'short',
+          eligibleSeats: seats.map((seat) => seat.seatId),
+          deadlineAt: Date.now() + 120_000,
+          openedByTurnId: randomUUID(),
+        },
+      ],
+      [
+        events.length + 2,
+        'RestVoteCast',
+        { voteId, seat: seats[0]!.seatId, choice: 'yes' },
+      ],
+      [
+        events.length + 3,
+        'RestVoteCastNotice',
+        { voteId, seat: seats[0]!.seatId },
+      ],
+      [
+        events.length + 4,
+        'RestVoteCast',
+        { voteId, seat: seats[1]!.seatId, choice: 'no' },
+      ],
+      [
+        events.length + 5,
+        'RestVoteCastNotice',
+        { voteId, seat: seats[1]!.seatId },
+      ],
+    );
+    if (opts.closedRestVote)
+      events.push([
+        events.length + 1,
+        'RestVoteClosed',
+        {
+          voteId,
+          outcome: 'passed',
+          closeReason: 'host-tiebreak',
+          yes: 2,
+          no: 2,
+        },
+      ]);
+  }
   for (const [seq, type, payload] of events)
     await q(
       'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,$2,$1,$3,$4)',
@@ -397,7 +466,9 @@ describe('account deletion: holds, idempotence, and nested checkpoints', () => {
       await q('SELECT 1 FROM accounts WHERE id=$1', [f.gone]),
     ).toHaveLength(0);
     expect(
-      await q("SELECT 1 FROM accounts WHERE status='deleting'"),
+      await q("SELECT 1 FROM accounts WHERE id=ANY($1) AND status='deleting'", [
+        [f.gone],
+      ]),
     ).toHaveLength(0);
     await reload(f.session);
   });
@@ -546,6 +617,76 @@ describe('account deletion: coordinates with live Rooms through the session leas
     for (const secret of [...SECRETS, f.gone])
       expect(dump).not.toContain(secret);
     await reload(f.session);
+  });
+
+  it('scrubs every ballot in an open rest vote and cancels the unrecoverable vote on restart', async () => {
+    const f = await seedCombatRoom({ clarification: false, restVote: true });
+    await sweep();
+
+    const voteEvents = (await q(
+      "SELECT type,payload FROM events WHERE session_id=$1 AND type LIKE 'RestVote%' ORDER BY seq",
+      [f.session],
+    )) as { type: string; payload: Record<string, unknown> }[];
+    const opened = voteEvents.find((event) => event.type === 'RestVoteOpened');
+    expect(opened?.payload).not.toHaveProperty('eligibleSeats');
+    for (const event of voteEvents.filter((row) =>
+      ['RestVoteCast', 'RestVoteCastNotice'].includes(row.type),
+    ))
+      expect(event.payload).toEqual({ scrubbed: true });
+    const snapshot = (
+      await q(
+        'SELECT state FROM snapshots WHERE session_id=$1 ORDER BY seq DESC LIMIT 1',
+        [f.session],
+      )
+    )[0]?.state as { restVote?: Record<string, unknown> };
+    expect(snapshot.restVote).not.toHaveProperty('eligibleSeats');
+    expect(snapshot.restVote).not.toHaveProperty('ballots');
+    expect(snapshot.restVote).not.toHaveProperty('castSeatIds');
+
+    const room = await reload(f.session);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(room.state.restVote).toBeUndefined();
+    expect(
+      (
+        await q(
+          "SELECT payload FROM events WHERE session_id=$1 AND type='RestVoteClosed' ORDER BY seq DESC LIMIT 1",
+          [f.session],
+        )
+      )[0]?.payload,
+    ).toMatchObject({
+      outcome: 'failed',
+      closeReason: 'cancelled',
+      yes: null,
+      no: null,
+    });
+  });
+
+  it('keeps the deleted host tie-break outcome while unlinking the whole vote ballot', async () => {
+    const f = await seedCombatRoom({
+      clarification: false,
+      closedRestVote: true,
+    });
+    await sweep();
+    const rows = (await q(
+      "SELECT type,payload FROM events WHERE session_id=$1 AND type LIKE 'RestVote%' ORDER BY seq",
+      [f.session],
+    )) as { type: string; payload: Record<string, unknown> }[];
+    expect(rows.find((row) => row.type === 'RestVoteClosed')?.payload).toEqual({
+      voteId: rows.find((row) => row.type === 'RestVoteClosed')?.payload.voteId,
+      outcome: 'passed',
+      closeReason: 'host-tiebreak',
+      yes: null,
+      no: null,
+    });
+    const ballots = rows.filter((row) =>
+      ['RestVoteCast', 'RestVoteCastNotice'].includes(row.type),
+    );
+    expect(ballots.length).toBeGreaterThan(0);
+    expect(
+      ballots.every(
+        (row) => JSON.stringify(row.payload) === '{"scrubbed":true}',
+      ),
+    ).toBe(true);
   });
 });
 

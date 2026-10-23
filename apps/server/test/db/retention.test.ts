@@ -11,7 +11,19 @@ import { purgeArchivedSessions } from '../../src/retention/jobs/sessions.js';
 import { restoreForMember } from '../../src/rooms/invites.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-afterAll(() => pool.end());
+const accountIds: string[] = [];
+const sessionIds: string[] = [];
+afterAll(async () => {
+  for (const id of sessionIds) {
+    await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await q('SELECT purge_session($1)', [id]);
+  }
+  for (const id of accountIds) {
+    await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await q('DELETE FROM accounts WHERE id=$1', [id]);
+  }
+  await pool.end();
+});
 const logs: Record<string, unknown>[] = [];
 const log = (e: Record<string, unknown>) => void logs.push(e);
 const q = async (sql: string, p: unknown[] = []) =>
@@ -25,6 +37,7 @@ async function account(status: string, name = 'Player') {
     "INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at,deletion_requested_at) VALUES($1,$2,'h',$3,$4,true,now(),'v1',now(),now())",
     [id, `${id}@example.test`, name, status],
   );
+  accountIds.push(id);
   return id;
 }
 async function seatEvent(
@@ -52,6 +65,7 @@ describe('retention sweeper (Postgres)', () => {
     const store = new LocalObjectStore(dir);
     const acc = await account('active');
     const sess = randomUUID();
+    sessionIds.push(sess);
     await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
       sess,
       acc,
@@ -127,6 +141,7 @@ describe('retention sweeper (Postgres)', () => {
   it('purges expired log rows but preserves old registry entries, facts, and scene summaries', async () => {
     const acc = await account('active');
     const sess = randomUUID();
+    sessionIds.push(sess);
     await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
       sess,
       acc,
@@ -203,6 +218,7 @@ describe('retention sweeper (Postgres)', () => {
   it('does not purge a session restored between the sweep select and its purge', async () => {
     const acc = await account('active');
     const sess = randomUUID();
+    sessionIds.push(sess);
     await q(
       "INSERT INTO sessions(id,owner_account_id,status,archived_at) VALUES($1,$2,'archived','2020-01-01')",
       [sess, acc],
@@ -233,6 +249,7 @@ describe('retention sweeper (Postgres)', () => {
   it('still purges an archived session once it is past the 90-day cutoff', async () => {
     const acc = await account('active');
     const sess = randomUUID();
+    sessionIds.push(sess);
     await q(
       "INSERT INTO sessions(id,owner_account_id,status,archived_at) VALUES($1,$2,'archived','2020-01-01')",
       [sess, acc],
@@ -258,6 +275,7 @@ describe('retention sweeper (Postgres)', () => {
     const friend = await account('active', 'Friend');
     const solo = randomUUID(),
       shared = randomUUID();
+    sessionIds.push(solo, shared);
     await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$3),($2,$3)', [
       solo,
       shared,
@@ -357,11 +375,10 @@ describe('retention sweeper (Postgres)', () => {
     expect(JSON.stringify(logs)).not.toContain('@example.test');
     expect(JSON.stringify(logs)).not.toContain('SecretName');
 
-    logs.length = 0;
     await runSweep(pool, { store, log });
     expect(
-      logs.find((l) => l.job === 'accountDeletion' && 'deleted' in l),
-    ).toMatchObject({ deleted: 0, held: 0, failed: 0 });
+      await count('SELECT count(*)::int n FROM accounts WHERE id=$1', [gone]),
+    ).toBe(0);
   });
 
   it('skips and audits held items', async () => {

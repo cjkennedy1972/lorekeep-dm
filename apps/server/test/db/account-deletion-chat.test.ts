@@ -8,7 +8,19 @@ import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { runSweep } from '../../src/retention/sweeper.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-afterAll(() => pool.end());
+const accountIds: string[] = [];
+const sessionIds: string[] = [];
+afterAll(async () => {
+  for (const id of sessionIds) {
+    await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await q('SELECT purge_session($1)', [id]);
+  }
+  for (const id of accountIds) {
+    await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await q('DELETE FROM accounts WHERE id=$1', [id]);
+  }
+  await pool.end();
+});
 const q = async (sql: string, p: unknown[] = []) =>
   (await pool.query(sql, p)).rows;
 
@@ -18,6 +30,7 @@ async function account(name: string) {
     "INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at,deletion_requested_at) VALUES($1,$2,'h',$3,'deleting',true,now(),'v1',now(),now())",
     [id, `${id}@example.test`, name],
   );
+  accountIds.push(id);
   return id;
 }
 
@@ -27,6 +40,7 @@ async function activeAccount(name: string) {
     "INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'h',$3,'active',true,now(),'v1',now())",
     [id, `${id}@example.test`, name],
   );
+  accountIds.push(id);
   return id;
 }
 
@@ -52,6 +66,7 @@ describe('account deletion and chat history', () => {
     const host = await activeAccount('Host');
     const session = randomUUID();
     const heldSession = randomUUID();
+    sessionIds.push(session, heldSession);
     await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2),($3,$4)', [
       session,
       host,

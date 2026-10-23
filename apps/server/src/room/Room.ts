@@ -43,6 +43,12 @@ import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
 import type { Catalog } from '@game/rules-engine';
 import { resolveSoloRest } from './rest.js';
+import {
+  castRestVote as addRestVoteCast,
+  cancelRestVoteForCombat,
+  evaluateRestVote,
+  type RestVote,
+} from './restVote.js';
 import { failForward, resolveDeathSave, retryFromCheckpoint } from './death.js';
 
 const CLIENT_GAME_STATE_FIELDS = ['characters', 'combatRoom'] as const;
@@ -185,6 +191,7 @@ export class Room {
   private readonly turnRunner?: SoloTurnRunner;
   private readonly combatRuntime: CombatRuntime;
   private reactionTimer?: NodeJS.Timeout;
+  private restVoteTimer?: NodeJS.Timeout;
   private turnInFlight = false;
   private turnAbort?: AbortController;
   private turnAccountId?: string;
@@ -259,9 +266,13 @@ export class Room {
     this.scheduleRoundTimer();
     queueMicrotask(() => {
       void this.resumeRecoveredRound().catch(() => undefined);
+      void this.cancelScrubbedRecoveredVote().catch((error) =>
+        console.error(`Rest vote recovery failed for ${this.sessionId}`, error),
+      );
     });
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     this.scheduleReaction();
+    this.scheduleRestVoteTimer();
     for (const [actionId, open] of Object.entries(
       this.state.openClarifications ?? {},
     )) {
@@ -518,6 +529,20 @@ export class Room {
     const clientVisibleState = { ...this.state };
     delete clientVisibleState.round;
     delete clientVisibleState.closedRoundSubmissions;
+    if (clientVisibleState.restVote) {
+      const vote = clientVisibleState.restVote;
+      clientVisibleState.restVote = {
+        voteId: vote.voteId,
+        type: vote.type,
+        deadlineAt: vote.deadlineAt,
+        ...(vote.remainingMs !== undefined
+          ? { remainingMs: vote.remainingMs }
+          : {}),
+        openedByTurnId: vote.openedByTurnId,
+        castSeatIds:
+          vote.castSeatIds ?? vote.ballots?.map((ballot) => ballot.seat) ?? [],
+      };
+    }
     if (!this.state.gameState) return { ...clientVisibleState, seats };
     const gameState = clientGameState(this.state.gameState);
     return { ...clientVisibleState, seats, gameState };
@@ -657,6 +682,15 @@ export class Room {
         type: 'StateSync',
         payload: { state: this.clientState() },
       });
+      const vote = this.asRestVote();
+      if (vote) {
+        const isHost = this.store.isTableHost
+          ? await this.store.isTableHost(this.sessionId, accountId)
+          : false;
+        const close = evaluateRestVote(vote, Date.now(), isHost);
+        if (close)
+          await this.finishRestVote(vote, isHost ? 'host-revoked' : 'quorum');
+      }
       connection?.close?.(1000, 'Left the table');
     });
   }
@@ -772,6 +806,10 @@ export class Room {
       this.assertNotNarrating();
       if (!this.state.seats.some((seat) => seat.accountId === accountId))
         throw new Error('Account is not seated');
+      if (this.state.seats.length > 1)
+        throw new Error(
+          'rest-not-allowed: multiplayer rest requires a party vote',
+        );
       const gameState = this.state.gameState as
         | Record<string, unknown>
         | undefined;
@@ -786,6 +824,352 @@ export class Room {
       );
       await this.commitGameState(resolved.gameState, resolved.events);
     });
+  }
+
+  castRestVote(
+    accountId: string,
+    voteId: string,
+    choice: 'yes' | 'no',
+    kind: 'ballot' | 'tiebreak',
+    actionId: string,
+  ): Promise<void> {
+    return this.enqueuePlayer(async () => {
+      const vote = this.asRestVote();
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat || !vote || vote.voteId !== voteId) {
+        this.sendError(
+          accountId,
+          'vote-closed',
+          'That rest vote is closed.',
+          actionId,
+        );
+        return;
+      }
+      if (
+        this.state.paused ||
+        !this.connections.has(accountId) ||
+        seat.presence !== 'online'
+      ) {
+        this.sendError(
+          accountId,
+          'ballot-not-allowed',
+          'Your seat cannot cast a ballot right now.',
+          actionId,
+        );
+        return;
+      }
+      if (
+        kind === 'tiebreak' &&
+        (!this.store.isTableHost ||
+          !(await this.store.isTableHost(this.sessionId, accountId)))
+      ) {
+        this.sendError(
+          accountId,
+          'ballot-not-allowed',
+          'Only the host may break a tie.',
+          actionId,
+        );
+        return;
+      }
+      if (Date.now() >= vote.deadlineAt) {
+        await this.finishRestVote(vote, 'timer');
+        this.sendError(
+          accountId,
+          'vote-closed',
+          'That rest vote is closed.',
+          actionId,
+        );
+        return;
+      }
+      const next = addRestVoteCast(vote, seat.seatId, choice, kind);
+      if (!next) {
+        // A retry of the same (voteId, seat, kind) is idempotent; a different
+        // second ballot or invalid tie-break is not.
+        if (
+          (kind === 'ballot' &&
+            vote.ballots.some((ballot) => ballot.seat === seat.seatId)) ||
+          (kind === 'tiebreak' && vote.tieBreak)
+        )
+          return;
+        this.sendError(
+          accountId,
+          'ballot-not-allowed',
+          'That ballot is not allowed.',
+          actionId,
+        );
+        return;
+      }
+      if (!this.reserveActionMutation(accountId, 'rest-vote')) {
+        this.sendError(
+          accountId,
+          'ACTION_LIMITED',
+          'Too many recent actions; try again shortly.',
+          actionId,
+        );
+        return;
+      }
+      await this.persist('RestVoteCast', {
+        voteId,
+        seat: seat.seatId,
+        choice,
+      });
+      const notice = await this.persist('RestVoteCastNotice', {
+        voteId,
+        seat: seat.seatId,
+      });
+      this.broadcast({
+        seq: notice.seq,
+        type: 'RestVoteCastNotice',
+        payload: { voteId, seat: seat.seatId },
+      } as ServerMessage);
+      const close = evaluateRestVote(next, Date.now());
+      if (close) await this.finishRestVote(next, 'quorum');
+    });
+  }
+
+  private asRestVote(): RestVote | undefined {
+    const vote = this.state.restVote;
+    if (!vote?.eligibleSeats || vote.deadlineAt === null) return undefined;
+    return {
+      voteId: vote.voteId,
+      type: vote.type,
+      eligibleSeats: vote.eligibleSeats,
+      ballots: vote.ballots ?? [],
+      ...(vote.tieBreak ? { tieBreak: vote.tieBreak } : {}),
+      openedByTurnId: vote.openedByTurnId,
+      deadlineAt: vote.deadlineAt,
+    };
+  }
+
+  private async cancelScrubbedRecoveredVote(): Promise<void> {
+    if (!this.state.restVote || this.state.restVote.eligibleSeats) return;
+    await this.enqueue(async () => {
+      const vote = this.state.restVote;
+      if (!vote || vote.eligibleSeats) return;
+      const turnId = randomUUID();
+      const nextState = RoomStateSchema.parse({
+        ...this.state,
+        restVote: undefined,
+        restVoteLastClosedAt: Date.now(),
+        lastRestVoteResult: {
+          voteId: vote.voteId,
+          type: vote.type,
+          outcome: 'failed',
+          closeReason: 'cancelled',
+        },
+        lastRestVoteResultTurnId: turnId,
+      });
+      const stored = await this.writeTurn(
+        this.sessionId,
+        [
+          {
+            turnId,
+            type: 'RestVoteClosed',
+            payload: {
+              voteId: vote.voteId,
+              outcome: 'failed',
+              closeReason: 'cancelled',
+              yes: null,
+              no: null,
+            },
+          },
+        ],
+        nextState,
+        this.lease,
+      );
+      this.seq = stored.events.at(-1)?.seq ?? this.seq;
+      this.state = nextState;
+      this.broadcast({
+        seq: this.seq,
+        type: 'RestVoteClosed',
+        payload: stored.events[0]?.payload as Record<string, unknown>,
+      } as ServerMessage);
+    });
+  }
+
+  private buildRestVoteOpenEvent(
+    turnId: string,
+    type: 'short' | 'long',
+    completedRoundId?: string,
+  ): EventInput | undefined {
+    const now = Date.now();
+    const round = this.state.round;
+    const game = this.state.gameState as
+      | {
+          combatRoom?: unknown;
+          gameEngine?: { combat?: { combatants?: unknown[] } };
+        }
+      | undefined;
+    const inCombat =
+      !!game?.combatRoom || !!game?.gameEngine?.combat?.combatants?.length;
+    const completesCurrentRound =
+      !!completedRoundId &&
+      round?.roundId === completedRoundId &&
+      round.status === 'resolving';
+    if (
+      this.state.paused ||
+      this.state.seats.length < 2 ||
+      this.state.restVote ||
+      inCombat ||
+      (round &&
+        ['open', 'closing', 'resolving'].includes(round.status) &&
+        !completesCurrentRound)
+    )
+      return undefined;
+    if ((this.state.restVoteCount ?? 0) >= 6) return undefined;
+    if (
+      this.state.restVoteLastClosedAt !== undefined &&
+      now - this.state.restVoteLastClosedAt < 10 * 60_000
+    )
+      return undefined;
+    return {
+      turnId,
+      type: 'RestVoteOpened',
+      payload: {
+        voteId: randomUUID(),
+        type,
+        eligibleSeats: this.state.seats.map((seat) => seat.seatId),
+        deadlineAt: now + 120_000,
+        openedByTurnId: turnId,
+      },
+    };
+  }
+
+  private scheduleRestVoteTimer(): void {
+    clearTimeout(this.restVoteTimer);
+    const vote = this.asRestVote();
+    if (!vote || this.state.paused) return;
+    this.restVoteTimer = setTimeout(
+      () => {
+        void this.enqueue(async () => {
+          const current = this.asRestVote();
+          if (
+            current?.voteId === vote.voteId &&
+            Date.now() >= current.deadlineAt
+          )
+            await this.finishRestVote(current, 'timer');
+        }).catch((error) =>
+          console.error(`Rest vote timer failed for ${this.sessionId}`, error),
+        );
+      },
+      vote.tieBreak ? 0 : Math.max(0, vote.deadlineAt - Date.now()),
+    );
+  }
+
+  private async finishRestVote(
+    vote: RestVote,
+    trigger: 'timer' | 'quorum' | 'combat' | 'host-revoked',
+  ): Promise<void> {
+    if (this.state.restVote?.voteId !== vote.voteId) return;
+    clearTimeout(this.restVoteTimer);
+    let close =
+      trigger === 'combat'
+        ? cancelRestVoteForCombat()
+        : evaluateRestVote(
+            vote,
+            trigger === 'timer' ? vote.deadlineAt : Date.now(),
+            trigger === 'host-revoked',
+          );
+    if (!close && trigger !== 'timer')
+      close = evaluateRestVote(
+        vote,
+        vote.deadlineAt,
+        trigger === 'host-revoked',
+      );
+    if (!close) return;
+    const turnId = randomUUID();
+    const writes: EventInput[] = [
+      {
+        turnId,
+        type: 'RestVoteClosed',
+        payload: {
+          voteId: vote.voteId,
+          outcome: close.outcome,
+          closeReason: close.closeReason,
+          yes: close.yes,
+          no: close.no,
+        },
+      },
+    ];
+    let gameState = this.state.gameState as Record<string, unknown> | undefined;
+    if (close.outcome === 'passed' && trigger !== 'combat') {
+      if (!gameState)
+        throw new Error('Game state is unavailable for rest effects');
+      const effects: Record<string, unknown>[] = [];
+      for (const seat of this.state.seats) {
+        if (
+          !(gameState.characters as Record<string, unknown> | undefined)?.[
+            seat.accountId
+          ]
+        )
+          continue;
+        const rested = resolveSoloRest(
+          gameState,
+          seat.accountId,
+          vote.type,
+          loadCatalog(),
+        );
+        gameState = rested.gameState;
+        effects.push(...rested.events);
+      }
+      writes.push(
+        ...effects.map((event) => ({
+          turnId,
+          type: String(event.type),
+          payload: event,
+        })),
+      );
+      writes.push({
+        turnId,
+        type: 'RestApplied',
+        payload: { voteId: vote.voteId, type: vote.type, effects },
+      });
+      writes.push({
+        turnId,
+        type: 'GameStateCommitted',
+        payload: { gameState },
+      });
+    }
+    const nextState = RoomStateSchema.parse({
+      ...this.state,
+      restVote: undefined,
+      restVoteLastClosedAt: Date.now(),
+      lastRestVoteResult: {
+        voteId: vote.voteId,
+        type: vote.type,
+        outcome: close.outcome,
+        closeReason: close.closeReason,
+      },
+      lastRestVoteResultTurnId: turnId,
+      gameState,
+    });
+    const stored = await this.writeTurn(
+      this.sessionId,
+      writes,
+      nextState,
+      this.lease,
+    );
+    this.seq = stored.events.at(-1)?.seq ?? this.seq;
+    this.state = nextState;
+    const closeEvent = stored.events.find(
+      (event) => event.type === 'RestVoteClosed',
+    );
+    if (closeEvent)
+      this.broadcast({
+        seq: closeEvent.seq,
+        type: 'RestVoteClosed',
+        payload: closeEvent.payload as Record<string, unknown>,
+      } as ServerMessage);
+    if (close.outcome === 'passed' && trigger !== 'combat')
+      this.broadcast({
+        seq: this.seq,
+        type: 'RestApplied',
+        payload: { voteId: vote.voteId, type: vote.type },
+      } as ServerMessage);
+    this.scheduleRestVoteTimer();
+    if (trigger !== 'combat') await this.openRound();
   }
 
   rollDeathSave(accountId: string): Promise<void> {
@@ -951,7 +1335,18 @@ export class Room {
         throw new Error('Account is not seated');
       if (!paused && !isHost) throw new NotTableHostError();
       if ((this.state.paused ?? false) === paused) return;
-      await this.persist('TablePaused', { paused });
+      const vote = this.state.restVote;
+      const now = Date.now();
+      await this.persist('TablePaused', {
+        paused,
+        ...(vote && paused && vote.deadlineAt !== null
+          ? { restVoteRemainingMs: Math.max(0, vote.deadlineAt - now) }
+          : {}),
+        ...(vote && !paused
+          ? { restVoteDeadlineAt: now + (vote.remainingMs ?? 0) }
+          : {}),
+      });
+      this.scheduleRestVoteTimer();
       if (paused) await this.freezeRoundTimer();
       else await this.resumeRoundTimer();
       this.broadcast({
@@ -1095,7 +1490,7 @@ export class Room {
 
   reserveActionMutation(
     accountId: string,
-    kind: 'submit' | 'edit' | 'withdraw',
+    kind: 'submit' | 'edit' | 'withdraw' | 'rest-vote',
   ): boolean {
     const seat = this.state.seats.find((item) => item.accountId === accountId);
     if (!seat) return false;
@@ -1229,7 +1624,12 @@ export class Room {
   }
 
   private async openRound(): Promise<void> {
-    if (!this.state.roundsEnabled || !this.state.gameState || this.state.paused)
+    if (
+      !this.state.roundsEnabled ||
+      !this.state.gameState ||
+      this.state.paused ||
+      this.state.restVote
+    )
       return;
     if (this.state.round?.status === 'open') return;
     const previousQueue = [...(this.state.round?.queuedSubmissions ?? [])].sort(
@@ -1612,6 +2012,7 @@ export class Room {
       if (!round) return false;
       const currentSubmissions = round.submissions;
       const queued =
+        !!this.state.restVote ||
         round.status === 'resolving' ||
         (round.status === 'open' &&
           round.eligibleSeatIds.length === 1 &&
@@ -1746,9 +2147,13 @@ export class Room {
       if (this.hasActionId(actionId, receiptSeq, accountId)) return 'duplicate';
       const round = this.state.round;
       if (!round) return 'unknown_submission';
-      if (round.status !== 'open' && round.status !== 'resolving')
+      if (
+        round.status !== 'open' &&
+        round.status !== 'resolving' &&
+        !this.state.restVote
+      )
         return 'round_closed';
-      const queued = round.status === 'resolving';
+      const queued = !!this.state.restVote || round.status === 'resolving';
       const list = queued ? round.queuedSubmissions : round.submissions;
       const action = list.find(
         (item) =>
@@ -1899,7 +2304,7 @@ export class Room {
       const round = this.state.round;
       if (round) {
         if (round.status === 'closing') return 'round_closed';
-        const queued = round.status === 'resolving';
+        const queued = !!this.state.restVote || round.status === 'resolving';
         const list = queued ? round.queuedSubmissions : round.submissions;
         const index = list.findIndex(
           (item) =>
@@ -2092,6 +2497,7 @@ export class Room {
           text,
           state: this.state.gameState ?? this.state,
           playerName,
+          lastRestVoteResult: this.state.lastRestVoteResult,
           allowClarification: !clarificationAsked,
           clarificationAsked,
           steerAway: xCardAtStart.requested > xCardAtStart.steered,
@@ -2163,7 +2569,7 @@ export class Room {
               'RulingLogged',
             ].includes(String((event as { type?: unknown }).type)),
         );
-        const writes = result.events
+        const writes: EventInput[] = result.events
           .filter((event) => {
             const type = String((event as { type?: string }).type);
             return (
@@ -2179,6 +2585,34 @@ export class Room {
             type: String((event as { type: string }).type),
             payload: event,
           }));
+        const restRequest = result.fallback
+          ? undefined
+          : (result.events.find(
+              (event) =>
+                (event as { type?: string }).type === 'RestVoteRequested',
+            ) as { kind?: 'short' | 'long' } | undefined);
+        for (let index = writes.length - 1; index >= 0; index--)
+          if (writes[index]?.type === 'RestVoteRequested')
+            writes.splice(index, 1);
+        const combatStartAt = result.events.findIndex(
+          (event) => (event as { type?: string }).type === 'CombatStarted',
+        );
+        if (combatStartAt >= 0 && this.state.restVote) {
+          const closePayload = {
+            voteId: this.state.restVote.voteId,
+            ...cancelRestVoteForCombat(),
+          };
+          const insertAt = writes.findIndex(
+            (write) => write.type === 'CombatStarted',
+          );
+          writes.splice(insertAt < 0 ? 0 : insertAt, 0, {
+            seq: undefined,
+            turnId: id,
+            type: 'RestVoteClosed',
+            payload: closePayload,
+          });
+          clearTimeout(this.restVoteTimer);
+        }
         const clarification = result.clarification;
         if (!clarification) {
           writes.push({
@@ -2209,6 +2643,14 @@ export class Room {
                   : [actionId],
             },
           });
+        if (restRequest?.kind) {
+          const openEvent = this.buildRestVoteOpenEvent(
+            id,
+            restRequest.kind,
+            roundId,
+          );
+          if (openEvent) writes.push(openEvent);
+        }
         const nextSeq = this.seq + writes.length;
         const live = this.state.gameState as
           | Record<string, unknown>
@@ -2289,12 +2731,54 @@ export class Room {
             payload: event,
           });
         const deadlineAt = Date.now() + CLARIFICATION_TIMEOUT_MS;
+        const restVoteClosePayload = writes.find(
+          (write) => write.type === 'RestVoteClosed',
+        )?.payload as
+          | {
+              outcome: 'passed' | 'failed';
+              closeReason: NonNullable<
+                RoomState['lastRestVoteResult']
+              >['closeReason'];
+            }
+          | undefined;
         const nextState = {
           ...this.state,
           gameState: settleEngine(turnGameState),
+          ...(writes.some((write) => write.type === 'RestVoteClosed')
+            ? {
+                restVote: undefined,
+                restVoteLastClosedAt: Date.now(),
+                ...(this.state.restVote && {
+                  lastRestVoteResult: {
+                    voteId: this.state.restVote.voteId,
+                    type: this.state.restVote.type,
+                    outcome: restVoteClosePayload!.outcome,
+                    closeReason: restVoteClosePayload!.closeReason,
+                  },
+                  lastRestVoteResultTurnId: id,
+                }),
+              }
+            : {}),
+          ...(writes.find((write) => write.type === 'RestVoteOpened')
+            ? {
+                restVoteCount: (this.state.restVoteCount ?? 0) + 1,
+                restVote: {
+                  ...(writes.find((write) => write.type === 'RestVoteOpened')!
+                    .payload as NonNullable<RoomState['restVote']>),
+                  ballots: [],
+                  castSeatIds: [],
+                },
+              }
+            : {}),
           ...(roundId && this.state.round?.roundId === roundId
             ? { round: { ...this.state.round, status: 'resolved' as const } }
             : {}),
+          ...(this.state.lastRestVoteResult &&
+            this.state.lastRestVoteResultTurnId !== id &&
+            !writes.some((write) => write.type === 'RestVoteClosed') && {
+              lastRestVoteResult: undefined,
+              lastRestVoteResultTurnId: undefined,
+            }),
           ...(!clarification && {
             xCard: {
               requested: this.state.xCard?.requested ?? 0,
@@ -2347,6 +2831,33 @@ export class Room {
         );
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;
+        const opened = stored.events.find(
+          (event) => event.type === 'RestVoteOpened',
+        );
+        if (opened) {
+          this.broadcast({
+            seq: opened.seq,
+            type: 'RestVoteOpened',
+            payload: {
+              voteId: (opened.payload as { voteId: string }).voteId,
+              type: (opened.payload as { type: 'short' | 'long' }).type,
+              deadlineAt: (opened.payload as { deadlineAt: number }).deadlineAt,
+            },
+          } as ServerMessage);
+          this.scheduleRestVoteTimer();
+        }
+        const cancelled = stored.events.find(
+          (event) =>
+            event.type === 'RestVoteClosed' &&
+            (event.payload as { closeReason?: string }).closeReason ===
+              'cancelled-combat',
+        );
+        if (cancelled)
+          this.broadcast({
+            seq: cancelled.seq,
+            type: 'RestVoteClosed',
+            payload: cancelled.payload as Record<string, unknown>,
+          } as ServerMessage);
         if (!clarification && roundId)
           for (const submitted of this.state.round?.roundId === roundId
             ? this.state.round.submissions.flatMap((action) => action.actionIds)
@@ -2645,6 +3156,7 @@ export class Room {
   async drain(deadlineMs = DRAIN_DEADLINE_MS): Promise<void> {
     this.draining = true;
     clearTimeout(this.reactionTimer);
+    clearTimeout(this.restVoteTimer);
     for (const timer of this.clarificationTimers.values()) clearTimeout(timer);
     let deadline: NodeJS.Timeout | undefined;
     const timedOut = new Promise<boolean>((resolve) => {

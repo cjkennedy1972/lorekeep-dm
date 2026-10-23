@@ -35,11 +35,46 @@ export const ClosedRoundSubmissionSchema = z.object({
   accountId: AccountIdSchema,
   actionIds: z.array(z.uuid()),
 });
+export const RestVoteSchema = z.object({
+  voteId: z.uuid(),
+  type: z.enum(['short', 'long']),
+  deadlineAt: z.number().nullable(),
+  remainingMs: z.number().nonnegative().optional(),
+  openedByTurnId: z.uuid(),
+  // Internal recovery data. Client state carries castSeatIds only.
+  eligibleSeats: z.array(SeatIdSchema).optional(),
+  ballots: z
+    .array(z.object({ seat: SeatIdSchema, choice: z.enum(['yes', 'no']) }))
+    .optional(),
+  tieBreak: z.enum(['yes', 'no']).optional(),
+  castSeatIds: z.array(SeatIdSchema).optional(),
+});
+export const RestVoteResultSchema = z.object({
+  voteId: z.uuid(),
+  type: z.enum(['short', 'long']),
+  outcome: z.enum(['passed', 'failed']),
+  closeReason: z.enum([
+    'majority',
+    'no-majority-early',
+    'no-majority',
+    'host-tiebreak',
+    'tie-failed',
+    'expired',
+    'cancelled',
+    'cancelled-combat',
+  ]),
+});
 export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
   round: RoundStateSchema.optional(),
+  restVote: RestVoteSchema.optional(),
+  restVoteCount: z.int().nonnegative().optional(),
+  restVoteLastClosedAt: z.number().nonnegative().optional(),
+  /** Most recent result for the DM's next-turn context; not a rest mechanic. */
+  lastRestVoteResult: RestVoteResultSchema.optional(),
+  lastRestVoteResultTurnId: z.uuid().optional(),
   roundsEnabled: z.boolean().optional(),
   /** Host setting for rounds opened after the current one; null disables the deadline. */
   roundDurationMs: z.number().int().nonnegative().nullable().optional(),
@@ -70,6 +105,8 @@ export const RoomStateSchema = z.object({
 export type Presence = z.infer<typeof PresenceSchema>;
 export type Seat = z.infer<typeof SeatSchema>;
 export type RoomState = z.infer<typeof RoomStateSchema>;
+export type RestVoteState = z.infer<typeof RestVoteSchema>;
+export type RestVoteResult = z.infer<typeof RestVoteResultSchema>;
 
 export const CreateRoomInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
