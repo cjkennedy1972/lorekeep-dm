@@ -170,6 +170,14 @@ export function HostControls({
           Save round timer
         </button>
       </form>
+      {others.length === 0 && (
+        <div className="actions">
+          <button type="button" disabled>
+            Transfer host
+          </button>
+          <span>No other player can take host yet.</span>
+        </div>
+      )}
       {others.length > 0 && (
         <section aria-labelledby="host-seats-heading" className="host-seats">
           <h3 id="host-seats-heading">Players</h3>

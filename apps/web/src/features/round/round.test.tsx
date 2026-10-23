@@ -266,6 +266,26 @@ describe('HostControls', () => {
     expect(screen.getByRole('button', { name: 'Make Bo host' })).toBeTruthy();
   });
 
+  it('shows transfer host disabled when no other player can take host', () => {
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected
+        send={vi.fn()}
+        seats={[seats[0]!]}
+        selfSeatId="seat-a"
+      />,
+    );
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Transfer host',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
   it('transfers host only after confirming', () => {
     const send = vi.fn(() => 'id');
     render(
