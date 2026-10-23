@@ -94,6 +94,12 @@ export class Room {
     };
   }
 
+  /** StateSync payload: the round rides beside the state, as the server sends it (clientSyncPayload). */
+  syncPayload() {
+    const { round, ...state } = this.state();
+    return { state, round };
+  }
+
   /** Applies a round or host message from a seat; the seat identity always comes from the socket. */
   act(accountId: string, actionId: string, type: string, payload: unknown) {
     const seat = this.seats.get(accountId);
@@ -200,7 +206,7 @@ export class Room {
     const msg: ServerMessage = {
       seq: ++this.seq,
       type: 'StateSync',
-      payload: { state: this.state() },
+      payload: this.syncPayload(),
     };
     for (const set of this.conns.values()) for (const send of set) send(msg);
   }
@@ -228,7 +234,7 @@ export class Room {
     const sync: ServerMessage = {
       seq: ++this.seq,
       type: 'StateSync',
-      payload: { state: this.state() },
+      payload: this.syncPayload(),
     };
     // The protocol has no seat-added message: a new seat is announced by re-syncing everyone.
     if (fresh) for (const c of this.conns.values()) for (const s of c) s(sync);
@@ -255,7 +261,7 @@ export class Room {
     const msg: ServerMessage = {
       seq: ++this.seq,
       type: 'StateSync',
-      payload: { state: this.state() },
+      payload: this.syncPayload(),
     };
     for (const set of this.conns.values()) for (const send of set) send(msg);
   }
