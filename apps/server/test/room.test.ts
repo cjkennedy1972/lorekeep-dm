@@ -404,6 +404,98 @@ describe('room actor', () => {
       name: 'RoomPausedError',
     });
   });
+  it.each([false, true])(
+    'resumes a recovered resolve-now close after restart (paused=%s)',
+    async (paused) => {
+      const { store, events } = fixture();
+      events.push({
+        sessionId: id,
+        seq: 1,
+        turnId: randomUUID(),
+        type: 'Seed',
+        payload: {},
+        ts: new Date(),
+      });
+      const accountId = randomUUID();
+      const seatId = randomUUID();
+      const actionId = randomUUID();
+      const latest: LatestState = {
+        snapshot: {
+          sessionId: id,
+          seq: 1,
+          createdAt: new Date(),
+          state: {
+            sessionId: id,
+            phase: 'lobby',
+            seats: [
+              {
+                seatId,
+                accountId,
+                displayName: 'Host',
+                presence: 'online',
+              },
+            ],
+            roundsEnabled: true,
+            paused,
+            gameState: {},
+            round: {
+              roundId: randomUUID(),
+              status: 'closing',
+              closeReason: 'resolve-now',
+              eligibleSeatIds: [seatId],
+              deadlineAt: null,
+              submissions: [
+                {
+                  seatId,
+                  accountId,
+                  actionId,
+                  originalActionId: actionId,
+                  actionIds: [actionId],
+                  text: 'Finish this action',
+                  playerName: 'Host',
+                  receiptSeq: 1,
+                },
+              ],
+              queuedSubmissions: [],
+            },
+          },
+        },
+        events: [],
+      };
+      const room = new Room(store, lease, latest, {
+        async run() {
+          return {
+            narration: 'Recovered and resolved.',
+            events: [],
+            state: {},
+            turnSeed: 'seed',
+            usage: { in: 0, out: 0 },
+          };
+        },
+      });
+      if (paused) await room.setPaused(accountId, false, true);
+      await new Promise<void>((resolve, reject) => {
+        const deadline = Date.now() + 1000;
+        const check = () => {
+          if (events.some((event) => event.type === 'RoundCompleted')) {
+            resolve();
+          } else if (Date.now() >= deadline) {
+            reject(new Error('Recovered round did not complete'));
+          } else {
+            setTimeout(check, 5);
+          }
+        };
+        check();
+      });
+      expect(
+        events.filter((event) => event.type === 'RoundResolved'),
+      ).toHaveLength(1);
+      expect(
+        events.filter((event) => event.type === 'RoundCompleted'),
+      ).toHaveLength(1);
+      await room.drain(100);
+    },
+  );
   it('keeps the previous version when an edit gate blocks during close and rejects later edits', async () => {
     const { store, events } = fixture();
     store.isTableHost = async () => true;

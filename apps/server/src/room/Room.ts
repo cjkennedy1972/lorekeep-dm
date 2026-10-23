@@ -1289,6 +1289,16 @@ export class Room {
 
   private async resumeRoundTimer(): Promise<void> {
     const round = this.state.round;
+    if (round?.status === 'closing') {
+      const reason =
+        round.closeReason === 'resolve-now'
+          ? 'timer'
+          : (round.closeReason ?? 'timer');
+      queueMicrotask(() => {
+        void this.resolveRound(reason).catch(() => undefined);
+      });
+      return;
+    }
     if (
       round?.status === 'open' &&
       round.deadlineAt === null &&
@@ -1317,9 +1327,11 @@ export class Room {
     }
     if (round.status === 'closing') {
       // No ingress gates survive a process restart; finish the persisted close.
-      void this.resolveRound(round.closeReason ?? 'timer').catch(
-        () => undefined,
-      );
+      const reason =
+        round.closeReason === 'resolve-now'
+          ? 'timer'
+          : (round.closeReason ?? 'timer');
+      void this.resolveRound(reason).catch(() => undefined);
       return;
     }
     if (round.status === 'resolving' && round.submissions.length > 0) {
