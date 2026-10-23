@@ -104,6 +104,17 @@ describe('roomReducer', () => {
     expect(v.room?.seats[0]?.presence).toBe('online');
     expect(roomReducer(v, sync(7)).needsResync).toBe(false);
   });
+  test('StateSync at the stored seq clears a pending resync', () => {
+    const thin = roomReducer(roomReducer(initialRoomView, sync(3)), {
+      seq: 4,
+      type: 'RoundOpened',
+      payload: {},
+    } as unknown as ServerMessage);
+    expect(thin.needsResync).toBe(true);
+    const v = roomReducer(thin, syncWithRound(3, round));
+    expect(v.needsResync).toBe(false);
+    expect(v.room?.round).toEqual(round);
+  });
   test('patch before any StateSync requests resync', () => {
     expect(roomReducer(initialRoomView, pres(1, 'away')).needsResync).toBe(
       true,

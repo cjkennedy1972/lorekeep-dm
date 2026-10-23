@@ -97,7 +97,25 @@ export class Room {
   /** StateSync payload: the round rides beside the state, as the server sends it (clientSyncPayload). */
   syncPayload() {
     const { round, ...state } = this.state();
-    return { state, round };
+    return { state, round: round && this.publicRound(round) };
+  }
+
+  /** Strips submission text and accountId, which the strict RoundSnapshot schema rejects. */
+  private publicRound(round: NonNullable<RoomState['round']>) {
+    const pub = (s: Submission) => ({
+      seatId: s.seatId,
+      actionId: s.actionId,
+      originalActionId: s.originalActionId,
+      actionIds: s.actionIds,
+      playerName: s.playerName,
+      receiptSeq: s.receiptSeq,
+      ...(s.editedAt === undefined ? {} : { editedAt: s.editedAt }),
+    });
+    return {
+      ...round,
+      submissions: round.submissions.map(pub),
+      queuedSubmissions: round.queuedSubmissions.map(pub),
+    };
   }
 
   /** Applies a round or host message from a seat; the seat identity always comes from the socket. */
