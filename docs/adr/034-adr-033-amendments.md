@@ -24,7 +24,7 @@ This amends ADR-030 §1.6 (preconditions), §4.8 (close reasons), §6.1 (event s
 2. The cancelled close is a failed vote under ADR-030 §8. It emits `RestVoteClosed` only, applies no effects, emits no `RestApplied`, and changes no rest state. Its ballots are not counted in the tally. The §1.7 cooldown still starts, as for any close.
 3. No vote can open until `CombatEnded`.
 4. **One close mechanism.** The close is recorded by `closeReason`, not by a separate field. ADR-030 §6.1 names the close reason field `reason` in `RestVoteClosed{voteId, outcome, reason, yes, no}`. This ADR renames that field to `closeReason` for every rest-vote close. The rename applies to every ADR-030 use of `reason` for a vote close (§3, §4.8, §6.1, §7.2). Uses of `reason` for `rest-not-allowed` and `vote-closed` are error reasons under ADR-022 §2.4 and are unchanged.
-5. **Close enum.** The ADR-030 §4.8 close enum gains `cancelled-combat` as a `closeReason`. The vote's `outcome` is `failed`, the existing failed value that §8 uses. No outcome is applied to the rest state.
+5. **Close enum.** The ADR-030 §4.8 close enum gains `cancelled-combat` as a `closeReason`. The one form of a combat-cancelled close is the pair `outcome: failed` with `closeReason: cancelled-combat`, the existing failed value that §8 uses. No outcome is applied to the rest state.
 6. ADR-033 D12 and D20 wrote the close as "outcome `cancelled-combat`". That wording is superseded by items 4 and 5 (see §6 item 3).
 
 ### 2. ADR-022 amendment: combat narration tool scope
@@ -63,9 +63,11 @@ These are the combat and rest events declared for §15.6. ADR-033 §7.1 declares
 | `TurnResolved` | `{turnId, entityId, eventIds}` | ADR-033 §7.1 | log and DM input |
 | `MoveStarted` | `{turnId, entityId, path}` | ADR-033 §7.1 | all seats |
 | `MoveEnded` | `{turnId, entityId, reason}`, `reason` ∈ ADR-033 §4.6 | ADR-033 §7.1 | all seats |
-| `ReactionPromptOpened` (broadcast form, visible reactor) | `{promptId, reactorEntityId, reactorSeat, deadline}` | ADR-033 §3.1 | all seats |
-| `ReactionPromptOpened` (broadcast form, hidden reactor) | none; not sent to non-controlling seats, which see nothing (§3 item 1) | this ADR §3 | controlling seat only |
-| `ReactionPromptOpened` (private form) | full form for the controlling seat: `{promptId, reactorEntityId, reactorSeat, deadline, trigger, options}` | ADR-033 §3.2 | controlling seat only |
+| `ReactionPromptOpened`, non-controlling seats, visible reactor | `{promptId, reactorEntityId, reactorSeat, deadline}` | ADR-033 §3.1 | non-controlling seats |
+| `ReactionPromptOpened`, non-controlling seats, hidden reactor | nothing is sent (§3 item 1) | this ADR §3 | none |
+| `ReactionPromptOpened`, controlling seat | full form: `{promptId, reactorEntityId, reactorSeat, deadline, trigger, options}` | ADR-033 §3.1, §3.2 | controlling seat only |
+
+The same split applies to the snapshot and to replay: a non-controlling seat sees a hidden reactor's prompt not at all, and a visible reactor's prompt as the broadcast form.
 | `ReactionAnswered` | `{promptId, answer}` | ADR-033 §7.1 | all seats, unless hidden (§3 of this ADR) |
 | `ReactionDeclined` | `{promptId, cause}`, `cause` ∈ `timeout`, `presence`, `no-controller`, `cap`, `restart` | ADR-033 §7.1 | all seats, unless hidden |
 | `NarrationCommitted` | `{turnId, narrationId}` | ADR-033 §7.1 | all seats |
@@ -92,6 +94,7 @@ These codes are declared here as an extension of the ADR-022 §2.4 enum, as ADR-
    - §1 admission table, the `reaction-pending` row. The rejected code is `reaction-window-open`. `reaction-pending` is the phase name only.
    - §1 admission rule 1, which says the turn commands are "accepted only in `awaiting-command`". That is still true, and the table governs.
    - §3.1, `ReactionPromptOpened` payload. The broadcast and private forms are given in §5 of this ADR.
+   - §3.2, the sentence "Other seats see only 'prompt open' and its deadline", for hidden reactors only. §3 item 1 of this ADR replaces it. Visible reactors keep the §3.1 broadcast.
    - §8 "Rest votes" bullet, replaced by §1 of this ADR.
    - D12, replaced by §1 of this ADR. Its "outcome `cancelled-combat`" wording is replaced by `closeReason: cancelled-combat` with `outcome: failed` (§1 items 4 and 5).
    - D20, same replacement as D12.
