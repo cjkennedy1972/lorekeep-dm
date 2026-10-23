@@ -67,11 +67,12 @@ These are the combat and rest events declared for §15.6. ADR-033 §7.1 declares
 | `ReactionPromptOpened`, non-controlling seats, hidden reactor | nothing is sent (§3 item 1) | this ADR §3 | none |
 | `ReactionPromptOpened`, controlling seat | full form: `{promptId, reactorEntityId, reactorSeat, deadline, trigger, options}` | ADR-033 §3.1, §3.2 | controlling seat only |
 
-The same split applies to the snapshot and to replay: a non-controlling seat sees a hidden reactor's prompt not at all, and a visible reactor's prompt as the broadcast form.
 | `ReactionAnswered` | `{promptId, answer}` | ADR-033 §7.1 | all seats, unless hidden (§3 of this ADR) |
 | `ReactionDeclined` | `{promptId, cause}`, `cause` ∈ `timeout`, `presence`, `no-controller`, `cap`, `restart` | ADR-033 §7.1 | all seats, unless hidden |
 | `NarrationCommitted` | `{turnId, narrationId}` | ADR-033 §7.1 | all seats |
 | `RestVoteClosed` | `{voteId, outcome, closeReason, yes, no}` | ADR-030 §6.1, field renamed by §1 item 4 | all seats |
+
+The same split applies to the snapshot and to replay: a non-controlling seat sees a hidden reactor's prompt not at all, and a visible reactor's prompt as the broadcast form.
 
 `RestVoteOpened`, `RestVoteCast`, `RestVoteCastNotice`, and `RestApplied` keep ADR-030 §6.1 payloads unchanged. `ReactionAvailable` is an M1 engine event and is not declared here.
 
