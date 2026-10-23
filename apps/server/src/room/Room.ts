@@ -396,6 +396,13 @@ export class Room {
     lastSeq = -1,
   ): Promise<void> {
     return this.enqueue(async () => {
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat) {
+        connection.close?.(1008, 'Seat required to subscribe');
+        return;
+      }
       const ownerAccountId = await this.store.tableHostAccountId?.(
         this.sessionId,
       );

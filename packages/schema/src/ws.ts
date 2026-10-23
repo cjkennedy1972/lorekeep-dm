@@ -229,15 +229,17 @@ export const RewindTurnSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
-const RoundSnapshotSubmissionSchema = z.object({
-  seatId: SeatIdSchema,
-  actionId: z.uuid(),
-  originalActionId: z.uuid(),
-  actionIds: z.array(z.uuid()),
-  playerName: z.string().min(1),
-  receiptSeq: z.int().positive(),
-  editedAt: z.number().optional(),
-});
+const RoundSnapshotSubmissionSchema = z
+  .object({
+    seatId: SeatIdSchema,
+    actionId: z.uuid(),
+    originalActionId: z.uuid(),
+    actionIds: z.array(z.uuid()),
+    playerName: z.string().min(1),
+    receiptSeq: z.int().positive(),
+    editedAt: z.number().optional(),
+  })
+  .strict();
 export const RoundSnapshotSchema = z.object({
   roundId: z.uuid(),
   status: z.enum(['open', 'closing', 'resolving', 'resolved']),

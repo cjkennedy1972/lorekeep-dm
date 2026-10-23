@@ -443,6 +443,60 @@ describe('room actor', () => {
     await room.join(leaver, { send: () => {} });
     expect(room.state.seats.map((seat) => seat.accountId)).toContain(leaver);
   });
+  it('does not allow a left account to resubscribe or receive later broadcasts', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const leaver = randomUUID();
+    const sent: unknown[] = [];
+    const closes: unknown[] = [];
+    await room.seat(leaver, 'Leaver');
+    await room.subscribe(leaver, {
+      send: (message) => sent.push(message),
+      close: (...args: unknown[]) => closes.push(args),
+    });
+
+    await room.leave(leaver);
+    sent.length = 0;
+    await room.subscribe(leaver, {
+      send: (message) => sent.push(message),
+      close: (...args: unknown[]) => closes.push(args),
+    });
+    await room.seat(randomUUID(), 'Another player');
+
+    expect(sent).toEqual([]);
+    expect(closes).toContainEqual([1000, 'Left the table']);
+    expect(closes).toContainEqual([1008, 'Seat required to subscribe']);
+  });
+  it('does not allow a kicked account to resubscribe or receive later broadcasts', async () => {
+    const { store } = fixture();
+    const host = randomUUID();
+    store.isTableHost = async (_sessionId, accountId) => accountId === host;
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const target = randomUUID();
+    const sent: unknown[] = [];
+    const closes: unknown[] = [];
+    await room.seat(host, 'Host');
+    await room.seat(target, 'Target');
+    await room.subscribe(target, {
+      send: (message) => sent.push(message),
+      close: (...args: unknown[]) => closes.push(args),
+    });
+    const targetSeat = room.state.seats.find(
+      (seat) => seat.accountId === target,
+    )!;
+
+    await room.kickSeat(host, randomUUID(), targetSeat.seatId);
+    sent.length = 0;
+    await room.subscribe(target, {
+      send: (message) => sent.push(message),
+      close: (...args: unknown[]) => closes.push(args),
+    });
+    await room.seat(randomUUID(), 'Another player');
+
+    expect(sent).toEqual([]);
+    expect(closes).toContainEqual([1008, 'Seat revoked by the host']);
+    expect(closes).toContainEqual([1008, 'Seat required to subscribe']);
+  });
   it('persists validated registry events through the room mailbox', async () => {
     const { store, registryWrites } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id));
@@ -462,17 +516,22 @@ describe('room actor', () => {
     expect(events).toHaveLength(1);
     const stale: unknown[] = [];
     const current: unknown[] = [];
+    const staleAccount = randomUUID();
+    const currentAccount = randomUUID();
+    await room.seat(staleAccount, 'Stale');
+    await room.seat(currentAccount, 'Current');
+    const currentSeq = room.seq;
     await room.subscribe(
-      randomUUID(),
+      staleAccount,
       { send: (message) => stale.push(message) },
       0,
     );
     await room.subscribe(
-      randomUUID(),
+      currentAccount,
       { send: (message) => current.push(message) },
-      1,
+      currentSeq,
     );
-    expect(stale).toMatchObject([{ type: 'StateSync', seq: 1 }]);
+    expect(stale).toMatchObject([{ type: 'StateSync', seq: currentSeq }]);
     expect(current).toEqual([]);
   });
   it('edits a queued submission without moving its receipt position and scopes it to its seat', async () => {
