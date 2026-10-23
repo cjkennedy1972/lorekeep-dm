@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { CapturingDm } from '../sim/dm.js';
+import type { InputGate } from '../../src/safety/inputGate.js';
 import {
   BLOCKED_MARKER,
   eventually,
+  moderationGate,
   SimTable,
   type SimClient,
 } from '../sim/harness.js';
@@ -32,8 +34,32 @@ beforeAll(() => {
   process.env.NODE_ENV = 'test';
 });
 
-async function startTable(players: number, dm = new CapturingDm()) {
-  table = await SimTable.start(db, { players, dm: dm.adapter() });
+/** Holds the gate decision for one text until released, so receipt order differs from acceptance order. */
+function holdGate(heldText: string) {
+  let release!: () => void;
+  let reached!: () => void;
+  const open = new Promise<void>((resolve) => (release = resolve));
+  const atGate = new Promise<void>((resolve) => (reached = resolve));
+  const base = moderationGate();
+  const gate: InputGate = {
+    ...base,
+    check: async (input) => {
+      if (input.text === heldText) {
+        reached();
+        await open;
+      }
+      return base.check(input);
+    },
+  };
+  return { gate, atGate, release };
+}
+
+async function startTable(
+  players: number,
+  dm = new CapturingDm(),
+  gate?: InputGate,
+) {
+  table = await SimTable.start(db, { players, dm: dm.adapter(), gate });
   for (const client of table.clients) {
     const closed = await client.connect();
     expect(closed).toBeUndefined();
@@ -55,13 +81,18 @@ describe('simultaneous submission ordering', () => {
   it('sorts a batch by receiptSeq and includes every submitted action', async () => {
     // ADR-029 §1.3: gate decisions may complete in any order, so acceptance order is not
     // the contract. The contract is that the batch is sorted by receiptSeq.
-    const { table: t } = await startTable(3);
+    // alpha holds receipt 1 at the gate, so bravo and charlie are accepted first. Without the
+    // sort the batch would be [2, 3, 1] in acceptance order.
+    const held = holdGate('alpha');
+    const { table: t } = await startTable(3, undefined, held.gate);
     const [a, b, c] = t.clients as [SimClient, SimClient, SimClient];
-    const submitted = [
-      a.submit('alpha'),
-      b.submit('bravo'),
-      c.submit('charlie'),
-    ];
+    const submitted = [a.submit('alpha')];
+    await held.atGate;
+    submitted.push(b.submit('bravo'), c.submit('charlie'));
+    await eventually(
+      async () => (await t.events('RoundActionAccepted')).length === 2,
+    );
+    held.release();
     await eventually(
       async () => (await t.events('RoundResolved')).length === 1,
     );
