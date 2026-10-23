@@ -16,17 +16,19 @@ export interface RoomSnapshot extends RoomView {
   error: string | null;
   /** Set when the server closes this socket for a host action; the client then stops reconnecting and sending. */
   removed: Removal | null;
+  /** Set when the server reports this account has no seat; the client stops and waits for a manual rejoin. */
+  unseated: boolean;
 }
 
-// ponytail: Room.ts kickSeat/endTable close with these exact code+reason pairs; they are the only signal a kicked client gets.
-// A revoked seat whose socket was offline closes with 'not seated' instead, so it reads as removed too.
+// ponytail: Room.ts kickSeat/endTable close with these exact code+reason pairs; the kick pair is the only host-removal signal.
+// 'Player is not seated at this table' also fires for self-leave during a reconnect, so it is not a removal.
 export function removalForClose(code: number, reason: string): Removal | null {
   if (code === 1008 && reason === 'Seat revoked by the host') return 'kicked';
-  if (code === 1008 && reason === 'Player is not seated at this table')
-    return 'kicked';
   if (code === 1000 && reason === 'Table ended by host') return 'ended';
   return null;
 }
+
+const UNSEATED_REASON = 'Player is not seated at this table';
 
 export interface RoomClientOptions {
   /** HTTP origin of the API, e.g. http://localhost:8787 */
@@ -43,6 +45,7 @@ const initial: RoomSnapshot = {
   status: 'closed',
   error: null,
   removed: null,
+  unseated: false,
 };
 
 export function createRoomClient(opts: RoomClientOptions) {
@@ -133,6 +136,13 @@ export function createRoomClient(opts: RoomClientOptions) {
           set({ status: 'closed', removed });
           return;
         }
+        if (e.code === 1008 && e.reason === UNSEATED_REASON) {
+          // Not a removal: stop without retrying; start() rejoins on the user's action.
+          socket = undefined;
+          stopped = true;
+          set({ status: 'closed', unseated: true });
+          return;
+        }
         scheduleReconnect();
       };
       ws.onerror = () => {};
@@ -152,7 +162,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       if (!stopped) return;
       stopped = false;
       attempt = 0;
-      set({ status: 'connecting' });
+      set({ status: 'connecting', unseated: false });
       void connect();
     },
     stop() {

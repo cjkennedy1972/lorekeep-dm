@@ -488,6 +488,17 @@ export function Game() {
         <Link to="/rooms">My games</Link>
       </section>
     );
+  if (live.unseated)
+    return (
+      <section>
+        <h1>Not seated</h1>
+        <p role="status">You&apos;re not seated at this table.</p>
+        <button type="button" onClick={live.rejoin}>
+          Rejoin
+        </button>
+        <Link to="/rooms">My games</Link>
+      </section>
+    );
   if (id && resumeLoading)
     return (
       <section>

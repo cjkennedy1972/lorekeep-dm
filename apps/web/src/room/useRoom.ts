@@ -19,5 +19,5 @@ export function useRoom(opts: RoomClientOptions) {
     return () => client.stop();
   }, [client]);
   const snapshot = useSyncExternalStore(client.subscribe, client.getSnapshot);
-  return { ...snapshot, send: client.send };
+  return { ...snapshot, send: client.send, rejoin: client.start };
 }
