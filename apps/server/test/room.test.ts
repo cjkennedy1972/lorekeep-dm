@@ -162,6 +162,23 @@ describe('room actor', () => {
       expect(new Room(store, lease, await latest()).state.ended).toBe(true);
     });
 
+    it('does not persist TableEnded when the table store refuses to end it', async () => {
+      const { store, events } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      store.endTable = async () => {
+        throw new Error('store unavailable');
+      };
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+
+      await expect(room.endTable(host, randomUUID())).rejects.toThrow(
+        'store unavailable',
+      );
+      expect(room.state.ended).not.toBe(true);
+      expect(events.some((event) => event.type === 'TableEnded')).toBe(false);
+    });
+
     it('stores late-join requests and only seats a host-approved requester at the next scene boundary', async () => {
       const { store, events } = fixture();
       const host = randomUUID();

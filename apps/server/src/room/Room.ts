@@ -2045,12 +2045,12 @@ export class Room {
     return this.enqueue(async () => {
       if (this.actionIds.has(actionId)) return;
       const actor = await this.requireHost(accountId);
+      await this.store.endTable?.(this.sessionId);
       await this.persist('TableEnded', {
         actorSeatId: actor.seatId,
         actorAccountId: accountId,
         actionId,
       });
-      await this.store.endTable?.(this.sessionId);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',

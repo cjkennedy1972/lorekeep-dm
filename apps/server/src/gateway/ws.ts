@@ -702,18 +702,22 @@ export function installGateway(
                 },
               });
             if (room.hasActionId(msg.actionId)) return;
-            if (!room.reserveActionMutation(identity.accountId, 'host'))
-              return send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'RATE_LIMITED',
-                  message: 'Too many requests. Try again later.',
-                  actionId: msg.actionId,
-                },
-              });
             return requireCurrentCommandSeat()
-              .then(() => run(command.data.payload as never))
+              .then(() => {
+                if (!room.reserveActionMutation(identity.accountId, 'host')) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: msg.actionId,
+                    },
+                  });
+                  return;
+                }
+                return run(command.data.payload as never);
+              })
               .catch((error: unknown) =>
                 send({
                   seq: room.seq,
@@ -738,19 +742,21 @@ export function installGateway(
             const mute = MuteChatSchema.safeParse(msg);
             if (!mute.success) return;
             if (room.hasActionId(mute.data.actionId)) return;
-            if (!room.reserveActionMutation(identity.accountId, 'host'))
-              return send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'RATE_LIMITED',
-                  message: 'Too many requests. Try again later.',
-                  actionId: mute.data.actionId,
-                },
-              });
             return requireCurrentCommandSeat()
-              .then(() =>
-                db
+              .then(() => {
+                if (!room.reserveActionMutation(identity.accountId, 'host')) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: mute.data.actionId,
+                    },
+                  });
+                  return;
+                }
+                return db
                   .query<{
                     host: boolean;
                   }>(
@@ -783,15 +789,23 @@ export function installGateway(
                       target.seatId,
                       mute.data.payload.muted,
                     );
-                  }),
-              )
-              .catch(() =>
+                  });
+              })
+              .catch((error: unknown) =>
                 send({
                   seq: room.seq,
                   type: 'Error',
                   payload: {
-                    code: 'ACTION_REJECTED',
-                    message: 'Chat mute could not be changed.',
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : error instanceof RoomSeatRequiredError
+                          ? 'SEAT_REVOKED'
+                          : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can do that.'
+                        : 'Chat mute could not be changed.',
                     actionId: msg.actionId,
                   },
                 }),
@@ -1022,24 +1036,26 @@ export function installGateway(
               return;
             }
             if (room.hasActionId(config.data.actionId)) return;
-            if (!room.reserveActionMutation(identity.accountId, 'host'))
-              return send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'RATE_LIMITED',
-                  message: 'Too many requests. Try again later.',
-                  actionId: config.data.actionId,
-                },
-              });
             return requireCurrentCommandSeat()
-              .then(() =>
-                room.configureRoundTimer(
+              .then(() => {
+                if (!room.reserveActionMutation(identity.accountId, 'host')) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: config.data.actionId,
+                    },
+                  });
+                  return;
+                }
+                return room.configureRoundTimer(
                   identity.accountId,
                   config.data.payload.durationMs,
                   config.data.actionId,
-                ),
-              )
+                );
+              })
               .catch((error: unknown) => {
                 send({
                   seq: room.seq,
