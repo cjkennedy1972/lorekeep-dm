@@ -206,7 +206,7 @@ export class Room {
   }
 
   /** Seats the account (max 6), sends StateSync to it, broadcasts presence. Returns leave(). */
-  join(account: Account, send: Send): (() => void) | null {
+  join(account: Account, send: Send, isHost = false): (() => void) | null {
     let seat = this.seats.get(account.id);
     const fresh = !seat;
     if (!seat) {
@@ -216,6 +216,7 @@ export class Room {
         accountId: account.id,
         displayName: account.displayName,
         presence: 'offline',
+        isHost,
         matureOptOut: false,
       };
       this.seats.set(account.id, seat);

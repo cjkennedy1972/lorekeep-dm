@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import WebSocket from 'ws';
 import { createMock } from '../../mock/server.js';
-import { createRoomClient } from './client.js';
+import { createRoomClient, removalForClose } from './client.js';
 
 const sockets: WebSocket[] = [];
 class TrackedWS extends WebSocket {
@@ -112,5 +112,62 @@ test('send reports whether the message went out', async () => {
   client.start();
   await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
   expect(client.send('Resync')).toEqual(expect.any(String));
+  client.stop();
+});
+
+test('removalForClose matches only the host kick and table-end close pairs', () => {
+  expect(removalForClose(1008, 'Seat revoked by the host')).toBe('kicked');
+  expect(removalForClose(1000, 'Table ended by host')).toBe('ended');
+  expect(
+    removalForClose(1008, 'Player is not seated at this table'),
+  ).toBeNull();
+  expect(removalForClose(1008, 'Room is full')).toBeNull();
+  expect(removalForClose(1006, '')).toBeNull();
+});
+
+test('a kicked seat shows removed, stops reconnecting and stops sending', async () => {
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+    baseDelayMs: 10,
+  });
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  const opened = sockets.length;
+  sockets.at(-1)!.emit('close', 1008, Buffer.from('Seat revoked by the host'));
+  await vi.waitFor(() => expect(client.getSnapshot().removed).toBe('kicked'));
+  expect(client.getSnapshot().status).toBe('closed');
+  expect(client.send('Resync')).toBe(false);
+  await new Promise((r) => setTimeout(r, 60));
+  expect(sockets.length).toBe(opened);
+  client.stop();
+});
+
+test('a not-seated close is neutral: no removal, no reconnect loop, manual rejoin works', async () => {
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+    baseDelayMs: 10,
+  });
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  const opened = sockets.length;
+  // Self-leave while this account's socket was reconnecting: the server answers with not-seated.
+  sockets
+    .at(-1)!
+    .emit('close', 1008, Buffer.from('Player is not seated at this table'));
+  await vi.waitFor(() => expect(client.getSnapshot().unseated).toBe(true));
+  expect(client.getSnapshot().removed).toBeNull();
+  expect(client.getSnapshot().status).toBe('closed');
+  expect(client.send('Resync')).toBe(false);
+  await new Promise((r) => setTimeout(r, 60));
+  expect(sockets.length).toBe(opened);
+
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  expect(client.getSnapshot().unseated).toBe(false);
+  expect(sockets.length).toBe(opened + 1);
   client.stop();
 });

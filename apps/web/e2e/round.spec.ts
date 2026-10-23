@@ -103,6 +103,11 @@ test('host controls validate the round timer, save it, and pass axe', async ({
     await hostPage.goto(`/rooms/${room.id}/game`);
     await expect(hostPage.getByText('Connected')).toBeVisible();
 
+    const guestPage = await guest.newPage();
+    await guestPage.goto(`/join/${room.code}`);
+    await guestPage.getByRole('button', { name: 'Join table' }).click();
+    await guestPage.getByRole('heading', { name: 'Timer table' }).waitFor();
+
     const controls = hostPage.getByRole('region', { name: 'Host controls' });
     await controls.getByLabel('No time limit').uncheck();
     await controls.getByLabel('Round timer in seconds (30 to 600)').fill('5');
@@ -119,8 +124,20 @@ test('host controls validate the round timer, save it, and pass axe', async ({
       controls.getByRole('status').filter({ hasText: 'Round timer saved.' }),
     ).toBeVisible();
 
-    const unavailable = controls.getByRole('button', { name: 'Transfer host' });
-    await expect(unavailable).toBeDisabled();
+    // With a guest seated, transfer is wired per player: the guest can be made host,
+    // and the host has no transfer control for themselves.
+    await expect(
+      controls.getByRole('button', {
+        name: 'Make Timer Guest host',
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await expect(
+      controls.getByRole('button', {
+        name: 'Make Timer Host host',
+        exact: true,
+      }),
+    ).toHaveCount(0);
 
     const results = await new AxeBuilder({ page: hostPage })
       .include('.round-panel')

@@ -4,9 +4,25 @@
 }
 
 .round-panel .round-seats,
-.host-controls .host-unavailable {
+.host-controls .host-seats ul {
   list-style: none;
   padding: 0;
+}
+
+/* Host buttons wrap on narrow screens and keep a 44px touch target. */
+.host-controls button {
+  min-height: 2.75rem;
+  margin: 0.25rem 0.25rem 0.25rem 0;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.host-controls .host-seats li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
 }
 
 .round-panel .round-queued {

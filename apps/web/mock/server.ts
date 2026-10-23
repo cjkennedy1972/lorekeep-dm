@@ -617,9 +617,11 @@ export function createMock(
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       const room = roomFor(issued.tableId);
+      const owner = rooms.get(issued.tableId)?.hostId;
       const leave = room.join(
         account,
         (m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m)),
+        owner === account.id,
       );
       if (!leave) return void ws.close(1008, 'room full');
       ws.on('message', (raw) => {

@@ -7,11 +7,28 @@ export type ConnectionStatus =
   | 'reconnecting'
   | 'closed';
 
+/** Why this seat lost the table: the host removed it, or the host ended the table. */
+export type Removal = 'kicked' | 'ended';
+
 export interface RoomSnapshot extends RoomView {
   status: ConnectionStatus;
   /** Last schema/server error, for display; never throws. */
   error: string | null;
+  /** Set when the server closes this socket for a host action; the client then stops reconnecting and sending. */
+  removed: Removal | null;
+  /** Set when the server reports this account has no seat; the client stops and waits for a manual rejoin. */
+  unseated: boolean;
 }
+
+// ponytail: Room.ts kickSeat/endTable close with these exact code+reason pairs; the kick pair is the only host-removal signal.
+// 'Player is not seated at this table' also fires for self-leave during a reconnect, so it is not a removal.
+export function removalForClose(code: number, reason: string): Removal | null {
+  if (code === 1008 && reason === 'Seat revoked by the host') return 'kicked';
+  if (code === 1000 && reason === 'Table ended by host') return 'ended';
+  return null;
+}
+
+const UNSEATED_REASON = 'Player is not seated at this table';
 
 export interface RoomClientOptions {
   /** HTTP origin of the API, e.g. http://localhost:8787 */
@@ -27,6 +44,8 @@ const initial: RoomSnapshot = {
   ...initialRoomView,
   status: 'closed',
   error: null,
+  removed: null,
+  unseated: false,
 };
 
 export function createRoomClient(opts: RoomClientOptions) {
@@ -47,7 +66,7 @@ export function createRoomClient(opts: RoomClientOptions) {
 
   /** Returns the wire actionId so callers can match their own submission in round state, or false when offline. */
   const send = (type: string, payload: Record<string, unknown> = {}) => {
-    if (socket?.readyState !== WS.OPEN) return false;
+    if (snap.removed || socket?.readyState !== WS.OPEN) return false;
     const actionId = crypto.randomUUID() as ClientEnvelope['actionId'];
     const env: ClientEnvelope = {
       actionId,
@@ -108,8 +127,23 @@ export function createRoomClient(opts: RoomClientOptions) {
         // Server sends StateSync on join; lastSeq in envelopes lets it resume.
       };
       ws.onmessage = (e) => onMessage(e.data);
-      ws.onclose = () => {
-        if (socket === ws) scheduleReconnect();
+      ws.onclose = (e) => {
+        if (socket !== ws) return;
+        const removed = removalForClose(e.code, e.reason);
+        if (removed) {
+          // A host kick or table end is final: do not reconnect.
+          socket = undefined;
+          set({ status: 'closed', removed });
+          return;
+        }
+        if (e.code === 1008 && e.reason === UNSEATED_REASON) {
+          // Not a removal: stop without retrying; start() rejoins on the user's action.
+          socket = undefined;
+          stopped = true;
+          set({ status: 'closed', unseated: true });
+          return;
+        }
+        scheduleReconnect();
       };
       ws.onerror = () => {};
     } catch {
@@ -128,7 +162,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       if (!stopped) return;
       stopped = false;
       attempt = 0;
-      set({ status: 'connecting' });
+      set({ status: 'connecting', unseated: false });
       void connect();
     },
     stop() {
