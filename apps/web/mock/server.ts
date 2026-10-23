@@ -608,13 +608,24 @@ export function createMock(
       );
       if (!leave) return void ws.close(1008, 'room full');
       ws.on('message', (raw) => {
-        let message: { type?: string; payload?: { paused?: boolean } };
+        let message: {
+          type?: string;
+          actionId?: string;
+          payload?: { paused?: boolean };
+        };
         try {
           message = JSON.parse(String(raw)) as typeof message;
         } catch {
           return;
         }
         if (message.type === 'XCard') room.xCard();
+        if (typeof message.actionId === 'string')
+          room.act(
+            account.id,
+            message.actionId,
+            message.type ?? '',
+            message.payload,
+          );
         if (
           message.type === 'PauseTable' &&
           typeof message.payload?.paused === 'boolean'

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   AccountIdSchema,
   SeatIdSchema,
@@ -10,6 +11,19 @@ import {
 } from '@game/schema';
 
 type Send = (msg: ServerMessage) => void;
+type RoundId = NonNullable<RoomState['round']>['roundId'];
+
+type Submission = {
+  seatId: Seat['seatId'];
+  accountId: Seat['accountId'];
+  actionId: string;
+  originalActionId: string;
+  actionIds: string[];
+  text: string;
+  playerName: string;
+  receiptSeq: number;
+  editedAt?: number;
+};
 
 const SCRIPTED = {
   seatId: SeatIdSchema.parse('00000000-0000-4000-8000-0000000000b1'),
@@ -25,6 +39,9 @@ export class Room {
   private conns = new Map<string, Set<Send>>();
   private timer: NodeJS.Timeout | undefined;
   private paused = false;
+  private roundId = randomUUID() as RoundId;
+  private submissions = new Map<string, Submission>();
+  private roundDurationMs: number | null | undefined;
   readonly sessionId = SessionIdSchema.parse(
     '00000000-0000-4000-8000-0000000000c1',
   );
@@ -47,7 +64,66 @@ export class Room {
       phase: 'lobby',
       seats: [...this.seats.values()],
       paused: this.paused,
+      roundsEnabled: true,
+      roundDurationMs: this.roundDurationMs,
+      round: {
+        roundId: this.roundId,
+        status: 'open',
+        eligibleSeatIds: [...this.seats.values()].map((s) => s.seatId),
+        deadlineAt: null,
+        submissions: [...this.submissions.values()],
+        queuedSubmissions: [],
+      } satisfies NonNullable<RoomState['round']>,
     };
+  }
+
+  /** Applies a round or host message from a seat; the seat identity always comes from the socket. */
+  act(accountId: string, actionId: string, type: string, payload: unknown) {
+    const seat = this.seats.get(accountId);
+    if (!seat) return;
+    const body = (payload ?? {}) as Record<string, unknown>;
+    const mine = this.submissions.get(accountId);
+    if (type === 'PlayerAction' && typeof body.text === 'string') {
+      this.submissions.set(accountId, {
+        seatId: seat.seatId,
+        accountId: seat.accountId,
+        actionId,
+        originalActionId: actionId,
+        actionIds: [actionId],
+        text: body.text,
+        playerName: seat.displayName,
+        receiptSeq: this.seq + 1,
+      });
+    } else if (
+      type === 'EditAction' &&
+      mine &&
+      mine.actionId === body.editedActionId &&
+      typeof body.text === 'string'
+    ) {
+      mine.text = body.text;
+      mine.editedAt = Date.now();
+    } else if (
+      type === 'WithdrawAction' &&
+      mine &&
+      mine.actionId === body.withdrawnActionId
+    ) {
+      this.submissions.delete(accountId);
+    } else if (type === 'ConfigureRoundTimer' && 'durationMs' in body) {
+      this.roundDurationMs = body.durationMs as number | null;
+    } else if (type === 'ResolveNow') {
+      this.submissions.clear();
+      this.roundId = randomUUID() as RoundId;
+    } else return;
+    this.broadcastState();
+  }
+
+  private broadcastState() {
+    const msg: ServerMessage = {
+      seq: ++this.seq,
+      type: 'StateSync',
+      payload: { state: this.state() },
+    };
+    for (const set of this.conns.values()) for (const send of set) send(msg);
   }
 
   /** Seats the account (max 6), sends StateSync to it, broadcasts presence. Returns leave(). */
