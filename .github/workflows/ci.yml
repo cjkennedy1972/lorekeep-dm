@@ -81,9 +81,9 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-1.63.0
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Firefox and WebKit
-        timeout-minutes: 6
+        timeout-minutes: 12
         run: |
           for attempt in 1 2; do
             if timeout 5m pnpm --filter @game/web exec playwright install --with-deps firefox webkit; then
