@@ -148,6 +148,12 @@ export function Lobby() {
                 ? 'no time limit'
                 : `${live.room.roundDurationMs / 1000} seconds`}
           </strong>
+          . Content tier:{' '}
+          {tierCap === null
+            ? 'Mature (default)'
+            : tierCap === 'standard'
+              ? 'Standard'
+              : 'Family'}
           .
         </p>
         {live.room?.paused && <p role="status">The table is paused.</p>}

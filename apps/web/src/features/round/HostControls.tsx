@@ -7,30 +7,28 @@ import './round.css';
 export const ROUND_TIMER_MIN_S = 30;
 export const ROUND_TIMER_MAX_S = 600;
 
-/** Validates a host-entered timer in seconds; null means no deadline. */
-export function timerMsFromSeconds(
-  seconds: number | null,
-): { ok: true; durationMs: number | null } | { ok: false; message: string } {
-  if (seconds === null) return { ok: true, durationMs: null };
-  if (
-    !Number.isInteger(seconds) ||
-    seconds < ROUND_TIMER_MIN_S ||
-    seconds > ROUND_TIMER_MAX_S
-  ) {
-    return {
-      ok: false,
-      message: `Enter a whole number of seconds from ${ROUND_TIMER_MIN_S} to ${ROUND_TIMER_MAX_S}, or choose no time limit.`,
-    };
-  }
-  return { ok: true, durationMs: seconds * 1000 };
+/**
+ * Clamps a host-entered timer to the 30–600 s bounds (client-side until the server enforces them).
+ * Returns the seconds to send; `null` input means no deadline and is handled by the caller.
+ */
+export function clampTimerSeconds(seconds: number): number {
+  return Math.min(
+    ROUND_TIMER_MAX_S,
+    Math.max(ROUND_TIMER_MIN_S, Math.round(seconds)),
+  );
 }
 
-/** Host-only controls the server already supports, plus the ones it does not yet expose. */
-const UNAVAILABLE = [
-  'Remove a player',
-  'Transfer host',
-  'Approve or deny late joiners',
-  'End the table',
+/**
+ * Host-only controls the server does not expose yet (M4-3b, Forge). The disabled buttons
+ * carry the intended command so wiring is a small diff: swap `disabled` for an onClick that
+ * calls `send(command, payload)`. These command names are not in the schema yet.
+ */
+const UNAVAILABLE: { label: string; command: string }[] = [
+  { label: 'Remove a player', command: 'KickSeat' }, // payload: { seatId }
+  { label: 'Transfer host', command: 'TransferHost' }, // payload: { seatId }
+  { label: 'Approve late joiner', command: 'ApproveLateJoin' }, // payload: { requestId }
+  { label: 'Deny late joiner', command: 'DenyLateJoin' }, // payload: { requestId }
+  { label: 'End the table', command: 'EndTable' }, // payload: {}
 ];
 
 type Props = {
@@ -70,16 +68,27 @@ export function HostControls({
 
   function saveTimer(e: FormEvent) {
     e.preventDefault();
-    const parsed = timerMsFromSeconds(noLimit ? null : Number(seconds.trim()));
-    if (!parsed.ok) {
-      setError(parsed.message);
+    if (noLimit) {
+      sendHost(
+        'ConfigureRoundTimer',
+        { durationMs: null },
+        'Round timer saved. It applies to rounds opened after this one.',
+      );
+      return;
+    }
+    const entered = Number(seconds.trim());
+    if (seconds.trim() === '' || !Number.isFinite(entered)) {
+      setError('Enter a number of seconds, or choose no time limit.');
       setNote('');
       return;
     }
+    const clamped = clampTimerSeconds(entered);
     sendHost(
       'ConfigureRoundTimer',
-      { durationMs: parsed.durationMs },
-      'Round timer saved. It applies to rounds opened after this one.',
+      { durationMs: clamped * 1000 },
+      clamped === entered
+        ? 'Round timer saved. It applies to rounds opened after this one.'
+        : `Round timer saved as ${clamped} seconds, the nearest allowed value. It applies to rounds opened after this one.`,
     );
   }
 
@@ -139,9 +148,9 @@ export function HostControls({
         aria-labelledby="host-unavailable-heading"
         className="host-unavailable"
       >
-        {UNAVAILABLE.map((label) => (
+        {UNAVAILABLE.map(({ label, command }) => (
           <li key={label}>
-            <button type="button" disabled>
+            <button type="button" disabled data-command={command}>
               {label}
             </button>{' '}
             <span>Server support is not in place yet.</span>

@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { RoomState, Seat } from '@game/schema';
 import { roomReducer, initialRoomView } from '../../room/reducer';
 import { RoundPanel, isOwnSubmission, secondsLeft } from './RoundPanel';
-import { HostControls, timerMsFromSeconds } from './HostControls';
+import { HostControls, clampTimerSeconds } from './HostControls';
 
 type Round = NonNullable<RoomState['round']>;
 
@@ -142,14 +142,15 @@ describe('RoundPanel', () => {
   });
 });
 
-describe('timerMsFromSeconds', () => {
-  it('accepts the 30 s floor and 600 s cap and rejects outside them', () => {
-    expect(timerMsFromSeconds(30)).toEqual({ ok: true, durationMs: 30_000 });
-    expect(timerMsFromSeconds(600)).toEqual({ ok: true, durationMs: 600_000 });
-    expect(timerMsFromSeconds(null)).toEqual({ ok: true, durationMs: null });
-    expect(timerMsFromSeconds(29).ok).toBe(false);
-    expect(timerMsFromSeconds(601).ok).toBe(false);
-    expect(timerMsFromSeconds(45.5).ok).toBe(false);
+describe('clampTimerSeconds', () => {
+  it('keeps in-range values and clamps to the 30 s floor and 600 s cap', () => {
+    expect(clampTimerSeconds(120)).toBe(120);
+    expect(clampTimerSeconds(30)).toBe(30);
+    expect(clampTimerSeconds(600)).toBe(600);
+    expect(clampTimerSeconds(5)).toBe(30);
+    expect(clampTimerSeconds(-10)).toBe(30);
+    expect(clampTimerSeconds(601)).toBe(600);
+    expect(clampTimerSeconds(45.5)).toBe(46);
   });
 });
 
@@ -174,7 +175,7 @@ describe('HostControls', () => {
     });
   });
 
-  it('rejects an out-of-range timer without sending', () => {
+  it('clamps an out-of-range timer to 30 s and says so', () => {
     const send = vi.fn(() => 'id');
     render(
       <HostControls
@@ -189,8 +190,29 @@ describe('HostControls', () => {
       target: { value: '5' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save round timer' }));
+    expect(send).toHaveBeenCalledWith('ConfigureRoundTimer', {
+      durationMs: 30_000,
+    });
+    expect(screen.getByRole('status').textContent).toContain('30 seconds');
+  });
+
+  it('rejects a non-numeric timer without sending', () => {
+    const send = vi.fn(() => 'id');
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected
+        send={send}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('No time limit'));
+    fireEvent.change(screen.getByLabelText(/Round timer in seconds/), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save round timer' }));
     expect(send).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert').textContent).toContain('30 to 600');
+    expect(screen.getByRole('alert').textContent).toContain('Enter a number');
   });
 
   it('keeps unsupported host actions disabled', () => {

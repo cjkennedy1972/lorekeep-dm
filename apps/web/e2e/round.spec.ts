@@ -108,7 +108,9 @@ test('host controls validate the round timer, save it, and pass axe', async ({
     await controls.getByLabel('Round timer in seconds (30 to 600)').fill('5');
     await controls.getByRole('button', { name: 'Save round timer' }).focus();
     await hostPage.keyboard.press('Enter');
-    await expect(controls.getByRole('alert')).toContainText('30 to 600');
+    await expect(
+      controls.getByRole('status').filter({ hasText: '30 seconds' }),
+    ).toBeVisible();
 
     await controls.getByLabel('Round timer in seconds (30 to 600)').fill('120');
     await controls.getByRole('button', { name: 'Save round timer' }).focus();
