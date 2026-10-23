@@ -14,7 +14,6 @@ export function characterRulesInput(character: Character) {
     name: character.name,
     speciesId: character.speciesId,
     classId: character.classId,
-    backgroundId: character.backgroundId,
     level: character.level,
     abilities: character.abilities,
     proficiencies: character.proficiencies,
@@ -39,7 +38,10 @@ export class SeatCharacterError extends Error {
       | 'INVALID_CHARACTER'
       | 'NOT_SEATED'
       | 'SOLO_SESSION'
-      | 'ALREADY_BOUND',
+      | 'ALREADY_BOUND'
+      | 'ACCOUNT_INACTIVE'
+      | 'SESSION_INACTIVE'
+      | 'CHARACTER_BOUND',
   ) {
     super(code);
     this.name = 'SeatCharacterError';
@@ -61,35 +63,81 @@ export class SeatCharacterRepository {
       validateCharacter(character, catalog).length
     )
       throw new SeatCharacterError('INVALID_CHARACTER');
-    const result =
-      expectedRevision === undefined
-        ? await this.db.query<{ revision: number }>(
-            `INSERT INTO account_characters(id, account_id, character) VALUES($1,$2,$3::jsonb)
-           RETURNING revision`,
-            [character.id, accountId, JSON.stringify(character)],
-          )
-        : await this.db.query<{ revision: number }>(
-            `UPDATE account_characters SET character=$3::jsonb, revision=revision+1, updated_at=now()
-           WHERE id=$1 AND account_id=$2 AND revision=$4 RETURNING revision`,
-            [
-              character.id,
-              accountId,
-              JSON.stringify(character),
-              expectedRevision,
-            ],
-          );
-    if (!result.rowCount) {
-      const prior = await this.db.query<{
-        account_id: string;
-        revision: number;
-      }>('SELECT account_id,revision FROM account_characters WHERE id=$1', [
-        character.id,
-      ]);
-      if (prior.rows[0]?.account_id !== accountId)
-        throw new SeatCharacterError('NOT_OWNER');
-      throw new SeatCharacterError('STALE_REVISION');
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const account = await client.query<{ status: string }>(
+        'SELECT status FROM accounts WHERE id=$1 FOR UPDATE',
+        [accountId],
+      );
+      if (account.rows[0]?.status !== 'active')
+        throw new SeatCharacterError('ACCOUNT_INACTIVE');
+      const result =
+        expectedRevision === undefined
+          ? await client.query<{ revision: number }>(
+              `INSERT INTO account_characters(id, account_id, character) VALUES($1,$2,$3::jsonb)
+             RETURNING revision`,
+              [character.id, accountId, JSON.stringify(character)],
+            )
+          : await client.query<{ revision: number }>(
+              `UPDATE account_characters SET character=$3::jsonb, revision=revision+1, updated_at=now()
+             WHERE id=$1 AND account_id=$2 AND revision=$4 RETURNING revision`,
+              [
+                character.id,
+                accountId,
+                JSON.stringify(character),
+                expectedRevision,
+              ],
+            );
+      if (!result.rowCount) {
+        const prior = await client.query<{
+          account_id: string;
+          revision: number;
+        }>('SELECT account_id,revision FROM account_characters WHERE id=$1', [
+          character.id,
+        ]);
+        if (prior.rows[0]?.account_id !== accountId)
+          throw new SeatCharacterError('NOT_OWNER');
+        throw new SeatCharacterError('STALE_REVISION');
+      }
+      await client.query('COMMIT');
+      return result.rows[0]!.revision;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    return result.rows[0]!.revision;
+  }
+
+  async deleteOwnedCharacter(accountId: string, characterId: string) {
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const account = await client.query<{ status: string }>(
+        'SELECT status FROM accounts WHERE id=$1 FOR UPDATE',
+        [accountId],
+      );
+      if (account.rows[0]?.status !== 'active')
+        throw new SeatCharacterError('ACCOUNT_INACTIVE');
+      const deleted = await client.query(
+        'DELETE FROM account_characters WHERE id=$1 AND account_id=$2',
+        [characterId, accountId],
+      );
+      await client.query('COMMIT');
+      return deleted.rowCount === 1;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      const pgError = error as { code?: string; constraint?: string };
+      if (
+        pgError.code === '23503' &&
+        pgError.constraint === 'session_seat_characters_active_character_fkey'
+      )
+        throw new SeatCharacterError('CHARACTER_BOUND');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async bind(input: {
@@ -102,13 +150,21 @@ export class SeatCharacterRepository {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
-      const session = await client.query<{ mode: string }>(
-        'SELECT mode FROM sessions WHERE id=$1 FOR UPDATE',
+      const session = await client.query<{ mode: string; status: string }>(
+        'SELECT mode,status FROM sessions WHERE id=$1 FOR UPDATE',
         [input.sessionId],
       );
       if (!session.rowCount) throw new SeatCharacterError('NOT_FOUND');
       if (session.rows[0]!.mode !== 'party')
         throw new SeatCharacterError('SOLO_SESSION');
+      if (['ended', 'deleting', 'deleted'].includes(session.rows[0]!.status))
+        throw new SeatCharacterError('SESSION_INACTIVE');
+      const account = await client.query<{ status: string }>(
+        'SELECT status FROM accounts WHERE id=$1 FOR SHARE',
+        [input.accountId],
+      );
+      if (account.rows[0]?.status !== 'active')
+        throw new SeatCharacterError('ACCOUNT_INACTIVE');
       const member = await client.query(
         `SELECT 1 FROM events j WHERE j.session_id=$1 AND j.type='SeatJoined'
           AND j.payload->>'seatId'=$2 AND j.payload->>'accountId'=$3
@@ -166,17 +222,43 @@ export class SeatCharacterRepository {
     }
   }
 
-  async release(sessionId: string, seatId: string) {
-    const result = await this.db.query(
-      `UPDATE session_seat_characters SET binding_status='released', unbound_at=now()
-       WHERE session_id=$1 AND seat_id=$2 AND binding_status='active' RETURNING id`,
-      [sessionId, seatId],
-    );
-    return result.rowCount === 1;
+  async release(sessionId: string, seatId: string, accountId: string) {
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const session = await client.query<{ status: string }>(
+        'SELECT status FROM sessions WHERE id=$1 FOR UPDATE',
+        [sessionId],
+      );
+      if (!session.rowCount) throw new SeatCharacterError('NOT_FOUND');
+      if (['ended', 'deleting', 'deleted'].includes(session.rows[0]!.status))
+        throw new SeatCharacterError('SESSION_INACTIVE');
+      const account = await client.query<{ status: string }>(
+        'SELECT status FROM accounts WHERE id=$1 FOR SHARE',
+        [accountId],
+      );
+      if (account.rows[0]?.status !== 'active')
+        throw new SeatCharacterError('ACCOUNT_INACTIVE');
+      const result = await client.query(
+        `UPDATE session_seat_characters SET binding_status='released', unbound_at=now()
+         WHERE session_id=$1 AND seat_id=$2 AND account_id=$3 AND binding_status='active' RETURNING id`,
+        [sessionId, seatId, accountId],
+      );
+      await client.query('COMMIT');
+      return result.rowCount === 1;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /** Called only inside the ADR-017 deletion transaction. Retains anonymous mechanics, not links. */
-  async redactAccount(client: import('pg').PoolClient, accountId: string) {
+  static async redactAccount(
+    client: import('pg').PoolClient,
+    accountId: string,
+  ) {
     await client.query(
       `UPDATE session_seat_characters SET account_id=NULL, character_id=NULL, character_revision=NULL,
          character_snapshot = jsonb_set(character_snapshot - 'id' - 'name', '{name}', '"Deleted player"'::jsonb),

@@ -6,6 +6,7 @@ import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
 import { AUTHOR_KEY, TEXT_KEYS } from '../../routes/reports.js';
 import { currentMemberEventsSql } from '../../room/membership.js';
+import { SeatCharacterRepository } from '../../persistence/seatCharacters.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
@@ -471,16 +472,9 @@ async function deleteAccount(
     "UPDATE message_reports SET reason='' WHERE reporter_account_id=$1",
     [accountId],
   );
-  // ADR-035 binding records retain anonymous mechanics only; clear both durable identity links
-  // before account/source-character cascade constraints run.
-  await client.query(
-    `UPDATE session_seat_characters
-        SET account_id=NULL, character_id=NULL, character_revision=NULL,
-            character_snapshot=jsonb_set(character_snapshot - 'id' - 'name', '{name}', '"Deleted player"'::jsonb),
-            binding_status='redacted', unbound_at=COALESCE(unbound_at,now())
-      WHERE account_id=$1`,
-    [accountId],
-  );
+  // ADR-035 binding records retain anonymous mechanics only; the repository owns
+  // the single redaction implementation used by this transaction.
+  await SeatCharacterRepository.redactAccount(client, accountId);
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }

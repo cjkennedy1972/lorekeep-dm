@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 export const up = (pgm) =>
   pgm.sql(
     readFileSync(
-      new URL('./0040_seat_character_bindings.sql', import.meta.url),
+      new URL('./0037_seat_character_bindings.sql', import.meta.url),
       'utf8',
     ),
   );
