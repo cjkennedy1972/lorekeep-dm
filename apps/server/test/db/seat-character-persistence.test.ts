@@ -85,9 +85,18 @@ describe('party seat-character persistence', () => {
   it('enforces one active character per seat and rejects a foreign account owner', async () => {
     const f = await fixture();
     const stranger = randomUUID();
+    const strangerSeat = randomUUID();
     await db.query(
       `INSERT INTO accounts(id,email,password_hash,display_name,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'x','Stranger',true,now(),'v1',now())`,
       [stranger, `${stranger}@example.test`],
+    );
+    await db.query(
+      "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,(SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE session_id=$1),$2,'SeatJoined',$3)",
+      [
+        f.sessionId,
+        randomUUID(),
+        { seatId: strangerSeat, accountId: stranger },
+      ],
     );
     try {
       await expect(
@@ -117,6 +126,15 @@ describe('party seat-character persistence', () => {
           expectedRevision: 1,
         }),
       ).rejects.toMatchObject({ code: 'ALREADY_BOUND' });
+      await expect(
+        f.repo.bind({
+          sessionId: f.sessionId,
+          seatId: strangerSeat,
+          accountId: stranger,
+          characterId: f.character.id,
+          expectedRevision: f.revision,
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_OWNER' });
       await expect(
         f.repo.saveOwnedCharacter(stranger, f.character, f.revision),
       ).rejects.toMatchObject({ code: 'NOT_OWNER' });
