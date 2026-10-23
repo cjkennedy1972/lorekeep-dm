@@ -31,6 +31,7 @@ import {
   RecordedLlmAdapter,
   fixtureModeFromEnvironment,
 } from '../llm/recorded.js';
+import { currentMemberSql } from '../room/membership.js';
 
 const catalog = loadCatalog();
 const adventureParsed = AdventureSchema.parse(adventure01);
@@ -322,10 +323,10 @@ export function registerTableRoutes(
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });
       const result = await db.query(
-        `SELECT s.id,s.name,s.status,s.adventure_id,s.difficulty,s.catalog_version,pinned_catalog.entries AS catalog_snapshot,s.last_active_at,s.character,s.premise,s.owner_account_id,snap.state,snap.seq
+        `SELECT s.id,s.name,s.status,s.mode,s.adventure_id,s.difficulty,s.catalog_version,pinned_catalog.entries AS catalog_snapshot,s.last_active_at,s.character,s.premise,s.owner_account_id,snap.state,snap.seq
       FROM sessions s LEFT JOIN catalog_snapshots pinned_catalog ON pinned_catalog.catalog_version=s.catalog_version
       LEFT JOIN LATERAL (SELECT state,seq FROM snapshots WHERE session_id=s.id ORDER BY seq DESC LIMIT 1) snap ON true
-      WHERE s.id=$1 AND s.owner_account_id=$2 AND s.mode='solo'`,
+      WHERE s.id=$1 AND ((s.mode='solo' AND s.owner_account_id=$2) OR (s.mode='party' AND ${currentMemberSql('$2')}))`,
         [request.params.id, accountId],
       );
       const row = result.rows[0] as
@@ -333,7 +334,7 @@ export function registerTableRoutes(
         | undefined;
       if (!row) {
         const exists = await db.query(
-          "SELECT id FROM sessions WHERE id=$1 AND mode='solo'",
+          "SELECT id,mode,owner_account_id FROM sessions WHERE id=$1 AND mode='solo'",
           [request.params.id],
         );
         if (exists.rowCount)
@@ -427,10 +428,11 @@ export function registerTableRoutes(
         recapTier,
         recapTableLines,
       );
-      await db.query(
-        "UPDATE sessions SET last_active_at=now(),status='active' WHERE id=$1 AND owner_account_id=$2",
-        [request.params.id, accountId],
-      );
+      if (row.mode === 'solo')
+        await db.query(
+          "UPDATE sessions SET last_active_at=now(),status='active' WHERE id=$1 AND owner_account_id=$2 AND mode='solo'",
+          [request.params.id, accountId],
+        );
       const room = await rooms.get(request.params.id);
       await room.persistRecap({
         recap: recap.recap,

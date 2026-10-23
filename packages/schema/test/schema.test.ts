@@ -86,6 +86,38 @@ const cases = [
     { seq: 0, type: 'StateSync', payload: {} },
   ],
   [
+    StateSyncSchema,
+    {
+      seq: 0,
+      type: 'StateSync',
+      payload: {
+        state: room,
+        round: {
+          roundId: uuid,
+          status: 'open',
+          eligibleSeatIds: [uuid],
+          deadlineAt: null,
+          submissions: [
+            {
+              seatId: uuid,
+              actionId: uuid,
+              originalActionId: uuid,
+              actionIds: [uuid],
+              playerName: 'A',
+              receiptSeq: 1,
+            },
+          ],
+          queuedSubmissions: [],
+        },
+      },
+    },
+    {
+      seq: 0,
+      type: 'StateSync',
+      payload: { state: room, round: { roundId: 'bad' } },
+    },
+  ],
+  [
     PresenceChangedSchema,
     {
       seq: 1,

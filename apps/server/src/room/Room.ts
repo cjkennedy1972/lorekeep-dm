@@ -6,6 +6,7 @@ import {
   type RoomState,
   type ServerMessage,
   type ChatMessage,
+  type StateSync,
 } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import {
@@ -413,7 +414,7 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.clientState() },
+          payload: this.clientSyncPayload(),
         });
       this.sendCombatSnapshot(connection);
       for (const [actionId, open] of Object.entries(
@@ -587,6 +588,31 @@ export class Room {
     return { ...clientVisibleState, seats, gameState };
   }
 
+  private clientSyncPayload(): StateSync['payload'] {
+    const round = this.state.round;
+    return {
+      state: this.clientState(),
+      ...(round
+        ? {
+            round: {
+              roundId: round.roundId,
+              status: round.status,
+              eligibleSeatIds: round.eligibleSeatIds,
+              deadlineAt: round.deadlineAt,
+              ...(round.deadlineAt !== null
+                ? { remainingMs: Math.max(0, round.deadlineAt - Date.now()) }
+                : {}),
+              ...(round.closeReason ? { closeReason: round.closeReason } : {}),
+              submissions: round.submissions.map(publicRoundSubmission),
+              queuedSubmissions: round.queuedSubmissions.map(
+                publicRoundSubmission,
+              ),
+            },
+          }
+        : {}),
+    };
+  }
+
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */
   private sendCombatSnapshot(connection: Connection): void {
     const combat = roomGameState(this.state);
@@ -642,7 +668,7 @@ export class Room {
         this.broadcast({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.clientState() },
+          payload: this.clientSyncPayload(),
         });
       }
       this.connections.set(accountId, connection);
@@ -650,7 +676,7 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.clientState() },
+          payload: this.clientSyncPayload(),
         });
       this.sendCombatSnapshot(connection);
       this.sendRoundSnapshot(connection);
@@ -692,7 +718,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -728,7 +754,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
       const vote = this.asRestVote();
       if (vote) {
@@ -1367,7 +1393,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -1400,7 +1426,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
       if (!paused) this.kickQueue();
     });
@@ -1463,7 +1489,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -1829,7 +1855,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
       return request.requestId;
     });
@@ -1864,7 +1890,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -1889,7 +1915,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -1936,7 +1962,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -1975,7 +2001,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
       connection?.close?.(1008, 'Seat revoked by the host');
     });
@@ -2010,7 +2036,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -2038,7 +2064,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
     });
   }
@@ -2056,7 +2082,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: this.clientSyncPayload(),
       });
       for (const connection of this.connections.values())
         connection.close?.(1000, 'Table ended by host');
@@ -3358,7 +3384,7 @@ export class Room {
         this.broadcast({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.clientState() },
+          payload: this.clientSyncPayload(),
         });
       }).catch(() => undefined);
     if (ended)

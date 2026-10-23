@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { StateSyncSchema } from '@game/schema';
 import { describe, expect, it } from 'vitest';
 import { Room, type RoomStore } from '../src/room/Room.js';
 import type { LatestState, StoredEvent } from '../src/persistence/index.js';
@@ -57,6 +58,67 @@ function fixture() {
 }
 
 describe('room actor', () => {
+  it('includes a complete public round snapshot in StateSync', async () => {
+    const { store } = fixture();
+    const accountId = randomUUID();
+    const seatId = randomUUID();
+    const actionId = randomUUID();
+    const roundId = randomUUID();
+    const room = new Room(store, lease, {
+      snapshot: {
+        sessionId: id,
+        seq: 1,
+        createdAt: new Date(),
+        state: {
+          sessionId: id,
+          phase: 'lobby',
+          seats: [
+            { seatId, accountId, displayName: 'Player', presence: 'offline' },
+          ],
+          gameState: {},
+          round: {
+            roundId,
+            status: 'open',
+            eligibleSeatIds: [seatId],
+            deadlineAt: Date.now() + 30_000,
+            submissions: [
+              {
+                seatId,
+                accountId,
+                actionId,
+                originalActionId: actionId,
+                actionIds: [actionId],
+                text: 'private action text',
+                playerName: 'Player',
+                receiptSeq: 2,
+              },
+            ],
+            queuedSubmissions: [],
+          },
+        },
+      },
+      events: [],
+    });
+    const sent: unknown[] = [];
+    await room.subscribe(accountId, { send: (message) => sent.push(message) });
+    const sync = sent.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as {
+      payload: { state: unknown; round?: Record<string, unknown> };
+    };
+    expect(StateSyncSchema.parse(sync).payload.round).toBeDefined();
+    expect(sync.payload.round).toMatchObject({
+      roundId,
+      status: 'open',
+      eligibleSeatIds: [seatId],
+      submissions: [
+        { seatId, actionId, actionIds: [actionId], playerName: 'Player' },
+      ],
+      queuedSubmissions: [],
+    });
+    expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
+    expect(JSON.stringify(sync)).not.toContain('private action text');
+  });
   describe('host controls', () => {
     it('requires a current host and enforces timer bounds server-side', async () => {
       const { store } = fixture();

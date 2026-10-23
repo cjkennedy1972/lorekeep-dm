@@ -229,10 +229,33 @@ export const RewindTurnSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+const RoundSnapshotSubmissionSchema = z.object({
+  seatId: SeatIdSchema,
+  actionId: z.uuid(),
+  originalActionId: z.uuid(),
+  actionIds: z.array(z.uuid()),
+  playerName: z.string().min(1),
+  receiptSeq: z.int().positive(),
+  editedAt: z.number().optional(),
+});
+export const RoundSnapshotSchema = z.object({
+  roundId: z.uuid(),
+  status: z.enum(['open', 'closing', 'resolving', 'resolved']),
+  eligibleSeatIds: z.array(SeatIdSchema),
+  deadlineAt: z.number().nullable(),
+  remainingMs: z.number().nonnegative().optional(),
+  closeReason: z.enum(['all-submitted', 'timer', 'resolve-now']).optional(),
+  submissions: z.array(RoundSnapshotSubmissionSchema),
+  queuedSubmissions: z.array(RoundSnapshotSubmissionSchema),
+});
 export const StateSyncSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('StateSync'),
-  payload: z.object({ state: RoomStateSchema }),
+  payload: z.object({
+    state: RoomStateSchema,
+    /** Full public round snapshot; optional for compatibility with older servers. */
+    round: RoundSnapshotSchema.optional(),
+  }),
 });
 export const PresenceChangedSchema = z.object({
   seq: z.int().nonnegative(),
