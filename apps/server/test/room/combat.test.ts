@@ -124,6 +124,9 @@ function setup() {
   const events: StoredEvent[] = [];
   let snapshot: LatestState['snapshot'] = null;
   const store: RoomStore = {
+    async isAccountActive() {
+      return true;
+    },
     async loadLatest() {
       return { snapshot, events: [] };
     },

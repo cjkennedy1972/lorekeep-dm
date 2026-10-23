@@ -14,8 +14,12 @@ const lease = {
 function fixture() {
   const events: StoredEvent[] = [];
   const registryWrites: RegistryEvent[][] = [];
+  const inactiveAccounts = new Set<string>();
   let snapshot: LatestState['snapshot'] = null;
   const store: RoomStore = {
+    async isAccountActive(accountId) {
+      return !inactiveAccounts.has(accountId);
+    },
     async persistRegistryEvents(_sessionId, registryEvents) {
       registryWrites.push([...registryEvents]);
     },
@@ -43,10 +47,211 @@ function fixture() {
       return { events: stored };
     },
   };
-  return { store, events, registryWrites, latest: () => store.loadLatest(id) };
+  return {
+    store,
+    events,
+    registryWrites,
+    inactiveAccounts,
+    latest: () => store.loadLatest(id),
+  };
 }
 
 describe('room actor', () => {
+  describe('host controls', () => {
+    it('requires a current host and enforces timer bounds server-side', async () => {
+      const { store } = fixture();
+      const owner = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === owner;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const player = randomUUID();
+      await room.seat(owner, 'Host');
+      await room.seat(player, 'Player');
+      const hostSeat = room.state.seats.find(
+        (seat) => seat.accountId === owner,
+      )!;
+      await expect(
+        room.kickSeat(player, randomUUID(), hostSeat.seatId),
+      ).rejects.toThrow('Only the table host');
+      await expect(
+        room.transferHost(player, randomUUID(), hostSeat.seatId),
+      ).rejects.toThrow('Only the table host');
+      await expect(
+        room.approveLateJoin(player, randomUUID(), randomUUID()),
+      ).rejects.toThrow('Only the table host');
+      await expect(
+        room.denyLateJoin(player, randomUUID(), randomUUID()),
+      ).rejects.toThrow('Only the table host');
+      await expect(room.endTable(player, randomUUID())).rejects.toThrow(
+        'Only the table host',
+      );
+      await expect(
+        room.setChatMute(player, randomUUID(), hostSeat.seatId, true),
+      ).rejects.toThrow('Only the table host');
+      await expect(room.configureRoundTimer(player, 30_000)).rejects.toThrow(
+        'Only the table host',
+      );
+      await expect(room.configureRoundTimer(owner, 29_999)).rejects.toThrow(
+        '30 and 600 seconds',
+      );
+      await expect(room.configureRoundTimer(owner, 600_001)).rejects.toThrow(
+        '30 and 600 seconds',
+      );
+      await room.configureRoundTimer(owner, null);
+      await room.configureRoundTimer(owner, 30_000);
+    });
+
+    it('kicks a current seat with actor attribution and preserves transfer, mute, and end state on replay', async () => {
+      const { store, events, latest } = fixture();
+      let owner = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === owner;
+      store.transferTableHost = async (_sessionId, current, next) => {
+        if (current !== owner) throw new Error('not owner');
+        owner = next;
+      };
+      store.endTable = async () => {};
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const host = owner;
+      const target = randomUUID();
+      await room.seat(host, 'Host');
+      await room.seat(target, 'Target');
+      const hostSeat = room.state.seats.find(
+        (seat) => seat.accountId === host,
+      )!;
+      const targetSeat = room.state.seats.find(
+        (seat) => seat.accountId === target,
+      )!;
+      await room.kickSeat(
+        host,
+        '00000000-0000-4000-8000-000000000001',
+        targetSeat.seatId,
+      );
+      expect(events.at(-1)).toMatchObject({
+        type: 'SeatRevoked',
+        payload: {
+          seatId: targetSeat.seatId,
+          actorSeatId: hostSeat.seatId,
+          actorAccountId: host,
+          cause: 'host-kick',
+        },
+      });
+      await room.kickSeat(
+        host,
+        '00000000-0000-4000-8000-000000000001',
+        targetSeat.seatId,
+      );
+
+      const replacement = randomUUID();
+      await room.seat(replacement, 'Replacement');
+      await room.setChatMute(
+        host,
+        '00000000-0000-4000-8000-000000000002',
+        room.state.seats.find((seat) => seat.accountId === replacement)!.seatId,
+        true,
+      );
+      await room.transferHost(
+        host,
+        '00000000-0000-4000-8000-000000000003',
+        room.state.seats.find((seat) => seat.accountId === replacement)!.seatId,
+      );
+      expect(
+        room.state.seats.find((seat) => seat.accountId === replacement),
+      ).toMatchObject({ isHost: true, chatMuted: true });
+      const restored = new Room(store, lease, await latest());
+      expect(
+        restored.state.seats.find((seat) => seat.accountId === replacement),
+      ).toMatchObject({ isHost: true, chatMuted: true });
+      await restored.endTable(
+        replacement,
+        '00000000-0000-4000-8000-000000000004',
+      );
+      await restored.endTable(
+        replacement,
+        '00000000-0000-4000-8000-000000000004',
+      );
+      expect(restored.state.ended).toBe(true);
+      expect(new Room(store, lease, await latest()).state.ended).toBe(true);
+    });
+
+    it('does not persist TableEnded when the table store refuses to end it', async () => {
+      const { store, events } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      store.endTable = async () => {
+        throw new Error('store unavailable');
+      };
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+
+      await expect(room.endTable(host, randomUUID())).rejects.toThrow(
+        'store unavailable',
+      );
+      expect(room.state.ended).not.toBe(true);
+      expect(events.some((event) => event.type === 'TableEnded')).toBe(false);
+    });
+
+    it('approves a late join when persisted combat state has no tracker', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({
+        combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
+      });
+      const requestId = await room.requestLateJoin(randomUUID(), 'Late');
+
+      await expect(
+        room.approveLateJoin(host, randomUUID(), requestId),
+      ).resolves.toBeUndefined();
+    });
+
+    it('does not admit an approved late join after their account becomes inactive', async () => {
+      const { store, events, inactiveAccounts } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({});
+      const requester = randomUUID();
+      const requestId = await room.requestLateJoin(requester, 'Late');
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      inactiveAccounts.add(requester);
+
+      await room.resolveNow(host);
+
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(false);
+      expect(events.map((event) => event.type)).not.toContain(
+        'LateJoinAdmitted',
+      );
+    });
+
+    it('stores late-join requests and only seats a host-approved requester at the next scene boundary', async () => {
+      const { store, events } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({});
+      const requester = randomUUID();
+      const requestId = await room.requestLateJoin(requester, 'Late');
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(false);
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(false);
+      await room.resolveNow(host);
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(true);
+      expect(events.map((event) => event.type)).toContain('LateJoinApproved');
+      expect(events.map((event) => event.type)).toContain('LateJoinAdmitted');
+    });
+  });
+
   it('preserves the frozen action when editing and withdrawing queued actions during resolution', async () => {
     const { store } = fixture();
     let startTurn!: () => void;
@@ -642,7 +847,7 @@ describe('room actor', () => {
     });
     const host = randomUUID();
     await room.seat(host, 'Host');
-    await room.configureRoundTimer(host, 1);
+    await room.configureRoundTimer(host, 30_000);
     await room.persistGameState({});
     const roundId = room.state.round!.roundId;
     await new Promise((resolve) => setTimeout(resolve, 3));

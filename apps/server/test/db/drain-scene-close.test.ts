@@ -110,6 +110,9 @@ async function harness(
   const writes: { gameState: { sceneId: string } }[] = [];
   let leaseHeld = true;
   const store: RoomStore = {
+    async isAccountActive() {
+      return true;
+    },
     async loadLatest() {
       return { snapshot: null, events: [] };
     },

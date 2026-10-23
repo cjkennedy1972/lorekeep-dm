@@ -18,6 +18,11 @@ import {
   PauseTableSchema,
   ResolveNowSchema,
   ConfigureRoundTimerSchema,
+  KickSeatSchema,
+  TransferHostSchema,
+  ApproveLateJoinSchema,
+  DenyLateJoinSchema,
+  EndTableSchema,
   RewindTurnSchema,
   type ServerMessage,
 } from '@game/schema';
@@ -518,6 +523,34 @@ export function installGateway(
             return;
           }
           const msg = parsed.data;
+          const requireCurrentCommandSeat = async () => {
+            const auth = await db.query<{ valid: boolean }>(
+              `SELECT a.expires_at>clock_timestamp() AND a.absolute_expires_at>clock_timestamp() AND u.status='active' AS valid
+                 FROM auth_sessions a JOIN accounts u ON u.id=a.account_id JOIN sessions r ON r.id=$3
+                WHERE a.account_id=$1 AND a.token_hash=$2 AND r.status='active'`,
+              [identity.accountId, identity.authTokenHash, identity.sessionId],
+            );
+            const storedSeatId = await currentSeatId(
+              db,
+              identity.accountId,
+              identity.sessionId,
+            );
+            const roomSeat = room.state.seats.find(
+              (seat) => seat.accountId === identity.accountId,
+            );
+            if (
+              auth.rows[0]?.valid !== true ||
+              !(await hasCurrentSeat(
+                db,
+                identity.accountId,
+                identity.sessionId,
+              )) ||
+              !storedSeatId ||
+              roomSeat?.seatId !== storedSeatId
+            )
+              throw new RoomSeatRequiredError();
+            return roomSeat;
+          };
           if (msg.type === 'CastRestVote') {
             const action = CastRestVoteSchema.safeParse(msg);
             if (!action.success) {
@@ -612,42 +645,167 @@ export function installGateway(
                 ws.close(1008, 'Player is not seated at this table'),
               );
           }
-          if (msg.type === 'MuteChat') {
-            const mute = MuteChatSchema.safeParse(msg);
-            if (!mute.success) return;
-            return db
-              .query<{ host: boolean }>(
-                'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
-                [identity.sessionId, identity.accountId],
-              )
-              .then(async ({ rows }) => {
-                if (rows[0]?.host !== true) throw new NotTableHostError();
-                const target = room.state.seats.find(
-                  (seat) => seat.seatId === mute.data.payload.seatId,
-                );
-                if (!target) throw new RoomSeatRequiredError();
-                if (mute.data.payload.muted)
-                  await db.query(
-                    `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
-                     VALUES($1,$2,NULL,'host',$3)
-                     ON CONFLICT(session_id,seat_id) DO UPDATE SET muted_until=NULL,source='host',updated_at=now(),updated_by=EXCLUDED.updated_by`,
-                    [identity.sessionId, target.seatId, identity.accountId],
-                  );
-                else {
-                  chatPolicy.liftMute(identity.sessionId, target.seatId);
-                  await db.query(
-                    `DELETE FROM chat_mutes WHERE session_id=$1 AND seat_id=$2`,
-                    [identity.sessionId, target.seatId],
-                  );
+          const hostCommands = {
+            KickSeat: [
+              KickSeatSchema,
+              (payload: { seatId: string }) =>
+                room.kickSeat(identity.accountId, msg.actionId, payload.seatId),
+            ],
+            TransferHost: [
+              TransferHostSchema,
+              (payload: { seatId: string }) =>
+                room.transferHost(
+                  identity.accountId,
+                  msg.actionId,
+                  payload.seatId,
+                ),
+            ],
+            ApproveLateJoin: [
+              ApproveLateJoinSchema,
+              (payload: { requestId: string }) =>
+                room.approveLateJoin(
+                  identity.accountId,
+                  msg.actionId,
+                  payload.requestId,
+                ),
+            ],
+            DenyLateJoin: [
+              DenyLateJoinSchema,
+              (payload: { requestId: string }) =>
+                room.denyLateJoin(
+                  identity.accountId,
+                  msg.actionId,
+                  payload.requestId,
+                ),
+            ],
+            EndTable: [
+              EndTableSchema,
+              () => room.endTable(identity.accountId, msg.actionId),
+            ],
+          } as const;
+          const hostCommand =
+            hostCommands[msg.type as keyof typeof hostCommands];
+          if (hostCommand) {
+            const [schema, run] = hostCommand as readonly [
+              typeof KickSeatSchema,
+              (payload: never) => Promise<void>,
+            ];
+            const command = schema.safeParse(msg);
+            if (!command.success)
+              return send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Host command is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+            if (room.hasActionId(msg.actionId)) return;
+            return requireCurrentCommandSeat()
+              .then(() => {
+                if (!room.reserveActionMutation(identity.accountId, 'host')) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: msg.actionId,
+                    },
+                  });
+                  return;
                 }
+                return run(command.data.payload as never);
               })
-              .catch(() =>
+              .catch((error: unknown) =>
                 send({
                   seq: room.seq,
                   type: 'Error',
                   payload: {
-                    code: 'ACTION_REJECTED',
-                    message: 'Chat mute could not be changed.',
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : error instanceof RoomSeatRequiredError
+                          ? 'SEAT_REVOKED'
+                          : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can do that.'
+                        : 'Host command could not be accepted.',
+                    actionId: msg.actionId,
+                  },
+                }),
+              );
+          }
+          if (msg.type === 'MuteChat') {
+            const mute = MuteChatSchema.safeParse(msg);
+            if (!mute.success) return;
+            if (room.hasActionId(mute.data.actionId)) return;
+            return requireCurrentCommandSeat()
+              .then(() => {
+                if (!room.reserveActionMutation(identity.accountId, 'host')) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: mute.data.actionId,
+                    },
+                  });
+                  return;
+                }
+                return db
+                  .query<{
+                    host: boolean;
+                  }>(
+                    'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
+                    [identity.sessionId, identity.accountId],
+                  )
+                  .then(async ({ rows }) => {
+                    if (rows[0]?.host !== true) throw new NotTableHostError();
+                    const target = room.state.seats.find(
+                      (seat) => seat.seatId === mute.data.payload.seatId,
+                    );
+                    if (!target) throw new RoomSeatRequiredError();
+                    if (mute.data.payload.muted)
+                      await db.query(
+                        `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
+                     VALUES($1,$2,NULL,'host',$3)
+                     ON CONFLICT(session_id,seat_id) DO UPDATE SET muted_until=NULL,source='host',updated_at=now(),updated_by=EXCLUDED.updated_by`,
+                        [identity.sessionId, target.seatId, identity.accountId],
+                      );
+                    else {
+                      chatPolicy.liftMute(identity.sessionId, target.seatId);
+                      await db.query(
+                        `DELETE FROM chat_mutes WHERE session_id=$1 AND seat_id=$2`,
+                        [identity.sessionId, target.seatId],
+                      );
+                    }
+                    await room.setChatMute(
+                      identity.accountId,
+                      mute.data.actionId,
+                      target.seatId,
+                      mute.data.payload.muted,
+                    );
+                  });
+              })
+              .catch((error: unknown) =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : error instanceof RoomSeatRequiredError
+                          ? 'SEAT_REVOKED'
+                          : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can do that.'
+                        : 'Chat mute could not be changed.',
                     actionId: msg.actionId,
                   },
                 }),
@@ -877,11 +1035,27 @@ export function installGateway(
               });
               return;
             }
-            return room
-              .configureRoundTimer(
-                identity.accountId,
-                config.data.payload.durationMs,
-              )
+            if (room.hasActionId(config.data.actionId)) return;
+            return requireCurrentCommandSeat()
+              .then(() => {
+                if (!room.reserveActionMutation(identity.accountId, 'host')) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: config.data.actionId,
+                    },
+                  });
+                  return;
+                }
+                return room.configureRoundTimer(
+                  identity.accountId,
+                  config.data.payload.durationMs,
+                  config.data.actionId,
+                );
+              })
               .catch((error: unknown) => {
                 send({
                   seq: room.seq,
@@ -1382,11 +1556,9 @@ export function installGateway(
                 true,
               )
             )
-              await applyAutomaticChatMute(
-                db,
-                identity.sessionId,
-                seat.seatId,
-              ).catch(() => {});
+              await applyAutomaticChatMute(db, identity.sessionId, seat.seatId)
+                .then(() => room.setSystemChatMute(seat.seatId, true))
+                .catch(() => {});
             const logId =
               decision.moderationLogId ??
               (await writeChatGateLog(identity.accountId, identity.sessionId));

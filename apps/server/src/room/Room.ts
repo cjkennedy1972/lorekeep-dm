@@ -133,8 +133,16 @@ export interface RoomStore {
   ): Promise<ChatHistoryEntry[]>;
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
+  isAccountActive(accountId: string): Promise<boolean>;
   loadRewindPlan?(sessionId: string): Promise<RewindPlan | null>;
   isTableHost?(sessionId: string, accountId: string): Promise<boolean>;
+  tableHostAccountId?(sessionId: string): Promise<string | undefined>;
+  transferTableHost?(
+    sessionId: string,
+    currentAccountId: string,
+    newAccountId: string,
+  ): Promise<void>;
+  endTable?(sessionId: string): Promise<void>;
   /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
   xCardAbortEnabled?(sessionId: string): Promise<boolean>;
   setXCardAbortEnabled?(sessionId: string, enabled: boolean): Promise<void>;
@@ -190,6 +198,7 @@ export class Room {
   private readonly drainAbort = new AbortController();
   private readonly turnRunner?: SoloTurnRunner;
   private readonly combatRuntime: CombatRuntime;
+  private combatRoundForLateJoin = 0;
   private reactionTimer?: NodeJS.Timeout;
   private restVoteTimer?: NodeJS.Timeout;
   private turnInFlight = false;
@@ -248,6 +257,7 @@ export class Room {
     this.combatRuntime = combatRuntime;
     const recovered = recoverRoom(this.sessionId, latest);
     this.state = recovered.state;
+    this.combatRoundForLateJoin = roomGameState(this.state)?.combat?.round ?? 0;
     this.seq = recovered.seq;
     this.chatReceiptSeq = Math.max(
       this.seq,
@@ -310,22 +320,31 @@ export class Room {
       actionIds?: string[];
       submission?: { actionId?: string; actionIds?: string[] };
     };
-    const committedActionIds =
-      type === 'ActionAccepted' || type === 'ActionEdited'
-        ? [
-            ...(actionPayload.actionIds ?? []),
-            ...(actionPayload.submission?.actionIds ?? []),
-            ...((actionPayload.actionId ?? actionPayload.submission?.actionId)
-              ? [
-                  (actionPayload.actionId ??
-                    actionPayload.submission?.actionId) as string,
-                ]
-              : []),
-            ...(actionPayload.commandActionId
-              ? [actionPayload.commandActionId]
-              : []),
-          ]
-        : [];
+    const committedActionIds = [
+      'ActionAccepted',
+      'ActionEdited',
+      'SeatRevoked',
+      'HostTransferred',
+      'LateJoinApproved',
+      'LateJoinDenied',
+      'TableEnded',
+      'ChatMuteChanged',
+      'RoundTimerConfigured',
+    ].includes(type)
+      ? [
+          ...(actionPayload.actionIds ?? []),
+          ...(actionPayload.submission?.actionIds ?? []),
+          ...((actionPayload.actionId ?? actionPayload.submission?.actionId)
+            ? [
+                (actionPayload.actionId ??
+                  actionPayload.submission?.actionId) as string,
+              ]
+            : []),
+          ...(actionPayload.commandActionId
+            ? [actionPayload.commandActionId]
+            : []),
+        ]
+      : [];
     const actionIds = [...new Set([...this.actionIds, ...committedActionIds])];
     const stored = await this.writeTurn(
       this.sessionId,
@@ -376,6 +395,19 @@ export class Room {
     lastSeq = -1,
   ): Promise<void> {
     return this.enqueue(async () => {
+      const ownerAccountId = await this.store.tableHostAccountId?.(
+        this.sessionId,
+      );
+      const ownerSeat = this.state.seats.find(
+        (item) => item.accountId === ownerAccountId,
+      );
+      if (
+        ownerSeat &&
+        this.state.seats.some(
+          (item) => item.isHost !== (item.seatId === ownerSeat.seatId),
+        )
+      )
+        await this.persist('HostSeatChanged', { seatId: ownerSeat.seatId });
       this.connections.set(accountId, connection);
       if (lastSeq !== this.seq)
         connection.send({
@@ -523,6 +555,13 @@ export class Room {
   clientState(): RoomState {
     const seats = this.state.seats.map((seat) => {
       const clientSeat = { ...seat };
+      if (
+        clientSeat.chatMutedUntil != null &&
+        clientSeat.chatMutedUntil <= Date.now()
+      ) {
+        clientSeat.chatMuted = false;
+        clientSeat.chatMutedUntil = undefined;
+      }
       delete clientSeat.matureOptOut;
       return clientSeat;
     });
@@ -592,6 +631,11 @@ export class Room {
           accountId: accountId as RoomState['seats'][number]['accountId'],
           displayName,
           presence: 'offline',
+          isHost: this.store.isTableHost
+            ? await this.store.isTableHost(this.sessionId, accountId)
+            : false,
+          chatMuted: false,
+          chatMutedUntil: null,
           matureOptOut,
         };
         await this.persist('SeatJoined', seat);
@@ -639,6 +683,10 @@ export class Room {
         accountId,
         displayName,
         presence: 'offline',
+        isHost: this.store.isTableHost
+          ? await this.store.isTableHost(this.sessionId, accountId)
+          : false,
+        chatMuted: false,
         matureOptOut,
       });
       this.broadcast({
@@ -1490,7 +1538,7 @@ export class Room {
 
   reserveActionMutation(
     accountId: string,
-    kind: 'submit' | 'edit' | 'withdraw' | 'rest-vote',
+    kind: 'submit' | 'edit' | 'withdraw' | 'rest-vote' | 'host',
   ): boolean {
     const seat = this.state.seats.find((item) => item.accountId === accountId);
     if (!seat) return false;
@@ -1624,6 +1672,15 @@ export class Room {
   }
 
   private async openRound(): Promise<void> {
+    const activeCombat = roomGameState(this.state);
+    if (
+      !this.turnInFlight &&
+      (!activeCombat ||
+        activeCombat.ended ||
+        !activeCombat.combat?.activeEntityId) &&
+      (!this.state.round || this.state.round.status === 'resolved')
+    )
+      await this.admitApprovedLateJoins();
     if (
       !this.state.roundsEnabled ||
       !this.state.gameState ||
@@ -1748,17 +1805,285 @@ export class Room {
     return this.resolveRound('resolve-now', accountId);
   }
 
+  requestLateJoin(
+    accountId: string,
+    displayName: string,
+    matureOptOut = false,
+  ): Promise<string> {
+    return this.enqueue(async () => {
+      if (this.state.ended) throw new Error('Table ended');
+      if (this.state.seats.some((seat) => seat.accountId === accountId))
+        throw new Error('Already seated');
+      const existing = (this.state.lateJoinRequests ?? []).find(
+        (request) => request.accountId === accountId,
+      );
+      if (existing) return existing.requestId;
+      if (this.state.seats.length >= 6) throw new Error('Room is full');
+      const request = {
+        requestId: randomUUID(),
+        accountId,
+        displayName,
+        matureOptOut,
+      };
+      await this.persist('LateJoinRequested', request);
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+      return request.requestId;
+    });
+  }
+
+  approveLateJoin(
+    accountId: string,
+    actionId: string,
+    requestId: string,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      const actor = await this.requireHost(accountId);
+      const request = this.state.lateJoinRequests?.find(
+        (item) => item.requestId === requestId,
+      );
+      if (!request || request.approved) throw new RoomSeatRequiredError();
+      if (this.state.seats.length >= 6) throw new Error('Room is full');
+      await this.persist('LateJoinApproved', {
+        requestId,
+        actorSeatId: actor.seatId,
+        actionId,
+      });
+      // Admission is deferred until openRound, a serialized exploration scene boundary.
+      const combat = roomGameState(this.state);
+      if (
+        !this.turnInFlight &&
+        (!combat || combat.ended || !combat.combat?.activeEntityId) &&
+        (!this.state.round || this.state.round.status === 'resolved')
+      )
+        await this.admitApprovedLateJoins();
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+    });
+  }
+
+  denyLateJoin(
+    accountId: string,
+    actionId: string,
+    requestId: string,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      const actor = await this.requireHost(accountId);
+      const request = this.state.lateJoinRequests?.find(
+        (item) => item.requestId === requestId,
+      );
+      if (!request) throw new RoomSeatRequiredError();
+      await this.persist('LateJoinDenied', {
+        requestId,
+        actorSeatId: actor.seatId,
+        actionId,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+    });
+  }
+
+  private async admitApprovedLateJoins(): Promise<void> {
+    const approved = (this.state.lateJoinRequests ?? []).filter(
+      (request) => request.approved,
+    );
+    for (const request of approved) {
+      if (this.state.seats.length >= 6) break;
+      if (!(await this.store.isAccountActive(request.accountId))) continue;
+      const seat = {
+        seatId: randomUUID(),
+        accountId: request.accountId,
+        displayName: request.displayName,
+        presence: 'offline' as const,
+        isHost: false,
+        chatMuted: false,
+        chatMutedUntil: null,
+        matureOptOut: request.matureOptOut ?? false,
+      };
+      await this.persist('SeatJoined', seat);
+      await this.persist('LateJoinAdmitted', {
+        requestId: request.requestId,
+        seatId: seat.seatId,
+      });
+    }
+  }
+
+  setSystemChatMute(
+    seatId: string,
+    muted: boolean,
+    mutedUntil = Date.now() + 5 * 60_000,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      const target = this.state.seats.find((seat) => seat.seatId === seatId);
+      if (!target || target.chatMuted === muted) return;
+      await this.persist('ChatMuteChanged', {
+        seatId,
+        muted,
+        mutedUntil: muted ? mutedUntil : null,
+        source: 'automatic',
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+    });
+  }
+
+  private async requireHost(
+    accountId: string,
+  ): Promise<RoomState['seats'][number]> {
+    const actor = this.state.seats.find((seat) => seat.accountId === accountId);
+    if (
+      !actor ||
+      !this.store.isTableHost ||
+      !(await this.store.isTableHost(this.sessionId, accountId))
+    )
+      throw new NotTableHostError();
+    return actor;
+  }
+
+  kickSeat(accountId: string, actionId: string, seatId: string): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      const actor = await this.requireHost(accountId);
+      const target = this.state.seats.find((seat) => seat.seatId === seatId);
+      if (!target || target.seatId === actor.seatId)
+        throw new RoomSeatRequiredError();
+      const connection = this.connections.get(target.accountId);
+      this.connections.delete(target.accountId);
+      this.withdrawQueuedFor(target.accountId);
+      await this.persist('SeatRevoked', {
+        seatId: target.seatId,
+        accountId: target.accountId,
+        actorSeatId: actor.seatId,
+        actorAccountId: accountId,
+        cause: 'host-kick',
+        actionId,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+      connection?.close?.(1008, 'Seat revoked by the host');
+    });
+  }
+
+  transferHost(
+    accountId: string,
+    actionId: string,
+    seatId: string,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      await this.requireHost(accountId);
+      const target = this.state.seats.find((seat) => seat.seatId === seatId);
+      if (!target) throw new RoomSeatRequiredError();
+      if (target.accountId === accountId) return;
+      if (!this.store.transferTableHost)
+        throw new Error('Host transfer unavailable');
+      await this.store.transferTableHost(
+        this.sessionId,
+        accountId,
+        target.accountId,
+      );
+      await this.persist('HostTransferred', {
+        fromAccountId: accountId,
+        toAccountId: target.accountId,
+        actionId,
+        fromSeatId: this.state.seats.find((s) => s.accountId === accountId)
+          ?.seatId,
+        toSeatId: seatId,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+    });
+  }
+
+  setChatMute(
+    accountId: string,
+    actionId: string,
+    seatId: string,
+    muted: boolean,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      const actor = await this.requireHost(accountId);
+      const target = this.state.seats.find((seat) => seat.seatId === seatId);
+      if (!target || (target.seatId === actor.seatId && muted))
+        throw new RoomSeatRequiredError();
+      if (target.chatMuted === muted) return;
+      await this.persist('ChatMuteChanged', {
+        seatId,
+        muted,
+        mutedUntil: null,
+        actorSeatId: actor.seatId,
+        actionId,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+    });
+  }
+
+  endTable(accountId: string, actionId: string): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      const actor = await this.requireHost(accountId);
+      await this.store.endTable?.(this.sessionId);
+      await this.persist('TableEnded', {
+        actorSeatId: actor.seatId,
+        actorAccountId: accountId,
+        actionId,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+      for (const connection of this.connections.values())
+        connection.close?.(1000, 'Table ended by host');
+      this.connections.clear();
+    });
+  }
+
   configureRoundTimer(
     accountId: string,
     durationMs: number | null,
+    actionId: string = randomUUID(),
   ): Promise<void> {
     return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      if (
+        durationMs !== null &&
+        (!Number.isInteger(durationMs) ||
+          durationMs < 30_000 ||
+          durationMs > 600_000)
+      )
+        throw new Error('Round timer must be between 30 and 600 seconds');
       if (
         !this.store.isTableHost ||
         !(await this.store.isTableHost(this.sessionId, accountId))
       )
         throw new NotTableHostError('Only the table host can configure rounds');
-      await this.persist('RoundTimerConfigured', { durationMs });
+      await this.persist('RoundTimerConfigured', { durationMs, actionId });
       this.broadcast({
         seq: this.seq,
         type: 'RoundTimerConfigured',
@@ -3021,6 +3346,21 @@ export class Room {
         payload: { events: events.map(toWireEvent) },
       } as ServerMessage);
     const ended = events.find((event) => event.type === 'CombatEnded');
+    const roundBoundary = events.some(
+      (event) =>
+        event.type === 'TurnStarted' &&
+        Number(event.round) > this.combatRoundForLateJoin,
+    );
+    this.combatRoundForLateJoin = state.combat.round;
+    if (ended || roundBoundary)
+      void this.enqueue(async () => {
+        await this.admitApprovedLateJoins();
+        this.broadcast({
+          seq: this.seq,
+          type: 'StateSync',
+          payload: { state: this.clientState() },
+        });
+      }).catch(() => undefined);
     if (ended)
       this.broadcast({
         seq: this.seq,

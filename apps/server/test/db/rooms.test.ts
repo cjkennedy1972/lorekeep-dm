@@ -103,7 +103,9 @@ describe('rooms + invites (postgres)', () => {
     expect(seats).toHaveLength(2); // host + guest once
     expect(Object.keys(seats[1]).sort()).toEqual([
       'accountId',
+      'chatMuted',
       'displayName',
+      'isHost',
       'matureOptOut',
       'presence',
       'seatId',

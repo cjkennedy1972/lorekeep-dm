@@ -171,11 +171,42 @@ export const ConfigureRoundTimerSchema = z
     actionId: ActionIdSchema,
     type: z.literal('ConfigureRoundTimer'),
     payload: z
-      .object({ durationMs: z.number().int().nonnegative().nullable() })
+      .object({
+        durationMs: z.number().int().min(30_000).max(600_000).nullable(),
+      })
       .strict(),
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+const hostCommand = <T extends string, P extends z.ZodTypeAny>(
+  type: T,
+  payload: P,
+) =>
+  z
+    .object({
+      actionId: ActionIdSchema,
+      type: z.literal(type),
+      payload,
+      lastSeq: z.int().nonnegative(),
+    })
+    .strict();
+export const KickSeatSchema = hostCommand(
+  'KickSeat',
+  z.object({ seatId: SeatIdSchema }).strict(),
+);
+export const TransferHostSchema = hostCommand(
+  'TransferHost',
+  z.object({ seatId: SeatIdSchema }).strict(),
+);
+export const ApproveLateJoinSchema = hostCommand(
+  'ApproveLateJoin',
+  z.object({ requestId: z.uuid() }).strict(),
+);
+export const DenyLateJoinSchema = hostCommand(
+  'DenyLateJoin',
+  z.object({ requestId: z.uuid() }).strict(),
+);
+export const EndTableSchema = hostCommand('EndTable', z.object({}).strict());
 export const CastRestVoteSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -242,6 +273,14 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RoundCompleted',
       'RoundClosedEmpty',
       'RoundTimerConfigured',
+      'SeatRevoked',
+      'HostTransferred',
+      'HostSeatChanged',
+      'LateJoinRequested',
+      'LateJoinDenied',
+      'TableEnded',
+      'ChatMuteChanged',
+      'LateJoinApproved',
       'RestVoteOpened',
       'RestVoteCastNotice',
       'RestVoteClosed',

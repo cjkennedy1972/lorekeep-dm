@@ -45,6 +45,14 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':
+    case 'SeatRevoked':
+    case 'HostTransferred':
+    case 'HostSeatChanged':
+    case 'LateJoinRequested':
+    case 'LateJoinDenied':
+    case 'LateJoinApproved':
+    case 'TableEnded':
+    case 'ChatMuteChanged':
       // Round broadcasts carry thin payloads, not full submissions; the full round arrives in a StateSync after a Resync.
       return view.needsResync ? view : { ...view, needsResync: true };
     case 'ActionQueued':

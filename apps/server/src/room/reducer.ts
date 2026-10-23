@@ -193,6 +193,13 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       round: { ...state.round, status: 'resolving' },
     });
   }
+  if (event.type === 'RoundClosedEmpty') {
+    if (!state.round) return state;
+    return RoomStateSchema.parse({
+      ...state,
+      round: { ...state.round, status: 'resolved' },
+    });
+  }
   if (event.type === 'RoundCompleted') {
     if (!state.round) return state;
     return RoomStateSchema.parse({
@@ -235,6 +242,79 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       return state;
     return RoomStateSchema.parse({ ...state, seats: [...state.seats, seat] });
   }
+  if (event.type === 'HostSeatChanged') {
+    const { seatId } = event.payload as { seatId: string };
+    return RoomStateSchema.parse({
+      ...state,
+      seats: state.seats.map((seat) => ({
+        ...seat,
+        isHost: seat.seatId === seatId,
+      })),
+    });
+  }
+  if (event.type === 'HostTransferred') {
+    const { toSeatId } = event.payload as { toSeatId: string };
+    return RoomStateSchema.parse({
+      ...state,
+      seats: state.seats.map((seat) => ({
+        ...seat,
+        isHost: seat.seatId === toSeatId,
+      })),
+    });
+  }
+  if (event.type === 'ChatMuteChanged') {
+    const { seatId, muted, mutedUntil } = event.payload as {
+      seatId: string;
+      muted: boolean;
+      mutedUntil?: number | null;
+    };
+    return RoomStateSchema.parse({
+      ...state,
+      seats: state.seats.map((seat) =>
+        seat.seatId === seatId
+          ? {
+              ...seat,
+              chatMuted: muted,
+              chatMutedUntil: muted ? (mutedUntil ?? null) : undefined,
+            }
+          : seat,
+      ),
+    });
+  }
+  if (event.type === 'LateJoinRequested') {
+    const request = event.payload as NonNullable<
+      RoomState['lateJoinRequests']
+    >[number];
+    return RoomStateSchema.parse({
+      ...state,
+      lateJoinRequests: [
+        ...(state.lateJoinRequests ?? []).filter(
+          (item) => item.requestId !== request.requestId,
+        ),
+        request,
+      ],
+    });
+  }
+  if (event.type === 'LateJoinApproved') {
+    const { requestId } = event.payload as { requestId: string };
+    return RoomStateSchema.parse({
+      ...state,
+      lateJoinRequests: (state.lateJoinRequests ?? []).map((item) =>
+        item.requestId === requestId ? { ...item, approved: true } : item,
+      ),
+    });
+  }
+  if (event.type === 'LateJoinDenied' || event.type === 'LateJoinAdmitted') {
+    const { requestId } = event.payload as { requestId: string };
+    return RoomStateSchema.parse({
+      ...state,
+      lateJoinRequests: (state.lateJoinRequests ?? []).filter(
+        (item) => item.requestId !== requestId,
+      ),
+    });
+  }
+  if (event.type === 'TableEnded')
+    return RoomStateSchema.parse({ ...state, ended: true, paused: true });
   if (event.type === 'SeatRevoked') {
     const { seatId } = event.payload as { seatId: string };
     return RoomStateSchema.parse({

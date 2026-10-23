@@ -76,6 +76,9 @@ function narratingRunner(
 function setup(runner: SoloTurnRunner, eligible: Set<string>) {
   const events: StoredEvent[] = [];
   const store: RoomStore = {
+    async isAccountActive() {
+      return true;
+    },
     async loadLatest(): Promise<LatestState> {
       return { snapshot: null, events: [] };
     },

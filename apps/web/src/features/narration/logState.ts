@@ -192,6 +192,14 @@ export function narrationLogReducer(
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':
+    case 'SeatRevoked':
+    case 'HostTransferred':
+    case 'HostSeatChanged':
+    case 'LateJoinRequested':
+    case 'LateJoinDenied':
+    case 'LateJoinApproved':
+    case 'TableEnded':
+    case 'ChatMuteChanged':
     case 'RestVoteOpened':
     case 'RestVoteCastNotice':
     case 'RestVoteClosed':

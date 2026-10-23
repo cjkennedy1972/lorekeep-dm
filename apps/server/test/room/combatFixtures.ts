@@ -155,6 +155,9 @@ export function memoryTable(gameState: unknown, runner?: SoloTurnRunner) {
     createdAt: new Date(),
   };
   const store: RoomStore = {
+    async isAccountActive() {
+      return true;
+    },
     async loadLatest() {
       return { snapshot, events: [] };
     },

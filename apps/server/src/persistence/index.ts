@@ -200,6 +200,35 @@ export class Persistence {
       .reverse();
   }
 
+  async tableHostAccountId(sessionId: string): Promise<string | undefined> {
+    const { rows } = await this.pool.query<{ owner_account_id: string }>(
+      'SELECT owner_account_id FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    return rows[0]?.owner_account_id;
+  }
+
+  async transferTableHost(
+    sessionId: string,
+    currentAccountId: string,
+    newAccountId: string,
+  ): Promise<void> {
+    const result = await this.pool.query(
+      "UPDATE sessions SET owner_account_id=$3 WHERE id=$1 AND owner_account_id=$2 AND status='active'",
+      [sessionId, currentAccountId, newAccountId],
+    );
+    if (result.rowCount !== 1)
+      throw new Error('Host transfer was not authorized');
+  }
+
+  async endTable(sessionId: string): Promise<void> {
+    const result = await this.pool.query(
+      "UPDATE sessions SET status='ended', archived_at=now() WHERE id=$1 AND status='active'",
+      [sessionId],
+    );
+    if (result.rowCount !== 1) throw new Error('Table is not active');
+  }
+
   async isTableHost(sessionId: string, accountId: string): Promise<boolean> {
     const { rows } = await this.pool.query<{ host: boolean }>(
       'SELECT owner_account_id=$2 AS host FROM sessions WHERE id=$1',
@@ -377,6 +406,14 @@ export class Persistence {
       const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
       return { events: inserted, snapshot };
     });
+  }
+
+  async isAccountActive(accountId: string): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
+      "SELECT 1 FROM accounts WHERE id=$1 AND status='active'",
+      [accountId],
+    );
+    return rowCount === 1;
   }
 
   async matureEligibleAccounts(accountIds: string[]): Promise<string[]> {
