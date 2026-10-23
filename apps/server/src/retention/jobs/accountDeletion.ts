@@ -269,6 +269,14 @@ async function deleteAccount(
         )
       ).rows,
     );
+    eventRows.push(
+      ...(
+        await client.query<EventRow>(
+          "SELECT session_id, seq, type, payload FROM events WHERE session_id = ANY($1) AND type IN ('RestVoteOpened','RestVoteCast','RestVoteCastNotice','RestVoteClosed','RestApplied')",
+          [touched],
+        )
+      ).rows,
+    );
   }
 
   // Capture all historical seat ids before event redaction replaces account linkage,
@@ -282,6 +290,44 @@ async function deleteAccount(
       [accountId],
     )
   ).rows.map(({ seat_id }) => seat_id);
+  const seatIdsBySession = new Map<string, Set<string>>();
+  const seatRows = await client.query<{ session_id: string; seat_id: string }>(
+    `SELECT DISTINCT session_id, payload->>'seatId' AS seat_id
+       FROM events
+      WHERE type IN ('SeatJoined','SeatRevoked') AND payload->>'accountId'=$1
+        AND payload->>'seatId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+    [accountId],
+  );
+  for (const { session_id, seat_id } of seatRows.rows) {
+    const sessionSeats = seatIdsBySession.get(session_id) ?? new Set<string>();
+    sessionSeats.add(seat_id);
+    seatIdsBySession.set(session_id, sessionSeats);
+  }
+
+  const affectedVotes = new Set<string>();
+  const deletedBallotVotes = new Set<string>();
+  for (const row of eventRows) {
+    const payload = row.payload as Record<string, unknown>;
+    const voteId =
+      typeof payload.voteId === 'string' ? payload.voteId : undefined;
+    if (!voteId) continue;
+    const voteKey = `${row.session_id}:${voteId}`;
+    const deletedSeats = seatIdsBySession.get(row.session_id) ?? new Set();
+    if (
+      row.type === 'RestVoteOpened' &&
+      Array.isArray(payload.eligibleSeats) &&
+      payload.eligibleSeats.some(
+        (seat) => typeof seat === 'string' && deletedSeats.has(seat),
+      )
+    )
+      affectedVotes.add(voteKey);
+    if (
+      row.type === 'RestVoteCast' &&
+      typeof payload.seat === 'string' &&
+      deletedSeats.has(payload.seat)
+    )
+      deletedBallotVotes.add(voteKey);
+  }
 
   const placeholders = new Map<string, string>();
   const placeholderFor = async (sessionId: string) => {
@@ -309,7 +355,7 @@ async function deleteAccount(
     if (seenEvents.has(key)) continue;
     seenEvents.add(key);
     const payload = row.payload as Record<string, unknown>;
-    const scrubbed = scrub(
+    let scrubbed = scrub(
       payload,
       {
         accountId,
@@ -319,6 +365,31 @@ async function deleteAccount(
       },
       row.type === 'chat.committed',
     );
+    const payloadRecord = payload as Record<string, unknown>;
+    const voteId =
+      typeof payloadRecord.voteId === 'string'
+        ? payloadRecord.voteId
+        : undefined;
+    const voteKey = voteId ? `${row.session_id}:${voteId}` : '';
+    if (row.type === 'RestVoteOpened' && affectedVotes.has(voteKey)) {
+      const opened = { ...(scrubbed as Record<string, unknown>) };
+      delete opened.eligibleSeats;
+      scrubbed = opened;
+    } else if (
+      (row.type === 'RestVoteCast' || row.type === 'RestVoteCastNotice') &&
+      affectedVotes.has(voteKey)
+    ) {
+      scrubbed = { scrubbed: true };
+    } else if (
+      row.type === 'RestVoteClosed' &&
+      deletedBallotVotes.has(voteKey)
+    ) {
+      scrubbed = {
+        ...(scrubbed as Record<string, unknown>),
+        yes: null,
+        no: null,
+      };
+    }
     if (JSON.stringify(scrubbed) === JSON.stringify(payload)) continue;
     await client.query('SELECT redact_event($1,$2,$3)', [
       row.session_id,
@@ -454,6 +525,15 @@ function scrub(value: unknown, s: Scrub, preserveChatText = false): unknown {
   for (const [key, child] of Object.entries(obj)) {
     if (key === s.accountId || s.charIds.has(key)) continue;
     if (CACHE_KEYS.includes(key)) continue;
+    if (key === 'restVote' && isRecord(child)) {
+      const redactedVote = { ...child };
+      delete redactedVote.eligibleSeats;
+      delete redactedVote.ballots;
+      delete redactedVote.tieBreak;
+      delete redactedVote.castSeatIds;
+      out[key] = scrub(redactedVote, s);
+      continue;
+    }
     if (owned && PLAYER_TEXT_KEYS.includes(key)) {
       if (preserveChatText && key === 'text') out[key] = REDACTED;
       continue;

@@ -6,6 +6,88 @@ export function emptyRoom(sessionId: string): RoomState {
 }
 
 export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
+  if (
+    event.type === 'ActionAccepted' &&
+    state.lastRestVoteResult &&
+    state.lastRestVoteResultTurnId !== event.turnId
+  )
+    return RoomStateSchema.parse({
+      ...state,
+      lastRestVoteResult: undefined,
+      lastRestVoteResultTurnId: undefined,
+    });
+  if (event.type === 'RestVoteOpened') {
+    const payload = event.payload as NonNullable<RoomState['restVote']>;
+    return RoomStateSchema.parse({
+      ...state,
+      restVoteCount: (state.restVoteCount ?? 0) + 1,
+      restVote: {
+        ...payload,
+        ballots: [],
+        castSeatIds: [],
+      },
+    });
+  }
+  if (event.type === 'RestVoteCast') {
+    const vote = state.restVote;
+    if (!vote || vote.voteId !== (event.payload as { voteId: string }).voteId)
+      return state;
+    const payload = event.payload as {
+      seat: string;
+      choice: 'yes' | 'no';
+    };
+    const ballots = vote.ballots ?? [];
+    if (ballots.length === (vote.eligibleSeats?.length ?? -1))
+      return RoomStateSchema.parse({
+        ...state,
+        restVote: { ...vote, tieBreak: payload.choice },
+      });
+    if (ballots.some((ballot) => ballot.seat === payload.seat)) return state;
+    return RoomStateSchema.parse({
+      ...state,
+      restVote: {
+        ...vote,
+        ballots: [...ballots, { seat: payload.seat, choice: payload.choice }],
+        castSeatIds: [...(vote.castSeatIds ?? []), payload.seat],
+      },
+    });
+  }
+  if (event.type === 'RestVoteCastNotice') {
+    const vote = state.restVote;
+    const payload = event.payload as { voteId: string; seat: string };
+    if (!vote || vote.voteId !== payload.voteId) return state;
+    return RoomStateSchema.parse({
+      ...state,
+      restVote: {
+        ...vote,
+        castSeatIds: [...new Set([...(vote.castSeatIds ?? []), payload.seat])],
+      },
+    });
+  }
+  if (event.type === 'RestVoteClosed') {
+    const payload = event.payload as {
+      voteId: string;
+      outcome: 'passed' | 'failed';
+      closeReason: NonNullable<RoomState['lastRestVoteResult']>['closeReason'];
+    };
+    const vote = state.restVote;
+    return RoomStateSchema.parse({
+      ...state,
+      restVote: undefined,
+      restVoteLastClosedAt: event.ts.getTime(),
+      ...(vote
+        ? {
+            lastRestVoteResult: {
+              voteId: payload.voteId,
+              type: vote.type,
+              outcome: payload.outcome,
+              closeReason: payload.closeReason,
+            },
+            lastRestVoteResultTurnId: event.turnId,
+          }
+        : {}),
+    });
+  }
   if (event.type === 'RoundOpened') {
     const closedRoundSubmissions = [
       ...(state.closedRoundSubmissions ?? []),
@@ -178,8 +260,28 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     return RoomStateSchema.parse({ ...state, openClarifications });
   }
   if (event.type === 'TablePaused') {
-    const { paused } = event.payload as { paused: boolean };
-    return RoomStateSchema.parse({ ...state, paused });
+    const { paused, restVoteRemainingMs, restVoteDeadlineAt } =
+      event.payload as {
+        paused: boolean;
+        restVoteRemainingMs?: number;
+        restVoteDeadlineAt?: number;
+      };
+    const restVote = state.restVote
+      ? paused && restVoteRemainingMs !== undefined
+        ? {
+            ...state.restVote,
+            deadlineAt: null,
+            remainingMs: restVoteRemainingMs,
+          }
+        : !paused && restVoteDeadlineAt !== undefined
+          ? {
+              ...state.restVote,
+              deadlineAt: restVoteDeadlineAt,
+              remainingMs: undefined,
+            }
+          : state.restVote
+      : undefined;
+    return RoomStateSchema.parse({ ...state, paused, restVote });
   }
   if (event.type === 'PresenceChanged') {
     const payload = event.payload as {

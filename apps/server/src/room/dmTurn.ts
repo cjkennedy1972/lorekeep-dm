@@ -8,6 +8,12 @@ export interface SoloTurnRequest {
   text: string;
   state: unknown;
   playerName?: string;
+  lastRestVoteResult?: {
+    voteId: string;
+    type: 'short' | 'long';
+    outcome: 'passed' | 'failed';
+    closeReason: string;
+  };
   allowClarification?: boolean;
   clarificationAsked?: boolean;
   steerAway?: boolean;
