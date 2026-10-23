@@ -131,7 +131,7 @@ test.describe.serial('party round and host panels (real server)', () => {
     }
   });
 
-  // ponytail: the scout's "resolved" copy exists only while the round is `resolving`; the client gets no close reason from the thin RoundResolved, so a Resync that lands after the turn completes never shows it. Fails 3 of 5 runs. Unblock: server includes closeReason in RoundResolved, or assert the reopened round instead.
+  // ponytail: the scout's "resolved" copy exists only while the round is `resolving`; the client gets no close reason from the thin RoundResolved, so a Resync that lands after the turn completes never shows it. Fails 3 of 5 runs. Unblock: server includes closeReason in RoundResolved, or assert the reopened round instead. Tracked in card 72ebe2cd.
   test.fixme(
     'the host resolves the round from the keyboard alone',
     async ({ browser }) => {
@@ -418,7 +418,7 @@ test.describe.serial('party round and host panels (real server)', () => {
   // Still blocked: the table route (routes/tables.ts:329) and the socket (gateway/ws.ts:296-305)
   // both require an existing seat, so an unseated account gets the "Game unavailable" page before a
   // socket opens and never reaches the "Not seated" + Rejoin state (Game.tsx:491). Unblock once a
-  // seat can be lost while a tab stays open.
+  // seat can be lost while a tab stays open. Tracked in card 72ebe2cd.
   test.fixme(
     'an unseated player sees Not seated and can rejoin',
     async () => {},
