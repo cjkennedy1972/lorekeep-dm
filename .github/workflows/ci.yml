@@ -82,15 +82,20 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Install Firefox and WebKit
+      # Keep apt dependency installation outside the retry loop: a timed-out apt
+      # child can retain dpkg's lock and make an immediate retry fail.
+      - name: Install Firefox and WebKit system dependencies
+        timeout-minutes: 8
+        run: pnpm --filter @game/web exec playwright install-deps firefox webkit
+      - name: Install Firefox and WebKit browsers
         timeout-minutes: 12
         run: |
           for attempt in 1 2; do
-            if timeout 5m pnpm --filter @game/web exec playwright install --with-deps firefox webkit; then
+            if timeout 5m pnpm --filter @game/web exec playwright install firefox webkit; then
               exit 0
             fi
             if [ "$attempt" -eq 2 ]; then exit 1; fi
-            echo "Playwright install failed or timed out; retrying once"
+            echo "Playwright browser download failed or timed out; retrying once"
           done
       - run: pnpm --filter @game/web exec playwright test --project=firefox --project=webkit
       - uses: actions/upload-artifact@v4
