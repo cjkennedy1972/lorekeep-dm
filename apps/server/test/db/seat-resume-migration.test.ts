@@ -59,7 +59,7 @@ describe.skipIf(!databaseUrl)(
       await database!.pool.query(
         await readFile(
           new URL(
-            '../../migrations/0039_initialize_seat_resume_tokens.sql',
+            '../../migrations/0040_initialize_seat_resume_tokens.sql',
             import.meta.url,
           ),
           'utf8',

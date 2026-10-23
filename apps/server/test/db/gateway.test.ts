@@ -281,6 +281,44 @@ describe('one-time gateway', () => {
       ],
     );
   });
+  it('rejects an approved claim when persisted seat membership is revoked', async () => {
+    const revokedSessionId = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      revokedSessionId,
+      accounts[0],
+    ]);
+    const room = await rooms.get(revokedSessionId);
+    await room.seat(accounts[0], 'Host');
+    await joinSeated(room, accounts[1], { send() {} }, 'Revoked claimant');
+    const seat = room.state.seats.find(
+      (candidate) => candidate.accountId === accounts[1],
+    )!;
+    await room.kickSeat(accounts[0], randomUUID(), seat.seatId);
+
+    // Model a row surviving/reappearing around the membership race. Even an
+    // approved claim must re-check persisted membership under its DB claim.
+    await db.query(
+      `INSERT INTO seat_resume_tokens(session_id,seat_id,token_hash,rotated_at)
+       VALUES($1,$2,'unmatchable-test-hash',clock_timestamp())`,
+      [revokedSessionId, seat.seatId],
+    );
+    const socketId = randomUUID();
+    const result = await authorizeSeatSocket(
+      db,
+      revokedSessionId,
+      seat.seatId,
+      socketId,
+      undefined,
+      true,
+      accounts[1],
+    );
+    expect(result).toEqual({ status: 'invalid-token' });
+    const row = await db.query<{ active_socket_id: string | null }>(
+      'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [revokedSessionId, seat.seatId],
+    );
+    expect(row.rows[0]?.active_socket_id).toBeNull();
+  });
   it('restores socket control within the two-second target after resume proof', async () => {
     const startedAt = performance.now();
     const socket = connect(await ticket(tokens[0]!));

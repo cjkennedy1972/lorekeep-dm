@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 export const up = (pgm) =>
   pgm.sql(
     readFileSync(
-      new URL('./0039_initialize_seat_resume_tokens.sql', import.meta.url),
+      new URL('./0040_initialize_seat_resume_tokens.sql', import.meta.url),
       'utf8',
     ),
   );
