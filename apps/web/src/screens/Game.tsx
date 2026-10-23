@@ -613,6 +613,9 @@ export function Game() {
           myText={pendingAction?.text}
           connected={live.status === 'connected'}
           send={live.send}
+          onEdited={(text) =>
+            updatePendingAction((current) => current && { ...current, text })
+          }
         />
       )}
       {isHost && (

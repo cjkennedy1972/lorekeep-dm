@@ -67,6 +67,8 @@ type Props = {
   myText?: string;
   connected: boolean;
   send: RoomSend;
+  /** Called with the new text once an edit is sent, so the own-action text stays current. */
+  onEdited?: (text: string) => void;
 };
 
 /** Collect-then-resolve round: who has submitted, time left, and this player's own action. */
@@ -77,6 +79,7 @@ export function RoundPanel({
   myText,
   connected,
   send,
+  onEdited,
 }: Props) {
   const now = useNow(Boolean(round?.deadlineAt));
   const [draft, setDraft] = useState('');
@@ -122,6 +125,7 @@ export function RoundPanel({
       setNote('Not connected, so your edit was not sent. Try again.');
       return;
     }
+    onEdited?.(text);
     setEditing(false);
     setNote('Edit sent.');
   }
