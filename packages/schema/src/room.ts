@@ -1,4 +1,3 @@
-import { CharacterSchema } from './character.js';
 import { z } from 'zod';
 import { AccountIdSchema, SeatIdSchema, SessionIdSchema } from './ids.js';
 
@@ -25,8 +24,6 @@ export const SeatSchema = z.object({
   chatMutedUntil: z.number().nonnegative().nullable().optional(),
   // Private account preference; omitted from the shared room-state wire view.
   matureOptOut: z.boolean().optional(),
-  /** Bound active player character for party sessions. */
-  characterId: z.uuid().optional(),
 });
 export const RoundSubmissionSchema = z.object({
   seatId: SeatIdSchema,
@@ -86,6 +83,8 @@ export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
+  /** Revoked seats remain in durable room history but cannot control or chat. */
+  revokedSeats: z.array(SeatSchema).optional(),
   round: RoundStateSchema.optional(),
   restVote: RestVoteSchema.optional(),
   restVoteCount: z.int().nonnegative().optional(),
@@ -110,6 +109,21 @@ export const RoomStateSchema = z.object({
   pauseCause: z.enum(['host', 'no-connected-seats']).optional(),
   spotlightTurn: z.number().int().nonnegative().optional(),
   spotlightCursor: z.number().int().nonnegative().optional(),
+  /** Last committed presence-event time per seat, used to enforce ADR-031 §2.8. */
+  presenceEventAt: z.record(z.string(), z.number().nonnegative()).optional(),
+  presenceEventType: z
+    .record(
+      z.string(),
+      z.enum([
+        'PresenceChanged',
+        'SeatDisconnected',
+        'SeatAway',
+        'SeatReconnected',
+      ]),
+    )
+    .optional(),
+  /** Last DM-turn index at which each account supplied player input. */
+  spotlightActivity: z.record(z.string(), z.number().nonnegative()).optional(),
   ended: z.boolean().optional(),
   lateJoinRequests: z
     .array(
@@ -119,7 +133,6 @@ export const RoomStateSchema = z.object({
           accountId: AccountIdSchema,
           displayName: z.string().min(1),
           matureOptOut: z.boolean().optional(),
-          character: CharacterSchema.optional(),
           approved: z.boolean().optional(),
         })
         .strict(),

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { createApp } from '../app.js';
 import type { Pool } from 'pg';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -23,6 +23,9 @@ import {
   TransferHostSchema,
   ApproveLateJoinSchema,
   DenyLateJoinSchema,
+  ApproveSeatClaimSchema,
+  DenySeatClaimSchema,
+  StateSyncAckSchema,
   EndTableSchema,
   RewindTurnSchema,
   type ServerMessage,
@@ -46,11 +49,15 @@ import {
 import { ConnectionRegistry } from './connections.js';
 import { ChatPolicy } from '../chat/policy.js';
 import { applyAutomaticChatMute } from '../chat/mutes.js';
-import { randomUUID } from 'node:crypto';
 import {
   currentMemberEventsSql,
   currentMemberSql,
 } from '../room/membership.js';
+import {
+  authorizeSeatSocket,
+  heartbeatSeatSocket,
+  releaseSeatSocket,
+} from './resumeTokens.js';
 
 const MAX_BYTES = 10 * 1024;
 const CHAT_REJECTION = 'That message could not be sent. Try again.';
@@ -104,7 +111,7 @@ export function installGateway(
   revalidateMs = 15_000,
 ): () => Promise<void> {
   const chatPolicy = new ChatPolicy();
-  app.post<{ Body?: { sessionId?: string; resumeToken?: string } }>(
+  app.post<{ Body?: { sessionId?: string } }>(
     '/api/ws-ticket',
     {
       onRequest: async (request, reply) => {
@@ -129,30 +136,6 @@ export function installGateway(
       if (!eligible) return reply.code(403).send({ error: 'not seated' });
       const seatId = await currentSeatId(db, auth.account_id, eligible);
       if (!seatId) return reply.code(403).send({ error: 'not seated' });
-      const stored = await db.query<{ token_hash: string }>(
-        'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
-        [eligible, seatId],
-      );
-      const priorToken = request.body?.resumeToken;
-      if (
-        stored.rowCount &&
-        (!priorToken ||
-          createHash('sha256').update(priorToken).digest('hex') !==
-            stored.rows[0]!.token_hash)
-      )
-        return reply.code(403).send({ error: 'resume-token' });
-      const resumeToken = randomBytes(16).toString('base64url');
-      await db.query(
-        `INSERT INTO seat_resume_tokens(session_id,seat_id,token_hash,rotated_at)
-         VALUES($1,$2,$3,clock_timestamp())
-         ON CONFLICT(session_id,seat_id) DO UPDATE
-           SET token_hash=EXCLUDED.token_hash,rotated_at=EXCLUDED.rotated_at`,
-        [
-          eligible,
-          seatId,
-          createHash('sha256').update(resumeToken).digest('hex'),
-        ],
-      );
       return {
         ticket: await issueTicket(
           db,
@@ -160,7 +143,6 @@ export function installGateway(
           eligible,
           auth.token_hash,
         ),
-        resumeToken,
       };
     },
   );
@@ -181,6 +163,7 @@ export function installGateway(
       return;
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
+      ws.on('error', () => {});
       const reject = () => ws.close(1008, 'Policy violation');
       if (!validWebSocketOrigin(request.headers.origin, request.headers.host)) {
         reject();
@@ -207,19 +190,178 @@ export function installGateway(
           reject();
           return;
         }
-        connections.add(ws, identity.authTokenHash);
-        ws.on('close', () => connections.remove(ws));
-        // Close the consume->register race: revocation may have landed in between.
-        await connections.sweep();
-        if (ws.readyState !== WebSocket.OPEN) return;
-        let room;
+        const seatId = await currentSeatId(db, identity.accountId, eligible);
+        if (!seatId) {
+          reject();
+          return;
+        }
+        const seatKey = `${identity.sessionId}:${seatId}`;
+        const ipAddress = request.socket.remoteAddress ?? 'unknown';
+        if (
+          !connections.consumeSeatAuthAttempt(seatKey) ||
+          !connections.consumeTransportAuthAttempt(
+            identity.accountId,
+            ipAddress,
+          )
+        ) {
+          reject();
+          return;
+        }
+        const socketId = randomUUID();
+        if (!connections.reserveSeat(seatKey, ws)) {
+          reject();
+          return;
+        }
+        let seatAuthorized = false;
+        let pendingClaimId: string | undefined;
+        let room: Awaited<ReturnType<RoomRegistry['get']>> | undefined;
+        let snapshotAcknowledged = false;
+        let requiredSnapshotSeq = 0;
+        const messagesBeforeSnapshotAck: import('ws').RawData[] = [];
+        let snapshotAckTimer: ReturnType<typeof setTimeout> | undefined;
+        ws.on('close', () => {
+          connections.remove(ws);
+          if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
+          if (pendingClaimId && room)
+            void room.cancelSeatResumeClaim(pendingClaimId).catch(() => {});
+          if (seatAuthorized)
+            void releaseSeatSocket(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+            ).catch(() => {});
+        });
+        const initialFrames: import('ws').RawData[] = [];
+        let resolveFirstFrame!: (data: import('ws').RawData) => void;
+        let firstFrameReceived = false;
+        const firstFrame = new Promise<import('ws').RawData>((resolve) => {
+          resolveFirstFrame = resolve;
+        });
+        const resumeFrameHandler = (data: import('ws').RawData) => {
+          if (!firstFrameReceived) {
+            firstFrameReceived = true;
+            resolveFirstFrame(data);
+          } else initialFrames.push(data);
+        };
+        ws.on('message', resumeFrameHandler);
+        ws.send(
+          JSON.stringify({
+            seq: 0,
+            type: 'SeatResumeChallenge',
+            payload: { seatId },
+          }),
+        );
+        let resumeMessage: unknown;
+        let resumeTimeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          resumeMessage = await Promise.race([
+            firstFrame,
+            new Promise<never>(
+              (_, rejectFirst) =>
+                (resumeTimeout = setTimeout(
+                  () => rejectFirst(new Error('resume timeout')),
+                  5_000,
+                )),
+            ),
+          ]).then((frame) => JSON.parse(frame.toString()));
+        } catch {
+          ws.off('message', resumeFrameHandler);
+          ws.close(1008, 'Seat proof required');
+          return;
+        } finally {
+          if (resumeTimeout) clearTimeout(resumeTimeout);
+        }
+        const proof = resumeMessage as {
+          type?: unknown;
+          payload?: { resumeToken?: unknown };
+        };
+        if (proof.type !== 'ResumeSeat') {
+          ws.off('message', resumeFrameHandler);
+          ws.close(1008, 'Seat proof required');
+          return;
+        }
+        const presentedToken =
+          typeof proof.payload?.resumeToken === 'string'
+            ? proof.payload.resumeToken
+            : undefined;
         try {
           room = await rooms.get(identity.sessionId);
         } catch {
+          ws.off('message', resumeFrameHandler);
           ws.close(1013, 'Room unavailable; retry');
           return;
         }
-        // The close handler below is not registered yet; bail so no seat or heartbeat is leaked.
+        let authorization = await authorizeSeatSocket(
+          db,
+          identity.sessionId,
+          seatId,
+          socketId,
+          presentedToken,
+        );
+        if (authorization.status === 'invalid-token') {
+          pendingClaimId = randomUUID();
+          ws.send(
+            JSON.stringify({
+              seq: room.seq,
+              type: 'SeatClaimPending',
+              payload: { claimId: pendingClaimId, expiresInMs: 60_000 },
+            }),
+          );
+          try {
+            const approved = await room.requestSeatResumeClaim(
+              identity.accountId,
+              pendingClaimId,
+            );
+            if (!approved) throw new Error('seat claim denied or expired');
+            if (
+              !(await hasCurrentSeat(
+                db,
+                identity.accountId,
+                identity.sessionId,
+              ))
+            )
+              throw new Error('seat revoked during claim');
+            authorization = await authorizeSeatSocket(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+              presentedToken,
+              true,
+            );
+          } catch {
+            ws.off('message', resumeFrameHandler);
+            if (ws.readyState === WebSocket.OPEN)
+              ws.send(
+                JSON.stringify({
+                  seq: room.seq,
+                  type: 'SeatClaimDenied',
+                  payload: { claimId: pendingClaimId },
+                }),
+              );
+            ws.close(1008, 'Seat claim refused');
+            return;
+          }
+          pendingClaimId = undefined;
+        }
+        if (authorization.status !== 'authorized') {
+          ws.off('message', resumeFrameHandler);
+          ws.close(1008, 'Seat authentication failed');
+          return;
+        }
+        seatAuthorized = true;
+        connections.add(ws, identity.authTokenHash, seatKey);
+        await connections.sweep();
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (authorization.takenOver) await room.recordSeatTakenOver(seatId);
+        ws.send(
+          JSON.stringify({
+            seq: room.seq,
+            type: 'SeatAuthenticated',
+            payload: { seatId, resumeToken: authorization.resumeToken },
+          }),
+        );
         if (ws.readyState !== WebSocket.OPEN) return;
         let chatDeliveryChain: Promise<unknown> = Promise.resolve();
         const queueChatDelivery = (
@@ -247,6 +389,8 @@ export function installGateway(
         };
         const connection = {
           send: (message: ServerMessage) => {
+            if (message.type === 'StateSync')
+              requiredSnapshotSeq = Math.max(requiredSnapshotSeq, message.seq);
             if (
               message.type === 'ChatMessage' ||
               message.type === 'ChatHistory'
@@ -285,6 +429,13 @@ export function installGateway(
         ws.on('pong', () => {
           missedPongs = 0;
           lastPongAt = Date.now();
+          connections.markPong(ws);
+          void heartbeatSeatSocket(
+            db,
+            identity.sessionId,
+            seatId,
+            socketId,
+          ).catch(() => {});
         });
         ws.on('close', () => {
           active = false;
@@ -304,8 +455,9 @@ export function installGateway(
         // A client may act the moment it receives its first message, which room.join() sends
         // before this handler would otherwise exist; ws drops messages with no listener.
         // Buffer (bounded) until the join has finished, then dispatch in order.
-        const early: import('ws').RawData[] = [];
+        const early: import('ws').RawData[] = initialFrames;
         const gate: { dispatch?: (data: import('ws').RawData) => void } = {};
+        ws.off('message', resumeFrameHandler);
         ws.on('message', (data) => {
           if (gate.dispatch) {
             gate.dispatch(data);
@@ -332,6 +484,11 @@ export function installGateway(
             -1,
             { requireExistingSeat: true },
           );
+          snapshotAckTimer = setTimeout(() => {
+            if (!snapshotAcknowledged)
+              ws.close(1008, 'State restore acknowledgement required');
+          }, 3_000);
+          snapshotAckTimer.unref?.();
           if (!active) {
             await room.disconnect(identity.accountId);
             return;
@@ -372,6 +529,27 @@ export function installGateway(
             envelope = JSON.parse(data.toString());
           } catch {
             envelope = undefined;
+          }
+          const stateAck = StateSyncAckSchema.safeParse(envelope);
+          if (stateAck.success) {
+            if (
+              !snapshotAcknowledged &&
+              stateAck.data.payload.seq === requiredSnapshotSeq
+            ) {
+              snapshotAcknowledged = true;
+              if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
+              for (const queued of messagesBeforeSnapshotAck.splice(0))
+                dispatch(queued);
+            }
+            return;
+          }
+          if (!snapshotAcknowledged) {
+            if (messagesBeforeSnapshotAck.length >= 32) {
+              ws.close(1008, 'Too many messages before state acknowledgement');
+              return;
+            }
+            messagesBeforeSnapshotAck.push(data);
+            return;
           }
           const chat = ChatSendSchema.safeParse(envelope);
           if (chat.success) {
@@ -713,6 +891,24 @@ export function installGateway(
                   identity.accountId,
                   msg.actionId,
                   payload.requestId,
+                ),
+            ],
+            ApproveSeatClaim: [
+              ApproveSeatClaimSchema,
+              (payload: { claimId: string }) =>
+                room.approveSeatResumeClaim(
+                  identity.accountId,
+                  msg.actionId,
+                  payload.claimId,
+                ),
+            ],
+            DenySeatClaim: [
+              DenySeatClaimSchema,
+              (payload: { claimId: string }) =>
+                room.denySeatResumeClaim(
+                  identity.accountId,
+                  msg.actionId,
+                  payload.claimId,
                 ),
             ],
             EndTable: [

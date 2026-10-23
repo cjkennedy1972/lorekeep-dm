@@ -65,7 +65,7 @@ test('connects with ticket, gets StateSync, resumes after socket drop', async ()
   const first = client.getSnapshot().lastSeq;
   const mine = () =>
     client.getSnapshot().room?.seats.find((s) => s.displayName === 'Cy');
-  expect(mine()?.presence).toBe('online');
+  expect(mine()?.presence).toBe('connected');
 
   sockets[0]!.terminate(); // abrupt drop
   await vi.waitFor(() => expect(statuses).toContain('reconnecting'));
@@ -73,7 +73,7 @@ test('connects with ticket, gets StateSync, resumes after socket drop', async ()
     const s = client.getSnapshot();
     expect(s.status).toBe('connected');
     expect(s.lastSeq).toBeGreaterThan(first);
-    expect(mine()?.presence).toBe('online');
+    expect(mine()?.presence).toBe('connected');
   });
   expect(sockets.length).toBeGreaterThan(1);
   client.stop();

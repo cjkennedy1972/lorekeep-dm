@@ -2,13 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import type { registerAuthRoutes } from './auth.js';
 import type { Pool } from 'pg';
-import {
-  CharacterSchema,
-  CreateRoomInputSchema,
-  type RoomInfo,
-} from '@game/schema';
-import { validateCharacter } from '@game/rules-engine';
-import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { CreateRoomInputSchema, type RoomInfo } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import { tokenFromCookie } from '../accounts/sessions.js';
 import { hashToken } from '../accounts/signup.js';
@@ -145,12 +139,6 @@ export function registerSessionRoutes(
           ? undefined
           : screened.recap || SAFE_RECAP_FALLBACK,
     };
-  };
-  const lateJoinCharacter = (raw: unknown) => {
-    const parsed = CharacterSchema.safeParse(raw);
-    if (!parsed.success || validateCharacter(parsed.data, loadCatalog()).length)
-      return undefined;
-    return parsed.data;
   };
   const seatProfile = async (accountId: string) => {
     const row = (
@@ -362,20 +350,10 @@ export function registerSessionRoutes(
         !room.state?.seats?.some((seat) => seat.accountId === accountId) &&
         room.state?.gameState
       ) {
-        const character = lateJoinCharacter(
-          (request.body as { character?: unknown } | null)?.character,
-        );
-        if (!character)
-          return reply.code(400).send({
-            code: 'INVALID_CHARACTER',
-            message:
-              'Choose a legal player character before requesting to join.',
-          });
         const requestId = await room.requestLateJoin(
           accountId,
           profile.displayName,
           matureOptOut,
-          character,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
@@ -403,16 +381,8 @@ export function registerSessionRoutes(
         accountId,
         optOut,
       ]);
-    const admitted = room.state.seats.some(
-      (seat) => seat.accountId === accountId && seat.characterId,
-    );
     return {
       room: view(found.id, found.name, found.owner === accountId),
-      ...(admitted
-        ? {
-            onboarding: await onboarding(found.id, accountId, matureOptOut),
-          }
-        : {}),
     };
   };
   app.get<{ Params: { code: string } }>(
@@ -432,7 +402,6 @@ export function registerSessionRoutes(
           code: 'INVITE_INVALID',
           message: 'This invite link is no longer valid.',
         });
-      const room = await rooms.get(found.id);
       return {
         room: {
           ...view(
@@ -442,7 +411,6 @@ export function registerSessionRoutes(
             undefined,
             found.hostTierCap,
           ),
-          requiresCharacter: Boolean(room.state.gameState),
         },
       };
     },
@@ -467,22 +435,12 @@ export function registerSessionRoutes(
       const optOut = (request.body as { matureOptOut?: unknown } | null)
         ?.matureOptOut;
       try {
-        const character = lateJoinCharacter(
-          (request.body as { character?: unknown } | null)?.character,
-        );
-        if (!character)
-          return reply.code(400).send({
-            code: 'INVALID_CHARACTER',
-            message:
-              'Choose a legal player character before requesting to join.',
-          });
         const requestId = await (
           await rooms.get(found.id)
         ).requestLateJoin(
           accountId,
           profile.displayName,
           typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
-          character,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [

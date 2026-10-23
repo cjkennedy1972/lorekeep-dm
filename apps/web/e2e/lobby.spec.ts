@@ -89,10 +89,10 @@ test('keyboard-only: create a table, copy the invite, two players see each other
   await tab.getByRole('heading', { name: 'Keyboard Keep' }).waitFor();
 
   const seats = page.getByRole('list', { name: /players/i });
-  await expect(seats).toContainText('Harper (online)');
-  await expect(seats).toContainText('Nia (online)');
+  await expect(seats).toContainText('Harper (connected)');
+  await expect(seats).toContainText('Nia (connected)');
   await expect(tab.getByRole('list', { name: /players/i })).toContainText(
-    'Harper (online)',
+    'Harper (connected)',
   );
 });
 

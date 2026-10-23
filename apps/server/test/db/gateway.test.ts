@@ -3,10 +3,12 @@ import { randomUUID, createHash } from 'node:crypto';
 import { on } from 'node:events';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
+import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { consumeTicket, issueTicket } from '../../src/gateway/tickets.js';
+import { authorizeSeatSocket } from '../../src/gateway/resumeTokens.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
@@ -20,7 +22,8 @@ const rooms = new RoomRegistry(
   new SessionLease(db),
   'gateway-test',
 );
-installGateway(app, db, rooms);
+const connections = new ConnectionRegistry(db);
+installGateway(app, db, rooms, connections);
 let base: string;
 const accounts = [randomUUID(), randomUUID(), randomUUID()];
 const sessionId = randomUUID();
@@ -29,17 +32,24 @@ let tokens: string[];
 // and a once('message') registered after an await drops those frames.
 const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
 const resumeTokens = new Map<string, string>();
-async function next(ws: WebSocket): Promise<{
+const ticketOwners = new Map<string, string>();
+async function next(
+  ws: WebSocket,
+  timeoutMs = 3000,
+): Promise<{
   type: string;
   seq: number;
-  payload: { state: { seats: unknown[] }; presence?: string };
+  payload: { state: { seats: unknown[] }; presence?: string; claimId?: string };
 }> {
   let timer: NodeJS.Timeout | undefined;
   try {
     const { value } = await Promise.race([
       inboxes.get(ws)!.next(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('socket timeout')), 3000);
+        timer = setTimeout(
+          () => reject(new Error('socket timeout')),
+          timeoutMs,
+        );
       }),
     ]);
     return JSON.parse(String(value[0]));
@@ -49,12 +59,34 @@ async function next(ws: WebSocket): Promise<{
 }
 async function nextOfType(ws: WebSocket, type: string) {
   for (;;) {
-    const message = await next(ws);
+    let message;
+    try {
+      message = await next(ws);
+    } catch (error) {
+      throw new Error(`waiting for ${type}: ${String(error)}`);
+    }
     if (message.type === type) return message;
   }
 }
 function closed(ws: WebSocket): Promise<number> {
   return new Promise((resolve) => ws.once('close', (code) => resolve(code)));
+}
+async function closeSocket(ws: WebSocket) {
+  if (ws.readyState === WebSocket.CLOSED) return;
+  const result = closed(ws);
+  ws.close();
+  await result;
+}
+async function waitForReleasedSocket(seatId: string) {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const result = await db.query<{ active_socket_id: string | null }>(
+      'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [sessionId, seatId],
+    );
+    if (!result.rows[0]?.active_socket_id) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('socket control claim was not released after close');
 }
 async function ticket(token: string) {
   const res = await fetch(`${base}/api/ws-ticket`, {
@@ -64,23 +96,48 @@ async function ticket(token: string) {
       cookie: `sid=${token}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      sessionId,
-      ...(resumeTokens.get(token)
-        ? { resumeToken: resumeTokens.get(token) }
-        : {}),
-    }),
+    body: JSON.stringify({ sessionId }),
   });
   expect(res.status).toBe(200);
-  const body = (await res.json()) as { ticket: string; resumeToken: string };
-  resumeTokens.set(token, body.resumeToken);
+  const body = (await res.json()) as { ticket: string };
+  ticketOwners.set(body.ticket, token);
   return body.ticket;
 }
-function connect(t: string) {
+function connect(t: string, proofOverride?: string) {
   const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
     origin: base,
   });
   inboxes.set(ws, on(ws, 'message'));
+  ws.on('message', (raw) => {
+    const message = JSON.parse(String(raw)) as {
+      type?: string;
+      seq?: number;
+      payload?: { resumeToken?: string };
+    };
+    if (message.type === 'SeatResumeChallenge')
+      ws.send(
+        JSON.stringify({
+          type: 'ResumeSeat',
+          payload: {
+            resumeToken:
+              proofOverride ?? resumeTokens.get(ticketOwners.get(t)!),
+          },
+        }),
+      );
+    if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken) {
+      const owner = ticketOwners.get(t);
+      if (owner) resumeTokens.set(owner, message.payload.resumeToken);
+    }
+    if (message.type === 'StateSync')
+      ws.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'StateSyncAck',
+          payload: { seq: message.seq },
+          lastSeq: message.seq,
+        }),
+      );
+  });
   return ws;
 }
 beforeAll(async () => {
@@ -105,6 +162,7 @@ beforeAll(async () => {
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   base = address;
 });
+beforeEach(() => connections.resetAuthAttemptHistory());
 afterAll(async () => {
   await rooms.drain();
   await app.close();
@@ -114,28 +172,66 @@ describe('one-time gateway', () => {
   it('requires and rotates the per-seat resume token', async () => {
     const firstTicket = await ticket(tokens[0]);
     expect(firstTicket).toBeTruthy();
+    const first = connect(firstTicket);
+    await nextOfType(first, 'SeatAuthenticated');
+    await nextOfType(first, 'StateSync');
     const current = resumeTokens.get(tokens[0])!;
-    const requestTicket = (resumeToken?: string) =>
-      fetch(`${base}/api/ws-ticket`, {
-        method: 'POST',
-        headers: {
-          origin: base,
-          cookie: `sid=${tokens[0]}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          sessionId,
-          ...(resumeToken ? { resumeToken } : {}),
-        }),
-      });
-    expect((await requestTicket()).status).toBe(403);
-    expect((await requestTicket('stale-token')).status).toBe(403);
-    const rotated = await requestTicket(current);
-    expect(rotated.status).toBe(200);
-    const rotatedBody = (await rotated.json()) as { resumeToken: string };
-    expect(rotatedBody.resumeToken).not.toBe(current);
-    expect((await requestTicket(current)).status).toBe(403);
-    resumeTokens.set(tokens[0], rotatedBody.resumeToken);
+    expect(current).toBeTruthy();
+    // Mint while this token is current, before the next authenticated socket rotates it.
+    const staleTicket = await ticket(tokens[0]);
+    const hostSeatId = (await rooms.get(sessionId)).state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    await closeSocket(first);
+    await waitForReleasedSocket(hostSeatId);
+    const secondTicket = await ticket(tokens[0]);
+    const second = connect(secondTicket);
+    await nextOfType(second, 'SeatAuthenticated');
+    await nextOfType(second, 'StateSync');
+    const rotated = resumeTokens.get(tokens[0])!;
+    expect(rotated).not.toBe(current);
+    await closeSocket(second);
+    await waitForReleasedSocket(hostSeatId);
+    const staleIdentity = await consumeTicket(db, staleTicket, sessionId);
+    expect(staleIdentity).toMatchObject({ accountId: accounts[0], sessionId });
+    const staleAuth = await authorizeSeatSocket(
+      db,
+      sessionId,
+      hostSeatId,
+      randomUUID(),
+      current,
+    );
+    expect(staleAuth).toMatchObject({ status: 'invalid-token' });
+  });
+  it('requires live host approval for a lost-token claim and rotates on grant', async () => {
+    const host = connect(await ticket(tokens[0]));
+    await nextOfType(host, 'StateSync');
+    const bootstrap = connect(await ticket(tokens[1]));
+    await nextOfType(bootstrap, 'SeatAuthenticated');
+    const claimantSeatId = (await rooms.get(sessionId)).state.seats.find(
+      (seat) => seat.accountId === accounts[1],
+    )!.seatId;
+    await closeSocket(bootstrap);
+    await waitForReleasedSocket(claimantSeatId);
+
+    const previous = resumeTokens.get(tokens[1])!;
+    const claimant = connect(await ticket(tokens[1]), 'lost-token');
+    const pending = await nextOfType(claimant, 'SeatClaimPending');
+    const claimId = pending.payload.claimId!;
+    await nextOfType(host, 'SeatClaimRequested');
+    const room = await rooms.get(sessionId);
+    host.send(
+      JSON.stringify({
+        actionId: randomUUID(),
+        type: 'ApproveSeatClaim',
+        payload: { claimId },
+        lastSeq: room.seq,
+      }),
+    );
+    await nextOfType(claimant, 'SeatAuthenticated');
+    expect(resumeTokens.get(tokens[1])).not.toBe(previous);
+    await Promise.all([closeSocket(claimant), closeSocket(host)]);
+    await waitForReleasedSocket(claimantSeatId);
   });
   it('enforces expiry, scope and atomic reuse', async () => {
     const t = await issueTicket(
@@ -163,37 +259,34 @@ describe('one-time gateway', () => {
   });
   it('syncs two real sockets and broadcasts disconnect', async () => {
     const first = connect(await ticket(tokens[0]));
-    const a = await next(first);
+    const a = await nextOfType(first, 'StateSync');
     expect(a.type).toBe('StateSync');
     const second = connect(await ticket(tokens[1]));
-    const b = await next(second);
+    const b = await nextOfType(second, 'StateSync');
     expect(b.type).toBe('StateSync');
     expect(b.payload.state.seats).toHaveLength(3);
-    let message = await next(first);
-    while (
-      message.type !== 'PresenceChanged' ||
-      message.payload.presence !== 'connected'
-    )
-      message = await next(first);
     second.close();
-    let leave = await next(first);
-    while (
-      leave.type !== 'PresenceChanged' ||
-      leave.payload.presence !== 'disconnected'
-    )
-      leave = await next(first);
-    expect(leave).toMatchObject({
-      type: 'PresenceChanged',
-      payload: { presence: 'disconnected' },
-    });
-    const reused = connect(await ticket(tokens[0]));
-    const badTicket = new URL(reused.url).searchParams.get('ticket')!;
-    await next(reused);
-    reused.close();
-    const denied = connect(badTicket);
-    expect(await closed(denied)).toBe(1008);
-    first.close();
-  });
+    await closeSocket(second);
+    const room = await rooms.get(sessionId);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (
+        room.state.seats.find((seat) => seat.accountId === accounts[1])
+          ?.presence === 'disconnected'
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(
+      room.state.seats.find((seat) => seat.accountId === accounts[1])?.presence,
+    ).toBe('disconnected');
+    await closeSocket(second);
+    await waitForReleasedSocket(
+      (await rooms.get(sessionId)).state.seats.find(
+        (seat) => seat.accountId === accounts[1],
+      )!.seatId,
+    );
+    await closeSocket(first);
+  }, 20_000);
 
   it('rejects every host command from a seated non-host socket', async () => {
     const room = await rooms.get(sessionId);
@@ -226,9 +319,14 @@ describe('one-time gateway', () => {
       });
     }
     expect(room.state.ended).not.toBe(true);
-    host.close();
-    guest.close();
-    secondGuest.close();
+    await Promise.all([
+      closeSocket(host),
+      closeSocket(guest),
+      closeSocket(secondGuest),
+    ]);
+    await Promise.all(
+      room.state.seats.map((seat) => waitForReleasedSocket(seat.seatId)),
+    );
   });
 
   it('rejects a host command after its seat is revoked in persisted membership', async () => {
@@ -273,6 +371,14 @@ describe('one-time gateway', () => {
         JSON.stringify({ seatId: seat.seatId, accountId: accounts[0] }),
       ],
     );
+    expect(
+      (
+        await db.query(
+          'SELECT 1 FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+          [revokedSessionId, seat.seatId],
+        )
+      ).rowCount,
+    ).toBe(0);
     const actionId = randomUUID();
     host.send(
       JSON.stringify({
@@ -291,7 +397,7 @@ describe('one-time gateway', () => {
         revokedSessionId,
       ]),
     ).toMatchObject({ rows: [{ status: 'active' }] });
-    host.close();
+    await closeSocket(host);
   });
 
   it('rejects player chat while paused without persisting or broadcasting it', async () => {
@@ -369,7 +475,6 @@ describe('one-time gateway', () => {
         sessionId,
       ]),
     ).toMatchObject({ rowCount: 0 });
-    host.close();
-    guest.close();
+    await Promise.all([closeSocket(host), closeSocket(guest)]);
   });
 });

@@ -1,8 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type RoomInfo } from '../api';
-import type { Character } from '@game/schema';
-import { QuickBuild } from '../features/character/QuickBuild';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
 export function Join() {
@@ -12,11 +10,8 @@ export function Join() {
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<boolean | null>(null);
   const [joining, setJoining] = useState(false);
-  const [preview, setPreview] = useState<
-    (RoomInfo & { requiresCharacter?: boolean }) | undefined
-  >();
+  const [preview, setPreview] = useState<RoomInfo | undefined>();
   const [previewError, setPreviewError] = useState('');
-  const [character, setCharacter] = useState<Character>();
   const [onboarding, setOnboarding] = useState<{
     settings?: {
       contentTier?: string;
@@ -32,7 +27,7 @@ export function Join() {
   useEffect(() => {
     if (!code) return;
     let live = true;
-    void api<{ room: RoomInfo & { requiresCharacter?: boolean } }>(
+    void api<{ room: RoomInfo }>(
       `/api/invites/${encodeURIComponent(code)}`,
     ).then((r) => {
       if (!live) return;
@@ -48,7 +43,7 @@ export function Join() {
     setError('');
     const r = await api<{ room: RoomInfo }>(
       `/api/invites/${encodeURIComponent(invite)}/join`,
-      { matureOptOut: checked, ...(character ? { character } : {}) },
+      { matureOptOut: checked },
     );
     if (r.ok) return navigate(`/rooms/${r.data.room.id}`, { replace: true });
     if (r.code === 'LATE_JOIN_PENDING')
@@ -94,14 +89,6 @@ export function Join() {
                   : 'Family'}
             </strong>
           </p>
-          {preview.requiresCharacter && (
-            <>
-              <QuickBuild onBuild={setCharacter} />
-              {character && (
-                <p role="status">Selected character: {character.name}</p>
-              )}
-            </>
-          )}
           <MatureOptOutField
             checked={checked}
             tierCap={preview.tierCap ?? null}
@@ -129,10 +116,7 @@ export function Join() {
             </p>
           )}
           <div className="actions">
-            <button
-              type="submit"
-              disabled={joining || (!!preview.requiresCharacter && !character)}
-            >
+            <button type="submit" disabled={joining}>
               Join table
             </button>
           </div>

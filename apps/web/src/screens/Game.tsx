@@ -86,6 +86,14 @@ export function Game() {
   const [resume, setResume] = useState<{ recap: string; name: string } | null>(
     null,
   );
+  const [seatClaims, setSeatClaims] = useState<
+    {
+      claimId: string;
+      seatId: string;
+      displayName: string;
+      expiresAt: number;
+    }[]
+  >([]);
   const [safetyNotice, setSafetyNotice] = useState('');
   const [spotlightNotice, setSpotlightNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
@@ -138,6 +146,30 @@ export function Game() {
         );
       if (message.type === 'SpotlightPrompt')
         setSpotlightNotice(String(asRecord(message.payload).prompt ?? ''));
+      if (message.type === 'SeatClaimRequested') {
+        const payload = asRecord(message.payload);
+        setSeatClaims((current) => [
+          ...current.filter(
+            (claim) => claim.claimId !== String(payload.claimId),
+          ),
+          {
+            claimId: String(payload.claimId),
+            seatId: String(payload.seatId),
+            displayName: String(payload.displayName),
+            expiresAt: Number(payload.expiresAt),
+          },
+        ]);
+      }
+      if (
+        message.type === 'SeatClaimApproved' ||
+        message.type === 'SeatClaimDenied' ||
+        message.type === 'SeatClaimExpired'
+      ) {
+        const claimId = String(asRecord(message.payload).claimId ?? '');
+        setSeatClaims((current) =>
+          current.filter((claim) => claim.claimId !== claimId),
+        );
+      }
       if (message.type === 'StateSync') {
         live.send('ChatHistoryRequest');
         const state = asRecord(message.payload.state);
@@ -624,16 +656,56 @@ export function Game() {
         />
       )}
       {isHost && (
-        <HostControls
-          round={room.round}
-          roundDurationMs={room.roundDurationMs ?? null}
-          connected={live.status === 'connected'}
-          paused={room.paused === true}
-          send={live.send}
-          seats={room.seats}
-          selfSeatId={selfSeat?.seatId}
-          lateJoinRequests={room.lateJoinRequests}
-        />
+        <>
+          <HostControls
+            round={room.round}
+            roundDurationMs={room.roundDurationMs ?? null}
+            connected={live.status === 'connected'}
+            paused={room.paused === true}
+            send={live.send}
+            seats={room.seats}
+            selfSeatId={selfSeat?.seatId}
+            lateJoinRequests={room.lateJoinRequests}
+          />
+          <HostControls
+            round={room.round}
+            roundDurationMs={room.roundDurationMs ?? null}
+            connected={live.status === 'connected'}
+            paused={room.paused === true}
+            send={live.send}
+          />
+          {seatClaims.length > 0 && (
+            <section aria-label="Device claims">
+              <h2>Reconnect claims</h2>
+              {seatClaims.map((claim) => (
+                <div key={claim.claimId}>
+                  <p>
+                    {claim.displayName} needs approval to reconnect on a new
+                    device.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={live.status !== 'connected'}
+                    onClick={() =>
+                      live.send('ApproveSeatClaim', { claimId: claim.claimId })
+                    }
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={live.status !== 'connected'}
+                    onClick={() =>
+                      live.send('DenySeatClaim', { claimId: claim.claimId })
+                    }
+                  >
+                    Deny
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+        </>
       )}
       <ChatPanel
         roomId={id}

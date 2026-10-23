@@ -173,8 +173,7 @@ export class SimTable {
   async ticket(
     token: string,
     sessionId: string,
-    resumeToken?: string,
-  ): Promise<{ ticket: string; resumeToken: string } | undefined> {
+  ): Promise<{ ticket: string } | undefined> {
     const res = await fetch(`${this.base}/api/ws-ticket`, {
       method: 'POST',
       headers: {
@@ -182,13 +181,10 @@ export class SimTable {
         cookie: `sid=${token}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        sessionId,
-        ...(resumeToken ? { resumeToken } : {}),
-      }),
+      body: JSON.stringify({ sessionId }),
     });
     if (res.status !== 200) return undefined;
-    return (await res.json()) as { ticket: string; resumeToken: string };
+    return (await res.json()) as { ticket: string };
   }
 
   async stop(): Promise<void> {
@@ -226,10 +222,8 @@ export class SimClient {
     const ticketResult = await this.table.ticket(
       this.token,
       this.table.sessionId,
-      this.resumeToken,
     );
     if (!ticketResult) return 1008;
-    this.resumeToken = ticketResult.resumeToken;
     const socket = new WebSocket(
       `${this.table.wsBase}/ws?ticket=${ticketResult.ticket}`,
       {
@@ -243,6 +237,27 @@ export class SimClient {
       const frame = JSON.parse(data.toString()) as ServerFrame;
       this.lastSeq = Math.max(this.lastSeq, frame.seq ?? 0);
       this.inbox.push(frame);
+      if (frame.type === 'SeatResumeChallenge')
+        socket.send(
+          JSON.stringify({
+            type: 'ResumeSeat',
+            payload: { resumeToken: this.resumeToken },
+          }),
+        );
+      if (
+        frame.type === 'SeatAuthenticated' &&
+        typeof frame.payload?.resumeToken === 'string'
+      )
+        this.resumeToken = frame.payload.resumeToken;
+      if (frame.type === 'StateSync')
+        socket.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'StateSyncAck',
+            payload: { seq: frame.seq },
+            lastSeq: frame.seq,
+          }),
+        );
     });
     socket.on('close', (code) => {
       this.closeCode = code;

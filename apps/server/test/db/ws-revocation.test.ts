@@ -47,16 +47,17 @@ async function setup() {
   return { accountId, sessionId, token, cookie: `sid=${token}` };
 }
 const resumeTokens = new Map<string, string>();
+const ticketSessions = new Map<string, string>();
 const ticketFor = async (cookie: string, sessionId: string) => {
   const key = sessionId;
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
     headers: { origin: base, cookie, 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, resumeToken: resumeTokens.get(key) }),
+    body: JSON.stringify({ sessionId }),
   });
   expect(res.status).toBe(200);
-  const result = (await res.json()) as { ticket: string; resumeToken: string };
-  resumeTokens.set(key, result.resumeToken);
+  const result = (await res.json()) as { ticket: string };
+  ticketSessions.set(result.ticket, key);
   return result.ticket;
 };
 const open = (ticket: string) =>
@@ -67,7 +68,34 @@ const open = (ticket: string) =>
         origin: base,
       },
     );
-    ws.once('message', () => resolve(ws)); // first frame is StateSync
+    ws.on('message', (raw) => {
+      const message = JSON.parse(String(raw)) as {
+        type?: string;
+        seq?: number;
+        payload?: { resumeToken?: string };
+      };
+      const key = ticketSessions.get(ticket)!;
+      if (message.type === 'SeatResumeChallenge')
+        ws.send(
+          JSON.stringify({
+            type: 'ResumeSeat',
+            payload: { resumeToken: resumeTokens.get(key) },
+          }),
+        );
+      if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken)
+        resumeTokens.set(key, message.payload.resumeToken);
+      if (message.type === 'StateSync') {
+        ws.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'StateSyncAck',
+            payload: { seq: message.seq },
+            lastSeq: message.seq,
+          }),
+        );
+        resolve(ws);
+      }
+    });
     ws.once('close', (code) => reject(new Error(`closed ${code}`)));
   });
 const closeInfo = (ws: WebSocket, ms = 2000) =>
@@ -161,6 +189,17 @@ describe('websocket survives neither revocation nor deactivation', () => {
     const u = await setup();
     const second = await createSession(db, u.accountId, 'second');
     const wsA = await open(await ticketFor(u.cookie, u.sessionId));
+    const competing = new WebSocket(
+      `${base.replace('http', 'ws')}/ws?ticket=${await ticketFor(`sid=${second}`, u.sessionId)}`,
+      { origin: base },
+    );
+    expect((await closeInfo(competing)).code).toBe(1008);
+    const closedA = new Promise<void>((resolve) =>
+      wsA.once('close', () => resolve()),
+    );
+    wsA.close();
+    await closedA;
+
     const wsB = await open(await ticketFor(`sid=${second}`, u.sessionId));
     const closeB = closeInfo(wsB);
     expect(
@@ -168,7 +207,7 @@ describe('websocket survives neither revocation nor deactivation', () => {
         .status,
     ).toBe(200);
     expect((await closeB).code).toBe(4401);
-    expect(wsA.readyState).toBe(WebSocket.OPEN);
+
     const third = await createSession(db, u.accountId, 'third');
     const wsC = await open(await ticketFor(`sid=${third}`, u.sessionId));
     const closeC = closeInfo(wsC);
@@ -176,7 +215,5 @@ describe('websocket survives neither revocation nor deactivation', () => {
       (await post('/api/me/sessions/revoke-others', u.cookie)).status,
     ).toBe(200);
     expect((await closeC).code).toBe(4401);
-    expect(wsA.readyState).toBe(WebSocket.OPEN);
-    wsA.close();
   });
 });

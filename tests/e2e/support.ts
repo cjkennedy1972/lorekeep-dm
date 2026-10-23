@@ -287,7 +287,6 @@ export async function connectRoom(
   lastSeq?: number,
 ) {
   const resumeKey = `${roomId}:${account.token}`;
-  const priorResumeToken = resumeTokens.get(resumeKey);
   const ticketResponse = await fetch(`${url}/api/ws-ticket`, {
     method: 'POST',
     headers: {
@@ -295,18 +294,11 @@ export async function connectRoom(
       origin: url,
       cookie: `sid=${account.token}`,
     },
-    body: JSON.stringify({
-      sessionId: roomId,
-      ...(priorResumeToken ? { resumeToken: priorResumeToken } : {}),
-    }),
+    body: JSON.stringify({ sessionId: roomId }),
   });
   if (!ticketResponse.ok)
     throw new Error(`Ticket request failed: ${ticketResponse.status}`);
-  const ticketBody = (await ticketResponse.json()) as {
-    ticket: string;
-    resumeToken: string;
-  };
-  resumeTokens.set(resumeKey, ticketBody.resumeToken);
+  const ticketBody = (await ticketResponse.json()) as { ticket: string };
   const { ticket } = ticketBody;
   const socketUrl =
     url.replace(/^http/, 'ws') + `/ws?sessionId=${roomId}&ticket=${ticket}`;
@@ -314,9 +306,35 @@ export async function connectRoom(
     headers: { origin: url },
   } as never);
   const messages: Record<string, unknown>[] = [];
-  socket.addEventListener('message', (event) =>
-    messages.push(JSON.parse(String(event.data)) as Record<string, unknown>),
-  );
+  socket.addEventListener('message', (event) => {
+    const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+    messages.push(message);
+    if (message.type === 'SeatResumeChallenge')
+      socket.send(
+        JSON.stringify({
+          type: 'ResumeSeat',
+          payload: { resumeToken: resumeTokens.get(resumeKey) },
+        }),
+      );
+    if (message.type === 'StateSync') {
+      const seq = message.seq as number;
+      socket.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'StateSyncAck',
+          payload: { seq },
+          lastSeq: seq,
+        }),
+      );
+    }
+    if (message.type === 'SeatAuthenticated') {
+      const resumeToken = (
+        message.payload as { resumeToken?: unknown } | undefined
+      )?.resumeToken;
+      if (typeof resumeToken === 'string')
+        resumeTokens.set(resumeKey, resumeToken);
+    }
+  });
   await Promise.race([
     new Promise<void>((resolve, reject) => {
       socket.addEventListener('open', () => resolve(), { once: true });

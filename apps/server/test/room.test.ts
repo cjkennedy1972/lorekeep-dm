@@ -160,6 +160,37 @@ describe('room actor', () => {
     ).toBe('before-next-turn');
   });
 
+  it('suppresses disconnect and reconnect events for a sub-10-second blip', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accountId = randomUUID();
+    await room.seat(accountId, 'Player');
+    await room.join(accountId, { send() {} });
+    const seatId = room.state.seats[0]!.seatId;
+    vi.useFakeTimers();
+    try {
+      const disconnected = room.disconnect(accountId);
+      await vi.advanceTimersByTimeAsync(10);
+      await disconnected;
+      await vi.advanceTimersByTimeAsync(5_000);
+      const rejoined = room.join(accountId, { send() {} });
+      await vi.advanceTimersByTimeAsync(10);
+      await rejoined;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(room.state.seats[0]?.presence).toBe('connected');
+      expect(
+        events.filter(
+          (event) =>
+            ['SeatDisconnected', 'SeatReconnected'].includes(event.type) &&
+            (event.payload as { seatId?: string }).seatId === seatId,
+        ),
+      ).toHaveLength(0);
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
+  });
+
   it('moves through disconnected, returning, and connected; only confirmed absence pauses the table', async () => {
     const { store, events } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id));
@@ -174,6 +205,19 @@ describe('room actor', () => {
       await vi.advanceTimersByTimeAsync(10);
       await disconnected;
       expect(room.state.seats[0]?.presence).toBe('disconnected');
+      expect(
+        events.filter(
+          (event) =>
+            [
+              'PresenceChanged',
+              'SeatDisconnected',
+              'SeatAway',
+              'SeatReconnected',
+            ].includes(event.type) &&
+            (event.payload as { seatId?: string }).seatId ===
+              room.state.seats[0]?.seatId,
+        ),
+      ).toHaveLength(1);
       expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
         false,
       );
@@ -186,6 +230,19 @@ describe('room actor', () => {
       expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
         true,
       );
+      expect(
+        events.filter(
+          (event) =>
+            [
+              'PresenceChanged',
+              'SeatDisconnected',
+              'SeatAway',
+              'SeatReconnected',
+            ].includes(event.type) &&
+            (event.payload as { seatId?: string }).seatId ===
+              room.state.seats[0]?.seatId,
+        ),
+      ).toHaveLength(2);
 
       const rejoined = room.join(accountId, { send() {} });
       await vi.advanceTimersByTimeAsync(10);
@@ -201,6 +258,56 @@ describe('room actor', () => {
       vi.useRealTimers();
     }
   });
+
+  it('requires host approval for a lost-token claim and expires it after 60 seconds', async () => {
+    const { store } = fixture();
+    const host = randomUUID();
+    const claimant = randomUUID();
+    store.isTableHost = async (_sessionId, accountId) => accountId === host;
+    const room = new Room(store, lease, await store.loadLatest(id));
+    await room.seat(host, 'Host');
+    await room.seat(claimant, 'Claimant');
+    vi.useFakeTimers();
+    try {
+      const claimId = randomUUID();
+      const decision = room.requestSeatResumeClaim(claimant, claimId);
+      await vi.advanceTimersByTimeAsync(59_999);
+      await room.approveSeatResumeClaim(host, randomUUID(), claimId);
+      await expect(decision).resolves.toBe(true);
+
+      const expiredId = randomUUID();
+      const expired = room.requestSeatResumeClaim(claimant, expiredId);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(expired).resolves.toBe(false);
+      await expect(
+        room.approveSeatResumeClaim(host, randomUUID(), expiredId),
+      ).rejects.toThrow();
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains a revoked seat in Room state while removing active control membership', async () => {
+    const { store } = fixture();
+    const host = randomUUID();
+    const target = randomUUID();
+    store.isTableHost = async (_sessionId, accountId) => accountId === host;
+    const room = new Room(store, lease, await store.loadLatest(id));
+    await room.seat(host, 'Host');
+    await room.seat(target, 'Target');
+    const revoked = room.state.seats.find((seat) => seat.accountId === target)!;
+    await room.leave(target);
+    expect(room.state.seats.some((seat) => seat.accountId === target)).toBe(
+      false,
+    );
+    expect(room.state.revokedSeats).toContainEqual({
+      ...revoked,
+      presence: 'revoked',
+    });
+    await room.drain();
+  });
+
   describe('host controls', () => {
     it('requires a current host and enforces timer bounds server-side', async () => {
       const { store } = fixture();

@@ -38,6 +38,7 @@ export async function enterGame(page: Page, room: TestRoom, title: string) {
   await page.goto(`/join/${room.code}`);
   await page.getByRole('button', { name: 'Join table' }).click();
   await page.getByRole('heading', { name: title }).waitFor();
+  await expect(page.getByText('Connected to the room.')).toBeVisible();
   await page.goto(`/rooms/${room.id}/game`);
   await expect(page.getByText('Connected')).toBeVisible();
 }

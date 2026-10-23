@@ -79,8 +79,36 @@ class Stack {
 
 class Client {
   log: Wire[] = [];
-  private constructor(readonly ws: WebSocket) {
-    ws.on('message', (data) => this.log.push(JSON.parse(data.toString())));
+  private static resumeTokens = new Map<string, string>();
+  private constructor(
+    readonly ws: WebSocket,
+    private readonly accountId: string,
+  ) {
+    ws.on('message', (data) => {
+      const frame = JSON.parse(data.toString()) as Wire;
+      this.log.push(frame);
+      if (frame.type === 'SeatResumeChallenge')
+        ws.send(
+          JSON.stringify({
+            type: 'ResumeSeat',
+            payload: { resumeToken: Client.resumeTokens.get(accountId) },
+          }),
+        );
+      if (
+        frame.type === 'SeatAuthenticated' &&
+        typeof frame.payload?.resumeToken === 'string'
+      )
+        Client.resumeTokens.set(accountId, frame.payload.resumeToken);
+      if (frame.type === 'StateSync')
+        ws.send(
+          JSON.stringify({
+            type: 'StateSyncAck',
+            actionId: randomUUID(),
+            lastSeq: frame.seq,
+            payload: { seq: frame.seq },
+          }),
+        );
+    });
   }
   static async open(
     s: Stack,
@@ -94,7 +122,7 @@ class Client {
         origin: s.base,
       },
     );
-    const client = new Client(ws);
+    const client = new Client(ws, user.id);
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => resolve());
       ws.once('error', reject);

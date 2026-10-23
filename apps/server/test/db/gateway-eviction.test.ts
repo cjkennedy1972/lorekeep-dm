@@ -52,6 +52,7 @@ function closedWithin(ws: WebSocket, ms: number) {
 }
 
 const resumeTokens = new Map<string, string>();
+const ticketOwners = new Map<string, string>();
 async function ticket(token: string) {
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
@@ -60,11 +61,11 @@ async function ticket(token: string) {
       cookie: `sid=${token}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ sessionId, resumeToken: resumeTokens.get(token) }),
+    body: JSON.stringify({ sessionId }),
   });
   expect(res.status).toBe(200);
-  const result = (await res.json()) as { ticket: string; resumeToken: string };
-  resumeTokens.set(token, result.resumeToken);
+  const result = (await res.json()) as { ticket: string };
+  ticketOwners.set(result.ticket, token);
   return result.ticket;
 }
 
@@ -73,6 +74,32 @@ function connect(t: string) {
     origin: base,
   });
   inboxes.set(ws, on(ws, 'message'));
+  ws.on('message', (raw) => {
+    const message = JSON.parse(String(raw)) as {
+      type?: string;
+      seq?: number;
+      payload?: { resumeToken?: string };
+    };
+    const owner = ticketOwners.get(t)!;
+    if (message.type === 'SeatResumeChallenge')
+      ws.send(
+        JSON.stringify({
+          type: 'ResumeSeat',
+          payload: { resumeToken: resumeTokens.get(owner) },
+        }),
+      );
+    if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken)
+      resumeTokens.set(owner, message.payload.resumeToken);
+    if (message.type === 'StateSync')
+      ws.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'StateSyncAck',
+          payload: { seq: message.seq },
+          lastSeq: message.seq,
+        }),
+      );
+  });
   return ws;
 }
 
@@ -105,6 +132,8 @@ afterAll(async () => {
 describe('room eviction and attached sockets', () => {
   it('closes a socket attached to an evicted room so the client reattaches to a fresh one', async () => {
     const heir = connect(await ticket(tokens[1]!));
+    expect((await next(heir)).type).toBe('SeatResumeChallenge');
+    expect((await next(heir)).type).toBe('SeatAuthenticated');
     expect((await next(heir)).type).toBe('StateSync');
 
     const closing = closedWithin(heir, 2000);
@@ -112,6 +141,8 @@ describe('room eviction and attached sockets', () => {
 
     expect(await closing).not.toBe('open');
     const fresh = connect(await ticket(tokens[1]!));
+    expect((await next(fresh)).type).toBe('SeatResumeChallenge');
+    expect((await next(fresh)).type).toBe('SeatAuthenticated');
     expect((await next(fresh)).type).toBe('StateSync');
     fresh.close();
   });

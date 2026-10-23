@@ -35,7 +35,8 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
   );
   try {
     const sync = await recovered.waitFor((m) => m.type === 'StateSync', 3_000);
-    expect(sync.seq).toBe(Number(expected.seq));
+    // Successful authentication records SeatTakenOver after the durable snapshot.
+    expect(sync.seq).toBe(Number(expected.seq) + 1);
     const clientSeat = (seat: Record<string, unknown>) =>
       Object.fromEntries(
         Object.entries(seat).filter(([key]) => key !== 'matureOptOut'),
@@ -51,12 +52,13 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
         ]),
     );
     const syncState = (sync.payload as { state: { seats?: unknown[] } }).state;
-    // Restart recovers presence as unknown until a seat is authenticated again.
+    // Authenticated recovery marks the seat returning until the reconnect hold elapses.
     const recoveredExpectedState = {
       ...expectedState,
+      revokedSeats: [],
       seats: (expectedState.seats as Record<string, unknown>[]).map((seat) => ({
         ...seat,
-        presence: 'unknown',
+        presence: 'returning',
       })),
     };
     expect(syncState).toEqual(recoveredExpectedState);

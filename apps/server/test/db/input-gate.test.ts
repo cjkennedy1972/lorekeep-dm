@@ -70,10 +70,9 @@ async function openSocket(token: string) {
       cookie: `sid=${token}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ sessionId, resumeToken: resumeTokens.get(token) }),
+    body: JSON.stringify({ sessionId }),
   });
-  const result = (await res.json()) as { ticket: string; resumeToken: string };
-  resumeTokens.set(token, result.resumeToken);
+  const result = (await res.json()) as { ticket: string };
   const ticket = result.ticket;
   const ws = new WebSocket(
     `${base.replace('http', 'ws')}/ws?ticket=${ticket}`,
@@ -82,7 +81,32 @@ async function openSocket(token: string) {
     },
   );
   inboxes.set(ws, on(ws, 'message'));
-  await nextMessage(ws);
+  ws.on('message', (raw) => {
+    const message = JSON.parse(String(raw)) as {
+      type?: string;
+      seq?: number;
+      payload?: { resumeToken?: string };
+    };
+    if (message.type === 'SeatResumeChallenge')
+      ws.send(
+        JSON.stringify({
+          type: 'ResumeSeat',
+          payload: { resumeToken: resumeTokens.get(token) },
+        }),
+      );
+    if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken)
+      resumeTokens.set(token, message.payload.resumeToken);
+    if (message.type === 'StateSync')
+      ws.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'StateSyncAck',
+          payload: { seq: message.seq },
+          lastSeq: message.seq,
+        }),
+      );
+  });
+  for (;;) if ((await nextMessage(ws)).type === 'StateSync') break;
   return ws;
 }
 

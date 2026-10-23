@@ -60,6 +60,7 @@ export function createRoomClient(opts: RoomClientOptions) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
   let resumeToken: string | undefined;
+  let pendingClaimId: string | undefined;
   try {
     resumeToken =
       globalThis.localStorage?.getItem(
@@ -100,6 +101,50 @@ export function createRoomClient(opts: RoomClientOptions) {
     if (!parsed.success)
       return set({ error: 'Received unrecognised message from server.' });
     const msg = parsed.data;
+    if (msg.type === 'SeatResumeChallenge') {
+      const env: ClientEnvelope = {
+        actionId: crypto.randomUUID() as ClientEnvelope['actionId'],
+        type: 'ResumeSeat',
+        payload: resumeToken ? { resumeToken } : {},
+        lastSeq: snap.lastSeq,
+      };
+      if (socket?.readyState === WS.OPEN) socket.send(JSON.stringify(env));
+      return;
+    }
+    if (msg.type === 'SeatAuthenticated') {
+      const nextToken = msg.payload.resumeToken;
+      if (typeof nextToken === 'string') {
+        resumeToken = nextToken;
+        try {
+          globalThis.localStorage?.setItem(
+            `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+            resumeToken,
+          );
+        } catch {
+          /* The current socket remains authenticated; a future new device needs host approval. */
+        }
+      }
+      attempt = 0;
+      set({ status: 'connected', error: null });
+      return;
+    }
+    if (msg.type === 'SeatClaimPending') {
+      pendingClaimId = String(msg.payload.claimId ?? '');
+      set({ error: 'Waiting for the host to approve this device.' });
+    }
+    if (
+      (msg.type === 'SeatClaimDenied' || msg.type === 'SeatClaimExpired') &&
+      String(msg.payload.claimId ?? '') === pendingClaimId
+    ) {
+      stopped = true;
+      pendingClaimId = undefined;
+      set({
+        status: 'closed',
+        error: 'The host did not approve this device claim.',
+      });
+      socket?.close();
+      return;
+    }
     opts.onMessage?.(msg);
     const wasResync = snap.needsResync;
     const next = roomReducer(snap, msg);
@@ -107,6 +152,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       ...next,
       error: msg.type === 'Error' ? msg.payload.message : snap.error,
     });
+    if (msg.type === 'StateSync') send('StateSyncAck', { seq: msg.seq });
     if (next.needsResync && !wasResync) send('Resync');
   };
 
@@ -126,26 +172,11 @@ export function createRoomClient(opts: RoomClientOptions) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-          ...(resumeToken ? { resumeToken } : {}),
         }),
       });
       if (!res.ok) throw new Error(`ticket ${res.status}`);
-      const body = (await res.json()) as {
-        ticket: string;
-        resumeToken?: string;
-      };
+      const body = (await res.json()) as { ticket: string };
       const { ticket } = body;
-      if (body.resumeToken) {
-        resumeToken = body.resumeToken;
-        try {
-          globalThis.localStorage?.setItem(
-            `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
-            resumeToken,
-          );
-        } catch {
-          /* Best-effort persistence. */
-        }
-      }
       if (stopped) return;
       const url = new URL('/ws', opts.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -153,9 +184,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       const ws = new WS(url.href);
       socket = ws;
       ws.onopen = () => {
-        attempt = 0;
-        set({ status: 'connected', error: null });
-        // Server sends StateSync on join; lastSeq in envelopes lets it resume.
+        set({ status: 'connecting' });
       };
       ws.onmessage = (e) => onMessage(e.data);
       ws.onclose = (e) => {

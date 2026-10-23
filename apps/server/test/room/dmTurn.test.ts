@@ -129,9 +129,14 @@ describe('Room solo DM turn lifecycle', () => {
     };
     const { room, events, latestSnapshot } = setup(runner);
     const accountId = randomUUID();
+    const idleAccountId = randomUUID();
     const messages: { type: string }[] = [];
+    const idleMessages: { type: string }[] = [];
     await joinSeated(room, accountId, {
       send: (message) => messages.push(message as { type: string }),
+    });
+    await joinSeated(room, idleAccountId, {
+      send: (message) => idleMessages.push(message as { type: string }),
     });
     const actionId = randomUUID();
     expect(
@@ -150,6 +155,8 @@ describe('Room solo DM turn lifecycle', () => {
     expect(events.map((event) => event.type)).toEqual([
       'SeatJoined',
       'PresenceChanged',
+      'SeatJoined',
+      'PresenceChanged',
       'RollEvent',
       'NarrationCompleted',
       'ActionAccepted',
@@ -159,6 +166,9 @@ describe('Room solo DM turn lifecycle', () => {
     expect(messages.some((message) => message.type === 'SpotlightPrompt')).toBe(
       true,
     );
+    expect(
+      idleMessages.some((message) => message.type === 'SpotlightPrompt'),
+    ).toBe(false);
     expect(latestSnapshot()?.state).toMatchObject({
       actionIds: [actionId],
       spotlightTurn: 1,

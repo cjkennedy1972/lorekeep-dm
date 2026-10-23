@@ -83,6 +83,14 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'Error':
     case 'ChatMessage':
     case 'ChatHistory':
+    case 'SeatTakenOver':
+    case 'SeatClaimRequested':
+    case 'SeatClaimApproved':
+    case 'SeatClaimDenied':
+    case 'SeatClaimExpired':
+    case 'SeatAuthenticated':
+    case 'SeatClaimPending':
+    case 'SeatResumeChallenge':
       return view; // surfaced by the client, not part of room state
   }
 }

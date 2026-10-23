@@ -38,9 +38,18 @@ function closed(ws: WebSocket): Promise<{ code: number; reason: string }> {
   );
 }
 function connect(ticket: string) {
-  return new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${ticket}`, {
-    origin: base,
+  const ws = new WebSocket(
+    `${base.replace('http', 'ws')}/ws?ticket=${ticket}`,
+    {
+      origin: base,
+    },
+  );
+  ws.on('message', (data) => {
+    const frame = JSON.parse(data.toString()) as { type: string };
+    if (frame.type === 'SeatResumeChallenge')
+      ws.send(JSON.stringify({ type: 'ResumeSeat', payload: {} }));
   });
+  return ws;
 }
 
 beforeAll(async () => {

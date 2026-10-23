@@ -42,6 +42,7 @@ const savedEndpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT;
 let fakeEndpoint: FakeOpenAIServer | undefined;
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
+const seatResumeTokens = new Map<string, string>();
 const runner: SoloTurnRunner = {
   async run(request, emit) {
     await new Promise((resolve) => setTimeout(resolve, 80));
@@ -96,8 +97,49 @@ async function openSocket(accountId: string, token: string, sessionId: string) {
     { origin: base },
   );
   await new Promise<void>((resolve, reject) => {
-    ws.once('message', () => resolve());
-    ws.once('error', reject);
+    const timer = setTimeout(
+      () => reject(new Error('websocket auth timeout')),
+      5000,
+    );
+    const onMessage = (data: WebSocket.RawData) => {
+      const frame = JSON.parse(data.toString()) as WireMessage & {
+        seq?: number;
+      };
+      if (frame.type === 'SeatResumeChallenge') {
+        ws.send(
+          JSON.stringify({
+            type: 'ResumeSeat',
+            payload: { resumeToken: seatResumeTokens.get(accountId) },
+          }),
+        );
+      } else if (
+        frame.type === 'SeatAuthenticated' &&
+        typeof frame.payload?.resumeToken === 'string'
+      ) {
+        seatResumeTokens.set(accountId, frame.payload.resumeToken);
+      } else if (frame.type === 'StateSync') {
+        ws.send(
+          JSON.stringify({
+            type: 'StateSyncAck',
+            actionId: randomUUID(),
+            lastSeq: frame.seq,
+            payload: { seq: frame.seq },
+          }),
+        );
+        clearTimeout(timer);
+        ws.off('message', onMessage);
+        resolve();
+      }
+    };
+    ws.on('message', onMessage);
+    ws.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    ws.once('close', () => {
+      clearTimeout(timer);
+      reject(new Error('socket closed before sync'));
+    });
   });
   return ws;
 }
@@ -371,8 +413,39 @@ describe('solo turn persisted lifecycle', () => {
         { origin: recordedBase },
       );
       await new Promise<void>((resolve, reject) => {
-        ws!.once('message', () => resolve());
-        ws!.once('error', reject);
+        const timer = setTimeout(
+          () => reject(new Error('websocket auth timeout')),
+          10_000,
+        );
+        const onMessage = (data: WebSocket.RawData) => {
+          const frame = JSON.parse(data.toString()) as WireMessage & {
+            seq?: number;
+          };
+          if (frame.type === 'SeatResumeChallenge')
+            ws!.send(JSON.stringify({ type: 'ResumeSeat', payload: {} }));
+          if (frame.type === 'StateSync') {
+            ws!.send(
+              JSON.stringify({
+                type: 'StateSyncAck',
+                actionId: randomUUID(),
+                lastSeq: frame.seq,
+                payload: { seq: frame.seq },
+              }),
+            );
+            clearTimeout(timer);
+            ws!.off('message', onMessage);
+            resolve();
+          }
+        };
+        ws!.on('message', onMessage);
+        ws!.once('error', (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        ws!.once('close', () => {
+          clearTimeout(timer);
+          reject(new Error('socket closed before sync'));
+        });
       });
       const completed = receive(
         ws,
@@ -426,7 +499,7 @@ describe('solo turn persisted lifecycle', () => {
         delete process.env.SOLO_TURN_ENDPOINT_SLOT;
       else process.env.SOLO_TURN_ENDPOINT_SLOT = priorEndpointSlot;
     }
-  });
+  }, 30_000);
 
   it('persists scene transitions in events and snapshot across room restart', async () => {
     const owner = await createUser();

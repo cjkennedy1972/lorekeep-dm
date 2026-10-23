@@ -4,6 +4,7 @@ import {
   TurnRevertedSchema,
   type ChatHistoryEntry,
   type RoomState,
+  type Seat,
   type ServerMessage,
   type ChatMessage,
   type StateSync,
@@ -40,15 +41,10 @@ import {
   type CombatTransition,
   type RoomCombatState,
 } from './combat.js';
-import { attacksFor, partySpawn, settleEngine } from './combatBootstrap.js';
+import { settleEngine } from './combatBootstrap.js';
 import { withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
-import {
-  deriveSheet,
-  validateCharacter,
-  type CharacterInput,
-} from '@game/rules-engine';
 import type { Catalog } from '@game/rules-engine';
 import { resolveSoloRest } from './rest.js';
 import {
@@ -169,12 +165,24 @@ export interface Connection {
   close?(code: number, reason: string): void;
 }
 
+interface PendingSeatClaim {
+  claimId: string;
+  accountId: string;
+  seatId: string;
+  displayName: string;
+  expiresAt: number;
+  timer: ReturnType<typeof setTimeout>;
+  decide: (approved: boolean) => void;
+}
+
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 const DRAIN_DEADLINE_MS = 30_000;
 const DEFAULT_ROUND_MS = 120_000;
 const ROUND_GATE_GRACE_MS = 5_000;
 const PRESENCE_HOLD_MS = 10_000;
 const AWAY_AFTER_MS = 30_000;
+const SEAT_CLAIM_TTL_MS = 60_000;
+const PRESENCE_EVENT_WINDOW_MS = 10_000;
 
 /** Exploration admission requires a committed scene close; combat waits for the next initiative round. */
 export function nextLateJoinBoundary(input: {
@@ -220,7 +228,16 @@ export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
   private readonly presenceTimers = new Map<string, NodeJS.Timeout>();
-  private readonly disconnectedEventTimers = new Map<string, NodeJS.Timeout>();
+  private readonly pendingPresenceEvents = new Map<
+    string,
+    {
+      presence: Seat['presence'];
+      type: string;
+      payload: Record<string, unknown>;
+      notBefore: number;
+    }
+  >();
+  private readonly presenceEventTimers = new Map<string, NodeJS.Timeout>();
   private readonly disconnectedAt = new Map<string, number>();
   private readonly disconnectedMs = new Map<string, number>();
   private readonly actionIds: Set<string>;
@@ -237,6 +254,7 @@ export class Room {
   private turnAccountId?: string;
   private matureDelivery: Promise<void> = Promise.resolve();
   private readonly pendingActions = new Set<string>();
+  private readonly seatClaims = new Map<string, PendingSeatClaim>();
   private sceneBoundaryPending = false;
   private chatReceiptSeq: number;
   private chatCommitTail: Promise<void> = Promise.resolve();
@@ -400,6 +418,111 @@ export class Room {
     return committed;
   }
 
+  /** Applies presence immediately and coalesces durable/public state events per ADR-031 §2.8. */
+  private async transitionPresence(
+    seatId: Seat['seatId'],
+    presence: Seat['presence'],
+    eventType = 'PresenceChanged',
+    extraPayload: Record<string, unknown> = {},
+  ): Promise<void> {
+    const seat = this.state.seats.find(
+      (candidate) => candidate.seatId === seatId,
+    );
+    if (!seat) return;
+    this.state = RoomStateSchema.parse({
+      ...this.state,
+      seats: this.state.seats.map((candidate) =>
+        candidate.seatId === seatId ? { ...candidate, presence } : candidate,
+      ),
+    });
+    const now = Date.now();
+    const priorPending = this.pendingPresenceEvents.get(seatId);
+    if (presence === 'returning' && priorPending?.type === 'SeatDisconnected') {
+      this.pendingPresenceEvents.delete(seatId);
+      const timer = this.presenceEventTimers.get(seatId);
+      if (timer) clearTimeout(timer);
+      this.presenceEventTimers.delete(seatId);
+      this.broadcast({
+        seq: this.seq,
+        type: 'StateSync',
+        payload: { state: this.clientState() },
+      });
+      return;
+    }
+    const last = this.state.presenceEventAt?.[seatId];
+    const commit = async (pending: {
+      presence: Seat['presence'];
+      type: string;
+      payload: Record<string, unknown>;
+    }) => {
+      if (!this.state.seats.some((candidate) => candidate.seatId === seatId)) {
+        this.pendingPresenceEvents.delete(seatId);
+        const timer = this.presenceEventTimers.get(seatId);
+        if (timer) clearTimeout(timer);
+        this.presenceEventTimers.delete(seatId);
+        return;
+      }
+      const event = await this.persist(pending.type, pending.payload);
+      this.pendingPresenceEvents.delete(seatId);
+      const timer = this.presenceEventTimers.get(seatId);
+      if (timer) clearTimeout(timer);
+      this.presenceEventTimers.delete(seatId);
+      this.broadcast({
+        seq: event.seq,
+        type: 'PresenceChanged',
+        payload: { seatId, presence: pending.presence },
+      });
+    };
+    const notBefore = Math.max(
+      this.pendingPresenceEvents.get(seatId)?.notBefore ?? 0,
+      last === undefined ? 0 : last + PRESENCE_EVENT_WINDOW_MS,
+      eventType === 'SeatDisconnected' ? now + PRESENCE_EVENT_WINDOW_MS : 0,
+    );
+    const pending = {
+      presence,
+      type: eventType,
+      payload: { seatId, presence, ...extraPayload },
+      notBefore,
+    };
+    if (notBefore <= now) {
+      await commit(pending);
+      return;
+    }
+    this.pendingPresenceEvents.set(seatId, pending);
+    this.broadcast({
+      seq: this.seq,
+      type: 'StateSync',
+      payload: { state: this.clientState() },
+    });
+    const oldTimer = this.presenceEventTimers.get(seatId);
+    if (oldTimer) clearTimeout(oldTimer);
+    const timer = setTimeout(
+      () => {
+        void this.enqueue(async () => {
+          const currentPending = this.pendingPresenceEvents.get(seatId);
+          if (currentPending) await commit(currentPending);
+        }).catch(() => undefined);
+      },
+      Math.max(0, notBefore - now),
+    );
+    timer.unref?.();
+    this.presenceEventTimers.set(seatId, timer);
+  }
+
+  recordSeatTakenOver(seatId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const event = await this.persist('SeatTakenOver', {
+        seatId,
+        at: Date.now(),
+      });
+      this.broadcast({
+        seq: event.seq,
+        type: 'SeatTakenOver',
+        payload: { seatId, at: event.ts.getTime() },
+      } as ServerMessage);
+    });
+  }
+
   /** A failed write reloads the committed head so in-memory seq and state match storage. */
   private async writeTurn(
     ...args: Parameters<RoomStore['writeTurn']>
@@ -460,15 +583,7 @@ export class Room {
         (item) => item.accountId === accountId,
       );
       if (seat && seat.presence !== 'connected') {
-        const event = await this.persist('PresenceChanged', {
-          seatId: seat.seatId,
-          presence: 'connected',
-        });
-        this.broadcast({
-          seq: event.seq,
-          type: 'PresenceChanged',
-          payload: { seatId: seat.seatId, presence: 'connected' },
-        });
+        await this.transitionPresence(seat.seatId, 'connected');
         await this.reconcileConnectionPause();
       }
       if (lastSeq !== this.seq)
@@ -627,7 +742,12 @@ export class Room {
       delete clientSeat.matureOptOut;
       return clientSeat;
     });
-    const clientVisibleState = { ...this.state };
+    const revokedSeats = (this.state.revokedSeats ?? []).map((seat) => {
+      const clientSeat = { ...seat };
+      delete clientSeat.matureOptOut;
+      return clientSeat;
+    });
+    const clientVisibleState = { ...this.state, revokedSeats };
     delete clientVisibleState.round;
     delete clientVisibleState.closedRoundSubmissions;
     if (clientVisibleState.restVote) {
@@ -763,21 +883,16 @@ export class Room {
       const initialConnection = seat.presence === 'offline';
       const connectedPresence = initialConnection ? 'connected' : 'returning';
       if (seat.presence !== connectedPresence) {
-        if (seat.presence === 'disconnected' || seat.presence === 'away')
-          await this.persist('SeatReconnected', {
-            seatId: seat.seatId,
-            at: Date.now(),
-            wasAway: seat.presence === 'away',
-          });
-        const event = await this.persist('PresenceChanged', {
-          seatId: seat.seatId,
-          presence: connectedPresence,
-        });
-        this.broadcast({
-          seq: event.seq,
-          type: 'PresenceChanged',
-          payload: { seatId: seat.seatId, presence: connectedPresence },
-        });
+        const wasAway = seat.presence === 'away';
+        const hadVisibleDisconnect = ['SeatDisconnected', 'SeatAway'].includes(
+          this.state.presenceEventType?.[seat.seatId] ?? '',
+        );
+        await this.transitionPresence(
+          seat.seatId,
+          connectedPresence,
+          hadVisibleDisconnect ? 'SeatReconnected' : 'PresenceChanged',
+          hadVisibleDisconnect ? { at: Date.now(), wasAway } : {},
+        );
       }
       if (!initialConnection && connectedPresence === 'returning')
         this.schedulePresenceTransition(
@@ -787,6 +902,14 @@ export class Room {
         );
       await this.reconcileConnectionPause();
       await this.ensureRoundOpen();
+      if (lastSeq !== this.seq || options.requireExistingSeat)
+        connection.send({
+          seq: this.seq,
+          type: 'StateSync',
+          payload: { state: this.clientState() },
+        });
+      this.sendCombatSnapshot(connection);
+      this.sendRoundSnapshot(connection);
     });
   }
 
@@ -842,10 +965,6 @@ export class Room {
         this.turnAbort?.abort();
       this.withdrawQueuedFor(accountId);
       await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
-      this.state = {
-        ...this.state,
-        seats: this.state.seats.filter((item) => item.seatId !== seat.seatId),
-      };
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -872,16 +991,14 @@ export class Room {
       if (seat && seat.presence !== 'disconnected') {
         this.clearPresenceTimer(seat.seatId);
         this.disconnectedAt.set(seat.seatId, disconnectedAt);
-        const event = await this.persist('PresenceChanged', {
-          seatId: seat.seatId,
-          presence: 'disconnected',
-        });
-        this.broadcast({
-          seq: event.seq,
-          type: 'PresenceChanged',
-          payload: { seatId: seat.seatId, presence: 'disconnected' },
-        });
-        this.scheduleDisconnectedEvent(seat.seatId, disconnectedAt);
+        await this.transitionPresence(
+          seat.seatId,
+          'disconnected',
+          'SeatDisconnected',
+          {
+            at: disconnectedAt,
+          },
+        );
         this.schedulePresenceTransition(
           seat.seatId,
           'away',
@@ -1953,7 +2070,6 @@ export class Room {
     accountId: string,
     displayName: string,
     matureOptOut = false,
-    character?: Character,
   ): Promise<string> {
     return this.enqueue(async () => {
       if (this.state.ended) throw new Error('Table ended');
@@ -1969,7 +2085,6 @@ export class Room {
         accountId,
         displayName,
         matureOptOut,
-        ...(character ? { character } : {}),
       };
       await this.persist('LateJoinRequested', request);
       this.broadcast({
@@ -2021,6 +2136,131 @@ export class Room {
     });
   }
 
+  requestSeatResumeClaim(accountId: string, claimId: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      const seat = this.state.seats.find(
+        (candidate) => candidate.accountId === accountId,
+      );
+      if (
+        !seat ||
+        seat.presence === 'revoked' ||
+        this.connections.has(accountId)
+      )
+        throw new RoomSeatRequiredError();
+      if (
+        [...this.seatClaims.values()].some(
+          (claim) => claim.seatId === seat.seatId,
+        )
+      )
+        throw new Error('A seat claim is already pending');
+      let decide!: (approved: boolean) => void;
+      const result = new Promise<boolean>((resolve) => {
+        decide = resolve;
+      });
+      const expiresAt = Date.now() + SEAT_CLAIM_TTL_MS;
+      const timer = setTimeout(() => {
+        void this.expireSeatResumeClaim(claimId);
+      }, SEAT_CLAIM_TTL_MS);
+      timer.unref?.();
+      this.seatClaims.set(claimId, {
+        claimId,
+        accountId,
+        seatId: seat.seatId,
+        displayName: seat.displayName,
+        expiresAt,
+        timer,
+        decide,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'SeatClaimRequested',
+        payload: {
+          claimId,
+          seatId: seat.seatId,
+          displayName: seat.displayName,
+          expiresAt,
+        },
+      });
+      return { result };
+    }).then(({ result }) => result);
+  }
+
+  approveSeatResumeClaim(
+    accountId: string,
+    actionId: string,
+    claimId: string,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      await this.requireHost(accountId);
+      const claim = this.seatClaims.get(claimId);
+      if (
+        !claim ||
+        claim.expiresAt <= Date.now() ||
+        this.connections.has(claim.accountId)
+      )
+        throw new RoomSeatRequiredError();
+      clearTimeout(claim.timer);
+      this.seatClaims.delete(claimId);
+      claim.decide(true);
+      this.broadcast({
+        seq: this.seq,
+        type: 'SeatClaimApproved',
+        payload: { claimId, actionId },
+      });
+    });
+  }
+
+  denySeatResumeClaim(
+    accountId: string,
+    actionId: string,
+    claimId: string,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      await this.requireHost(accountId);
+      const claim = this.seatClaims.get(claimId);
+      if (!claim) throw new RoomSeatRequiredError();
+      clearTimeout(claim.timer);
+      this.seatClaims.delete(claimId);
+      claim.decide(false);
+      this.broadcast({
+        seq: this.seq,
+        type: 'SeatClaimDenied',
+        payload: { claimId, actionId },
+      });
+    });
+  }
+
+  cancelSeatResumeClaim(claimId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const claim = this.seatClaims.get(claimId);
+      if (!claim) return;
+      clearTimeout(claim.timer);
+      this.seatClaims.delete(claimId);
+      claim.decide(false);
+      this.broadcast({
+        seq: this.seq,
+        type: 'SeatClaimExpired',
+        payload: { claimId },
+      });
+    });
+  }
+
+  private expireSeatResumeClaim(claimId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const claim = this.seatClaims.get(claimId);
+      if (!claim) return;
+      this.seatClaims.delete(claimId);
+      claim.decide(false);
+      this.broadcast({
+        seq: this.seq,
+        type: 'SeatClaimExpired',
+        payload: { claimId },
+      });
+    });
+  }
+
   denyLateJoin(
     accountId: string,
     actionId: string,
@@ -2066,10 +2306,7 @@ export class Room {
         chatMuted: false,
         chatMutedUntil: null,
         matureOptOut: request.matureOptOut ?? false,
-        ...(request.character ? { characterId: request.character.id } : {}),
       };
-      if (request.character)
-        await this.bindLateJoinCharacter(request.accountId, request.character);
       await this.persist('SeatJoined', seat);
       await this.persist('LateJoinAdmitted', {
         requestId: request.requestId,
@@ -2078,173 +2315,14 @@ export class Room {
     }
   }
 
-  private async bindLateJoinCharacter(
-    accountId: string,
-    character: Character,
-  ): Promise<void> {
-    const gameState = this.state.gameState as
-      | Record<string, unknown>
-      | undefined;
-    const engine = gameState?.gameEngine as
-      | {
-          map?: Battlemap;
-          entities?: {
-            id: string;
-            name?: string;
-            team: string;
-            pos: { x: number; y: number };
-            size: number;
-            hp: number;
-            maxHp: number;
-            ac: number;
-            speed: number;
-          }[];
-          ac?: Record<string, number>;
-          attacks?: Record<
-            string,
-            {
-              ownerId: string;
-              attackBonus: number;
-              damage: string;
-              damageType: string;
-            }
-          >;
-          combat?: { initiative?: { entityId: string; total: number }[] };
-        }
-      | undefined;
-    if (!gameState || !engine?.map || !engine.entities)
-      throw new Error('No legal engine spawn is available for this table');
-    if (validateCharacter(character as CharacterInput, loadCatalog()).length)
-      throw new Error(
-        'Late-join character is not legal for this rules catalog',
-      );
-    const sheet = deriveSheet(character as CharacterInput, loadCatalog());
-    const spawn = partySpawn(
-      engine.map,
-      engine.entities.filter((entity) => entity.pos.x >= 0),
-    )[0];
-    if (!spawn)
-      throw new Error('No legal engine spawn is available for this table');
-    const entity = {
-      id: character.id,
-      name: character.name,
-      team: 'party',
-      pos: spawn,
-      size: 1,
-      hp: character.hp.current,
-      maxHp: character.hp.max,
-      ac: sheet.ac,
-      speed: 30,
-    };
-    const characters = {
-      ...((gameState.characters as
-        | Record<string, CharacterInput>
-        | undefined) ?? {}),
-      [accountId]: character as CharacterInput,
-    };
-    const gameEngine = {
-      ...engine,
-      entities: [...engine.entities, entity],
-      ac: { ...(engine.ac ?? {}), [character.id]: sheet.ac },
-      ...(engine.combat?.initiative
-        ? {
-            combat: {
-              ...engine.combat,
-              initiative: [
-                ...engine.combat.initiative,
-                { entityId: character.id, total: sheet.initiative },
-              ],
-            },
-          }
-        : {}),
-    };
-    const priorCombat = gameState.combatRoom as RoomCombatState | undefined;
-    const combatRoom = priorCombat
-      ? {
-          ...priorCombat,
-          entities: [
-            ...priorCombat.entities,
-            {
-              ...entity,
-              kind: 'character' as const,
-              ...attacksFor(
-                entity,
-                character as CharacterInput,
-                engine.attacks ?? {},
-                loadCatalog(),
-              ),
-            },
-          ],
-          combat: {
-            ...priorCombat.combat,
-            initiative: [
-              ...priorCombat.combat.initiative,
-              { entityId: character.id, total: sheet.initiative },
-            ],
-            resources: {
-              ...priorCombat.combat.resources,
-              [character.id]: {
-                action: true,
-                bonusAction: true,
-                bonusActionSpellCast: false,
-                actionSpellCast: false,
-                reaction: true,
-                movementRemaining: 30,
-              },
-            },
-          },
-        }
-      : undefined;
-    const nextGameState = {
-      ...gameState,
-      characters,
-      gameEngine,
-      ...(combatRoom ? { combatRoom } : {}),
-    };
-    const nextState = RoomStateSchema.parse({
-      ...this.state,
-      gameState: nextGameState,
-    });
-    const stored = await this.writeTurn(
-      this.sessionId,
-      [
-        {
-          seq: this.seq + 1,
-          turnId: randomUUID(),
-          type: 'GameStateCommitted',
-          payload: { gameState: nextGameState },
-        },
-      ],
-      nextState,
-      this.lease,
-    );
-    this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
-    this.state = nextState;
-  }
-
   private clearPresenceTimer(seatId: string): void {
     const timer = this.presenceTimers.get(seatId);
     if (timer) clearTimeout(timer);
     this.presenceTimers.delete(seatId);
   }
 
-  private scheduleDisconnectedEvent(seatId: string, at: number): void {
-    const previous = this.disconnectedEventTimers.get(seatId);
-    if (previous) clearTimeout(previous);
-    const timer = setTimeout(() => {
-      this.disconnectedEventTimers.delete(seatId);
-      void this.enqueue(async () => {
-        const seat = this.state.seats.find((item) => item.seatId === seatId);
-        if (!seat || seat.presence !== 'disconnected') return;
-        await this.persist('SeatDisconnected', { seatId, at });
-      }).catch(() => undefined);
-    }, 10_000);
-    timer.unref?.();
-    this.disconnectedEventTimers.set(seatId, timer);
-  }
-
   private schedulePresenceTransition(
-    seatId: string,
+    seatId: Seat['seatId'],
     presence: 'connected' | 'away',
     delayMs: number,
   ): void {
@@ -2255,28 +2333,16 @@ export class Room {
         if (!seat) return;
         if (presence === 'connected' && seat.presence !== 'returning') return;
         if (presence === 'away' && seat.presence !== 'disconnected') return;
-        const semanticType = presence === 'away' ? 'SeatAway' : undefined;
-        if (semanticType)
-          await this.persist(semanticType, {
-            seatId: seat.seatId,
-            at: Date.now(),
-          });
-        const event = await this.persist('PresenceChanged', {
+        await this.transitionPresence(
           seatId,
           presence,
-        });
+          presence === 'away' ? 'SeatAway' : 'PresenceChanged',
+          presence === 'away' ? { at: Date.now() } : {},
+        );
         if (presence === 'connected') {
           this.disconnectedAt.delete(seatId);
           this.disconnectedMs.delete(seatId);
-          const disconnectedTimer = this.disconnectedEventTimers.get(seatId);
-          if (disconnectedTimer) clearTimeout(disconnectedTimer);
-          this.disconnectedEventTimers.delete(seatId);
         }
-        this.broadcast({
-          seq: event.seq,
-          type: 'PresenceChanged',
-          payload: { seatId: seat.seatId, presence },
-        });
         await this.reconcileConnectionPause();
         if (presence === 'connected') await this.ensureRoundOpen();
       }).catch(() => undefined);
@@ -3352,7 +3418,7 @@ export class Room {
             seq: undefined,
             turnId: id,
             type: 'ActionAccepted',
-            payload: { actionId },
+            payload: { actionId, accountId },
           });
         }
         if (roundId)
@@ -3471,6 +3537,14 @@ export class Room {
         const nextState = {
           ...this.state,
           gameState: settleEngine(turnGameState),
+          ...(!clarification
+            ? {
+                spotlightActivity: {
+                  ...(this.state.spotlightActivity ?? {}),
+                  [accountId]: this.state.spotlightTurn ?? 0,
+                },
+              }
+            : {}),
           ...(writes.some((write) => write.type === 'RestVoteClosed')
             ? {
                 restVote: undefined,
@@ -3971,7 +4045,12 @@ export class Room {
     const eligible = this.state.seats.filter(
       (seat) =>
         (seat.presence === 'connected' || seat.presence === 'returning') &&
-        this.connections.has(seat.accountId),
+        this.connections.has(seat.accountId) &&
+        (this.state.spotlightTurn ?? 0) -
+          (this.state.spotlightActivity?.[seat.accountId] ??
+            this.state.spotlightTurn ??
+            0) <=
+          10,
     );
     if (eligible.length === 0) return;
     const cursor = this.state.spotlightCursor ?? 0;
@@ -4029,9 +4108,14 @@ export class Room {
     clearTimeout(this.restVoteTimer);
     for (const timer of this.presenceTimers.values()) clearTimeout(timer);
     this.presenceTimers.clear();
-    for (const timer of this.disconnectedEventTimers.values())
-      clearTimeout(timer);
-    this.disconnectedEventTimers.clear();
+    for (const timer of this.presenceEventTimers.values()) clearTimeout(timer);
+    this.presenceEventTimers.clear();
+    this.pendingPresenceEvents.clear();
+    for (const claim of this.seatClaims.values()) {
+      clearTimeout(claim.timer);
+      claim.decide(false);
+    }
+    this.seatClaims.clear();
     this.disconnectedAt.clear();
     this.disconnectedMs.clear();
     for (const timer of this.clarificationTimers.values()) clearTimeout(timer);

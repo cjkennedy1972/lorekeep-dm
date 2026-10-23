@@ -106,15 +106,38 @@ test('export and delete', async () => {
   expect((await post('/api/me', null, cookie, 'GET')).status).toBe(401);
 });
 
+const resumeTokens = new Map<string, string>();
 async function connect(cookie: string) {
   const { ticket } = (await (
     await post('/api/ws-ticket', {}, cookie)
   ).json()) as { ticket: string };
   const ws = new WebSocket(`ws://${base}/ws?ticket=${ticket}`);
   const msgs: ReturnType<typeof ServerMessageSchema.parse>[] = [];
-  ws.on('message', (d) =>
-    msgs.push(ServerMessageSchema.parse(JSON.parse(String(d)))),
-  );
+  ws.on('message', (d) => {
+    const message = ServerMessageSchema.parse(JSON.parse(String(d)));
+    msgs.push(message);
+    if (message.type === 'SeatResumeChallenge')
+      ws.send(
+        JSON.stringify({
+          type: 'ResumeSeat',
+          payload: { resumeToken: resumeTokens.get(cookie) },
+        }),
+      );
+    if (
+      message.type === 'SeatAuthenticated' &&
+      typeof message.payload.resumeToken === 'string'
+    )
+      resumeTokens.set(cookie, message.payload.resumeToken);
+    if (message.type === 'StateSync')
+      ws.send(
+        JSON.stringify({
+          type: 'StateSyncAck',
+          actionId: crypto.randomUUID(),
+          lastSeq: message.seq,
+          payload: { seq: message.seq },
+        }),
+      );
+  });
   await new Promise((r) => ws.once('open', r));
   return { ws, msgs, ticket };
 }
@@ -139,13 +162,14 @@ test('two connections see each other presence; ticket is single use', async () =
   await until(
     () =>
       c1.msgs.some(
-        (m) => m.type === 'PresenceChanged' && m.payload.presence === 'online',
+        (m) =>
+          m.type === 'PresenceChanged' && m.payload.presence === 'connected',
       ) &&
       c2.msgs.some(
         (m) =>
           m.type === 'StateSync' &&
           m.payload.state.seats.some(
-            (s) => s.displayName === 'P1' && s.presence === 'online',
+            (s) => s.displayName === 'P1' && s.presence === 'connected',
           ),
       ),
   );
@@ -157,7 +181,8 @@ test('two connections see each other presence; ticket is single use', async () =
   c2.ws.close();
   await until(() =>
     c1.msgs.some(
-      (m) => m.type === 'PresenceChanged' && m.payload.presence === 'offline',
+      (m) =>
+        m.type === 'PresenceChanged' && m.payload.presence === 'disconnected',
     ),
   );
   const reuse = new WebSocket(`ws://${base}/ws?ticket=${c1.ticket}`);

@@ -83,6 +83,7 @@ export function createMock(
   >();
   const matureOptOuts = new Set<string>();
   const tickets = new Map<string, { accountId: string; tableId: string }>(); // single use
+  const resumeTokens = new Map<string, string>();
   type MockRoom = {
     id: string;
     name: string;
@@ -618,20 +619,80 @@ export function createMock(
     wss.handleUpgrade(req, socket, head, (ws) => {
       const room = roomFor(issued.tableId);
       const owner = rooms.get(issued.tableId)?.hostId;
-      const leave = room.join(
-        account,
-        (m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m)),
-        owner === account.id,
+      const tokenKey = `${issued.tableId}:${account.id}`;
+      let joined = false;
+      let acknowledged = false;
+      let requiredSeq = 0;
+      const queued: string[] = [];
+      let leave: (() => void) | undefined;
+      const send = (message: unknown) => {
+        if (ws.readyState !== ws.OPEN) return;
+        const frame = message as { type?: string; seq?: number };
+        if (frame.type === 'StateSync' && typeof frame.seq === 'number')
+          requiredSeq = frame.seq;
+        ws.send(JSON.stringify(message));
+      };
+      ws.send(
+        JSON.stringify({ seq: 0, type: 'SeatResumeChallenge', payload: {} }),
       );
-      if (!leave) return void ws.close(1008, 'room full');
       ws.on('message', (raw) => {
+        let message: {
+          type?: string;
+          actionId?: string;
+          lastSeq?: number;
+          payload?: { paused?: boolean; resumeToken?: string; seq?: number };
+        };
+        try {
+          message = JSON.parse(String(raw)) as typeof message;
+        } catch {
+          return;
+        }
+        if (!joined) {
+          if (message.type !== 'ResumeSeat')
+            return void ws.close(1008, 'Seat proof required');
+          const current = resumeTokens.get(tokenKey);
+          if (current && message.payload?.resumeToken !== current) {
+            send({
+              seq: 0,
+              type: 'SeatClaimPending',
+              payload: { claimId: 'mock-claim' },
+            });
+            return void ws.close(1008, 'Host approval required');
+          }
+          resumeTokens.set(tokenKey, randomBytes(16).toString('base64url'));
+          send({
+            seq: 0,
+            type: 'SeatAuthenticated',
+            payload: { resumeToken: resumeTokens.get(tokenKey) },
+          });
+          leave = room.join(account, send, owner === account.id) ?? undefined;
+          if (!leave) return void ws.close(1008, 'room full');
+          joined = true;
+          return;
+        }
+        if (message.type === 'StateSyncAck') {
+          if (message.payload?.seq === requiredSeq) {
+            acknowledged = true;
+            for (const queuedMessage of queued.splice(0))
+              dispatch(queuedMessage);
+          }
+          return;
+        }
+        if (!acknowledged) {
+          if (queued.length < 32) queued.push(String(raw));
+          else ws.close(1008, 'State acknowledgement required');
+          return;
+        }
+        dispatch(String(raw));
+      });
+      const dispatch = (raw: string) => {
         let message: {
           type?: string;
           actionId?: string;
           payload?: { paused?: boolean };
         };
         try {
-          message = JSON.parse(String(raw)) as typeof message;
+          message = JSON.parse(raw) as typeof message;
         } catch {
           return;
         }
@@ -648,8 +709,8 @@ export function createMock(
           typeof message.payload?.paused === 'boolean'
         )
           room.setPaused(message.payload.paused);
-      });
-      ws.on('close', leave);
+      };
+      ws.on('close', () => leave?.());
     });
   });
   server.on('close', () => {
