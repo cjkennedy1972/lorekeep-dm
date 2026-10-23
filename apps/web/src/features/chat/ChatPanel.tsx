@@ -1,11 +1,12 @@
 import { useRef, useState, type FormEvent } from 'react';
-import type { ChatHistoryEntry, RoomState } from '@game/schema';
+import type { ChatHistoryEntry } from '@game/schema';
 import { api } from '../../api.js';
+import type { ClientRoomState } from '../../room/reducer.js';
 
 interface ChatPanelProps {
   roomId: string;
   messages: ChatHistoryEntry[];
-  room: RoomState;
+  room: ClientRoomState;
   isHost: boolean;
   connected: boolean;
   error: string;

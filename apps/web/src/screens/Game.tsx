@@ -610,8 +610,12 @@ export function Game() {
           round={room.round}
           seats={room.seats}
           myActionId={pendingAction?.id}
+          myText={pendingAction?.text}
           connected={live.status === 'connected'}
           send={live.send}
+          onEdited={(text) =>
+            updatePendingAction((current) => current && { ...current, text })
+          }
         />
       )}
       {isHost && (
