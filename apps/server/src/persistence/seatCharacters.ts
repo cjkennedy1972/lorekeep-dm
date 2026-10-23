@@ -76,6 +76,7 @@ export class SeatCharacterRepository {
         expectedRevision === undefined
           ? await client.query<{ revision: number }>(
               `INSERT INTO account_characters(id, account_id, character) VALUES($1,$2,$3::jsonb)
+             ON CONFLICT (id) DO NOTHING
              RETURNING revision`,
               [character.id, accountId, JSON.stringify(character)],
             )
@@ -157,7 +158,7 @@ export class SeatCharacterRepository {
       if (!session.rowCount) throw new SeatCharacterError('NOT_FOUND');
       if (session.rows[0]!.mode !== 'party')
         throw new SeatCharacterError('SOLO_SESSION');
-      if (['ended', 'deleting', 'deleted'].includes(session.rows[0]!.status))
+      if (session.rows[0]!.status !== 'active')
         throw new SeatCharacterError('SESSION_INACTIVE');
       const account = await client.query<{ status: string }>(
         'SELECT status FROM accounts WHERE id=$1 FOR SHARE',

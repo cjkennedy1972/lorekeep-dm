@@ -48,10 +48,10 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
-  it('rejects binding into ended or deleting sessions', async () => {
+  it('rejects binding into non-active sessions', async () => {
     const f = await fixture();
     try {
-      for (const status of ['ended', 'deleting']) {
+      for (const status of ['ended', 'deleting', 'archived']) {
         await db.query('UPDATE sessions SET status=$2 WHERE id=$1', [
           f.sessionId,
           status,
@@ -163,6 +163,9 @@ describe('party seat-character persistence', () => {
       await expect(
         f.repo.saveOwnedCharacter(stranger, f.character, f.revision),
       ).rejects.toMatchObject({ code: 'NOT_OWNER' });
+      await expect(
+        f.repo.saveOwnedCharacter(stranger, f.character),
+      ).rejects.toMatchObject({ code: 'NOT_OWNER' });
     } finally {
       await db.query('SELECT purge_session($1)', [f.sessionId]);
       await db.query('DELETE FROM accounts WHERE id=ANY($1)', [
@@ -170,6 +173,115 @@ describe('party seat-character persistence', () => {
       ]);
     }
   });
+
+  it('serializes bind against the account-deletion status transition in both commit orders', async () => {
+    const f = await fixture();
+    const racePool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      application_name: 'seat-character-race-bind',
+      max: 1,
+    });
+    const bindRepo = new SeatCharacterRepository(racePool);
+    const transition = await db.connect();
+    let pendingBind:
+      | Promise<{ value: unknown } | { error: unknown }>
+      | undefined;
+    try {
+      // Order 1: deletion owns the account row first. bind() must wait on its
+      // FOR SHARE lock, then observe deleting after the transition commits.
+      await transition.query('BEGIN');
+      const transitioned = await transition.query(
+        `UPDATE accounts SET status='deleting',deletion_requested_at=now() WHERE id=$1 RETURNING status`,
+        [f.accountId],
+      );
+      expect(transitioned.rows[0]?.status).toBe('deleting');
+      pendingBind = bindRepo
+        .bind({
+          sessionId: f.sessionId,
+          seatId: f.seatA,
+          accountId: f.accountId,
+          characterId: f.character.id,
+          expectedRevision: f.revision,
+        })
+        .then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+
+      const deadline = Date.now() + 5000;
+      let waiting = false;
+      while (Date.now() < deadline) {
+        const activity = await db.query<{ waiting: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_stat_activity
+             WHERE application_name='seat-character-race-bind'
+               AND wait_event_type='Lock'
+           ) AS waiting`,
+        );
+        if (activity.rows[0]!.waiting) {
+          waiting = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      await transition.query('COMMIT');
+      const bindResult = await pendingBind;
+      expect(bindResult).toHaveProperty('error');
+      expect(bindResult.error).toMatchObject({ code: 'ACCOUNT_INACTIVE' });
+
+      const result = await runAccountDeletions(
+        { db, store: {} as never, now: new Date(), log: () => {} },
+        [f.accountId],
+      );
+      expect(result).toMatchObject({ deleted: 1, failed: 0, held: 0 });
+      const survivors = await db.query(
+        `SELECT 1 FROM session_seat_characters
+         WHERE binding_status='active' AND account_id=$1`,
+        [f.accountId],
+      );
+      expect(survivors.rowCount).toBe(0);
+
+      // Order 2: a bind commits before deletion takes the account lock. The
+      // deletion job must scrub that newly-created binding rather than leave
+      // an active account link behind.
+      const reverse = await fixture();
+      try {
+        const bound = await reverse.repo.bind({
+          sessionId: reverse.sessionId,
+          seatId: reverse.seatA,
+          accountId: reverse.accountId,
+          characterId: reverse.character.id,
+          expectedRevision: reverse.revision,
+        });
+        await db.query(
+          `UPDATE accounts SET status='deleting',deletion_requested_at=now() WHERE id=$1`,
+          [reverse.accountId],
+        );
+        const deleted = await runAccountDeletions(
+          { db, store: {} as never, now: new Date(), log: () => {} },
+          [reverse.accountId],
+        );
+        expect(deleted).toMatchObject({ deleted: 1, failed: 0, held: 0 });
+        const reverseSurvivors = await db.query(
+          `SELECT 1 FROM session_seat_characters
+           WHERE id=$1 AND (binding_status='active' OR account_id IS NOT NULL)`,
+          [bound.bindingId],
+        );
+        expect(reverseSurvivors.rowCount).toBe(0);
+      } finally {
+        await db.query('SELECT purge_session($1)', [reverse.sessionId]);
+        await db.query('DELETE FROM accounts WHERE id=$1', [reverse.accountId]);
+      }
+    } finally {
+      await transition.query('ROLLBACK').catch(() => {});
+      if (pendingBind) await pendingBind;
+      transition.release();
+      await racePool.end();
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  }, 15_000);
 
   it('blocks source deletion while bound, then allows it after the owner releases', async () => {
     const f = await fixture();
@@ -304,6 +416,7 @@ describe('party seat-character persistence', () => {
         binding_status: 'redacted',
       });
       expect(bindingAfter.character_snapshot.name).toBe('Deleted player');
+      expect(bindingAfter.character_snapshot).not.toHaveProperty('id');
       expect(bindingAfter.character_snapshot.abilities).toEqual(
         f.character.abilities,
       );
@@ -316,7 +429,9 @@ describe('party seat-character persistence', () => {
       ).toBe(0);
       expect(
         await db.query(
-          'SELECT 1 FROM session_seat_characters WHERE account_id=$1 OR character_id=$2',
+          `SELECT 1 FROM session_seat_characters
+           WHERE account_id=$1 OR character_id=$2
+              OR (binding_status='active' AND account_id=$1)`,
           [f.accountId, f.character.id],
         ),
       ).toMatchObject({ rowCount: 0 });
