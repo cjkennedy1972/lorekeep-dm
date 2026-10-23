@@ -667,13 +667,6 @@ export function Game() {
             selfSeatId={selfSeat?.seatId}
             lateJoinRequests={room.lateJoinRequests}
           />
-          <HostControls
-            round={room.round}
-            roundDurationMs={room.roundDurationMs ?? null}
-            connected={live.status === 'connected'}
-            paused={room.paused === true}
-            send={live.send}
-          />
           {seatClaims.length > 0 && (
             <section aria-label="Device claims">
               <h2>Reconnect claims</h2>

@@ -173,8 +173,8 @@ class Client {
   /** Sends a combat command and resolves with its outcome: the next tracker, or the Error for that action. */
   async command(payload: Record<string, unknown>, retries = 40): Promise<Wire> {
     for (let attempt = 0; attempt < retries; attempt++) {
-      // Stay under the gateway's per-socket message rate limit (10/s sustained).
-      const wait = this.lastSent + 100 - Date.now();
+      // Leave headroom beneath the gateway's 10/s per-socket message limit.
+      const wait = this.lastSent + 120 - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       this.lastSent = Date.now();
       const actionId = randomUUID();

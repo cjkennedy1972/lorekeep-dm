@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AccountIdSchema, SeatIdSchema, SessionIdSchema } from './ids.js';
+import { CharacterSchema } from './character.js';
 
 export const PresenceSchema = z.enum([
   'connected',
@@ -18,6 +19,7 @@ export const SeatSchema = z.object({
   accountId: AccountIdSchema,
   displayName: z.string().min(1),
   presence: PresenceSchema,
+  characterId: z.uuid().optional(),
   /** Public host-control state, refreshed by the serialized Room event log. */
   isHost: z.boolean().optional(),
   chatMuted: z.boolean().optional(),
@@ -133,6 +135,7 @@ export const RoomStateSchema = z.object({
           accountId: AccountIdSchema,
           displayName: z.string().min(1),
           matureOptOut: z.boolean().optional(),
+          character: CharacterSchema.optional(),
           approved: z.boolean().optional(),
         })
         .strict(),

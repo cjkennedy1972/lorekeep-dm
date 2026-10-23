@@ -255,6 +255,14 @@ describe('one-time gateway', () => {
       undefined,
     );
     expect(result).toEqual({ status: 'invalid-token' });
+    const presentedTokenWithoutRow = await authorizeSeatSocket(
+      db,
+      sessionId,
+      seatId,
+      randomUUID(),
+      tokens[0],
+    );
+    expect(presentedTokenWithoutRow).toEqual({ status: 'invalid-token' });
     // Restore fixture state through the same host-approved recovery path.
     const socketId = randomUUID();
     const recovered = await authorizeSeatSocket(

@@ -514,8 +514,18 @@ describe('room actor', () => {
         false,
         character,
       );
+      expect(
+        room.state.lateJoinRequests?.find(
+          (request) => request.requestId === requestId,
+        )?.character?.id,
+      ).toBe(character.id);
 
       await room.approveLateJoin(host, randomUUID(), requestId);
+      expect(
+        room.state.lateJoinRequests?.find(
+          (request) => request.requestId === requestId,
+        )?.character?.id,
+      ).toBe(character.id);
       await room.submitAction(host, randomUUID(), 'close the scene');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -787,6 +797,14 @@ describe('room actor', () => {
     const currentAccount = randomUUID();
     await room.seat(staleAccount, 'Stale');
     await room.seat(currentAccount, 'Current');
+    await room.subscribe(staleAccount, {
+      send: (message) => stale.push(message),
+    });
+    await room.subscribe(currentAccount, {
+      send: (message) => current.push(message),
+    });
+    stale.length = 0;
+    current.length = 0;
     const currentSeq = room.seq;
     await room.subscribe(
       staleAccount,

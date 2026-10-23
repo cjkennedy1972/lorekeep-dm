@@ -41,10 +41,15 @@ import {
   type CombatTransition,
   type RoomCombatState,
 } from './combat.js';
-import { settleEngine } from './combatBootstrap.js';
+import { attacksFor, partySpawn, settleEngine } from './combatBootstrap.js';
 import { withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
+import {
+  deriveSheet,
+  validateCharacter,
+  type CharacterInput,
+} from '@game/rules-engine';
 import type { Catalog } from '@game/rules-engine';
 import { resolveSoloRest } from './rest.js';
 import {
@@ -581,10 +586,7 @@ export class Room {
       )
         await this.persist('HostSeatChanged', { seatId: ownerSeat.seatId });
       this.connections.set(accountId, connection);
-      const seat = this.state.seats.find(
-        (item) => item.accountId === accountId,
-      );
-      if (seat && seat.presence !== 'connected') {
+      if (seat.presence !== 'connected') {
         await this.transitionPresence(seat.seatId, 'connected');
         await this.reconcileConnectionPause();
       }
@@ -890,12 +892,6 @@ export class Room {
         }
       }
       this.connections.set(accountId, connection);
-      if (lastSeq !== this.seq)
-        connection.send({
-          seq: this.seq,
-          type: 'StateSync',
-          payload: this.clientSyncPayload(),
-        });
       this.sendCombatSnapshot(connection);
       this.sendRoundSnapshot(connection);
       const initialConnection = seat.presence === 'offline';
@@ -2106,6 +2102,7 @@ export class Room {
     accountId: string,
     displayName: string,
     matureOptOut = false,
+    character?: Character,
   ): Promise<string> {
     return this.enqueue(async () => {
       if (this.state.ended) throw new Error('Table ended');
@@ -2121,6 +2118,7 @@ export class Room {
         accountId,
         displayName,
         matureOptOut,
+        ...(character ? { character } : {}),
       };
       await this.persist('LateJoinRequested', request);
       this.broadcast({
@@ -2342,7 +2340,10 @@ export class Room {
         chatMuted: false,
         chatMutedUntil: null,
         matureOptOut: request.matureOptOut ?? false,
+        ...(request.character ? { characterId: request.character.id } : {}),
       };
+      if (request.character)
+        await this.bindLateJoinCharacter(request.accountId, request.character);
       await this.persist('SeatJoined', seat);
       const resumeToken = await this.store.createSeatResumeToken?.(
         this.sessionId,
@@ -2355,6 +2356,151 @@ export class Room {
         seatId: seat.seatId,
       });
     }
+  }
+
+  private async bindLateJoinCharacter(
+    accountId: string,
+    character: Character,
+  ): Promise<void> {
+    const gameState = this.state.gameState as
+      | Record<string, unknown>
+      | undefined;
+    const engine = gameState?.gameEngine as
+      | {
+          map?: Battlemap;
+          entities?: {
+            id: string;
+            name?: string;
+            team: string;
+            pos: { x: number; y: number };
+            size: number;
+            hp: number;
+            maxHp: number;
+            ac: number;
+            speed: number;
+          }[];
+          ac?: Record<string, number>;
+          attacks?: Record<
+            string,
+            {
+              ownerId: string;
+              attackBonus: number;
+              damage: string;
+              damageType: string;
+            }
+          >;
+          combat?: { initiative?: { entityId: string; total: number }[] };
+        }
+      | undefined;
+    if (!gameState || !engine?.map || !engine.entities)
+      throw new Error('No legal engine spawn is available for this table');
+    const catalog = loadCatalog();
+    if (validateCharacter(character as CharacterInput, catalog).length)
+      throw new Error(
+        'Late-join character is not legal for this rules catalog',
+      );
+    const sheet = deriveSheet(character as CharacterInput, catalog);
+    const spawn = partySpawn(
+      engine.map,
+      engine.entities.filter((entity) => entity.pos.x >= 0),
+    )[0];
+    if (!spawn)
+      throw new Error('No legal engine spawn is available for this table');
+    const entity = {
+      id: character.id,
+      name: character.name,
+      team: 'party',
+      pos: spawn,
+      size: 1,
+      hp: character.hp.current,
+      maxHp: character.hp.max,
+      ac: sheet.ac,
+      speed: 30,
+    };
+    const characters = {
+      ...((gameState.characters as
+        | Record<string, CharacterInput>
+        | undefined) ?? {}),
+      [accountId]: character as CharacterInput,
+    };
+    const gameEngine = {
+      ...engine,
+      entities: [...engine.entities, entity],
+      ac: { ...(engine.ac ?? {}), [character.id]: sheet.ac },
+      ...(engine.combat?.initiative
+        ? {
+            combat: {
+              ...engine.combat,
+              initiative: [
+                ...engine.combat.initiative,
+                { entityId: character.id, total: sheet.initiative },
+              ],
+            },
+          }
+        : {}),
+    };
+    const priorCombat = gameState.combatRoom as RoomCombatState | undefined;
+    const combatRoom = priorCombat
+      ? {
+          ...priorCombat,
+          entities: [
+            ...priorCombat.entities,
+            {
+              ...entity,
+              kind: 'character' as const,
+              ...attacksFor(
+                entity,
+                character as CharacterInput,
+                engine.attacks ?? {},
+                catalog,
+              ),
+            },
+          ],
+          combat: {
+            ...priorCombat.combat,
+            initiative: [
+              ...priorCombat.combat.initiative,
+              { entityId: character.id, total: sheet.initiative },
+            ],
+            resources: {
+              ...priorCombat.combat.resources,
+              [character.id]: {
+                action: true,
+                bonusAction: true,
+                bonusActionSpellCast: false,
+                actionSpellCast: false,
+                reaction: true,
+                movementRemaining: 30,
+              },
+            },
+          },
+        }
+      : undefined;
+    const nextGameState = {
+      ...gameState,
+      characters,
+      gameEngine,
+      ...(combatRoom ? { combatRoom } : {}),
+    };
+    const nextState = RoomStateSchema.parse({
+      ...this.state,
+      gameState: nextGameState,
+    });
+    const stored = await this.writeTurn(
+      this.sessionId,
+      [
+        {
+          seq: this.seq + 1,
+          turnId: randomUUID(),
+          type: 'GameStateCommitted',
+          payload: { gameState: nextGameState },
+        },
+      ],
+      nextState,
+      this.lease,
+    );
+    this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
+    this.state = nextState;
   }
 
   private clearPresenceTimer(seatId: string): void {

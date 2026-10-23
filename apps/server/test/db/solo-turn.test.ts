@@ -119,6 +119,7 @@ async function openSocket(accountId: string, token: string, sessionId: string) {
   );
   await new Promise<void>((resolve, reject) => {
     const seenFrames: string[] = [];
+    let synced = false;
     const timer = setTimeout(
       () =>
         reject(
@@ -159,9 +160,11 @@ async function openSocket(accountId: string, token: string, sessionId: string) {
             payload: { seq: frame.seq },
           }),
         );
-        clearTimeout(timer);
-        ws.off('message', onMessage);
-        resolve();
+        if (!synced) {
+          synced = true;
+          clearTimeout(timer);
+          resolve();
+        }
       }
     };
     ws.on('message', onMessage);
@@ -189,12 +192,16 @@ function receive(
   predicate: (message: WireMessage) => boolean,
 ): Promise<WireMessage> {
   return new Promise<WireMessage>((resolve, reject) => {
+    const seen: string[] = [];
     const timer = setTimeout(
-      () => reject(new Error('socket message timeout')),
+      () => reject(new Error(`socket message timeout; seen=${seen.join(',')}`)),
       5000,
     );
     const handler = (data: WebSocket.RawData) => {
       const message = JSON.parse(data.toString()) as WireMessage;
+      seen.push(
+        `${message.type}${message.payload?.code ? `:${message.payload.code}` : ''}`,
+      );
       if (!predicate(message)) return;
       clearTimeout(timer);
       ws.off('message', handler);
@@ -493,6 +500,7 @@ describe('solo turn persisted lifecycle', () => {
         { origin: recordedBase },
       );
       await new Promise<void>((resolve, reject) => {
+        let synced = false;
         const timer = setTimeout(
           () => reject(new Error('websocket auth timeout')),
           10_000,
@@ -519,9 +527,11 @@ describe('solo turn persisted lifecycle', () => {
                 payload: { seq: frame.seq },
               }),
             );
-            clearTimeout(timer);
-            ws!.off('message', onMessage);
-            resolve();
+            if (!synced) {
+              synced = true;
+              clearTimeout(timer);
+              resolve();
+            }
           }
         };
         ws!.on('message', onMessage);

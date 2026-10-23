@@ -1104,6 +1104,21 @@ export function installGateway(
               });
               return;
             }
+            // Combat commands bypass the PlayerAction/EditAction queue below,
+            // but still share its per-socket flood budget. Reject before they
+            // can enqueue unbounded work in the Room mailbox.
+            if (!consumeMessageToken(messageBucket)) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'RATE_LIMITED',
+                  message: 'Too many messages.',
+                  actionId: action.data.actionId,
+                },
+              });
+              return;
+            }
             return room
               .submitCombatCommand(
                 identity.accountId,
