@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'node:crypto';
 import type { createApp } from '../app.js';
 import type { Pool } from 'pg';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -103,7 +104,7 @@ export function installGateway(
   revalidateMs = 15_000,
 ): () => Promise<void> {
   const chatPolicy = new ChatPolicy();
-  app.post<{ Body?: { sessionId?: string } }>(
+  app.post<{ Body?: { sessionId?: string; resumeToken?: string } }>(
     '/api/ws-ticket',
     {
       onRequest: async (request, reply) => {
@@ -126,6 +127,32 @@ export function installGateway(
         return reply.code(400).send({ error: 'sessionId' });
       const eligible = await eligibleSession(db, auth.account_id, sessionId);
       if (!eligible) return reply.code(403).send({ error: 'not seated' });
+      const seatId = await currentSeatId(db, auth.account_id, eligible);
+      if (!seatId) return reply.code(403).send({ error: 'not seated' });
+      const stored = await db.query<{ token_hash: string }>(
+        'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+        [eligible, seatId],
+      );
+      const priorToken = request.body?.resumeToken;
+      if (
+        stored.rowCount &&
+        (!priorToken ||
+          createHash('sha256').update(priorToken).digest('hex') !==
+            stored.rows[0]!.token_hash)
+      )
+        return reply.code(403).send({ error: 'resume-token' });
+      const resumeToken = randomBytes(16).toString('base64url');
+      await db.query(
+        `INSERT INTO seat_resume_tokens(session_id,seat_id,token_hash,rotated_at)
+         VALUES($1,$2,$3,clock_timestamp())
+         ON CONFLICT(session_id,seat_id) DO UPDATE
+           SET token_hash=EXCLUDED.token_hash,rotated_at=EXCLUDED.rotated_at`,
+        [
+          eligible,
+          seatId,
+          createHash('sha256').update(resumeToken).digest('hex'),
+        ],
+      );
       return {
         ticket: await issueTicket(
           db,
@@ -133,6 +160,7 @@ export function installGateway(
           eligible,
           auth.token_hash,
         ),
+        resumeToken,
       };
     },
   );

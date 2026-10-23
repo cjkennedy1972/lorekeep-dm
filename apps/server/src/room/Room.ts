@@ -7,6 +7,8 @@ import {
   type ServerMessage,
   type ChatMessage,
   type StateSync,
+  type Character,
+  type Battlemap,
 } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import {
@@ -38,10 +40,15 @@ import {
   type CombatTransition,
   type RoomCombatState,
 } from './combat.js';
-import { settleEngine } from './combatBootstrap.js';
+import { attacksFor, partySpawn, settleEngine } from './combatBootstrap.js';
 import { withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
+import {
+  deriveSheet,
+  validateCharacter,
+  type CharacterInput,
+} from '@game/rules-engine';
 import type { Catalog } from '@game/rules-engine';
 import { resolveSoloRest } from './rest.js';
 import {
@@ -169,17 +176,18 @@ const ROUND_GATE_GRACE_MS = 5_000;
 const PRESENCE_HOLD_MS = 10_000;
 const AWAY_AFTER_MS = 30_000;
 
-/** Exploration admits a join between committed narration turns, before the
- * next turn's starting snapshot. Combat uses the next initiative round. */
+/** Exploration admission requires a committed scene close; combat waits for the next initiative round. */
 export function nextLateJoinBoundary(input: {
   turnInFlight: boolean;
   combatActive: boolean;
   roundStatus?: NonNullable<RoomState['round']>['status'];
+  sceneBoundary?: boolean;
 }): 'after-turn' | 'next-combat-round' | 'before-next-turn' {
   if (input.combatActive) return 'next-combat-round';
   if (
     input.turnInFlight ||
-    (input.roundStatus && input.roundStatus !== 'resolved')
+    (input.roundStatus && input.roundStatus !== 'resolved') ||
+    !input.sceneBoundary
   )
     return 'after-turn';
   return 'before-next-turn';
@@ -229,6 +237,7 @@ export class Room {
   private turnAccountId?: string;
   private matureDelivery: Promise<void> = Promise.resolve();
   private readonly pendingActions = new Set<string>();
+  private sceneBoundaryPending = false;
   private chatReceiptSeq: number;
   private chatCommitTail: Promise<void> = Promise.resolve();
   private activeTurn: Promise<void> = Promise.resolve();
@@ -283,12 +292,9 @@ export class Room {
       ...recovered.state,
       seats: recovered.state.seats.map((seat) => ({
         ...seat,
-        presence:
-          seat.presence === 'revoked'
-            ? 'revoked'
-            : seat.presence === 'offline'
-              ? 'offline'
-              : 'unknown',
+        // Process recovery cannot prove a pre-crash socket is still alive.
+        // Preserve revocation, but make every other persisted status unknown.
+        presence: seat.presence === 'revoked' ? 'revoked' : 'unknown',
       })),
     });
     this.combatRoundForLateJoin = roomGameState(this.state)?.combat?.round ?? 0;
@@ -704,6 +710,15 @@ export class Room {
   ): Promise<void> {
     return this.enqueue(async () => {
       let seat = this.state.seats.find((item) => item.accountId === accountId);
+      const pendingReaction = roomGameState(this.state)?.pendingReaction;
+      if (
+        pendingReaction &&
+        this.reactionSeatPresence(pendingReaction.entityId) &&
+        ['away', 'revoked', 'unknown'].includes(
+          this.reactionSeatPresence(pendingReaction.entityId)!,
+        )
+      )
+        await this.declineExpiredReaction();
       if (!seat) {
         if (options.requireExistingSeat) throw new RoomSeatRequiredError();
         if (this.state.seats.length >= 6) throw new Error('Room is full');
@@ -1802,9 +1817,12 @@ export class Room {
           !activeCombat.ended &&
           !!activeCombat.combat?.activeEntityId,
         roundStatus: this.state.round?.status,
+        sceneBoundary: this.sceneBoundaryPending,
       }) === 'before-next-turn'
-    )
+    ) {
+      this.sceneBoundaryPending = false;
       await this.admitApprovedLateJoins();
+    }
     if (
       !this.state.roundsEnabled ||
       !this.state.gameState ||
@@ -1935,6 +1953,7 @@ export class Room {
     accountId: string,
     displayName: string,
     matureOptOut = false,
+    character?: Character,
   ): Promise<string> {
     return this.enqueue(async () => {
       if (this.state.ended) throw new Error('Table ended');
@@ -1950,6 +1969,7 @@ export class Room {
         accountId,
         displayName,
         matureOptOut,
+        ...(character ? { character } : {}),
       };
       await this.persist('LateJoinRequested', request);
       this.broadcast({
@@ -1979,7 +1999,7 @@ export class Room {
         actorSeatId: actor.seatId,
         actionId,
       });
-      // Admission is deferred until openRound, a serialized exploration scene boundary.
+      // Exploration admission waits for a committed SceneClosed event; combat uses the next initiative round.
       const combat = roomGameState(this.state);
       if (
         nextLateJoinBoundary({
@@ -1987,9 +2007,12 @@ export class Room {
           combatActive:
             !!combat && !combat.ended && !!combat.combat?.activeEntityId,
           roundStatus: this.state.round?.status,
+          sceneBoundary: this.sceneBoundaryPending,
         }) === 'before-next-turn'
-      )
+      ) {
+        this.sceneBoundaryPending = false;
         await this.admitApprovedLateJoins();
+      }
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -2029,7 +2052,11 @@ export class Room {
     );
     for (const request of approved) {
       if (this.state.seats.length >= 6) break;
-      if (!(await this.store.isAccountActive(request.accountId))) continue;
+      if (
+        this.store.isAccountActive &&
+        !(await this.store.isAccountActive(request.accountId))
+      )
+        continue;
       const seat = {
         seatId: randomUUID(),
         accountId: request.accountId,
@@ -2039,13 +2066,160 @@ export class Room {
         chatMuted: false,
         chatMutedUntil: null,
         matureOptOut: request.matureOptOut ?? false,
+        ...(request.character ? { characterId: request.character.id } : {}),
       };
+      if (request.character)
+        await this.bindLateJoinCharacter(request.accountId, request.character);
       await this.persist('SeatJoined', seat);
       await this.persist('LateJoinAdmitted', {
         requestId: request.requestId,
         seatId: seat.seatId,
       });
     }
+  }
+
+  private async bindLateJoinCharacter(
+    accountId: string,
+    character: Character,
+  ): Promise<void> {
+    const gameState = this.state.gameState as
+      | Record<string, unknown>
+      | undefined;
+    const engine = gameState?.gameEngine as
+      | {
+          map?: Battlemap;
+          entities?: {
+            id: string;
+            name?: string;
+            team: string;
+            pos: { x: number; y: number };
+            size: number;
+            hp: number;
+            maxHp: number;
+            ac: number;
+            speed: number;
+          }[];
+          ac?: Record<string, number>;
+          attacks?: Record<
+            string,
+            {
+              ownerId: string;
+              attackBonus: number;
+              damage: string;
+              damageType: string;
+            }
+          >;
+          combat?: { initiative?: { entityId: string; total: number }[] };
+        }
+      | undefined;
+    if (!gameState || !engine?.map || !engine.entities)
+      throw new Error('No legal engine spawn is available for this table');
+    if (validateCharacter(character as CharacterInput, loadCatalog()).length)
+      throw new Error(
+        'Late-join character is not legal for this rules catalog',
+      );
+    const sheet = deriveSheet(character as CharacterInput, loadCatalog());
+    const spawn = partySpawn(
+      engine.map,
+      engine.entities.filter((entity) => entity.pos.x >= 0),
+    )[0];
+    if (!spawn)
+      throw new Error('No legal engine spawn is available for this table');
+    const entity = {
+      id: character.id,
+      name: character.name,
+      team: 'party',
+      pos: spawn,
+      size: 1,
+      hp: character.hp.current,
+      maxHp: character.hp.max,
+      ac: sheet.ac,
+      speed: 30,
+    };
+    const characters = {
+      ...((gameState.characters as
+        | Record<string, CharacterInput>
+        | undefined) ?? {}),
+      [accountId]: character as CharacterInput,
+    };
+    const gameEngine = {
+      ...engine,
+      entities: [...engine.entities, entity],
+      ac: { ...(engine.ac ?? {}), [character.id]: sheet.ac },
+      ...(engine.combat?.initiative
+        ? {
+            combat: {
+              ...engine.combat,
+              initiative: [
+                ...engine.combat.initiative,
+                { entityId: character.id, total: sheet.initiative },
+              ],
+            },
+          }
+        : {}),
+    };
+    const priorCombat = gameState.combatRoom as RoomCombatState | undefined;
+    const combatRoom = priorCombat
+      ? {
+          ...priorCombat,
+          entities: [
+            ...priorCombat.entities,
+            {
+              ...entity,
+              kind: 'character' as const,
+              ...attacksFor(
+                entity,
+                character as CharacterInput,
+                engine.attacks ?? {},
+                loadCatalog(),
+              ),
+            },
+          ],
+          combat: {
+            ...priorCombat.combat,
+            initiative: [
+              ...priorCombat.combat.initiative,
+              { entityId: character.id, total: sheet.initiative },
+            ],
+            resources: {
+              ...priorCombat.combat.resources,
+              [character.id]: {
+                action: true,
+                bonusAction: true,
+                bonusActionSpellCast: false,
+                actionSpellCast: false,
+                reaction: true,
+                movementRemaining: 30,
+              },
+            },
+          },
+        }
+      : undefined;
+    const nextGameState = {
+      ...gameState,
+      characters,
+      gameEngine,
+      ...(combatRoom ? { combatRoom } : {}),
+    };
+    const nextState = RoomStateSchema.parse({
+      ...this.state,
+      gameState: nextGameState,
+    });
+    const stored = await this.writeTurn(
+      this.sessionId,
+      [
+        {
+          seq: this.seq + 1,
+          turnId: randomUUID(),
+          type: 'GameStateCommitted',
+          payload: { gameState: nextGameState },
+        },
+      ],
+      nextState,
+      this.lease,
+    );
+    this.seq = stored.events.at(-1)?.seq ?? this.seq + 1;
+    this.state = nextState;
   }
 
   private clearPresenceTimer(seatId: string): void {
@@ -2952,6 +3126,11 @@ export class Room {
           action.playerName,
           action.clarificationAsked === true,
         );
+        if (this.sceneBoundaryPending)
+          await this.enqueue(async () => {
+            this.sceneBoundaryPending = false;
+            await this.admitApprovedLateJoins();
+          });
       } catch (error) {
         // A turn that throws (e.g. no endpoint configured, table state unavailable) must not
         // leave the player waiting forever. Nothing was committed, so the same action can be
@@ -3379,6 +3558,8 @@ export class Room {
         );
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;
+        if (stored.events.some((event) => event.type === 'SceneClosed'))
+          this.sceneBoundaryPending = true;
         const opened = stored.events.find(
           (event) => event.type === 'RestVoteOpened',
         );

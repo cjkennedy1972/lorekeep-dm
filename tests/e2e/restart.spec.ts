@@ -51,7 +51,15 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
         ]),
     );
     const syncState = (sync.payload as { state: { seats?: unknown[] } }).state;
-    expect(syncState).toEqual(expectedState);
+    // Restart recovers presence as unknown until a seat is authenticated again.
+    const recoveredExpectedState = {
+      ...expectedState,
+      seats: (expectedState.seats as Record<string, unknown>[]).map((seat) => ({
+        ...seat,
+        presence: 'unknown',
+      })),
+    };
+    expect(syncState).toEqual(recoveredExpectedState);
     for (const seat of syncState.seats ?? [])
       expect(seat).not.toHaveProperty('matureOptOut');
     expect(Date.now() - startedAt).toBeLessThanOrEqual(3_000);

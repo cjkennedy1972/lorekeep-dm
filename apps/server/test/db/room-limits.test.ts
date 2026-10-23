@@ -91,7 +91,10 @@ describe('room quota, creation throttle and idle eviction', () => {
     await leases.release(taken!);
     const again = await reg.get(id);
     expect(again).not.toBe(room);
-    expect(again.state).toEqual(state);
+    expect(again.state).toEqual({
+      ...state,
+      seats: state.seats.map((seat) => ({ ...seat, presence: 'unknown' })),
+    });
     expect(again.seq).toBe(seq);
     await reg.drain();
   });

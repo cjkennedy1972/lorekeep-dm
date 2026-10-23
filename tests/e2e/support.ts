@@ -278,12 +278,16 @@ export async function joinRoom(url: string, code: string, account: Account) {
     );
 }
 
+const resumeTokens = new Map<string, string>();
+
 export async function connectRoom(
   url: string,
   roomId: string,
   account: Account,
   lastSeq?: number,
 ) {
+  const resumeKey = `${roomId}:${account.token}`;
+  const priorResumeToken = resumeTokens.get(resumeKey);
   const ticketResponse = await fetch(`${url}/api/ws-ticket`, {
     method: 'POST',
     headers: {
@@ -291,11 +295,19 @@ export async function connectRoom(
       origin: url,
       cookie: `sid=${account.token}`,
     },
-    body: JSON.stringify({ sessionId: roomId }),
+    body: JSON.stringify({
+      sessionId: roomId,
+      ...(priorResumeToken ? { resumeToken: priorResumeToken } : {}),
+    }),
   });
   if (!ticketResponse.ok)
     throw new Error(`Ticket request failed: ${ticketResponse.status}`);
-  const { ticket } = (await ticketResponse.json()) as { ticket: string };
+  const ticketBody = (await ticketResponse.json()) as {
+    ticket: string;
+    resumeToken: string;
+  };
+  resumeTokens.set(resumeKey, ticketBody.resumeToken);
+  const { ticket } = ticketBody;
   const socketUrl =
     url.replace(/^http/, 'ws') + `/ws?sessionId=${roomId}&ticket=${ticket}`;
   const socket = new WebSocket(socketUrl, {

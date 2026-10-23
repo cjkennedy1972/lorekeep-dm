@@ -51,13 +51,21 @@ function closedWithin(ws: WebSocket, ms: number) {
   ]);
 }
 
+const resumeTokens = new Map<string, string>();
 async function ticket(token: string) {
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
-    headers: { origin: base, cookie: `sid=${token}` },
+    headers: {
+      origin: base,
+      cookie: `sid=${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ sessionId, resumeToken: resumeTokens.get(token) }),
   });
   expect(res.status).toBe(200);
-  return (await res.json()).ticket as string;
+  const result = (await res.json()) as { ticket: string; resumeToken: string };
+  resumeTokens.set(token, result.resumeToken);
+  return result.ticket;
 }
 
 function connect(t: string) {

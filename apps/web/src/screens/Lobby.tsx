@@ -56,6 +56,7 @@ export function Lobby() {
 
   const live = useRoom({
     baseUrl: http.base,
+    sessionId: id,
     fetchImpl: (...a) => http.fetch(...a),
     WebSocketImpl: http.WebSocket,
   });

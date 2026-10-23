@@ -61,12 +61,20 @@ async function nextMessage(
   }
 }
 
+const resumeTokens = new Map<string, string>();
 async function openSocket(token: string) {
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
-    headers: { origin: base, cookie: `sid=${token}` },
+    headers: {
+      origin: base,
+      cookie: `sid=${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ sessionId, resumeToken: resumeTokens.get(token) }),
   });
-  const ticket = (await res.json()).ticket as string;
+  const result = (await res.json()) as { ticket: string; resumeToken: string };
+  resumeTokens.set(token, result.resumeToken);
+  const ticket = result.ticket;
   const ws = new WebSocket(
     `${base.replace('http', 'ws')}/ws?ticket=${ticket}`,
     {

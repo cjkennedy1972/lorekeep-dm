@@ -28,6 +28,7 @@ let tokens: string[];
 // Buffered per socket from creation: ws can emit several frames from one TCP chunk,
 // and a once('message') registered after an await drops those frames.
 const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
+const resumeTokens = new Map<string, string>();
 async function next(ws: WebSocket): Promise<{
   type: string;
   seq: number;
@@ -58,10 +59,22 @@ function closed(ws: WebSocket): Promise<number> {
 async function ticket(token: string) {
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
-    headers: { origin: base, cookie: `sid=${token}` },
+    headers: {
+      origin: base,
+      cookie: `sid=${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      sessionId,
+      ...(resumeTokens.get(token)
+        ? { resumeToken: resumeTokens.get(token) }
+        : {}),
+    }),
   });
   expect(res.status).toBe(200);
-  return (await res.json()).ticket as string;
+  const body = (await res.json()) as { ticket: string; resumeToken: string };
+  resumeTokens.set(token, body.resumeToken);
+  return body.ticket;
 }
 function connect(t: string) {
   const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
@@ -98,6 +111,32 @@ afterAll(async () => {
   await db.end();
 });
 describe('one-time gateway', () => {
+  it('requires and rotates the per-seat resume token', async () => {
+    const firstTicket = await ticket(tokens[0]);
+    expect(firstTicket).toBeTruthy();
+    const current = resumeTokens.get(tokens[0])!;
+    const requestTicket = (resumeToken?: string) =>
+      fetch(`${base}/api/ws-ticket`, {
+        method: 'POST',
+        headers: {
+          origin: base,
+          cookie: `sid=${tokens[0]}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          ...(resumeToken ? { resumeToken } : {}),
+        }),
+      });
+    expect((await requestTicket()).status).toBe(403);
+    expect((await requestTicket('stale-token')).status).toBe(403);
+    const rotated = await requestTicket(current);
+    expect(rotated.status).toBe(200);
+    const rotatedBody = (await rotated.json()) as { resumeToken: string };
+    expect(rotatedBody.resumeToken).not.toBe(current);
+    expect((await requestTicket(current)).status).toBe(403);
+    resumeTokens.set(tokens[0], rotatedBody.resumeToken);
+  });
   it('enforces expiry, scope and atomic reuse', async () => {
     const t = await issueTicket(
       db,
@@ -133,19 +172,19 @@ describe('one-time gateway', () => {
     let message = await next(first);
     while (
       message.type !== 'PresenceChanged' ||
-      message.payload.presence !== 'online'
+      message.payload.presence !== 'connected'
     )
       message = await next(first);
     second.close();
     let leave = await next(first);
     while (
       leave.type !== 'PresenceChanged' ||
-      leave.payload.presence !== 'offline'
+      leave.payload.presence !== 'disconnected'
     )
       leave = await next(first);
     expect(leave).toMatchObject({
       type: 'PresenceChanged',
-      payload: { presence: 'offline' },
+      payload: { presence: 'disconnected' },
     });
     const reused = connect(await ticket(tokens[0]));
     const badTicket = new URL(reused.url).searchParams.get('ticket')!;
@@ -274,6 +313,9 @@ describe('one-time gateway', () => {
     await nextOfType(guest, 'StateSync').catch((error) => {
       throw new Error(`waiting for guest sync: ${String(error)}`);
     });
+    // The host's reconnect hold may auto-resume the table after its sync. Re-pause
+    // once both sockets are ready so this test exercises paused-chat policy itself.
+    await room.setPaused(accounts[0], true, true);
     const before = await db.query(
       "SELECT count(*)::int AS count FROM events WHERE session_id=$1 AND type IN ('chat.committed','chat.rejected')",
       [sessionId],

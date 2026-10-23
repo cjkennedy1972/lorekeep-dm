@@ -46,13 +46,18 @@ async function setup() {
   const token = await createSession(db, accountId, 'test');
   return { accountId, sessionId, token, cookie: `sid=${token}` };
 }
-const ticketFor = async (cookie: string) => {
+const resumeTokens = new Map<string, string>();
+const ticketFor = async (cookie: string, sessionId: string) => {
+  const key = sessionId;
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
-    headers: { origin: base, cookie },
+    headers: { origin: base, cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId, resumeToken: resumeTokens.get(key) }),
   });
   expect(res.status).toBe(200);
-  return ((await res.json()) as { ticket: string }).ticket;
+  const result = (await res.json()) as { ticket: string; resumeToken: string };
+  resumeTokens.set(key, result.resumeToken);
+  return result.ticket;
 };
 const open = (ticket: string) =>
   new Promise<WebSocket>((resolve, reject) => {
@@ -97,8 +102,8 @@ afterAll(async () => {
 describe('websocket survives neither revocation nor deactivation', () => {
   it('logout closes the socket within 2s, Resync gets no reply, and an unused ticket is dead', async () => {
     const u = await setup();
-    const ws = await open(await ticketFor(u.cookie));
-    const unused = await ticketFor(u.cookie);
+    const ws = await open(await ticketFor(u.cookie, u.sessionId));
+    const unused = await ticketFor(u.cookie, u.sessionId);
     const messages: string[] = [];
     ws.on('message', (d) => messages.push(d.toString()));
     const closing = closeInfo(ws);
@@ -145,7 +150,7 @@ describe('websocket survives neither revocation nor deactivation', () => {
   });
   it('account set to deleting closes the socket (cross-node path via periodic tick)', async () => {
     const u = await setup();
-    const ws = await open(await ticketFor(u.cookie));
+    const ws = await open(await ticketFor(u.cookie, u.sessionId));
     const closing = closeInfo(ws);
     await db.query("UPDATE accounts SET status='deleting' WHERE id=$1", [
       u.accountId,
@@ -155,8 +160,8 @@ describe('websocket survives neither revocation nor deactivation', () => {
   it('DELETE /api/me/sessions/:id closes only that device, revoke-others closes the rest', async () => {
     const u = await setup();
     const second = await createSession(db, u.accountId, 'second');
-    const wsA = await open(await ticketFor(u.cookie));
-    const wsB = await open(await ticketFor(`sid=${second}`));
+    const wsA = await open(await ticketFor(u.cookie, u.sessionId));
+    const wsB = await open(await ticketFor(`sid=${second}`, u.sessionId));
     const closeB = closeInfo(wsB);
     expect(
       (await post(`/api/me/sessions/${hashToken(second)}`, u.cookie, 'DELETE'))
@@ -165,7 +170,7 @@ describe('websocket survives neither revocation nor deactivation', () => {
     expect((await closeB).code).toBe(4401);
     expect(wsA.readyState).toBe(WebSocket.OPEN);
     const third = await createSession(db, u.accountId, 'third');
-    const wsC = await open(await ticketFor(`sid=${third}`));
+    const wsC = await open(await ticketFor(`sid=${third}`, u.sessionId));
     const closeC = closeInfo(wsC);
     expect(
       (await post('/api/me/sessions/revoke-others', u.cookie)).status,

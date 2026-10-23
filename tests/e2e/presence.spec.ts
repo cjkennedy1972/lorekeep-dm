@@ -25,13 +25,13 @@ test('two verified accounts join one room and observe synced presence', async ()
       a.waitFor(
         (m) =>
           m.type === 'PresenceChanged' &&
-          (m.payload as { presence?: string }).presence === 'online' &&
+          (m.payload as { presence?: string }).presence === 'connected' &&
           Number(m.seq) > baselineA,
       ),
       b.waitFor(
         (m) =>
           m.type === 'PresenceChanged' &&
-          (m.payload as { presence?: string }).presence === 'online' &&
+          (m.payload as { presence?: string }).presence === 'connected' &&
           Number(m.seq) > baselineB,
       ),
     ]);

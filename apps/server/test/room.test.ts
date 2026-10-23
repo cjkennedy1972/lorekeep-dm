@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { StateSyncSchema } from '@game/schema';
+import { CharacterSchema, StateSyncSchema } from '@game/schema';
+import { quickBuild } from '@game/rules-engine';
+import { catalog, cryptMap } from './room/combatFixtures.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
   Room,
@@ -8,6 +10,7 @@ import {
 } from '../src/room/Room.js';
 import type { LatestState, StoredEvent } from '../src/persistence/index.js';
 import type { RegistryEvent } from '../src/dm/memory.js';
+import type { SoloTurnRunner } from '../src/room/dmTurn.js';
 
 const id = randomUUID();
 const lease = {
@@ -122,7 +125,9 @@ describe('room actor', () => {
     });
     expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
     expect(JSON.stringify(sync)).not.toContain('private action text');
-  it('places exploration admission between resolved turns and combat admission at a round boundary', () => {
+  });
+
+  it('places exploration admission at a committed scene boundary and combat admission at a round boundary', () => {
     expect(
       nextLateJoinBoundary({
         turnInFlight: true,
@@ -142,6 +147,15 @@ describe('room actor', () => {
         turnInFlight: false,
         combatActive: false,
         roundStatus: 'resolved',
+        sceneBoundary: false,
+      }),
+    ).toBe('after-turn');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: false,
+        roundStatus: 'resolved',
+        sceneBoundary: true,
       }),
     ).toBe('before-next-turn');
   });
@@ -357,11 +371,88 @@ describe('room actor', () => {
       );
     });
 
-    it('stores late-join requests and only seats a host-approved requester at the next scene boundary', async () => {
+    it('binds an approved late join character and places its engine entity at a free spawn', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const runner: SoloTurnRunner = {
+        async run(request) {
+          return {
+            narration: 'The scene closes.',
+            events: [
+              { type: 'TurnStarted', turnId: 'turn-scene-close' },
+              { type: 'SceneClosed', sceneId: 'scene-test', summary: 'Done.' },
+            ],
+            state: request.state as Record<string, unknown>,
+            turnSeed: '0x0000000000000001',
+            usage: { in: 1, out: 1 },
+          };
+        },
+      };
+      const room = new Room(store, lease, await store.loadLatest(id), runner);
+      await room.seat(host, 'Host');
+      await room.persistGameState({
+        characters: {},
+        gameEngine: { map: cryptMap, entities: [] },
+      });
+      const requester = randomUUID();
+      const character = CharacterSchema.parse({
+        ...quickBuild(catalog, 'class:wizard', 32).character,
+        id: randomUUID(),
+        name: 'Late Hero',
+      });
+      const requestId = await room.requestLateJoin(
+        requester,
+        'Late',
+        false,
+        character,
+      );
+
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      await room.submitAction(host, randomUUID(), 'close the scene');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const admitted = room.state.seats.find(
+        (seat) => seat.accountId === requester,
+      );
+      expect(admitted?.characterId).toBe(character.id);
+      const gameState = room.state.gameState as {
+        characters: Record<string, { id: string }>;
+        gameEngine: {
+          entities: { id: string; pos: { x: number; y: number } }[];
+        };
+      };
+      expect(gameState.characters[requester]?.id).toBe(character.id);
+      expect(gameState.gameEngine.entities).toContainEqual(
+        expect.objectContaining({
+          id: character.id,
+          pos: expect.objectContaining({
+            x: expect.any(Number),
+            y: expect.any(Number),
+          }),
+        }),
+      );
+    });
+
+    it('admits approved exploration joiners at a committed scene boundary', async () => {
       const { store, events } = fixture();
       const host = randomUUID();
       store.isTableHost = async (_sessionId, accountId) => accountId === host;
-      const room = new Room(store, lease, await store.loadLatest(id));
+      const runner: SoloTurnRunner = {
+        async run(request) {
+          return {
+            narration: 'The scene closes.',
+            events: [
+              { type: 'TurnStarted', turnId: 'turn-scene-close' },
+              { type: 'SceneClosed', sceneId: 'scene-test', summary: 'Done.' },
+            ],
+            state: request.state as Record<string, unknown>,
+            turnSeed: '0x0000000000000001',
+            usage: { in: 1, out: 1 },
+          };
+        },
+      };
+      const room = new Room(store, lease, await store.loadLatest(id), runner);
       await room.seat(host, 'Host');
       await room.persistGameState({});
       const requester = randomUUID();
@@ -373,7 +464,8 @@ describe('room actor', () => {
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
       ).toBe(false);
-      await room.resolveNow(host);
+      await room.submitAction(host, randomUUID(), 'close the scene');
+      await new Promise((resolve) => setTimeout(resolve, 100));
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
       ).toBe(true);
@@ -1076,7 +1168,7 @@ describe('room actor', () => {
     const closing = room.resolveNow(host);
     room.completeActionReceipt(receiptSeq);
     await closing;
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(requests).toEqual(['Allowed action']);
     expect(
       JSON.stringify(

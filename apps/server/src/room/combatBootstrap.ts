@@ -96,7 +96,7 @@ export function attacksFor(
     })),
   };
 }
-function partySpawn(
+export function partySpawn(
   map: Battlemap,
   taken: readonly { pos: GridPos; size: number }[],
 ): GridPos[] {

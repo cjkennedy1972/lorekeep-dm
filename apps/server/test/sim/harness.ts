@@ -170,13 +170,25 @@ export class SimTable {
   }
 
   /** Fetch a single-use WS ticket through the real HTTP route. */
-  async ticket(token: string): Promise<string | undefined> {
+  async ticket(
+    token: string,
+    sessionId: string,
+    resumeToken?: string,
+  ): Promise<{ ticket: string; resumeToken: string } | undefined> {
     const res = await fetch(`${this.base}/api/ws-ticket`, {
       method: 'POST',
-      headers: { origin: this.base, cookie: `sid=${token}` },
+      headers: {
+        origin: this.base,
+        cookie: `sid=${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId,
+        ...(resumeToken ? { resumeToken } : {}),
+      }),
     });
     if (res.status !== 200) return undefined;
-    return ((await res.json()) as { ticket: string }).ticket;
+    return (await res.json()) as { ticket: string; resumeToken: string };
   }
 
   async stop(): Promise<void> {
@@ -197,6 +209,7 @@ export class SimClient {
   readonly inbox: ServerFrame[] = [];
   closeCode?: number;
   lastSeq = 0;
+  private resumeToken?: string;
 
   constructor(
     private readonly table: SimTable,
@@ -210,11 +223,19 @@ export class SimClient {
    * returns the close code if the gateway refuses the socket first.
    */
   async connect(): Promise<number | undefined> {
-    const ticket = await this.table.ticket(this.token);
-    if (!ticket) return 1008;
-    const socket = new WebSocket(`${this.table.wsBase}/ws?ticket=${ticket}`, {
-      origin: this.table.base,
-    });
+    const ticketResult = await this.table.ticket(
+      this.token,
+      this.table.sessionId,
+      this.resumeToken,
+    );
+    if (!ticketResult) return 1008;
+    this.resumeToken = ticketResult.resumeToken;
+    const socket = new WebSocket(
+      `${this.table.wsBase}/ws?ticket=${ticketResult.ticket}`,
+      {
+        origin: this.table.base,
+      },
+    );
     this.socket = socket;
     this.closeCode = undefined;
     const syncsBefore = this.messages('StateSync').length;

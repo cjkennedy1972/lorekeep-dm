@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import type { registerAuthRoutes } from './auth.js';
 import type { Pool } from 'pg';
-import { CreateRoomInputSchema, type RoomInfo } from '@game/schema';
+import {
+  CharacterSchema,
+  CreateRoomInputSchema,
+  type RoomInfo,
+} from '@game/schema';
+import { validateCharacter } from '@game/rules-engine';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { authenticateRequest } from '../middleware/auth.js';
 import { tokenFromCookie } from '../accounts/sessions.js';
 import { hashToken } from '../accounts/signup.js';
@@ -15,6 +21,16 @@ import {
 } from '../rooms/invites.js';
 import type { RoomRegistry } from '../room/registry.js';
 import { BoundedCounter } from '../accounts/throttle.js';
+import {
+  buildResumeRecap,
+  gateRecap,
+  SAFE_RECAP_FALLBACK,
+} from '../dm/recap.js';
+import { createEndpointJudge } from '../safety/inputGate.js';
+import {
+  loadContentTierState,
+  loadSeatedContentBoundaries,
+} from '../safety/tierLoader.js';
 
 type Seater = Pick<RoomRegistry, 'get'>;
 const JOIN_LIMIT = 10;
@@ -82,6 +98,60 @@ export function registerSessionRoutes(
       ...(code ? { code } : {}),
       ...(tierCap !== undefined ? { tierCap } : {}),
     }) as RoomInfo;
+  const recapModerator = createEndpointJudge(db);
+  const onboarding = async (
+    sessionId: string,
+    accountId: string,
+    optedOut: boolean,
+  ) => {
+    const [session, tierState, boundaries] = await Promise.all([
+      db.query<{
+        content_tier: 'family' | 'standard' | 'mature';
+        host_tier_cap: 'family' | 'standard' | null;
+      }>('SELECT content_tier, host_tier_cap FROM sessions WHERE id=$1', [
+        sessionId,
+      ]),
+      loadContentTierState(db, sessionId, false),
+      loadSeatedContentBoundaries(db, sessionId),
+    ]);
+    const settings = session.rows[0];
+    if (!settings) throw new Error('Table settings unavailable');
+    const tier =
+      optedOut && tierState.tier === 'mature' ? 'standard' : tierState.tier;
+    const personal = await db.query<{
+      content_lines: string[];
+      content_veils: string[];
+    }>('SELECT content_lines, content_veils FROM accounts WHERE id=$1', [
+      accountId,
+    ]);
+    const tableLines = [
+      ...boundaries.lines.map((line) => `line: ${line}`),
+      ...boundaries.veils.map((veil) => `veil: ${veil}`),
+      ...(personal.rows[0]?.content_lines ?? []).map((line) => `line: ${line}`),
+      ...(personal.rows[0]?.content_veils ?? []).map((veil) => `veil: ${veil}`),
+    ];
+    const built = await buildResumeRecap({ db, sessionId });
+    const screened = await gateRecap(built, recapModerator, tier, tableLines);
+    return {
+      settings: {
+        contentTier: tier,
+        hostTierCap: settings.host_tier_cap,
+        matureOptOut: optedOut,
+        lines: personal.rows[0]?.content_lines ?? [],
+        veils: personal.rows[0]?.content_veils ?? [],
+      },
+      recap:
+        tier === 'mature' && !optedOut
+          ? undefined
+          : screened.recap || SAFE_RECAP_FALLBACK,
+    };
+  };
+  const lateJoinCharacter = (raw: unknown) => {
+    const parsed = CharacterSchema.safeParse(raw);
+    if (!parsed.success || validateCharacter(parsed.data, loadCatalog()).length)
+      return undefined;
+    return parsed.data;
+  };
   const seatProfile = async (accountId: string) => {
     const row = (
       await db.query<{ display_name: string; mature_opt_out: boolean }>(
@@ -282,19 +352,30 @@ export function registerSessionRoutes(
       });
     const optOut = (request.body as { matureOptOut?: unknown } | null)
       ?.matureOptOut;
+    const profile = await seatProfile(accountId);
+    const matureOptOut =
+      typeof optOut === 'boolean' ? optOut : profile.matureOptOut;
+    let room: import('../room/Room.js').Room;
     try {
-      const profile = await seatProfile(accountId);
-      const room = await rooms.get(found.id);
-      const matureOptOut =
-        typeof optOut === 'boolean' ? optOut : profile.matureOptOut;
+      room = await rooms.get(found.id);
       if (
         !room.state?.seats?.some((seat) => seat.accountId === accountId) &&
         room.state?.gameState
       ) {
+        const character = lateJoinCharacter(
+          (request.body as { character?: unknown } | null)?.character,
+        );
+        if (!character)
+          return reply.code(400).send({
+            code: 'INVALID_CHARACTER',
+            message:
+              'Choose a legal player character before requesting to join.',
+          });
         const requestId = await room.requestLateJoin(
           accountId,
           profile.displayName,
           matureOptOut,
+          character,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
@@ -302,6 +383,7 @@ export function registerSessionRoutes(
             optOut,
           ]);
         return reply.code(409).send({
+          ...(await onboarding(found.id, accountId, matureOptOut)),
           code: 'LATE_JOIN_PENDING',
           message:
             'Your request is waiting for the host. Retry this invite after it is approved.',
@@ -321,7 +403,17 @@ export function registerSessionRoutes(
         accountId,
         optOut,
       ]);
-    return { room: view(found.id, found.name, found.owner === accountId) };
+    const admitted = room.state.seats.some(
+      (seat) => seat.accountId === accountId && seat.characterId,
+    );
+    return {
+      room: view(found.id, found.name, found.owner === accountId),
+      ...(admitted
+        ? {
+            onboarding: await onboarding(found.id, accountId, matureOptOut),
+          }
+        : {}),
+    };
   };
   app.get<{ Params: { code: string } }>(
     '/api/invites/:code',
@@ -340,14 +432,18 @@ export function registerSessionRoutes(
           code: 'INVITE_INVALID',
           message: 'This invite link is no longer valid.',
         });
+      const room = await rooms.get(found.id);
       return {
-        room: view(
-          found.id,
-          found.name,
-          found.owner === accountId,
-          undefined,
-          found.hostTierCap,
-        ),
+        room: {
+          ...view(
+            found.id,
+            found.name,
+            found.owner === accountId,
+            undefined,
+            found.hostTierCap,
+          ),
+          requiresCharacter: Boolean(room.state.gameState),
+        },
       };
     },
   );
@@ -371,19 +467,37 @@ export function registerSessionRoutes(
       const optOut = (request.body as { matureOptOut?: unknown } | null)
         ?.matureOptOut;
       try {
+        const character = lateJoinCharacter(
+          (request.body as { character?: unknown } | null)?.character,
+        );
+        if (!character)
+          return reply.code(400).send({
+            code: 'INVALID_CHARACTER',
+            message:
+              'Choose a legal player character before requesting to join.',
+          });
         const requestId = await (
           await rooms.get(found.id)
         ).requestLateJoin(
           accountId,
           profile.displayName,
           typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+          character,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
             accountId,
             optOut,
           ]);
-        return reply.code(202).send({ requestId, status: 'pending' });
+        return reply.code(202).send({
+          ...(await onboarding(
+            found.id,
+            accountId,
+            typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+          )),
+          requestId,
+          status: 'pending',
+        });
       } catch (error) {
         if (error instanceof Error && error.message === 'Room is full')
           return reply

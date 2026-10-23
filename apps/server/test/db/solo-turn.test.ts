@@ -250,6 +250,9 @@ describe('solo turn persisted lifecycle', () => {
     first.close();
     await new Promise((resolve) => setTimeout(resolve, 100));
     const reconnected = await openSocket(owner.id, owner.token, table);
+    // A recovered seat is returning until the ADR-031 hold expires; a zero-connected-seat pause
+    // resumes only after it reaches connected.
+    await new Promise((resolve) => setTimeout(resolve, 10_100));
     sendAction(reconnected, actionId, 'Open the door again.');
     await receive(
       reconnected,
@@ -288,7 +291,7 @@ describe('solo turn persisted lifecycle', () => {
       actionIds: expect.arrayContaining([actionId, one, two]),
     });
     reconnected.close();
-  });
+  }, 30_000);
 
   it('replays the recorded-LLM fixture through the production runner over websocket', async () => {
     const owner = await createUser();

@@ -39,6 +39,22 @@ const recorder = () => {
   return { sent, connection };
 };
 
+async function waitForConnectedPresence(seen: ReturnType<typeof recorder>) {
+  for (let i = 0; i < 1_500; i++) {
+    if (
+      seen.sent.some(
+        (message) =>
+          message.type === 'PresenceChanged' &&
+          (message.payload as { presence?: unknown } | undefined)?.presence ===
+            'connected',
+      )
+    )
+      return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('recovered seat did not reach connected presence');
+}
+
 async function account(optOut = false) {
   const id = randomUUID();
   await db.query(
@@ -191,6 +207,7 @@ describe('host tier cap', () => {
     );
     const seen = recorder();
     await joinSeated(room, host, seen.connection, 'Host');
+    await waitForConnectedPresence(seen);
     expect(await room.submitAction(host, randomUUID(), 'Look.', 'Host')).toBe(
       true,
     );
@@ -203,7 +220,7 @@ describe('host tier cap', () => {
     await expectContiguousLog(sessionId);
     await new SessionLease(db).release(held);
     await app.close();
-  });
+  }, 20_000);
 
   it('a live Room takes the cap change and the next player action succeeds with one ContentTierChanged', async () => {
     const host = await account();
@@ -220,6 +237,7 @@ describe('host tier cap', () => {
     const room = await rooms.get(sessionId);
     const seen = recorder();
     await joinSeated(room, host, seen.connection, 'Host');
+    await waitForConnectedPresence(seen);
     const app = createApp(db, {
       inputGate: allowInputGate,
       cookieSecret: 'test-secret',
@@ -241,7 +259,7 @@ describe('host tier cap', () => {
     await expectContiguousLog(sessionId);
     await app.close();
     await rooms.drain();
-  });
+  }, 20_000);
 
   it('a cap change racing a player action keeps the event log contiguous', async () => {
     const host = await account();
@@ -256,7 +274,9 @@ describe('host tier cap', () => {
       runner(),
     );
     const room = await rooms.get(sessionId);
-    await joinSeated(room, host, recorder().connection, 'Host');
+    const seen = recorder();
+    await joinSeated(room, host, seen.connection, 'Host');
+    await waitForConnectedPresence(seen);
     const app = createApp(db, {
       inputGate: allowInputGate,
       cookieSecret: 'test-secret',
@@ -280,7 +300,7 @@ describe('host tier cap', () => {
     await expectContiguousLog(sessionId);
     await app.close();
     await rooms.drain();
-  });
+  }, 20_000);
 
   it('clears the cap so the next narration returns to the computed tier', async () => {
     const host = await account();

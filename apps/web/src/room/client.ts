@@ -33,6 +33,8 @@ const UNSEATED_REASON = 'Player is not seated at this table';
 export interface RoomClientOptions {
   /** HTTP origin of the API, e.g. http://localhost:8787 */
   baseUrl: string;
+  /** Session whose single-use resume token is being rotated. */
+  sessionId?: string;
   fetchImpl?: typeof fetch;
   WebSocketImpl?: typeof WebSocket;
   baseDelayMs?: number;
@@ -57,6 +59,15 @@ export function createRoomClient(opts: RoomClientOptions) {
   let socket: WebSocket | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
+  let resumeToken: string | undefined;
+  try {
+    resumeToken =
+      globalThis.localStorage?.getItem(
+        `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+      ) ?? undefined;
+  } catch {
+    /* Browser storage may be disabled; a fresh seat claim will be required. */
+  }
   let stopped = true;
   const listeners = new Set<() => void>();
   const set = (p: Partial<RoomSnapshot>) => {
@@ -112,9 +123,29 @@ export function createRoomClient(opts: RoomClientOptions) {
       const res = await doFetch(`${opts.baseUrl}/api/ws-ticket`, {
         method: 'POST',
         credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+          ...(resumeToken ? { resumeToken } : {}),
+        }),
       });
       if (!res.ok) throw new Error(`ticket ${res.status}`);
-      const { ticket } = (await res.json()) as { ticket: string };
+      const body = (await res.json()) as {
+        ticket: string;
+        resumeToken?: string;
+      };
+      const { ticket } = body;
+      if (body.resumeToken) {
+        resumeToken = body.resumeToken;
+        try {
+          globalThis.localStorage?.setItem(
+            `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+            resumeToken,
+          );
+        } catch {
+          /* Best-effort persistence. */
+        }
+      }
       if (stopped) return;
       const url = new URL('/ws', opts.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';

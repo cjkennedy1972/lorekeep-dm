@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type RoomInfo } from '../api';
+import type { Character } from '@game/schema';
+import { QuickBuild } from '../features/character/QuickBuild';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
 export function Join() {
@@ -10,15 +12,27 @@ export function Join() {
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<boolean | null>(null);
   const [joining, setJoining] = useState(false);
-  const [preview, setPreview] = useState<RoomInfo>();
+  const [preview, setPreview] = useState<
+    (RoomInfo & { requiresCharacter?: boolean }) | undefined
+  >();
   const [previewError, setPreviewError] = useState('');
+  const [character, setCharacter] = useState<Character>();
+  const [onboarding, setOnboarding] = useState<{
+    settings?: {
+      contentTier?: string;
+      hostTierCap?: string | null;
+      lines?: string[];
+      veils?: string[];
+    };
+    recap?: string;
+  }>();
   const content = useMatureOptOut();
   const checked = draft ?? content.optOut ?? false;
 
   useEffect(() => {
     if (!code) return;
     let live = true;
-    void api<{ room: RoomInfo }>(
+    void api<{ room: RoomInfo & { requiresCharacter?: boolean } }>(
       `/api/invites/${encodeURIComponent(code)}`,
     ).then((r) => {
       if (!live) return;
@@ -34,9 +48,11 @@ export function Join() {
     setError('');
     const r = await api<{ room: RoomInfo }>(
       `/api/invites/${encodeURIComponent(invite)}/join`,
-      { matureOptOut: checked },
+      { matureOptOut: checked, ...(character ? { character } : {}) },
     );
     if (r.ok) return navigate(`/rooms/${r.data.room.id}`, { replace: true });
+    if (r.code === 'LATE_JOIN_PENDING')
+      setOnboarding(r.data as typeof onboarding);
     setError(r.message);
     setJoining(false);
   }
@@ -78,19 +94,45 @@ export function Join() {
                   : 'Family'}
             </strong>
           </p>
+          {preview.requiresCharacter && (
+            <>
+              <QuickBuild onBuild={setCharacter} />
+              {character && (
+                <p role="status">Selected character: {character.name}</p>
+              )}
+            </>
+          )}
           <MatureOptOutField
             checked={checked}
             tierCap={preview.tierCap ?? null}
             disabled={joining}
             onChange={(v) => setDraft(v)}
           />
+          {onboarding && (
+            <section aria-label="Table onboarding">
+              <h2>Table onboarding</h2>
+              {onboarding.settings && (
+                <p>Content setting: {onboarding.settings.contentTier}</p>
+              )}
+              {onboarding.settings?.lines?.length ? (
+                <p>Lines: {onboarding.settings.lines.join(', ')}</p>
+              ) : null}
+              {onboarding.settings?.veils?.length ? (
+                <p>Veils: {onboarding.settings.veils.join(', ')}</p>
+              ) : null}
+              {onboarding.recap && <p>{onboarding.recap}</p>}
+            </section>
+          )}
           {message && (
             <p role="alert">
               {message} <Link to="/rooms">Back to My tables</Link>
             </p>
           )}
           <div className="actions">
-            <button type="submit" disabled={joining}>
+            <button
+              type="submit"
+              disabled={joining || (!!preview.requiresCharacter && !character)}
+            >
               Join table
             </button>
           </div>

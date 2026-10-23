@@ -1,3 +1,4 @@
+import { CharacterSchema } from './character.js';
 import { z } from 'zod';
 import { AccountIdSchema, SeatIdSchema, SessionIdSchema } from './ids.js';
 
@@ -24,6 +25,8 @@ export const SeatSchema = z.object({
   chatMutedUntil: z.number().nonnegative().nullable().optional(),
   // Private account preference; omitted from the shared room-state wire view.
   matureOptOut: z.boolean().optional(),
+  /** Bound active player character for party sessions. */
+  characterId: z.uuid().optional(),
 });
 export const RoundSubmissionSchema = z.object({
   seatId: SeatIdSchema,
@@ -116,6 +119,7 @@ export const RoomStateSchema = z.object({
           accountId: AccountIdSchema,
           displayName: z.string().min(1),
           matureOptOut: z.boolean().optional(),
+          character: CharacterSchema.optional(),
           approved: z.boolean().optional(),
         })
         .strict(),

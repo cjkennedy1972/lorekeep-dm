@@ -108,6 +108,7 @@ export function Game() {
   }, [id]);
   const live = useRoom({
     baseUrl: http.base,
+    sessionId: id,
     fetchImpl: (...args) => http.fetch(...args),
     WebSocketImpl: http.WebSocket,
     onMessage: (message) => {
