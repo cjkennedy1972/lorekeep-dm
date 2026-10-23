@@ -22,8 +22,12 @@ export const initialRoomView: RoomView = {
 export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
   switch (msg.type) {
     case 'StateSync':
-      // A snapshot at the stored seq still answers a pending resync: thin Round* broadcasts don't advance lastSeq.
-      if (msg.seq <= view.lastSeq && view.room && !view.needsResync)
+      // While a resync is pending, a snapshot at the stored seq answers it (thin Round* broadcasts don't advance lastSeq); older ones stay stale.
+      if (
+        view.room &&
+        (msg.seq < view.lastSeq ||
+          (msg.seq === view.lastSeq && !view.needsResync))
+      )
         return view; // duplicate/stale snapshot
       return {
         room: { ...msg.payload.state, round: msg.payload.round },
