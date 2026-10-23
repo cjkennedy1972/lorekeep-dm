@@ -115,6 +115,41 @@ describe('roomReducer', () => {
     expect(v.needsResync).toBe(false);
     expect(v.room?.round).toEqual(round);
   });
+  test('stale StateSync below the stored seq is ignored while resync is pending', () => {
+    const thin = roomReducer(roomReducer(initialRoomView, sync(5)), {
+      seq: 6,
+      type: 'RoundOpened',
+      payload: {},
+    } as unknown as ServerMessage);
+    expect(thin.needsResync).toBe(true);
+    const v = roomReducer(thin, syncWithRound(3, round));
+    expect(v).toBe(thin);
+    expect(v.lastSeq).toBe(5);
+    expect(v.needsResync).toBe(true);
+    expect(v.room?.round).toBeUndefined();
+  });
+  test('StateSync at the stored seq keeps the round when it clears a pending resync', () => {
+    const thin = roomReducer(roomReducer(initialRoomView, sync(5)), {
+      seq: 6,
+      type: 'RoundOpened',
+      payload: {},
+    } as unknown as ServerMessage);
+    const v = roomReducer(thin, syncWithRound(5, round));
+    expect(v.needsResync).toBe(false);
+    expect(v.lastSeq).toBe(5);
+    expect(v.room?.round).toEqual(round);
+  });
+  test('higher-seq StateSync applies while resync is pending', () => {
+    const thin = roomReducer(roomReducer(initialRoomView, sync(5)), {
+      seq: 6,
+      type: 'RoundOpened',
+      payload: {},
+    } as unknown as ServerMessage);
+    const v = roomReducer(thin, syncWithRound(8, round));
+    expect(v.needsResync).toBe(false);
+    expect(v.lastSeq).toBe(8);
+    expect(v.room?.round).toEqual(round);
+  });
   test('patch before any StateSync requests resync', () => {
     expect(roomReducer(initialRoomView, pres(1, 'away')).needsResync).toBe(
       true,
