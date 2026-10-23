@@ -202,26 +202,7 @@ export function createRoomClient(opts: RoomClientOptions) {
         }),
       });
       if (!res.ok) throw new Error(`ticket ${res.status}`);
-      const body = (await res.json()) as {
-        ticket: string;
-        resumeToken?: string;
-      };
-      const { ticket } = body;
-      const ticketResumeToken = body.resumeToken;
-      if (
-        typeof ticketResumeToken === 'string' &&
-        ticketResumeToken.length > 0
-      ) {
-        resumeToken = ticketResumeToken;
-        try {
-          globalThis.localStorage?.setItem(
-            `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
-            ticketResumeToken,
-          );
-        } catch {
-          /* The current attempt still carries the token in memory. */
-        }
-      }
+      const { ticket } = (await res.json()) as { ticket: string };
       if (stopped) return;
       const url = new URL('/ws', opts.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -235,6 +216,17 @@ export function createRoomClient(opts: RoomClientOptions) {
       ws.onclose = (e) => {
         if (socket !== ws) return;
         const removed = removalForClose(e.code, e.reason);
+        const unseated = e.code === 1008 && e.reason === UNSEATED_REASON;
+        if (removed) resumeToken = undefined;
+        if (removed || unseated) {
+          try {
+            globalThis.localStorage?.removeItem(
+              `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+            );
+          } catch {
+            /* The server enforces seat membership if storage is unavailable. */
+          }
+        }
         if (removed) {
           // A host kick or table end is final: do not reconnect.
           socket = undefined;

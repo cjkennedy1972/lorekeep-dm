@@ -137,9 +137,6 @@ export function installGateway(
       if (!eligible) return reply.code(403).send({ error: 'not seated' });
       const seatId = await currentSeatId(db, auth.account_id, eligible);
       if (!seatId) return reply.code(403).send({ error: 'not seated' });
-      const pendingResumeToken = (
-        await rooms.get(eligible)
-      ).pendingSeatResumeToken(auth.account_id);
       return {
         ticket: await issueTicket(
           db,
@@ -147,7 +144,6 @@ export function installGateway(
           eligible,
           auth.token_hash,
         ),
-        ...(pendingResumeToken ? { resumeToken: pendingResumeToken } : {}),
       };
     },
   );
@@ -298,7 +294,7 @@ export function installGateway(
           identity.sessionId,
           seatId,
           socketId,
-          presentedToken,
+          presentedToken ?? room.pendingSeatResumeToken(identity.accountId),
         );
         if (authorization.status === 'invalid-token') {
           if (
@@ -324,14 +320,6 @@ export function installGateway(
               pendingClaimId,
             );
             if (!approved) throw new Error('seat claim denied or expired');
-            if (
-              !(await hasCurrentSeat(
-                db,
-                identity.accountId,
-                identity.sessionId,
-              ))
-            )
-              throw new Error('seat revoked during claim');
             authorization = await authorizeSeatSocket(
               db,
               identity.sessionId,
@@ -339,6 +327,7 @@ export function installGateway(
               socketId,
               presentedToken,
               true,
+              identity.accountId,
             );
           } catch {
             ws.off('message', resumeFrameHandler);

@@ -10,7 +10,6 @@ import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { consumeTicket, issueTicket } from '../../src/gateway/tickets.js';
 import {
   authorizeSeatSocket,
-  commitSeatResumeToken,
   releaseSeatSocket,
 } from '../../src/gateway/resumeTokens.js';
 import { createSession } from '../../src/accounts/sessions.js';
@@ -68,7 +67,9 @@ async function nextOfType(ws: WebSocket, type: string) {
     try {
       message = await next(ws);
     } catch (error) {
-      throw new Error(`waiting for ${type}: ${String(error)}`);
+      throw new Error(
+        `waiting for ${type}: ${String(error)}; received ${seenMessageTypes.get(ws)?.join(', ') ?? 'no frames'}`,
+      );
     }
     if (message.type === type) return message;
   }
@@ -105,6 +106,8 @@ async function ticket(token: string) {
   });
   expect(res.status).toBe(200);
   const body = (await res.json()) as { ticket: string };
+  expect(body).toEqual({ ticket: expect.any(String) });
+  expect(JSON.stringify(body)).not.toMatch(/resumeToken/i);
   ticketOwners.set(body.ticket, token);
   return body.ticket;
 }
@@ -168,29 +171,10 @@ beforeAll(async () => {
     accounts.map((id) => createSession(db, id, 'test')),
   );
   for (let i = 0; i < accounts.length; i++) {
-    const seat = (await rooms.get(sessionId)).state.seats.find(
-      (candidate) => candidate.accountId === accounts[i],
-    )!;
-    const socketId = randomUUID();
-    const authorization = await authorizeSeatSocket(
-      db,
-      sessionId,
-      seat.seatId,
-      socketId,
-      undefined,
-      true,
-    );
-    if (authorization.status !== 'authorized')
-      throw new Error('failed to prepare approved test seat');
-    resumeTokens.set(tokens[i]!, authorization.resumeToken);
-    await commitSeatResumeToken(
-      db,
-      sessionId,
-      seat.seatId,
-      socketId,
-      authorization.resumeToken,
-    );
-    await releaseSeatSocket(db, sessionId, seat.seatId, socketId);
+    const room = await rooms.get(sessionId);
+    const pending = room.pendingSeatResumeToken(accounts[i]!);
+    if (!pending) throw new Error('test seat has no undelivered resume token');
+    resumeTokens.set(tokens[i]!, pending);
   }
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   base = address;
@@ -272,19 +256,45 @@ describe('one-time gateway', () => {
       socketId,
       undefined,
       true,
+      accounts[0],
     );
-    expect(recovered).toMatchObject({ status: 'authorized' });
-    if (recovered.status === 'authorized') {
-      resumeTokens.set(tokens[0]!, recovered.resumeToken);
-      await commitSeatResumeToken(
-        db,
+    expect(recovered).toEqual({ status: 'invalid-token' });
+    const restored = await db.query(
+      'SELECT 1 FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [sessionId, seatId],
+    );
+    expect(restored.rowCount).toBe(0);
+    await releaseSeatSocket(db, sessionId, seatId, socketId);
+    // Restore only the isolated shared fixture after proving production auth
+    // refuses to recreate a deleted row, so later socket tests start valid.
+    const pendingToken = (await rooms.get(sessionId)).pendingSeatResumeToken(
+      accounts[0]!,
+    );
+    if (!pendingToken) throw new Error('test fixture token is missing');
+    await db.query(
+      `INSERT INTO seat_resume_tokens(session_id,seat_id,token_hash,rotated_at)
+       VALUES($1,$2,$3,clock_timestamp())`,
+      [
         sessionId,
         seatId,
-        socketId,
-        recovered.resumeToken,
-      );
-    }
-    await releaseSeatSocket(db, sessionId, seatId, socketId);
+        createHash('sha256').update(pendingToken).digest('hex'),
+      ],
+    );
+  });
+  it('restores socket control within the two-second target after resume proof', async () => {
+    const startedAt = performance.now();
+    const socket = connect(await ticket(tokens[0]!));
+    await nextOfType(socket, 'SeatAuthenticated');
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    await nextOfType(socket, 'StateSync');
+    expect(seenMessageTypes.get(socket)).toEqual(
+      expect.arrayContaining(['SeatResumeChallenge', 'SeatAuthenticated']),
+    );
+    await closeSocket(socket);
+    const seatId = (await rooms.get(sessionId)).state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    await waitForReleasedSocket(seatId);
   });
   it('requires and rotates the per-seat resume token', async () => {
     const firstTicket = await ticket(tokens[0]);

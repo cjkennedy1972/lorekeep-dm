@@ -16,6 +16,7 @@ export async function authorizeSeatSocket(
   socketId: string,
   presentedToken: string | undefined,
   hostApprovedClaim = false,
+  accountId?: string,
 ): Promise<SeatSocketAuthorization> {
   const client = await db.connect();
   try {
@@ -37,6 +38,26 @@ export async function authorizeSeatSocket(
       [sessionId, seatId],
     );
     const row = result.rows[0];
+    if (hostApprovedClaim) {
+      if (!row || !accountId) {
+        await client.query('ROLLBACK');
+        return { status: 'invalid-token' };
+      }
+      const membership = await client.query<{ current: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM sessions s JOIN events j ON j.session_id=s.id
+            WHERE s.id=$1 AND s.status='active' AND j.type='SeatJoined'
+              AND j.payload->>'seatId'=$2 AND j.payload->>'accountId'=$3
+              AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=j.session_id
+                AND r.type='SeatRevoked' AND r.payload->>'seatId'=$2 AND r.seq>j.seq)
+         ) AS current`,
+        [sessionId, seatId, accountId],
+      );
+      if (!membership.rows[0]?.current) {
+        await client.query('ROLLBACK');
+        return { status: 'invalid-token' };
+      }
+    }
     if (row?.socket_live) {
       await client.query('ROLLBACK');
       return { status: 'active-socket' };
@@ -44,8 +65,9 @@ export async function authorizeSeatSocket(
     // A missing row is not a first-use bootstrap path: legacy or otherwise
     // uninitialized seats must use the host-approved recovery flow.
     if (
-      !hostApprovedClaim &&
-      (!row || !presentedToken || hash(presentedToken) !== row.token_hash)
+      !row ||
+      (!hostApprovedClaim &&
+        (!presentedToken || hash(presentedToken) !== row.token_hash))
     ) {
       await client.query('ROLLBACK');
       return { status: 'invalid-token' };

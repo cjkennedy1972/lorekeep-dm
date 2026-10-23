@@ -332,7 +332,31 @@ async function main() {
         headers: { origin },
       },
     );
-    ws.on('message', (data) => messages.push(JSON.parse(String(data))));
+    ws.on('message', (data) => {
+      const message = JSON.parse(String(data));
+      messages.push(message);
+      // The production server waits for resume proof before sending StateSync.
+      if (message.type === 'SeatResumeChallenge') {
+        ws.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'ResumeSeat',
+            payload: {},
+            lastSeq: 0,
+          }),
+        );
+      }
+      if (message.type === 'StateSync') {
+        ws.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'StateSyncAck',
+            payload: { seq: message.seq },
+            lastSeq: message.seq,
+          }),
+        );
+      }
+    });
     await new Promise((resolve, reject) => {
       ws.once('open', resolve);
       ws.once('error', reject);
@@ -340,7 +364,7 @@ async function main() {
     await waitUntil(
       () => messages.some((m) => m.type === 'StateSync'),
       10_000,
-      'initial StateSync',
+      `initial StateSync (received: ${messages.map((message) => message.type).join(', ') || 'none'})`,
     );
     const lastSeq = Math.max(...messages.map((m) => m.seq ?? 0));
     ws.send(
