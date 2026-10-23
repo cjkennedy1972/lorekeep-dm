@@ -19,8 +19,11 @@ export interface RoomSnapshot extends RoomView {
 }
 
 // ponytail: Room.ts kickSeat/endTable close with these exact code+reason pairs; they are the only signal a kicked client gets.
+// A revoked seat whose socket was offline closes with 'not seated' instead, so it reads as removed too.
 export function removalForClose(code: number, reason: string): Removal | null {
   if (code === 1008 && reason === 'Seat revoked by the host') return 'kicked';
+  if (code === 1008 && reason === 'Player is not seated at this table')
+    return 'kicked';
   if (code === 1000 && reason === 'Table ended by host') return 'ended';
   return null;
 }

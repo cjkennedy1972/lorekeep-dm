@@ -266,7 +266,7 @@ describe('HostControls', () => {
     expect(screen.getByRole('button', { name: 'Make Bo host' })).toBeTruthy();
   });
 
-  it('transfers host to another player without a confirm step', () => {
+  it('transfers host only after confirming', () => {
     const send = vi.fn(() => 'id');
     render(
       <HostControls
@@ -279,7 +279,11 @@ describe('HostControls', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Make Bo host' }));
+    expect(send).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Make host' }));
     expect(send).toHaveBeenCalledWith('TransferHost', { seatId: 'seat-b' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('removes a player only after confirming, and Escape cancels with focus back on the opener', () => {

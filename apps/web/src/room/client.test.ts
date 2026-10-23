@@ -118,9 +118,10 @@ test('send reports whether the message went out', async () => {
 test('removalForClose matches only the host kick and table-end close pairs', () => {
   expect(removalForClose(1008, 'Seat revoked by the host')).toBe('kicked');
   expect(removalForClose(1000, 'Table ended by host')).toBe('ended');
-  expect(
-    removalForClose(1008, 'Player is not seated at this table'),
-  ).toBeNull();
+  expect(removalForClose(1008, 'Player is not seated at this table')).toBe(
+    'kicked',
+  );
+  expect(removalForClose(1008, 'Room is full')).toBeNull();
   expect(removalForClose(1006, '')).toBeNull();
 });
 

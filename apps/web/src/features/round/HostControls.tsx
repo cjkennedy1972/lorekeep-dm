@@ -33,7 +33,11 @@ type Props = {
   lateJoinRequests?: LateJoinRequest[];
 };
 
-type Confirming = { kind: 'kick'; seat: Seat } | { kind: 'end' } | null;
+type Confirming =
+  | { kind: 'kick'; seat: Seat }
+  | { kind: 'transfer'; seat: Seat }
+  | { kind: 'end' }
+  | null;
 
 export function HostControls({
   round,
@@ -104,6 +108,13 @@ export function HostControls({
         { seatId: seat.seatId },
         `Removing ${seat.displayName} from the table.`,
       );
+    } else if (confirming?.kind === 'transfer') {
+      const { seat } = confirming;
+      sendHost(
+        'TransferHost',
+        { seatId: seat.seatId },
+        `${seat.displayName} is now the host.`,
+      );
     } else if (confirming?.kind === 'end') {
       sendHost('EndTable', {}, 'Ending the table.');
     }
@@ -169,13 +180,7 @@ export function HostControls({
                 <button
                   type="button"
                   disabled={!connected}
-                  onClick={() =>
-                    sendHost(
-                      'TransferHost',
-                      { seatId: seat.seatId },
-                      `${seat.displayName} is now the host.`,
-                    )
-                  }
+                  onClick={() => setConfirming({ kind: 'transfer', seat })}
                 >
                   Make {seat.displayName} host
                 </button>{' '}
@@ -243,6 +248,17 @@ export function HostControls({
       <p role={error ? 'alert' : 'status'} aria-live="polite">
         {error || note}
       </p>
+      {confirming?.kind === 'transfer' && (
+        <ConfirmDialog
+          titleId="host-confirm-title"
+          title={`Make ${confirming.seat.displayName} the host?`}
+          confirmLabel="Make host"
+          onConfirm={confirmAndSend}
+          onCancel={() => setConfirming(null)}
+        >
+          <p>You will stop being the host and lose host controls.</p>
+        </ConfirmDialog>
+      )}
       {confirming?.kind === 'kick' && (
         <ConfirmDialog
           titleId="host-confirm-title"
