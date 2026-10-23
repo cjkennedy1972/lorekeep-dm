@@ -46,9 +46,10 @@ afterEach(async () => {
 afterAll(async () => {
   for (const id of sessionIds.splice(0))
     await q('SELECT purge_session($1)', [id]);
-  for (const id of accountIds.splice(0))
+  const createdAccountIds = accountIds.splice(0);
+  for (const id of createdAccountIds)
     await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
-  for (const id of accountIds.splice(0))
+  for (const id of createdAccountIds)
     await q('DELETE FROM accounts WHERE id=$1', [id]);
   await pool.end();
 });
@@ -465,7 +466,9 @@ describe('account deletion: holds, idempotence, and nested checkpoints', () => {
       await q('SELECT 1 FROM accounts WHERE id=$1', [f.gone]),
     ).toHaveLength(0);
     expect(
-      await q("SELECT 1 FROM accounts WHERE status='deleting'"),
+      await q("SELECT 1 FROM accounts WHERE id=ANY($1) AND status='deleting'", [
+        [f.gone],
+      ]),
     ).toHaveLength(0);
     await reload(f.session);
   });

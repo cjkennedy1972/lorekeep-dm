@@ -88,7 +88,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await rooms.drain();
   await app.close();
-  // events are append-only, so rows are left behind (random ids, as in the other db tests)
+  for (const id of roomIds) await db.query('SELECT purge_session($1)', [id]);
+  for (const id of accounts)
+    await db.query('DELETE FROM accounts WHERE id=$1', [id]);
   await db.end();
 });
 

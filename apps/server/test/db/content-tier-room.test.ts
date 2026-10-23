@@ -15,6 +15,9 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
 let db: Pool;
 let dir: string;
+const accountIds: string[] = [];
+const sessionIds: string[] = [];
+const rooms: Room[] = [];
 
 type Sent = { type: string; payload?: unknown };
 const recorder = () => {
@@ -38,6 +41,7 @@ async function account(optOut: boolean, status = 'active') {
      VALUES($1,$2,'hash','Player',$3,true,now(),'v1',now(),$4)`,
     [id, `${id}@example.test`, status, optOut],
   );
+  accountIds.push(id);
   return id;
 }
 
@@ -47,6 +51,7 @@ async function session(owner: string) {
     'INSERT INTO sessions(id,owner_account_id,name,moderation_verified,endpoint_allows_mature) VALUES($1,$2,$3,true,true)',
     [id, owner, 'Room tier'],
   );
+  sessionIds.push(id);
   return id;
 }
 
@@ -102,7 +107,14 @@ async function openRoom(
     false,
     true,
   );
-  return new Room(store, lease, await store.loadLatest(sessionId), runner);
+  const room = new Room(
+    store,
+    lease,
+    await store.loadLatest(sessionId),
+    runner,
+  );
+  rooms.push(room);
+  return room;
 }
 
 async function waitForCompletion(sessionId: string) {
@@ -122,6 +134,15 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'content-tier-room-'));
 });
 afterAll(async () => {
+  for (const room of rooms.splice(0)) await room.drain();
+  for (const id of sessionIds) {
+    await db.query('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await db.query('SELECT purge_session($1)', [id]);
+  }
+  for (const id of accountIds) {
+    await db.query('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await db.query('DELETE FROM accounts WHERE id=$1', [id]);
+  }
   await db.end();
   await rm(dir, { recursive: true, force: true });
 });

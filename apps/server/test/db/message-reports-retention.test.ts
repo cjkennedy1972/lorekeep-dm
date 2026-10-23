@@ -16,7 +16,19 @@ import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { allowInputGate } from '../support/allowInputGate.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-afterAll(() => pool.end());
+const accountIds: string[] = [];
+const sessionIds: string[] = [];
+afterAll(async () => {
+  for (const id of sessionIds) {
+    await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await q('SELECT purge_session($1)', [id]);
+  }
+  for (const id of accountIds) {
+    await q('DELETE FROM legal_holds WHERE item_id=$1', [id]);
+    await q('DELETE FROM accounts WHERE id=$1', [id]);
+  }
+  await pool.end();
+});
 const HOST = 'http://lorekeep.test';
 const DAY = 86_400_000;
 const q = async (sql: string, p: unknown[] = []) =>
@@ -38,6 +50,7 @@ async function account(name: string) {
     "INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'h',$3,'active',true,now(),'v1',now())",
     [id, `${id}@example.test`, name],
   );
+  accountIds.push(id);
   return id;
 }
 
@@ -54,6 +67,7 @@ async function session(owner: string, status = 'active', archivedAt?: Date) {
     'INSERT INTO sessions(id,owner_account_id,name,status,archived_at) VALUES($1,$2,$3,$4,$5)',
     [id, owner, 'Table', status, archivedAt ?? null],
   );
+  sessionIds.push(id);
   return id;
 }
 
@@ -167,6 +181,7 @@ describe('message report retention (Postgres)', () => {
     const reporter = await account('Hollis Host');
     const author = await account('Quinn Seated');
     const sid = randomUUID();
+    sessionIds.push(sid);
     await q(
       "INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,'Table')",
       [sid, keeper],
@@ -301,6 +316,7 @@ describe('message report retention (Postgres)', () => {
     const reporter = await account('Hollis Host');
     const author = await account('Quinn Seated');
     const sid = randomUUID();
+    sessionIds.push(sid);
     await q(
       "INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,'Table')",
       [sid, keeper],
