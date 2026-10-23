@@ -63,7 +63,8 @@ These are the combat and rest events declared for §15.6. ADR-033 §7.1 declares
 | `TurnResolved` | `{turnId, entityId, eventIds}` | ADR-033 §7.1 | log and DM input |
 | `MoveStarted` | `{turnId, entityId, path}` | ADR-033 §7.1 | all seats |
 | `MoveEnded` | `{turnId, entityId, reason}`, `reason` ∈ ADR-033 §4.6 | ADR-033 §7.1 | all seats |
-| `ReactionPromptOpened` | `{promptId, reactorEntityId, reactorSeat, deadline}` (broadcast); `{trigger, options}` (private to controlling seat) | ADR-033 §7.1, split by §3 of this ADR | see split |
+| `ReactionPromptOpened` (broadcast form) | `{promptId, reactorSeat, deadline}`; `reactorEntityId` is included only when the reacting entity is visible to the seat | ADR-033 §7.1, split by §3 of this ADR | all seats, hidden entities excluded per §3 |
+| `ReactionPromptOpened` (private form) | `{promptId, trigger, options}` | ADR-033 §3.2 | controlling seat only |
 | `ReactionAnswered` | `{promptId, answer}` | ADR-033 §7.1 | all seats, unless hidden (§3 of this ADR) |
 | `ReactionDeclined` | `{promptId, cause}`, `cause` ∈ `timeout`, `presence`, `no-controller`, `cap`, `restart` | ADR-033 §7.1 | all seats, unless hidden |
 | `NarrationCommitted` | `{turnId, narrationId}` | ADR-033 §7.1 | all seats |
@@ -84,17 +85,17 @@ These codes are declared here as an extension of the ADR-022 §2.4 enum, as ADR-
 | `reaction-pending` | Reaction answers only: `use{handle}` or `decline`, from the controlling seat of the reacting entity. Bounded resolution and timer expiry still apply. | Every other command: `reaction-pending`. Not queued. |
 | `narrating` | Pause only (ADR-029 §5) | Every combat command: `narration-in-progress`. Not queued. |
 
-2. Codes new to this ADR: `move-in-progress`, `reaction-pending`, `narration-in-progress`, `not-your-turn`, `combat-active`, `prompt-closed`, `seat-mismatch`, `rate-limited`.
+2. Codes new to this ADR: `move-in-progress`, `reaction-pending`, `narration-in-progress`, `not-your-turn`, `combat-active`, `prompt-closed`, `seat-mismatch`, `rate-limited`, `combat-start-unauthorized`.
 3. **Supersessions.** This ADR supersedes these ADR-033 lines:
    - §1 admission table, the `narrating` row. The code is `narration-in-progress`, not the phase name.
    - §1 admission table, the `reaction-pending` row. The code is `reaction-pending`, which is distinct from the phase name `reaction-pending`.
    - §1 admission rule 1, which says the turn commands are "accepted only in `awaiting-command`". That is still true, and the table governs.
-   - §3.1, `ReactionPromptOpened` payload. §3.1 and §7.1 are replaced by §5 of this ADR.
+   - §3.1, `ReactionPromptOpened` payload. The broadcast and private forms are given in §5 of this ADR.
    - §8 "Rest votes" bullet, replaced by §1 of this ADR.
    - D12, replaced by §1 of this ADR. Its "outcome `cancelled-combat`" wording is replaced by `closeReason: cancelled-combat` with `outcome: failed` (§1 items 4 and 5).
    - D20, same replacement as D12.
 4. **Corrected D19.** ADR-033 D19 says "the only inputs honored are reaction answers when a window opens". Replace that sentence with: reaction answers are accepted only in `reaction-pending`, from the controlling seat of the reacting entity. Bounded-resolution paths (ADR-033 §5.5) and timer expiry (§5.3) apply in any phase where a turn is open. Reaction windows open only by moving the Room to `reaction-pending` (ADR-033 §4.2), in the same mailbox pass as the triggering step. The `moving` phase runs the path to its end or to a §4 stop, and no command interrupts it.
-5. **Combat start authority.** An encounter starts only from an engine-validated DM tool call, `start_combat` (ADR-022 §2.3 item 7), made during an active round. The engine validates it and rejects it with the codes ADR-022 §2.3 item 7 lists (`unknown-monster`, `already-in-combat`, `no-spawn-space`, `enemy-cap-exceeded`). Player text and host text never start combat. The host has no command that starts combat. A host request reaches the DM only as input text, and the DM may or may not call `start_combat`.
+5. **Combat start authority.** An encounter starts only from an engine-validated DM tool call, `start_combat` (ADR-022 §2.3 item 7), made during an active round. The engine validates it and rejects it with the codes ADR-022 §2.3 item 7 lists (`unknown-monster`, `already-in-combat`, `no-spawn-space`, `enemy-cap-exceeded`). Player text and host text never start combat. The host has no command that starts combat. A host request reaches the DM only as input text, and the DM may or may not call `start_combat`. Any attempt to start combat from a non-DM source (player or host command, or text routed as a command) is rejected with `combat-start-unauthorized` and applies no state change.
 
 ## Alternatives considered
 
