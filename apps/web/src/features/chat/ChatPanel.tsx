@@ -67,22 +67,14 @@ export function ChatPanel(props: ChatPanelProps) {
                 Report message
               </button>
               {props.isHost && seat && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => props.onMute(seat.seatId, true)}
-                    disabled={!props.connected}
-                  >
-                    Mute {seat.displayName} in chat
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => props.onMute(seat.seatId, false)}
-                    disabled={!props.connected}
-                  >
-                    Unmute {seat.displayName} in chat
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => props.onMute(seat.seatId, !seat.chatMuted)}
+                  disabled={!props.connected}
+                >
+                  {seat.chatMuted ? 'Unmute' : 'Mute'} {seat.displayName} in
+                  chat
+                </button>
               )}
               {reporting === entry.seq && (
                 <form

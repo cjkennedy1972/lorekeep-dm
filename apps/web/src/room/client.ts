@@ -7,10 +7,22 @@ export type ConnectionStatus =
   | 'reconnecting'
   | 'closed';
 
+/** Why this seat lost the table: the host removed it, or the host ended the table. */
+export type Removal = 'kicked' | 'ended';
+
 export interface RoomSnapshot extends RoomView {
   status: ConnectionStatus;
   /** Last schema/server error, for display; never throws. */
   error: string | null;
+  /** Set when the server closes this socket for a host action; the client then stops reconnecting and sending. */
+  removed: Removal | null;
+}
+
+// ponytail: Room.ts kickSeat/endTable close with these exact code+reason pairs; they are the only signal a kicked client gets.
+export function removalForClose(code: number, reason: string): Removal | null {
+  if (code === 1008 && reason === 'Seat revoked by the host') return 'kicked';
+  if (code === 1000 && reason === 'Table ended by host') return 'ended';
+  return null;
 }
 
 export interface RoomClientOptions {
@@ -27,6 +39,7 @@ const initial: RoomSnapshot = {
   ...initialRoomView,
   status: 'closed',
   error: null,
+  removed: null,
 };
 
 export function createRoomClient(opts: RoomClientOptions) {
@@ -47,7 +60,7 @@ export function createRoomClient(opts: RoomClientOptions) {
 
   /** Returns the wire actionId so callers can match their own submission in round state, or false when offline. */
   const send = (type: string, payload: Record<string, unknown> = {}) => {
-    if (socket?.readyState !== WS.OPEN) return false;
+    if (snap.removed || socket?.readyState !== WS.OPEN) return false;
     const actionId = crypto.randomUUID() as ClientEnvelope['actionId'];
     const env: ClientEnvelope = {
       actionId,
@@ -108,8 +121,16 @@ export function createRoomClient(opts: RoomClientOptions) {
         // Server sends StateSync on join; lastSeq in envelopes lets it resume.
       };
       ws.onmessage = (e) => onMessage(e.data);
-      ws.onclose = () => {
-        if (socket === ws) scheduleReconnect();
+      ws.onclose = (e) => {
+        if (socket !== ws) return;
+        const removed = removalForClose(e.code, e.reason);
+        if (removed) {
+          // A host kick or table end is final: do not reconnect.
+          socket = undefined;
+          set({ status: 'closed', removed });
+          return;
+        }
+        scheduleReconnect();
       };
       ws.onerror = () => {};
     } catch {

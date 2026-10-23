@@ -86,7 +86,6 @@ export function Game() {
   const [resume, setResume] = useState<{ recap: string; name: string } | null>(
     null,
   );
-  const [isHost, setIsHost] = useState(false);
   const [safetyNotice, setSafetyNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLoading, setResumeLoading] = useState(false);
@@ -104,11 +103,6 @@ export function Game() {
   useEffect(() => {
     if (id) {
       loadGame();
-      void api<{ room: { isHost: boolean } }>(`/api/rooms/${id}`).then(
-        (result) => {
-          if (result.ok) setIsHost(result.data.room.isHost);
-        },
-      );
     }
   }, [id]);
   const live = useRoom({
@@ -473,6 +467,27 @@ export function Game() {
     ? { width: map.w * 32, height: map.h * 32 }
     : { width: 0, height: 0 };
 
+  // Host status comes from the shared seat flag, so only the real host sees enabled host controls.
+  const selfSeat = room?.seats?.find((seat) => seat.accountId === account?.id);
+  const isHost = selfSeat?.isHost === true;
+  if (live.removed === 'kicked')
+    return (
+      <section>
+        <h1>Removed from table</h1>
+        <p role="alert">
+          The host removed you from this table. You can no longer send to it.
+        </p>
+        <Link to="/rooms">My games</Link>
+      </section>
+    );
+  if (live.removed === 'ended')
+    return (
+      <section>
+        <h1>Table ended</h1>
+        <p role="status">The host ended this table.</p>
+        <Link to="/rooms">My games</Link>
+      </section>
+    );
   if (id && resumeLoading)
     return (
       <section>
@@ -595,6 +610,9 @@ export function Game() {
           connected={live.status === 'connected'}
           paused={room.paused === true}
           send={live.send}
+          seats={room.seats}
+          selfSeatId={selfSeat?.seatId}
+          lateJoinRequests={room.lateJoinRequests}
         />
       )}
       <ChatPanel

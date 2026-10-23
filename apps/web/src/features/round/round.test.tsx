@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { RoomState, Seat } from '@game/schema';
+import { AccountIdSchema, type RoomState, type Seat } from '@game/schema';
 import { roomReducer, initialRoomView } from '../../room/reducer';
 import { RoundPanel, isOwnSubmission, secondsLeft } from './RoundPanel';
 import { HostControls, clampTimerSeconds } from './HostControls';
@@ -250,19 +250,140 @@ describe('HostControls', () => {
     ).toBe(true);
   });
 
-  it('keeps unsupported host actions disabled', () => {
+  it('lists the other players, never the host’s own seat', () => {
     render(
       <HostControls
         round={undefined}
         roundDurationMs={null}
         connected
         send={vi.fn()}
+        seats={seats}
+        selfSeatId="seat-a"
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Remove Ada' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Remove Bo' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Make Bo host' })).toBeTruthy();
+  });
+
+  it('transfers host to another player without a confirm step', () => {
+    const send = vi.fn(() => 'id');
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected
+        send={send}
+        seats={seats}
+        selfSeatId="seat-a"
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Make Bo host' }));
+    expect(send).toHaveBeenCalledWith('TransferHost', { seatId: 'seat-b' });
+  });
+
+  it('removes a player only after confirming, and Escape cancels with focus back on the opener', () => {
+    const send = vi.fn(() => 'id');
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected
+        send={send}
+        seats={seats}
+        selfSeatId="seat-a"
+      />,
+    );
+    const opener = screen.getByRole('button', { name: 'Remove Bo' });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('sends KickSeat when the removal is confirmed', () => {
+    const send = vi.fn(() => 'id');
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected
+        send={send}
+        seats={seats}
+        selfSeatId="seat-a"
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Bo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove player' }));
+    expect(send).toHaveBeenCalledWith('KickSeat', { seatId: 'seat-b' });
+    expect(screen.getByRole('status').textContent).toContain('Removing Bo');
+  });
+
+  it('ends the table only after confirming', () => {
+    const send = vi.fn(() => 'id');
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected
+        send={send}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'End the table' }));
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'End table' }));
+    expect(send).toHaveBeenCalledWith('EndTable', {});
+  });
+
+  it('approves and denies late joiners by request id', () => {
+    const send = vi.fn(() => 'id');
+    const requestId = '55555555-5555-4555-8555-555555555555';
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected
+        send={send}
+        lateJoinRequests={[
+          {
+            requestId,
+            accountId: AccountIdSchema.parse(
+              '00000000-0000-4000-8000-0000000000c1',
+            ),
+            displayName: 'Cy',
+          },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Approve Cy' }));
+    expect(send).toHaveBeenLastCalledWith('ApproveLateJoin', { requestId });
+    fireEvent.click(screen.getByRole('button', { name: 'Deny Cy' }));
+    expect(send).toHaveBeenLastCalledWith('DenyLateJoin', { requestId });
+  });
+
+  it('disables destructive actions while disconnected', () => {
+    render(
+      <HostControls
+        round={undefined}
+        roundDurationMs={null}
+        connected={false}
+        send={vi.fn()}
+        seats={seats}
+        selfSeatId="seat-a"
       />,
     );
     expect(
+      (screen.getByRole('button', { name: 'Remove Bo' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
       (
         screen.getByRole('button', {
-          name: 'Transfer host',
+          name: 'End the table',
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
