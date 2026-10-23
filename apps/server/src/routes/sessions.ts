@@ -20,7 +20,7 @@ type Seater = Pick<RoomRegistry, 'get'>;
 const JOIN_LIMIT = 10;
 export const MAX_ACTIVE_ROOMS = 20;
 export const CREATE_PER_HOUR = 10;
-export const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host FROM sessions s
+export const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host,s.host_tier_cap AS tier_cap FROM sessions s
   WHERE s.status='active' AND (s.owner_account_id=$1 OR ${currentMemberSql('$1')})`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -154,11 +154,17 @@ export function registerSessionRoutes(
     app.get(base, async (request, reply) => {
       const accountId = await member(request, reply);
       if (!accountId) return reply;
-      const r = await db.query<{ id: string; name: string; is_host: boolean }>(
-        `${ROOM_LIST_SQL} ORDER BY s.created_at DESC`,
-        [accountId],
-      );
-      return { rooms: r.rows.map((x) => view(x.id, x.name, x.is_host)) };
+      const r = await db.query<{
+        id: string;
+        name: string;
+        is_host: boolean;
+        tier_cap: 'family' | 'standard' | null;
+      }>(`${ROOM_LIST_SQL} ORDER BY s.created_at DESC`, [accountId]);
+      return {
+        rooms: r.rows.map((x) =>
+          view(x.id, x.name, x.is_host, undefined, x.tier_cap),
+        ),
+      };
     });
     app.get(`${base}/:id`, async (request, reply) => {
       const accountId = await member(request, reply);
@@ -278,13 +284,31 @@ export function registerSessionRoutes(
       ?.matureOptOut;
     try {
       const profile = await seatProfile(accountId);
-      await (
-        await rooms.get(found.id)
-      ).seat(
-        accountId,
-        profile.displayName,
-        typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
-      );
+      const room = await rooms.get(found.id);
+      const matureOptOut =
+        typeof optOut === 'boolean' ? optOut : profile.matureOptOut;
+      if (
+        !room.state?.seats?.some((seat) => seat.accountId === accountId) &&
+        room.state?.gameState
+      ) {
+        const requestId = await room.requestLateJoin(
+          accountId,
+          profile.displayName,
+          matureOptOut,
+        );
+        if (typeof optOut === 'boolean')
+          await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
+            accountId,
+            optOut,
+          ]);
+        return reply.code(409).send({
+          code: 'LATE_JOIN_PENDING',
+          message:
+            'Your request is waiting for the host. Retry this invite after it is approved.',
+          requestId,
+        });
+      }
+      await room.seat(accountId, profile.displayName, matureOptOut);
     } catch (error) {
       if (error instanceof Error && error.message === 'Room is full')
         return reply
@@ -325,6 +349,61 @@ export function registerSessionRoutes(
           found.hostTierCap,
         ),
       };
+    },
+  );
+  app.post<{ Params: { code: string } }>(
+    '/api/invites/:code/late-join',
+    async (request, reply) => {
+      const accountId = await member(request, reply);
+      if (!accountId) return reply;
+      if (throttled(`${request.ip}:${request.params.code}`))
+        return reply.code(429).send({
+          code: 'RATE_LIMITED',
+          message: 'Too many attempts. Wait a minute.',
+        });
+      const found = await sessionForCode(db, request.params.code);
+      if (!found || found.status !== 'active')
+        return reply.code(404).send({
+          code: 'INVITE_INVALID',
+          message: 'This invite link is no longer valid.',
+        });
+      const profile = await seatProfile(accountId);
+      const optOut = (request.body as { matureOptOut?: unknown } | null)
+        ?.matureOptOut;
+      try {
+        const requestId = await (
+          await rooms.get(found.id)
+        ).requestLateJoin(
+          accountId,
+          profile.displayName,
+          typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+        );
+        if (typeof optOut === 'boolean')
+          await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
+            accountId,
+            optOut,
+          ]);
+        return reply.code(202).send({ requestId, status: 'pending' });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Room is full')
+          return reply
+            .code(409)
+            .send({ code: 'ROOM_FULL', message: 'This table is full.' });
+        if (error instanceof Error && error.message === 'Already seated')
+          return reply.code(409).send({
+            code: 'ALREADY_SEATED',
+            message: 'You already have a seat at this table.',
+          });
+        if (
+          error instanceof Error &&
+          error.message === 'Join request already pending'
+        )
+          return reply.code(409).send({
+            code: 'JOIN_PENDING',
+            message: 'Your request is already pending.',
+          });
+        throw error;
+      }
     },
   );
   app.post<{ Params: { code: string } }>('/api/invites/:code/join', join);

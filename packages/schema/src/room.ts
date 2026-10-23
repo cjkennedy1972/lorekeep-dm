@@ -7,6 +7,10 @@ export const SeatSchema = z.object({
   accountId: AccountIdSchema,
   displayName: z.string().min(1),
   presence: PresenceSchema,
+  /** Public host-control state, refreshed by the serialized Room event log. */
+  isHost: z.boolean().optional(),
+  chatMuted: z.boolean().optional(),
+  chatMutedUntil: z.number().nonnegative().nullable().optional(),
   // Private account preference; omitted from the shared room-state wire view.
   matureOptOut: z.boolean().optional(),
 });
@@ -89,6 +93,20 @@ export const RoomStateSchema = z.object({
     .optional(),
   /** Table pause: no new narration starts while set. Shared, so every seat sees it. */
   paused: z.boolean().optional(),
+  ended: z.boolean().optional(),
+  lateJoinRequests: z
+    .array(
+      z
+        .object({
+          requestId: z.uuid(),
+          accountId: AccountIdSchema,
+          displayName: z.string().min(1),
+          matureOptOut: z.boolean().optional(),
+          approved: z.boolean().optional(),
+        })
+        .strict(),
+    )
+    .optional(),
   openClarifications: z
     .record(
       z.string(),
