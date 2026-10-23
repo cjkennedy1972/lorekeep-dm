@@ -1,7 +1,12 @@
-import type { RoomState, ServerMessage } from '@game/schema';
+import type { RoomState, RoundSnapshot, ServerMessage } from '@game/schema';
+
+/** Client room view: the StateSync round is the public snapshot, which omits submission text. */
+export type ClientRoomState = Omit<RoomState, 'round'> & {
+  round?: RoundSnapshot;
+};
 
 export interface RoomView {
-  room: RoomState | null;
+  room: ClientRoomState | null;
   lastSeq: number;
   /** True when a seq gap was seen; the client must send a resync request. */
   needsResync: boolean;
@@ -17,8 +22,18 @@ export const initialRoomView: RoomView = {
 export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
   switch (msg.type) {
     case 'StateSync':
-      if (msg.seq <= view.lastSeq && view.room) return view; // duplicate/stale snapshot
-      return { room: msg.payload.state, lastSeq: msg.seq, needsResync: false };
+      // While a resync is pending, a snapshot at the stored seq answers it (thin Round* broadcasts don't advance lastSeq); older ones stay stale.
+      if (
+        view.room &&
+        (msg.seq < view.lastSeq ||
+          (msg.seq === view.lastSeq && !view.needsResync))
+      )
+        return view; // duplicate/stale snapshot
+      return {
+        room: { ...msg.payload.state, round: msg.payload.round },
+        lastSeq: msg.seq,
+        needsResync: false,
+      };
     case 'PresenceChanged': {
       if (msg.seq <= view.lastSeq) return view; // duplicate or out-of-order
       if (!view.room || msg.seq !== view.lastSeq + 1)

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { RoomState, Seat } from '@game/schema';
+import type { RoundSnapshot, Seat } from '@game/schema';
 import './round.css';
 
-type Round = NonNullable<RoomState['round']>;
+type Round = RoundSnapshot;
 type Submission = Round['submissions'][number];
 
 /** Sends a command over the room socket; returns the wire actionId, or false when offline. */
@@ -63,8 +63,12 @@ type Props = {
   seats: Seat[];
   /** Wire actionId of this player's latest PlayerAction, from the send that created it. */
   myActionId?: string;
+  /** This player's own action text; the public round snapshot omits it. */
+  myText?: string;
   connected: boolean;
   send: RoomSend;
+  /** Called with the new text once an edit is sent, so the own-action text stays current. */
+  onEdited?: (text: string) => void;
 };
 
 /** Collect-then-resolve round: who has submitted, time left, and this player's own action. */
@@ -72,8 +76,10 @@ export function RoundPanel({
   round,
   seats,
   myActionId,
+  myText,
   connected,
   send,
+  onEdited,
 }: Props) {
   const now = useNow(Boolean(round?.deadlineAt));
   const [draft, setDraft] = useState('');
@@ -119,6 +125,7 @@ export function RoundPanel({
       setNote('Not connected, so your edit was not sent. Try again.');
       return;
     }
+    onEdited?.(text);
     setEditing(false);
     setNote('Edit sent.');
   }
@@ -170,7 +177,7 @@ export function RoundPanel({
               Queued for the next round. It will be used when this round closes.
             </p>
           )}
-          {!editing && <p>{ownEntry.text}</p>}
+          {!editing && myText && <p>{myText}</p>}
           {open && editing && (
             <>
               <label htmlFor="round-edit-text">Edit your action</label>
@@ -196,7 +203,7 @@ export function RoundPanel({
                 type="button"
                 disabled={!connected}
                 onClick={() => {
-                  setDraft(ownEntry.text);
+                  setDraft(myText ?? '');
                   setEditing(true);
                 }}
               >

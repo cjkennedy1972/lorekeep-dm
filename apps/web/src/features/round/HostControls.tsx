@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { RoomState, Seat } from '@game/schema';
+import type { RoomState, RoundSnapshot, Seat } from '@game/schema';
 import type { RoomSend } from './RoundPanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import './round.css';
@@ -22,7 +22,7 @@ export function clampTimerSeconds(seconds: number): number {
 type LateJoinRequest = NonNullable<RoomState['lateJoinRequests']>[number];
 
 type Props = {
-  round: RoomState['round'];
+  round: RoundSnapshot | undefined;
   roundDurationMs: RoomState['roundDurationMs'];
   connected: boolean;
   paused?: boolean;
