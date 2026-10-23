@@ -25,11 +25,7 @@ const state = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as PartyState;
 const origin = `http://localhost:${process.env.LIVE_WEB_PORT ?? 5176}`;
 
-// Game.tsx:97 loads GET /api/tables/:id for the solo recap, and that route only resolves
-// solo sessions owned by the caller (routes/tables.ts). A party table has no such row, so the
-// real response is 404 and Game.tsx:483 replaces the whole screen with "Game unavailable".
-// Only that recap request is answered here; round, host, chat and websocket traffic is real.
-// Product gap reported on card 1ff75585-765c-49b4-b359-ad561747db7e.
+// Every request goes to the real server; GET /api/tables/:id resolves party members (#280).
 async function openAs(
   browser: Browser,
   account: Account,
@@ -40,11 +36,6 @@ async function openAs(
   await context.addCookies([
     { name: 'sid', value: account.token, url: origin },
   ]);
-  await context.route(`**/api/tables/${table}`, (route) =>
-    route.fulfill({
-      json: { game: { recap: '', name: 'Party table' } },
-    }),
-  );
   const page = await context.newPage();
   const frames: ServerFrame[] = [];
   page.on('websocket', (socket) =>
@@ -75,12 +66,10 @@ async function tabTo(page: Page, name: string) {
 test.describe.serial('party round and host panels (real server)', () => {
   test.setTimeout(180_000);
 
-  // Blocked for the three round specs below: Room.clientState() deletes `round`
-  // (Room.ts:569) and the once-per-subscribe RoundOpened snapshot (Room.ts:599-614) is never
-  // stored by the client reducer (reducer.ts:56 assumes a StateSync carries the round). So
-  // room.round stays undefined in Game.tsx and RoundPanel always says "No round is open.".
+  // Blocked for the three round specs below: the server sends the open round in StateSync
+  // (Room.ts:598-620, clientSyncPayload), but reducer.ts:21 keeps only payload.state and drops
+  // payload.round. So room.round stays undefined and RoundPanel always says "No round is open.".
   // Card 1ff75585-765c-49b4-b359-ad561747db7e.
-
   test.fixme(
     'three seated players see one round and the same submitted list',
     async ({ browser }) => {
@@ -285,16 +274,153 @@ test.describe.serial('party round and host panels (real server)', () => {
     }
   });
 
-  // Blocked: the client has no UI for these host commands. HostControls.tsx:27-31 lists
-  // KickSeat, TransferHost, ApproveLateJoin, DenyLateJoin and EndTable as disabled
-  // "Server support is not in place yet." rows, so no browser path can send them.
-  // Card 1ff75585-765c-49b4-b359-ad561747db7e.
+  // Host commands go through the real websocket. The describe block is serial, so each test
+  // starts from the seating the earlier ones leave: kick Scout, hand host to Guest, then deny and
+  // approve Latecomer as the new host, and end the table last.
+  test('host kicks a seat and the kicked player loses access', async ({
+    browser,
+  }) => {
+    const { table, host, scout } = state();
+    const path = `/rooms/${table}/game`;
+    const hostView = await openAs(browser, host, table, path);
+    const scoutView = await openAs(browser, scout, table, path);
+    try {
+      const controls = hostView.page.getByRole('region', {
+        name: 'Host controls',
+      });
+      await controls
+        .getByRole('button', { name: 'Remove Round Scout', exact: true })
+        .click();
+      await hostView.page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: 'Remove player', exact: true })
+        .click();
+
+      await expect(
+        scoutView.page.getByRole('heading', { name: 'Removed from table' }),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(
+        controls.getByRole('button', {
+          name: 'Remove Round Scout',
+          exact: true,
+        }),
+      ).toHaveCount(0);
+
+      // Access is revoked server-side too: a fresh request for the table is refused.
+      const reload = await scoutView.context.request.get(
+        `/api/tables/${table}`,
+      );
+      expect(reload.ok()).toBe(false);
+    } finally {
+      await Promise.all([hostView.context.close(), scoutView.context.close()]);
+    }
+  });
+
+  test('host transfers host to another seat', async ({ browser }) => {
+    const { table, host, guest } = state();
+    const path = `/rooms/${table}/game`;
+    const hostView = await openAs(browser, host, table, path);
+    const guestView = await openAs(browser, guest, table, path);
+    try {
+      const hostControls = hostView.page.getByRole('region', {
+        name: 'Host controls',
+      });
+      await hostControls
+        .getByRole('button', { name: 'Make Round Guest host', exact: true })
+        .click();
+      await hostView.page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: 'Make host', exact: true })
+        .click();
+
+      // The new host gets the controls; the old host loses them.
+      await expect(
+        guestView.page.getByRole('region', { name: 'Host controls' }),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(
+        hostView.page.getByRole('region', { name: 'Host controls' }),
+      ).toHaveCount(0, { timeout: 30_000 });
+    } finally {
+      await Promise.all([hostView.context.close(), guestView.context.close()]);
+    }
+  });
+
+  test('host denies a pending late join', async ({ browser }) => {
+    const { table, invite, outsider, guest } = state();
+    const path = `/rooms/${table}/game`;
+    const hostView = await openAs(browser, guest, table, path);
+    const latecomer = await openAs(browser, outsider, table, `/join/${invite}`);
+    try {
+      const pending = latecomer.page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === `/api/invites/${invite}/join`,
+      );
+      await latecomer.page.getByRole('button', { name: 'Join table' }).click();
+      expect((await pending).status()).toBe(409);
+
+      const controls = hostView.page.getByRole('region', {
+        name: 'Host controls',
+      });
+      await controls
+        .getByRole('button', { name: 'Deny Latecomer', exact: true })
+        .click();
+      await expect(
+        controls.getByRole('button', { name: 'Deny Latecomer', exact: true }),
+      ).toHaveCount(0, { timeout: 30_000 });
+
+      // A denied request never seats the player, so the table stays closed to them.
+      const access = await latecomer.context.request.get(
+        `/api/tables/${table}`,
+      );
+      expect(access.ok()).toBe(false);
+    } finally {
+      await Promise.all([hostView.context.close(), latecomer.context.close()]);
+    }
+  });
+
+  // Product gap: ApproveLateJoin only marks the request approved. Admission to a seat is deferred
+  // until a round boundary (Room.ts:1893-1896 and admitApprovedLateJoins at Room.ts:1930), and the
+  // open round never closes in this UI because the round never reaches the client (reducer.ts:21).
+  // So an approved Latecomer is never seated here. Card 1ff75585-765c-49b4-b359-ad561747db7e.
   test.fixme(
-    'host kicks a seat and the kicked player loses access',
+    'host approves a pending late join and the player is seated',
     async () => {},
   );
-  test.fixme('host transfers host to another seat', async () => {});
-  test.fixme('host approves a pending late join', async () => {});
-  test.fixme('host denies a pending late join', async () => {});
-  test.fixme('host ends the table', async () => {});
+
+  // Not reproducible from the UI in this build: the table route (routes/tables.ts:329) and the
+  // socket (gateway/ws.ts:296-305) both require an existing seat, so an unseated account gets the
+  // "Game unavailable" page before a socket opens and never reaches the "Not seated" + Rejoin state
+  // (Game.tsx:491). Not verified in a browser; unblock once a seat can be lost while a tab stays open.
+  test.fixme(
+    'an unseated player sees Not seated and can rejoin',
+    async () => {},
+  );
+
+  test('host ends the table and every seated player sees it ended', async ({
+    browser,
+  }) => {
+    const { table, guest, host } = state();
+    const path = `/rooms/${table}/game`;
+    const hostView = await openAs(browser, guest, table, path);
+    const seatedView = await openAs(browser, host, table, path);
+    try {
+      await hostView.page
+        .getByRole('button', { name: 'End the table', exact: true })
+        .click();
+      await hostView.page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: 'End table', exact: true })
+        .click();
+
+      await expect(
+        seatedView.page.getByRole('heading', { name: 'Table ended' }),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(
+        hostView.page.getByRole('heading', { name: 'Table ended' }),
+      ).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await Promise.all([hostView.context.close(), seatedView.context.close()]);
+    }
+  });
 });

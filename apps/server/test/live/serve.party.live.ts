@@ -17,6 +17,7 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { hero, preCombatGame } from '../room/combatFixtures.js';
 import { scriptedDm } from '../room/scriptedDm.js';
 import { isLocalDatabaseUrl } from './localDatabaseUrl.js';
@@ -115,6 +116,18 @@ it('serves a party table (host, two seated guests, one outsider) for browser e2e
       { ...hero, id: randomUUID() },
     ]),
   );
+  // Party tables are created without a pinned catalog (routes/sessions.ts:131), so GET
+  // /api/tables/:id answers CATALOG_VERSION_UNAVAILABLE. Pin the live catalog here, the same way
+  // solo creation does (routes/tables.ts:239-244), so the game screen can load.
+  const catalog = loadCatalog();
+  await db.query(
+    `INSERT INTO catalog_snapshots(catalog_version,entries) VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
+    [catalog.catalogVersion, JSON.stringify(catalog.entries)],
+  );
+  await db.query(`UPDATE sessions SET catalog_version=$2 WHERE id=$1`, [
+    table,
+    catalog.catalogVersion,
+  ]);
   const room = await rooms.get(table);
   await room.persistGameState({
     ...preCombatGame(hero),
