@@ -28,12 +28,20 @@ The Room holds one combat state per encounter. It has three parts:
 - `turn`: `{turnId, entityId, controllerSeat, phase, timer}`. `controllerSeat` is null for NPC and unassigned entities.
 - `phase`: one of `awaiting-command`, `moving`, `reaction-pending`, `narrating`. A table-level `paused` flag overlays every phase (§8).
 
-Command admission in combat:
+Command admission in combat is defined once, by phase. This table is the only admission rule. §4 and §6 refer to it.
 
-1. The active combatant's controlling seat may submit move, action, bonus action, and `end-turn`. These are accepted only in `awaiting-command`.
-   - A path in progress is not a command. In `moving`, the controlling seat may submit only `end-path`, which ends the path at the current square with `MoveEnded{reason: complete}`.
-   - Every other turn command in `moving` (move, action, bonus action, `end-turn`) is rejected with `move-in-progress`. It is not queued. The player ends the path first, then acts.
-   - A timer expiry in `moving` ends the path with `MoveEnded{reason: timed-out}` and applies the timeout action (§5.3).
+| Phase | Accepted | Rejected |
+|---|---|---|
+| `awaiting-command` | Controlling seat: move, action, bonus action, `end-turn`. | Other seats: `not-your-turn`. Chat is always allowed (item 4). |
+| `moving` (a path resolving) | Nothing from the controlling seat. Engine-driven continuation only: the path runs to its end or to a §4 stop, and the bounded-resolution paths (§5.5) and timer expiry (§5.3) apply. | Controlling seat: move, action, bonus action, `end-turn` → `move-in-progress`. Not queued. |
+| `reaction-pending` | The controlling seat of the reacting entity: `use{handle}` or `decline` (§3). The bounded-resolution paths (§5.5) and timer expiry (§5.3) still apply. | Every other command → `reaction-pending`. Not queued. |
+| `narrating` | Nothing from any seat, except pause (ADR-029 §5). | Every combat command → `narrating`. Not queued (D2). |
+
+The phase name is `narrating` throughout. ADR-022 calls it the narration turn.
+
+Admission rules:
+
+1. The active combatant's controlling seat's turn commands are accepted only in `awaiting-command`, as the table shows.
 2. Any other seat that submits a turn command receives `not-your-turn` (US-B2 AC1). It is not queued.
 3. A reaction answer (§3) is accepted only from the controlling seat of the reacting entity, in `reaction-pending`.
 4. OOC chat is accepted from all seats under ADR-029 §§6–7. It does not affect phase, timers, or turn order, and it is not in the combat log.
@@ -66,7 +74,7 @@ Command admission in combat:
 
 ### 4. Opportunity-attack movement: pause and resume
 
-1. A move is one path command (ADR-018). The engine computes the full path at command time and spends movement per step. Phase is `moving` until the path ends or is ended.
+1. A move is one path command (ADR-018). The engine computes the full path at command time and spends movement per step. Phase is `moving` until the path ends. No command from the controlling seat is accepted while moving (admission table, §1). The path cannot be ended by the player.
 2. A step that departs a square threatened by an enemy's reach (ADR-018 `threatenedBy`) is applied first. The mover stands on the step's destination. The path then pauses and the trigger opens (§3). The step is not undone.
 3. When every prompt from that step has closed, the engine re-checks the remaining steps against current state: each destination is unoccupied, within remaining speed (ADR-018 `reachable`), and the mover is still able to move (conscious, not restrained, not grappled, not incapacitated per the engine's condition state). This check runs whatever the outcome was, including decline, expiry, cap, or a reaction that dropped the mover to 0 HP.
 4. If every remaining step is legal, movement resumes along the original path and phase returns to `moving`. If any step is illegal, movement ends at the current square with `MoveEnded{reason}`.
@@ -115,7 +123,10 @@ Command admission in combat:
 - **Away and autopilot (ADR-031).** Autopilot acts only at turn start (§5). Away reactors are declined at once (§3.6). Timeout on an away seat is Dodge, applied after the bound in §5.5.
 - **Rate limits (ADR-029 §8).** Combat commands use the same per-seat buckets as other commands. No combat command is exempt. A combat command that exceeds its bucket is rejected `rate-limited` and does not change phase.
 - **Idempotency (ADR-029 §3, §4).** `actionId` is keyed by `(seat, actionId)`. A seat that replays another seat's `actionId` gets its own result space and never another seat's result.
-- **Rest votes (ADR-030).** No vote opens during combat. A vote already open when `CombatStarted` is applied closes at once with `closeReason: cancelled-combat`. It is not resolved, no rest outcome is applied, and its members are not counted as having voted. This ADR decides the rule because ADR-030 does not say. ADR-033 cannot edit ADR-030, so ADR-030 needs an append-only amendment that states the same rule.
+- **Rest votes (ADR-030).** This ADR amends ADR-030's "No vote during combat" line (ADR-030, the combat rule at merged line 143). The amendment, which ADR-030 needs as an append-only note:
+  - Combat start cancels any open rest vote immediately, with outcome `cancelled-combat`. This is the same outcome as a failed vote under ADR-030: no rest state changes.
+  - Combat start is not delayed by the vote. The cancel runs in the same mailbox pass as `CombatStarted`.
+  - No vote can open until `CombatEnded`.
 - **Round lifecycle (ADR-029 §§2–4, PR #268).** When an encounter starts, an open exploration round closes with `closeReason: combat-start` and resolves in one DM turn before `CombatStarted`. No round opens during combat. The accepted and queued rules of ADR-029 §4 do not apply to combat commands.
 - **OOC chat (ADR-029 §§6–7, §11).** Chat works during combat, under the same gate. Chat does not affect turn order or timers. The DM allowlist gains the combat events above. Chat is never on it.
 - **Geometry and movement (ADR-018).** Path, reach, and handle rules are unchanged. This ADR only adds the pause and resume points in §4.
@@ -149,8 +160,8 @@ Command admission in combat:
   - a server-side seat derived from the socket, with a mismatched payload seat rejected;
   - movement re-check after a reaction;
   - timer frozen during reaction and pause;
-  - `move-in-progress` rejects every turn command except `end-path` while phase is `moving`, and timer expiry ends the path with `timed-out`;
-  - a rest vote open at `CombatStarted` closes with `cancelled-combat` and applies no outcome;
+  - `move-in-progress` rejects move, action, and `end-turn` while phase is `moving`, and timer expiry ends the path with `timed-out`;
+  - a rest vote open at `CombatStarted` is cancelled in the same mailbox pass, with outcome `cancelled-combat`, and combat start is not delayed;
   - revoked controller resolves at once, and away controller resolves after 90 s with the timer off;
   - configured timer below 30 s rejected;
   - restart re-runs an uncommitted narration once, never re-runs a committed one, and commits the fallback when the attempt counter is at 2;
@@ -169,13 +180,15 @@ Command admission in combat:
 - **D9.** On restart, open prompts close as declined, movement is re-checked, and an uncommitted narration re-runs once, bounded by a persisted attempt counter.
 - **D10.** Several triggers from one step open one at a time, ordered by reactor initiative and then seat id.
 - **D11.** Expiry is recorded as `ReactionDeclined{cause: timeout}`, not as a separate event. This keeps the event set smaller.
-- **D12.** No rest vote opens during combat. A vote open when combat starts closes with `closeReason: cancelled-combat` and applies no outcome.
+- **D12.** No rest vote opens during combat. Combat start cancels any open rest vote immediately with outcome `cancelled-combat`, which is a failed vote under ADR-030 and changes no rest state. Combat start is not delayed by the vote. Votes reopen only after `CombatEnded`. This amends ADR-030's "No vote during combat" line.
 - **D13.** Host reassignment stays out of M4. The host cannot act for other seats in combat.
 - **D14.** Every resolved turn gets a DM narration, including holds. ADR-022 T6 applies unchanged.
 - **D15.** The acting seat is server-side, derived from the socket and ticket. Payload seats are never trusted.
 - **D16.** Reaction answers and prompt options are seat-bound. Other seats see only that a prompt is open.
 - **D17.** Each turn has a 45 s cumulative reaction-wait budget. Exhausting it declines further triggers with `cause: cap`.
 - **D18.** A revoked controller resolves at once. An away or unknown controller resolves after a fixed 90 s bound, regardless of the timer setting.
+- **D19.** Admission is defined once, by phase, in the §1 table. While `moving`, the controlling seat's move, action, and `end-turn` are rejected with `move-in-progress`, and the only inputs honored are reaction answers when a window opens and the bounded-resolution paths (§5.3, §5.5). The player has no end-path command. A path runs to its end or to a §4 stop.
+- **D20.** Combat start cancels open rest votes immediately with outcome `cancelled-combat`. No vote opens until `CombatEnded`. This amends ADR-030's "No vote during combat" line.
 
 ## Verification
 
