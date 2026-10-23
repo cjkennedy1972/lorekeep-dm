@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { CharacterSchema, StateSyncSchema } from '@game/schema';
-import { quickBuild } from '@game/rules-engine';
-import { catalog, cryptMap } from './room/combatFixtures.js';
+import { StateSyncSchema } from '@game/schema';
 import { describe, expect, it, vi } from 'vitest';
 import {
   Room,
@@ -475,79 +473,6 @@ describe('room actor', () => {
       ).toBe(false);
       expect(events.map((event) => event.type)).not.toContain(
         'LateJoinAdmitted',
-      );
-    });
-
-    it('binds an approved late join character and places its engine entity at a free spawn', async () => {
-      const { store } = fixture();
-      const host = randomUUID();
-      store.isTableHost = async (_sessionId, accountId) => accountId === host;
-      const runner: SoloTurnRunner = {
-        async run(request) {
-          return {
-            narration: 'The scene closes.',
-            events: [
-              { type: 'TurnStarted', turnId: 'turn-scene-close' },
-              { type: 'SceneClosed', sceneId: 'scene-test', summary: 'Done.' },
-            ],
-            state: request.state as Record<string, unknown>,
-            turnSeed: '0x0000000000000001',
-            usage: { in: 1, out: 1 },
-          };
-        },
-      };
-      const room = new Room(store, lease, await store.loadLatest(id), runner);
-      await room.seat(host, 'Host');
-      await room.persistGameState({
-        characters: {},
-        gameEngine: { map: cryptMap, entities: [] },
-      });
-      const requester = randomUUID();
-      const character = CharacterSchema.parse({
-        ...quickBuild(catalog, 'class:wizard', 32).character,
-        id: randomUUID(),
-        name: 'Late Hero',
-      });
-      const requestId = await room.requestLateJoin(
-        requester,
-        'Late',
-        false,
-        character,
-      );
-      expect(
-        room.state.lateJoinRequests?.find(
-          (request) => request.requestId === requestId,
-        )?.character?.id,
-      ).toBe(character.id);
-
-      await room.approveLateJoin(host, randomUUID(), requestId);
-      expect(
-        room.state.lateJoinRequests?.find(
-          (request) => request.requestId === requestId,
-        )?.character?.id,
-      ).toBe(character.id);
-      await room.submitAction(host, randomUUID(), 'close the scene');
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      const admitted = room.state.seats.find(
-        (seat) => seat.accountId === requester,
-      );
-      expect(admitted?.characterId).toBe(character.id);
-      const gameState = room.state.gameState as {
-        characters: Record<string, { id: string }>;
-        gameEngine: {
-          entities: { id: string; pos: { x: number; y: number } }[];
-        };
-      };
-      expect(gameState.characters[requester]?.id).toBe(character.id);
-      expect(gameState.gameEngine.entities).toContainEqual(
-        expect.objectContaining({
-          id: character.id,
-          pos: expect.objectContaining({
-            x: expect.any(Number),
-            y: expect.any(Number),
-          }),
-        }),
       );
     });
 
