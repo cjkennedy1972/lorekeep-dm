@@ -311,6 +311,62 @@ describe('message report retention (Postgres)', () => {
     await runAccountDeletions(ctx(), [author]);
   });
 
+  it('checks character-linked session holds on the deletion transaction client', async () => {
+    const owner = await account('Held Character Owner');
+    const characterId = randomUUID();
+    const ownedSession = await session(owner);
+    await q('UPDATE sessions SET character_id=$2 WHERE id=$1', [
+      ownedSession,
+      characterId,
+    ]);
+    await q(
+      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,$3,$4)',
+      [
+        ownedSession,
+        randomUUID(),
+        'CharacterSaved',
+        JSON.stringify({ [owner]: { id: characterId } }),
+      ],
+    );
+
+    const unrelatedOwner = await account('Unrelated Character Owner');
+    const heldSession = await session(unrelatedOwner);
+    await q(
+      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,$3,$4)',
+      [
+        heldSession,
+        randomUUID(),
+        'CharacterReferenced',
+        JSON.stringify({ characterId }),
+      ],
+    );
+    await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
+      heldSession,
+    ]);
+    await markDeleting(owner);
+
+    // With one connection, a pool query from inside deleteAccount cannot acquire
+    // another connection. The transaction client must perform both hold lookup
+    // and audit insert instead.
+    const singleConnectionPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 1,
+      connectionTimeoutMillis: 500,
+    });
+    try {
+      const result = await runAccountDeletions(
+        { ...ctx(), db: singleConnectionPool },
+        [owner],
+      );
+      expect(result).toMatchObject({ held: 1, failed: 0, deleted: 0 });
+      expect(
+        (await q('SELECT status FROM accounts WHERE id=$1', [owner]))[0].status,
+      ).toBe('deleting');
+    } finally {
+      await singleConnectionPool.end();
+    }
+  });
+
   it('does not keep the author text when their deletion commits between the report context read and the insert', async () => {
     const keeper = await account('Keeper Kim');
     const reporter = await account('Hollis Host');

@@ -116,7 +116,7 @@ async function fenceSession(
   sessionId: string,
 ) {
   if (fenced.has(sessionId)) return;
-  if (await skipIfHeld(ctx, 'accountDeletion', 'session', sessionId))
+  if (await skipIfHeld(ctx, 'accountDeletion', 'session', sessionId, client))
     throw new Error(HELD);
   await client.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE', [
     sessionId,
@@ -166,7 +166,7 @@ async function deleteAccount(
     )
   ).rows;
   for (const r of exportRows)
-    if (await skipIfHeld(ctx, 'accountDeletion', 'export', r.id))
+    if (await skipIfHeld(ctx, 'accountDeletion', 'export', r.id, client))
       throw new Error(HELD);
   for (const r of exportRows) await removeArchive(ctx, r.archive_key);
   counts.exports = exportRows.length;
@@ -190,7 +190,15 @@ async function deleteAccount(
       counts.roomsHandedOff++;
     } else {
       for (const { account_id } of await coSeatAccounts(client, id, accountId))
-        if (await skipIfHeld(ctx, 'accountDeletion', 'account', account_id))
+        if (
+          await skipIfHeld(
+            ctx,
+            'accountDeletion',
+            'account',
+            account_id,
+            client,
+          )
+        )
           throw new Error(HELD);
       await client.query('SELECT purge_session($1)', [id]);
       counts.roomsDeleted++;
