@@ -70,6 +70,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RestVoteCastNotice':
     case 'RestVoteClosed':
     case 'RestApplied':
+    case 'SpotlightPrompt':
       return view; // surfaced by the client, not part of room state
     case 'CombatTracker':
     case 'ReactionPrompt':

@@ -87,6 +87,7 @@ export function Game() {
     null,
   );
   const [safetyNotice, setSafetyNotice] = useState('');
+  const [spotlightNotice, setSpotlightNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLoading, setResumeLoading] = useState(false);
   const loadGame = () => {
@@ -134,6 +135,8 @@ export function Game() {
         setSafetyNotice(
           'An X-card was used. The DM will steer away next turn.',
         );
+      if (message.type === 'SpotlightPrompt')
+        setSpotlightNotice(String(asRecord(message.payload).prompt ?? ''));
       if (message.type === 'StateSync') {
         live.send('ChatHistoryRequest');
         const state = asRecord(message.payload.state);
@@ -557,6 +560,11 @@ export function Game() {
           {safetyNotice ||
             (room.paused ? 'The table is paused.' : 'The table is active.')}
         </p>
+        {spotlightNotice && (
+          <p role="status" aria-live="polite">
+            {spotlightNotice}
+          </p>
+        )}
         <button
           type="button"
           onClick={() => {

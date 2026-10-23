@@ -154,8 +154,15 @@ describe('Room solo DM turn lifecycle', () => {
       'NarrationCompleted',
       'ActionAccepted',
       'GameStateCommitted',
+      'SpotlightPrompted',
     ]);
-    expect(latestSnapshot()?.state).toMatchObject({ actionIds: [actionId] });
+    expect(messages.some((message) => message.type === 'SpotlightPrompt')).toBe(
+      true,
+    );
+    expect(latestSnapshot()?.state).toMatchObject({
+      actionIds: [actionId],
+      spotlightTurn: 1,
+    });
   });
 
   it('rejects actions beyond the per-seat in-flight queue cap', async () => {

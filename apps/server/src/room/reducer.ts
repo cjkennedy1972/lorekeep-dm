@@ -313,6 +313,14 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       ),
     });
   }
+  if (event.type === 'SpotlightPrompted') {
+    const { turn, cursor } = event.payload as { turn: number; cursor: number };
+    return RoomStateSchema.parse({
+      ...state,
+      spotlightTurn: turn,
+      spotlightCursor: cursor,
+    });
+  }
   if (event.type === 'TableEnded')
     return RoomStateSchema.parse({ ...state, ended: true, paused: true });
   if (event.type === 'SeatRevoked') {
@@ -340,9 +348,10 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     return RoomStateSchema.parse({ ...state, openClarifications });
   }
   if (event.type === 'TablePaused') {
-    const { paused, restVoteRemainingMs, restVoteDeadlineAt } =
+    const { paused, cause, restVoteRemainingMs, restVoteDeadlineAt } =
       event.payload as {
         paused: boolean;
+        cause?: 'host' | 'no-connected-seats';
         restVoteRemainingMs?: number;
         restVoteDeadlineAt?: number;
       };
@@ -361,19 +370,35 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
             }
           : state.restVote
       : undefined;
-    return RoomStateSchema.parse({ ...state, paused, restVote });
+    return RoomStateSchema.parse({
+      ...state,
+      paused,
+      pauseCause: paused ? (cause ?? state.pauseCause ?? 'host') : undefined,
+      restVote,
+    });
   }
-  if (event.type === 'PresenceChanged') {
+  if (
+    event.type === 'PresenceChanged' ||
+    event.type === 'SeatDisconnected' ||
+    event.type === 'SeatAway' ||
+    event.type === 'SeatReconnected'
+  ) {
     const payload = event.payload as {
       seatId: string;
       presence: Seat['presence'];
     };
+    const presence =
+      event.type === 'SeatDisconnected'
+        ? 'disconnected'
+        : event.type === 'SeatAway'
+          ? 'away'
+          : event.type === 'SeatReconnected'
+            ? 'returning'
+            : payload.presence;
     return RoomStateSchema.parse({
       ...state,
       seats: state.seats.map((seat) =>
-        seat.seatId === payload.seatId
-          ? { ...seat, presence: payload.presence }
-          : seat,
+        seat.seatId === payload.seatId ? { ...seat, presence } : seat,
       ),
     });
   }

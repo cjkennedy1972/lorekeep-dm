@@ -118,6 +118,20 @@ describe('combat turn resource refresh', () => {
       false,
     );
   });
+
+  it('applies defensive Dodge through the combat command seam', () => {
+    const result = createCombatRuntime().execute(combat, 'ent_hero', {
+      command: 'dodge',
+    });
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(result.events).toContainEqual({
+      type: 'DodgeDeclared',
+      entityId: 'ent_hero',
+    });
+    expect(result.state.combat.resources.ent_hero?.action).toBe(false);
+    expect(result.state.dodging).toContain('ent_hero');
+  });
 });
 
 function setup() {

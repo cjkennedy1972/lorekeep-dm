@@ -204,6 +204,7 @@ export function narrationLogReducer(
     case 'RestVoteCastNotice':
     case 'RestVoteClosed':
     case 'RestApplied':
+    case 'SpotlightPrompt':
     case 'CombatTracker':
     case 'ReactionPrompt':
     case 'CombatOptions':

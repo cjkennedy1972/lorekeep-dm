@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { StateSyncSchema } from '@game/schema';
-import { describe, expect, it } from 'vitest';
-import { Room, type RoomStore } from '../src/room/Room.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  Room,
+  nextLateJoinBoundary,
+  type RoomStore,
+} from '../src/room/Room.js';
 import type { LatestState, StoredEvent } from '../src/persistence/index.js';
 import type { RegistryEvent } from '../src/dm/memory.js';
 
@@ -118,6 +122,70 @@ describe('room actor', () => {
     });
     expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
     expect(JSON.stringify(sync)).not.toContain('private action text');
+  it('places exploration admission between resolved turns and combat admission at a round boundary', () => {
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: true,
+        combatActive: false,
+        roundStatus: 'resolved',
+      }),
+    ).toBe('after-turn');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: true,
+        roundStatus: 'resolved',
+      }),
+    ).toBe('next-combat-round');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: false,
+        roundStatus: 'resolved',
+      }),
+    ).toBe('before-next-turn');
+  });
+
+  it('moves through disconnected, returning, and connected; only confirmed absence pauses the table', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accountId = randomUUID();
+    await room.seat(accountId, 'Player');
+    await room.join(accountId, { send() {} });
+    expect(room.state.seats[0]?.presence).toBe('connected');
+
+    vi.useFakeTimers();
+    try {
+      const disconnected = room.disconnect(accountId);
+      await vi.advanceTimersByTimeAsync(10);
+      await disconnected;
+      expect(room.state.seats[0]?.presence).toBe('disconnected');
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        false,
+      );
+      expect(room.state).toMatchObject({
+        paused: true,
+        pauseCause: 'no-connected-seats',
+      });
+      await vi.advanceTimersByTimeAsync(9_990);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        true,
+      );
+
+      const rejoined = room.join(accountId, { send() {} });
+      await vi.advanceTimersByTimeAsync(10);
+      await rejoined;
+      expect(room.state.seats[0]?.presence).toBe('returning');
+
+      await vi.advanceTimersByTimeAsync(10_010);
+      expect(room.state.seats[0]?.presence).toBe('connected');
+      expect(room.state).toMatchObject({ paused: false });
+      expect(events.some((event) => event.type === 'SeatAway')).toBe(false);
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
   });
   describe('host controls', () => {
     it('requires a current host and enforces timer bounds server-side', async () => {

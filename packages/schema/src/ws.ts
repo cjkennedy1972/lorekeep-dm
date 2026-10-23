@@ -104,6 +104,7 @@ export const CombatCommandSchema = z
       z
         .object({ command: z.literal('move'), destination: GridPosSchema })
         .strict(),
+      z.object({ command: z.literal('dodge') }).strict(),
       z
         .object({
           command: z.literal('attack'),
@@ -322,6 +323,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'SafetyFlag',
       'DeathSaveRequired',
       'TpkChoiceRequired',
+      'SpotlightPrompt',
     ]),
     payload: z.record(z.string(), z.unknown()),
   }),

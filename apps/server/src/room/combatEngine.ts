@@ -166,6 +166,7 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
     return {
       state: {
         ...state,
+        dodging: (state.dodging ?? []).filter((id) => id !== nextId),
         combat: {
           ...state.combat,
           round,

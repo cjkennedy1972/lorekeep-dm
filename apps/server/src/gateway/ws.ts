@@ -241,24 +241,33 @@ export function installGateway(
         };
         const send = connection.send;
         let active = true;
-        let alive = true;
+        let missedPongs = 0;
+        let lastPongAt = Date.now();
+        let heartbeatLost = false;
         const heartbeat = setInterval(() => {
-          if (!alive) {
+          missedPongs += 1;
+          if (missedPongs >= 3) {
+            heartbeatLost = true;
             ws.terminate();
             return;
           }
-          alive = false;
           ws.ping();
-        }, 10_000);
+        }, 5_000);
         heartbeat.unref();
         ws.on('pong', () => {
-          alive = true;
+          missedPongs = 0;
+          lastPongAt = Date.now();
         });
         ws.on('close', () => {
           active = false;
           clearInterval(heartbeat);
           if (room.isCurrentConnection(identity.accountId, connection)) {
-            const task = room.disconnect(identity.accountId).catch(() => {});
+            const task = room
+              .disconnect(
+                identity.accountId,
+                heartbeatLost ? lastPongAt : Date.now(),
+              )
+              .catch(() => {});
             disconnectTasks.add(task);
             void task.finally(() => disconnectTasks.delete(task));
           }

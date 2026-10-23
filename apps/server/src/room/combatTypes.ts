@@ -52,6 +52,8 @@ export type RoomCombatState = {
     initiative: { entityId: string; total: number }[];
     resources: Record<string, CombatResourcesState>;
   };
+  /** Active Dodge effects expire when that entity's next turn begins. */
+  dodging?: string[];
   /** The prompt shown to the table. `deadlineAt` is an absolute epoch-ms so a restart can resume the countdown. */
   pendingReaction?: {
     reactionId: string;

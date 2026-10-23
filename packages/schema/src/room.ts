@@ -1,7 +1,18 @@
 import { z } from 'zod';
 import { AccountIdSchema, SeatIdSchema, SessionIdSchema } from './ids.js';
 
-export const PresenceSchema = z.enum(['online', 'away', 'offline']);
+export const PresenceSchema = z.enum([
+  'connected',
+  'returning',
+  'disconnected',
+  'away',
+  'unknown',
+  'revoked',
+  // Read compatibility for rooms written before ADR-031; new transitions use
+  // the six-state vocabulary above.
+  'online',
+  'offline',
+]);
 export const SeatSchema = z.object({
   seatId: SeatIdSchema,
   accountId: AccountIdSchema,
@@ -93,6 +104,9 @@ export const RoomStateSchema = z.object({
     .optional(),
   /** Table pause: no new narration starts while set. Shared, so every seat sees it. */
   paused: z.boolean().optional(),
+  pauseCause: z.enum(['host', 'no-connected-seats']).optional(),
+  spotlightTurn: z.number().int().nonnegative().optional(),
+  spotlightCursor: z.number().int().nonnegative().optional(),
   ended: z.boolean().optional(),
   lateJoinRequests: z
     .array(
