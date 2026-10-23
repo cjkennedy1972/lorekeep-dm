@@ -471,6 +471,14 @@ async function deleteAccount(
     "UPDATE message_reports SET reason='' WHERE reporter_account_id=$1",
     [accountId],
   );
+  // ADR-035 binding records retain anonymous mechanics only; clear both durable identity links
+  // before account/source-character cascade constraints run.
+  await client.query(
+    `UPDATE session_seat_characters
+        SET account_id=NULL, character_id=NULL, character_revision=NULL,
+            character_snapshot=jsonb_set(character_snapshot - 'id' - 'name', '{name}', '"Deleted player"'::jsonb),
+            binding_status='redacted', unbound_at=COALESCE(unbound_at,now())
+      WHERE account_id=$1`, [accountId]);
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }
