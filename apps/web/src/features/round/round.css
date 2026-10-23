@@ -1,0 +1,29 @@
+.round-panel,
+.host-controls {
+  margin-top: 1rem;
+}
+
+.round-panel .round-seats,
+.host-controls .host-unavailable {
+  list-style: none;
+  padding: 0;
+}
+
+.round-panel .round-queued {
+  font-style: italic;
+}
+
+.host-controls .host-timer {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 24rem;
+  margin-top: 0.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .round-panel *,
+  .host-controls * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
