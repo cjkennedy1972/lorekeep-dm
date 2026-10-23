@@ -250,6 +250,7 @@ export const RoundSnapshotSchema = z.object({
   submissions: z.array(RoundSnapshotSubmissionSchema),
   queuedSubmissions: z.array(RoundSnapshotSubmissionSchema),
 });
+export type RoundSnapshot = z.infer<typeof RoundSnapshotSchema>;
 export const StateSyncSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('StateSync'),

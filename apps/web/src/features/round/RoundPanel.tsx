@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { RoomState, Seat } from '@game/schema';
+import type { RoundSnapshot, Seat } from '@game/schema';
 import './round.css';
 
-type Round = NonNullable<RoomState['round']>;
+type Round = RoundSnapshot;
 type Submission = Round['submissions'][number];
 
 /** Sends a command over the room socket; returns the wire actionId, or false when offline. */
@@ -63,6 +63,8 @@ type Props = {
   seats: Seat[];
   /** Wire actionId of this player's latest PlayerAction, from the send that created it. */
   myActionId?: string;
+  /** This player's own action text; the public round snapshot omits it. */
+  myText?: string;
   connected: boolean;
   send: RoomSend;
 };
@@ -72,6 +74,7 @@ export function RoundPanel({
   round,
   seats,
   myActionId,
+  myText,
   connected,
   send,
 }: Props) {
@@ -170,7 +173,7 @@ export function RoundPanel({
               Queued for the next round. It will be used when this round closes.
             </p>
           )}
-          {!editing && <p>{ownEntry.text}</p>}
+          {!editing && myText && <p>{myText}</p>}
           {open && editing && (
             <>
               <label htmlFor="round-edit-text">Edit your action</label>
@@ -196,7 +199,7 @@ export function RoundPanel({
                 type="button"
                 disabled={!connected}
                 onClick={() => {
-                  setDraft(ownEntry.text);
+                  setDraft(myText ?? '');
                   setEditing(true);
                 }}
               >

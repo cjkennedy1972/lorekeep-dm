@@ -4,6 +4,7 @@ import {
   SessionIdSchema,
   AccountIdSchema,
   type RoomState,
+  type RoundSnapshot,
   type ServerMessage,
 } from '@game/schema';
 import { initialRoomView, roomReducer } from './reducer.js';
@@ -32,11 +33,52 @@ const pres = (seq: number, presence: 'away' | 'online'): ServerMessage => ({
   type: 'PresenceChanged',
   payload: { seatId, presence },
 });
+const actionId = '00000000-0000-4000-8000-0000000000e1';
+const round: RoundSnapshot = {
+  roundId: '00000000-0000-4000-8000-0000000000d1',
+  status: 'open',
+  eligibleSeatIds: [seatId],
+  deadlineAt: null,
+  submissions: [
+    {
+      seatId,
+      actionId,
+      originalActionId: actionId,
+      actionIds: [actionId],
+      playerName: 'Sam',
+      receiptSeq: 1,
+    },
+  ],
+  queuedSubmissions: [],
+};
+const syncWithRound = (
+  seq: number,
+  snapshot?: RoundSnapshot,
+): ServerMessage => ({
+  seq,
+  type: 'StateSync',
+  payload: snapshot ? { state, round: snapshot } : { state },
+});
 
 describe('roomReducer', () => {
   test('StateSync replaces state', () => {
     const v = roomReducer(initialRoomView, sync(3));
     expect(v).toEqual({ room: state, lastSeq: 3, needsResync: false });
+  });
+  test('StateSync stores the public round snapshot', () => {
+    const v = roomReducer(initialRoomView, syncWithRound(3, round));
+    expect(v.room?.round).toEqual(round);
+  });
+  test('StateSync without a round clears the stored round', () => {
+    const open = roomReducer(initialRoomView, syncWithRound(3, round));
+    expect(roomReducer(open, syncWithRound(4)).room?.round).toBeUndefined();
+  });
+  test('presence patch keeps the stored round', () => {
+    const v = roomReducer(
+      roomReducer(initialRoomView, syncWithRound(3, round)),
+      pres(4, 'away'),
+    );
+    expect(v.room?.round).toEqual(round);
   });
   test('applies in-order presence patch', () => {
     const v = roomReducer(
