@@ -40,7 +40,7 @@ This sets the tool scope for one turn class, using the ADR-022 sections it touch
 
 This amends ADR-033 §3.1 and §3.2 for hidden entities.
 
-1. If the reacting entity is hidden from a seat (ADR-033 §7.3, visibility split), the reaction prompt and `reactorEntityId` go only to the controlling seat. Other seats see nothing about the prompt: no "prompt open", no deadline.
+1. If the reacting entity is hidden from a seat (ADR-033 §3.2, visibility split), the reaction prompt and `reactorEntityId` go only to the controlling seat. Other seats see nothing about the prompt: no "prompt open", no deadline.
 2. The log keeps the full record. The engine appends `ReactionPromptOpened`, `ReactionAnswered`, or `ReactionDeclined` with the full payload, and the server applies this visibility rule to every seat's broadcast, snapshot, and replay.
 3. A hidden reactor's prompt does not change phase timing. Its window runs under ADR-033 §3.5 (expiry) and §3.7 (pause).
 
@@ -48,7 +48,7 @@ This amends ADR-033 §3.1 and §3.2 for hidden entities.
 
 1. If the host revokes the controlling seat of the active combatant, the turn's bounded resolution (ADR-033 §5.5) applies at once. The timeout action (Dodge or hold, §5.3) is applied, so the turn is spent.
 2. This is intended. A revoked seat cannot act, and the table does not wait for it.
-3. The host revoke is not a combat command. It is a seat revocation (ADR-031 §4.2), so the admission table in ADR-033 §1 does not gate it.
+3. The host revoke is not a combat command. It is a seat revocation (ADR-031 §2 item 7), so the admission table in ADR-033 §1 does not gate it.
 
 ### 5. Event names for architecture §15.6
 
@@ -83,13 +83,13 @@ These codes are declared here as an extension of the ADR-022 §2.4 enum, as ADR-
 |---|---|---|
 | `awaiting-command` | Controlling seat: move, action, bonus action, `end-turn` | Other seats: `not-your-turn`. Chat is always allowed. |
 | `moving` | Engine continuation only. Bounded resolution (ADR-033 §5.5) and timer expiry (§5.3) apply. | Controlling seat: `move-in-progress`. Other seats: `not-your-turn`. Not queued. |
-| `reaction-pending` | Reaction answers only: `use{handle}` or `decline`, from the controlling seat of the reacting entity. Bounded resolution and timer expiry still apply. | Every other command: `reaction-pending`. Not queued. |
+| `reaction-pending` | Reaction answers only: `use{handle}` or `decline`, from the controlling seat of the reacting entity. Bounded resolution and timer expiry still apply. | Every other command: `reaction-window-open`. Not queued. |
 | `narrating` | Pause only (ADR-029 §5) | Every combat command: `narration-in-progress`. Not queued. |
 
-2. Codes new to this ADR: `move-in-progress`, `reaction-pending`, `narration-in-progress`, `not-your-turn`, `combat-active`, `prompt-closed`, `seat-mismatch`, `rate-limited`, `combat-start-unauthorized`.
+2. Codes new to this ADR: `move-in-progress`, `reaction-window-open`, `narration-in-progress`, `not-your-turn`, `combat-start-unauthorized`.
 3. **Supersessions.** This ADR supersedes these ADR-033 lines:
    - §1 admission table, the `narrating` row. The code is `narration-in-progress`, not the phase name.
-   - §1 admission table, the `reaction-pending` row. The code is `reaction-pending`, which is distinct from the phase name `reaction-pending`.
+   - §1 admission table, the `reaction-pending` row. The rejected code is `reaction-window-open`. `reaction-pending` is the phase name only.
    - §1 admission rule 1, which says the turn commands are "accepted only in `awaiting-command`". That is still true, and the table governs.
    - §3.1, `ReactionPromptOpened` payload. The broadcast and private forms are given in §5 of this ADR.
    - §8 "Rest votes" bullet, replaced by §1 of this ADR.
