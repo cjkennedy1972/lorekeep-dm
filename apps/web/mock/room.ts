@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   AccountIdSchema,
   SeatIdSchema,
@@ -10,6 +11,30 @@ import {
 } from '@game/schema';
 
 type Send = (msg: ServerMessage) => void;
+type RoundId = NonNullable<RoomState['round']>['roundId'];
+type RoundCloseReason = NonNullable<
+  NonNullable<RoomState['round']>['closeReason']
+>;
+
+/** Test-only round driver, reached through POST /api/test/tables/:id/round. */
+export type RoundScript =
+  | { op: 'open'; deadlineInMs: number | null }
+  | { op: 'submit'; accountId: string; text: string }
+  | { op: 'queue'; accountId: string; text: string }
+  | { op: 'close'; reason: RoundCloseReason }
+  | { op: 'resolve' };
+
+type Submission = {
+  seatId: Seat['seatId'];
+  accountId: Seat['accountId'];
+  actionId: string;
+  originalActionId: string;
+  actionIds: string[];
+  text: string;
+  playerName: string;
+  receiptSeq: number;
+  editedAt?: number;
+};
 
 const SCRIPTED = {
   seatId: SeatIdSchema.parse('00000000-0000-4000-8000-0000000000b1'),
@@ -25,6 +50,14 @@ export class Room {
   private conns = new Map<string, Set<Send>>();
   private timer: NodeJS.Timeout | undefined;
   private paused = false;
+  private roundId = randomUUID() as RoundId;
+  private submissions = new Map<string, Submission>();
+  private roundDurationMs: number | null | undefined;
+  private roundStatus: 'open' | 'closing' | 'resolving' | 'resolved' = 'open';
+  private closeReason: RoundCloseReason | undefined;
+  private deadlineAt: number | null = null;
+  private queued = new Map<string, Submission>();
+  private chatSeq = 0;
   readonly sessionId = SessionIdSchema.parse(
     '00000000-0000-4000-8000-0000000000c1',
   );
@@ -47,7 +80,129 @@ export class Room {
       phase: 'lobby',
       seats: [...this.seats.values()],
       paused: this.paused,
+      roundsEnabled: true,
+      roundDurationMs: this.roundDurationMs,
+      round: {
+        roundId: this.roundId,
+        status: this.roundStatus,
+        ...(this.closeReason ? { closeReason: this.closeReason } : {}),
+        eligibleSeatIds: [...this.seats.values()].map((s) => s.seatId),
+        deadlineAt: this.deadlineAt,
+        submissions: [...this.submissions.values()],
+        queuedSubmissions: [...this.queued.values()],
+      } satisfies NonNullable<RoomState['round']>,
     };
+  }
+
+  /** Applies a round or host message from a seat; the seat identity always comes from the socket. */
+  act(accountId: string, actionId: string, type: string, payload: unknown) {
+    const seat = this.seats.get(accountId);
+    if (!seat) return;
+    const body = (payload ?? {}) as Record<string, unknown>;
+    const mine = this.submissions.get(accountId) ?? this.queued.get(accountId);
+    if (type === 'PlayerAction' && typeof body.text === 'string') {
+      // Like the server, a seat acting while the round is closing lands in the queue.
+      (this.roundStatus === 'open' ? this.submissions : this.queued).set(
+        accountId,
+        this.submission(seat, actionId, body.text),
+      );
+    } else if (
+      type === 'EditAction' &&
+      mine &&
+      mine.actionId === body.editedActionId &&
+      typeof body.text === 'string'
+    ) {
+      mine.text = body.text;
+      mine.editedAt = Date.now();
+    } else if (
+      type === 'WithdrawAction' &&
+      mine &&
+      mine.actionId === body.withdrawnActionId
+    ) {
+      this.submissions.delete(accountId);
+      this.queued.delete(accountId);
+    } else if (type === 'ConfigureRoundTimer' && 'durationMs' in body) {
+      this.roundDurationMs = body.durationMs as number | null;
+    } else if (type === 'ResolveNow') {
+      this.submissions.clear();
+      this.queued.clear();
+      this.roundId = randomUUID() as RoundId;
+      this.roundStatus = 'open';
+      this.closeReason = undefined;
+      this.deadlineAt = null;
+    } else if (type === 'ChatSend' && typeof body.text === 'string') {
+      this.chat(seat, body.text);
+      return;
+    } else return;
+    this.broadcastState();
+  }
+
+  private submission(seat: Seat, actionId: string, text: string): Submission {
+    return {
+      seatId: seat.seatId,
+      accountId: seat.accountId,
+      actionId,
+      originalActionId: actionId,
+      actionIds: [actionId],
+      text,
+      playerName: seat.displayName,
+      receiptSeq: this.seq + 1,
+    };
+  }
+
+  /** Test driver: moves the single table round through open, submit, queue, close, and resolve. */
+  script(op: RoundScript) {
+    if (op.op === 'open') {
+      this.roundId = randomUUID() as RoundId;
+      this.roundStatus = 'open';
+      this.closeReason = undefined;
+      this.deadlineAt =
+        op.deadlineInMs === null ? null : Date.now() + op.deadlineInMs;
+      this.submissions.clear();
+      this.queued.clear();
+    } else if (op.op === 'submit' || op.op === 'queue') {
+      const seat = this.seats.get(op.accountId);
+      if (!seat) throw new Error('No seat for that account at this table.');
+      (op.op === 'submit' ? this.submissions : this.queued).set(
+        op.accountId,
+        this.submission(seat, randomUUID(), op.text),
+      );
+    } else if (op.op === 'close') {
+      this.roundStatus = 'closing';
+      this.closeReason = op.reason;
+      this.deadlineAt = null;
+    } else {
+      this.roundStatus = 'resolved';
+    }
+    this.broadcastState();
+  }
+
+  /** Broadcasts an OOC chat line from a seat, the way the server echoes ChatMessage. */
+  private chat(seat: Seat, text: string) {
+    const msg: ServerMessage = {
+      seq: ++this.seq,
+      type: 'ChatMessage',
+      payload: {
+        messageId: randomUUID(),
+        roomId: this.sessionId,
+        seatId: seat.seatId,
+        receiptSeq: ++this.chatSeq,
+        receivedAt: Date.now(),
+        text,
+        channel: 'ooc',
+        gateDecision: { verdict: 'allow' },
+      },
+    } as unknown as ServerMessage;
+    for (const set of this.conns.values()) for (const send of set) send(msg);
+  }
+
+  private broadcastState() {
+    const msg: ServerMessage = {
+      seq: ++this.seq,
+      type: 'StateSync',
+      payload: { state: this.state() },
+    };
+    for (const set of this.conns.values()) for (const send of set) send(msg);
   }
 
   /** Seats the account (max 6), sends StateSync to it, broadcasts presence. Returns leave(). */

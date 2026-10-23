@@ -55,6 +55,7 @@ export function Lobby() {
     WebSocketImpl: http.WebSocket,
   });
   const seats = live.room?.seats ?? [];
+  const round = live.room?.round;
   const announcement = usePresenceAnnouncement(seats);
   const content = useMatureOptOut();
   const [contentNote, setContentNote] = useState('');
@@ -113,16 +114,54 @@ export function Lobby() {
       </p>
       <h2 id="seats-heading">Players ({seats.length} of 6)</h2>
       <ul aria-labelledby="seats-heading" className="seats">
-        {seats.map((s) => (
-          <li key={s.seatId} data-presence={s.presence}>
-            {s.displayName}{' '}
-            <span className="presence">({PRESENCE[s.presence]})</span>
-          </li>
-        ))}
+        {seats.map((s) => {
+          const eligible = round?.eligibleSeatIds.includes(s.seatId) ?? false;
+          const submitted =
+            round?.submissions.some((item) => item.seatId === s.seatId) ??
+            false;
+          return (
+            <li key={s.seatId} data-presence={s.presence}>
+              {s.displayName}{' '}
+              <span className="presence">({PRESENCE[s.presence]})</span>
+              {eligible && (
+                <span className="round-ready">
+                  {' '}
+                  {submitted ? 'submitted this round' : 'waiting for action'}
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
+      <section aria-labelledby="rules-heading">
+        <h2 id="rules-heading">Table rules</h2>
+        <p>
+          Rounds: <strong>{live.room?.roundsEnabled ? 'on' : 'off'}</strong>.
+          Round timer:{' '}
+          <strong>
+            {live.room?.roundDurationMs === undefined
+              ? 'default'
+              : live.room.roundDurationMs === null
+                ? 'no time limit'
+                : `${live.room.roundDurationMs / 1000} seconds`}
+          </strong>
+          . Content tier:{' '}
+          {tierCap === null
+            ? 'Mature (default)'
+            : tierCap === 'standard'
+              ? 'Standard'
+              : 'Family'}
+          .
+        </p>
+        {live.room?.paused && <p role="status">The table is paused.</p>}
+        <p>
+          Anyone at the table can use the X-card or pause in the game at any
+          time.
+        </p>
+      </section>
       <section aria-labelledby="content-heading">
         <h2 id="content-heading">Content settings</h2>
         <p>

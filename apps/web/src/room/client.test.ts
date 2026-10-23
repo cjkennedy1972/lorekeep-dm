@@ -111,6 +111,6 @@ test('send reports whether the message went out', async () => {
   expect(client.send('PlayerAction', { text: 'hi' })).toBe(false);
   client.start();
   await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
-  expect(client.send('Resync')).toBe(true);
+  expect(client.send('Resync')).toEqual(expect.any(String));
   client.stop();
 });

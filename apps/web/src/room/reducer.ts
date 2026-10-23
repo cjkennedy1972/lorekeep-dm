@@ -35,6 +35,18 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
         },
       };
     }
+    case 'RoundOpened':
+    case 'RoundActionAccepted':
+    case 'RoundActionQueued':
+    case 'RoundActionEdited':
+    case 'RoundActionWithdrawn':
+    case 'RoundClosing':
+    case 'RoundResolved':
+    case 'RoundCompleted':
+    case 'RoundClosedEmpty':
+    case 'RoundTimerConfigured':
+      // Round broadcasts carry thin payloads, not full submissions; the full round arrives in a StateSync after a Resync.
+      return view.needsResync ? view : { ...view, needsResync: true };
     case 'ActionQueued':
     case 'ActionWithdrawn':
     case 'TurnThinking':
@@ -46,16 +58,6 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'ClarificationRequested':
     case 'ContentTierChanged':
     case 'SafetyFlag':
-    case 'RoundOpened':
-    case 'RoundActionAccepted':
-    case 'RoundActionQueued':
-    case 'RoundActionEdited':
-    case 'RoundActionWithdrawn':
-    case 'RoundClosing':
-    case 'RoundResolved':
-    case 'RoundCompleted':
-    case 'RoundClosedEmpty':
-    case 'RoundTimerConfigured':
       return view; // surfaced by the client, not part of room state
     case 'CombatTracker':
     case 'ReactionPrompt':

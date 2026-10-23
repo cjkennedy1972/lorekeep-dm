@@ -16,6 +16,8 @@ import { TokenTable } from '../features/map/TokenTable.js';
 import { Describe } from '../features/map/Describe.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
 import { ActionInput } from '../features/input/ActionInput.js';
+import { RoundPanel } from '../features/round/RoundPanel.js';
+import { HostControls } from '../features/round/HostControls.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { ConnectionStatus } from '../room/ConnectionStatus.js';
 import { useRoom } from '../room/useRoom.js';
@@ -371,8 +373,9 @@ export function Game() {
   const lastActionText = useRef('');
   const submitAction = (text: string) => {
     lastActionText.current = text;
-    const id = `local-${crypto.randomUUID()}`;
-    if (!live.send('PlayerAction', { text })) {
+    // The wire actionId lets the round panel recognise this player's submission.
+    const id = live.send('PlayerAction', { text });
+    if (!id) {
       setError('Not connected, so your action was not sent. Try again.');
       return;
     }
@@ -576,6 +579,24 @@ export function Game() {
           also apply to party chat. No explanation is needed.
         </p>
       </section>
+      {room.roundsEnabled && (
+        <RoundPanel
+          round={room.round}
+          seats={room.seats}
+          myActionId={pendingAction?.id}
+          connected={live.status === 'connected'}
+          send={live.send}
+        />
+      )}
+      {isHost && (
+        <HostControls
+          round={room.round}
+          roundDurationMs={room.roundDurationMs ?? null}
+          connected={live.status === 'connected'}
+          paused={room.paused === true}
+          send={live.send}
+        />
+      )}
       <ChatPanel
         roomId={id}
         messages={chatMessages}
@@ -583,8 +604,10 @@ export function Game() {
         isHost={isHost}
         connected={live.status === 'connected'}
         error={chatError}
-        onSend={(text) => live.send('ChatSend', { text })}
-        onMute={(seatId, muted) => live.send('MuteChat', { seatId, muted })}
+        onSend={(text) => Boolean(live.send('ChatSend', { text }))}
+        onMute={(seatId, muted) =>
+          Boolean(live.send('MuteChat', { seatId, muted }))
+        }
       />
       <ActionInput
         onSubmit={submitAction}
