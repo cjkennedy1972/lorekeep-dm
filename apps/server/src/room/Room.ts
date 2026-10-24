@@ -57,14 +57,59 @@ import { failForward, resolveDeathSave, retryFromCheckpoint } from './death.js';
 
 const CLIENT_GAME_STATE_FIELDS = ['characters', 'combatRoom'] as const;
 
-function clientGameState(value: unknown): Record<string, unknown> {
+function clientGameState(
+  value: unknown,
+  viewerAccountId?: string,
+  bindings?: ReadonlyMap<string, PrivateSeatCharacterBinding>,
+): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const source = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
-  for (const key of CLIENT_GAME_STATE_FIELDS)
-    if (key in source) result[key] = source[key];
+  for (const key of CLIENT_GAME_STATE_FIELDS) {
+    if (!(key in source)) continue;
+    if (
+      key !== 'characters' ||
+      !source.characters ||
+      typeof source.characters !== 'object'
+    ) {
+      result[key] = source[key];
+      continue;
+    }
+    const characters: Record<string, unknown> = {};
+    for (const [seatId, character] of Object.entries(
+      source.characters as Record<string, unknown>,
+    )) {
+      const isOwner =
+        viewerAccountId !== undefined &&
+        (bindings?.get(seatId)?.accountId === viewerAccountId ||
+          seatId === viewerAccountId);
+      if (isOwner) {
+        characters[seatId] = character;
+        continue;
+      }
+      if (
+        !character ||
+        typeof character !== 'object' ||
+        Array.isArray(character)
+      ) {
+        characters[seatId] = character;
+        continue;
+      }
+      const card = character as Record<string, unknown>;
+      characters[seatId] = Object.fromEntries(
+        ['id', 'name', 'speciesId', 'classId', 'level', 'hp']
+          .filter((field) => field in card)
+          .map((field) => [field, card[field]]),
+      );
+    }
+    result[key] = characters;
+  }
   if (source.checkpoint && typeof source.checkpoint === 'object')
-    result.checkpoint = clientGameState(source.checkpoint);
+    result.checkpoint = clientGameState(
+      source.checkpoint,
+      viewerAccountId,
+      bindings,
+    );
   return result;
 }
 
@@ -899,7 +944,11 @@ export class Room {
       };
     }
     if (!this.state.gameState) return { ...clientVisibleState, seats };
-    const gameState = clientGameState(this.state.gameState);
+    const gameState = clientGameState(
+      this.state.gameState,
+      viewerAccountId,
+      this.seatBindings,
+    );
     return { ...clientVisibleState, seats, gameState };
   }
 
@@ -1197,7 +1246,7 @@ export class Room {
       }
       if (this.turnInFlight && this.turnAccountId === accountId)
         this.turnAbort?.abort();
-      this.withdrawQueuedFor(accountId);
+      await this.withdrawSeatActions(seat);
       const wasBound = this.seatBindings.has(seat.seatId);
       await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
       if (wasBound) this.afterSeatReleased();
@@ -1755,8 +1804,7 @@ export class Room {
   ): Promise<void> {
     return this.enqueue(async () => {
       this.assertNotNarrating();
-      if (!this.state.seats.some((seat) => seat.accountId === accountId))
-        throw new Error('Account is not seated');
+      this.requireBoundSeat(accountId);
       const gameState = this.state.gameState as
         | Record<string, unknown>
         | undefined;
@@ -2689,7 +2737,7 @@ export class Room {
         throw new RoomSeatRequiredError();
       const connection = this.connections.get(target.accountId);
       this.connections.delete(target.accountId);
-      this.withdrawQueuedFor(target.accountId);
+      await this.withdrawSeatActions(target);
       const wasBound = this.seatBindings.has(target.seatId);
       await this.persist('SeatRevoked', {
         seatId: target.seatId,
@@ -2883,9 +2931,17 @@ export class Room {
         for (const key of this.editsPerRound.keys())
           if (key.startsWith(`${round.roundId}:`))
             this.editsPerRound.delete(key);
-        const batch = [...(this.state.round?.submissions ?? [])].sort(
-          (a, b) => a.receiptSeq - b.receiptSeq,
+        const currentlyBoundSeatIds = new Set(
+          this.state.seats
+            .filter(
+              (seat) =>
+                !this.bindingEnforced || this.seatBindings.has(seat.seatId),
+            )
+            .map((seat) => seat.seatId),
         );
+        const batch = [...(this.state.round?.submissions ?? [])]
+          .filter((submission) => currentlyBoundSeatIds.has(submission.seatId))
+          .sort((a, b) => a.receiptSeq - b.receiptSeq);
         if (batch.length === 0) {
           await this.persist('RoundClosedEmpty', { roundId: round.roundId });
           this.broadcast({
@@ -2896,6 +2952,7 @@ export class Room {
           await this.openRound();
           return;
         }
+        // Departure withdrawals are the primary path; enforce current binding again at close.
         // Re-check eligibility at close; accepted submissions from seats that became away stay in the batch.
         const closeReason = round.closeReason ?? reason;
         await this.persist('RoundResolved', {
@@ -3259,8 +3316,19 @@ export class Room {
     answer: string,
   ): Promise<boolean> {
     return this.enqueuePlayer(async () => {
+      let seat: Seat;
+      try {
+        seat = this.requireBoundSeat(accountId);
+      } catch {
+        return false;
+      }
       const open = this.state.openClarifications?.[actionId];
-      if (!open || open.accountId !== accountId) return false;
+      if (
+        !open ||
+        open.accountId !== accountId ||
+        !this.state.seats.some((current) => current.seatId === seat.seatId)
+      )
+        return false;
       await this.closeClarification(actionId, 'answered');
       this.queuedActions.unshift({
         accountId,
@@ -3519,6 +3587,43 @@ export class Room {
       }
     this.turnAccountId = undefined;
     this.turnInFlight = false;
+  }
+
+  private async withdrawSeatActions(seat: Seat): Promise<void> {
+    const round = this.state.round;
+    const submission = round?.submissions.find(
+      (item) => item.seatId === seat.seatId,
+    );
+    if (round && submission) {
+      const commandActionId = randomUUID();
+      await this.persist('RoundActionWithdrawn', {
+        roundId: round.roundId,
+        seatId: seat.seatId,
+        accountId: seat.accountId,
+        commandActionId,
+        actionId: submission.actionId,
+        queued: false,
+      });
+      for (const id of submission.actionIds) this.pendingActions.delete(id);
+      this.broadcast({
+        seq: this.seq,
+        type: 'RoundActionWithdrawn',
+        payload: { roundId: round.roundId, seatId: seat.seatId },
+      } as ServerMessage);
+    }
+    for (const [actionId, clarification] of Object.entries(
+      this.state.openClarifications ?? {},
+    )) {
+      if (clarification.accountId !== seat.accountId) continue;
+      this.pendingActions.delete(actionId);
+      await this.closeClarification(actionId, 'expired');
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionWithdrawn',
+        payload: { actionId },
+      } as ServerMessage);
+    }
+    this.withdrawQueuedFor(seat.accountId);
   }
 
   private withdrawQueuedFor(accountId: string): void {

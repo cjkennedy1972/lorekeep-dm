@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   Room,
   RoomSeatRequiredError,
-  type Connection,
   type RoomStore,
 } from '../../src/room/Room.js';
 import type { CombatRuntime } from '../../src/room/combat.js';
@@ -27,6 +26,9 @@ function party(
     partyMode?: boolean;
     gameState?: (seatA: string) => unknown;
     runtime?: CombatRuntime;
+    hostA?: boolean;
+    roundsEnabled?: boolean;
+    turnRunner?: SoloTurnRunner;
   } = {},
 ) {
   const [accountA, accountB, seatA, seatB] = [1, 2, 3, 4].map(() =>
@@ -59,6 +61,9 @@ function party(
       stored.push(...out);
       return { events: out };
     },
+    async isTableHost(_id: string, accountId: string) {
+      return options.hostA === true && accountId === accountA;
+    },
   } as unknown as RoomStore;
   const secret = { name: 'Secret sheet name' };
   const bindings = [
@@ -86,18 +91,19 @@ function party(
         state: {
           sessionId,
           phase: 'lobby',
+          ...(options.roundsEnabled ? { roundsEnabled: true } : {}),
           seats: [seat(seatA, accountA), seat(seatB, accountB)],
           gameState: options.gameState?.(seatA) ?? {},
         },
       },
       events: [],
     },
-    runner,
+    options.turnRunner ?? runner,
     options.runtime,
     bindings,
     options.partyMode ?? true,
   );
-  return { room, writes, accountA, accountB, seatA, seatB };
+  return { room, writes, stored, accountA, accountB, seatA, seatB };
 }
 
 describe('ADR-035 party seat gating', () => {
@@ -164,6 +170,151 @@ describe('ADR-035 party seat gating', () => {
     );
   });
 
+  it('projects a public card to other seats while the owner retains their own sheet', () => {
+    const f = party({ bindB: true });
+    const privateSheet = {
+      id: randomUUID(),
+      name: 'Hero',
+      speciesId: 'species:human',
+      classId: 'class:cleric',
+      level: 3,
+      hp: { current: 8, max: 20, temp: 0 },
+      privateNotes: 'secret history',
+      backstory: 'private backstory',
+    };
+    f.room.state.gameState = {
+      characters: { [f.seatA]: privateSheet, [f.seatB]: privateSheet },
+    };
+    const other = f.room.clientState(f.accountB).gameState as {
+      characters: Record<string, Record<string, unknown>>;
+    };
+    const own = f.room.clientState(f.accountA).gameState as {
+      characters: Record<string, Record<string, unknown>>;
+    };
+    expect(other.characters[f.seatA]).toEqual({
+      id: privateSheet.id,
+      name: 'Hero',
+      speciesId: 'species:human',
+      classId: 'class:cleric',
+      level: 3,
+      hp: privateSheet.hp,
+    });
+    expect(other.characters[f.seatA]).not.toHaveProperty('privateNotes');
+    expect(own.characters[f.seatA]).toEqual(privateSheet);
+
+    const solo = party({ bindA: false, partyMode: false });
+    solo.room.state.gameState = {
+      characters: { [solo.accountA]: privateSheet },
+    };
+    expect(
+      (
+        solo.room.clientState(solo.accountA).gameState as {
+          characters: Record<string, unknown>;
+        }
+      ).characters[solo.accountA],
+    ).toEqual(privateSheet);
+  });
+
+  it.each(['leave', 'kick'] as const)(
+    '%s withdraws a round action and closes its clarification before revocation',
+    async (departure) => {
+      const dmCalls: string[] = [];
+      const f = party({
+        bindB: true,
+        hostA: true,
+        roundsEnabled: true,
+        turnRunner: {
+          async run(request) {
+            dmCalls.push(request.text);
+            return undefined as never;
+          },
+        } as unknown as SoloTurnRunner,
+      });
+      const actionId = randomUUID();
+      await f.room.submitAction(f.accountB, actionId, 'withdraw me', 'B');
+      const clarificationId = randomUUID();
+      f.room.state.openClarifications = {
+        [clarificationId]: {
+          accountId: f.accountB,
+          playerName: 'B',
+          text: 'question',
+          question: 'Which?',
+          deadlineAt: Date.now() + 60_000,
+        },
+      } as never;
+      if (departure === 'leave') await f.room.leave(f.accountB);
+      else await f.room.kickSeat(f.accountA, randomUUID(), f.seatB);
+      expect(
+        (f.room.state.round?.submissions ?? []).some(
+          (submission) => submission.seatId === f.seatB,
+        ),
+      ).toBe(false);
+      expect(
+        f.room.state.openClarifications?.[clarificationId],
+      ).toBeUndefined();
+      expect(
+        f.writes.some((write) => write.events.includes('RoundActionWithdrawn')),
+      ).toBe(true);
+      expect(
+        f.writes.some((write) => write.events.includes('RoundResolved')),
+      ).toBe(false);
+      expect(dmCalls).toEqual([]);
+      expect(
+        f.writes.some((write) => write.events.includes('ClarificationClosed')),
+      ).toBe(true);
+    },
+  );
+
+  it('filters a submission if its binding is revoked before round close', async () => {
+    const f = party({ bindB: true });
+    const actionId = randomUUID();
+    f.room.state.round = {
+      roundId: randomUUID(),
+      status: 'open',
+      eligibleSeatIds: [f.seatB],
+      deadlineAt: Date.now() + 60_000,
+      queuedSubmissions: [],
+      submissions: [
+        {
+          seatId: f.seatB,
+          accountId: f.accountB,
+          actionId,
+          originalActionId: actionId,
+          actionIds: [actionId],
+          text: 'must not reach DM',
+          playerName: 'B',
+          receiptSeq: 1,
+        },
+      ],
+    } as never;
+    f.room.state.paused = false;
+    f.room.state.seats = f.room.state.seats.filter(
+      (seat) => seat.seatId !== f.seatB,
+    );
+    f.room.seatCharacters.delete(f.seatB);
+    await (
+      f.room as unknown as { resolveRound(reason: 'timer'): Promise<void> }
+    ).resolveRound('timer');
+    expect(f.stored.some((event) => event.type === 'RoundResolved')).toBe(
+      false,
+    );
+    expect(f.stored.some((event) => event.type === 'RoundClosedEmpty')).toBe(
+      true,
+    );
+  });
+
+  it('rejects clarification answers and TPK choices from revoked or unbound accounts', async () => {
+    const f = party({ bindB: true });
+    await f.room.leave(f.accountB);
+    expect(
+      await f.room.answerClarification(f.accountB, randomUUID(), 'answer'),
+    ).toBe(false);
+    const unbound = party({ bindB: false });
+    await expect(
+      unbound.room.chooseTpkResolution(unbound.accountB, 'fail-forward'),
+    ).rejects.toBeInstanceOf(RoomSeatRequiredError);
+  });
+
   it('does not emit a release for a seat that was never bound', async () => {
     const { room, writes, accountB } = party();
     await room.leave(accountB);
@@ -184,6 +335,9 @@ describe('ADR-035 party seat gating', () => {
         f.room.withdrawRoundAction(account, randomUUID(), randomUUID()),
       ).rejects.toBeInstanceOf(RoomSeatRequiredError);
       await expect(f.room.takeRest(account, 'short')).rejects.toThrow();
+      await expect(
+        f.room.chooseTpkResolution(account, 'fail-forward'),
+      ).rejects.toBeInstanceOf(RoomSeatRequiredError);
       await expect(
         f.room.submitCombatCommand(account, randomUUID(), {
           command: 'end-turn',

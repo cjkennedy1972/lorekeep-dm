@@ -154,7 +154,12 @@ export class SimTable {
         id: randomUUID(),
       };
       const revision = await seatCharacters.saveOwnedCharacter(id, character);
-      await room.bindSeatCharacter(id, character.id, revision, async () => true);
+      await room.bindSeatCharacter(
+        id,
+        character.id,
+        revision,
+        async () => true,
+      );
     }
     // Same lifecycle step as POST /api/tables: rounds only open once game state exists.
     await room.persistGameState({ premise: 'Sim table', worldSeeded: true });

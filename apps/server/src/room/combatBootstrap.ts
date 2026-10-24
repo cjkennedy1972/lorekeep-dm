@@ -137,10 +137,10 @@ function bindParty(game: GameState, party: PartyBindings): GameState {
     ids.set(snapshot.id, id);
     characters[seatId] = { ...snapshot, id };
   }
-  const engine = game.gameEngine as Record<string, any> | undefined;
+  const engine = game.gameEngine as Record<string, unknown> | undefined;
   if (!engine) return game;
   const remap = (id: string) => ids.get(id) ?? id;
-  const rekey = (record: Record<string, any> | undefined) =>
+  const rekey = (record: Record<string, unknown> | undefined) =>
     record &&
     Object.fromEntries(Object.entries(record).map(([k, v]) => [remap(k), v]));
   return {
@@ -152,9 +152,9 @@ function bindParty(game: GameState, party: PartyBindings): GameState {
         ...e,
         id: remap(e.id),
       })),
-      ac: rekey(engine.ac),
+      ac: rekey(engine.ac as Record<string, unknown> | undefined),
       // Preserve engine-owned HP across party id remapping and later combat settle.
-      hp: rekey(engine.hp),
+      hp: rekey(engine.hp as Record<string, unknown> | undefined),
       attacks:
         engine.attacks &&
         Object.fromEntries(
@@ -163,9 +163,15 @@ function bindParty(game: GameState, party: PartyBindings): GameState {
           ),
         ),
       combat: engine.combat && {
-        ...engine.combat,
+        ...(engine.combat as {
+          initiative?: { entityId: string; total: number }[];
+        }),
         initiative: (
-          engine.combat.initiative as { entityId: string; total: number }[]
+          (
+            engine.combat as {
+              initiative?: { entityId: string; total: number }[];
+            }
+          ).initiative ?? []
         ).map((i) => ({ ...i, entityId: remap(i.entityId) })),
       },
     },
