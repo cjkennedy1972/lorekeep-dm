@@ -80,7 +80,7 @@ test('an unbound seat is told to bind; keyboard alone binds a character', async 
     page.getByRole('listitem').filter({ hasText: 'Scripted Sam' }),
   ).toContainText('no character bound');
   await expect(
-    page.getByRole('listitem').filter({ hasText: 'Quinn (you)' }),
+    page.getByRole('listitem').filter({ hasText: 'Quinn' }),
   ).toContainText('character bound');
 });
 

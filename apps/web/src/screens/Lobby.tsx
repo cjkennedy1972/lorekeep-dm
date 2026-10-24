@@ -145,9 +145,9 @@ export function Lobby() {
             false;
           return (
             <li key={s.seatId} data-presence={s.presence}>
-              {s.displayName}
-              {s.seatId === live.mySeatId && ' (you)'}{' '}
+              {s.displayName}{' '}
               <span className="presence">({PRESENCE[s.presence]})</span>
+              {s.seatId === live.mySeatId && ' (you)'}{' '}
               {eligible && (
                 <span className="round-ready">
                   {' '}

@@ -309,7 +309,14 @@ export function createMock(
     if (route === 'GET /api/me/characters')
       return json(res, 200, {
         characters: charactersFor(account.id).map(
-          ({ accountId: _owner, ...character }) => character,
+          ({ id, name, species, className, level, revision }) => ({
+            id,
+            name,
+            species,
+            className,
+            level,
+            revision,
+          }),
         ),
       });
     if (url.pathname.startsWith('/api/operator/'))
