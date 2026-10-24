@@ -15,6 +15,7 @@ import {
 } from '../rooms/invites.js';
 import type { RoomRegistry } from '../room/registry.js';
 import { BoundedCounter } from '../accounts/throttle.js';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
 
 type Seater = Pick<RoomRegistry, 'get'>;
 const JOIN_LIMIT = 10;
@@ -22,6 +23,7 @@ export const MAX_ACTIVE_ROOMS = 20;
 export const CREATE_PER_HOUR = 10;
 export const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_host,s.host_tier_cap AS tier_cap FROM sessions s
   WHERE s.status='active' AND (s.owner_account_id=$1 OR ${currentMemberSql('$1')})`;
+const catalog = loadCatalog();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Room endpoints. `/api/rooms` is what the web calls; `/api/sessions` and `/api/join/:code` are the ticket's names. */
@@ -126,11 +128,16 @@ export function registerSessionRoutes(
           message: 'That table name cannot be used.',
         });
       const id = randomUUID();
+      await db.query(
+        `INSERT INTO catalog_snapshots(catalog_version,entries)
+         VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
+        [catalog.catalogVersion, JSON.stringify(catalog.entries)],
+      );
       // ponytail: count+insert is not serialized; concurrent creates can overshoot by a few. Add an advisory lock if that matters.
       const inserted = await db.query(
-        `INSERT INTO sessions(id,owner_account_id,name) SELECT $1,$2,$3
+        `INSERT INTO sessions(id,owner_account_id,name,catalog_version) SELECT $1,$2,$3,$5
           WHERE (SELECT count(*) FROM sessions WHERE owner_account_id=$2 AND status='active') < $4`,
-        [id, accountId, parsed.data.name, maxRooms],
+        [id, accountId, parsed.data.name, maxRooms, catalog.catalogVersion],
       );
       if (!inserted.rowCount)
         return reply.code(409).send({
