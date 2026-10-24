@@ -116,9 +116,13 @@ function connect(
   t: string,
   proofOverride?: string | null,
   saveResumeToken = true,
+  cookieToken?: string | null,
 ) {
+  const ownerToken = ticketOwners.get(t);
+  const selectedCookie = cookieToken === undefined ? ownerToken : cookieToken;
   const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
     origin: base,
+    ...(selectedCookie ? { headers: { cookie: `sid=${selectedCookie}` } } : {}),
   });
   inboxes.set(ws, on(ws, 'message'));
   seenMessageTypes.set(ws, []);
@@ -338,11 +342,10 @@ describe('one-time gateway', () => {
       'DELETE FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
       [soloSessionId, seatId],
     );
-    const tokenlessSocket = connect(
-      await ticket(tokens[0]!, soloSessionId),
-      null,
-      false,
-    );
+    const tokenlessTicket = await ticket(tokens[0]!, soloSessionId);
+    const wrongCookieSocket = connect(tokenlessTicket, null, false, tokens[1]!);
+    expect(await closed(wrongCookieSocket)).toBe(1008);
+    const tokenlessSocket = connect(tokenlessTicket, null, false);
     await nextOfType(tokenlessSocket, 'SeatAuthenticated');
     await nextOfType(tokenlessSocket, 'StateSync');
     await closeSocket(tokenlessSocket);

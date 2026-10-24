@@ -377,8 +377,13 @@ export function registerSessionRoutes(
             accountId,
             optOut,
           ]);
+        const { settings } = await onboarding(
+          found.id,
+          accountId,
+          matureOptOut,
+        );
         return reply.code(409).send({
-          ...(await onboarding(found.id, accountId, matureOptOut)),
+          settings,
           code: 'LATE_JOIN_PENDING',
           message:
             'Your request is waiting for the host. Retry this invite after it is approved.',
@@ -472,12 +477,13 @@ export function registerSessionRoutes(
             accountId,
             optOut,
           ]);
+        const { settings } = await onboarding(
+          found.id,
+          accountId,
+          typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+        );
         return reply.code(202).send({
-          ...(await onboarding(
-            found.id,
-            accountId,
-            typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
-          )),
+          settings,
           requestId,
           status: 'pending',
         });

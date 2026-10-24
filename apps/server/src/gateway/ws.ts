@@ -31,6 +31,7 @@ import {
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
+import { ticketCookieMatches } from './ticketCookie.js';
 import { validOrigin as validRequestOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
@@ -216,6 +217,10 @@ export function installGateway(
           reject();
           return;
         }
+        const cookieMatchesTicket = ticketCookieMatches(
+          request.headers.cookie,
+          identity.authTokenHash,
+        );
         const socketId = randomUUID();
         let seatAuthorized = false;
         let pendingClaimId: string | undefined;
@@ -314,7 +319,7 @@ export function installGateway(
           presentedToken ?? firstDeliveryToken,
           false,
           identity.accountId,
-          soloOwnerRecoveryEnabled,
+          soloOwnerRecoveryEnabled && cookieMatchesTicket,
         );
         if (authorization.status === 'invalid-token') {
           if (
