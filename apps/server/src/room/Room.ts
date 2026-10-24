@@ -973,14 +973,15 @@ export class Room {
 
   private clientSyncPayload(): StateSync['payload'] {
     const round = this.state.round;
+    const boundSeatIds = this.state.seats
+      .filter(
+        (seat) =>
+          seat.presence !== 'revoked' && this.seatBindings.has(seat.seatId),
+      )
+      .map((seat) => seat.seatId);
     return {
       state: this.clientState(),
-      boundSeatIds: this.state.seats
-        .filter(
-          (seat) =>
-            seat.presence !== 'revoked' && this.seatBindings.has(seat.seatId),
-        )
-        .map((seat) => seat.seatId),
+      ...(boundSeatIds.length > 0 ? { boundSeatIds } : {}),
       ...(round
         ? {
             round: {

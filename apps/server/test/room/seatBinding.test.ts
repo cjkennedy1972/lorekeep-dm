@@ -129,6 +129,36 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it('omits bound seat identifiers from solo and empty-party StateSync payloads', async () => {
+    for (const options of [
+      { partyMode: false, bindA: false, bindB: false },
+      { partyMode: true, bindA: false, bindB: false },
+    ]) {
+      const f = party(options);
+      const messages: Record<string, unknown>[] = [];
+      await f.room.subscribe(f.accountA, {
+        send(message: Record<string, unknown>) {
+          messages.push(message);
+        },
+      });
+      const sync = messages.find((message) => message.type === 'StateSync')!;
+      expect(sync.payload).not.toHaveProperty('boundSeatIds');
+    }
+  });
+
+  it('excludes a revoked seat while retaining another bound seat in StateSync', async () => {
+    const f = party({ bindB: true, hostA: true });
+    await f.room.kickSeat(f.accountA, randomUUID(), f.seatB);
+    const messages: Record<string, unknown>[] = [];
+    await f.room.subscribe(f.accountA, {
+      send(message: Record<string, unknown>) {
+        messages.push(message);
+      },
+    });
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(sync.payload).toHaveProperty('boundSeatIds', [f.seatA]);
+  });
+
   it('includes only active bound seat identifiers in reconnect StateSync', async () => {
     const f = party({ bindA: false, bindB: true });
     await f.room.bindSeatCharacter(
