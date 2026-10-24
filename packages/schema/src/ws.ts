@@ -347,6 +347,8 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RoundClosedEmpty',
       'RoundTimerConfigured',
       'SeatRevoked',
+      'SeatCharacterBound',
+      'SeatCharacterReleased',
       'SeatTakenOver',
       'HostTransferred',
       'HostSeatChanged',
@@ -384,6 +386,11 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   }),
   StateSyncSchema,
   SeatPrivateRoundSyncSchema,
+  z.object({
+    seq: z.int().nonnegative(),
+    type: z.literal('SeatCharacterBoundPrivate'),
+    payload: z.object({ seatId: z.uuid() }).strict(),
+  }),
   z.object({
     seq: z.int().nonnegative(),
     type: z.literal('CombatTracker'),

@@ -248,9 +248,10 @@ describe('room actor', () => {
         },
       ],
     );
-    const sent: unknown[] = [];
-    await room.subscribe(accountId, { send: (message) => sent.push(message) });
-    const sync = sent.find(
+    await room.subscribe(accountId, {
+      send: (message) => revokedMessages.push(message),
+    });
+    const sync = revokedMessages.find(
       (message) => (message as { type?: string }).type === 'StateSync',
     ) as {
       payload: { state: unknown; round?: Record<string, unknown> };
@@ -270,13 +271,13 @@ describe('room actor', () => {
     expect(JSON.stringify(sync)).not.toContain('Secret sheet name');
     expect(JSON.stringify(sync)).not.toContain('never wire this');
 
-    sent.length = 0;
+    revokedMessages.length = 0;
     room.state.seats[0]!.presence = 'revoked';
     (
       room as unknown as { sendSeatPrivateRoundSync: (id: string) => void }
     ).sendSeatPrivateRoundSync(accountId);
     expect(
-      sent.some(
+      revokedMessages.some(
         (message) =>
           (message as { type?: string }).type === 'SeatPrivateRoundSync',
       ),

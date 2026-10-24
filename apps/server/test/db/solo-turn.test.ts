@@ -324,6 +324,8 @@ describe('solo turn persisted lifecycle', () => {
     });
     expect(outsiderResponse.status).toBe(404);
     const outsiderBody = await outsiderResponse.text();
+    const stableHeaders = (headers: Headers) =>
+      [...headers].filter(([name]) => name !== 'date');
     const nonexistentResponse = await fetch(
       `${base}/api/tables/${randomUUID()}`,
       {
@@ -331,16 +333,18 @@ describe('solo turn persisted lifecycle', () => {
       },
     );
     expect(nonexistentResponse.status).toBe(outsiderResponse.status);
-    expect([...nonexistentResponse.headers]).toEqual([
-      ...outsiderResponse.headers,
-    ]);
+    expect(stableHeaders(nonexistentResponse.headers)).toEqual(
+      stableHeaders(outsiderResponse.headers),
+    );
     expect(await nonexistentResponse.text()).toBe(outsiderBody);
     await room.leave(member.id);
     const revokedResponse = await fetch(`${base}/api/tables/${id}`, {
       headers: { cookie: `sid=${member.token}` },
     });
     expect(revokedResponse.status).toBe(404);
-    expect([...revokedResponse.headers]).toEqual([...outsiderResponse.headers]);
+    expect(stableHeaders(revokedResponse.headers)).toEqual(
+      stableHeaders(outsiderResponse.headers),
+    );
     expect(await revokedResponse.text()).toBe(outsiderBody);
   });
 

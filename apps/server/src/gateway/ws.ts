@@ -898,6 +898,7 @@ export function installGateway(
                   const current = await requireCurrentCommandSeat();
                   return current.seatId === identity.seatId;
                 },
+                msg.actionId,
               )
               .catch(() =>
                 send({

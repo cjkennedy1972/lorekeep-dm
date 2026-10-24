@@ -449,6 +449,7 @@ export class Room {
     type: string,
     payload: unknown,
     seatCharacterTransition?: SeatCharacterTransition,
+    additionalActionIds: readonly string[] = [],
   ): Promise<StoredEvent> {
     // ADR-035 §2: revoke/leave/kick releases the binding in the same serialized write.
     let released: { seatId: string; reason: string } | undefined;
@@ -526,7 +527,13 @@ export class Room {
             : []),
         ]
       : [];
-    const actionIds = [...new Set([...this.actionIds, ...committedActionIds])];
+    const actionIds = [
+      ...new Set([
+        ...this.actionIds,
+        ...committedActionIds,
+        ...additionalActionIds,
+      ]),
+    ];
     const stored = await this.writeTurn(
       this.sessionId,
       inputs,
@@ -643,6 +650,7 @@ export class Room {
     characterId: string,
     expectedRevision: number,
     validateTicket: () => Promise<boolean>,
+    actionId: string,
   ): Promise<void> {
     return this.enqueuePlayer(async () => {
       const seat = this.state.seats.find(
@@ -660,13 +668,27 @@ export class Room {
           characterId,
           expectedRevision,
         },
+        [actionId],
       );
+      this.actionIds.add(actionId);
       const bindings = await this.store.loadActiveSeatCharacterBindings?.(
         this.sessionId,
       );
       if (bindings) {
         const binding = bindings.find((item) => item.seatId === seat.seatId);
-        if (binding) this.seatBindings.set(seat.seatId, binding);
+        if (binding) {
+          this.seatBindings.set(seat.seatId, binding);
+          this.broadcast({
+            seq: this.seq,
+            type: 'SeatCharacterBound',
+            payload: { seatId: seat.seatId },
+          } as ServerMessage);
+          this.connections.get(accountId)?.send({
+            seq: this.seq,
+            type: 'SeatCharacterBoundPrivate',
+            payload: { seatId: seat.seatId },
+          } as ServerMessage);
+        }
       }
     });
   }

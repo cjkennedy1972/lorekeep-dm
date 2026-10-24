@@ -22,6 +22,9 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { joinSeated } from '../helpers/room.js';
+import { quickBuild } from '@game/rules-engine';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = createApp(db, { inputGate: allowInputGate });
 const rooms = new RoomRegistry(
@@ -48,7 +51,7 @@ async function next(
 ): Promise<{
   type: string;
   seq: number;
-  payload: { state: { seats: unknown[] }; presence?: string; claimId?: string };
+  payload: Record<string, unknown>;
 }> {
   let timer: NodeJS.Timeout | undefined;
   try {
@@ -1244,5 +1247,184 @@ describe('one-time gateway', () => {
         await waitForReleasedSocket(seatId);
       }),
     );
+  });
+});
+
+describe('party character binding WebSocket authorization', () => {
+  async function fixture() {
+    const id = randomUUID();
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'party')",
+      [id, accounts[0]],
+    );
+    const room = await rooms.get(id);
+    const prior0 = resumeTokens.get(tokens[0]!);
+    const prior1 = resumeTokens.get(tokens[1]!);
+    const initial0 = await room.seat(
+      accounts[0]!,
+      'Binding owner',
+      false,
+      hashToken(tokens[0]!),
+    );
+    const initial1 = await room.seat(
+      accounts[1]!,
+      'Unbound guest',
+      false,
+      hashToken(tokens[1]!),
+    );
+    resumeTokens.set(tokens[0]!, initial0!);
+    resumeTokens.set(tokens[1]!, initial1!);
+    const catalog = loadCatalog();
+    const repo = new SeatCharacterRepository(db);
+    const owned = {
+      ...quickBuild(catalog, undefined, 0x31, 1).character,
+      id: randomUUID(),
+    };
+    const foreign = {
+      ...quickBuild(catalog, undefined, 0x32, 1).character,
+      id: randomUUID(),
+    };
+    const revision = await repo.saveOwnedCharacter(accounts[0]!, owned);
+    await repo.saveOwnedCharacter(accounts[1]!, foreign);
+    const owner = connect(await ticket(tokens[0]!, id));
+    const guest = connect(await ticket(tokens[1]!, id));
+    await nextOfType(owner, 'StateSync');
+    await nextOfType(guest, 'StateSync');
+    return {
+      id,
+      room,
+      owner,
+      guest,
+      owned,
+      foreign,
+      revision,
+      repo,
+      prior0,
+      prior1,
+    };
+  }
+  async function bind(
+    ws: WebSocket,
+    room: { seq: number },
+    characterId: string,
+    expectedRevision: number,
+    actionId = randomUUID(),
+  ) {
+    ws.send(
+      JSON.stringify({
+        actionId,
+        type: 'BindCharacter',
+        payload: { characterId, expectedRevision },
+        lastSeq: room.seq,
+      }),
+    );
+    return actionId;
+  }
+  async function shutdown(f: Awaited<ReturnType<typeof fixture>>) {
+    await Promise.all([closeSocket(f.owner), closeSocket(f.guest)]);
+    for (const seat of f.room.state.seats)
+      await waitForReleasedSocket(seat.seatId, f.id);
+    if (f.prior0) resumeTokens.set(tokens[0]!, f.prior0);
+    else resumeTokens.delete(tokens[0]!);
+    if (f.prior1) resumeTokens.set(tokens[1]!, f.prior1);
+    else resumeTokens.delete(tokens[1]!);
+  }
+
+  it('broadcasts identifier-only bind, privately confirms to owner, and makes actionId retries idempotent', async () => {
+    const f = await fixture();
+    try {
+      const ownerSeatId = f.room.state.seats.find(
+        (seat) => seat.accountId === accounts[0],
+      )!.seatId;
+      const actionId = await bind(f.owner, f.room, f.owned.id, f.revision);
+      const publicEvent = await nextOfType(f.guest, 'SeatCharacterBound');
+      expect(publicEvent.payload).toEqual({ seatId: ownerSeatId });
+      const ownerEvent = await nextOfType(f.owner, 'SeatCharacterBound');
+      expect(ownerEvent.payload).toEqual({ seatId: ownerSeatId });
+      expect(
+        await nextOfType(f.owner, 'SeatCharacterBoundPrivate'),
+      ).toMatchObject({ payload: { seatId: ownerSeatId } });
+      await bind(f.owner, f.room, f.owned.id, f.revision, actionId);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(seenMessageTypes.get(f.owner)).not.toContain('Error');
+      expect(
+        (
+          await db.query(
+            "SELECT count(*)::int AS n FROM events WHERE session_id=$1 AND type='SeatCharacterBound'",
+            [f.id],
+          )
+        ).rows[0]!.n,
+      ).toBe(1);
+    } finally {
+      await shutdown(f);
+    }
+  });
+
+  it('rejects revoked, foreign-owned, unknown, stale, and gameplay actions from unbound seats with non-disclosing errors', async () => {
+    const f = await fixture();
+    try {
+      const sendAndError = async (characterId: string, revision: number) => {
+        const actionId = await bind(f.owner, f.room, characterId, revision);
+        return nextOfType(f.owner, 'Error').then((m) => ({ actionId, m }));
+      };
+      const foreign = await sendAndError(f.foreign.id, 1);
+      const unknown = await sendAndError(randomUUID(), 1);
+      expect(foreign.m.payload).toMatchObject({
+        code: 'ACTION_REJECTED',
+        actionId: foreign.actionId,
+        message: 'Character could not be bound.',
+      });
+      expect(unknown.m.payload).toMatchObject({
+        code: foreign.m.payload.code,
+        message: foreign.m.payload.message,
+      });
+      const stale = await sendAndError(f.owned.id, f.revision + 1);
+      expect(stale.m.payload).toMatchObject({
+        code: 'ACTION_REJECTED',
+        actionId: stale.actionId,
+      });
+
+      const gameplayId = randomUUID();
+      f.guest.send(
+        JSON.stringify({
+          actionId: gameplayId,
+          type: 'PlayerAction',
+          payload: { text: 'I act before binding.' },
+          lastSeq: f.room.seq,
+        }),
+      );
+      await expect(nextOfType(f.guest, 'Error')).resolves.toMatchObject({
+        payload: { code: 'ACTION_REJECTED', actionId: gameplayId },
+      });
+
+      const ownerSeat = f.room.state.seats.find(
+        (seat) => seat.accountId === accounts[0],
+      )!;
+      // Simulate a concurrent authoritative revocation while the authenticated socket remains open.
+      const seq = Number(
+        (
+          await db.query(
+            'SELECT COALESCE(MAX(seq),0)+1 AS n FROM events WHERE session_id=$1',
+            [f.id],
+          )
+        ).rows[0]!.n,
+      );
+      await db.query(
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,$2,$3,'SeatRevoked',$4::jsonb)",
+        [
+          f.id,
+          seq,
+          randomUUID(),
+          JSON.stringify({ seatId: ownerSeat.seatId, accountId: accounts[0] }),
+        ],
+      );
+      const revokedId = await bind(f.owner, f.room, f.owned.id, f.revision);
+      await expect(nextOfType(f.owner, 'Error')).resolves.toMatchObject({
+        payload: { code: 'ACTION_REJECTED', actionId: revokedId },
+      });
+      expect(ownerSeat.seatId).toBeTruthy();
+    } finally {
+      await shutdown(f);
+    }
   });
 });

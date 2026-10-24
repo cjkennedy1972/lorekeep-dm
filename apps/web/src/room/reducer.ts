@@ -198,6 +198,9 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'SeatAuthenticated':
     case 'SeatClaimPending':
     case 'SeatResumeChallenge':
+    case 'SeatCharacterBound':
+    case 'SeatCharacterReleased':
+    case 'SeatCharacterBoundPrivate':
       return view; // surfaced by the client, not part of room state
   }
 }

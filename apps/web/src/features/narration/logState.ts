@@ -225,6 +225,9 @@ export function narrationLogReducer(
     case 'SeatAuthenticated':
     case 'SeatClaimPending':
     case 'SeatResumeChallenge':
+    case 'SeatCharacterBound':
+    case 'SeatCharacterReleased':
+    case 'SeatCharacterBoundPrivate':
       return state;
   }
 }
