@@ -169,6 +169,30 @@ describe('roomReducer', () => {
     const v = roomReducer(initialRoomView, sync(3));
     expect(v).toMatchObject({ room: state, lastSeq: 3, needsResync: false });
   });
+  test('keeps the last close fact across the next RoundOpened event', () => {
+    let view = roomReducer(initialRoomView, syncWithRound(10, round));
+    view = roomReducer(view, {
+      seq: 11,
+      type: 'RoundClosing',
+      payload: { roundId: round.roundId, closeReason: 'resolve-now' },
+    } as unknown as ServerMessage);
+    view = roomReducer(view, {
+      seq: 12,
+      type: 'RoundClosedEmpty',
+      payload: { roundId: round.roundId },
+    } as unknown as ServerMessage);
+    view = roomReducer(view, {
+      seq: 13,
+      type: 'RoundOpened',
+      payload: { roundId: 'next-round' },
+    } as unknown as ServerMessage);
+
+    expect(view.roundCloseAnnouncement).toEqual({
+      roundId: round.roundId,
+      closeReason: 'resolve-now',
+      summary: '1 of 1 submitted.',
+    });
+  });
   test('StateSync stores the public round snapshot', () => {
     const v = roomReducer(initialRoomView, syncWithRound(3, round));
     expect(v.room?.round).toEqual(round);

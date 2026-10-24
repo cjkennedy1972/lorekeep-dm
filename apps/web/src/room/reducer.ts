@@ -144,11 +144,10 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RoundActionQueued':
     case 'RoundActionEdited':
     case 'RoundActionWithdrawn': {
-      const next = needsRoundResync(view, msg);
-      if (!view.roundCloseAnnouncement) return next;
-      const roundId = String(msg.payload.roundId ?? '');
-      if (roundId === view.roundCloseAnnouncement.roundId) return next;
-      return { ...next, roundCloseAnnouncement: undefined };
+      // Keep the last close fact through the following RoundOpened event. The
+      // panel may not render between sequenced events, so clearing it here can
+      // make React batch away the only chance to announce the close.
+      return needsRoundResync(view, msg);
     }
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
