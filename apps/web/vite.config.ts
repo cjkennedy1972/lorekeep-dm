@@ -24,6 +24,7 @@ export default defineConfig({
       'e2e/**',
       'e2e-live/**',
       'e2e-adventure/**',
+      'e2e-party/**',
       'dist/**',
       'node_modules/**',
     ],
