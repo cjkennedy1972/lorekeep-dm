@@ -442,6 +442,14 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       const optionsReply = await client.command({ command: 'options' });
       if (
         optionsReply.type === 'Error' &&
+        optionsReply.payload?.message === 'It is not your turn.'
+      ) {
+        // CombatTracker is a broadcast snapshot; the turn can advance while this
+        // command is queued. Re-read it on the next loop before choosing an action.
+        continue;
+      }
+      if (
+        optionsReply.type === 'Error' &&
         optionsReply.payload?.message === 'Resolve the pending reaction first.'
       ) {
         const prompt = client.last<Record<string, unknown>>('ReactionPrompt');
@@ -454,7 +462,9 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         });
         continue;
       }
-      expect(optionsReply.type).toBe('CombatOptions');
+      expect(optionsReply.type, JSON.stringify(optionsReply.payload)).toBe(
+        'CombatOptions',
+      );
       const opts = optionsReply.payload as Record<string, unknown>;
       const resources = tracker.resources.ent_aria;
       const area = (opts.areas as Record<string, unknown>[])
