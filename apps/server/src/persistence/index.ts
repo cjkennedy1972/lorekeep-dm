@@ -343,7 +343,15 @@ export class Persistence {
     registryTurnId?: string,
     rewoundTurnIds: readonly string[] = [],
     seatCharacterTransition?: SeatCharacterTransition,
-  ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
+  ): Promise<{
+    events: StoredEvent[];
+    snapshot: Snapshot;
+    binding?: {
+      seatId: string;
+      accountId: string;
+      characterSnapshot: Record<string, unknown>;
+    };
+  }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
       let binding:
@@ -455,7 +463,19 @@ export class Persistence {
         );
       }
       const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
-      return { events: inserted, snapshot };
+      return {
+        events: inserted,
+        snapshot,
+        ...(binding
+          ? {
+              binding: {
+                seatId: seatCharacterTransition!.seatId,
+                accountId: seatCharacterTransition!.accountId,
+                characterSnapshot: binding.characterSnapshot,
+              },
+            }
+          : {}),
+      };
     });
   }
 

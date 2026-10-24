@@ -877,7 +877,7 @@ export function installGateway(
             const command = BindCharacterSchema.safeParse(msg);
             if (!command.success) return;
             if (room.hasActionId(msg.actionId)) return;
-            if (!room.reserveActionMutation(identity.accountId, 'host')) {
+            if (!room.reserveActionMutation(identity.accountId, 'bind')) {
               send({
                 seq: room.seq,
                 type: 'Error',

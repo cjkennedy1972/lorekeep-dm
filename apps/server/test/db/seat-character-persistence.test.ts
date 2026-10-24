@@ -49,6 +49,75 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
+  it('returns the committed binding and releases its row on revocation without a Room cache entry', async () => {
+    const f = await fixture();
+    try {
+      const store = new Persistence(db);
+      const bound = await store.writeTurn(
+        f.sessionId,
+        [
+          {
+            seq: 3,
+            turnId: randomUUID(),
+            type: 'SeatCharacterBound',
+            payload: { seatId: f.seatA },
+          },
+        ],
+        {},
+        undefined,
+        [],
+        undefined,
+        undefined,
+        [],
+        {
+          kind: 'bind',
+          seatId: f.seatA,
+          accountId: f.accountId,
+          characterId: f.character.id,
+          expectedRevision: f.revision,
+        },
+      );
+      expect(bound.binding).toMatchObject({
+        seatId: f.seatA,
+        accountId: f.accountId,
+        characterSnapshot: { id: f.character.id },
+      });
+
+      await store.writeTurn(
+        f.sessionId,
+        [
+          {
+            seq: 4,
+            turnId: randomUUID(),
+            type: 'SeatRevoked',
+            payload: { seatId: f.seatA, accountId: f.accountId },
+          },
+          {
+            seq: 5,
+            turnId: randomUUID(),
+            type: 'SeatCharacterReleased',
+            payload: { seatId: f.seatA, reason: 'left' },
+          },
+        ],
+        {},
+        undefined,
+        [],
+        undefined,
+        undefined,
+        [],
+        { kind: 'release', seatId: f.seatA, accountId: f.accountId },
+      );
+      expect(
+        await db.query(
+          "SELECT 1 FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2 AND binding_status='active'",
+          [f.sessionId, f.seatA],
+        ),
+      ).toMatchObject({ rowCount: 0 });
+    } finally {
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  });
   it('rolls back binding when event append fails after the binding insert', async () => {
     const f = await fixture();
     try {

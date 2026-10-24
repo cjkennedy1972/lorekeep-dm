@@ -29,6 +29,7 @@ function party(
     hostA?: boolean;
     roundsEnabled?: boolean;
     turnRunner?: SoloTurnRunner;
+    failBindingReload?: boolean;
   } = {},
 ) {
   const [accountA, accountB, seatA, seatB] = [1, 2, 3, 4].map(() =>
@@ -39,6 +40,11 @@ function party(
   const store = {
     async loadLatest() {
       return { snapshot: null, events: [] };
+    },
+    async loadActiveSeatCharacterBindings() {
+      if (options.failBindingReload)
+        throw new Error('simulated reload failure');
+      return [];
     },
     async writeTurn(
       _id: string,
@@ -59,7 +65,23 @@ function party(
         ts: new Date(),
       })) as StoredEvent[];
       stored.push(...out);
-      return { events: out };
+      const bind = (transition ?? {}) as {
+        kind?: string;
+        seatId?: string;
+        accountId?: string;
+      };
+      return {
+        events: out,
+        ...(bind.kind === 'bind'
+          ? {
+              binding: {
+                seatId: bind.seatId!,
+                accountId: bind.accountId!,
+                characterSnapshot: { name: 'Committed sheet' },
+              },
+            }
+          : {}),
+      };
     },
     async isTableHost(_id: string, accountId: string) {
       return options.hostA === true && accountId === accountA;
@@ -157,6 +179,40 @@ describe('ADR-035 party seat gating', () => {
     ]);
   });
 
+  it('releases a just-committed binding even if the follow-up binding reload fails', async () => {
+    const f = party({ bindA: false, failBindingReload: true });
+    await f.room.bindSeatCharacter(
+      f.accountA,
+      randomUUID(),
+      1,
+      async () => true,
+      randomUUID(),
+    );
+    expect(f.room.seatCharacters.get(f.seatA)).toMatchObject({
+      accountId: f.accountA,
+      characterSnapshot: { name: 'Committed sheet' },
+    });
+    await f.room.leave(f.accountA);
+    const revoke = f.writes.find((write) =>
+      write.events.includes('SeatRevoked'),
+    )!;
+    expect(revoke.events).toEqual(['SeatRevoked', 'SeatCharacterReleased']);
+    expect(revoke.transition).toMatchObject({
+      kind: 'release',
+      seatId: f.seatA,
+    });
+  });
+
+  it('does not reveal a character when a different viewer id matches the seat id', () => {
+    const f = party({ bindB: true });
+    const privateSheet = { name: 'Owner-only sheet', privateNotes: 'private' };
+    f.room.state.gameState = { characters: { [f.seatA]: privateSheet } };
+    const projection = f.room.clientState(f.seatA).gameState as {
+      characters: Record<string, Record<string, unknown>>;
+    };
+    expect(projection.characters[f.seatA]).not.toHaveProperty('privateNotes');
+  });
+
   it('leave releases the binding atomically with an identifier-only event', async () => {
     const { room, writes, accountA, seatA } = party({ bindB: true });
     expect(room.seatCharacters.has(seatA)).toBe(true);
@@ -168,6 +224,16 @@ describe('ADR-035 party seat gating', () => {
     expect(JSON.stringify(room.clientState())).not.toContain(
       'Secret sheet name',
     );
+  });
+
+  it('does not allow a replacement account to use the previous account binding', async () => {
+    const f = party({ bindA: true });
+    const replacement = randomUUID();
+    f.room.state.seats.find((seat) => seat.seatId === f.seatA)!.accountId =
+      replacement;
+    await expect(
+      f.room.submitAction(replacement, randomUUID(), 'use inherited sheet'),
+    ).rejects.toBeInstanceOf(RoomSeatRequiredError);
   });
 
   it('projects a public card to other seats while the owner retains their own sheet', () => {
@@ -315,11 +381,18 @@ describe('ADR-035 party seat gating', () => {
     ).rejects.toBeInstanceOf(RoomSeatRequiredError);
   });
 
-  it('does not emit a release for a seat that was never bound', async () => {
-    const { room, writes, accountB } = party();
+  it('attempts an account-scoped release when a seat was never bound in memory', async () => {
+    const { room, writes, accountB, seatB } = party();
     await room.leave(accountB);
-    expect(writes.at(-1)?.events).toEqual(['SeatRevoked']);
-    expect(writes.at(-1)?.transition).toBeUndefined();
+    expect(writes.at(-1)?.events).toEqual([
+      'SeatRevoked',
+      'SeatCharacterReleased',
+    ]);
+    expect(writes.at(-1)?.transition).toMatchObject({
+      kind: 'release',
+      seatId: seatB,
+      accountId: accountB,
+    });
   });
 
   it('gates every party session even when no seat is bound', async () => {
