@@ -117,13 +117,19 @@ function connect(
   proofOverride?: string | null,
   saveResumeToken = true,
   cookieToken?: string | null,
+  gatewayBase = base,
 ) {
   const ownerToken = ticketOwners.get(t);
   const selectedCookie = cookieToken === undefined ? ownerToken : cookieToken;
-  const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
-    origin: base,
-    ...(selectedCookie ? { headers: { cookie: `sid=${selectedCookie}` } } : {}),
-  });
+  const ws = new WebSocket(
+    `${gatewayBase.replace('http', 'ws')}/ws?ticket=${t}`,
+    {
+      origin: gatewayBase,
+      ...(selectedCookie
+        ? { headers: { cookie: `sid=${selectedCookie}` } }
+        : {}),
+    },
+  );
   inboxes.set(ws, on(ws, 'message'));
   seenMessageTypes.set(ws, []);
   ws.on('message', (raw) => {
@@ -350,6 +356,17 @@ describe('one-time gateway', () => {
       tokens[1]!,
     );
     expect(await closed(wrongCookieSocket)).toBe(1008);
+    // The rejected wrong-cookie attempt must leave this exact ticket usable.
+    const wrongCookieRetry = connect(wrongCookieTicket);
+    await nextOfType(wrongCookieRetry, 'SeatAuthenticated');
+    await nextOfType(wrongCookieRetry, 'StateSync');
+    await closeSocket(wrongCookieRetry);
+    await waitForReleasedSocket(seatId, soloSessionId);
+    await db.query(
+      'DELETE FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [soloSessionId, seatId],
+    );
+
     const tokenlessTicket = await ticket(tokens[0]!, soloSessionId);
     const noCookieSocket = connect(tokenlessTicket, null, false, null);
     expect(await closed(noCookieSocket)).toBe(1008);
@@ -358,6 +375,44 @@ describe('one-time gateway', () => {
     await nextOfType(tokenlessSocket, 'SeatAuthenticated');
     await nextOfType(tokenlessSocket, 'StateSync');
     await closeSocket(tokenlessSocket);
+    await waitForReleasedSocket(seatId, soloSessionId);
+    // Successful redemption remains single-use.
+    expect(
+      await consumeTicket(db, tokenlessTicket, soloSessionId),
+    ).toBeUndefined();
+
+    // A valid owner cookie does not enable recovery when the flag is off.
+    await db.query(
+      'DELETE FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [soloSessionId, seatId],
+    );
+    const flagOffApp = createApp(db, { inputGate: allowInputGate });
+    installGateway(
+      flagOffApp,
+      db,
+      rooms,
+      new ConnectionRegistry(db),
+      15_000,
+      false,
+    );
+    const flagOffBase = await flagOffApp.listen({ host: '127.0.0.1', port: 0 });
+    try {
+      const flagOffTicket = await ticket(tokens[0]!, soloSessionId);
+      const flagOffSocket = connect(
+        flagOffTicket,
+        null,
+        false,
+        undefined,
+        flagOffBase,
+      );
+      await nextOfType(flagOffSocket, 'SeatClaimPending');
+      expect(seenMessageTypes.get(flagOffSocket)).not.toContain(
+        'SeatAuthenticated',
+      );
+      await closeSocket(flagOffSocket);
+    } finally {
+      await flagOffApp.close();
+    }
     await closeSocket(otherSessionSocket);
     if (priorResumeToken) resumeTokens.set(tokens[0]!, priorResumeToken);
     else resumeTokens.delete(tokens[0]!);
