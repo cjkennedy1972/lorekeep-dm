@@ -1370,18 +1370,27 @@ describe('party character binding WebSocket authorization', () => {
       const foreign = await sendAndError(f.foreign.id, 1);
       const unknown = await sendAndError(randomUUID(), 1);
       expect(foreign.m.payload).toMatchObject({
-        code: 'ACTION_REJECTED',
+        code: 'NOT_OWNER',
         actionId: foreign.actionId,
         message: 'Character could not be bound.',
       });
       expect(unknown.m.payload).toMatchObject({
-        code: foreign.m.payload.code,
-        message: foreign.m.payload.message,
+        code: 'ACTION_REJECTED',
+        actionId: unknown.actionId,
       });
       const stale = await sendAndError(f.owned.id, f.revision + 1);
       expect(stale.m.payload).toMatchObject({
-        code: 'ACTION_REJECTED',
+        code: 'STALE_REVISION',
         actionId: stale.actionId,
+      });
+
+      await bind(f.owner, f.room, f.owned.id, f.revision);
+      await nextOfType(f.owner, 'SeatCharacterBound');
+      await nextOfType(f.owner, 'SeatCharacterBoundPrivate');
+      const duplicate = await sendAndError(f.owned.id, f.revision);
+      expect(duplicate.m.payload).toMatchObject({
+        code: 'ALREADY_BOUND',
+        actionId: duplicate.actionId,
       });
 
       const gameplayId = randomUUID();
@@ -1420,8 +1429,18 @@ describe('party character binding WebSocket authorization', () => {
       );
       const revokedId = await bind(f.owner, f.room, f.owned.id, f.revision);
       await expect(nextOfType(f.owner, 'Error')).resolves.toMatchObject({
-        payload: { code: 'ACTION_REJECTED', actionId: revokedId },
+        payload: { code: 'NOT_SEATED', actionId: revokedId },
       });
+      const limited = await sendAndError(f.owned.id, f.revision);
+      expect(limited.m.payload).toMatchObject({
+        code: 'RATE_LIMITED',
+        actionId: limited.actionId,
+      });
+      const binds = await db.query(
+        "SELECT count(*)::int AS count FROM events WHERE session_id=$1 AND type='SeatCharacterBound'",
+        [f.id],
+      );
+      expect(binds.rows[0]!.count).toBe(1);
       expect(ownerSeat.seatId).toBeTruthy();
     } finally {
       await shutdown(f);

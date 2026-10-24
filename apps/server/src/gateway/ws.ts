@@ -53,6 +53,7 @@ import { ConnectionRegistry } from './connections.js';
 import { SOLO_OWNER_RESUME_RECOVERY_ENABLED } from './recoveryPolicy.js';
 import { ChatPolicy } from '../chat/policy.js';
 import { applyAutomaticChatMute } from '../chat/mutes.js';
+import { SeatCharacterError } from '../persistence/seatCharacters.js';
 import {
   currentMemberEventsSql,
   currentMemberSql,
@@ -68,6 +69,22 @@ const MAX_BYTES = 10 * 1024;
 const CHAT_REJECTION = 'That message could not be sent. Try again.';
 const MESSAGE_BUCKET_CAPACITY = 20;
 const MESSAGE_REFILL_PER_SECOND = 10;
+function bindFailureCode(error: unknown): string {
+  if (error instanceof RoomSeatRequiredError) return 'NOT_SEATED';
+  if (!(error instanceof SeatCharacterError)) return 'ACTION_REJECTED';
+  switch (error.code) {
+    case 'NOT_OWNER':
+    case 'STALE_REVISION':
+    case 'NOT_SEATED':
+    case 'ACCOUNT_INACTIVE':
+      return error.code;
+    case 'ALREADY_BOUND':
+    case 'CHARACTER_BOUND':
+      return 'ALREADY_BOUND';
+    default:
+      return 'ACTION_REJECTED';
+  }
+}
 async function hasCurrentSeat(
   db: Pool,
   accountId: string,
@@ -900,17 +917,17 @@ export function installGateway(
                 },
                 msg.actionId,
               )
-              .catch(() =>
+              .catch((error: unknown) => {
                 send({
                   seq: room.seq,
                   type: 'Error',
                   payload: {
-                    code: 'ACTION_REJECTED',
+                    code: bindFailureCode(error),
                     message: 'Character could not be bound.',
                     actionId: msg.actionId,
                   },
-                }),
-              );
+                });
+              });
           }
           if (msg.type === 'CastRestVote') {
             const action = CastRestVoteSchema.safeParse(msg);
