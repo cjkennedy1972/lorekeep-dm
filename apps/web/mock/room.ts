@@ -193,8 +193,9 @@ export class Room {
       } as ServerMessage;
       for (const send of this.conns.get(seat.accountId) ?? []) send(error);
     };
+    // Foreign and unknown ids get the same neutral rejection, so the client never learns whether a character exists.
     if (!character || character.accountId !== seat.accountId)
-      return reject('NOT_OWNER', 'That character is not on this account.');
+      return reject('ACTION_REJECTED', 'Character could not be bound.');
     if (character.revision !== body.expectedRevision)
       return reject(
         'STALE_REVISION',
@@ -202,9 +203,12 @@ export class Room {
       );
     if (this.bound.has(seat.seatId))
       return reject('ALREADY_BOUND', 'This seat already has a character.');
-    // Bound to another seat at this table: the server has no typed code for this yet, so it stays generic.
+    // Bound to another seat at this table.
     if ([...this.bound.values()].includes(character.id))
-      return reject('ACTION_REJECTED', 'Character could not be bound.');
+      return reject(
+        'ALREADY_BOUND',
+        'Character is already bound at this table.',
+      );
     this.bound.set(seat.seatId, character.id);
     this.emit({
       seq: ++this.seq,

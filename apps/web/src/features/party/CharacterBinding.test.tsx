@@ -102,7 +102,7 @@ describe('CharacterBinding', () => {
       />,
     );
     expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toMatch(/already has/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/already bound/i);
     expect(screen.getByRole('button', { name: 'Bind character' })).toBeTruthy();
   });
 
@@ -167,7 +167,7 @@ describe('CharacterBinding', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  test('a not-owner error shows its message', async () => {
+  test('NOT_OWNER shows the neutral rejection, not an ownership message', async () => {
     listed();
     const send = vi.fn(() => ACTION);
     const { rerender } = render(
@@ -189,9 +189,9 @@ describe('CharacterBinding', () => {
         {...LIVE}
       />,
     );
-    expect((await screen.findByRole('alert')).textContent).toMatch(
-      /not yours/i,
-    );
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/could not be bound/i);
+    expect(alert.textContent).not.toMatch(/not yours|not on this account/i);
   });
 
   test('a silent server clears the pending bind after the reply timeout', async () => {

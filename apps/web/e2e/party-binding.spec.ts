@@ -119,7 +119,7 @@ test('a character that changed since the list loaded is rejected with an accessi
   ).toBeEnabled();
 });
 
-test('a character the account does not own is refused with the not-owner message', async ({
+test('a character the account does not own is refused with the neutral rejection', async ({
   browser,
 }) => {
   const host = await browser.newContext();
@@ -155,8 +155,9 @@ test('a character the account does not own is refused with the not-owner message
     .selectOption(foreignId);
   await page.getByRole('button', { name: 'Bind character' }).click();
 
+  // The refusal is the same neutral rejection an unknown id gets, so it does not reveal ownership.
   await expect(
-    page.getByRole('alert').filter({ hasText: 'That character is not yours' }),
+    page.getByRole('alert').filter({ hasText: 'could not be bound' }),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Bind character' }),

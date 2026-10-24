@@ -13,7 +13,6 @@ const catalog = loadCharacterCatalog();
 
 describe('bindFailureFor', () => {
   test('maps every named server code to its failure', () => {
-    expect(bindFailureFor('NOT_OWNER')).toBe('not-owner');
     expect(bindFailureFor('ALREADY_BOUND')).toBe('already-bound');
     expect(bindFailureFor('STALE_REVISION')).toBe('stale-revision');
     expect(bindFailureFor('NOT_SEATED')).toBe('not-seated');
@@ -21,7 +20,8 @@ describe('bindFailureFor', () => {
     expect(bindFailureFor('RATE_LIMITED')).toBe('rate-limited');
   });
 
-  test('falls back to rejected for ACTION_REJECTED and unknown codes', () => {
+  test('falls back to rejected for NOT_OWNER, ACTION_REJECTED and unknown codes', () => {
+    expect(bindFailureFor('NOT_OWNER')).toBe('rejected');
     expect(bindFailureFor('ACTION_REJECTED')).toBe('rejected');
     expect(bindFailureFor('SOMETHING_NEW')).toBe('rejected');
   });
@@ -30,7 +30,6 @@ describe('bindFailureFor', () => {
 describe('bindFailureMessage', () => {
   test('every failure has a distinct, non-empty sentence', () => {
     const all: BindFailure[] = [
-      'not-owner',
       'already-bound',
       'stale-revision',
       'not-seated',

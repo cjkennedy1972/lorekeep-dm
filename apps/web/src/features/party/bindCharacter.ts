@@ -13,7 +13,6 @@ export interface OwnedCharacter {
 }
 
 export type BindFailure =
-  | 'not-owner'
   | 'already-bound'
   | 'stale-revision'
   | 'not-seated'
@@ -23,11 +22,9 @@ export type BindFailure =
   | 'no-reply'
   | 'interrupted';
 
-/** Maps a bind Error code to a failure. Codes the picker does not name fall back to 'rejected' (ACTION_REJECTED). */
+/** Maps a bind Error code to a failure. NOT_OWNER and codes the picker does not name fall back to 'rejected', so the client never confirms a character exists on another account. */
 export function bindFailureFor(code: string): BindFailure {
   switch (code) {
-    case 'NOT_OWNER':
-      return 'not-owner';
     case 'ALREADY_BOUND':
       return 'already-bound';
     case 'STALE_REVISION':
@@ -44,9 +41,8 @@ export function bindFailureFor(code: string): BindFailure {
 }
 
 const FAILURE_MESSAGE: Record<BindFailure, string> = {
-  'not-owner':
-    'That character is not yours. Choose one of your own characters.',
-  'already-bound': 'This seat already has a character bound.',
+  'already-bound':
+    'This seat or character is already bound at this table. Choose another character.',
   'stale-revision':
     'That character changed since the list loaded. Reload your characters and choose again.',
   'not-seated':
@@ -55,7 +51,7 @@ const FAILURE_MESSAGE: Record<BindFailure, string> = {
     'This account is inactive, so characters cannot be bound to a seat.',
   'rate-limited': 'Too many bind attempts. Wait a moment, then try again.',
   rejected:
-    'The character could not be bound. It may already be in use at this table. Try another.',
+    'That character could not be bound. Reload your characters and choose again.',
   'no-reply':
     'The table did not confirm the bind. Check the connection, then try again.',
   interrupted:
