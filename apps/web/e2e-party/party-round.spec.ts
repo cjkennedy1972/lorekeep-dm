@@ -435,7 +435,19 @@ test.describe.serial('party round and host panels (real server)', () => {
         name: 'Resolve round now',
         exact: true,
       });
-      await expect(resolve).toBeEnabled({ timeout: 10_000 });
+      const reconnectPause = hostView.page.getByRole('status').filter({
+        hasText: 'Table paused: waiting for players to reconnect.',
+      });
+      await expect
+        .poll(
+          async () =>
+            (await reconnectPause.isVisible()) || (await resolve.isEnabled()),
+          { timeout: 15_000 },
+        )
+        .toBe(true);
+      if (await reconnectPause.isVisible())
+        await expect(reconnectPause).toBeHidden({ timeout: 20_000 });
+      await expect(resolve).toBeEnabled({ timeout: 20_000 });
       await resolve.click();
 
       // Seated players appear in the host's seat list; the approved latecomer is one of them.

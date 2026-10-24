@@ -177,8 +177,11 @@ export function Game() {
         const state = asRecord(message.payload.state);
         setSafetyNotice((current) =>
           state.paused === true
-            ? 'The table is paused.'
-            : current === 'The table is paused.'
+            ? state.pauseCause === 'no-connected-seats'
+              ? 'Table paused: waiting for players to reconnect. It will resume automatically when a seat is confirmed connected.'
+              : 'The table is paused.'
+            : current.startsWith('Table paused:') ||
+                current === 'The table is paused.'
               ? ''
               : current,
         );
@@ -593,7 +596,11 @@ export function Game() {
         <h2>Safety controls</h2>
         <p role="status" aria-live="polite">
           {safetyNotice ||
-            (room.paused ? 'The table is paused.' : 'The table is active.')}
+            (room.paused
+              ? room.pauseCause === 'no-connected-seats'
+                ? 'Table paused: waiting for players to reconnect. It will resume automatically when a seat is confirmed connected.'
+                : 'The table is paused.'
+              : 'The table is active.')}
         </p>
         {spotlightNotice && (
           <p role="status" aria-live="polite">
@@ -668,6 +675,7 @@ export function Game() {
             roundDurationMs={room.roundDurationMs ?? null}
             connected={live.status === 'connected'}
             paused={room.paused === true}
+            pauseCause={room.pauseCause}
             send={live.send}
             seats={room.seats}
             selfSeatId={selfSeat?.seatId}

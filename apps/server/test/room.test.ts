@@ -125,7 +125,7 @@ describe('room actor', () => {
     expect(JSON.stringify(sync)).not.toContain('private action text');
   });
 
-  it('places exploration admission at a committed scene boundary and combat admission at a round boundary', () => {
+  it('places exploration admission at a committed scene or resolved-round boundary and combat admission at a round boundary', () => {
     expect(
       nextLateJoinBoundary({
         turnInFlight: true,
@@ -145,6 +145,14 @@ describe('room actor', () => {
         turnInFlight: false,
         combatActive: false,
         roundStatus: 'resolved',
+        sceneBoundary: false,
+      }),
+    ).toBe('before-next-turn');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: false,
+        roundStatus: 'open',
         sceneBoundary: false,
       }),
     ).toBe('after-turn');

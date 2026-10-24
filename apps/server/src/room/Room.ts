@@ -183,7 +183,7 @@ const AWAY_AFTER_MS = 30_000;
 const SEAT_CLAIM_TTL_MS = 60_000;
 const PRESENCE_EVENT_WINDOW_MS = 10_000;
 
-/** Exploration admission requires a committed scene close; combat waits for the next initiative round. */
+/** Exploration admission waits for a committed scene close or resolved round; combat waits for the next initiative round. */
 export function nextLateJoinBoundary(input: {
   turnInFlight: boolean;
   combatActive: boolean;
@@ -194,7 +194,7 @@ export function nextLateJoinBoundary(input: {
   if (
     input.turnInFlight ||
     (input.roundStatus && input.roundStatus !== 'resolved') ||
-    !input.sceneBoundary
+    (!input.sceneBoundary && input.roundStatus !== 'resolved')
   )
     return 'after-turn';
   return 'before-next-turn';
@@ -228,7 +228,12 @@ export class Room {
   private readonly connections = new Map<string, Connection>();
   private readonly pendingSeatResumeTokens = new Map<
     string,
-    { token: string; authTokenHash: string; expiresAt: number }
+    {
+      token: string;
+      authTokenHash: string;
+      expiresAt: number;
+      expiryTimer: NodeJS.Timeout;
+    }
   >();
   private readonly lateJoinAuthTokenHashes = new Map<string, string>();
   private readonly presenceTimers = new Map<string, NodeJS.Timeout>();
@@ -872,11 +877,7 @@ export class Room {
           seat.seatId,
         );
         if (resumeToken && authTokenHash)
-          this.pendingSeatResumeTokens.set(accountId, {
-            token: resumeToken,
-            authTokenHash,
-            expiresAt: Date.now() + 30_000,
-          });
+          this.setPendingSeatResumeToken(accountId, resumeToken, authTokenHash);
         this.broadcast({
           seq: this.seq,
           type: 'StateSync',
@@ -922,7 +923,10 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'StateSync',
-          payload: { state: this.clientState(accountId) },
+          payload: {
+            ...this.clientSyncPayload(),
+            state: this.clientState(accountId),
+          },
         });
       this.sendCombatSnapshot(connection);
       this.sendRoundSnapshot(connection);
@@ -959,11 +963,7 @@ export class Room {
         seatId,
       );
       if (resumeToken && authTokenHash)
-        this.pendingSeatResumeTokens.set(accountId, {
-          token: resumeToken,
-          authTokenHash,
-          expiresAt: Date.now() + 30_000,
-        });
+        this.setPendingSeatResumeToken(accountId, resumeToken, authTokenHash);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -971,6 +971,26 @@ export class Room {
       });
       return resumeToken;
     });
+  }
+
+  private setPendingSeatResumeToken(
+    accountId: string,
+    token: string,
+    authTokenHash: string,
+  ): void {
+    const previous = this.pendingSeatResumeTokens.get(accountId);
+    if (previous) clearTimeout(previous.expiryTimer);
+    const pending = {
+      token,
+      authTokenHash,
+      expiresAt: Date.now() + 30_000,
+      expiryTimer: setTimeout(() => {
+        if (this.pendingSeatResumeTokens.get(accountId) === pending)
+          this.pendingSeatResumeTokens.delete(accountId);
+      }, 30_000),
+    };
+    pending.expiryTimer.unref?.();
+    this.pendingSeatResumeTokens.set(accountId, pending);
   }
 
   /** One-time handoff to the exact authenticated session that seated the account. */
@@ -982,10 +1002,12 @@ export class Room {
     const pending = this.pendingSeatResumeTokens.get(accountId);
     if (!pending) return undefined;
     if (pending.expiresAt <= now) {
+      clearTimeout(pending.expiryTimer);
       this.pendingSeatResumeTokens.delete(accountId);
       return undefined;
     }
     if (pending.authTokenHash !== authTokenHash) return undefined;
+    clearTimeout(pending.expiryTimer);
     this.pendingSeatResumeTokens.delete(accountId);
     return pending.token;
   }
@@ -995,8 +1017,10 @@ export class Room {
     authTokenHash: string,
   ): void {
     const pending = this.pendingSeatResumeTokens.get(accountId);
-    if (pending?.authTokenHash === authTokenHash)
+    if (pending?.authTokenHash === authTokenHash) {
+      clearTimeout(pending.expiryTimer);
       this.pendingSeatResumeTokens.delete(accountId);
+    }
   }
 
   isCurrentConnection(accountId: string, connection: Connection): boolean {
@@ -2377,11 +2401,11 @@ export class Room {
       const authTokenHash = this.lateJoinAuthTokenHashes.get(request.requestId);
       this.lateJoinAuthTokenHashes.delete(request.requestId);
       if (resumeToken && authTokenHash)
-        this.pendingSeatResumeTokens.set(request.accountId, {
-          token: resumeToken,
+        this.setPendingSeatResumeToken(
+          request.accountId,
+          resumeToken,
           authTokenHash,
-          expiresAt: Date.now() + 30_000,
-        });
+        );
       await this.persist('LateJoinAdmitted', {
         requestId: request.requestId,
         seatId: seat.seatId,
@@ -4115,7 +4139,10 @@ export class Room {
       for (const [accountId, connection] of this.connections)
         connection.send({
           ...message,
-          payload: { state: this.clientState(accountId) },
+          payload: {
+            ...this.clientSyncPayload(),
+            state: this.clientState(accountId),
+          },
         });
       return;
     }
