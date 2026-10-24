@@ -17,7 +17,6 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
-import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { hero, preCombatGame } from '../room/combatFixtures.js';
 import { scriptedDm } from '../room/scriptedDm.js';
 import { isLocalDatabaseUrl } from './localDatabaseUrl.js';
@@ -58,7 +57,14 @@ it('serves a party table (host, two seated guests, one outsider) for browser e2e
       attributable: false,
     }),
   };
-  const app = createApp(db, { inputGate: partyInputGate, rooms, connections });
+  // The invite-join throttle (10 hits per IP and invite per 60 s) is shared by every spec in this
+  // serial suite. Raise it for the harness only so no spec has to wait out the window.
+  const app = createApp(db, {
+    inputGate: partyInputGate,
+    rooms,
+    connections,
+    joinRateLimit: 1000,
+  });
   installGateway(app, db, rooms, connections, 300);
 
   const seedAccount = async (displayName: string) => {
@@ -116,18 +122,6 @@ it('serves a party table (host, two seated guests, one outsider) for browser e2e
       { ...hero, id: randomUUID() },
     ]),
   );
-  // Party tables are created without a pinned catalog (routes/sessions.ts:131), so GET
-  // /api/tables/:id answers CATALOG_VERSION_UNAVAILABLE. Pin the live catalog here, the same way
-  // solo creation does (routes/tables.ts:239-244), so the game screen can load.
-  const catalog = loadCatalog();
-  await db.query(
-    `INSERT INTO catalog_snapshots(catalog_version,entries) VALUES($1,$2::jsonb) ON CONFLICT (catalog_version) DO NOTHING`,
-    [catalog.catalogVersion, JSON.stringify(catalog.entries)],
-  );
-  await db.query(`UPDATE sessions SET catalog_version=$2 WHERE id=$1`, [
-    table,
-    catalog.catalogVersion,
-  ]);
   const room = await rooms.get(table);
   await room.persistGameState({
     ...preCombatGame(hero),
@@ -145,6 +139,8 @@ it('serves a party table (host, two seated guests, one outsider) for browser e2e
       scout: { accountId: scout.id, token: scout.token },
       outsider: { accountId: outsider.id, token: outsider.token },
     }),
+    // Holds bearer tokens: owner-only.
+    { mode: 0o600 },
   );
   // Listen last: Playwright treats the first HTTP answer as "ready", and the state file exists by now.
   await app.listen({ host: '127.0.0.1', port });

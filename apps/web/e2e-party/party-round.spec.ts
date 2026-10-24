@@ -370,9 +370,6 @@ test.describe.serial('party round and host panels (real server)', () => {
   test('host approves a pending late join and the player is seated', async ({
     browser,
   }) => {
-    // The invite join throttle allows 10 hits per IP and invite per 60 s, and the earlier specs in
-    // this serial suite share that budget. Wait for the window to clear so this join is not 429.
-    await new Promise((resolve) => setTimeout(resolve, 61_000));
     const { table, invite, outsider, guest } = state();
     const path = `/rooms/${table}/game`;
     const hostView = await openAs(browser, guest, table, path);
