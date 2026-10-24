@@ -96,7 +96,8 @@ test('a character that changed since the list loaded is rejected with an accessi
   await expect(picker(page)).toBeVisible();
 
   // The sheet changes after the picker loaded, so the bind carries an old revision.
-  const [first] = await ownCharacters(host);
+  const first = (await ownCharacters(host))[0];
+  if (!first) throw new Error('expected a seeded character for this account');
   const bumped = await host.request.post(
     `${API}/api/test/characters/${first.id}/revision`,
   );
