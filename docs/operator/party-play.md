@@ -78,7 +78,7 @@ Every non-allow writes a moderation log entry.
 
 **Who may do what.** Any seated account may send chat, unless paused (non-host) or muted. The host may mute and unmute a seat (`MuteChat`).
 
-**Not done yet.** Chat report-a-message flow is covered by retention rules (see §6) but the player-facing report UI is not described here; verify before documenting.
+**Unverified: report-a-message UI.** Server report routes and `message_reports` retention exist (`apps/server/src/routes/reports.ts`), but the player-facing report flow in the web client was not verified and is not described here.
 
 ---
 
@@ -90,7 +90,7 @@ All host commands are sent through the `hostCommand` envelope with `lastSeq`. On
 |---|---|---|
 | `ConfigureRoundTimer` | Sets round timer (30–600 s or null for off) | Applies to rounds opened after the save. |
 | `ResolveNow` | Resolves the open round now | Rejected while paused. |
-| `KickSeat` | Removes a seat from the table | |
+| `KickSeat` | Removes the target seat and closes its socket (close code 1008, "Seat revoked by the host"). Emits `SeatRevoked` with `cause: 'host-kick'`. Host cannot kick their own seat. | Shipped behavior, which differs from ADR-031 §2.7 in three ways. (1) **Terminal per seat:** not implemented. The code removes the seat from `state.seats`; there is no `revoked` seat state, and the `cause` value is `host-kick`, not `kick`. (2) **Re-entry needs host approval:** implemented in the sense that nothing blocks the kicked account from calling `requestLateJoin` again, and admission still requires `ApproveLateJoin`. (3) **Ban at join request:** **not shipped.** No ban cause or ban check exists in `Room.ts` or `ws.ts`; a banned-account block is not available. Rest-vote N and counted-ballot retention for a kicked seat (ADR-031 §2.7) are unverified. |
 | `TransferHost` | Moves host to another seated account | Fails with "Host transfer unavailable" if the target is not eligible. (`Room.ts` ~L2029) |
 | `ApproveLateJoin` / `DenyLateJoin` | Decides a pending late-join request (`requestId`) | Approved requests are admitted at the next safe point. Events: `LateJoinRequested`, `LateJoinApproved`, `LateJoinDenied`, `LateJoinAdmitted`. |
 | `EndTable` | Ends the table | Later mutations fail with "Table ended". |
@@ -194,10 +194,11 @@ Recorded here and in the PR body for the reviewer:
 
 1. **ADR status headers are stale.** ADR-029, ADR-030, ADR-031, ADR-032, ADR-033, and ADR-035 still read "Proposed" (or "draft PR") though the code for some has shipped. ADR-031 is not shipped at all; the others are partly or fully shipped.
 2. **Chat length counting differs.** Server `ChatSend` max is 2000 UTF-16 units. Web `ChatPanel` counts code points (`Array.from`). A 2000-emoji message can pass one and fail the other.
-3. **Table gate vs ADR-032.** Code uses 40 calls per 60 s per table. ADR-032 describes a shared pool of 200 per minute. Not reconciled in this pass; check `inputGate.ts` and ADR-032 body.
+3. **Table gate vs ADR-032.** Resolved. ADR-032 §3 replaces the ADR-029 §8 shared pool with class budgets and sets at most 40 chat gate calls per minute per table, which matches `TABLE_GATE_LIMIT` = 40 in `policy.ts`. The doc now states the per-table limit as verified. The cross-table chat class budget (2 in flight, 120/min) is not verified against code.
 4. **Paused-chat rule.** `ws.ts` rejects non-host chat while paused. Confirm this matches ADR-029/032 text.
 5. **Round timer limits.** The 30–600 s range is enforced server-side. The web client clamps and shows a notice; the clamp is advisory.
-6. **Chat report UI.** Retention rules exist in ADR-028 and migrations, but the report flow was not verified for this page.
+6. **Kick semantics (ADR-031 §2.7).** Code removes the seat and emits `SeatRevoked` with `cause: 'host-kick'`. No terminal `revoked` state and no ban-at-join-request check exist. Ban is not shipped.
+7. **Chat report UI.** Server report routes exist; the web report flow is unverified (see §2).
 
 ## Checks
 
