@@ -192,7 +192,11 @@ class Client {
       const reply = await this.until(
         (m) =>
           m.type === expectedType ||
-          (m.type === 'Error' && m.payload?.actionId === actionId),
+          // The first flood gate (ws.ts, before the actionId is parsed) replies
+          // RATE_LIMITED without an actionId; the second gate echoes it.
+          (m.type === 'Error' &&
+            (m.payload?.actionId === actionId ||
+              m.payload?.code === 'RATE_LIMITED')),
         mark,
       );
       if (reply.payload?.message?.includes('still narrating')) {
