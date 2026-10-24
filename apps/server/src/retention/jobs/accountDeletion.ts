@@ -6,6 +6,7 @@ import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
 import { AUTHOR_KEY, TEXT_KEYS } from '../../routes/reports.js';
 import { currentMemberEventsSql } from '../../room/membership.js';
+import { SeatCharacterRepository } from '../../persistence/seatCharacters.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
@@ -471,6 +472,9 @@ async function deleteAccount(
     "UPDATE message_reports SET reason='' WHERE reporter_account_id=$1",
     [accountId],
   );
+  // ADR-035 binding records retain anonymous mechanics only; the repository owns
+  // the single redaction implementation used by this transaction.
+  await SeatCharacterRepository.redactAccount(client, accountId);
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }
