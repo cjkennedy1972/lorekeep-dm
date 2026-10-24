@@ -199,6 +199,12 @@ class Client {
         await new Promise((r) => setTimeout(r, 50));
         continue;
       }
+      // RATE_LIMITED is rejected before the Room sees the command, so resending is safe.
+      // Back off long enough for the per-socket bucket (10/s refill) to recover.
+      if (reply.payload?.code === 'RATE_LIMITED') {
+        await new Promise((r) => setTimeout(r, 300));
+        continue;
+      }
       return reply;
     }
     throw new Error('DM never finished narrating');
@@ -454,6 +460,12 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         });
         continue;
       }
+      if (optionsReply.type === 'Error')
+        throw new Error(
+          `options got Error code=${String(optionsReply.payload?.code)} message=${String(optionsReply.payload?.message)}; frames: ${client.log
+            .map((m) => m.type + (m.payload?.code ? `:${m.payload.code}` : ''))
+            .join(',')}`,
+        );
       expect(optionsReply.type).toBe('CombatOptions');
       const opts = optionsReply.payload as Record<string, unknown>;
       const resources = tracker.resources.ent_aria;
