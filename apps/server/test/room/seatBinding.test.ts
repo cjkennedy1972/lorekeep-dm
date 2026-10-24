@@ -25,6 +25,7 @@ function party(
     bindB?: boolean;
     partyMode?: boolean;
     gameState?: (seatA: string) => unknown;
+    round?: (seatA: string, seatB: string) => unknown;
     runtime?: CombatRuntime;
     hostA?: boolean;
     roundsEnabled?: boolean;
@@ -116,6 +117,7 @@ function party(
           ...(options.roundsEnabled ? { roundsEnabled: true } : {}),
           seats: [seat(seatA, accountA), seat(seatB, accountB)],
           gameState: options.gameState?.(seatA) ?? {},
+          ...(options.round ? { round: options.round(seatA, seatB) } : {}),
         },
       },
       events: [],
@@ -129,6 +131,156 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it('omits bound seat identifiers from solo and empty-party StateSync payloads', async () => {
+    for (const options of [
+      { partyMode: false, bindA: false, bindB: false },
+      { partyMode: true, bindA: false, bindB: false },
+    ]) {
+      const f = party(options);
+      const messages: Record<string, unknown>[] = [];
+      await f.room.subscribe(f.accountA, {
+        send(message: Record<string, unknown>) {
+          messages.push(message);
+        },
+      });
+      const sync = messages.find((message) => message.type === 'StateSync')!;
+      expect(sync.payload).not.toHaveProperty('boundSeatIds');
+    }
+  });
+
+  it('excludes a revoked seat while retaining another bound seat in StateSync', async () => {
+    const f = party({ bindB: true, hostA: true });
+    await f.room.kickSeat(f.accountA, randomUUID(), f.seatB);
+    const messages: Record<string, unknown>[] = [];
+    await f.room.subscribe(f.accountA, {
+      send(message: Record<string, unknown>) {
+        messages.push(message);
+      },
+    });
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(sync.payload).toHaveProperty('boundSeatIds', [f.seatA]);
+  });
+
+  it('includes only active bound seat identifiers in reconnect StateSync', async () => {
+    const f = party({ bindA: false, bindB: true });
+    await f.room.bindSeatCharacter(
+      f.accountA,
+      randomUUID(),
+      1,
+      async () => true,
+      randomUUID(),
+    );
+    const messages: Record<string, unknown>[] = [];
+    const connection = {
+      send(message: Record<string, unknown>) {
+        messages.push(message);
+      },
+    };
+    await f.room.subscribe(f.accountA, connection);
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(
+      (sync.payload as { boundSeatIds: string[] }).boundSeatIds.toSorted(),
+    ).toEqual([f.seatA, f.seatB].toSorted());
+    expect(JSON.stringify(sync)).not.toContain('Secret sheet name');
+    expect(JSON.stringify(sync)).not.toContain('characterSnapshot');
+
+    await f.room.leave(f.accountB);
+    const afterRelease: Record<string, unknown>[] = [];
+    await f.room.subscribe(f.accountA, {
+      send(message: Record<string, unknown>) {
+        afterRelease.push(message);
+      },
+    });
+    expect(
+      (
+        afterRelease.find((message) => message.type === 'StateSync')!
+          .payload as { boundSeatIds: string[] }
+      ).boundSeatIds,
+    ).toEqual([f.seatA]);
+  });
+
+  it('includes only active bound seats in a RESYNC StateSync', async () => {
+    const f = party({ bindB: true, hostA: true });
+    await f.room.kickSeat(f.accountA, randomUUID(), f.seatB);
+    const messages: Record<string, unknown>[] = [];
+    await f.room.subscribe(
+      f.accountA,
+      { send: (message) => messages.push(message) },
+      -1,
+    );
+
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(sync.payload).toHaveProperty('boundSeatIds', [f.seatA]);
+
+    const empty = party({ bindA: false, bindB: false });
+    const emptyMessages: Record<string, unknown>[] = [];
+    await empty.room.subscribe(
+      empty.accountA,
+      {
+        send: (message) => emptyMessages.push(message),
+      },
+      -1,
+    );
+    expect(
+      emptyMessages.find((message) => message.type === 'StateSync')!.payload,
+    ).not.toHaveProperty('boundSeatIds');
+  });
+
+  it('includes active bound seats in the round StateSync and excludes released seats', async () => {
+    const f = party({
+      bindB: true,
+      roundsEnabled: true,
+      round: (seatA, seatB) => ({
+        roundId: randomUUID(),
+        status: 'open',
+        eligibleSeatIds: [seatA, seatB],
+        deadlineAt: null,
+        submissions: [],
+        queuedSubmissions: [],
+      }),
+    });
+    await f.room.leave(f.accountB);
+    const messages: Record<string, unknown>[] = [];
+    await f.room.join(
+      f.accountA,
+      { send: (message) => messages.push(message) },
+      'A',
+      false,
+      -1,
+      { requireExistingSeat: true },
+    );
+
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(sync.payload).toHaveProperty('boundSeatIds', [f.seatA]);
+    expect(sync.payload).toHaveProperty('round');
+
+    const empty = party({
+      bindA: false,
+      bindB: false,
+      roundsEnabled: true,
+      round: (seatA) => ({
+        roundId: randomUUID(),
+        status: 'open',
+        eligibleSeatIds: [seatA],
+        deadlineAt: null,
+        submissions: [],
+        queuedSubmissions: [],
+      }),
+    });
+    const emptyMessages: Record<string, unknown>[] = [];
+    await empty.room.join(
+      empty.accountA,
+      { send: (message) => emptyMessages.push(message) },
+      'A',
+      false,
+      -1,
+      { requireExistingSeat: true },
+    );
+    expect(
+      emptyMessages.find((message) => message.type === 'StateSync')!.payload,
+    ).not.toHaveProperty('boundSeatIds');
+  });
+
   it('rejects round actions from an unbound seat', async () => {
     const { room, accountA, accountB } = party();
     await expect(

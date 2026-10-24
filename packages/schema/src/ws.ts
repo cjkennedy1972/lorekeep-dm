@@ -286,6 +286,12 @@ export const StateSyncSchema = z.object({
   type: z.literal('StateSync'),
   payload: z.object({
     state: RoomStateSchema,
+    /**
+     * Identifier-only readiness projection. Absent means no seats are bound;
+     * clients must treat absent as [] on every StateSync so releases are
+     * visible after resync.
+     */
+    boundSeatIds: z.array(SeatIdSchema).optional(),
     /** Full public round snapshot; optional for compatibility with older servers. */
     round: RoundSnapshotSchema.optional(),
   }),
