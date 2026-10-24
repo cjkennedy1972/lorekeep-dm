@@ -195,7 +195,7 @@ export class Room {
     };
     // Foreign and unknown ids get the same neutral rejection, so the client never learns whether a character exists.
     if (!character || character.accountId !== seat.accountId)
-      return reject('ACTION_REJECTED', 'Character could not be bound.');
+      return reject('ACTION_REJECTED', "That character can't be bound.");
     if (character.revision !== body.expectedRevision)
       return reject(
         'STALE_REVISION',

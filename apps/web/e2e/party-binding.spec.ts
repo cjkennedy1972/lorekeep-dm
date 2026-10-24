@@ -119,29 +119,27 @@ test('a character that changed since the list loaded is rejected with an accessi
   ).toBeEnabled();
 });
 
-test('a character the account does not own is refused with the neutral rejection', async ({
+test('a character the account does not own gets the same neutral rejection as an unknown one', async ({
   browser,
 }) => {
   const host = await browser.newContext();
   await signedIn(host, 'Sage');
   const page = await host.newPage();
-  const foreignId = randomUUID();
-  // The list offers a character this account does not own; the server must refuse the bind.
+  // The list offers ids this account does not own; the server must refuse each with one identical message.
+  const listed = [randomUUID(), randomUUID()];
   await page.route('**/api/me/characters', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        characters: [
-          {
-            id: foreignId,
-            name: 'Not Mine',
-            classId: 'class:fighter',
-            speciesId: 'species:human',
-            level: 1,
-            revision: 1,
-          },
-        ],
+        characters: listed.map((id, i) => ({
+          id,
+          name: `Not Mine ${i}`,
+          classId: 'class:fighter',
+          speciesId: 'species:human',
+          level: 1,
+          revision: 1,
+        })),
       }),
     }),
   );
@@ -150,18 +148,23 @@ test('a character the account does not own is refused with the neutral rejection
   await page.getByRole('heading', { name: 'Foreign Keep' }).waitFor();
   await expect(picker(page)).toBeVisible();
 
-  await page
-    .getByRole('combobox', { name: 'Your character' })
-    .selectOption(foreignId);
-  await page.getByRole('button', { name: 'Bind character' }).click();
-
-  // The refusal is the same neutral rejection an unknown id gets, so it does not reveal ownership.
-  await expect(
-    page.getByRole('alert').filter({ hasText: 'could not be bound' }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Bind character' }),
-  ).toBeEnabled();
+  const copies: string[] = [];
+  for (const characterId of listed) {
+    await page
+      .getByRole('combobox', { name: 'Your character' })
+      .selectOption(characterId);
+    await page.getByRole('button', { name: 'Bind character' }).click();
+    const alert = page.getByRole('alert').filter({ hasText: "can't be bound" });
+    await expect(alert).toBeVisible();
+    copies.push((await alert.textContent()) ?? '');
+    await expect(
+      page.getByRole('button', { name: 'Reload characters' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Bind character' }),
+    ).toBeEnabled();
+  }
+  expect(copies[0]).toBe(copies[1]);
 });
 
 function picker(page: import('@playwright/test').Page) {

@@ -175,7 +175,7 @@ export function CharacterBinding({
       {failure && (
         <p role="alert">
           {bindFailureMessage(failure)}{' '}
-          {failure === 'stale-revision' && (
+          {(failure === 'stale-revision' || failure === 'rejected') && (
             <button
               type="button"
               onClick={() => {

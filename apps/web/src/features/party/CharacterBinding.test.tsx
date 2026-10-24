@@ -194,7 +194,10 @@ describe('CharacterBinding', () => {
       />,
     );
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toMatch(/could not be bound/i);
+    expect(alert.textContent).toMatch(/can't be bound/i);
+    expect(
+      screen.getByRole('button', { name: 'Reload characters' }),
+    ).toBeTruthy();
     expect(alert.textContent).not.toMatch(/not yours|account|owner/i);
   });
 

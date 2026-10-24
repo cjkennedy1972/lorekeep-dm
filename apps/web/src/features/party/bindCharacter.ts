@@ -51,7 +51,7 @@ const FAILURE_MESSAGE: Record<BindFailure, string> = {
     'This account is inactive, so characters cannot be bound to a seat.',
   'rate-limited': 'Too many bind attempts. Wait a moment, then try again.',
   rejected:
-    'That character could not be bound. Reload your characters and choose again.',
+    "That character can't be bound. Reload your characters and try again.",
   'no-reply':
     'The table did not confirm the bind. Check the connection, then try again.',
   interrupted:
