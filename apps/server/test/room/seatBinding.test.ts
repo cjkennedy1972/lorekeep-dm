@@ -214,9 +214,13 @@ describe('ADR-035 party seat gating', () => {
 
     const empty = party({ bindA: false, bindB: false });
     const emptyMessages: Record<string, unknown>[] = [];
-    await empty.room.subscribe(empty.accountA, {
-      send: (message) => emptyMessages.push(message),
-    }, -1);
+    await empty.room.subscribe(
+      empty.accountA,
+      {
+        send: (message) => emptyMessages.push(message),
+      },
+      -1,
+    );
     expect(
       emptyMessages.find((message) => message.type === 'StateSync')!.payload,
     ).not.toHaveProperty('boundSeatIds');
