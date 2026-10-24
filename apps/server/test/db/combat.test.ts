@@ -172,6 +172,7 @@ class Client {
   private lastSent = 0;
   /** Sends a combat command and resolves with its outcome: the next tracker, or the Error for that action. */
   async command(payload: Record<string, unknown>, retries = 40): Promise<Wire> {
+    let rateLimited = 0;
     for (let attempt = 0; attempt < retries; attempt++) {
       // Leave headroom beneath the gateway's 10/s per-socket message limit.
       const wait = this.lastSent + 120 - Date.now();
@@ -206,12 +207,21 @@ class Client {
       // RATE_LIMITED is rejected before the Room sees the command, so resending is safe.
       // Back off long enough for the per-socket bucket (10/s refill) to recover.
       if (reply.payload?.code === 'RATE_LIMITED') {
+        // A real limiter regression would rate-limit every attempt, so cap the
+        // tolerated backoffs and name the cause instead of "never finished narrating".
+        if (++rateLimited > 5)
+          throw new Error(
+            `RATE_LIMITED ${rateLimited} times sending ${JSON.stringify(payload)}`,
+          );
+        console.warn(`combat command RATE_LIMITED (backoff #${rateLimited})`);
         await new Promise((r) => setTimeout(r, 300));
         continue;
       }
       return reply;
     }
-    throw new Error('DM never finished narrating');
+    throw new Error(
+      `DM never finished narrating (${rateLimited} RATE_LIMITED backoffs)`,
+    );
   }
   last<T = Record<string, unknown>>(type: string): T {
     return [...this.log].reverse().find((m) => m.type === type)?.payload as T;
