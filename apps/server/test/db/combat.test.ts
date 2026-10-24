@@ -172,6 +172,7 @@ class Client {
   private lastSent = 0;
   /** Sends a combat command and resolves with its outcome: the next tracker, or the Error for that action. */
   async command(payload: Record<string, unknown>, retries = 40): Promise<Wire> {
+    let rateLimited = 0;
     for (let attempt = 0; attempt < retries; attempt++) {
       // Leave headroom beneath the gateway's 10/s per-socket message limit.
       const wait = this.lastSent + 120 - Date.now();
@@ -192,16 +193,36 @@ class Client {
       const reply = await this.until(
         (m) =>
           m.type === expectedType ||
-          (m.type === 'Error' && m.payload?.actionId === actionId),
+          // The first flood gate (ws.ts, before the actionId is parsed) replies
+          // RATE_LIMITED without an actionId; the second gate echoes it.
+          (m.type === 'Error' &&
+            (m.payload?.actionId === actionId ||
+              (m.payload?.code === 'RATE_LIMITED' &&
+                m.payload?.actionId === undefined))),
         mark,
       );
       if (reply.payload?.message?.includes('still narrating')) {
         await new Promise((r) => setTimeout(r, 50));
         continue;
       }
+      // RATE_LIMITED is rejected before the Room sees the command, so resending is safe.
+      // Back off long enough for the per-socket bucket (10/s refill) to recover.
+      if (reply.payload?.code === 'RATE_LIMITED') {
+        // A real limiter regression would rate-limit every attempt, so cap the
+        // tolerated backoffs and name the cause instead of "never finished narrating".
+        if (++rateLimited > 5)
+          throw new Error(
+            `RATE_LIMITED ${rateLimited} times sending ${JSON.stringify(payload)}`,
+          );
+        console.warn(`combat command RATE_LIMITED (backoff #${rateLimited})`);
+        await new Promise((r) => setTimeout(r, 300));
+        continue;
+      }
       return reply;
     }
-    throw new Error('DM never finished narrating');
+    throw new Error(
+      `DM never finished narrating (${rateLimited} RATE_LIMITED backoffs)`,
+    );
   }
   last<T = Record<string, unknown>>(type: string): T {
     return [...this.log].reverse().find((m) => m.type === type)?.payload as T;
@@ -442,6 +463,14 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       const optionsReply = await client.command({ command: 'options' });
       if (
         optionsReply.type === 'Error' &&
+        optionsReply.payload?.message === 'It is not your turn.'
+      ) {
+        // CombatTracker is a broadcast snapshot; the turn can advance while this
+        // command is queued. Re-read it on the next loop before choosing an action.
+        continue;
+      }
+      if (
+        optionsReply.type === 'Error' &&
         optionsReply.payload?.message === 'Resolve the pending reaction first.'
       ) {
         const prompt = client.last<Record<string, unknown>>('ReactionPrompt');
@@ -454,6 +483,12 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         });
         continue;
       }
+      if (optionsReply.type === 'Error')
+        throw new Error(
+          `options got Error code=${String(optionsReply.payload?.code)} message=${String(optionsReply.payload?.message)}; frames: ${client.log
+            .map((m) => m.type + (m.payload?.code ? `:${m.payload.code}` : ''))
+            .join(',')}`,
+        );
       expect(optionsReply.type).toBe('CombatOptions');
       const opts = optionsReply.payload as Record<string, unknown>;
       const resources = tracker.resources.ent_aria;
