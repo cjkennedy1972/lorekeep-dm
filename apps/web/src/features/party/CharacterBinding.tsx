@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { api } from '../../api';
+import { loadCharacterCatalog } from '../character/catalog';
 import {
   bindFailureFor,
   bindFailureMessage,
@@ -7,6 +8,11 @@ import {
   type BindFailure,
   type OwnedCharacter,
 } from './bindCharacter';
+
+const catalog = loadCharacterCatalog();
+
+/** How long a bind may wait for its Error before the picker stops waiting and says so. */
+export const BIND_REPLY_TIMEOUT_MS = 10_000;
 
 export interface BindServerError {
   actionId: string;
@@ -21,9 +27,21 @@ interface Props {
   send: (type: string, payload: Record<string, unknown>) => string | false;
   /** Latest server Error; only the one matching this component's bind attempt is shown. */
   serverError: BindServerError | null;
+  /** False while the socket is down; an in-flight bind can no longer get its reply. */
+  connected: boolean;
+  /** True while a resync is pending; the snapshot that answers it replaces the bind state. */
+  resyncing: boolean;
+  replyTimeoutMs?: number;
 }
 
-export function CharacterBinding({ bound, send, serverError }: Props) {
+export function CharacterBinding({
+  bound,
+  send,
+  serverError,
+  connected,
+  resyncing,
+  replyTimeoutMs = BIND_REPLY_TIMEOUT_MS,
+}: Props) {
   const selectId = useId();
   const [characters, setCharacters] = useState<OwnedCharacter[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -65,6 +83,21 @@ export function CharacterBinding({ bound, send, serverError }: Props) {
     setPending(null);
     setFailure(bindFailureFor(serverError.code));
   }, [pending, serverError]);
+
+  // Terminal outcomes without an Error: no reply in time, a dropped socket, or a resync that replaces the state.
+  useEffect(() => {
+    if (!pending) return;
+    if (!connected || resyncing) {
+      setPending(null);
+      setFailure('interrupted');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setPending(null);
+      setFailure('no-reply');
+    }, replyTimeoutMs);
+    return () => window.clearTimeout(timer);
+  }, [pending, connected, resyncing, replyTimeoutMs]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -109,8 +142,8 @@ export function CharacterBinding({ bound, send, serverError }: Props) {
         <p role="status">Loading your characters…</p>
       ) : characters.length === 0 ? (
         <p>
-          You have no characters yet. Create one, then come back here to bind
-          it.
+          You have no characters on this account yet, so there is nothing to
+          bind.
         </p>
       ) : (
         <form onSubmit={onSubmit}>
@@ -123,7 +156,7 @@ export function CharacterBinding({ bound, send, serverError }: Props) {
           >
             {characters.map((c) => (
               <option key={c.id} value={c.id}>
-                {characterLabel(c)}
+                {characterLabel(c, catalog)}
               </option>
             ))}
           </select>{' '}

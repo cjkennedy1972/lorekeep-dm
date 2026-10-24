@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-/** Owned-character record for the mock; the real server has no list endpoint yet (see PR gaps). */
+/** Owned-character record for the mock; the list response mirrors GET /api/me/characters (ids, not display strings). */
 export interface MockCharacter {
   id: string;
   accountId: string;
   name: string;
-  species: string;
-  className: string;
+  classId: string;
+  speciesId: string;
   level: number;
   revision: number;
 }
@@ -15,8 +15,18 @@ const byAccount = new Map<string, MockCharacter[]>();
 const byId = new Map<string, MockCharacter>();
 
 const SEED = [
-  { name: 'Aldric Vane', species: 'Human', className: 'Fighter', level: 3 },
-  { name: 'Brenna Holt', species: 'Elf', className: 'Wizard', level: 3 },
+  {
+    name: 'Aldric Vane',
+    classId: 'class:fighter',
+    speciesId: 'species:human',
+    level: 3,
+  },
+  {
+    name: 'Brenna Holt',
+    classId: 'class:wizard',
+    speciesId: 'species:elf',
+    level: 3,
+  },
 ] as const;
 
 /** Lazily seeds two characters per account so a fresh signup has something to bind. */

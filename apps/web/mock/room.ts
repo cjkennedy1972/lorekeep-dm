@@ -100,7 +100,15 @@ export class Room {
   /** StateSync payload: the round rides beside the state, as the server sends it (clientSyncPayload). */
   syncPayload() {
     const { round, ...state } = this.state();
-    return { state, round: round && this.publicRound(round) };
+    const boundSeatIds = [...this.bound.keys()].map((id) =>
+      SeatIdSchema.parse(id),
+    );
+    return {
+      state,
+      round: round && this.publicRound(round),
+      // Omitted when empty, as the server sends it: clients treat absent as no bound seats.
+      ...(boundSeatIds.length ? { boundSeatIds } : {}),
+    };
   }
 
   /** Strips submission text and accountId, which the strict RoundSnapshot schema rejects. */
@@ -167,7 +175,7 @@ export class Room {
     this.sendSeatPrivateRoundSync(accountId);
   }
 
-  /** Mirrors the server's BindCharacter rules. Every rejection is one ACTION_REJECTED, as gateway/ws.ts sends it. */
+  /** Mirrors the server's BindCharacter rejections: each sends one typed Error with the request actionId echoed. */
   private bindCharacter(
     seat: Seat,
     actionId: string,
@@ -177,25 +185,26 @@ export class Room {
       typeof body.characterId === 'string'
         ? characterById(body.characterId)
         : undefined;
-    const rejected =
-      !character ||
-      character.accountId !== seat.accountId ||
-      character.revision !== body.expectedRevision ||
-      this.bound.has(seat.seatId) ||
-      [...this.bound.values()].includes(character.id);
-    if (rejected || !character) {
+    const reject = (code: string, message: string) => {
       const error = {
         seq: this.seq,
         type: 'Error',
-        payload: {
-          code: 'ACTION_REJECTED',
-          message: 'Character could not be bound.',
-          actionId,
-        },
+        payload: { code, message, actionId },
       } as ServerMessage;
       for (const send of this.conns.get(seat.accountId) ?? []) send(error);
-      return;
-    }
+    };
+    if (!character || character.accountId !== seat.accountId)
+      return reject('NOT_OWNER', 'That character is not on this account.');
+    if (character.revision !== body.expectedRevision)
+      return reject(
+        'STALE_REVISION',
+        'The character changed. Reload and retry.',
+      );
+    if (this.bound.has(seat.seatId))
+      return reject('ALREADY_BOUND', 'This seat already has a character.');
+    // Bound to another seat at this table: the server has no typed code for this yet, so it stays generic.
+    if ([...this.bound.values()].includes(character.id))
+      return reject('ACTION_REJECTED', 'Character could not be bound.');
     this.bound.set(seat.seatId, character.id);
     this.emit({
       seq: ++this.seq,
@@ -204,7 +213,7 @@ export class Room {
     } as ServerMessage);
     for (const send of this.conns.get(seat.accountId) ?? [])
       send({
-        seq: this.seq,
+        seq: ++this.seq,
         type: 'SeatCharacterBoundPrivate',
         payload: { seatId: seat.seatId },
       } as ServerMessage);

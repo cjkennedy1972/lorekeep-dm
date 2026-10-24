@@ -99,10 +99,40 @@ describe('roomReducer bound seats', () => {
     expect(gap.boundSeatIds).toEqual([]);
   });
 
-  test('StateSync keeps the bound set it already tracked', () => {
+  test('an in-sequence bind does not request a resync', () => {
+    const boundView = roomReducer(live, bound(2));
+    expect(boundView.needsResync).toBe(false);
+    const releasedView = roomReducer(boundView, released(3));
+    expect(releasedView.needsResync).toBe(false);
+  });
+
+  test('StateSync seeds the bound set from the snapshot', () => {
+    const seeded = roomReducer(initialRoomView, {
+      seq: 1,
+      type: 'StateSync',
+      payload: { state, boundSeatIds: [seatId] },
+    } as ServerMessage);
+    expect(seeded.boundSeatIds).toEqual([seatId]);
+  });
+
+  test('StateSync without boundSeatIds clears the set it tracked', () => {
     const boundView = roomReducer(live, bound(2));
     const resynced = roomReducer(boundView, sync(3));
-    expect(resynced.boundSeatIds).toEqual([seatId]);
+    expect(resynced.boundSeatIds).toEqual([]);
+  });
+
+  test('a resync after a release clears the seat from the set', () => {
+    const boundView = roomReducer(live, bound(2));
+    const releasedView = roomReducer(boundView, released(3));
+    const resyncing = roomReducer(releasedView, pres(9, 'away'));
+    expect(resyncing.needsResync).toBe(true);
+    const snapshot = roomReducer(resyncing, {
+      seq: 9,
+      type: 'StateSync',
+      payload: { state },
+    } as ServerMessage);
+    expect(snapshot.needsResync).toBe(false);
+    expect(snapshot.boundSeatIds).toEqual([]);
   });
 });
 

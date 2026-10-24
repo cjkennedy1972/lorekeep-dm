@@ -108,9 +108,55 @@ test('a character that changed since the list loaded is rejected with an accessi
     .selectOption(first.id);
   await page.getByRole('button', { name: 'Bind character' }).click();
 
-  // The mock sends ACTION_REJECTED for every bind failure, as the server does, so the generic message is what shows.
+  // The server answers with STALE_REVISION, which maps to its own copy and a reload action.
   await expect(
-    page.getByRole('alert').filter({ hasText: 'could not be bound' }),
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'changed since the list loaded' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Reload characters' }),
+  ).toBeEnabled();
+});
+
+test('a character the account does not own is refused with the not-owner message', async ({
+  browser,
+}) => {
+  const host = await browser.newContext();
+  await signedIn(host, 'Sage');
+  const page = await host.newPage();
+  const foreignId = randomUUID();
+  // The list offers a character this account does not own; the server must refuse the bind.
+  await page.route('**/api/me/characters', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        characters: [
+          {
+            id: foreignId,
+            name: 'Not Mine',
+            classId: 'class:fighter',
+            speciesId: 'species:human',
+            level: 1,
+            revision: 1,
+          },
+        ],
+      }),
+    }),
+  );
+  const id = await createTable(host, 'Foreign Keep');
+  await page.goto(`/rooms/${id}`);
+  await page.getByRole('heading', { name: 'Foreign Keep' }).waitFor();
+  await expect(picker(page)).toBeVisible();
+
+  await page
+    .getByRole('combobox', { name: 'Your character' })
+    .selectOption(foreignId);
+  await page.getByRole('button', { name: 'Bind character' }).click();
+
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'That character is not yours' }),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Bind character' }),

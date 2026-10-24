@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Seat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
+import { canOfferPicker } from '../features/party/bindCharacter';
 import {
   CharacterBinding,
   type BindServerError,
@@ -80,6 +81,7 @@ export function Lobby() {
   ).length;
   const mineBound =
     live.mySeatId !== null && live.boundSeatIds.includes(live.mySeatId);
+  const offerPicker = canOfferPicker(seats, live.mySeatId, live.unseated);
   const announcement = usePresenceAnnouncement(seats);
   const content = useMatureOptOut();
   const [contentNote, setContentNote] = useState('');
@@ -170,11 +172,13 @@ export function Lobby() {
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      {live.mySeatId && (
+      {offerPicker && (
         <CharacterBinding
           bound={mineBound}
           send={live.send}
           serverError={bindError}
+          connected={live.status === 'connected'}
+          resyncing={live.needsResync}
         />
       )}
       <section aria-labelledby="rules-heading">

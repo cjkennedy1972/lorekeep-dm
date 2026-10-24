@@ -306,16 +306,17 @@ export function createMock(
         return err(res, 404, 'NOT_FOUND', 'Not found.');
       return json(res, 200, { revision: bumpRevision(owned.id)?.revision });
     }
+    // Mirrors GET /api/me/characters: only this account's characters, as ids plus picker fields.
     if (route === 'GET /api/me/characters')
       return json(res, 200, {
         characters: charactersFor(account.id).map(
-          ({ id, name, species, className, level, revision }) => ({
+          ({ id, revision, name, classId, speciesId, level }) => ({
             id,
-            name,
-            species,
-            className,
-            level,
             revision,
+            name,
+            classId,
+            speciesId,
+            level,
           }),
         ),
       });
