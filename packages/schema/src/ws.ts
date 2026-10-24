@@ -9,6 +9,14 @@ export const ClientEnvelopeSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
   lastSeq: z.int().nonnegative(),
 });
+export const StateSyncAckSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('StateSyncAck'),
+    payload: z.object({ seq: z.int().nonnegative() }).strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const PlayerActionSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -104,6 +112,7 @@ export const CombatCommandSchema = z
       z
         .object({ command: z.literal('move'), destination: GridPosSchema })
         .strict(),
+      z.object({ command: z.literal('dodge') }).strict(),
       z
         .object({
           command: z.literal('attack'),
@@ -206,6 +215,14 @@ export const DenyLateJoinSchema = hostCommand(
   'DenyLateJoin',
   z.object({ requestId: z.uuid() }).strict(),
 );
+export const ApproveSeatClaimSchema = hostCommand(
+  'ApproveSeatClaim',
+  z.object({ claimId: z.uuid() }).strict(),
+);
+export const DenySeatClaimSchema = hostCommand(
+  'DenySeatClaim',
+  z.object({ claimId: z.uuid() }).strict(),
+);
 export const EndTableSchema = hostCommand('EndTable', z.object({}).strict());
 export const CastRestVoteSchema = z
   .object({
@@ -300,6 +317,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RoundClosedEmpty',
       'RoundTimerConfigured',
       'SeatRevoked',
+      'SeatTakenOver',
       'HostTransferred',
       'HostSeatChanged',
       'LateJoinRequested',
@@ -307,6 +325,13 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'TableEnded',
       'ChatMuteChanged',
       'LateJoinApproved',
+      'SeatClaimRequested',
+      'SeatClaimApproved',
+      'SeatClaimDenied',
+      'SeatClaimExpired',
+      'SeatAuthenticated',
+      'SeatClaimPending',
+      'SeatResumeChallenge',
       'RestVoteOpened',
       'RestVoteCastNotice',
       'RestVoteClosed',
@@ -323,6 +348,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'SafetyFlag',
       'DeathSaveRequired',
       'TpkChoiceRequired',
+      'SpotlightPrompt',
     ]),
     payload: z.record(z.string(), z.unknown()),
   }),

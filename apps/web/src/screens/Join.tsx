@@ -10,8 +10,17 @@ export function Join() {
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<boolean | null>(null);
   const [joining, setJoining] = useState(false);
-  const [preview, setPreview] = useState<RoomInfo>();
+  const [preview, setPreview] = useState<RoomInfo | undefined>();
   const [previewError, setPreviewError] = useState('');
+  const [onboarding, setOnboarding] = useState<{
+    settings?: {
+      contentTier?: string;
+      hostTierCap?: string | null;
+      lines?: string[];
+      veils?: string[];
+    };
+    recap?: string;
+  }>();
   const content = useMatureOptOut();
   const checked = draft ?? content.optOut ?? false;
 
@@ -37,6 +46,8 @@ export function Join() {
       { matureOptOut: checked },
     );
     if (r.ok) return navigate(`/rooms/${r.data.room.id}`, { replace: true });
+    if (r.code === 'LATE_JOIN_PENDING')
+      setOnboarding(r.data as typeof onboarding);
     setError(r.message);
     setJoining(false);
   }
@@ -84,6 +95,21 @@ export function Join() {
             disabled={joining}
             onChange={(v) => setDraft(v)}
           />
+          {onboarding && (
+            <section aria-label="Table onboarding">
+              <h2>Table onboarding</h2>
+              {onboarding.settings && (
+                <p>Content setting: {onboarding.settings.contentTier}</p>
+              )}
+              {onboarding.settings?.lines?.length ? (
+                <p>Lines: {onboarding.settings.lines.join(', ')}</p>
+              ) : null}
+              {onboarding.settings?.veils?.length ? (
+                <p>Veils: {onboarding.settings.veils.join(', ')}</p>
+              ) : null}
+              {onboarding.recap && <p>{onboarding.recap}</p>}
+            </section>
+          )}
           {message && (
             <p role="alert">
               {message} <Link to="/rooms">Back to My tables</Link>

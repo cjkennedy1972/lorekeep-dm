@@ -26,6 +26,7 @@ type Props = {
   roundDurationMs: RoomState['roundDurationMs'];
   connected: boolean;
   paused?: boolean;
+  pauseCause?: 'host' | 'no-connected-seats';
   send: RoomSend;
   seats?: Seat[];
   /** The host's own seat, excluded from kick and transfer. */
@@ -44,6 +45,7 @@ export function HostControls({
   roundDurationMs,
   connected,
   paused = false,
+  pauseCause,
   send,
   seats = [],
   selfSeatId,
@@ -132,7 +134,15 @@ export function HostControls({
         >
           Resolve round now
         </button>
-        {paused && <span>Resume the table to resolve the round.</span>}
+        {paused &&
+          (pauseCause === 'no-connected-seats' ? (
+            <span>
+              Table paused: waiting for players to reconnect. It will resume
+              automatically when a seat is confirmed connected.
+            </span>
+          ) : (
+            <span>Resume the table to resolve the round.</span>
+          ))}
         <button
           type="button"
           disabled={!connected}

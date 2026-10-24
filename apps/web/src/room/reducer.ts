@@ -85,6 +85,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RestVoteCastNotice':
     case 'RestVoteClosed':
     case 'RestApplied':
+    case 'SpotlightPrompt':
       return view; // surfaced by the client, not part of room state
     case 'CombatTracker':
     case 'ReactionPrompt':
@@ -97,6 +98,14 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'Error':
     case 'ChatMessage':
     case 'ChatHistory':
+    case 'SeatTakenOver':
+    case 'SeatClaimRequested':
+    case 'SeatClaimApproved':
+    case 'SeatClaimDenied':
+    case 'SeatClaimExpired':
+    case 'SeatAuthenticated':
+    case 'SeatClaimPending':
+    case 'SeatResumeChallenge':
       return view; // surfaced by the client, not part of room state
   }
 }

@@ -170,6 +170,10 @@ Per ADR-035, `sessions.character_id` stays solo-only.
 
 ---
 
+## Seat resume token storage
+
+The web client stores seat resume tokens in origin-scoped `localStorage`, which persists across tabs and browser restarts in the same browser profile. A later page load on that origin can therefore resume the seat. Same-origin JavaScript, including an XSS payload, can read the token; `localStorage` does not protect it from script running on the application origin. Keep the client origin free of untrusted script and third-party script control.
+
 ## M4 status
 
 | Item | Status | PR | ADR |

@@ -6,6 +6,8 @@ const apiPort = Number(process.env.LIVE_API_PORT ?? 8799);
 const webPort = Number(process.env.LIVE_WEB_PORT ?? 5175);
 process.env.LIVE_STATE_FILE = stateFile;
 process.env.LIVE_API_PORT = String(apiPort);
+// Adventure resume is the dedicated test harness for opt-in solo recovery.
+process.env.SOLO_OWNER_RESUME_RECOVERY_ENABLED = 'true';
 
 export default defineConfig({
   testDir: './e2e-adventure',

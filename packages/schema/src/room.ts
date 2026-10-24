@@ -1,7 +1,18 @@
 import { z } from 'zod';
 import { AccountIdSchema, SeatIdSchema, SessionIdSchema } from './ids.js';
 
-export const PresenceSchema = z.enum(['online', 'away', 'offline']);
+export const PresenceSchema = z.enum([
+  'connected',
+  'returning',
+  'disconnected',
+  'away',
+  'unknown',
+  'revoked',
+  // Read compatibility for rooms written before ADR-031; new transitions use
+  // the six-state vocabulary above.
+  'online',
+  'offline',
+]);
 export const SeatSchema = z.object({
   seatId: SeatIdSchema,
   accountId: AccountIdSchema,
@@ -72,6 +83,8 @@ export const RoomStateSchema = z.object({
   sessionId: SessionIdSchema,
   phase: z.literal('lobby'),
   seats: z.array(SeatSchema).max(6),
+  /** Revoked seats remain in durable room history but cannot control or chat. */
+  revokedSeats: z.array(SeatSchema).optional(),
   round: RoundStateSchema.optional(),
   restVote: RestVoteSchema.optional(),
   restVoteCount: z.int().nonnegative().optional(),
@@ -93,6 +106,24 @@ export const RoomStateSchema = z.object({
     .optional(),
   /** Table pause: no new narration starts while set. Shared, so every seat sees it. */
   paused: z.boolean().optional(),
+  pauseCause: z.enum(['host', 'no-connected-seats']).optional(),
+  spotlightTurn: z.number().int().nonnegative().optional(),
+  spotlightCursor: z.number().int().nonnegative().optional(),
+  /** Last committed presence-event time per seat, used to enforce ADR-031 §2.8. */
+  presenceEventAt: z.record(z.string(), z.number().nonnegative()).optional(),
+  presenceEventType: z
+    .record(
+      z.string(),
+      z.enum([
+        'PresenceChanged',
+        'SeatDisconnected',
+        'SeatAway',
+        'SeatReconnected',
+      ]),
+    )
+    .optional(),
+  /** Last DM-turn index at which each account supplied player input. */
+  spotlightActivity: z.record(z.string(), z.number().nonnegative()).optional(),
   ended: z.boolean().optional(),
   lateJoinRequests: z
     .array(

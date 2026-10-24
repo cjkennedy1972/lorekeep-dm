@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { WebSocket } from 'ws';
 import {
   ClientEnvelopeSchema,
   KickSeatSchema,
@@ -9,6 +10,7 @@ import {
   ConfigureRoundTimerSchema,
 } from '@game/schema';
 import { consumeMessageToken } from '../../src/gateway/ws.js';
+import { ConnectionRegistry } from '../../src/gateway/connections.js';
 describe('gateway envelope', () => {
   it('accepts the Prism host-control command names and rejects out-of-range timers', () => {
     const base = { actionId: crypto.randomUUID(), lastSeq: 0 };
@@ -70,6 +72,71 @@ describe('gateway envelope', () => {
     expect(consumeMessageToken(bucket, 1000)).toBe(false);
     expect(consumeMessageToken(bucket, 1100)).toBe(true);
     expect(consumeMessageToken(bucket, 1100)).toBe(false);
+  });
+
+  it('replaces an in-memory socket only after the caller validates the seat token', () => {
+    const registry = new ConnectionRegistry({
+      query: async () => ({ rows: [] }),
+    } as never);
+    const oldSocket = {
+      readyState: 1,
+      close: vi.fn(),
+    } as unknown as WebSocket;
+    const newSocket = {
+      readyState: 1,
+      close: vi.fn(),
+    } as unknown as WebSocket;
+    expect(registry.reserveSeat('session:seat', oldSocket)).toEqual({
+      reserved: true,
+      takenOver: false,
+    });
+    registry.add(oldSocket, 'auth-hash', 'session:seat');
+    expect(registry.reserveSeat('session:seat', newSocket)).toEqual({
+      reserved: false,
+      takenOver: false,
+    });
+    expect(oldSocket.close).not.toHaveBeenCalled();
+    expect(registry.reserveSeat('session:seat', newSocket, true)).toEqual({
+      reserved: true,
+      takenOver: true,
+    });
+    expect(oldSocket.close).toHaveBeenCalledOnce();
+    expect(registry.hasSeatSocket('session:seat')).toBe(false);
+  });
+  it('limits socket authentication attempts per seat, account, and IP', () => {
+    const registry = new ConnectionRegistry({
+      query: async () => ({ rows: [] }),
+    } as never);
+    for (let i = 0; i < 5; i++)
+      expect(registry.consumeSeatAuthAttempt('session:seat', 10_000 + i)).toBe(
+        true,
+      );
+    expect(registry.consumeSeatAuthAttempt('session:seat', 10_100)).toBe(false);
+    expect(registry.consumeSeatAuthAttempt('session:seat', 70_001)).toBe(true);
+
+    for (let i = 0; i < 30; i++)
+      expect(
+        registry.consumeTransportAuthAttempt(
+          `account-${i}`,
+          'shared-ip',
+          100_000 + i,
+        ),
+      ).toBe(true);
+    for (let i = 0; i < 90; i++)
+      expect(
+        registry.consumeTransportAuthAttempt(
+          `other-${i}`,
+          'shared-ip',
+          100_200 + i,
+        ),
+      ).toBe(true);
+    expect(
+      registry.consumeTransportAuthAttempt(
+        'last-account',
+        'shared-ip',
+        100_400,
+      ),
+    ).toBe(false);
   });
   it('rejects malformed and accepts client wire format', () => {
     expect(ClientEnvelopeSchema.safeParse({ type: 'Resync' }).success).toBe(

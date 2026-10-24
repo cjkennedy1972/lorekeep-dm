@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import WebSocket from 'ws';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
+import { hashToken } from '../../src/accounts/signup.js';
 import type { LlmAdapter } from '../../src/llm/adapter.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { Persistence } from '../../src/persistence/index.js';
@@ -137,7 +138,12 @@ export class SimTable {
     );
     const room = await rooms.get(sessionId);
     for (const [index, id] of accountIds.entries())
-      await room.seat(id, `${options.namePrefix ?? 'Sim '}${index + 1}`);
+      await room.seat(
+        id,
+        `${options.namePrefix ?? 'Sim '}${index + 1}`,
+        false,
+        hashToken(tokens[index]!),
+      );
     // Same lifecycle step as POST /api/tables: rounds only open once game state exists.
     await room.persistGameState({ premise: 'Sim table', worldSeeded: true });
     return table;
@@ -170,13 +176,21 @@ export class SimTable {
   }
 
   /** Fetch a single-use WS ticket through the real HTTP route. */
-  async ticket(token: string): Promise<string | undefined> {
+  async ticket(
+    token: string,
+    sessionId: string,
+  ): Promise<{ ticket: string; resumeToken?: string } | undefined> {
     const res = await fetch(`${this.base}/api/ws-ticket`, {
       method: 'POST',
-      headers: { origin: this.base, cookie: `sid=${token}` },
+      headers: {
+        origin: this.base,
+        cookie: `sid=${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId }),
     });
     if (res.status !== 200) return undefined;
-    return ((await res.json()) as { ticket: string }).ticket;
+    return (await res.json()) as { ticket: string; resumeToken?: string };
   }
 
   async stop(): Promise<void> {
@@ -197,6 +211,7 @@ export class SimClient {
   readonly inbox: ServerFrame[] = [];
   closeCode?: number;
   lastSeq = 0;
+  private resumeToken?: string;
 
   constructor(
     private readonly table: SimTable,
@@ -210,11 +225,18 @@ export class SimClient {
    * returns the close code if the gateway refuses the socket first.
    */
   async connect(): Promise<number | undefined> {
-    const ticket = await this.table.ticket(this.token);
-    if (!ticket) return 1008;
-    const socket = new WebSocket(`${this.table.wsBase}/ws?ticket=${ticket}`, {
-      origin: this.table.base,
-    });
+    const ticketResult = await this.table.ticket(
+      this.token,
+      this.table.sessionId,
+    );
+    if (!ticketResult) return 1008;
+    if (ticketResult.resumeToken) this.resumeToken = ticketResult.resumeToken;
+    const socket = new WebSocket(
+      `${this.table.wsBase}/ws?ticket=${ticketResult.ticket}`,
+      {
+        origin: this.table.base,
+      },
+    );
     this.socket = socket;
     this.closeCode = undefined;
     const syncsBefore = this.messages('StateSync').length;
@@ -222,6 +244,27 @@ export class SimClient {
       const frame = JSON.parse(data.toString()) as ServerFrame;
       this.lastSeq = Math.max(this.lastSeq, frame.seq ?? 0);
       this.inbox.push(frame);
+      if (frame.type === 'SeatResumeChallenge')
+        socket.send(
+          JSON.stringify({
+            type: 'ResumeSeat',
+            payload: { resumeToken: this.resumeToken },
+          }),
+        );
+      if (
+        frame.type === 'SeatAuthenticated' &&
+        typeof frame.payload?.resumeToken === 'string'
+      )
+        this.resumeToken = frame.payload.resumeToken;
+      if (frame.type === 'StateSync')
+        socket.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'StateSyncAck',
+            payload: { seq: frame.seq },
+            lastSeq: frame.seq,
+          }),
+        );
     });
     socket.on('close', (code) => {
       this.closeCode = code;

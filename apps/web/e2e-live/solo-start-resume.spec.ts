@@ -5,7 +5,7 @@ type Seed = { token: string; table: string };
 const state = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as Seed;
 
-test('signed-in solo start, My games and resume recap survive a fresh browser context', async ({
+test('signed-in solo start, My games and resume recap survive a fresh page', async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -35,13 +35,11 @@ test('signed-in solo start, My games and resume recap survive a fresh browser co
     name: 'Resume Proof',
     startingLevel: 2,
   });
-  await context.close();
+  await page.close();
 
-  const fresh = await browser.newContext();
-  await fresh.addCookies([
-    { name: 'sid', value: token, url: 'http://localhost:5174' },
-  ]);
-  const resumed = await fresh.newPage();
+  // A new page in the same browser profile retains the server-issued resume
+  // token in localStorage. A tokenless device is a separate host-approval flow.
+  const resumed = await context.newPage();
   const resumeStart = Date.now();
   await resumed.goto('/rooms');
   await resumed.getByRole('link', { name: 'Resume Resume Proof' }).click();
@@ -54,5 +52,5 @@ test('signed-in solo start, My games and resume recap survive a fresh browser co
   });
   timings.resumeAndStateReadyMs = Date.now() - resumeStart;
   console.log(`M2-37 flow timings: ${JSON.stringify(timings)}`);
-  await fresh.close();
+  await context.close();
 });

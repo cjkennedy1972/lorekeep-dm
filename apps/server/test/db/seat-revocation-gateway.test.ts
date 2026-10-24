@@ -38,9 +38,18 @@ function closed(ws: WebSocket): Promise<{ code: number; reason: string }> {
   );
 }
 function connect(ticket: string) {
-  return new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${ticket}`, {
-    origin: base,
+  const ws = new WebSocket(
+    `${base.replace('http', 'ws')}/ws?ticket=${ticket}`,
+    {
+      origin: base,
+    },
+  );
+  ws.on('message', (data) => {
+    const frame = JSON.parse(data.toString()) as { type: string };
+    if (frame.type === 'SeatResumeChallenge')
+      ws.send(JSON.stringify({ type: 'ResumeSeat', payload: {} }));
   });
+  return ws;
 }
 
 beforeAll(async () => {
@@ -91,12 +100,15 @@ describe('seat revocation at the gateway', () => {
   });
 
   it('a socket for a revoked seat is refused with 1008 at upgrade', async () => {
+    const room = await rooms.get(sessionId);
+    await joinSeated(room, leaver, { send() {} }, 'Leaver again');
     const ticket = await issueTicket(
       db,
       leaver,
       sessionId,
       hashToken(leaverToken),
     );
+    await room.leave(leaver);
     const ws = connect(ticket);
     const close = await closed(ws);
     expect(close.code).toBe(1008);

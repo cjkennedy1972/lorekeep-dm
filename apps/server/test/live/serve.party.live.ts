@@ -65,6 +65,12 @@ it('serves a party table (host, two seated guests, one outsider) for browser e2e
     connections,
     joinRateLimit: 1000,
   });
+  // Specs use repeated reconnects with the same fixture seats. Keep the production
+  // limiter behavior covered by gateway.test.ts, and isolate each browser scenario.
+  app.post('/api/test/reset-auth-attempts', async () => {
+    connections.resetAuthAttemptHistory();
+    return { ok: true };
+  });
   installGateway(app, db, rooms, connections, 300);
 
   const seedAccount = async (displayName: string) => {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Room, type RoomStore } from '../../src/room/Room.js';
 import {
   combatTracker,
@@ -118,6 +118,20 @@ describe('combat turn resource refresh', () => {
       false,
     );
   });
+
+  it('applies defensive Dodge through the combat command seam', () => {
+    const result = createCombatRuntime().execute(combat, 'ent_hero', {
+      command: 'dodge',
+    });
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(result.events).toContainEqual({
+      type: 'DodgeDeclared',
+      entityId: 'ent_hero',
+    });
+    expect(result.state.combat.resources.ent_hero?.action).toBe(false);
+    expect(result.state.dodging).toContain('ent_hero');
+  });
 });
 
 function setup() {
@@ -152,6 +166,58 @@ function setup() {
 }
 
 describe('Room combat command seam', () => {
+  it('limits an away active actor to defensive Dodge and ends that turn', async () => {
+    const { room, events } = setup();
+    const awayAccount = randomUUID();
+    const activeAccount = randomUUID();
+    await joinSeated(room, awayAccount, { send() {} });
+    await joinSeated(room, activeAccount, { send() {} });
+    room.state = {
+      ...room.state,
+      seats: room.state.seats.map((seat) =>
+        seat.accountId === awayAccount ? { ...seat, presence: 'away' } : seat,
+      ),
+      gameState: {
+        combatRoom: {
+          ...combat,
+          combat: {
+            ...combat.combat,
+            activeEntityId: 'ent_goblin',
+            initiative: [
+              { entityId: 'ent_goblin', total: 18 },
+              { entityId: 'ent_hero', total: 12 },
+            ],
+          },
+        },
+        combatActors: {
+          [awayAccount]: 'ent_hero',
+          [activeAccount]: 'ent_goblin',
+        },
+      },
+    };
+
+    await room.submitCombatCommand(activeAccount, randomUUID(), {
+      command: 'end-turn',
+    });
+    await vi.waitFor(() => {
+      expect(events.some((event) => event.type === 'AutopilotActed')).toBe(
+        true,
+      );
+    });
+
+    const autopilot = events.find((event) => event.type === 'AutopilotActed');
+    expect(autopilot?.payload).toMatchObject({
+      action: 'dodge',
+      reason: 'away-at-turn-start',
+      consumable: 'none',
+    });
+    expect(events.some((event) => event.type === 'DodgeDeclared')).toBe(true);
+    expect(events.some((event) => event.type === 'AttackResolved')).toBe(false);
+    expect(
+      events.filter((event) => event.type === 'TurnEnded').length,
+    ).toBeGreaterThanOrEqual(2);
+    await room.drain();
+  });
   it('rejects another account and non-active actor without mutating combat state', async () => {
     const { room, events } = setup();
     const owner = randomUUID(),

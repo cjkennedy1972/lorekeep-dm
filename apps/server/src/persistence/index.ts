@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { ChatMessageSchema, type ChatHistoryEntry } from '@game/schema';
 import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
@@ -83,6 +83,23 @@ async function applyHostTierCap(
 
 export class Persistence {
   readonly db: Pool;
+  async createSeatResumeToken(
+    sessionId: string,
+    seatId: string,
+  ): Promise<string> {
+    const token = randomBytes(24).toString('base64url');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    await this.pool.query(
+      `INSERT INTO seat_resume_tokens(session_id,seat_id,token_hash,rotated_at)
+       VALUES($1,$2,$3,clock_timestamp())
+       ON CONFLICT(session_id,seat_id) DO UPDATE SET
+         token_hash=EXCLUDED.token_hash,rotated_at=EXCLUDED.rotated_at,
+         active_socket_id=NULL,heartbeat_at=NULL`,
+      [sessionId, seatId, tokenHash],
+    );
+    return token;
+  }
+
   constructor(private readonly pool: Pool) {
     this.db = pool;
   }

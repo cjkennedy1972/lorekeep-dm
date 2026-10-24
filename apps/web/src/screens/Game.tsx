@@ -86,7 +86,16 @@ export function Game() {
   const [resume, setResume] = useState<{ recap: string; name: string } | null>(
     null,
   );
+  const [seatClaims, setSeatClaims] = useState<
+    {
+      claimId: string;
+      seatId: string;
+      displayName: string;
+      expiresAt: number;
+    }[]
+  >([]);
   const [safetyNotice, setSafetyNotice] = useState('');
+  const [spotlightNotice, setSpotlightNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLoading, setResumeLoading] = useState(false);
   const loadGame = () => {
@@ -107,6 +116,7 @@ export function Game() {
   }, [id]);
   const live = useRoom({
     baseUrl: http.base,
+    sessionId: id,
     fetchImpl: (...args) => http.fetch(...args),
     WebSocketImpl: http.WebSocket,
     onMessage: (message) => {
@@ -130,17 +140,48 @@ export function Game() {
         setChatMessages((current) =>
           mergeChatHistory(current, message.payload.messages),
         );
+      if (message.type === 'SeatTakenOver')
+        setSafetyNotice('Your seat was recovered on another connection.');
       if (message.type === 'SafetyFlag' && message.payload.kind === 'x-card')
         setSafetyNotice(
           'An X-card was used. The DM will steer away next turn.',
         );
+      if (message.type === 'SpotlightPrompt')
+        setSpotlightNotice(String(asRecord(message.payload).prompt ?? ''));
+      if (message.type === 'SeatClaimRequested') {
+        const payload = asRecord(message.payload);
+        setSeatClaims((current) => [
+          ...current.filter(
+            (claim) => claim.claimId !== String(payload.claimId),
+          ),
+          {
+            claimId: String(payload.claimId),
+            seatId: String(payload.seatId),
+            displayName: String(payload.displayName),
+            expiresAt: Number(payload.expiresAt),
+          },
+        ]);
+      }
+      if (
+        message.type === 'SeatClaimApproved' ||
+        message.type === 'SeatClaimDenied' ||
+        message.type === 'SeatClaimExpired'
+      ) {
+        const claimId = String(asRecord(message.payload).claimId ?? '');
+        setSeatClaims((current) =>
+          current.filter((claim) => claim.claimId !== claimId),
+        );
+      }
       if (message.type === 'StateSync') {
         live.send('ChatHistoryRequest');
         const state = asRecord(message.payload.state);
         setSafetyNotice((current) =>
           state.paused === true
-            ? 'The table is paused.'
-            : current === 'The table is paused.'
+            ? state.pauseCause === 'no-connected-seats'
+              ? 'Table paused: waiting for players to reconnect. It will resume automatically when a seat is confirmed connected.'
+              : 'The table is paused.'
+            : current.startsWith('Table paused:') ||
+                current === 'The table is paused.'
               ? ''
               : current,
         );
@@ -555,8 +596,17 @@ export function Game() {
         <h2>Safety controls</h2>
         <p role="status" aria-live="polite">
           {safetyNotice ||
-            (room.paused ? 'The table is paused.' : 'The table is active.')}
+            (room.paused
+              ? room.pauseCause === 'no-connected-seats'
+                ? 'Table paused: waiting for players to reconnect. It will resume automatically when a seat is confirmed connected.'
+                : 'The table is paused.'
+              : 'The table is active.')}
         </p>
+        {spotlightNotice && (
+          <p role="status" aria-live="polite">
+            {spotlightNotice}
+          </p>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -619,16 +669,50 @@ export function Game() {
         />
       )}
       {isHost && (
-        <HostControls
-          round={room.round}
-          roundDurationMs={room.roundDurationMs ?? null}
-          connected={live.status === 'connected'}
-          paused={room.paused === true}
-          send={live.send}
-          seats={room.seats}
-          selfSeatId={selfSeat?.seatId}
-          lateJoinRequests={room.lateJoinRequests}
-        />
+        <>
+          <HostControls
+            round={room.round}
+            roundDurationMs={room.roundDurationMs ?? null}
+            connected={live.status === 'connected'}
+            paused={room.paused === true}
+            pauseCause={room.pauseCause}
+            send={live.send}
+            seats={room.seats}
+            selfSeatId={selfSeat?.seatId}
+            lateJoinRequests={room.lateJoinRequests}
+          />
+          {seatClaims.length > 0 && (
+            <section aria-label="Device claims">
+              <h2>Reconnect claims</h2>
+              {seatClaims.map((claim) => (
+                <div key={claim.claimId}>
+                  <p>
+                    {claim.displayName} needs approval to reconnect on a new
+                    device.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={live.status !== 'connected'}
+                    onClick={() =>
+                      live.send('ApproveSeatClaim', { claimId: claim.claimId })
+                    }
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={live.status !== 'connected'}
+                    onClick={() =>
+                      live.send('DenySeatClaim', { claimId: claim.claimId })
+                    }
+                  >
+                    Deny
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+        </>
       )}
       <ChatPanel
         roomId={id}

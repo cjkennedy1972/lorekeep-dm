@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { tokenFromCookie } from '../accounts/sessions.js';
+import { hashToken } from '../accounts/signup.js';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { CharacterSchema, AdventureSchema } from '@game/schema';
@@ -147,6 +149,8 @@ export function registerTableRoutes(
   app.post('/api/tables', async (request, reply) => {
     const accountId = await account(request, reply);
     if (!accountId) return reply;
+    const authToken = tokenFromCookie(request.headers.cookie);
+    const authTokenHash = authToken ? hashToken(authToken) : undefined;
     const parsed = createSchema.safeParse(request.body);
     if (!parsed.success)
       return reply.code(400).send({
@@ -265,6 +269,7 @@ export function registerTableRoutes(
         accountId,
         'Adventurer',
         optOut[0]?.mature_opt_out ?? false,
+        authTokenHash,
       );
       await room.persistGameState({
         characters: { [accountId]: character },

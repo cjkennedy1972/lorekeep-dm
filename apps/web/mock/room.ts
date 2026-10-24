@@ -64,11 +64,11 @@ export class Room {
 
   /** @param scriptedFlipMs presence toggle interval for the scripted seat; 0 disables. */
   constructor(scriptedFlipMs = 15_000) {
-    this.seats.set(SCRIPTED.accountId, { ...SCRIPTED, presence: 'online' });
+    this.seats.set(SCRIPTED.accountId, { ...SCRIPTED, presence: 'connected' });
     if (scriptedFlipMs > 0) {
       this.timer = setInterval(() => {
         const s = this.seats.get(SCRIPTED.accountId)!;
-        this.setPresence(s, s.presence === 'online' ? 'away' : 'online');
+        this.setPresence(s, s.presence === 'connected' ? 'away' : 'connected');
       }, scriptedFlipMs);
       this.timer.unref();
     }
@@ -248,7 +248,7 @@ export class Room {
     const set = this.conns.get(account.id) ?? new Set<Send>();
     set.add(send);
     this.conns.set(account.id, set);
-    this.setPresence(seat, 'online');
+    this.setPresence(seat, 'connected');
     const sync: ServerMessage = {
       seq: ++this.seq,
       type: 'StateSync',
@@ -259,7 +259,7 @@ export class Room {
     else send(sync);
     return () => {
       set.delete(send);
-      if (set.size === 0) this.setPresence(seat, 'offline');
+      if (set.size === 0) this.setPresence(seat, 'disconnected');
     };
   }
 

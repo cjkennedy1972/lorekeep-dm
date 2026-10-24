@@ -1,5 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Browser,
+  type BrowserContext,
+  type Page,
+} from '@playwright/test';
 
 // Real server + Postgres + scripted DM (see apps/server/test/live/serve.party.live.ts).
 // Three browser contexts share one table; every round action goes through the real websocket.
@@ -24,6 +30,17 @@ type ServerFrame = {
 const state = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as PartyState;
 const origin = `http://localhost:${process.env.LIVE_WEB_PORT ?? 5176}`;
+const storageByAccount = new Map<
+  string,
+  Awaited<ReturnType<BrowserContext['storageState']>>
+>();
+
+async function closeAs(view: { accountId: string; context: BrowserContext }) {
+  storageByAccount.set(view.accountId, await view.context.storageState());
+  await view.context.close();
+  // Let the server-side close handler release the seat claim before the next serial spec reconnects.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
 
 // Every request goes to the real server; GET /api/tables/:id resolves party members (#280).
 async function openAs(
@@ -32,10 +49,14 @@ async function openAs(
   table: string,
   path: string,
 ) {
-  const context = await browser.newContext();
-  await context.addCookies([
-    { name: 'sid', value: account.token, url: origin },
-  ]);
+  const savedStorage = storageByAccount.get(account.accountId);
+  const context = await browser.newContext(
+    savedStorage ? { storageState: savedStorage } : undefined,
+  );
+  if (!savedStorage)
+    await context.addCookies([
+      { name: 'sid', value: account.token, url: origin },
+    ]);
   const page = await context.newPage();
   const frames: ServerFrame[] = [];
   page.on('websocket', (socket) =>
@@ -49,7 +70,7 @@ async function openAs(
     }),
   );
   await page.goto(path);
-  return { context, page, frames };
+  return { accountId: account.accountId, context, page, frames };
 }
 
 async function tabTo(page: Page, name: string) {
@@ -65,6 +86,10 @@ async function tabTo(page: Page, name: string) {
 
 test.describe.serial('party round and host panels (real server)', () => {
   test.setTimeout(180_000);
+  test.beforeEach(async ({ request }) => {
+    const response = await request.post('/api/test/reset-auth-attempts');
+    expect(response.ok()).toBe(true);
+  });
 
   test('three seated players see one round and the same submitted list', async ({
     browser,
@@ -90,7 +115,11 @@ test.describe.serial('party round and host panels (real server)', () => {
         await expect(submitted.getByText('Round Scout: waiting')).toBeVisible();
       }
     } finally {
-      await Promise.all(players.map(({ context }) => context.close()));
+      for (const { accountId, context } of players) {
+        const saved = await context.storageState();
+        storageByAccount.set(accountId, saved);
+      }
+      await Promise.all(players.map(closeAs));
     }
   });
 
@@ -100,6 +129,21 @@ test.describe.serial('party round and host panels (real server)', () => {
     const { table, host, guest, scout } = state();
     const path = `/rooms/${table}/game`;
     const hostView = await openAs(browser, host, table, path);
+    const resumeButton = hostView.page.getByRole('button', {
+      name: 'Resume table',
+    });
+    const hostRound = hostView.page.locator('.round-summary');
+    await expect
+      .poll(
+        async () =>
+          (await resumeButton.isVisible()) || (await hostRound.isVisible()),
+      )
+      .toBe(true);
+    if (await resumeButton.isVisible()) {
+      await expect(resumeButton).toBeEnabled();
+      await resumeButton.click();
+      await expect(hostRound).toBeVisible();
+    }
     const guestView = await openAs(browser, guest, table, path);
     const scoutView = await openAs(browser, scout, table, path);
     try {
@@ -113,21 +157,19 @@ test.describe.serial('party round and host panels (real server)', () => {
       await expect(
         guestView.page.getByRole('heading', { name: 'Your action' }),
       ).toBeVisible();
-      for (const { page } of [hostView, guestView, scoutView]) {
-        await expect(page.locator('.round-summary')).toHaveText(
+      for (const view of [hostView, guestView, scoutView]) {
+        await expect(view.page.locator('.round-summary')).toHaveText(
           /1 of 3 submitted\./,
           { timeout: 30_000 },
         );
         await expect(
-          page
+          view.page
             .getByRole('list', { name: 'Submitted' })
             .getByText('Round Guest: submitted'),
         ).toBeVisible();
       }
     } finally {
-      await Promise.all(
-        [hostView, guestView, scoutView].map(({ context }) => context.close()),
-      );
+      await Promise.all([hostView, guestView, scoutView].map(closeAs));
     }
   });
 
@@ -157,10 +199,7 @@ test.describe.serial('party round and host panels (real server)', () => {
             .filter({ hasText: 'The host resolved the round.' }),
         ).toBeVisible({ timeout: 60_000 });
       } finally {
-        await Promise.all([
-          hostView.context.close(),
-          scoutView.context.close(),
-        ]);
+        await Promise.all([closeAs(hostView), closeAs(scoutView)]);
       }
     },
   );
@@ -189,7 +228,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       });
       await expect(page.getByRole('alert').first()).not.toBeEmpty();
     } finally {
-      await context.close();
+      await closeAs({ accountId: outsider.accountId, context });
     }
   });
 
@@ -255,7 +294,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         ),
       ).toBe(false);
     } finally {
-      await Promise.all([hostView.context.close(), guestView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(guestView)]);
     }
   });
 
@@ -297,7 +336,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       );
       expect(reload.ok()).toBe(false);
     } finally {
-      await Promise.all([hostView.context.close(), scoutView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(scoutView)]);
     }
   });
 
@@ -326,7 +365,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         hostView.page.getByRole('region', { name: 'Host controls' }),
       ).toHaveCount(0, { timeout: 30_000 });
     } finally {
-      await Promise.all([hostView.context.close(), guestView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(guestView)]);
     }
   });
 
@@ -360,7 +399,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       );
       expect(access.ok()).toBe(false);
     } finally {
-      await Promise.all([hostView.context.close(), latecomer.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(latecomer)]);
     }
   });
 
@@ -396,7 +435,19 @@ test.describe.serial('party round and host panels (real server)', () => {
         name: 'Resolve round now',
         exact: true,
       });
-      await expect(resolve).toBeEnabled({ timeout: 10_000 });
+      const reconnectPause = hostView.page.getByRole('status').filter({
+        hasText: 'Table paused: waiting for players to reconnect.',
+      });
+      await expect
+        .poll(
+          async () =>
+            (await reconnectPause.isVisible()) || (await resolve.isEnabled()),
+          { timeout: 15_000 },
+        )
+        .toBe(true);
+      if (await reconnectPause.isVisible())
+        await expect(reconnectPause).toBeHidden({ timeout: 20_000 });
+      await expect(resolve).toBeEnabled({ timeout: 20_000 });
       await resolve.click();
 
       // Seated players appear in the host's seat list; the approved latecomer is one of them.
@@ -408,7 +459,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       );
       expect(access.ok()).toBe(true);
     } finally {
-      await Promise.all([hostView.context.close(), latecomer.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(latecomer)]);
     }
   });
 
@@ -444,7 +495,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         hostView.page.getByRole('heading', { name: 'Table ended' }),
       ).toBeVisible({ timeout: 30_000 });
     } finally {
-      await Promise.all([hostView.context.close(), seatedView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(seatedView)]);
     }
   });
 });

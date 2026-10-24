@@ -8,8 +8,9 @@ export async function joinSeated(
   matureOptOut = false,
   lastSeq = -1,
   options: { requireExistingSeat?: boolean } = {},
+  authTokenHash?: string,
 ): Promise<void> {
-  await room.seat(accountId, displayName, matureOptOut);
+  await room.seat(accountId, displayName, matureOptOut, authTokenHash);
   await room.join(
     accountId,
     connection,
@@ -17,5 +18,6 @@ export async function joinSeated(
     matureOptOut,
     lastSeq,
     options,
+    authTokenHash,
   );
 }

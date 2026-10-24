@@ -35,6 +35,7 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
   );
   try {
     const sync = await recovered.waitFor((m) => m.type === 'StateSync', 3_000);
+    // A normal restart return is not a displacement, so it adds no takeover event.
     expect(sync.seq).toBe(Number(expected.seq));
     const clientSeat = (seat: Record<string, unknown>) =>
       Object.fromEntries(
@@ -51,7 +52,16 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
         ]),
     );
     const syncState = (sync.payload as { state: { seats?: unknown[] } }).state;
-    expect(syncState).toEqual(expectedState);
+    // Authenticated recovery marks the seat returning until the reconnect hold elapses.
+    const recoveredExpectedState = {
+      ...expectedState,
+      revokedSeats: [],
+      seats: (expectedState.seats as Record<string, unknown>[]).map((seat) => ({
+        ...seat,
+        presence: 'returning',
+      })),
+    };
+    expect(syncState).toEqual(recoveredExpectedState);
     for (const seat of syncState.seats ?? [])
       expect(seat).not.toHaveProperty('matureOptOut');
     expect(Date.now() - startedAt).toBeLessThanOrEqual(3_000);

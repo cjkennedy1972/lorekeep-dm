@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { createApp } from '../app.js';
 import type { Pool } from 'pg';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -22,11 +23,15 @@ import {
   TransferHostSchema,
   ApproveLateJoinSchema,
   DenyLateJoinSchema,
+  ApproveSeatClaimSchema,
+  DenySeatClaimSchema,
+  StateSyncAckSchema,
   EndTableSchema,
   RewindTurnSchema,
   type ServerMessage,
 } from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
+import { ticketCookieMatches } from './ticketCookie.js';
 import { validOrigin as validRequestOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
@@ -37,19 +42,26 @@ import {
 } from '../room/Room.js';
 import {
   consumeTicket,
+  soloOwnerRecoveryTicket,
   eligibleSession,
   isConfiguredOriginAllowed,
   issueTicket,
   validOrigin as validWebSocketOrigin,
 } from './tickets.js';
 import { ConnectionRegistry } from './connections.js';
+import { SOLO_OWNER_RESUME_RECOVERY_ENABLED } from './recoveryPolicy.js';
 import { ChatPolicy } from '../chat/policy.js';
 import { applyAutomaticChatMute } from '../chat/mutes.js';
-import { randomUUID } from 'node:crypto';
 import {
   currentMemberEventsSql,
   currentMemberSql,
 } from '../room/membership.js';
+import {
+  authorizeSeatSocket,
+  commitSeatResumeToken,
+  heartbeatSeatSocket,
+  releaseSeatSocket,
+} from './resumeTokens.js';
 
 const MAX_BYTES = 10 * 1024;
 const CHAT_REJECTION = 'That message could not be sent. Try again.';
@@ -101,6 +113,7 @@ export function installGateway(
   rooms: RoomRegistry,
   connections: ConnectionRegistry = new ConnectionRegistry(db),
   revalidateMs = 15_000,
+  soloOwnerRecoveryEnabled = SOLO_OWNER_RESUME_RECOVERY_ENABLED,
 ): () => Promise<void> {
   const chatPolicy = new ChatPolicy();
   app.post<{ Body?: { sessionId?: string } }>(
@@ -126,12 +139,15 @@ export function installGateway(
         return reply.code(400).send({ error: 'sessionId' });
       const eligible = await eligibleSession(db, auth.account_id, sessionId);
       if (!eligible) return reply.code(403).send({ error: 'not seated' });
+      const seatId = await currentSeatId(db, auth.account_id, eligible);
+      if (!seatId) return reply.code(403).send({ error: 'not seated' });
       return {
         ticket: await issueTicket(
           db,
           auth.account_id,
           eligible,
           auth.token_hash,
+          seatId,
         ),
       };
     },
@@ -153,6 +169,7 @@ export function installGateway(
       return;
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
+      ws.on('error', () => {});
       const reject = () => ws.close(1008, 'Policy violation');
       if (!validWebSocketOrigin(request.headers.origin, request.headers.host)) {
         reject();
@@ -165,6 +182,29 @@ export function installGateway(
         return;
       }
       void (async () => {
+        if (soloOwnerRecoveryEnabled) {
+          const recoveryTicket = await soloOwnerRecoveryTicket(
+            db,
+            ticket,
+            sessionId,
+          );
+          if (
+            recoveryTicket &&
+            !ticketCookieMatches(
+              request.headers.cookie,
+              recoveryTicket.authTokenHash,
+            )
+          ) {
+            const recoverySeatKey = `${recoveryTicket.sessionId}:${recoveryTicket.seatId}`;
+            connections.consumeSeatAuthAttempt(recoverySeatKey);
+            connections.consumeTransportAuthAttempt(
+              recoveryTicket.accountId,
+              request.socket.remoteAddress ?? 'unknown',
+            );
+            reject();
+            return;
+          }
+        }
         const identity = await consumeTicket(db, ticket, sessionId);
         if (!identity) {
           reject();
@@ -179,19 +219,246 @@ export function installGateway(
           reject();
           return;
         }
-        connections.add(ws, identity.authTokenHash);
-        ws.on('close', () => connections.remove(ws));
-        // Close the consume->register race: revocation may have landed in between.
-        await connections.sweep();
-        if (ws.readyState !== WebSocket.OPEN) return;
-        let room;
+        const currentSeat = await currentSeatId(
+          db,
+          identity.accountId,
+          eligible,
+        );
+        if (!currentSeat || currentSeat !== identity.seatId) {
+          reject();
+          return;
+        }
+        const seatId = identity.seatId;
+        const seatKey = `${identity.sessionId}:${seatId}`;
+        const ipAddress = request.socket.remoteAddress ?? 'unknown';
+        if (
+          !connections.consumeSeatAuthAttempt(seatKey) ||
+          !connections.consumeTransportAuthAttempt(
+            identity.accountId,
+            ipAddress,
+          )
+        ) {
+          reject();
+          return;
+        }
+        const cookieMatchesTicket = ticketCookieMatches(
+          request.headers.cookie,
+          identity.authTokenHash,
+        );
+        const socketId = randomUUID();
+        let seatAuthorized = false;
+        let pendingClaimId: string | undefined;
+        let room: Awaited<ReturnType<RoomRegistry['get']>> | undefined;
+        let snapshotAcknowledged = false;
+        let requiredSnapshotSeq = 0;
+        const messagesBeforeSnapshotAck: import('ws').RawData[] = [];
+        let snapshotAckTimer: ReturnType<typeof setTimeout> | undefined;
+        ws.on('close', () => {
+          connections.remove(ws);
+          if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
+          if (pendingClaimId && room)
+            void room.cancelSeatResumeClaim(pendingClaimId).catch(() => {});
+          if (seatAuthorized)
+            void releaseSeatSocket(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+            ).catch(() => {});
+        });
+        const initialFrames: import('ws').RawData[] = [];
+        let resolveFirstFrame!: (data: import('ws').RawData) => void;
+        let firstFrameReceived = false;
+        const firstFrame = new Promise<import('ws').RawData>((resolve) => {
+          resolveFirstFrame = resolve;
+        });
+        const resumeFrameHandler = (data: import('ws').RawData) => {
+          if (!firstFrameReceived) {
+            firstFrameReceived = true;
+            resolveFirstFrame(data);
+          } else initialFrames.push(data);
+        };
+        ws.on('message', resumeFrameHandler);
+        ws.send(
+          JSON.stringify({
+            seq: 0,
+            type: 'SeatResumeChallenge',
+            payload: { seatId },
+          }),
+        );
+        let resumeMessage: unknown;
+        let resumeTimeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          resumeMessage = await Promise.race([
+            firstFrame,
+            new Promise<never>(
+              (_, rejectFirst) =>
+                (resumeTimeout = setTimeout(
+                  () => rejectFirst(new Error('resume timeout')),
+                  5_000,
+                )),
+            ),
+          ]).then((frame) => JSON.parse(frame.toString()));
+        } catch {
+          ws.off('message', resumeFrameHandler);
+          ws.close(1008, 'Seat proof required');
+          return;
+        } finally {
+          if (resumeTimeout) clearTimeout(resumeTimeout);
+        }
+        const proof = resumeMessage as {
+          type?: unknown;
+          payload?: { resumeToken?: unknown };
+        };
+        if (proof.type !== 'ResumeSeat') {
+          ws.off('message', resumeFrameHandler);
+          ws.close(1008, 'Seat proof required');
+          return;
+        }
+        const presentedToken =
+          typeof proof.payload?.resumeToken === 'string'
+            ? proof.payload.resumeToken
+            : undefined;
         try {
           room = await rooms.get(identity.sessionId);
         } catch {
+          ws.off('message', resumeFrameHandler);
           ws.close(1013, 'Room unavailable; retry');
           return;
         }
-        // The close handler below is not registered yet; bail so no seat or heartbeat is leaked.
+        // Pending tokens are a one-time first-delivery path, not an account-wide
+        // fallback. The synchronous claim prevents a second tokenless socket from
+        // reusing the first socket's not-yet-delivered credential.
+        const firstDeliveryToken = presentedToken
+          ? undefined
+          : room.claimPendingSeatResumeToken(
+              identity.accountId,
+              identity.authTokenHash,
+            );
+        let authorization = await authorizeSeatSocket(
+          db,
+          identity.sessionId,
+          seatId,
+          socketId,
+          presentedToken ?? firstDeliveryToken,
+          false,
+          identity.accountId,
+          soloOwnerRecoveryEnabled && cookieMatchesTicket,
+        );
+        if (authorization.status === 'invalid-token') {
+          if (
+            !room.state.seats.some(
+              (seat) => seat.accountId === identity.accountId,
+            )
+          ) {
+            ws.off('message', resumeFrameHandler);
+            ws.close(1008, 'Player is not seated at this table');
+            return;
+          }
+          pendingClaimId = randomUUID();
+          ws.send(
+            JSON.stringify({
+              seq: room.seq,
+              type: 'SeatClaimPending',
+              payload: { claimId: pendingClaimId, expiresInMs: 60_000 },
+            }),
+          );
+          try {
+            const approved = await room.requestSeatResumeClaim(
+              identity.accountId,
+              pendingClaimId,
+            );
+            if (!approved) throw new Error('seat claim denied or expired');
+            authorization = await authorizeSeatSocket(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+              presentedToken,
+              true,
+              identity.accountId,
+            );
+          } catch {
+            ws.off('message', resumeFrameHandler);
+            if (ws.readyState === WebSocket.OPEN)
+              ws.send(
+                JSON.stringify({
+                  seq: room.seq,
+                  type: 'SeatClaimDenied',
+                  payload: { claimId: pendingClaimId },
+                }),
+              );
+            ws.close(1008, 'Seat claim refused');
+            return;
+          }
+          pendingClaimId = undefined;
+        }
+        if (authorization.status !== 'authorized') {
+          ws.off('message', resumeFrameHandler);
+          ws.close(1008, 'Seat authentication failed');
+          return;
+        }
+        // Do not evict/reserve an existing in-memory socket until the ticket
+        // holder has proved the current seat token or received host approval.
+        const reservation = connections.reserveSeat(seatKey, ws, true);
+        if (!reservation.reserved) {
+          await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
+          ws.off('message', resumeFrameHandler);
+          reject();
+          return;
+        }
+        seatAuthorized = true;
+        connections.add(
+          ws,
+          identity.authTokenHash,
+          seatKey,
+          identity.accountId,
+        );
+        await connections.sweep();
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (reservation.takenOver || authorization.soloOwnerRecovery)
+          await room.recordSeatTakenOver(seatId);
+        if (authorization.soloOwnerRecovery)
+          connections.notifyAccount(identity.accountId, {
+            seq: room.seq,
+            type: 'SeatTakenOver',
+            payload: { seatId, at: Date.now() },
+          });
+        let tokenCommitted = false;
+        try {
+          tokenCommitted = await commitSeatResumeToken(
+            db,
+            identity.sessionId,
+            seatId,
+            socketId,
+            authorization.resumeToken,
+          );
+        } catch {
+          tokenCommitted = false;
+        }
+        if (!tokenCommitted) {
+          ws.close(1011, 'Authentication state changed; retry');
+          return;
+        }
+        const authenticatedFrameSent = await new Promise<boolean>((resolve) => {
+          if (ws.readyState !== WebSocket.OPEN) return resolve(false);
+          ws.send(
+            JSON.stringify({
+              seq: room.seq,
+              type: 'SeatAuthenticated',
+              payload: { seatId, resumeToken: authorization.resumeToken },
+            }),
+            (error) => resolve(!error),
+          );
+        });
+        if (!authenticatedFrameSent) {
+          ws.close(1011, 'Authentication response could not be sent');
+          return;
+        }
+        room.completeSeatResumeTokenDelivery(
+          identity.accountId,
+          identity.authTokenHash,
+        );
         if (ws.readyState !== WebSocket.OPEN) return;
         let chatDeliveryChain: Promise<unknown> = Promise.resolve();
         const queueChatDelivery = (
@@ -219,6 +486,8 @@ export function installGateway(
         };
         const connection = {
           send: (message: ServerMessage) => {
+            if (message.type === 'StateSync')
+              requiredSnapshotSeq = Math.max(requiredSnapshotSeq, message.seq);
             if (
               message.type === 'ChatMessage' ||
               message.type === 'ChatHistory'
@@ -241,24 +510,40 @@ export function installGateway(
         };
         const send = connection.send;
         let active = true;
-        let alive = true;
+        let missedPongs = 0;
+        let lastPongAt = Date.now();
+        let heartbeatLost = false;
         const heartbeat = setInterval(() => {
-          if (!alive) {
+          missedPongs += 1;
+          if (missedPongs >= 3) {
+            heartbeatLost = true;
             ws.terminate();
             return;
           }
-          alive = false;
           ws.ping();
-        }, 10_000);
+        }, 5_000);
         heartbeat.unref();
         ws.on('pong', () => {
-          alive = true;
+          missedPongs = 0;
+          lastPongAt = Date.now();
+          connections.markPong(ws);
+          void heartbeatSeatSocket(
+            db,
+            identity.sessionId,
+            seatId,
+            socketId,
+          ).catch(() => {});
         });
         ws.on('close', () => {
           active = false;
           clearInterval(heartbeat);
           if (room.isCurrentConnection(identity.accountId, connection)) {
-            const task = room.disconnect(identity.accountId).catch(() => {});
+            const task = room
+              .disconnect(
+                identity.accountId,
+                heartbeatLost ? lastPongAt : Date.now(),
+              )
+              .catch(() => {});
             disconnectTasks.add(task);
             void task.finally(() => disconnectTasks.delete(task));
           }
@@ -267,8 +552,9 @@ export function installGateway(
         // A client may act the moment it receives its first message, which room.join() sends
         // before this handler would otherwise exist; ws drops messages with no listener.
         // Buffer (bounded) until the join has finished, then dispatch in order.
-        const early: import('ws').RawData[] = [];
+        const early: import('ws').RawData[] = initialFrames;
         const gate: { dispatch?: (data: import('ws').RawData) => void } = {};
+        ws.off('message', resumeFrameHandler);
         ws.on('message', (data) => {
           if (gate.dispatch) {
             gate.dispatch(data);
@@ -294,7 +580,13 @@ export function installGateway(
             name.rows[0]?.mature_opt_out ?? false,
             -1,
             { requireExistingSeat: true },
+            identity.authTokenHash,
           );
+          snapshotAckTimer = setTimeout(() => {
+            if (!snapshotAcknowledged)
+              ws.close(1008, 'State restore acknowledgement required');
+          }, 3_000);
+          snapshotAckTimer.unref?.();
           if (!active) {
             await room.disconnect(identity.accountId);
             return;
@@ -335,6 +627,27 @@ export function installGateway(
             envelope = JSON.parse(data.toString());
           } catch {
             envelope = undefined;
+          }
+          const stateAck = StateSyncAckSchema.safeParse(envelope);
+          if (stateAck.success) {
+            if (
+              !snapshotAcknowledged &&
+              stateAck.data.payload.seq === requiredSnapshotSeq
+            ) {
+              snapshotAcknowledged = true;
+              if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
+              for (const queued of messagesBeforeSnapshotAck.splice(0))
+                dispatch(queued);
+            }
+            return;
+          }
+          if (!snapshotAcknowledged) {
+            if (messagesBeforeSnapshotAck.length >= 32) {
+              ws.close(1008, 'Too many messages before state acknowledgement');
+              return;
+            }
+            messagesBeforeSnapshotAck.push(data);
+            return;
           }
           const chat = ChatSendSchema.safeParse(envelope);
           if (chat.success) {
@@ -678,6 +991,24 @@ export function installGateway(
                   payload.requestId,
                 ),
             ],
+            ApproveSeatClaim: [
+              ApproveSeatClaimSchema,
+              (payload: { claimId: string }) =>
+                room.approveSeatResumeClaim(
+                  identity.accountId,
+                  msg.actionId,
+                  payload.claimId,
+                ),
+            ],
+            DenySeatClaim: [
+              DenySeatClaimSchema,
+              (payload: { claimId: string }) =>
+                room.denySeatResumeClaim(
+                  identity.accountId,
+                  msg.actionId,
+                  payload.claimId,
+                ),
+            ],
             EndTable: [
               EndTableSchema,
               () => room.endTable(identity.accountId, msg.actionId),
@@ -827,6 +1158,21 @@ export function installGateway(
                   code: 'INVALID_ACTION',
                   message: 'Combat command is invalid.',
                   actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            // Combat commands bypass the PlayerAction/EditAction queue below,
+            // but still share its per-socket flood budget. Reject before they
+            // can enqueue unbounded work in the Room mailbox.
+            if (!consumeMessageToken(messageBucket)) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'RATE_LIMITED',
+                  message: 'Too many messages.',
+                  actionId: action.data.actionId,
                 },
               });
               return;

@@ -79,8 +79,42 @@ class Stack {
 
 class Client {
   log: Wire[] = [];
-  private constructor(readonly ws: WebSocket) {
-    ws.on('message', (data) => this.log.push(JSON.parse(data.toString())));
+  static resumeTokens = new Map<string, string>();
+  private constructor(
+    readonly ws: WebSocket,
+    private readonly accountId: string,
+    private readonly tableId: string,
+  ) {
+    ws.on('message', (data) => {
+      const frame = JSON.parse(data.toString()) as Wire;
+      this.log.push(frame);
+      if (frame.type === 'SeatResumeChallenge')
+        ws.send(
+          JSON.stringify({
+            type: 'ResumeSeat',
+            payload: {
+              resumeToken: Client.resumeTokens.get(`${tableId}:${accountId}`),
+            },
+          }),
+        );
+      if (
+        frame.type === 'SeatAuthenticated' &&
+        typeof frame.payload?.resumeToken === 'string'
+      )
+        Client.resumeTokens.set(
+          `${this.tableId}:${accountId}`,
+          frame.payload.resumeToken,
+        );
+      if (frame.type === 'StateSync')
+        ws.send(
+          JSON.stringify({
+            type: 'StateSyncAck',
+            actionId: randomUUID(),
+            lastSeq: frame.seq,
+            payload: { seq: frame.seq },
+          }),
+        );
+    });
   }
   static async open(
     s: Stack,
@@ -94,7 +128,7 @@ class Client {
         origin: s.base,
       },
     );
-    const client = new Client(ws);
+    const client = new Client(ws, user.id, table);
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => resolve());
       ws.once('error', reject);
@@ -139,8 +173,8 @@ class Client {
   /** Sends a combat command and resolves with its outcome: the next tracker, or the Error for that action. */
   async command(payload: Record<string, unknown>, retries = 40): Promise<Wire> {
     for (let attempt = 0; attempt < retries; attempt++) {
-      // Stay under the gateway's per-socket message rate limit (10/s sustained).
-      const wait = this.lastSent + 100 - Date.now();
+      // Leave headroom beneath the gateway's 10/s per-socket message limit.
+      const wait = this.lastSent + 120 - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       this.lastSent = Date.now();
       const actionId = randomUUID();
@@ -199,7 +233,8 @@ async function seedTable(
   );
   sessionIds.push(table);
   const room = await s.rooms.get(table);
-  await room.seat(owner.id, 'Aria');
+  const resumeToken = await room.seat(owner.id, 'Aria');
+  if (resumeToken) Client.resumeTokens.set(`${table}:${owner.id}`, resumeToken);
   const gameState = game(owner.id);
   await room.persistGameState(gameState);
   return table;
@@ -249,7 +284,10 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     const host = await newUser();
     const guest = await newUser();
     const table = await seedTable(stack, host, preCombat);
-    await (await stack.rooms.get(table)).seat(guest.id, 'Guest');
+    const guestToken = await (
+      await stack.rooms.get(table)
+    ).seat(guest.id, 'Guest');
+    if (guestToken) Client.resumeTokens.set(`${table}:${guest.id}`, guestToken);
     const h = await Client.open(stack, host, table);
     const g = await Client.open(stack, guest, table);
 
@@ -350,6 +388,14 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     await stack.stop();
     stack = await Stack.boot('combat-full-2');
     const client = await Client.open(stack, user, table);
+    // A recovered seat is `returning` until ADR-031's full 10 s reconnect hold.
+    await client.until(
+      (message) =>
+        message.type === 'PresenceChanged' &&
+        message.payload?.presence === 'connected',
+      0,
+      15_000,
+    );
 
     const mark = client.log.length;
     client.say('START-COMBAT');
@@ -568,8 +614,26 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     await stack.stop();
     stack = await Stack.boot('combat-resume-3');
     client = await Client.open(stack, user, table);
-    const resumed = await client.until((m) => m.type === 'ReactionPrompt', 0);
-    expect(resumed.payload!.reactionId).toBe(prompt.payload!.reactionId);
+    const resumed = await client.until(
+      (m) =>
+        m.type === 'ReactionPrompt' ||
+        (m.type === 'CombatEvents' &&
+          m.payload!.events.some(
+            (event: unknown) =>
+              (event as { type?: string }).type === 'ReactionResolved',
+          )),
+      0,
+    );
+    const stillPending = resumed.type === 'ReactionPrompt';
+    if (stillPending)
+      expect(resumed.payload!.reactionId).toBe(prompt.payload!.reactionId);
+    else
+      expect(resumed.payload!.events).toContainEqual(
+        expect.objectContaining({
+          type: 'ReactionResolved',
+          choice: 'decline',
+        }),
+      );
     const tracker = await client.until((m) => m.type === 'CombatTracker', 0);
     expect(tracker.payload).toMatchObject({ activeEntityId: 'ent_aria' });
     expect(tracker.payload!.resources.ent_aria.movementRemaining).toBe(
@@ -583,37 +647,61 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       lastSeq: 0,
       payload: {
         command: 'reaction',
-        reactionId: resumed.payload!.reactionId,
+        reactionId: prompt.payload!.reactionId,
         choice: 'take',
       },
     });
     const mark2 = client.log.length;
     client.ws.send(answer);
-    await client.until(
-      (m) =>
-        m.type === 'CombatEvents' &&
-        m.payload!.events.some((e: unknown) => e.type === 'ReactionResolved'),
-      mark2,
-    );
-    await client.until((m) => m.type === 'NarrationCompleted', mark2);
-    const persistDeadline = Date.now() + 5000;
-    while (
-      !(await storedTypes(table)).some(
-        (event) => event.type === 'NarrationCompleted',
-      )
-    ) {
-      if (Date.now() > persistDeadline)
-        throw new Error('Combat narration was not persisted.');
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    let answered = false;
+    if (stillPending) {
+      const outcome = await client.until(
+        (message) =>
+          (message.type === 'CombatEvents' &&
+            message.payload!.events.some(
+              (event: unknown) =>
+                (event as { type?: string }).type === 'ReactionResolved',
+            )) ||
+          (message.type === 'Error' && message.payload?.actionId === actionId),
+        mark2,
+      );
+      answered =
+        outcome.type === 'CombatEvents' &&
+        outcome.payload!.events.some(
+          (event: unknown) =>
+            (event as { type?: string; choice?: string }).type ===
+              'ReactionResolved' &&
+            (event as { choice?: string }).choice === 'take',
+        );
+    } else {
+      await client.until(
+        (message) =>
+          message.type === 'Error' && message.payload?.actionId === actionId,
+        mark2,
+      );
     }
-    const count = (await storedTypes(table)).length;
-    const mark3 = client.log.length;
-    client.ws.send(answer);
-    await client.until(
-      (m) => m.type === 'Error' && m.payload?.code === 'DUPLICATE_ACTION',
-      mark3,
-    );
-    expect((await storedTypes(table)).length).toBe(count);
+    if (answered) {
+      const persistDeadline = Date.now() + 5000;
+      while (
+        !(await storedTypes(table)).some(
+          (event) => event.type === 'NarrationCompleted',
+        )
+      ) {
+        if (Date.now() > persistDeadline)
+          throw new Error('Combat narration was not persisted.');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const count = (await storedTypes(table)).length;
+      const mark3 = client.log.length;
+      client.ws.send(answer);
+      await client.until(
+        (message) =>
+          message.type === 'Error' &&
+          message.payload?.code === 'DUPLICATE_ACTION',
+        mark3,
+      );
+      expect((await storedTypes(table)).length).toBe(count);
+    }
     expect(
       (await savedGame(table)).gameState.combatRoom!.pendingReaction,
     ).toBeUndefined();

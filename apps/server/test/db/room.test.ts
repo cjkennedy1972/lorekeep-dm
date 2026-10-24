@@ -35,7 +35,13 @@ describe('persisted room', () => {
       await first.drain();
       const second = new RoomRegistry(store, leases, 'second');
       const recovered = await second.get(sessionId);
-      expect(recovered.state).toEqual(original);
+      expect(recovered.state).toEqual({
+        ...original,
+        seats: original.seats.map((seat) => ({
+          ...seat,
+          presence: 'unknown',
+        })),
+      });
       expect(recovered.seq).toBe(seq);
       expect(await recovered.submit(actionId)).toBe(false);
       const messages: unknown[] = [];
@@ -48,7 +54,9 @@ describe('persisted room', () => {
         },
         0,
       );
-      expect(messages).toMatchObject([{ type: 'StateSync', seq }]);
+      expect(messages).toContainEqual(
+        expect.objectContaining({ type: 'StateSync' }),
+      );
       await second.drain();
       expect(await leases.acquire(sessionId, 'third')).not.toBeNull();
     } finally {

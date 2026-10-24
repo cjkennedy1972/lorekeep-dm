@@ -38,21 +38,41 @@ async function setup() {
     sessionId,
     accountId,
   ]);
+  const token = await createSession(db, accountId, 'test');
   const room = await rooms.get(sessionId);
-  await joinSeated(room, accountId, { send() {} }, 'P');
+  await joinSeated(
+    room,
+    accountId,
+    { send() {} },
+    'P',
+    false,
+    -1,
+    {},
+    hashToken(token),
+  );
   await room.disconnect(accountId);
   accounts.push(accountId);
   roomIds.push(sessionId);
-  const token = await createSession(db, accountId, 'test');
   return { accountId, sessionId, token, cookie: `sid=${token}` };
 }
-const ticketFor = async (cookie: string) => {
+const resumeTokens = new Map<string, string>();
+const resumeKey = (sessionId: string) => sessionId;
+const ticketSessions = new Map<string, string>();
+const ticketForCookie = new Map<string, string>();
+const ticketFor = async (cookie: string, sessionId: string) => {
+  const key = sessionId;
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
-    headers: { origin: base, cookie },
+    headers: { origin: base, cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
   });
   expect(res.status).toBe(200);
-  return ((await res.json()) as { ticket: string }).ticket;
+  const result = (await res.json()) as { ticket: string; resumeToken?: string };
+  ticketSessions.set(result.ticket, key);
+  ticketForCookie.set(result.ticket, cookie);
+  if (result.resumeToken)
+    resumeTokens.set(resumeKey(sessionId, cookie), result.resumeToken);
+  return result.ticket;
 };
 const open = (ticket: string) =>
   new Promise<WebSocket>((resolve, reject) => {
@@ -62,15 +82,49 @@ const open = (ticket: string) =>
         origin: base,
       },
     );
-    ws.once('message', () => resolve(ws)); // first frame is StateSync
+    ws.on('message', (raw) => {
+      const message = JSON.parse(String(raw)) as {
+        type?: string;
+        seq?: number;
+        payload?: { resumeToken?: string };
+      };
+      const key = ticketSessions.get(ticket)!;
+      if (message.type === 'SeatResumeChallenge')
+        ws.send(
+          JSON.stringify({
+            type: 'ResumeSeat',
+            payload: {
+              resumeToken: resumeTokens.get(
+                resumeKey(key, ticketForCookie.get(ticket) ?? ''),
+              ),
+            },
+          }),
+        );
+      if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken)
+        resumeTokens.set(
+          resumeKey(key, ticketForCookie.get(ticket) ?? ''),
+          message.payload.resumeToken,
+        );
+      if (message.type === 'StateSync') {
+        ws.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'StateSyncAck',
+            payload: { seq: message.seq },
+            lastSeq: message.seq,
+          }),
+        );
+        resolve(ws);
+      }
+    });
     ws.once('close', (code) => reject(new Error(`closed ${code}`)));
   });
-const closeInfo = (ws: WebSocket, ms = 2000) =>
+const closeInfo = (ws: WebSocket, ms = 2000, label = 'socket') =>
   new Promise<{ code: number; reason: string; ms: number }>(
     (resolve, reject) => {
       const t0 = Date.now();
       const timer = setTimeout(
-        () => reject(new Error('socket stayed open')),
+        () => reject(new Error(`${label} stayed open`)),
         ms,
       );
       ws.once('close', (code, reason) => {
@@ -97,8 +151,8 @@ afterAll(async () => {
 describe('websocket survives neither revocation nor deactivation', () => {
   it('logout closes the socket within 2s, Resync gets no reply, and an unused ticket is dead', async () => {
     const u = await setup();
-    const ws = await open(await ticketFor(u.cookie));
-    const unused = await ticketFor(u.cookie);
+    const ws = await open(await ticketFor(u.cookie, u.sessionId));
+    const unused = await ticketFor(u.cookie, u.sessionId);
     const messages: string[] = [];
     ws.on('message', (d) => messages.push(d.toString()));
     const closing = closeInfo(ws);
@@ -145,7 +199,7 @@ describe('websocket survives neither revocation nor deactivation', () => {
   });
   it('account set to deleting closes the socket (cross-node path via periodic tick)', async () => {
     const u = await setup();
-    const ws = await open(await ticketFor(u.cookie));
+    const ws = await open(await ticketFor(u.cookie, u.sessionId));
     const closing = closeInfo(ws);
     await db.query("UPDATE accounts SET status='deleting' WHERE id=$1", [
       u.accountId,
@@ -155,23 +209,43 @@ describe('websocket survives neither revocation nor deactivation', () => {
   it('DELETE /api/me/sessions/:id closes only that device, revoke-others closes the rest', async () => {
     const u = await setup();
     const second = await createSession(db, u.accountId, 'second');
-    const wsA = await open(await ticketFor(u.cookie));
-    const wsB = await open(await ticketFor(`sid=${second}`));
-    const closeB = closeInfo(wsB);
+    const wsA = await open(await ticketFor(u.cookie, u.sessionId));
+    const activeSeat = await db.query(
+      'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1',
+      [u.sessionId],
+    );
+    expect(activeSeat.rows[0]?.active_socket_id).toBeTruthy();
+    const competingTicket = await ticketFor(`sid=${second}`, u.sessionId);
+    const competing = new WebSocket(
+      `${base.replace('http', 'ws')}/ws?ticket=${competingTicket}`,
+      { origin: base },
+    );
+    competing.on('message', (raw) => {
+      const message = JSON.parse(String(raw)) as { type?: string };
+      if (message.type === 'SeatResumeChallenge')
+        competing.send(JSON.stringify({ type: 'ResumeSeat', payload: {} }));
+    });
+    expect((await closeInfo(competing, 2000, 'competing')).code).toBe(1008);
+    const closedA = new Promise<void>((resolve) =>
+      wsA.once('close', () => resolve()),
+    );
+    wsA.close();
+    await closedA;
+
+    const wsB = await open(await ticketFor(`sid=${second}`, u.sessionId));
+    const closeB = closeInfo(wsB, 2000, 'device B');
     expect(
       (await post(`/api/me/sessions/${hashToken(second)}`, u.cookie, 'DELETE'))
         .status,
     ).toBe(200);
     expect((await closeB).code).toBe(4401);
-    expect(wsA.readyState).toBe(WebSocket.OPEN);
+
     const third = await createSession(db, u.accountId, 'third');
-    const wsC = await open(await ticketFor(`sid=${third}`));
-    const closeC = closeInfo(wsC);
+    const wsC = await open(await ticketFor(`sid=${third}`, u.sessionId));
+    const closeC = closeInfo(wsC, 2000, 'device C');
     expect(
       (await post('/api/me/sessions/revoke-others', u.cookie)).status,
     ).toBe(200);
     expect((await closeC).code).toBe(4401);
-    expect(wsA.readyState).toBe(WebSocket.OPEN);
-    wsA.close();
   });
 });

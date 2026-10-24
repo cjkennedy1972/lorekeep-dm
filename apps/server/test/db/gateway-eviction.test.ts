@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { createSession } from '../../src/accounts/sessions.js';
+import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
@@ -51,13 +52,23 @@ function closedWithin(ws: WebSocket, ms: number) {
   ]);
 }
 
+const resumeTokens = new Map<string, string>();
+const ticketOwners = new Map<string, string>();
 async function ticket(token: string) {
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
-    headers: { origin: base, cookie: `sid=${token}` },
+    headers: {
+      origin: base,
+      cookie: `sid=${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ sessionId }),
   });
   expect(res.status).toBe(200);
-  return (await res.json()).ticket as string;
+  const result = (await res.json()) as { ticket: string; resumeToken?: string };
+  ticketOwners.set(result.ticket, token);
+  if (result.resumeToken) resumeTokens.set(token, result.resumeToken);
+  return result.ticket;
 }
 
 function connect(t: string) {
@@ -65,6 +76,32 @@ function connect(t: string) {
     origin: base,
   });
   inboxes.set(ws, on(ws, 'message'));
+  ws.on('message', (raw) => {
+    const message = JSON.parse(String(raw)) as {
+      type?: string;
+      seq?: number;
+      payload?: { resumeToken?: string };
+    };
+    const owner = ticketOwners.get(t)!;
+    if (message.type === 'SeatResumeChallenge')
+      ws.send(
+        JSON.stringify({
+          type: 'ResumeSeat',
+          payload: { resumeToken: resumeTokens.get(owner) },
+        }),
+      );
+    if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken)
+      resumeTokens.set(owner, message.payload.resumeToken);
+    if (message.type === 'StateSync')
+      ws.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'StateSyncAck',
+          payload: { seq: message.seq },
+          lastSeq: message.seq,
+        }),
+      );
+  });
   return ws;
 }
 
@@ -78,12 +115,21 @@ beforeAll(async () => {
     sessionId,
     accounts[0],
   ]);
-  const room = await rooms.get(sessionId);
-  await joinSeated(room, accounts[1]!, { send() {} }, 'Evict 1');
-  await room.disconnect(accounts[1]!);
   tokens = await Promise.all(
     accounts.map((id) => createSession(db, id, 'test')),
   );
+  const room = await rooms.get(sessionId);
+  await joinSeated(
+    room,
+    accounts[1]!,
+    { send() {} },
+    'Evict 1',
+    false,
+    -1,
+    {},
+    hashToken(tokens[1]!),
+  );
+  await room.disconnect(accounts[1]!);
   base = await app.listen({ host: '127.0.0.1', port: 0 });
 });
 
@@ -97,6 +143,8 @@ afterAll(async () => {
 describe('room eviction and attached sockets', () => {
   it('closes a socket attached to an evicted room so the client reattaches to a fresh one', async () => {
     const heir = connect(await ticket(tokens[1]!));
+    expect((await next(heir)).type).toBe('SeatResumeChallenge');
+    expect((await next(heir)).type).toBe('SeatAuthenticated');
     expect((await next(heir)).type).toBe('StateSync');
 
     const closing = closedWithin(heir, 2000);
@@ -104,6 +152,8 @@ describe('room eviction and attached sockets', () => {
 
     expect(await closing).not.toBe('open');
     const fresh = connect(await ticket(tokens[1]!));
+    expect((await next(fresh)).type).toBe('SeatResumeChallenge');
+    expect((await next(fresh)).type).toBe('SeatAuthenticated');
     expect((await next(fresh)).type).toBe('StateSync');
     fresh.close();
   });

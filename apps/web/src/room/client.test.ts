@@ -65,7 +65,7 @@ test('connects with ticket, gets StateSync, resumes after socket drop', async ()
   const first = client.getSnapshot().lastSeq;
   const mine = () =>
     client.getSnapshot().room?.seats.find((s) => s.displayName === 'Cy');
-  expect(mine()?.presence).toBe('online');
+  expect(mine()?.presence).toBe('connected');
 
   sockets[0]!.terminate(); // abrupt drop
   await vi.waitFor(() => expect(statuses).toContain('reconnecting'));
@@ -73,11 +73,46 @@ test('connects with ticket, gets StateSync, resumes after socket drop', async ()
     const s = client.getSnapshot();
     expect(s.status).toBe('connected');
     expect(s.lastSeq).toBeGreaterThan(first);
-    expect(mine()?.presence).toBe('online');
+    expect(mine()?.presence).toBe('connected');
   });
   expect(sockets.length).toBeGreaterThan(1);
   client.stop();
   expect(client.getSnapshot().status).toBe('closed');
+});
+
+test('ignores a ticket request from a stopped connection after restart', async () => {
+  const realFetch = await cookieFetch();
+  let releaseFirstFetch: (() => void) | undefined;
+  let fetchCount = 0;
+  const fetchImpl: typeof fetch = (input, init) => {
+    fetchCount++;
+    if (fetchCount === 1) {
+      return new Promise((resolve, reject) => {
+        releaseFirstFetch = () => {
+          void realFetch(input, init).then(resolve, reject);
+        };
+      });
+    }
+    return realFetch(input, init);
+  };
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl,
+    WebSocketImpl: WSImpl,
+  });
+  const previousSocketCount = sockets.length;
+
+  // Mirrors React StrictMode's setup -> cleanup -> setup while the first
+  // ticket request is still in flight.
+  client.start();
+  client.stop();
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  releaseFirstFetch?.();
+  await new Promise((r) => setTimeout(r, 30));
+
+  expect(sockets).toHaveLength(previousSocketCount + 1);
+  client.stop();
 });
 
 test('invalid server messages surface an error without crashing', async () => {
@@ -170,4 +205,51 @@ test('a not-seated close is neutral: no removal, no reconnect loop, manual rejoi
   expect(client.getSnapshot().unseated).toBe(false);
   expect(sockets.length).toBe(opened + 1);
   client.stop();
+});
+
+test('clears a stored resume token after the host denies its claim', async () => {
+  const values = new Map<string, string>([
+    ['lorekeep.seat-resume-token:denied-claim', 'stale-token'],
+  ]);
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  });
+  const client = createRoomClient({
+    baseUrl: base,
+    sessionId: 'denied-claim',
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+  });
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  const ws = sockets.at(-1)!;
+  ws.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        seq: client.getSnapshot().lastSeq,
+        type: 'SeatClaimPending',
+        payload: { claimId: 'claim-1' },
+      }),
+    ),
+    false,
+  );
+  ws.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        seq: client.getSnapshot().lastSeq,
+        type: 'SeatClaimDenied',
+        payload: { claimId: 'claim-1' },
+      }),
+    ),
+    false,
+  );
+  await vi.waitFor(() =>
+    expect(values.has('lorekeep.seat-resume-token:denied-claim')).toBe(false),
+  );
+  client.stop();
+  vi.unstubAllGlobals();
 });

@@ -30,6 +30,7 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
     await database.pool.query(
       `CREATE TABLE sessions (id uuid PRIMARY KEY, owner_account_id uuid, last_active_at timestamptz NOT NULL DEFAULT now());
        CREATE TABLE events (session_id uuid NOT NULL REFERENCES sessions(id), seq bigint NOT NULL, turn_id uuid NOT NULL, type text NOT NULL, payload jsonb NOT NULL, ts timestamptz NOT NULL DEFAULT now(), expires_at timestamptz, PRIMARY KEY(session_id,seq));
+       CREATE TABLE seat_resume_tokens (session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, seat_id uuid NOT NULL, token_hash text NOT NULL, rotated_at timestamptz NOT NULL DEFAULT now(), active_socket_id uuid, heartbeat_at timestamptz, PRIMARY KEY(session_id,seat_id), CHECK ((active_socket_id IS NULL) = (heartbeat_at IS NULL)));
        CREATE TABLE snapshots (session_id uuid NOT NULL REFERENCES sessions(id), seq bigint NOT NULL, state jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(session_id,seq));
        CREATE TABLE session_lease (session_id uuid PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, node_id text NOT NULL, expires_at timestamptz NOT NULL, epoch bigint NOT NULL DEFAULT 1)`,
     );

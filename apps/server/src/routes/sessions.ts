@@ -15,6 +15,7 @@ import {
 } from '../rooms/invites.js';
 import type { RoomRegistry } from '../room/registry.js';
 import { BoundedCounter } from '../accounts/throttle.js';
+import { loadContentTierState } from '../safety/tierLoader.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 
 type Seater = Pick<RoomRegistry, 'get'>;
@@ -84,6 +85,38 @@ export function registerSessionRoutes(
       ...(code ? { code } : {}),
       ...(tierCap !== undefined ? { tierCap } : {}),
     }) as RoomInfo;
+  const onboardingSettings = async (
+    sessionId: string,
+    accountId: string,
+    optedOut: boolean,
+  ) => {
+    const [session, tierState, personal] = await Promise.all([
+      db.query<{
+        content_tier: 'family' | 'standard' | 'mature';
+        host_tier_cap: 'family' | 'standard' | null;
+      }>('SELECT content_tier, host_tier_cap FROM sessions WHERE id=$1', [
+        sessionId,
+      ]),
+      loadContentTierState(db, sessionId, false),
+      db.query<{
+        content_lines: string[];
+        content_veils: string[];
+      }>('SELECT content_lines, content_veils FROM accounts WHERE id=$1', [
+        accountId,
+      ]),
+    ]);
+    const sessionSettings = session.rows[0];
+    if (!sessionSettings) throw new Error('Table settings unavailable');
+    const tier =
+      optedOut && tierState.tier === 'mature' ? 'standard' : tierState.tier;
+    return {
+      contentTier: tier,
+      hostTierCap: sessionSettings.host_tier_cap,
+      matureOptOut: optedOut,
+      lines: personal.rows[0]?.content_lines ?? [],
+      veils: personal.rows[0]?.content_veils ?? [],
+    };
+  };
   const seatProfile = async (accountId: string) => {
     const row = (
       await db.query<{ display_name: string; mature_opt_out: boolean }>(
@@ -101,6 +134,8 @@ export function registerSessionRoutes(
     app.post(base, async (request, reply) => {
       const accountId = await member(request, reply);
       if (!accountId) return reply;
+      const authToken = tokenFromCookie(request.headers.cookie);
+      const authTokenHash = authToken ? hashToken(authToken) : undefined;
       const parsed = CreateRoomInputSchema.safeParse(request.body);
       if (!parsed.success)
         return reply
@@ -148,7 +183,12 @@ export function registerSessionRoutes(
         const profile = await seatProfile(accountId);
         await (
           await rooms.get(id)
-        ).seat(accountId, profile.displayName, profile.matureOptOut);
+        ).seat(
+          accountId,
+          profile.displayName,
+          profile.matureOptOut,
+          authTokenHash,
+        );
       } catch (error) {
         await db.query('DELETE FROM sessions WHERE id=$1', [id]);
         throw error;
@@ -271,6 +311,8 @@ export function registerSessionRoutes(
   ) => {
     const accountId = await member(request, reply);
     if (!accountId) return reply;
+    const authToken = tokenFromCookie(request.headers.cookie);
+    const authTokenHash = authToken ? hashToken(authToken) : undefined;
     const { code } = request.params;
     if (throttled(`${request.ip}:${code}`))
       return reply.code(429).send({
@@ -289,11 +331,12 @@ export function registerSessionRoutes(
       });
     const optOut = (request.body as { matureOptOut?: unknown } | null)
       ?.matureOptOut;
+    const profile = await seatProfile(accountId);
+    const matureOptOut =
+      typeof optOut === 'boolean' ? optOut : profile.matureOptOut;
+    let room: import('../room/Room.js').Room;
     try {
-      const profile = await seatProfile(accountId);
-      const room = await rooms.get(found.id);
-      const matureOptOut =
-        typeof optOut === 'boolean' ? optOut : profile.matureOptOut;
+      room = await rooms.get(found.id);
       if (
         !room.state?.seats?.some((seat) => seat.accountId === accountId) &&
         room.state?.gameState
@@ -302,20 +345,32 @@ export function registerSessionRoutes(
           accountId,
           profile.displayName,
           matureOptOut,
+          authTokenHash,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
             accountId,
             optOut,
           ]);
+        const settings = await onboardingSettings(
+          found.id,
+          accountId,
+          matureOptOut,
+        );
         return reply.code(409).send({
+          settings,
           code: 'LATE_JOIN_PENDING',
           message:
             'Your request is waiting for the host. Retry this invite after it is approved.',
           requestId,
         });
       }
-      await room.seat(accountId, profile.displayName, matureOptOut);
+      await room.seat(
+        accountId,
+        profile.displayName,
+        matureOptOut,
+        authTokenHash,
+      );
     } catch (error) {
       if (error instanceof Error && error.message === 'Room is full')
         return reply
@@ -328,7 +383,9 @@ export function registerSessionRoutes(
         accountId,
         optOut,
       ]);
-    return { room: view(found.id, found.name, found.owner === accountId) };
+    return {
+      room: view(found.id, found.name, found.owner === accountId),
+    };
   };
   app.get<{ Params: { code: string } }>(
     '/api/invites/:code',
@@ -348,13 +405,15 @@ export function registerSessionRoutes(
           message: 'This invite link is no longer valid.',
         });
       return {
-        room: view(
-          found.id,
-          found.name,
-          found.owner === accountId,
-          undefined,
-          found.hostTierCap,
-        ),
+        room: {
+          ...view(
+            found.id,
+            found.name,
+            found.owner === accountId,
+            undefined,
+            found.hostTierCap,
+          ),
+        },
       };
     },
   );
@@ -363,6 +422,8 @@ export function registerSessionRoutes(
     async (request, reply) => {
       const accountId = await member(request, reply);
       if (!accountId) return reply;
+      const authToken = tokenFromCookie(request.headers.cookie);
+      const authTokenHash = authToken ? hashToken(authToken) : undefined;
       if (throttled(`${request.ip}:${request.params.code}`))
         return reply.code(429).send({
           code: 'RATE_LIMITED',
@@ -384,13 +445,23 @@ export function registerSessionRoutes(
           accountId,
           profile.displayName,
           typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+          authTokenHash,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
             accountId,
             optOut,
           ]);
-        return reply.code(202).send({ requestId, status: 'pending' });
+        const settings = await onboardingSettings(
+          found.id,
+          accountId,
+          typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+        );
+        return reply.code(202).send({
+          settings,
+          requestId,
+          status: 'pending',
+        });
       } catch (error) {
         if (error instanceof Error && error.message === 'Room is full')
           return reply

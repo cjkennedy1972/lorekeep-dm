@@ -68,27 +68,95 @@ export async function issueTicket(
   accountId: string,
   sessionId: string,
   authTokenHash: string,
+  seatId?: string,
 ): Promise<string> {
   const ticket = randomBytes(32).toString('base64url');
+  const resolvedSeatId =
+    seatId ??
+    (
+      await db.query<{ seat_id: string }>(
+        `SELECT j.payload->>'seatId' AS seat_id FROM events j
+      WHERE j.session_id=$1 AND j.type='SeatJoined'
+        AND j.payload->>'accountId'=$2
+        AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=j.session_id
+          AND r.type='SeatRevoked' AND r.payload->>'seatId'=j.payload->>'seatId'
+          AND r.seq>j.seq)
+      ORDER BY j.seq DESC LIMIT 1`,
+        [sessionId, accountId],
+      )
+    ).rows[0]?.seat_id;
+  if (!resolvedSeatId)
+    throw new Error('Cannot issue a ticket without a current seat');
   await db.query(
-    `INSERT INTO ws_tickets(ticket_hash,account_id,session_id,auth_token_hash,expires_at)
-    VALUES($1,$2,$3,$4,clock_timestamp() + interval '30 seconds')`,
-    [hash(ticket), accountId, sessionId, authTokenHash],
+    `INSERT INTO ws_tickets(ticket_hash,account_id,session_id,seat_id,auth_token_hash,expires_at)
+    VALUES($1,$2,$3,$4,$5,clock_timestamp() + interval '30 seconds')`,
+    [hash(ticket), accountId, sessionId, resolvedSeatId, authTokenHash],
   );
   return ticket;
 }
+/** Read a solo-owner ticket's binding without consuming it for the cookie gate. */
+export async function soloOwnerRecoveryTicket(
+  db: Pool,
+  ticket: string,
+  sessionId?: string,
+): Promise<
+  | {
+      authTokenHash: string;
+      accountId: string;
+      sessionId: string;
+      seatId: string;
+    }
+  | undefined
+> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) return undefined;
+  const result = await db.query<{
+    auth_token_hash: string;
+    account_id: string;
+    session_id: string;
+    seat_id: string;
+  }>(
+    `SELECT t.auth_token_hash,t.account_id,t.session_id,t.seat_id FROM ws_tickets t
+       JOIN sessions room ON room.id=t.session_id
+      WHERE t.ticket_hash=$1 AND t.used_at IS NULL
+        AND t.expires_at>clock_timestamp() AND ($2::uuid IS NULL OR t.session_id=$2)
+        AND room.mode='solo' AND room.owner_account_id=t.account_id
+        AND (SELECT count(DISTINCT live.payload->>'seatId') FROM events live
+          WHERE live.session_id=room.id AND live.type='SeatJoined'
+            AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=live.session_id
+              AND r.type='SeatRevoked' AND r.payload->>'seatId'=live.payload->>'seatId'
+              AND r.seq>live.seq))=1`,
+    [hash(ticket), sessionId ?? null],
+  );
+  const row = result.rows[0];
+  return (
+    row && {
+      authTokenHash: row.auth_token_hash,
+      accountId: row.account_id,
+      sessionId: row.session_id,
+      seatId: row.seat_id,
+    }
+  );
+}
+
 export async function consumeTicket(
   db: Pool,
   ticket: string,
   sessionId?: string,
 ): Promise<
-  { accountId: string; sessionId: string; authTokenHash: string } | undefined
+  | {
+      accountId: string;
+      sessionId: string;
+      seatId: string;
+      authTokenHash: string;
+    }
+  | undefined
 > {
   if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) return undefined;
   // Consumable only while the originating auth session, account, and table membership remain valid.
   const result = await db.query<{
     account_id: string;
     session_id: string;
+    seat_id: string;
     auth_token_hash: string;
   }>(
     `UPDATE ws_tickets t SET used_at=clock_timestamp()
@@ -99,7 +167,13 @@ export async function consumeTicket(
       AND s.expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp()
       AND a.id=t.account_id AND a.status='active'
       AND room.id=t.session_id AND (room.owner_account_id=t.account_id OR ${currentMemberSql('t.account_id', 'room')})
-      RETURNING t.account_id,t.session_id,t.auth_token_hash`,
+      AND EXISTS (SELECT 1 FROM events j WHERE j.session_id=t.session_id
+        AND j.type='SeatJoined' AND j.payload->>'seatId'=t.seat_id::text
+        AND j.payload->>'accountId'=t.account_id::text
+        AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=j.session_id
+          AND r.type='SeatRevoked' AND r.payload->>'seatId'=t.seat_id::text
+          AND r.seq>j.seq))
+      RETURNING t.account_id,t.session_id,t.seat_id,t.auth_token_hash`,
     [hash(ticket), sessionId ?? null],
   );
   const row = result.rows[0];
@@ -107,6 +181,7 @@ export async function consumeTicket(
     ? {
         accountId: row.account_id,
         sessionId: row.session_id,
+        seatId: row.seat_id,
         authTokenHash: row.auth_token_hash,
       }
     : undefined;

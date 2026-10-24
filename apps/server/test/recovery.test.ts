@@ -63,16 +63,28 @@ describe('room recovery', () => {
       state: {
         sessionId: id,
         phase: 'lobby',
-        seats: [seat],
+        seats: [{ ...seat, presence: 'connected' }],
         actionIds: [actionId],
       },
       createdAt: new Date(),
     };
     const store = {
       loadLatest: async () => ({ snapshot, events: [] }),
-      writeTurn: async () => {
-        throw new Error('unexpected write');
-      },
+      writeTurn: async (
+        _sessionId: string,
+        events: readonly {
+          seq: number;
+          turnId: string;
+          type: string;
+          payload: unknown;
+        }[],
+      ) => ({
+        events: events.map((item) => ({
+          sessionId: id,
+          ...item,
+          ts: new Date(),
+        })),
+      }),
     } as RoomStore;
     const room = new Room(store, lease, await store.loadLatest(id));
     const sent: unknown[] = [];
@@ -81,7 +93,10 @@ describe('room recovery', () => {
       { send: (message) => sent.push(message) },
       0,
     );
-    expect(sent).toMatchObject([{ type: 'StateSync', seq: 1 }]);
+    expect(sent).toMatchObject([
+      { type: 'PresenceChanged', seq: 2 },
+      { type: 'StateSync', seq: 2 },
+    ]);
     expect(await room.submit(actionId)).toBe(false);
   });
 });

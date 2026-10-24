@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { StateSyncSchema } from '@game/schema';
-import { describe, expect, it } from 'vitest';
-import { Room, type RoomStore } from '../src/room/Room.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  Room,
+  nextLateJoinBoundary,
+  type RoomStore,
+} from '../src/room/Room.js';
 import type { LatestState, StoredEvent } from '../src/persistence/index.js';
 import type { RegistryEvent } from '../src/dm/memory.js';
+import type { SoloTurnRunner } from '../src/room/dmTurn.js';
 
 const id = randomUUID();
 const lease = {
@@ -119,6 +124,227 @@ describe('room actor', () => {
     expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
     expect(JSON.stringify(sync)).not.toContain('private action text');
   });
+
+  it('places exploration admission at a committed scene or resolved-round boundary and combat admission at a round boundary', () => {
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: true,
+        combatActive: false,
+        roundStatus: 'resolved',
+      }),
+    ).toBe('after-turn');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: true,
+        roundStatus: 'resolved',
+      }),
+    ).toBe('next-combat-round');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: false,
+        roundStatus: 'resolved',
+        sceneBoundary: false,
+      }),
+    ).toBe('before-next-turn');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: false,
+        roundStatus: 'open',
+        sceneBoundary: false,
+      }),
+    ).toBe('after-turn');
+    expect(
+      nextLateJoinBoundary({
+        turnInFlight: false,
+        combatActive: false,
+        roundStatus: 'resolved',
+        sceneBoundary: true,
+      }),
+    ).toBe('before-next-turn');
+  });
+
+  it('suppresses disconnect and reconnect events for a sub-10-second blip', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accountId = randomUUID();
+    await room.seat(accountId, 'Player');
+    await room.join(accountId, { send() {} });
+    const seatId = room.state.seats[0]!.seatId;
+    vi.useFakeTimers();
+    try {
+      const disconnected = room.disconnect(accountId);
+      await vi.advanceTimersByTimeAsync(10);
+      await disconnected;
+      await vi.advanceTimersByTimeAsync(5_000);
+      const rejoined = room.join(accountId, { send() {} });
+      await vi.advanceTimersByTimeAsync(10);
+      await rejoined;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(room.state.seats[0]?.presence).toBe('connected');
+      expect(
+        events.filter(
+          (event) =>
+            ['SeatDisconnected', 'SeatReconnected'].includes(event.type) &&
+            (event.payload as { seatId?: string }).seatId === seatId,
+        ),
+      ).toHaveLength(0);
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
+  });
+
+  it('persists SeatTakenOver immediately during the presence coalescing window', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accountId = randomUUID();
+    await room.seat(accountId, 'Player');
+    await room.join(accountId, { send() {} });
+    const seatId = room.state.seats[0]!.seatId;
+    vi.useFakeTimers();
+    try {
+      const disconnected = room.disconnect(accountId);
+      await vi.advanceTimersByTimeAsync(2);
+      await disconnected;
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        false,
+      );
+
+      const takeover = room.recordSeatTakenOver(seatId);
+      await vi.advanceTimersByTimeAsync(2);
+      await takeover;
+      expect(
+        events.filter((event) => event.type === 'SeatTakenOver'),
+      ).toHaveLength(1);
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        false,
+      );
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
+  });
+
+  it('moves through disconnected, returning, and connected; only confirmed absence pauses the table', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accountId = randomUUID();
+    await room.seat(accountId, 'Player');
+    await room.join(accountId, { send() {} });
+    expect(room.state.seats[0]?.presence).toBe('connected');
+
+    vi.useFakeTimers();
+    try {
+      const disconnected = room.disconnect(accountId);
+      await vi.advanceTimersByTimeAsync(10);
+      await disconnected;
+      expect(room.state.seats[0]?.presence).toBe('disconnected');
+      expect(
+        events.filter(
+          (event) =>
+            [
+              'PresenceChanged',
+              'SeatDisconnected',
+              'SeatAway',
+              'SeatReconnected',
+            ].includes(event.type) &&
+            (event.payload as { seatId?: string }).seatId ===
+              room.state.seats[0]?.seatId,
+        ),
+      ).toHaveLength(1);
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        false,
+      );
+      expect(room.state).toMatchObject({
+        paused: true,
+        pauseCause: 'no-connected-seats',
+      });
+      await vi.advanceTimersByTimeAsync(9_990);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        true,
+      );
+      expect(
+        events.filter(
+          (event) =>
+            [
+              'PresenceChanged',
+              'SeatDisconnected',
+              'SeatAway',
+              'SeatReconnected',
+            ].includes(event.type) &&
+            (event.payload as { seatId?: string }).seatId ===
+              room.state.seats[0]?.seatId,
+        ),
+      ).toHaveLength(2);
+
+      const rejoined = room.join(accountId, { send() {} });
+      await vi.advanceTimersByTimeAsync(10);
+      await rejoined;
+      expect(room.state.seats[0]?.presence).toBe('returning');
+
+      await vi.advanceTimersByTimeAsync(10_010);
+      expect(room.state.seats[0]?.presence).toBe('connected');
+      expect(room.state).toMatchObject({ paused: false });
+      expect(events.some((event) => event.type === 'SeatAway')).toBe(false);
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
+  });
+
+  it('requires host approval for a lost-token claim and expires it after 60 seconds', async () => {
+    const { store } = fixture();
+    const host = randomUUID();
+    const claimant = randomUUID();
+    store.isTableHost = async (_sessionId, accountId) => accountId === host;
+    const room = new Room(store, lease, await store.loadLatest(id));
+    await room.seat(host, 'Host');
+    await room.seat(claimant, 'Claimant');
+    vi.useFakeTimers();
+    try {
+      const claimId = randomUUID();
+      const decision = room.requestSeatResumeClaim(claimant, claimId);
+      await vi.advanceTimersByTimeAsync(59_999);
+      await room.approveSeatResumeClaim(host, randomUUID(), claimId);
+      await expect(decision).resolves.toBe(true);
+
+      const expiredId = randomUUID();
+      const expired = room.requestSeatResumeClaim(claimant, expiredId);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(expired).resolves.toBe(false);
+      await expect(
+        room.approveSeatResumeClaim(host, randomUUID(), expiredId),
+      ).rejects.toThrow();
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains a revoked seat in Room state while removing active control membership', async () => {
+    const { store } = fixture();
+    const host = randomUUID();
+    const target = randomUUID();
+    store.isTableHost = async (_sessionId, accountId) => accountId === host;
+    const room = new Room(store, lease, await store.loadLatest(id));
+    await room.seat(host, 'Host');
+    await room.seat(target, 'Target');
+    const revoked = room.state.seats.find((seat) => seat.accountId === target)!;
+    await room.leave(target);
+    expect(room.state.seats.some((seat) => seat.accountId === target)).toBe(
+      false,
+    );
+    expect(room.state.revokedSeats).toContainEqual({
+      ...revoked,
+      presence: 'revoked',
+    });
+    await room.drain();
+  });
+
   describe('host controls', () => {
     it('requires a current host and enforces timer bounds server-side', async () => {
       const { store } = fixture();
@@ -289,11 +515,25 @@ describe('room actor', () => {
       );
     });
 
-    it('stores late-join requests and only seats a host-approved requester at the next scene boundary', async () => {
+    it('admits approved exploration joiners at a committed scene boundary', async () => {
       const { store, events } = fixture();
       const host = randomUUID();
       store.isTableHost = async (_sessionId, accountId) => accountId === host;
-      const room = new Room(store, lease, await store.loadLatest(id));
+      const runner: SoloTurnRunner = {
+        async run(request) {
+          return {
+            narration: 'The scene closes.',
+            events: [
+              { type: 'TurnStarted', turnId: 'turn-scene-close' },
+              { type: 'SceneClosed', sceneId: 'scene-test', summary: 'Done.' },
+            ],
+            state: request.state as Record<string, unknown>,
+            turnSeed: '0x0000000000000001',
+            usage: { in: 1, out: 1 },
+          };
+        },
+      };
+      const room = new Room(store, lease, await store.loadLatest(id), runner);
       await room.seat(host, 'Host');
       await room.persistGameState({});
       const requester = randomUUID();
@@ -305,7 +545,8 @@ describe('room actor', () => {
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
       ).toBe(false);
-      await room.resolveNow(host);
+      await room.submitAction(host, randomUUID(), 'close the scene');
+      await new Promise((resolve) => setTimeout(resolve, 100));
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
       ).toBe(true);
@@ -520,6 +761,14 @@ describe('room actor', () => {
     const currentAccount = randomUUID();
     await room.seat(staleAccount, 'Stale');
     await room.seat(currentAccount, 'Current');
+    await room.subscribe(staleAccount, {
+      send: (message) => stale.push(message),
+    });
+    await room.subscribe(currentAccount, {
+      send: (message) => current.push(message),
+    });
+    stale.length = 0;
+    current.length = 0;
     const currentSeq = room.seq;
     await room.subscribe(
       staleAccount,
@@ -1008,7 +1257,7 @@ describe('room actor', () => {
     const closing = room.resolveNow(host);
     room.completeActionReceipt(receiptSeq);
     await closing;
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(requests).toEqual(['Allowed action']);
     expect(
       JSON.stringify(

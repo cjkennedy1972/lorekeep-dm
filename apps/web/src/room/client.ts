@@ -33,6 +33,8 @@ const UNSEATED_REASON = 'Player is not seated at this table';
 export interface RoomClientOptions {
   /** HTTP origin of the API, e.g. http://localhost:8787 */
   baseUrl: string;
+  /** Session whose single-use resume token is being rotated. */
+  sessionId?: string;
   fetchImpl?: typeof fetch;
   WebSocketImpl?: typeof WebSocket;
   baseDelayMs?: number;
@@ -57,6 +59,18 @@ export function createRoomClient(opts: RoomClientOptions) {
   let socket: WebSocket | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
+  let generation = 0;
+  let resumeToken: string | undefined;
+  let pendingClaimId: string | undefined;
+  let authenticatedSeatId: string | undefined;
+  try {
+    resumeToken =
+      globalThis.localStorage?.getItem(
+        `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+      ) ?? undefined;
+  } catch {
+    /* Browser storage may be disabled; a fresh seat claim will be required. */
+  }
   let stopped = true;
   const listeners = new Set<() => void>();
   const set = (p: Partial<RoomSnapshot>) => {
@@ -89,47 +103,135 @@ export function createRoomClient(opts: RoomClientOptions) {
     if (!parsed.success)
       return set({ error: 'Received unrecognised message from server.' });
     const msg = parsed.data;
+    if (msg.type === 'SeatResumeChallenge') {
+      const env: ClientEnvelope = {
+        actionId: crypto.randomUUID() as ClientEnvelope['actionId'],
+        type: 'ResumeSeat',
+        payload: resumeToken ? { resumeToken } : {},
+        lastSeq: snap.lastSeq,
+      };
+      if (socket?.readyState === WS.OPEN) socket.send(JSON.stringify(env));
+      return;
+    }
+    if (msg.type === 'SeatAuthenticated') {
+      if (typeof msg.payload.seatId === 'string')
+        authenticatedSeatId = msg.payload.seatId;
+      const nextToken = msg.payload.resumeToken;
+      if (typeof nextToken === 'string') {
+        resumeToken = nextToken;
+        try {
+          globalThis.localStorage?.setItem(
+            `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+            resumeToken,
+          );
+        } catch {
+          /* The current socket remains authenticated; a future new device needs host approval. */
+        }
+      }
+      attempt = 0;
+      set({ status: 'connected', error: null });
+      return;
+    }
+    if (msg.type === 'SeatClaimPending') {
+      pendingClaimId = String(msg.payload.claimId ?? '');
+      set({ error: 'Waiting for the host to approve this device.' });
+    }
+    if (
+      (msg.type === 'SeatClaimDenied' || msg.type === 'SeatClaimExpired') &&
+      String(msg.payload.claimId ?? '') === pendingClaimId
+    ) {
+      stopped = true;
+      pendingClaimId = undefined;
+      resumeToken = undefined;
+      try {
+        globalThis.localStorage?.removeItem(
+          `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+        );
+      } catch {
+        /* The denied claim is closed even if browser storage is unavailable. */
+      }
+      set({
+        status: 'closed',
+        error: 'The host did not approve this device claim.',
+      });
+      socket?.close();
+      return;
+    }
     opts.onMessage?.(msg);
     const wasResync = snap.needsResync;
     const next = roomReducer(snap, msg);
+    if (
+      msg.type === 'StateSync' &&
+      authenticatedSeatId &&
+      !next.room?.seats.some((seat) => seat.seatId === authenticatedSeatId)
+    ) {
+      resumeToken = undefined;
+      try {
+        globalThis.localStorage?.removeItem(
+          `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+        );
+      } catch {
+        /* Revocation is enforced by the server even when storage is unavailable. */
+      }
+      stopped = true;
+      socket?.close();
+    }
     set({
       ...next,
       error: msg.type === 'Error' ? msg.payload.message : snap.error,
     });
+    if (msg.type === 'StateSync') send('StateSyncAck', { seq: msg.seq });
     if (next.needsResync && !wasResync) send('Resync');
   };
 
-  const scheduleReconnect = () => {
-    if (stopped) return;
+  const isActive = (connectionGeneration: number) =>
+    !stopped && connectionGeneration === generation;
+
+  const scheduleReconnect = (connectionGeneration: number) => {
+    if (!isActive(connectionGeneration)) return;
     set({ status: 'reconnecting' });
     const delay = Math.min(max, base * 2 ** attempt++);
-    timer = setTimeout(connect, delay);
+    timer = setTimeout(() => void connect(connectionGeneration), delay);
   };
 
-  async function connect() {
-    if (stopped) return;
+  async function connect(connectionGeneration: number) {
+    if (!isActive(connectionGeneration)) return;
     try {
       const res = await doFetch(`${opts.baseUrl}/api/ws-ticket`, {
         method: 'POST',
         credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+        }),
       });
+      if (!isActive(connectionGeneration)) return;
       if (!res.ok) throw new Error(`ticket ${res.status}`);
       const { ticket } = (await res.json()) as { ticket: string };
-      if (stopped) return;
+      if (!isActive(connectionGeneration)) return;
       const url = new URL('/ws', opts.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.searchParams.set('ticket', ticket);
       const ws = new WS(url.href);
       socket = ws;
       ws.onopen = () => {
-        attempt = 0;
-        set({ status: 'connected', error: null });
-        // Server sends StateSync on join; lastSeq in envelopes lets it resume.
+        set({ status: 'connecting' });
       };
       ws.onmessage = (e) => onMessage(e.data);
       ws.onclose = (e) => {
         if (socket !== ws) return;
         const removed = removalForClose(e.code, e.reason);
+        const unseated = e.code === 1008 && e.reason === UNSEATED_REASON;
+        if (removed) resumeToken = undefined;
+        if (removed || unseated) {
+          try {
+            globalThis.localStorage?.removeItem(
+              `lorekeep.seat-resume-token:${opts.sessionId ?? 'default'}`,
+            );
+          } catch {
+            /* The server enforces seat membership if storage is unavailable. */
+          }
+        }
         if (removed) {
           // A host kick or table end is final: do not reconnect.
           socket = undefined;
@@ -143,11 +245,11 @@ export function createRoomClient(opts: RoomClientOptions) {
           set({ status: 'closed', unseated: true });
           return;
         }
-        scheduleReconnect();
+        scheduleReconnect(connectionGeneration);
       };
       ws.onerror = () => {};
     } catch {
-      scheduleReconnect();
+      scheduleReconnect(connectionGeneration);
     }
   }
 
@@ -161,12 +263,14 @@ export function createRoomClient(opts: RoomClientOptions) {
     start() {
       if (!stopped) return;
       stopped = false;
+      generation++;
       attempt = 0;
       set({ status: 'connecting', unseated: false });
-      void connect();
+      void connect(generation);
     },
     stop() {
       stopped = true;
+      generation++;
       clearTimeout(timer);
       const s = socket;
       socket = undefined;

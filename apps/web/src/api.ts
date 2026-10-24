@@ -23,7 +23,13 @@ export interface RoomInfo {
 
 export type ApiResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; code: string; message: string };
+  | {
+      ok: false;
+      status: number;
+      code: string;
+      message: string;
+      data?: Record<string, unknown>;
+    };
 
 export async function api<T = Record<string, never>>(
   path: string,
@@ -47,6 +53,7 @@ export async function api<T = Record<string, never>>(
       status: res.status,
       code: String(json.code ?? 'ERROR'),
       message: String(json.message ?? 'Something went wrong. Try again.'),
+      data: json,
     };
   } catch {
     return {

@@ -7,9 +7,14 @@ import { useRoom } from '../room/useRoom';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
 const PRESENCE: Record<Seat['presence'], string> = {
+  connected: 'connected',
+  returning: 'returning',
+  disconnected: 'disconnected',
   online: 'online',
   away: 'away',
   offline: 'offline',
+  unknown: 'unknown',
+  revoked: 'left',
 };
 
 /** Polite announcements for presence changes and arrivals/departures. */
@@ -51,6 +56,7 @@ export function Lobby() {
 
   const live = useRoom({
     baseUrl: http.base,
+    sessionId: id,
     fetchImpl: (...a) => http.fetch(...a),
     WebSocketImpl: http.WebSocket,
   });

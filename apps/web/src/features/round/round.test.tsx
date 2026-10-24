@@ -250,6 +250,24 @@ describe('HostControls', () => {
     ).toBe(true);
   });
 
+  it('explains automatic resume during a no-connected-seats pause', () => {
+    render(
+      <HostControls
+        round={round()}
+        roundDurationMs={null}
+        connected
+        paused
+        pauseCause="no-connected-seats"
+        send={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        'Table paused: waiting for players to reconnect. It will resume automatically when a seat is confirmed connected.',
+      ),
+    ).toBeTruthy();
+  });
+
   it('lists the other players, never the host’s own seat', () => {
     render(
       <HostControls

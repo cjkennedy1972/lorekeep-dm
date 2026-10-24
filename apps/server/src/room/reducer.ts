@@ -6,16 +6,24 @@ export function emptyRoom(sessionId: string): RoomState {
 }
 
 export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
-  if (
-    event.type === 'ActionAccepted' &&
-    state.lastRestVoteResult &&
-    state.lastRestVoteResultTurnId !== event.turnId
-  )
+  if (event.type === 'ActionAccepted') {
+    const { accountId } = event.payload as { accountId?: string };
     return RoomStateSchema.parse({
       ...state,
-      lastRestVoteResult: undefined,
-      lastRestVoteResultTurnId: undefined,
+      ...(accountId
+        ? {
+            spotlightActivity: {
+              ...(state.spotlightActivity ?? {}),
+              [accountId]: state.spotlightTurn ?? 0,
+            },
+          }
+        : {}),
+      ...(state.lastRestVoteResult &&
+      state.lastRestVoteResultTurnId !== event.turnId
+        ? { lastRestVoteResult: undefined, lastRestVoteResultTurnId: undefined }
+        : {}),
     });
+  }
   if (event.type === 'RestVoteOpened') {
     const payload = event.payload as NonNullable<RoomState['restVote']>;
     return RoomStateSchema.parse({
@@ -113,6 +121,10 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     if (list.some((item) => item.seatId === submission.seatId)) return state;
     return RoomStateSchema.parse({
       ...state,
+      spotlightActivity: {
+        ...(state.spotlightActivity ?? {}),
+        [submission.accountId]: state.spotlightTurn ?? 0,
+      },
       round: {
         ...round,
         [queued ? 'queuedSubmissions' : 'submissions']: [...list, submission],
@@ -240,7 +252,14 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     const seat = event.payload as Seat;
     if (state.seats.some((item) => item.accountId === seat.accountId))
       return state;
-    return RoomStateSchema.parse({ ...state, seats: [...state.seats, seat] });
+    return RoomStateSchema.parse({
+      ...state,
+      seats: [...state.seats, seat],
+      spotlightActivity: {
+        ...(state.spotlightActivity ?? {}),
+        [seat.accountId]: state.spotlightTurn ?? 0,
+      },
+    });
   }
   if (event.type === 'HostSeatChanged') {
     const { seatId } = event.payload as { seatId: string };
@@ -313,13 +332,32 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       ),
     });
   }
+  if (event.type === 'SpotlightPrompted') {
+    const { turn, cursor } = event.payload as { turn: number; cursor: number };
+    return RoomStateSchema.parse({
+      ...state,
+      spotlightTurn: turn,
+      spotlightCursor: cursor,
+    });
+  }
   if (event.type === 'TableEnded')
     return RoomStateSchema.parse({ ...state, ended: true, paused: true });
   if (event.type === 'SeatRevoked') {
     const { seatId } = event.payload as { seatId: string };
+    const revoked = state.seats.find((seat) => seat.seatId === seatId);
     return RoomStateSchema.parse({
       ...state,
       seats: state.seats.filter((seat) => seat.seatId !== seatId),
+      ...(revoked
+        ? {
+            revokedSeats: [
+              ...(state.revokedSeats ?? []).filter(
+                (seat) => seat.seatId !== seatId,
+              ),
+              { ...revoked, presence: 'revoked' },
+            ],
+          }
+        : {}),
     });
   }
   if (event.type === 'GameStateCommitted') {
@@ -340,9 +378,10 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     return RoomStateSchema.parse({ ...state, openClarifications });
   }
   if (event.type === 'TablePaused') {
-    const { paused, restVoteRemainingMs, restVoteDeadlineAt } =
+    const { paused, cause, restVoteRemainingMs, restVoteDeadlineAt } =
       event.payload as {
         paused: boolean;
+        cause?: 'host' | 'no-connected-seats';
         restVoteRemainingMs?: number;
         restVoteDeadlineAt?: number;
       };
@@ -361,20 +400,48 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
             }
           : state.restVote
       : undefined;
-    return RoomStateSchema.parse({ ...state, paused, restVote });
+    return RoomStateSchema.parse({
+      ...state,
+      paused,
+      pauseCause: paused ? (cause ?? state.pauseCause ?? 'host') : undefined,
+      restVote,
+    });
   }
-  if (event.type === 'PresenceChanged') {
+  if (
+    event.type === 'PresenceChanged' ||
+    event.type === 'SeatDisconnected' ||
+    event.type === 'SeatAway' ||
+    event.type === 'SeatReconnected'
+  ) {
     const payload = event.payload as {
       seatId: string;
       presence: Seat['presence'];
     };
+    const presence =
+      event.type === 'SeatDisconnected'
+        ? 'disconnected'
+        : event.type === 'SeatAway'
+          ? 'away'
+          : event.type === 'SeatReconnected'
+            ? 'returning'
+            : payload.presence;
     return RoomStateSchema.parse({
       ...state,
       seats: state.seats.map((seat) =>
-        seat.seatId === payload.seatId
-          ? { ...seat, presence: payload.presence }
-          : seat,
+        seat.seatId === payload.seatId ? { ...seat, presence } : seat,
       ),
+      presenceEventAt: {
+        ...(state.presenceEventAt ?? {}),
+        [payload.seatId]: event.ts.getTime(),
+      },
+      presenceEventType: {
+        ...(state.presenceEventType ?? {}),
+        [payload.seatId]: event.type as
+          | 'PresenceChanged'
+          | 'SeatDisconnected'
+          | 'SeatAway'
+          | 'SeatReconnected',
+      },
     });
   }
   return state;

@@ -204,6 +204,7 @@ export function narrationLogReducer(
     case 'RestVoteCastNotice':
     case 'RestVoteClosed':
     case 'RestApplied':
+    case 'SpotlightPrompt':
     case 'CombatTracker':
     case 'ReactionPrompt':
     case 'CombatOptions':
@@ -215,6 +216,14 @@ export function narrationLogReducer(
     case 'PresenceChanged':
     case 'ChatMessage':
     case 'ChatHistory':
+    case 'SeatTakenOver':
+    case 'SeatClaimRequested':
+    case 'SeatClaimApproved':
+    case 'SeatClaimDenied':
+    case 'SeatClaimExpired':
+    case 'SeatAuthenticated':
+    case 'SeatClaimPending':
+    case 'SeatResumeChallenge':
       return state;
   }
 }

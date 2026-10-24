@@ -224,6 +224,9 @@ export function createCombatRuntime(
           attackId: weapon.id,
           seed: state.seed ?? 1,
           attackBonus: weapon.attackBonus,
+          ...(state.dodging?.includes(target.id)
+            ? { mode: 'disadvantage' as const }
+            : {}),
           damage: weapon.damage,
           damageType: weapon.damageType,
           targetAc: target.ac ?? 10,
@@ -265,6 +268,25 @@ export function createCombatRuntime(
             { type: 'ActionSpent', entityId: actorId },
             ...closing.events,
           ],
+        };
+      }
+      if (command.command === 'dodge') {
+        const resources = state.combat.resources[actorId];
+        if (!resources?.action)
+          return reject('Dodge is unavailable this turn.');
+        return {
+          state: {
+            ...state,
+            dodging: [...new Set([...(state.dodging ?? []), actorId])],
+            combat: {
+              ...state.combat,
+              resources: {
+                ...state.combat.resources,
+                [actorId]: { ...resources, action: false },
+              },
+            },
+          },
+          events: [{ type: 'DodgeDeclared', entityId: actorId }],
         };
       }
       if (command.command === 'end-turn') {
