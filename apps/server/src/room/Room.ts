@@ -17,12 +17,14 @@ import {
   type EventInput,
   type LatestState,
   type RewindPlan,
+  type SeatCharacterTransition,
   type StoredEvent,
 } from '../persistence/index.js';
 import type { HostCap } from '../safety/tier.js';
 import type { Lease } from './lease.js';
 import { recoverRoom } from './recovery.js';
 import { reduceRoom } from './reducer.js';
+import { seatEntityId, seatIdFromEntityId } from './seatEntity.js';
 import {
   LiveDmRestrictedError,
   XCardAbortError,
@@ -55,14 +57,61 @@ import { failForward, resolveDeathSave, retryFromCheckpoint } from './death.js';
 
 const CLIENT_GAME_STATE_FIELDS = ['characters', 'combatRoom'] as const;
 
-function clientGameState(value: unknown): Record<string, unknown> {
+function clientGameState(
+  value: unknown,
+  viewerAccountId?: string,
+  bindings?: ReadonlyMap<string, PrivateSeatCharacterBinding>,
+  allowLegacyAccountKey = false,
+): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const source = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
-  for (const key of CLIENT_GAME_STATE_FIELDS)
-    if (key in source) result[key] = source[key];
+  for (const key of CLIENT_GAME_STATE_FIELDS) {
+    if (!(key in source)) continue;
+    if (
+      key !== 'characters' ||
+      !source.characters ||
+      typeof source.characters !== 'object'
+    ) {
+      result[key] = source[key];
+      continue;
+    }
+    const characters: Record<string, unknown> = {};
+    for (const [seatId, character] of Object.entries(
+      source.characters as Record<string, unknown>,
+    )) {
+      const isOwner =
+        viewerAccountId !== undefined &&
+        (bindings?.get(seatId)?.accountId === viewerAccountId ||
+          (allowLegacyAccountKey && seatId === viewerAccountId));
+      if (isOwner) {
+        characters[seatId] = character;
+        continue;
+      }
+      if (
+        !character ||
+        typeof character !== 'object' ||
+        Array.isArray(character)
+      ) {
+        characters[seatId] = character;
+        continue;
+      }
+      const card = character as Record<string, unknown>;
+      characters[seatId] = Object.fromEntries(
+        ['id', 'name', 'speciesId', 'classId', 'level', 'hp']
+          .filter((field) => field in card)
+          .map((field) => [field, card[field]]),
+      );
+    }
+    result[key] = characters;
+  }
   if (source.checkpoint && typeof source.checkpoint === 'object')
-    result.checkpoint = clientGameState(source.checkpoint);
+    result.checkpoint = clientGameState(
+      source.checkpoint,
+      viewerAccountId,
+      bindings,
+      allowLegacyAccountKey,
+    );
   return result;
 }
 
@@ -101,8 +150,18 @@ type GatedRoundMutation =
       text: string;
     };
 
+export interface PrivateSeatCharacterBinding {
+  seatId: string;
+  accountId: string | null;
+  characterSnapshot: Record<string, unknown>;
+}
+
 export interface RoomStore {
   loadLatest(sessionId: string): Promise<LatestState>;
+  loadSessionMode?(sessionId: string): Promise<'solo' | 'party'>;
+  loadActiveSeatCharacterBindings?(
+    sessionId: string,
+  ): Promise<PrivateSeatCharacterBinding[]>;
   createSeatResumeToken?(sessionId: string, seatId: string): Promise<string>;
   persistRegistryEvents?(
     sessionId: string,
@@ -118,7 +177,8 @@ export interface RoomStore {
     expectedHeadSeq?: number,
     registryTurnId?: string,
     rewoundTurnIds?: readonly string[],
-  ): Promise<{ events: StoredEvent[] }>;
+    seatCharacterTransition?: SeatCharacterTransition,
+  ): Promise<{ events: StoredEvent[]; binding?: PrivateSeatCharacterBinding }>;
   writeHostTierCap(
     sessionId: string,
     cap: HostCap | null,
@@ -300,7 +360,18 @@ export class Room {
   private readonly editsPerRound = new Map<string, number>();
   readonly sessionId: string;
   state: RoomState;
+  /** Server-only rules input, never included in RoomState or any client projection. */
+  private readonly seatBindings: Map<string, PrivateSeatCharacterBinding>;
+  /**
+   * ADR-035: persisted `sessions.mode === 'party'` (never seat count or binding size) makes every
+   * gameplay command require a bound seat. Solo sessions and legacy SeatJoined replay are unchanged.
+   */
+  private readonly bindingEnforced: boolean;
   seq: number;
+
+  get seatCharacters(): ReadonlyMap<string, PrivateSeatCharacterBinding> {
+    return this.seatBindings;
+  }
 
   constructor(
     private readonly store: RoomStore,
@@ -308,10 +379,16 @@ export class Room {
     latest: LatestState,
     turnRunner?: SoloTurnRunner,
     combatRuntime: CombatRuntime = createCombatRuntime(),
+    seatCharacterBindings: readonly PrivateSeatCharacterBinding[] = [],
+    partyMode = false,
   ) {
     if (!lease || lease.expiresAt <= new Date())
       throw new Error('Room requires a live lease');
     this.sessionId = lease.sessionId;
+    this.seatBindings = new Map(
+      seatCharacterBindings.map((binding) => [binding.seatId, binding]),
+    );
+    this.bindingEnforced = partyMode;
     this.turnRunner = turnRunner;
     this.combatRuntime = combatRuntime;
     const recovered = recoverRoom(this.sessionId, latest);
@@ -370,17 +447,56 @@ export class Room {
     return this.enqueue(work);
   }
 
-  private async persist(type: string, payload: unknown): Promise<StoredEvent> {
+  private async persist(
+    type: string,
+    payload: unknown,
+    seatCharacterTransition?: SeatCharacterTransition,
+    additionalActionIds: readonly string[] = [],
+  ): Promise<StoredEvent> {
+    // ADR-035 §2: revoke/leave/kick releases the binding in the same serialized write.
+    let released: { seatId: string; reason: string } | undefined;
+    if (!seatCharacterTransition && type === 'SeatRevoked') {
+      const revoked = payload as {
+        seatId?: unknown;
+        accountId?: unknown;
+        cause?: unknown;
+      };
+      if (
+        typeof revoked.seatId === 'string' &&
+        typeof revoked.accountId === 'string'
+      ) {
+        seatCharacterTransition = {
+          kind: 'release',
+          seatId: revoked.seatId,
+          accountId: revoked.accountId,
+        };
+        released = {
+          seatId: revoked.seatId,
+          reason: typeof revoked.cause === 'string' ? revoked.cause : 'left',
+        };
+      }
+    }
     const next = this.seq + 1;
+    const turnId = randomUUID();
     const event: StoredEvent = {
       sessionId: this.sessionId,
       seq: next,
-      turnId: randomUUID(),
+      turnId,
       type,
       payload,
       ts: new Date(),
     };
+    const inputs = [{ seq: next, turnId, type, payload }];
     const state = reduceRoom(this.state, event);
+    if (released) {
+      // Identifier-only: no account, character, revision, hash or sheet data.
+      inputs.push({
+        seq: next + 1,
+        turnId,
+        type: 'SeatCharacterReleased',
+        payload: released,
+      });
+    }
     const actionPayload = payload as {
       actionId?: string;
       commandActionId?: string;
@@ -412,17 +528,31 @@ export class Room {
             : []),
         ]
       : [];
-    const actionIds = [...new Set([...this.actionIds, ...committedActionIds])];
+    const actionIds = [
+      ...new Set([
+        ...this.actionIds,
+        ...committedActionIds,
+        ...additionalActionIds,
+      ]),
+    ];
     const stored = await this.writeTurn(
       this.sessionId,
-      [{ seq: next, turnId: event.turnId, type, payload }],
+      inputs,
       { ...state, actionIds },
       this.lease,
+      [],
+      undefined,
+      undefined,
+      [],
+      seatCharacterTransition,
     );
     const committed = stored.events[0];
     if (!committed) throw new Error('Persistence returned no event');
-    this.seq = committed.seq;
+    this.seq = stored.events.at(-1)?.seq ?? committed.seq;
     this.state = state;
+    if (seatCharacterTransition?.kind === 'bind' && stored.binding)
+      this.seatBindings.set(seatCharacterTransition.seatId, stored.binding);
+    if (released) this.seatBindings.delete(released.seatId);
     for (const actionId of committedActionIds) this.actionIds.add(actionId);
     return committed;
   }
@@ -516,6 +646,47 @@ export class Room {
     );
     timer.unref?.();
     this.presenceEventTimers.set(seatId, timer);
+  }
+
+  bindSeatCharacter(
+    accountId: string,
+    characterId: string,
+    expectedRevision: number,
+    validateTicket: () => Promise<boolean>,
+    actionId: string,
+  ): Promise<void> {
+    return this.enqueuePlayer(async () => {
+      const seat = this.state.seats.find(
+        (item) => item.accountId === accountId,
+      );
+      if (!seat || seat.presence === 'revoked' || !(await validateTicket()))
+        throw new RoomSeatRequiredError();
+      await this.persist(
+        'SeatCharacterBound',
+        { seatId: seat.seatId },
+        {
+          kind: 'bind',
+          seatId: seat.seatId,
+          accountId,
+          characterId,
+          expectedRevision,
+        },
+        [actionId],
+      );
+      this.actionIds.add(actionId);
+      if (this.hasCurrentBinding(seat)) {
+        this.broadcast({
+          seq: this.seq,
+          type: 'SeatCharacterBound',
+          payload: { seatId: seat.seatId },
+        } as ServerMessage);
+        this.connections.get(accountId)?.send({
+          seq: this.seq,
+          type: 'SeatCharacterBoundPrivate',
+          payload: { seatId: seat.seatId },
+        } as ServerMessage);
+      }
+    });
   }
 
   recordSeatTakenOver(seatId: string): Promise<void> {
@@ -791,7 +962,12 @@ export class Room {
       };
     }
     if (!this.state.gameState) return { ...clientVisibleState, seats };
-    const gameState = clientGameState(this.state.gameState);
+    const gameState = clientGameState(
+      this.state.gameState,
+      viewerAccountId,
+      this.seatBindings,
+      !this.bindingEnforced,
+    );
     return { ...clientVisibleState, seats, gameState };
   }
 
@@ -1089,8 +1265,9 @@ export class Room {
       }
       if (this.turnInFlight && this.turnAccountId === accountId)
         this.turnAbort?.abort();
-      this.withdrawQueuedFor(accountId);
+      await this.withdrawSeatActions(seat);
       await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
+      this.afterSeatReleased();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -1230,9 +1407,8 @@ export class Room {
   ): Promise<void> {
     return this.enqueue(async () => {
       this.assertNotNarrating();
-      if (!this.state.seats.some((seat) => seat.accountId === accountId))
-        throw new Error('Account is not seated');
-      if (this.state.seats.length > 1)
+      this.requireBoundSeat(accountId);
+      if (this.state.seats.length > 1 || this.bindingEnforced)
         throw new Error(
           'rest-not-allowed: multiplayer rest requires a party vote',
         );
@@ -1276,7 +1452,8 @@ export class Room {
       if (
         this.state.paused ||
         !this.connections.has(accountId) ||
-        !['connected', 'returning', 'online'].includes(seat.presence)
+        !['connected', 'returning', 'online'].includes(seat.presence) ||
+        (this.bindingEnforced && !this.hasCurrentBinding(seat))
       ) {
         this.sendError(
           accountId,
@@ -1456,7 +1633,11 @@ export class Room {
       payload: {
         voteId: randomUUID(),
         type,
-        eligibleSeats: this.state.seats.map((seat) => seat.seatId),
+        eligibleSeats: this.state.seats
+          .filter(
+            (seat) => !this.bindingEnforced || this.hasCurrentBinding(seat),
+          )
+          .map((seat) => seat.seatId),
         deadlineAt: now + 120_000,
         openedByTurnId: turnId,
       },
@@ -1601,8 +1782,7 @@ export class Room {
   rollDeathSave(accountId: string): Promise<void> {
     return this.enqueue(async () => {
       this.assertNotNarrating();
-      if (!this.state.seats.some((seat) => seat.accountId === accountId))
-        throw new Error('Account is not seated');
+      this.requireBoundSeat(accountId);
       const gameState = this.state.gameState as
         | Record<string, unknown>
         | undefined;
@@ -1641,8 +1821,7 @@ export class Room {
   ): Promise<void> {
     return this.enqueue(async () => {
       this.assertNotNarrating();
-      if (!this.state.seats.some((seat) => seat.accountId === accountId))
-        throw new Error('Account is not seated');
+      this.requireBoundSeat(accountId);
       const gameState = this.state.gameState as
         | Record<string, unknown>
         | undefined;
@@ -1917,7 +2096,7 @@ export class Room {
 
   reserveActionMutation(
     accountId: string,
-    kind: 'submit' | 'edit' | 'withdraw' | 'rest-vote' | 'host',
+    kind: 'submit' | 'edit' | 'withdraw' | 'rest-vote' | 'host' | 'bind',
   ): boolean {
     const seat = this.state.seats.find((item) => item.accountId === accountId);
     if (!seat) return false;
@@ -2084,7 +2263,10 @@ export class Room {
       status: 'open' as const,
       eligibleSeatIds: this.state.seats
         .filter(
-          (seat) => seat.presence !== 'away' && seat.presence !== 'revoked',
+          (seat) =>
+            seat.presence !== 'away' &&
+            seat.presence !== 'revoked' &&
+            (!this.bindingEnforced || this.hasCurrentBinding(seat)),
         )
         .map((seat) => seat.seatId),
       deadlineAt:
@@ -2572,7 +2754,7 @@ export class Room {
         throw new RoomSeatRequiredError();
       const connection = this.connections.get(target.accountId);
       this.connections.delete(target.accountId);
-      this.withdrawQueuedFor(target.accountId);
+      await this.withdrawSeatActions(target);
       await this.persist('SeatRevoked', {
         seatId: target.seatId,
         accountId: target.accountId,
@@ -2581,6 +2763,7 @@ export class Room {
         cause: 'host-kick',
         actionId,
       });
+      this.afterSeatReleased();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -2719,6 +2902,7 @@ export class Room {
             !(await this.store.isTableHost(this.sessionId, requesterAccountId))
           )
             throw new NotTableHostError('Only the table host can resolve now');
+          this.requireBoundSeat(requesterAccountId);
         }
         if (this.state.paused && reason === 'resolve-now')
           throw new RoomPausedError();
@@ -2763,9 +2947,16 @@ export class Room {
         for (const key of this.editsPerRound.keys())
           if (key.startsWith(`${round.roundId}:`))
             this.editsPerRound.delete(key);
-        const batch = [...(this.state.round?.submissions ?? [])].sort(
-          (a, b) => a.receiptSeq - b.receiptSeq,
+        const currentlyBoundSeatIds = new Set(
+          this.state.seats
+            .filter(
+              (seat) => !this.bindingEnforced || this.hasCurrentBinding(seat),
+            )
+            .map((seat) => seat.seatId),
         );
+        const batch = [...(this.state.round?.submissions ?? [])]
+          .filter((submission) => currentlyBoundSeatIds.has(submission.seatId))
+          .sort((a, b) => a.receiptSeq - b.receiptSeq);
         if (batch.length === 0) {
           await this.persist('RoundClosedEmpty', { roundId: round.roundId });
           this.broadcast({
@@ -2776,6 +2967,7 @@ export class Room {
           await this.openRound();
           return;
         }
+        // Departure withdrawals are the primary path; enforce current binding again at close.
         // Re-check eligibility at close; accepted submissions from seats that became away stay in the batch.
         const closeReason = round.closeReason ?? reason;
         await this.persist('RoundResolved', {
@@ -2940,6 +3132,7 @@ export class Room {
         (item) => item.accountId === accountId,
       );
       if (!seat) throw new Error('Account is not seated');
+      this.assertSeatBound(seat);
       if (!this.turnRunner) throw new Error('Solo turn runner unavailable');
       if (receiptSeq !== undefined)
         this.completedActionDecisions.delete(receiptSeq);
@@ -3026,6 +3219,7 @@ export class Room {
         (item) => item.accountId === accountId,
       );
       if (!seat) throw new Error('Account is not seated');
+      this.assertSeatBound(seat);
       if (!this.turnRunner) throw new Error('Solo turn runner unavailable');
       if (this.actionIds.has(actionId) || this.pendingActions.has(actionId))
         return false;
@@ -3080,6 +3274,7 @@ export class Room {
         text,
       });
     return this.enqueuePlayer(async () => {
+      this.requireBoundSeat(accountId);
       if (receiptSeq !== undefined)
         this.completedActionDecisions.delete(receiptSeq);
       if (this.hasActionId(actionId, receiptSeq, accountId)) return 'duplicate';
@@ -3136,8 +3331,19 @@ export class Room {
     answer: string,
   ): Promise<boolean> {
     return this.enqueuePlayer(async () => {
+      let seat: Seat;
+      try {
+        seat = this.requireBoundSeat(accountId);
+      } catch {
+        return false;
+      }
       const open = this.state.openClarifications?.[actionId];
-      if (!open || open.accountId !== accountId) return false;
+      if (
+        !open ||
+        open.accountId !== accountId ||
+        !this.state.seats.some((current) => current.seatId === seat.seatId)
+      )
+        return false;
       await this.closeClarification(actionId, 'answered');
       this.queuedActions.unshift({
         accountId,
@@ -3237,6 +3443,7 @@ export class Room {
     | 'limited'
   > {
     return this.enqueue(async () => {
+      this.requireBoundSeat(accountId);
       if (this.hasActionId(commandActionId, undefined, accountId))
         return 'duplicate';
       if (!this.reserveActionMutation(accountId, 'withdraw')) return 'limited';
@@ -3395,6 +3602,43 @@ export class Room {
       }
     this.turnAccountId = undefined;
     this.turnInFlight = false;
+  }
+
+  private async withdrawSeatActions(seat: Seat): Promise<void> {
+    const round = this.state.round;
+    const submission = round?.submissions.find(
+      (item) => item.seatId === seat.seatId,
+    );
+    if (round && submission) {
+      const commandActionId = randomUUID();
+      await this.persist('RoundActionWithdrawn', {
+        roundId: round.roundId,
+        seatId: seat.seatId,
+        accountId: seat.accountId,
+        commandActionId,
+        actionId: submission.actionId,
+        queued: false,
+      });
+      for (const id of submission.actionIds) this.pendingActions.delete(id);
+      this.broadcast({
+        seq: this.seq,
+        type: 'RoundActionWithdrawn',
+        payload: { roundId: round.roundId, seatId: seat.seatId },
+      } as ServerMessage);
+    }
+    for (const [actionId, clarification] of Object.entries(
+      this.state.openClarifications ?? {},
+    )) {
+      if (clarification.accountId !== seat.accountId) continue;
+      this.pendingActions.delete(actionId);
+      await this.closeClarification(actionId, 'expired');
+      this.broadcast({
+        seq: this.seq,
+        type: 'ActionWithdrawn',
+        payload: { actionId },
+      } as ServerMessage);
+    }
+    this.withdrawQueuedFor(seat.accountId);
   }
 
   private withdrawQueuedFor(accountId: string): void {
@@ -3662,7 +3906,11 @@ export class Room {
             ? withHp(combatNow, hpChanges)
             : undefined;
         if (hurt) incoming = { ...incoming, combatRoom: hurt.state };
-        const reconciled = this.combatRuntime.reconcile(incoming, Date.now());
+        const reconciled = this.combatRuntime.reconcile(
+          incoming,
+          Date.now(),
+          this.bindingEnforced ? this.seatBindings : undefined,
+        );
         const combatEvents = [
           ...(hurt?.events ?? []),
           ...(reconciled?.events ?? []),
@@ -3875,6 +4123,7 @@ export class Room {
         (item) => item.accountId === accountId,
       );
       if (!seat) throw new Error('Account is not seated');
+      this.assertSeatBound(seat);
       if (this.actionIds.has(actionId)) return false;
       const current = roomGameState(this.state);
       const gameState = this.state.gameState as
@@ -3883,8 +4132,18 @@ export class Room {
             characters?: Record<string, never>;
           }
         | undefined;
-      const actorId = gameState?.combatActors?.[accountId];
-      if (!current || !actorId) {
+      // Bound seats act only as their own server-derived entity; the client never names one.
+      const candidate = this.seatBindings.get(seat.seatId);
+      const bound =
+        candidate?.accountId === seat.accountId ? candidate : undefined;
+      const actorId = bound
+        ? seatEntityId(seat.seatId)
+        : gameState?.combatActors?.[accountId];
+      if (
+        !current ||
+        !actorId ||
+        (bound && !current.entities.some((entity) => entity.id === actorId))
+      ) {
         this.sendError(
           accountId,
           'COMMAND_REJECTED',
@@ -3903,7 +4162,9 @@ export class Room {
         return true;
       }
       const result = this.combatRuntime.execute(current, actorId, command, {
-        character: gameState?.characters?.[accountId],
+        character: bound
+          ? ({ ...bound.characterSnapshot, id: actorId } as never)
+          : gameState?.characters?.[accountId],
         now: Date.now(),
       });
       if ('code' in result) {
@@ -4026,14 +4287,23 @@ export class Room {
         | { combatActors?: Record<string, string> }
         | undefined;
       const activeId = current?.combat.activeEntityId;
-      if (!current || !activeId || !game?.combatActors) return;
-      const accountId = Object.entries(game.combatActors).find(
-        ([, actorId]) => actorId === activeId,
-      )?.[0];
-      const seat = this.state.seats.find(
-        (item) => item.accountId === accountId,
-      );
-      if (!seat || seat.presence !== 'away') return;
+      if (!current || !activeId) return;
+      const partySeatId = seatIdFromEntityId(activeId);
+      let seatId = partySeatId;
+      if (partySeatId !== undefined) {
+        const presence = this.reactionSeatPresence(activeId);
+        if (presence !== 'away' && presence !== 'revoked') return;
+      } else {
+        if (!game?.combatActors) return;
+        const accountId = Object.entries(game.combatActors).find(
+          ([, actorId]) => actorId === activeId,
+        )?.[0];
+        const seat = this.state.seats.find(
+          (item) => item.accountId === accountId,
+        );
+        if (!seat || seat.presence !== 'away') return;
+        seatId = seat.seatId;
+      }
       const dodge = this.combatRuntime.execute(
         current,
         activeId,
@@ -4058,7 +4328,7 @@ export class Room {
             ...finish.events,
             {
               type: 'AutopilotActed',
-              seatId: seat.seatId,
+              seatId,
               action,
               reason: 'away-at-turn-start',
               consumable: 'none',
@@ -4165,6 +4435,14 @@ export class Room {
   private reactionSeatPresence(
     entityId: string,
   ): RoomState['seats'][number]['presence'] | undefined {
+    const partySeatId = seatIdFromEntityId(entityId);
+    if (partySeatId !== undefined)
+      // A released/revoked seat keeps its entity but loses control: decline at once.
+      return (
+        this.state.seats.find(
+          (seat) => seat.seatId === partySeatId && this.hasCurrentBinding(seat),
+        )?.presence ?? 'revoked'
+      );
     const game = this.state.gameState as
       | { combatActors?: Record<string, string> }
       | undefined;
@@ -4173,6 +4451,30 @@ export class Room {
     )?.[0];
     return this.state.seats.find((seat) => seat.accountId === accountId)
       ?.presence;
+  }
+
+  /** The retained PC entity is now uncontrolled: decline its reaction and defend on its turn (ADR-035 §2). */
+  private afterSeatReleased(): void {
+    this.scheduleReaction();
+    this.queueAwayAutopilot();
+  }
+
+  /** ADR-035: once bindings are enforced an unbound seat has no gameplay control. */
+  /** Current seat for an account; in party mode it must also hold a live binding. */
+  private requireBoundSeat(accountId: string): Seat {
+    const seat = this.state.seats.find((item) => item.accountId === accountId);
+    if (!seat) throw new Error('Account is not seated');
+    this.assertSeatBound(seat);
+    return seat;
+  }
+
+  private hasCurrentBinding(seat: Seat): boolean {
+    return this.seatBindings.get(seat.seatId)?.accountId === seat.accountId;
+  }
+
+  private assertSeatBound(seat: Seat): void {
+    if (this.bindingEnforced && !this.hasCurrentBinding(seat))
+      throw new RoomSeatRequiredError();
   }
 
   private sendError(

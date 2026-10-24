@@ -228,7 +228,7 @@ async function seedTable(
 ) {
   const table = randomUUID();
   await db.query(
-    'INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)',
+    "INSERT INTO sessions(id,owner_account_id,name,mode) VALUES($1,$2,$3,'solo')",
     [table, owner.id, 'Crypt'],
   );
   sessionIds.push(table);
