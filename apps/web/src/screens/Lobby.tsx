@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Seat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
+import {
+  CharacterBinding,
+  type BindServerError,
+} from '../features/party/CharacterBinding';
 import { ConnectionStatus } from '../room/ConnectionStatus';
 import { useRoom } from '../room/useRoom';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
@@ -54,14 +58,28 @@ export function Lobby() {
     );
   }, [id]);
 
+  const [bindError, setBindError] = useState<BindServerError | null>(null);
   const live = useRoom({
     baseUrl: http.base,
     sessionId: id,
     fetchImpl: (...a) => http.fetch(...a),
     WebSocketImpl: http.WebSocket,
+    onMessage: (msg) => {
+      if (msg.type === 'Error' && msg.payload.actionId)
+        setBindError({
+          actionId: msg.payload.actionId,
+          code: msg.payload.code,
+          message: msg.payload.message,
+        });
+    },
   });
   const seats = live.room?.seats ?? [];
   const round = live.room?.round;
+  const boundCount = seats.filter((s) =>
+    live.boundSeatIds.includes(s.seatId),
+  ).length;
+  const mineBound =
+    live.mySeatId !== null && live.boundSeatIds.includes(live.mySeatId);
   const announcement = usePresenceAnnouncement(seats);
   const content = useMatureOptOut();
   const [contentNote, setContentNote] = useState('');
@@ -127,21 +145,38 @@ export function Lobby() {
             false;
           return (
             <li key={s.seatId} data-presence={s.presence}>
-              {s.displayName}{' '}
+              {s.displayName}
+              {s.seatId === live.mySeatId && ' (you)'}{' '}
               <span className="presence">({PRESENCE[s.presence]})</span>
               {eligible && (
                 <span className="round-ready">
                   {' '}
                   {submitted ? 'submitted this round' : 'waiting for action'}
                 </span>
-              )}
+              )}{' '}
+              <span className="character-binding">
+                {live.boundSeatIds.includes(s.seatId)
+                  ? 'character bound'
+                  : 'no character bound'}
+              </span>
             </li>
           );
         })}
       </ul>
+      <p role="status" aria-live="polite">
+        {boundCount} of {seats.length} seats have a character bound. Party play
+        starts when every seat is bound.
+      </p>
       <p role="status" aria-live="polite" className="sr-only">
         {announcement}
       </p>
+      {live.mySeatId && (
+        <CharacterBinding
+          bound={mineBound}
+          send={live.send}
+          serverError={bindError}
+        />
+      )}
       <section aria-labelledby="rules-heading">
         <h2 id="rules-heading">Table rules</h2>
         <p>
