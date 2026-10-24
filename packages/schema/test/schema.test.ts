@@ -90,6 +90,19 @@ const cases = [
     {
       seq: 0,
       type: 'StateSync',
+      payload: { state: room, boundSeatIds: [uuid] },
+    },
+    {
+      seq: 0,
+      type: 'StateSync',
+      payload: { state: room, boundSeatIds: ['not-a-seat-id'] },
+    },
+  ],
+  [
+    StateSyncSchema,
+    {
+      seq: 0,
+      type: 'StateSync',
       payload: {
         state: room,
         round: {
