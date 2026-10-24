@@ -148,9 +148,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
       if (!view.roundCloseAnnouncement) return next;
       const roundId = String(msg.payload.roundId ?? '');
       if (roundId === view.roundCloseAnnouncement.roundId) return next;
-      const { roundCloseAnnouncement: _closed, ...withoutCloseAnnouncement } =
-        next;
-      return withoutCloseAnnouncement;
+      return { ...next, roundCloseAnnouncement: undefined };
     }
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
