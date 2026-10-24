@@ -197,7 +197,8 @@ class Client {
           // RATE_LIMITED without an actionId; the second gate echoes it.
           (m.type === 'Error' &&
             (m.payload?.actionId === actionId ||
-              m.payload?.code === 'RATE_LIMITED')),
+              (m.payload?.code === 'RATE_LIMITED' &&
+                m.payload?.actionId === undefined))),
         mark,
       );
       if (reply.payload?.message?.includes('still narrating')) {
