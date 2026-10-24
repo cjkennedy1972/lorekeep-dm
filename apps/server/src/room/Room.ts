@@ -584,7 +584,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: { ...this.clientSyncPayload(), state: this.clientState() },
       });
       return;
     }
@@ -631,7 +631,7 @@ export class Room {
     this.broadcast({
       seq: this.seq,
       type: 'StateSync',
-      payload: { state: this.clientState() },
+      payload: { ...this.clientSyncPayload(), state: this.clientState() },
     });
     const oldTimer = this.presenceEventTimers.get(seatId);
     if (oldTimer) clearTimeout(oldTimer);
@@ -975,6 +975,12 @@ export class Room {
     const round = this.state.round;
     return {
       state: this.clientState(),
+      boundSeatIds: this.state.seats
+        .filter(
+          (seat) =>
+            seat.presence !== 'revoked' && this.seatBindings.has(seat.seatId),
+        )
+        .map((seat) => seat.seatId),
       ...(round
         ? {
             round: {
@@ -2692,7 +2698,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: { ...this.clientSyncPayload(), state: this.clientState() },
       });
     } else if (
       confirmed &&
@@ -2704,7 +2710,7 @@ export class Room {
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
-        payload: { state: this.clientState() },
+        payload: { ...this.clientSyncPayload(), state: this.clientState() },
       });
       this.kickQueue();
     }

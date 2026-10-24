@@ -129,6 +129,44 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it('includes only active bound seat identifiers in reconnect StateSync', async () => {
+    const f = party({ bindA: false, bindB: true });
+    await f.room.bindSeatCharacter(
+      f.accountA,
+      randomUUID(),
+      1,
+      async () => true,
+      randomUUID(),
+    );
+    const messages: Record<string, unknown>[] = [];
+    const connection = {
+      send(message: Record<string, unknown>) {
+        messages.push(message);
+      },
+    };
+    await f.room.subscribe(f.accountA, connection);
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(
+      (sync.payload as { boundSeatIds: string[] }).boundSeatIds.toSorted(),
+    ).toEqual([f.seatA, f.seatB].toSorted());
+    expect(JSON.stringify(sync)).not.toContain('Secret sheet name');
+    expect(JSON.stringify(sync)).not.toContain('characterSnapshot');
+
+    await f.room.leave(f.accountB);
+    const afterRelease: Record<string, unknown>[] = [];
+    await f.room.subscribe(f.accountA, {
+      send(message: Record<string, unknown>) {
+        afterRelease.push(message);
+      },
+    });
+    expect(
+      (
+        afterRelease.find((message) => message.type === 'StateSync')!
+          .payload as { boundSeatIds: string[] }
+      ).boundSeatIds,
+    ).toEqual([f.seatA]);
+  });
+
   it('rejects round actions from an unbound seat', async () => {
     const { room, accountA, accountB } = party();
     await expect(
