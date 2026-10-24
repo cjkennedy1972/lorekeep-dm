@@ -94,22 +94,20 @@ export async function issueTicket(
   );
   return ticket;
 }
-/** Read a tokenless solo-owner recovery ticket's binding without consuming it. */
+/** Read a solo-owner ticket's binding without consuming it for the cookie gate. */
 export async function soloOwnerRecoveryTicketAuthHash(
   db: Pool,
   ticket: string,
+  sessionId?: string,
 ): Promise<string | undefined> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) return undefined;
   const result = await db.query<{ auth_token_hash: string }>(
     `SELECT t.auth_token_hash FROM ws_tickets t
        JOIN sessions room ON room.id=t.session_id
-       LEFT JOIN seat_resume_tokens token
-         ON token.session_id=t.session_id AND token.seat_id=t.seat_id
       WHERE t.ticket_hash=$1 AND t.used_at IS NULL
-        AND t.expires_at>clock_timestamp()
-        AND room.mode='solo' AND room.owner_account_id=t.account_id
-        AND token.seat_id IS NULL`,
-    [hash(ticket)],
+        AND t.expires_at>clock_timestamp() AND ($2::uuid IS NULL OR t.session_id=$2)
+        AND room.mode='solo' AND room.owner_account_id=t.account_id`,
+    [hash(ticket), sessionId ?? null],
   );
   return result.rows[0]?.auth_token_hash;
 }

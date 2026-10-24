@@ -343,6 +343,26 @@ describe('one-time gateway', () => {
     await closeSocket(staleTokenSocket);
     await waitForReleasedSocket(seatId, soloSessionId);
 
+    // A stale presented token with the wrong cookie is rejected before ticket
+    // consumption; retrying that same ticket with the owner cookie recovers.
+    const staleWrongCookieTicket = await ticket(tokens[0]!, soloSessionId);
+    const staleWrongCookieSocket = connect(
+      staleWrongCookieTicket,
+      'stale-after-restart',
+      false,
+      tokens[1]!,
+    );
+    expect(await closed(staleWrongCookieSocket)).toBe(1008);
+    const staleCookieRetry = connect(
+      staleWrongCookieTicket,
+      'stale-after-restart',
+      false,
+    );
+    await nextOfType(staleCookieRetry, 'SeatAuthenticated');
+    await nextOfType(staleCookieRetry, 'StateSync');
+    await closeSocket(staleCookieRetry);
+    await waitForReleasedSocket(seatId, soloSessionId);
+
     // A missing row models a restarted server with no usable token state.
     await db.query(
       'DELETE FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
@@ -371,6 +391,7 @@ describe('one-time gateway', () => {
     const noCookieSocket = connect(tokenlessTicket, null, false, null);
     expect(await closed(noCookieSocket)).toBe(1008);
     // Cookie-less and mismatched-cookie attempts do not consume the ticket.
+    connections.resetAuthAttemptHistory();
     const tokenlessSocket = connect(tokenlessTicket, null, false);
     await nextOfType(tokenlessSocket, 'SeatAuthenticated');
     await nextOfType(tokenlessSocket, 'StateSync');

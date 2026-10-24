@@ -186,6 +186,7 @@ export function installGateway(
           const authTokenHash = await soloOwnerRecoveryTicketAuthHash(
             db,
             ticket,
+            sessionId,
           );
           if (
             authTokenHash &&
