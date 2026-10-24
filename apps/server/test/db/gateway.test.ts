@@ -1370,14 +1370,17 @@ describe('party character binding WebSocket authorization', () => {
       const foreign = await sendAndError(f.foreign.id, 1);
       const unknown = await sendAndError(randomUUID(), 1);
       expect(foreign.m.payload).toMatchObject({
-        code: 'NOT_OWNER',
+        code: 'ACTION_REJECTED',
         actionId: foreign.actionId,
         message: 'Character could not be bound.',
       });
       expect(unknown.m.payload).toMatchObject({
         code: 'ACTION_REJECTED',
         actionId: unknown.actionId,
+        message: 'Character could not be bound.',
       });
+      expect(foreign.m.payload.code).toBe(unknown.m.payload.code);
+      expect(foreign.m.payload.message).toBe(unknown.m.payload.message);
       const stale = await sendAndError(f.owned.id, f.revision + 1);
       expect(stale.m.payload).toMatchObject({
         code: 'STALE_REVISION',
@@ -1442,6 +1445,40 @@ describe('party character binding WebSocket authorization', () => {
       );
       expect(binds.rows[0]!.count).toBe(1);
       expect(ownerSeat.seatId).toBeTruthy();
+    } finally {
+      await shutdown(f);
+    }
+  });
+
+  it('reports ALREADY_BOUND when another seat already holds the public character card', async () => {
+    const f = await fixture();
+    try {
+      const otherSeat = f.room.state.seats.find(
+        (seat) => seat.accountId === accounts[1],
+      )!;
+      // Seed the other seat's active public card to exercise the character uniqueness collision.
+      await db.query(
+        `INSERT INTO session_seat_characters
+           (session_id,seat_id,account_id,character_id,character_revision,character_snapshot)
+         VALUES($1,$2,$3,$4,$5,$6::jsonb)`,
+        [
+          f.id,
+          otherSeat.seatId,
+          accounts[0],
+          f.owned.id,
+          f.revision,
+          JSON.stringify({ name: f.owned.name }),
+        ],
+      );
+
+      const actionId = await bind(f.owner, f.room, f.owned.id, f.revision);
+      await expect(nextOfType(f.owner, 'Error')).resolves.toMatchObject({
+        payload: {
+          code: 'ALREADY_BOUND',
+          message: 'Character could not be bound.',
+          actionId,
+        },
+      });
     } finally {
       await shutdown(f);
     }

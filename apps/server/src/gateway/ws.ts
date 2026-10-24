@@ -74,11 +74,16 @@ function bindFailureCode(error: unknown): string {
   if (!(error instanceof SeatCharacterError)) return 'ACTION_REJECTED';
   switch (error.code) {
     case 'NOT_OWNER':
+    case 'NOT_FOUND':
+    case 'INVALID_CHARACTER':
+      return 'ACTION_REJECTED';
     case 'STALE_REVISION':
     case 'NOT_SEATED':
     case 'ACCOUNT_INACTIVE':
       return error.code;
     case 'ALREADY_BOUND':
+      // Bound character cards are public to all seated clients.
+      return 'ALREADY_BOUND';
     case 'CHARACTER_BOUND':
       return 'ALREADY_BOUND';
     default:
