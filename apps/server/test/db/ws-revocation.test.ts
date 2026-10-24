@@ -38,12 +38,21 @@ async function setup() {
     sessionId,
     accountId,
   ]);
+  const token = await createSession(db, accountId, 'test');
   const room = await rooms.get(sessionId);
-  await joinSeated(room, accountId, { send() {} }, 'P');
+  await joinSeated(
+    room,
+    accountId,
+    { send() {} },
+    'P',
+    false,
+    -1,
+    {},
+    hashToken(token),
+  );
   await room.disconnect(accountId);
   accounts.push(accountId);
   roomIds.push(sessionId);
-  const token = await createSession(db, accountId, 'test');
   return { accountId, sessionId, token, cookie: `sid=${token}` };
 }
 const resumeTokens = new Map<string, string>();

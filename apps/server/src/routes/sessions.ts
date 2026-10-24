@@ -159,6 +159,8 @@ export function registerSessionRoutes(
     app.post(base, async (request, reply) => {
       const accountId = await member(request, reply);
       if (!accountId) return reply;
+      const authToken = tokenFromCookie(request.headers.cookie);
+      const authTokenHash = authToken ? hashToken(authToken) : undefined;
       const parsed = CreateRoomInputSchema.safeParse(request.body);
       if (!parsed.success)
         return reply
@@ -206,7 +208,12 @@ export function registerSessionRoutes(
         const profile = await seatProfile(accountId);
         await (
           await rooms.get(id)
-        ).seat(accountId, profile.displayName, profile.matureOptOut);
+        ).seat(
+          accountId,
+          profile.displayName,
+          profile.matureOptOut,
+          authTokenHash,
+        );
       } catch (error) {
         await db.query('DELETE FROM sessions WHERE id=$1', [id]);
         throw error;
@@ -329,6 +336,8 @@ export function registerSessionRoutes(
   ) => {
     const accountId = await member(request, reply);
     if (!accountId) return reply;
+    const authToken = tokenFromCookie(request.headers.cookie);
+    const authTokenHash = authToken ? hashToken(authToken) : undefined;
     const { code } = request.params;
     if (throttled(`${request.ip}:${code}`))
       return reply.code(429).send({
@@ -361,6 +370,7 @@ export function registerSessionRoutes(
           accountId,
           profile.displayName,
           matureOptOut,
+          authTokenHash,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [
@@ -375,7 +385,12 @@ export function registerSessionRoutes(
           requestId,
         });
       }
-      await room.seat(accountId, profile.displayName, matureOptOut);
+      await room.seat(
+        accountId,
+        profile.displayName,
+        matureOptOut,
+        authTokenHash,
+      );
     } catch (error) {
       if (error instanceof Error && error.message === 'Room is full')
         return reply
@@ -427,6 +442,8 @@ export function registerSessionRoutes(
     async (request, reply) => {
       const accountId = await member(request, reply);
       if (!accountId) return reply;
+      const authToken = tokenFromCookie(request.headers.cookie);
+      const authTokenHash = authToken ? hashToken(authToken) : undefined;
       if (throttled(`${request.ip}:${request.params.code}`))
         return reply.code(429).send({
           code: 'RATE_LIMITED',
@@ -448,6 +465,7 @@ export function registerSessionRoutes(
           accountId,
           profile.displayName,
           typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
+          authTokenHash,
         );
         if (typeof optOut === 'boolean')
           await db.query('UPDATE accounts SET mature_opt_out=$2 WHERE id=$1', [

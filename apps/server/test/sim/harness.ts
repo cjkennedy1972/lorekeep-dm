@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import WebSocket from 'ws';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
+import { hashToken } from '../../src/accounts/signup.js';
 import type { LlmAdapter } from '../../src/llm/adapter.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { Persistence } from '../../src/persistence/index.js';
@@ -137,7 +138,12 @@ export class SimTable {
     );
     const room = await rooms.get(sessionId);
     for (const [index, id] of accountIds.entries())
-      await room.seat(id, `${options.namePrefix ?? 'Sim '}${index + 1}`);
+      await room.seat(
+        id,
+        `${options.namePrefix ?? 'Sim '}${index + 1}`,
+        false,
+        hashToken(tokens[index]!),
+      );
     // Same lifecycle step as POST /api/tables: rounds only open once game state exists.
     await room.persistGameState({ premise: 'Sim table', worldSeeded: true });
     return table;

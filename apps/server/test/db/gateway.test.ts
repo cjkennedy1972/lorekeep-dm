@@ -171,20 +171,19 @@ beforeAll(async () => {
     sessionId,
     accounts[0],
   ]);
-  const room = await rooms.get(sessionId);
-  await room.seat(accounts[0], 'Player 0');
-  await joinSeated(room, accounts[1], { send() {} }, 'Player 1');
-  await room.disconnect(accounts[1]);
-  await joinSeated(room, accounts[2], { send() {} }, 'Player 2');
-  await room.disconnect(accounts[2]);
   tokens = await Promise.all(
     accounts.map((id) => createSession(db, id, 'test')),
   );
+  const room = await rooms.get(sessionId);
   for (let i = 0; i < accounts.length; i++) {
-    const room = await rooms.get(sessionId);
-    const pending = room.pendingSeatResumeToken(accounts[i]!);
-    if (!pending) throw new Error('test seat has no undelivered resume token');
-    resumeTokens.set(tokens[i]!, pending);
+    const initialToken = await room.seat(
+      accounts[i]!,
+      `Player ${i}`,
+      false,
+      hashToken(tokens[i]!),
+    );
+    if (!initialToken) throw new Error('test seat has no resume token');
+    resumeTokens.set(tokens[i]!, initialToken);
   }
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   base = address;
@@ -204,8 +203,51 @@ describe('gateway seat authentication limits', () => {
   });
 });
 
+describe('pending first-token handoff', () => {
+  async function pendingSeat() {
+    const id = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      id,
+      accounts[0],
+    ]);
+    const room = await rooms.get(id);
+    const token = await room.seat(
+      accounts[0]!,
+      'Pending owner',
+      false,
+      hashToken(tokens[0]!),
+    );
+    if (!token) throw new Error('expected initial resume token');
+    return { id, room, token };
+  }
+
+  it('delivers only to the exact authenticated session, once', async () => {
+    const { room, token } = await pendingSeat();
+    expect(
+      room.claimPendingSeatResumeToken(accounts[0]!, hashToken(tokens[1]!)),
+    ).toBeUndefined();
+    expect(
+      room.claimPendingSeatResumeToken(accounts[0]!, hashToken(tokens[0]!)),
+    ).toBe(token);
+    expect(
+      room.claimPendingSeatResumeToken(accounts[0]!, hashToken(tokens[0]!)),
+    ).toBeUndefined();
+  });
+
+  it('does not deliver an expired pending token', async () => {
+    const { room } = await pendingSeat();
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        Date.now() + 30_001,
+      ),
+    ).toBeUndefined();
+  });
+});
+
 describe('one-time gateway', () => {
-  it('restores a solo owner after restart with a stale or absent seat token', async () => {
+  it('keeps solo recovery off by default and permits it only when explicitly enabled', async () => {
     const priorResumeToken = resumeTokens.get(tokens[0]!);
     const otherSessionId = randomUUID();
     await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
@@ -234,7 +276,7 @@ describe('one-time gateway', () => {
       (seat) => seat.accountId === accounts[0],
     )!.seatId;
     resumeTokens.set(tokens[0]!, initialToken!);
-    room.completeSeatResumeTokenDelivery(accounts[0]!);
+    room.completeSeatResumeTokenDelivery(accounts[0]!, hashToken(tokens[0]!));
 
     expect(
       await authorizeSeatSocket(
@@ -270,6 +312,7 @@ describe('one-time gateway', () => {
       false,
     );
     expect(await closed(deniedWhileLive)).toBe(1008);
+    expect(live.readyState).toBe(WebSocket.OPEN);
     await closeSocket(live);
     await waitForReleasedSocket(seatId, soloSessionId);
 
@@ -307,6 +350,42 @@ describe('one-time gateway', () => {
     if (priorResumeToken) resumeTokens.set(tokens[0]!, priorResumeToken);
     else resumeTokens.delete(tokens[0]!);
   });
+  it('does not hand the initial token to another login session for the same account', async () => {
+    const boundSessionId = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      boundSessionId,
+      accounts[1],
+    ]);
+    const room = await rooms.get(boundSessionId);
+    const expectedToken = await room.seat(
+      accounts[1]!,
+      'Bound player',
+      false,
+      hashToken(tokens[1]!),
+    );
+    const otherLogin = await createSession(db, accounts[1]!, 'second login');
+
+    const wrongSession = connect(
+      await ticket(otherLogin, boundSessionId),
+      null,
+      false,
+    );
+    await nextOfType(wrongSession, 'SeatClaimPending');
+    expect(seenMessageTypes.get(wrongSession)).not.toContain(
+      'SeatAuthenticated',
+    );
+    await closeSocket(wrongSession);
+
+    const boundSocket = connect(
+      await ticket(tokens[1]!, boundSessionId),
+      null,
+      false,
+    );
+    const authenticated = await nextOfType(boundSocket, 'SeatAuthenticated');
+    expect(authenticated.payload.resumeToken).not.toBe(expectedToken);
+    await closeSocket(boundSocket);
+  });
+
   it('refuses a second tokenless socket while the first delivery is in flight', async () => {
     const firstSessionId = randomUUID();
     await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
@@ -314,7 +393,7 @@ describe('one-time gateway', () => {
       accounts[0],
     ]);
     const room = await rooms.get(firstSessionId);
-    await room.seat(accounts[0], 'Initial owner');
+    await room.seat(accounts[0], 'Initial owner', false, hashToken(tokens[0]!));
     const first = connect(
       await ticket(tokens[0]!, firstSessionId),
       null,
@@ -325,9 +404,10 @@ describe('one-time gateway', () => {
       null,
       false,
     );
+    const secondClosed = closed(second);
     const authenticated = await nextOfType(first, 'SeatAuthenticated');
     expect(authenticated.payload).toHaveProperty('resumeToken');
-    expect(await closed(second)).toBe(1008);
+    expect(await secondClosed).toBe(1008);
     await closeSocket(first);
   });
 
@@ -340,7 +420,7 @@ describe('one-time gateway', () => {
     const room = await rooms.get(failedSessionId);
     const previousToken = await room.seat(accounts[0], 'Commit failure owner');
     if (!previousToken) throw new Error('initial resume token was not created');
-    room.completeSeatResumeTokenDelivery(accounts[0]!);
+    room.completeSeatResumeTokenDelivery(accounts[0]!, hashToken(tokens[0]!));
     const seatId = room.state.seats[0]!.seatId;
     const before = await db.query<{ token_hash: string }>(
       'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
@@ -388,7 +468,12 @@ describe('one-time gateway', () => {
       accounts[0],
     ]);
     const room = await rooms.get(createdSession);
-    const issuedToken = await room.seat(accounts[0], 'Token row player');
+    const issuedToken = await room.seat(
+      accounts[0],
+      'Token row player',
+      false,
+      hashToken(tokens[0]!),
+    );
     expect(issuedToken).toMatch(/^[A-Za-z0-9_-]{32}$/);
     const seatId = room.state.seats[0]!.seatId;
     const result = await db.query<{ token_hash: string }>(
@@ -399,7 +484,7 @@ describe('one-time gateway', () => {
     expect(result.rows[0]?.token_hash).toBe(
       createHash('sha256').update(issuedToken!).digest('hex'),
     );
-    expect(room.pendingSeatResumeToken(accounts[0])).toBe(issuedToken);
+    expect(issuedToken).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(
       await authorizeSeatSocket(
         db,
@@ -462,9 +547,7 @@ describe('one-time gateway', () => {
     await releaseSeatSocket(db, sessionId, seatId, socketId);
     // Restore only the isolated shared fixture after proving production auth
     // refuses to recreate a deleted row, so later socket tests start valid.
-    const pendingToken = (await rooms.get(sessionId)).pendingSeatResumeToken(
-      accounts[0]!,
-    );
+    const pendingToken = resumeTokens.get(tokens[0]!);
     if (!pendingToken) throw new Error('test fixture token is missing');
     await db.query(
       `INSERT INTO seat_resume_tokens(session_id,seat_id,token_hash,rotated_at)
@@ -616,9 +699,11 @@ describe('one-time gateway', () => {
     await waitForReleasedSocket(claimantSeatId);
 
     const previous = resumeTokens.get(tokens[1])!;
-    const claimant = connect(await ticket(tokens[1]), 'lost-token');
+    const grantTicket = await ticket(tokens[1]);
+    const claimant = connect(grantTicket, 'lost-token');
     const pending = await nextOfType(claimant, 'SeatClaimPending');
     const claimId = pending.payload.claimId!;
+    expect(await consumeTicket(db, grantTicket, sessionId)).toBeUndefined();
     await nextOfType(host, 'SeatClaimRequested');
     const room = await rooms.get(sessionId);
     host.send(

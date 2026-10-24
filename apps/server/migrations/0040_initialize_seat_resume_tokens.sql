@@ -4,7 +4,7 @@ INSERT INTO seat_resume_tokens (session_id, seat_id, token_hash)
 SELECT DISTINCT ON (j.session_id, j.payload->>'seatId')
        j.session_id,
        (j.payload->>'seatId')::uuid,
-       md5(random()::text || clock_timestamp()::text || (j.payload->>'seatId'))
+       replace(gen_random_uuid()::text, '-', '')
   FROM events j
  WHERE j.type = 'SeatJoined'
    AND j.payload ? 'seatId'
@@ -24,7 +24,7 @@ BEGIN
     VALUES (
       NEW.session_id,
       (NEW.payload->>'seatId')::uuid,
-      md5(random()::text || clock_timestamp()::text || (NEW.payload->>'seatId'))
+      replace(gen_random_uuid()::text, '-', '')
     )
     ON CONFLICT (session_id, seat_id) DO NOTHING;
   END IF;

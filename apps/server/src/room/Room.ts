@@ -226,7 +226,11 @@ export class RoomSeatRequiredError extends Error {
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
-  private readonly pendingSeatResumeTokens = new Map<string, string>();
+  private readonly pendingSeatResumeTokens = new Map<
+    string,
+    { token: string; authTokenHash: string; expiresAt: number }
+  >();
+  private readonly lateJoinAuthTokenHashes = new Map<string, string>();
   private readonly presenceTimers = new Map<string, NodeJS.Timeout>();
   private readonly pendingPresenceEvents = new Map<
     string,
@@ -834,6 +838,7 @@ export class Room {
     matureOptOut = false,
     lastSeq = -1,
     options: { requireExistingSeat?: boolean } = {},
+    authTokenHash?: string,
   ): Promise<void> {
     return this.enqueue(async () => {
       let seat = this.state.seats.find((item) => item.accountId === accountId);
@@ -866,8 +871,12 @@ export class Room {
           this.sessionId,
           seat.seatId,
         );
-        if (resumeToken)
-          this.pendingSeatResumeTokens.set(accountId, resumeToken);
+        if (resumeToken && authTokenHash)
+          this.pendingSeatResumeTokens.set(accountId, {
+            token: resumeToken,
+            authTokenHash,
+            expiresAt: Date.now() + 30_000,
+          });
         this.broadcast({
           seq: this.seq,
           type: 'StateSync',
@@ -925,12 +934,13 @@ export class Room {
     accountId: string,
     displayName: string,
     matureOptOut = false,
+    authTokenHash?: string,
   ): Promise<string | undefined> {
     return this.enqueue(async () => {
       const existing = this.state.seats.find(
         (item) => item.accountId === accountId,
       );
-      if (existing) return this.pendingSeatResumeTokens.get(accountId);
+      if (existing) return undefined;
       if (this.state.seats.length >= 6) throw new Error('Room is full');
       const seatId = randomUUID();
       await this.persist('SeatJoined', {
@@ -948,7 +958,12 @@ export class Room {
         this.sessionId,
         seatId,
       );
-      if (resumeToken) this.pendingSeatResumeTokens.set(accountId, resumeToken);
+      if (resumeToken && authTokenHash)
+        this.pendingSeatResumeTokens.set(accountId, {
+          token: resumeToken,
+          authTokenHash,
+          expiresAt: Date.now() + 30_000,
+        });
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -958,19 +973,30 @@ export class Room {
     });
   }
 
-  pendingSeatResumeToken(accountId: string): string | undefined {
-    return this.pendingSeatResumeTokens.get(accountId);
-  }
-
-  /** Atomically hands the initial token to at most one authenticated socket. */
-  claimPendingSeatResumeToken(accountId: string): string | undefined {
-    const token = this.pendingSeatResumeTokens.get(accountId);
-    if (token) this.pendingSeatResumeTokens.delete(accountId);
-    return token;
-  }
-
-  completeSeatResumeTokenDelivery(accountId: string): void {
+  /** One-time handoff to the exact authenticated session that seated the account. */
+  claimPendingSeatResumeToken(
+    accountId: string,
+    authTokenHash: string,
+    now = Date.now(),
+  ): string | undefined {
+    const pending = this.pendingSeatResumeTokens.get(accountId);
+    if (!pending) return undefined;
+    if (pending.expiresAt <= now) {
+      this.pendingSeatResumeTokens.delete(accountId);
+      return undefined;
+    }
+    if (pending.authTokenHash !== authTokenHash) return undefined;
     this.pendingSeatResumeTokens.delete(accountId);
+    return pending.token;
+  }
+
+  completeSeatResumeTokenDelivery(
+    accountId: string,
+    authTokenHash: string,
+  ): void {
+    const pending = this.pendingSeatResumeTokens.get(accountId);
+    if (pending?.authTokenHash === authTokenHash)
+      this.pendingSeatResumeTokens.delete(accountId);
   }
 
   isCurrentConnection(accountId: string, connection: Connection): boolean {
@@ -2102,6 +2128,7 @@ export class Room {
     accountId: string,
     displayName: string,
     matureOptOut = false,
+    authTokenHash?: string,
   ): Promise<string> {
     return this.enqueue(async () => {
       if (this.state.ended) throw new Error('Table ended');
@@ -2118,6 +2145,8 @@ export class Room {
         displayName,
         matureOptOut,
       };
+      if (authTokenHash)
+        this.lateJoinAuthTokenHashes.set(request.requestId, authTokenHash);
       await this.persist('LateJoinRequested', request);
       this.broadcast({
         seq: this.seq,
@@ -2310,6 +2339,7 @@ export class Room {
         actorSeatId: actor.seatId,
         actionId,
       });
+      this.lateJoinAuthTokenHashes.delete(requestId);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -2344,8 +2374,14 @@ export class Room {
         this.sessionId,
         seat.seatId,
       );
-      if (resumeToken)
-        this.pendingSeatResumeTokens.set(request.accountId, resumeToken);
+      const authTokenHash = this.lateJoinAuthTokenHashes.get(request.requestId);
+      this.lateJoinAuthTokenHashes.delete(request.requestId);
+      if (resumeToken && authTokenHash)
+        this.pendingSeatResumeTokens.set(request.accountId, {
+          token: resumeToken,
+          authTokenHash,
+          expiresAt: Date.now() + 30_000,
+        });
       await this.persist('LateJoinAdmitted', {
         requestId: request.requestId,
         seatId: seat.seatId,

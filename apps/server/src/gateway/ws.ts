@@ -302,7 +302,10 @@ export function installGateway(
         // reusing the first socket's not-yet-delivered credential.
         const firstDeliveryToken = presentedToken
           ? undefined
-          : room.claimPendingSeatResumeToken(identity.accountId);
+          : room.claimPendingSeatResumeToken(
+              identity.accountId,
+              identity.authTokenHash,
+            );
         let authorization = await authorizeSeatSocket(
           db,
           identity.sessionId,
@@ -423,7 +426,10 @@ export function installGateway(
           ws.close(1011, 'Authentication response could not be sent');
           return;
         }
-        room.completeSeatResumeTokenDelivery(identity.accountId);
+        room.completeSeatResumeTokenDelivery(
+          identity.accountId,
+          identity.authTokenHash,
+        );
         if (ws.readyState !== WebSocket.OPEN) return;
         let chatDeliveryChain: Promise<unknown> = Promise.resolve();
         const queueChatDelivery = (
@@ -545,6 +551,7 @@ export function installGateway(
             name.rows[0]?.mature_opt_out ?? false,
             -1,
             { requireExistingSeat: true },
+            identity.authTokenHash,
           );
           snapshotAckTimer = setTimeout(() => {
             if (!snapshotAcknowledged)

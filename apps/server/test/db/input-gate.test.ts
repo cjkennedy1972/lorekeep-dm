@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { createSession } from '../../src/accounts/sessions.js';
+import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
@@ -130,13 +131,22 @@ beforeAll(async () => {
     sessionId,
     accounts[0],
   ]);
-  const room = await rooms.get(sessionId);
-  await room.seat(accounts[0]!, 'Gate 0');
-  await joinSeated(room, accounts[1], { send() {} }, 'Gate 1');
-  await room.disconnect(accounts[1]);
   tokens = await Promise.all(
     accounts.map((id) => createSession(db, id, 'test')),
   );
+  const room = await rooms.get(sessionId);
+  await room.seat(accounts[0]!, 'Gate 0', false, hashToken(tokens[0]!));
+  await joinSeated(
+    room,
+    accounts[1],
+    { send() {} },
+    'Gate 1',
+    false,
+    -1,
+    {},
+    hashToken(tokens[1]!),
+  );
+  await room.disconnect(accounts[1]);
   base = await app.listen({ host: '127.0.0.1', port: 0 });
 });
 

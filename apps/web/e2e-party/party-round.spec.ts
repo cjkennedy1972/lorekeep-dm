@@ -35,6 +35,13 @@ const storageByAccount = new Map<
   Awaited<ReturnType<BrowserContext['storageState']>>
 >();
 
+async function closeAs(view: { accountId: string; context: BrowserContext }) {
+  storageByAccount.set(view.accountId, await view.context.storageState());
+  await view.context.close();
+  // Let the server-side close handler release the seat claim before the next serial spec reconnects.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+
 // Every request goes to the real server; GET /api/tables/:id resolves party members (#280).
 async function openAs(
   browser: Browser,
@@ -79,6 +86,10 @@ async function tabTo(page: Page, name: string) {
 
 test.describe.serial('party round and host panels (real server)', () => {
   test.setTimeout(180_000);
+  test.beforeEach(async ({ request }) => {
+    const response = await request.post('/api/test/reset-auth-attempts');
+    expect(response.ok()).toBe(true);
+  });
 
   test('three seated players see one round and the same submitted list', async ({
     browser,
@@ -108,7 +119,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         const saved = await context.storageState();
         storageByAccount.set(accountId, saved);
       }
-      await Promise.all(players.map(({ context }) => context.close()));
+      await Promise.all(players.map(closeAs));
     }
   });
 
@@ -158,9 +169,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         ).toBeVisible();
       }
     } finally {
-      await Promise.all(
-        [hostView, guestView, scoutView].map(({ context }) => context.close()),
-      );
+      await Promise.all([hostView, guestView, scoutView].map(closeAs));
     }
   });
 
@@ -190,10 +199,7 @@ test.describe.serial('party round and host panels (real server)', () => {
             .filter({ hasText: 'The host resolved the round.' }),
         ).toBeVisible({ timeout: 60_000 });
       } finally {
-        await Promise.all([
-          hostView.context.close(),
-          scoutView.context.close(),
-        ]);
+        await Promise.all([closeAs(hostView), closeAs(scoutView)]);
       }
     },
   );
@@ -222,7 +228,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       });
       await expect(page.getByRole('alert').first()).not.toBeEmpty();
     } finally {
-      await context.close();
+      await closeAs({ accountId: outsider.accountId, context });
     }
   });
 
@@ -288,7 +294,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         ),
       ).toBe(false);
     } finally {
-      await Promise.all([hostView.context.close(), guestView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(guestView)]);
     }
   });
 
@@ -330,7 +336,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       );
       expect(reload.ok()).toBe(false);
     } finally {
-      await Promise.all([hostView.context.close(), scoutView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(scoutView)]);
     }
   });
 
@@ -359,7 +365,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         hostView.page.getByRole('region', { name: 'Host controls' }),
       ).toHaveCount(0, { timeout: 30_000 });
     } finally {
-      await Promise.all([hostView.context.close(), guestView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(guestView)]);
     }
   });
 
@@ -393,7 +399,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       );
       expect(access.ok()).toBe(false);
     } finally {
-      await Promise.all([hostView.context.close(), latecomer.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(latecomer)]);
     }
   });
 
@@ -441,7 +447,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       );
       expect(access.ok()).toBe(true);
     } finally {
-      await Promise.all([hostView.context.close(), latecomer.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(latecomer)]);
     }
   });
 
@@ -477,7 +483,7 @@ test.describe.serial('party round and host panels (real server)', () => {
         hostView.page.getByRole('heading', { name: 'Table ended' }),
       ).toBeVisible({ timeout: 30_000 });
     } finally {
-      await Promise.all([hostView.context.close(), seatedView.context.close()]);
+      await Promise.all([closeAs(hostView), closeAs(seatedView)]);
     }
   });
 });
