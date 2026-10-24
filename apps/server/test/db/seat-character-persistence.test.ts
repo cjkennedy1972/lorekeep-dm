@@ -657,13 +657,12 @@ describe('party seat-character persistence', () => {
       expect(bindingAfter.character_snapshot.abilities).toEqual(
         f.character.abilities,
       );
-      expect(
-        (
-          await db.query('SELECT 1 FROM account_characters WHERE id=$1', [
-            f.character.id,
-          ])
-        ).rowCount,
-      ).toBe(0);
+      // Account deletion removes the reusable sheet because it contains player PII.
+      const deletedCharacter = await db.query(
+        'SELECT 1 FROM account_characters WHERE id=$1',
+        [f.character.id],
+      );
+      expect(deletedCharacter.rowCount).toBe(0);
       expect(
         await db.query(
           `SELECT 1 FROM session_seat_characters

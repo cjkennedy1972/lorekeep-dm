@@ -14,6 +14,7 @@ import { registerOperatorRoutes } from './routes/operator.js';
 import { sessionMatureEndpointAllowed } from './llm/matureEndpoint.js';
 import { registerReportRoutes } from './routes/reports.js';
 import { registerContentSettingsRoutes } from './routes/contentSettings.js';
+import { registerCharacterRoutes } from './routes/characters.js';
 import type { RoomRegistry } from './room/registry.js';
 import type { ConnectionRegistry } from './gateway/connections.js';
 import {
@@ -153,6 +154,7 @@ export function createApp(
       registerOperatorRoutes(scope, db as Pool, options.isOperator),
     );
     originScope(app, (scope) => registerReportRoutes(scope, db as Pool));
+    originScope(app, (scope) => registerCharacterRoutes(scope, db as Pool));
     originScope(app, (scope) =>
       registerContentSettingsRoutes(scope, db as Pool, options.rooms, {
         endpointAllowsMature: async (sessionId) =>

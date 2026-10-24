@@ -52,6 +52,31 @@ export class SeatCharacterError extends Error {
 export class SeatCharacterRepository {
   constructor(private readonly db: Pool) {}
 
+  async listOwnedCharacters(accountId: string) {
+    const result = await this.db.query<{
+      id: string;
+      revision: number;
+      name: string;
+      class_id: string;
+      species_id: string;
+      level: number;
+    }>(
+      `SELECT id,revision,character->>'name' AS name,
+              character->>'classId' AS class_id,character->>'speciesId' AS species_id,
+              (character->>'level')::integer AS level
+         FROM account_characters WHERE account_id=$1 ORDER BY created_at,id`,
+      [accountId],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      revision: row.revision,
+      name: row.name,
+      classId: row.class_id,
+      speciesId: row.species_id,
+      level: row.level,
+    }));
+  }
+
   async saveOwnedCharacter(
     accountId: string,
     character: Character,
