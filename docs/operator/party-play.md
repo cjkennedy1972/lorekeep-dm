@@ -66,7 +66,7 @@ Every non-allow writes a moderation log entry.
 |---|---|---|
 | Message length | 2000 characters (server counts UTF-16 units; see discrepancies) | `packages/schema/src/ws.ts` `ChatSend` |
 | Burst | 5 tokens, refill 1 per 2 s | `apps/server/src/chat/policy.ts` |
-| Sustained | 40 messages per 10 min | `policy.ts` |
+| Sustained | 40 messages per rolling 10 min; the 41st within the window is rejected (`sustained`) | `policy.ts` (verified) |
 | Duplicate | Same text rejected within 60 s | `policy.ts` |
 | Automatic mute | 3 attributable non-allows in 5 min → 5-minute mute | `policy.ts`, `chat/mutes.ts` |
 | Host mute | Persists; automatic mute does not override it | `chat/mutes.ts` |
@@ -99,7 +99,7 @@ All host commands are sent through the `hostCommand` envelope with `lastSeq`. On
 
 Host command failures: `NOT_HOST`, `COMMAND_REJECTED`, `INVALID_ACTION`.
 
-**Not verified in this pass.** The exact late-join eligibility rules (who may request, how many pending requests are allowed) and the kick and end-table rules beyond the envelope checks. Read `Room.ts` ~L1841–1960 and `ws.ts` ~L640–1000 before documenting those limits.
+**Not verified in this pass.** The exact late-join eligibility rules (who may request, how many pending requests are allowed) and the end-table rules beyond the envelope checks. Read `Room.ts` ~L1841–1960 and `ws.ts` ~L640–1000 before documenting those limits.
 
 **Not done yet.** Late-join character entry (ADR-035). Players can request and be admitted, but they do not choose or create a character during the join flow.
 
