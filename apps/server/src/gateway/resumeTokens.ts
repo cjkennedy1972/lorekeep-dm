@@ -48,6 +48,10 @@ export async function authorizeSeatSocket(
     const needsOwnerRecovery =
       !row || !presentedToken || hash(presentedToken) !== row.token_hash;
     if (allowSoloOwnerRecovery && accountId && needsOwnerRecovery) {
+      // Serialize seat-count/mode eligibility with seat joins and session conversion.
+      await client.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE', [
+        sessionId,
+      ]);
       const recovery = await client.query<{ allowed: boolean }>(
         `SELECT EXISTS (
            SELECT 1 FROM sessions s JOIN events j ON j.session_id=s.id
@@ -56,6 +60,12 @@ export async function authorizeSeatSocket(
               AND j.payload->>'seatId'=$2 AND j.payload->>'accountId'=$3::text
               AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=j.session_id
                 AND r.type='SeatRevoked' AND r.payload->>'seatId'=$2 AND r.seq>j.seq)
+              AND (SELECT count(DISTINCT live.payload->>'seatId') FROM events live
+                WHERE live.session_id=s.id AND live.type='SeatJoined'
+                  AND NOT EXISTS (SELECT 1 FROM events revoked WHERE revoked.session_id=live.session_id
+                    AND revoked.type='SeatRevoked'
+                    AND revoked.payload->>'seatId'=live.payload->>'seatId'
+                    AND revoked.seq>live.seq))=1
          ) AS allowed`,
         [sessionId, seatId, accountId],
       );

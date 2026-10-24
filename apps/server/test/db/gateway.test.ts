@@ -7,7 +7,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
-import { consumeTicket, issueTicket } from '../../src/gateway/tickets.js';
+import {
+  consumeTicket,
+  issueTicket,
+  soloOwnerRecoveryTicket,
+} from '../../src/gateway/tickets.js';
 import {
   authorizeSeatSocket,
   releaseSeatSocket,
@@ -257,6 +261,70 @@ describe('pending first-token handoff', () => {
 });
 
 describe('one-time gateway', () => {
+  it('refuses solo recovery when a second current seat exists', async () => {
+    const id = randomUUID();
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'solo')",
+      [id, accounts[0]],
+    );
+    const room = await rooms.get(id);
+    await room.seat(accounts[0]!, 'Solo owner');
+    await room.seat(accounts[1]!, 'Unexpected second seat');
+    const ownerSeatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    expect(
+      await authorizeSeatSocket(
+        db,
+        id,
+        ownerSeatId,
+        randomUUID(),
+        undefined,
+        false,
+        accounts[0],
+        true,
+      ),
+    ).toEqual({ status: 'invalid-token' });
+    const recoveryTicket = await issueTicket(
+      db,
+      accounts[0]!,
+      id,
+      hashToken(tokens[0]!),
+    );
+    expect(
+      await soloOwnerRecoveryTicket(db, recoveryTicket, id),
+    ).toBeUndefined();
+  });
+
+  it('throttles the sixth wrong-cookie solo recovery precheck within one minute', async () => {
+    const id = randomUUID();
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'solo')",
+      [id, accounts[0]],
+    );
+    const room = await rooms.get(id);
+    const seatToken = await room.seat(accounts[0]!, 'Rate-limited owner');
+    expect(seatToken).toBeTruthy();
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const wrongCookieSocket = connect(
+        await ticket(tokens[0]!, id),
+        undefined,
+        false,
+        tokens[1]!,
+      );
+      expect(await closed(wrongCookieSocket)).toBe(1008);
+    }
+    expect(connections.consumeSeatAuthAttempt(`${id}:${seatId}`)).toBe(false);
+    const unused = await db.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM ws_tickets WHERE session_id=$1 AND used_at IS NULL',
+      [id],
+    );
+    expect(Number(unused.rows[0]?.count)).toBe(6);
+  });
+
   it('keeps solo recovery off by default and permits it only when explicitly enabled', async () => {
     const priorResumeToken = resumeTokens.get(tokens[0]!);
     const otherSessionId = randomUUID();
@@ -362,6 +430,7 @@ describe('one-time gateway', () => {
     await nextOfType(staleCookieRetry, 'StateSync');
     await closeSocket(staleCookieRetry);
     await waitForReleasedSocket(seatId, soloSessionId);
+    connections.resetAuthAttemptHistory();
 
     // A missing row models a restarted server with no usable token state.
     await db.query(

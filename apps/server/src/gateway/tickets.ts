@@ -95,21 +95,47 @@ export async function issueTicket(
   return ticket;
 }
 /** Read a solo-owner ticket's binding without consuming it for the cookie gate. */
-export async function soloOwnerRecoveryTicketAuthHash(
+export async function soloOwnerRecoveryTicket(
   db: Pool,
   ticket: string,
   sessionId?: string,
-): Promise<string | undefined> {
+): Promise<
+  | {
+      authTokenHash: string;
+      accountId: string;
+      sessionId: string;
+      seatId: string;
+    }
+  | undefined
+> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) return undefined;
-  const result = await db.query<{ auth_token_hash: string }>(
-    `SELECT t.auth_token_hash FROM ws_tickets t
+  const result = await db.query<{
+    auth_token_hash: string;
+    account_id: string;
+    session_id: string;
+    seat_id: string;
+  }>(
+    `SELECT t.auth_token_hash,t.account_id,t.session_id,t.seat_id FROM ws_tickets t
        JOIN sessions room ON room.id=t.session_id
       WHERE t.ticket_hash=$1 AND t.used_at IS NULL
         AND t.expires_at>clock_timestamp() AND ($2::uuid IS NULL OR t.session_id=$2)
-        AND room.mode='solo' AND room.owner_account_id=t.account_id`,
+        AND room.mode='solo' AND room.owner_account_id=t.account_id
+        AND (SELECT count(DISTINCT live.payload->>'seatId') FROM events live
+          WHERE live.session_id=room.id AND live.type='SeatJoined'
+            AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=live.session_id
+              AND r.type='SeatRevoked' AND r.payload->>'seatId'=live.payload->>'seatId'
+              AND r.seq>live.seq))=1`,
     [hash(ticket), sessionId ?? null],
   );
-  return result.rows[0]?.auth_token_hash;
+  const row = result.rows[0];
+  return (
+    row && {
+      authTokenHash: row.auth_token_hash,
+      accountId: row.account_id,
+      sessionId: row.session_id,
+      seatId: row.seat_id,
+    }
+  );
 }
 
 export async function consumeTicket(

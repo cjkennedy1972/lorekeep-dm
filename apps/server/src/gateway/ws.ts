@@ -42,7 +42,7 @@ import {
 } from '../room/Room.js';
 import {
   consumeTicket,
-  soloOwnerRecoveryTicketAuthHash,
+  soloOwnerRecoveryTicket,
   eligibleSession,
   isConfiguredOriginAllowed,
   issueTicket,
@@ -183,15 +183,24 @@ export function installGateway(
       }
       void (async () => {
         if (soloOwnerRecoveryEnabled) {
-          const authTokenHash = await soloOwnerRecoveryTicketAuthHash(
+          const recoveryTicket = await soloOwnerRecoveryTicket(
             db,
             ticket,
             sessionId,
           );
           if (
-            authTokenHash &&
-            !ticketCookieMatches(request.headers.cookie, authTokenHash)
+            recoveryTicket &&
+            !ticketCookieMatches(
+              request.headers.cookie,
+              recoveryTicket.authTokenHash,
+            )
           ) {
+            const recoverySeatKey = `${recoveryTicket.sessionId}:${recoveryTicket.seatId}`;
+            connections.consumeSeatAuthAttempt(recoverySeatKey);
+            connections.consumeTransportAuthAttempt(
+              recoveryTicket.accountId,
+              request.socket.remoteAddress ?? 'unknown',
+            );
             reject();
             return;
           }
