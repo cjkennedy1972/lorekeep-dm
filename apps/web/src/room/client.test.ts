@@ -80,6 +80,41 @@ test('connects with ticket, gets StateSync, resumes after socket drop', async ()
   expect(client.getSnapshot().status).toBe('closed');
 });
 
+test('ignores a ticket request from a stopped connection after restart', async () => {
+  const realFetch = await cookieFetch();
+  let releaseFirstFetch: (() => void) | undefined;
+  let fetchCount = 0;
+  const fetchImpl: typeof fetch = (input, init) => {
+    fetchCount++;
+    if (fetchCount === 1) {
+      return new Promise((resolve, reject) => {
+        releaseFirstFetch = () => {
+          void realFetch(input, init).then(resolve, reject);
+        };
+      });
+    }
+    return realFetch(input, init);
+  };
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl,
+    WebSocketImpl: WSImpl,
+  });
+  const previousSocketCount = sockets.length;
+
+  // Mirrors React StrictMode's setup -> cleanup -> setup while the first
+  // ticket request is still in flight.
+  client.start();
+  client.stop();
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  releaseFirstFetch?.();
+  await new Promise((r) => setTimeout(r, 30));
+
+  expect(sockets).toHaveLength(previousSocketCount + 1);
+  client.stop();
+});
+
 test('invalid server messages surface an error without crashing', async () => {
   const client = createRoomClient({
     baseUrl: base,

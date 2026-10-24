@@ -59,6 +59,7 @@ export function createRoomClient(opts: RoomClientOptions) {
   let socket: WebSocket | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
+  let generation = 0;
   let resumeToken: string | undefined;
   let pendingClaimId: string | undefined;
   let authenticatedSeatId: string | undefined;
@@ -183,15 +184,18 @@ export function createRoomClient(opts: RoomClientOptions) {
     if (next.needsResync && !wasResync) send('Resync');
   };
 
-  const scheduleReconnect = () => {
-    if (stopped) return;
+  const isActive = (connectionGeneration: number) =>
+    !stopped && connectionGeneration === generation;
+
+  const scheduleReconnect = (connectionGeneration: number) => {
+    if (!isActive(connectionGeneration)) return;
     set({ status: 'reconnecting' });
     const delay = Math.min(max, base * 2 ** attempt++);
-    timer = setTimeout(connect, delay);
+    timer = setTimeout(() => void connect(connectionGeneration), delay);
   };
 
-  async function connect() {
-    if (stopped) return;
+  async function connect(connectionGeneration: number) {
+    if (!isActive(connectionGeneration)) return;
     try {
       const res = await doFetch(`${opts.baseUrl}/api/ws-ticket`, {
         method: 'POST',
@@ -201,9 +205,10 @@ export function createRoomClient(opts: RoomClientOptions) {
           ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
         }),
       });
+      if (!isActive(connectionGeneration)) return;
       if (!res.ok) throw new Error(`ticket ${res.status}`);
       const { ticket } = (await res.json()) as { ticket: string };
-      if (stopped) return;
+      if (!isActive(connectionGeneration)) return;
       const url = new URL('/ws', opts.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.searchParams.set('ticket', ticket);
@@ -240,11 +245,11 @@ export function createRoomClient(opts: RoomClientOptions) {
           set({ status: 'closed', unseated: true });
           return;
         }
-        scheduleReconnect();
+        scheduleReconnect(connectionGeneration);
       };
       ws.onerror = () => {};
     } catch {
-      scheduleReconnect();
+      scheduleReconnect(connectionGeneration);
     }
   }
 
@@ -258,12 +263,14 @@ export function createRoomClient(opts: RoomClientOptions) {
     start() {
       if (!stopped) return;
       stopped = false;
+      generation++;
       attempt = 0;
       set({ status: 'connecting', unseated: false });
-      void connect();
+      void connect(generation);
     },
     stop() {
       stopped = true;
+      generation++;
       clearTimeout(timer);
       const s = socket;
       socket = undefined;
