@@ -962,6 +962,13 @@ export class Room {
     return this.pendingSeatResumeTokens.get(accountId);
   }
 
+  /** Atomically hands the initial token to at most one authenticated socket. */
+  claimPendingSeatResumeToken(accountId: string): string | undefined {
+    const token = this.pendingSeatResumeTokens.get(accountId);
+    if (token) this.pendingSeatResumeTokens.delete(accountId);
+    return token;
+  }
+
   completeSeatResumeTokenDelivery(accountId: string): void {
     this.pendingSeatResumeTokens.delete(accountId);
   }

@@ -289,12 +289,18 @@ export function installGateway(
           ws.close(1013, 'Room unavailable; retry');
           return;
         }
+        // Pending tokens are a one-time first-delivery path, not an account-wide
+        // fallback. The synchronous claim prevents a second tokenless socket from
+        // reusing the first socket's not-yet-delivered credential.
+        const firstDeliveryToken = presentedToken
+          ? undefined
+          : room.claimPendingSeatResumeToken(identity.accountId);
         let authorization = await authorizeSeatSocket(
           db,
           identity.sessionId,
           seatId,
           socketId,
-          presentedToken ?? room.pendingSeatResumeToken(identity.accountId),
+          presentedToken ?? firstDeliveryToken,
           false,
           identity.accountId,
           true,
@@ -366,6 +372,24 @@ export function installGateway(
         await connections.sweep();
         if (ws.readyState !== WebSocket.OPEN) return;
         if (reservation.takenOver) await room.recordSeatTakenOver(seatId);
+        // ADR-037 (pending): solo-owner recovery treats the authenticated owner
+        // session as host approval; party seats never use this exception.
+        let tokenCommitted = false;
+        try {
+          tokenCommitted = await commitSeatResumeToken(
+            db,
+            identity.sessionId,
+            seatId,
+            socketId,
+            authorization.resumeToken,
+          );
+        } catch {
+          tokenCommitted = false;
+        }
+        if (!tokenCommitted) {
+          ws.close(1011, 'Authentication state changed; retry');
+          return;
+        }
         const authenticatedFrameSent = await new Promise<boolean>((resolve) => {
           if (ws.readyState !== WebSocket.OPEN) return resolve(false);
           ws.send(
@@ -379,18 +403,6 @@ export function installGateway(
         });
         if (!authenticatedFrameSent) {
           ws.close(1011, 'Authentication response could not be sent');
-          return;
-        }
-        if (
-          !(await commitSeatResumeToken(
-            db,
-            identity.sessionId,
-            seatId,
-            socketId,
-            authorization.resumeToken,
-          ))
-        ) {
-          ws.close(1011, 'Authentication state changed; retry');
           return;
         }
         room.completeSeatResumeTokenDelivery(identity.accountId);

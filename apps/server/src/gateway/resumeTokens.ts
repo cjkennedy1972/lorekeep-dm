@@ -39,8 +39,15 @@ export async function authorizeSeatSocket(
       [sessionId, seatId],
     );
     const row = result.rows[0];
+    // A live controller always wins before any token-recovery exception.
+    if (row?.socket_live) {
+      await client.query('ROLLBACK');
+      return { status: 'active-socket' };
+    }
     let soloOwnerRecovery = false;
-    if (allowSoloOwnerRecovery && accountId) {
+    const needsOwnerRecovery =
+      !row || !presentedToken || hash(presentedToken) !== row.token_hash;
+    if (allowSoloOwnerRecovery && accountId && needsOwnerRecovery) {
       const recovery = await client.query<{ allowed: boolean }>(
         `SELECT EXISTS (
            SELECT 1 FROM sessions s JOIN events j ON j.session_id=s.id
@@ -73,10 +80,6 @@ export async function authorizeSeatSocket(
         await client.query('ROLLBACK');
         return { status: 'invalid-token' };
       }
-    }
-    if (row?.socket_live) {
-      await client.query('ROLLBACK');
-      return { status: 'active-socket' };
     }
     // Missing or stale tokens require host approval except for a current solo
     // owner, whose ownership and seat membership were verified above.

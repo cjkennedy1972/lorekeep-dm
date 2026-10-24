@@ -234,6 +234,80 @@ describe('one-time gateway', () => {
     await nextOfType(tokenlessSocket, 'StateSync');
     await closeSocket(tokenlessSocket);
   });
+  it('refuses a second tokenless socket while the first delivery is in flight', async () => {
+    const firstSessionId = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      firstSessionId,
+      accounts[0],
+    ]);
+    const room = await rooms.get(firstSessionId);
+    await room.seat(accounts[0], 'Initial owner');
+    const first = connect(
+      await ticket(tokens[0]!, firstSessionId),
+      null,
+      false,
+    );
+    const second = connect(
+      await ticket(tokens[0]!, firstSessionId),
+      null,
+      false,
+    );
+    const authenticated = await nextOfType(first, 'SeatAuthenticated');
+    expect(authenticated.payload).toHaveProperty('resumeToken');
+    expect(await closed(second)).toBe(1008);
+    await closeSocket(first);
+  });
+
+  it('does not deliver a rotated token when its database commit fails', async () => {
+    const failedSessionId = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      failedSessionId,
+      accounts[0],
+    ]);
+    const room = await rooms.get(failedSessionId);
+    const previousToken = await room.seat(accounts[0], 'Commit failure owner');
+    if (!previousToken) throw new Error('initial resume token was not created');
+    room.completeSeatResumeTokenDelivery(accounts[0]!);
+    const seatId = room.state.seats[0]!.seatId;
+    const before = await db.query<{ token_hash: string }>(
+      'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [failedSessionId, seatId],
+    );
+    await db.query(`
+      CREATE FUNCTION fail_resume_token_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.session_id = '${failedSessionId}'::uuid AND OLD.token_hash IS DISTINCT FROM NEW.token_hash THEN
+          RAISE EXCEPTION 'injected resume-token commit failure';
+        END IF;
+        RETURN NEW;
+      END $$
+    `);
+    await db.query(`
+      CREATE TRIGGER fail_resume_token_commit
+      BEFORE UPDATE ON seat_resume_tokens FOR EACH ROW
+      EXECUTE FUNCTION fail_resume_token_commit()
+    `);
+    try {
+      const socket = connect(
+        await ticket(tokens[0]!, failedSessionId),
+        previousToken,
+        false,
+      );
+      expect(await closed(socket)).toBe(1011);
+      expect(seenMessageTypes.get(socket)).not.toContain('SeatAuthenticated');
+      const after = await db.query<{ token_hash: string }>(
+        'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+        [failedSessionId, seatId],
+      );
+      expect(after.rows[0]?.token_hash).toBe(before.rows[0]?.token_hash);
+    } finally {
+      await db.query(
+        'DROP TRIGGER fail_resume_token_commit ON seat_resume_tokens',
+      );
+      await db.query('DROP FUNCTION fail_resume_token_commit()');
+    }
+  });
+
   it('creates a resume-token row whenever a seat is created', async () => {
     const createdSession = randomUUID();
     await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
