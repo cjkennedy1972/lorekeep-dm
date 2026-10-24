@@ -99,6 +99,19 @@ describe('roomReducer bound seats', () => {
     expect(gap.boundSeatIds).toEqual([]);
   });
 
+  test('a release right after a revoke lands in sequence and clears the seat', () => {
+    const boundView = roomReducer(live, bound(2));
+    const revoked = roomReducer(boundView, {
+      seq: 3,
+      type: 'SeatRevoked',
+      payload: { seatId },
+    } as unknown as ServerMessage);
+    expect(revoked.lastSeq).toBe(3);
+    const releasedView = roomReducer(revoked, released(4));
+    expect(releasedView.lastSeq).toBe(4);
+    expect(releasedView.boundSeatIds).toEqual([]);
+  });
+
   test('an in-sequence bind does not request a resync', () => {
     const boundView = roomReducer(live, bound(2));
     expect(boundView.needsResync).toBe(false);

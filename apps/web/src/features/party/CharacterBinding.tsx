@@ -85,8 +85,9 @@ export function CharacterBinding({
   }, [pending, serverError]);
 
   // Terminal outcomes without an Error: no reply in time, a dropped socket, or a resync that replaces the state.
+  // A bind that already landed (bound) wins over any of these, even when it arrives in the same update as a resync.
   useEffect(() => {
-    if (!pending) return;
+    if (!pending || bound) return;
     if (!connected || resyncing) {
       setPending(null);
       setFailure('interrupted');
@@ -97,7 +98,7 @@ export function CharacterBinding({
       setFailure('no-reply');
     }, replyTimeoutMs);
     return () => window.clearTimeout(timer);
-  }, [pending, connected, resyncing, replyTimeoutMs]);
+  }, [pending, bound, connected, resyncing, replyTimeoutMs]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

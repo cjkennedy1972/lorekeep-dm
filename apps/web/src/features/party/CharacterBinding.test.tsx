@@ -283,6 +283,34 @@ describe('CharacterBinding', () => {
     );
   });
 
+  test('a bind that lands in the same update as a resync shows bound, not interrupted', async () => {
+    listed();
+    const send = vi.fn(() => ACTION);
+    const { rerender } = render(
+      <CharacterBinding
+        bound={false}
+        send={send}
+        serverError={null}
+        {...LIVE}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Bind character' }),
+    );
+    rerender(
+      <CharacterBinding
+        bound
+        send={send}
+        serverError={null}
+        connected
+        resyncing
+      />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/interrupted/i)).toBeNull();
+    expect(screen.getByRole('status').textContent).toMatch(/bound/i);
+  });
+
   test('reports when the socket is closed instead of sending', async () => {
     listed();
     render(
