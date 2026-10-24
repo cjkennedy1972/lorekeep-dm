@@ -34,7 +34,9 @@ export function registerCharacterRoutes(app: App, db: Pool) {
         message: 'Sign in required.',
         loginRequired: true,
       });
-    return repository.listOwnedCharacters(auth.account_id);
+    return {
+      characters: await repository.listOwnedCharacters(auth.account_id),
+    };
   });
 
   app.post('/api/me/characters', async (request, reply) => {
@@ -55,6 +57,7 @@ export function registerCharacterRoutes(app: App, db: Pool) {
         code: 'INVALID_CHARACTER',
         message: 'Character could not be saved.',
       });
+    // Count every valid write attempt, including conflicts and failed writes.
     if (writes.hit(auth.account_id) > 10)
       return reply.code(429).send({
         code: 'RATE_LIMITED',

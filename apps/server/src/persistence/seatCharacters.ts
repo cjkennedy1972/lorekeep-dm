@@ -34,6 +34,7 @@ export class SeatCharacterError extends Error {
     readonly code:
       | 'NOT_FOUND'
       | 'NOT_OWNER'
+      | 'ALREADY_EXISTS'
       | 'STALE_REVISION'
       | 'INVALID_CHARACTER'
       | 'NOT_SEATED'
@@ -124,6 +125,8 @@ export class SeatCharacterRepository {
         ]);
         if (prior.rows[0]?.account_id !== accountId)
           throw new SeatCharacterError('NOT_OWNER');
+        if (expectedRevision === undefined)
+          throw new SeatCharacterError('ALREADY_EXISTS');
         throw new SeatCharacterError('STALE_REVISION');
       }
       await client.query('COMMIT');
