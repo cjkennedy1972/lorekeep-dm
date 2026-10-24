@@ -48,6 +48,8 @@ const SCRIPTED = {
 export class Room {
   private seq = 0;
   private seats = new Map<string, Seat>();
+  /** Accounts whose seat was created by reserveSeat; their first join announces it, as a fresh seat would. */
+  private reserved = new Set<string>();
   private conns = new Map<string, Set<Send>>();
   private timer: NodeJS.Timeout | undefined;
   private paused = false;
@@ -228,9 +230,28 @@ export class Room {
     for (const set of this.conns.values()) for (const send of set) send(msg);
   }
 
-  /** The seat id this account holds, for SeatAuthenticated. */
-  seatIdOf(accountId: string) {
-    return this.seats.get(accountId)?.seatId;
+  /**
+   * Creates the account's seat without sending anything, so SeatAuthenticated can carry its id before join's frames.
+   * Returns null when the table is full.
+   */
+  reserveSeat(account: Account, isHost = false): string | null {
+    const existing = this.seats.get(account.id);
+    if (existing) return existing.seatId;
+    if (this.seats.size >= 6) return null;
+    this.seats.set(account.id, this.newSeat(account, isHost));
+    this.reserved.add(account.id);
+    return this.seats.get(account.id)!.seatId;
+  }
+
+  private newSeat(account: Account, isHost: boolean): Seat {
+    return {
+      seatId: SeatIdSchema.parse(crypto.randomUUID()),
+      accountId: account.id,
+      displayName: account.displayName,
+      presence: 'offline',
+      isHost,
+      matureOptOut: false,
+    };
   }
 
   private submission(seat: Seat, actionId: string, text: string): Submission {
@@ -326,18 +347,12 @@ export class Room {
   /** Seats the account (max 6), sends StateSync to it, broadcasts presence. Returns leave(). */
   join(account: Account, send: Send, isHost = false): (() => void) | null {
     let seat = this.seats.get(account.id);
-    const fresh = !seat;
+    let fresh = this.reserved.delete(account.id);
     if (!seat) {
       if (this.seats.size >= 6) return null;
-      seat = {
-        seatId: SeatIdSchema.parse(crypto.randomUUID()),
-        accountId: account.id,
-        displayName: account.displayName,
-        presence: 'offline',
-        isHost,
-        matureOptOut: false,
-      };
+      seat = this.newSeat(account, isHost);
       this.seats.set(account.id, seat);
+      fresh = true;
     }
     const set = this.conns.get(account.id) ?? new Set<Send>();
     set.add(send);

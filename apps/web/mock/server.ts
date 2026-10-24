@@ -685,16 +685,15 @@ export function createMock(
             return void ws.close(1008, 'Host approval required');
           }
           resumeTokens.set(tokenKey, randomBytes(16).toString('base64url'));
-          leave = room.join(account, send, owner === account.id) ?? undefined;
-          if (!leave) return void ws.close(1008, 'room full');
+          const seatId = room.reserveSeat(account, owner === account.id);
+          if (!seatId) return void ws.close(1008, 'room full');
           send({
             seq: 0,
             type: 'SeatAuthenticated',
-            payload: {
-              seatId: room.seatIdOf(account.id),
-              resumeToken: resumeTokens.get(tokenKey),
-            },
+            payload: { seatId, resumeToken: resumeTokens.get(tokenKey) },
           });
+          leave = room.join(account, send, owner === account.id) ?? undefined;
+          if (!leave) return void ws.close(1008, 'room full');
           joined = true;
           return;
         }
