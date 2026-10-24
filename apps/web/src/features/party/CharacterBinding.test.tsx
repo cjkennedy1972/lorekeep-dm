@@ -102,7 +102,9 @@ describe('CharacterBinding', () => {
       />,
     );
     expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toMatch(/already bound/i);
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /already have a character bound at this table/i,
+    );
     expect(screen.getByRole('button', { name: 'Bind character' })).toBeTruthy();
   });
 

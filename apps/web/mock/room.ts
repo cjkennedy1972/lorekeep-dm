@@ -204,13 +204,13 @@ export class Room {
         'The character changed. Reload and retry.',
       );
     if (this.bound.has(seat.seatId))
-      return reject('ALREADY_BOUND', 'This seat already has a character.');
-    // Bound to another seat at this table.
-    if ([...this.bound.values()].includes(character.id))
       return reject(
         'ALREADY_BOUND',
-        'Character is already bound at this table.',
+        'This seat already has a character bound.',
       );
+    // Bound to another seat at this table: the real server answers with the neutral rejection, not ALREADY_BOUND.
+    if ([...this.bound.values()].includes(character.id))
+      return reject('ACTION_REJECTED', "That character can't be bound.");
     this.bound.set(seat.seatId, character.id);
     this.emit({
       seq: ++this.seq,

@@ -41,8 +41,7 @@ export function bindFailureFor(code: string): BindFailure {
 }
 
 const FAILURE_MESSAGE: Record<BindFailure, string> = {
-  'already-bound':
-    'This seat or character is already bound at this table. Choose another character.',
+  'already-bound': 'You already have a character bound at this table.',
   'stale-revision':
     'That character changed since the list loaded. Reload your characters and choose again.',
   'not-seated':
