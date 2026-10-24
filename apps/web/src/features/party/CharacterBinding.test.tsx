@@ -126,7 +126,7 @@ describe('CharacterBinding', () => {
         send={send}
         serverError={{
           actionId: '00000000-0000-4000-8000-0000000000aa',
-          code: 'NOT_OWNER',
+          code: 'ACTION_REJECTED',
           message: 'x',
         }}
         {...LIVE}
@@ -167,7 +167,7 @@ describe('CharacterBinding', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  test('NOT_OWNER shows the neutral rejection, not an ownership message', async () => {
+  test('ACTION_REJECTED shows the neutral rejection, not an ownership message', async () => {
     listed();
     const send = vi.fn(() => ACTION);
     const { rerender } = render(
@@ -185,13 +185,17 @@ describe('CharacterBinding', () => {
       <CharacterBinding
         bound={false}
         send={send}
-        serverError={{ actionId: ACTION, code: 'NOT_OWNER', message: 'x' }}
+        serverError={{
+          actionId: ACTION,
+          code: 'ACTION_REJECTED',
+          message: 'x',
+        }}
         {...LIVE}
       />,
     );
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toMatch(/could not be bound/i);
-    expect(alert.textContent).not.toMatch(/not yours|not on this account/i);
+    expect(alert.textContent).not.toMatch(/not yours|account|owner/i);
   });
 
   test('a silent server clears the pending bind after the reply timeout', async () => {

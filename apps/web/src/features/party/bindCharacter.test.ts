@@ -20,8 +20,7 @@ describe('bindFailureFor', () => {
     expect(bindFailureFor('RATE_LIMITED')).toBe('rate-limited');
   });
 
-  test('falls back to rejected for NOT_OWNER, ACTION_REJECTED and unknown codes', () => {
-    expect(bindFailureFor('NOT_OWNER')).toBe('rejected');
+  test('falls back to rejected for ACTION_REJECTED and unknown codes', () => {
     expect(bindFailureFor('ACTION_REJECTED')).toBe('rejected');
     expect(bindFailureFor('SOMETHING_NEW')).toBe('rejected');
   });

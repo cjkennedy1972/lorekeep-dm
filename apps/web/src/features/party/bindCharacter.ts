@@ -22,7 +22,7 @@ export type BindFailure =
   | 'no-reply'
   | 'interrupted';
 
-/** Maps a bind Error code to a failure. NOT_OWNER and codes the picker does not name fall back to 'rejected', so the client never confirms a character exists on another account. */
+/** Maps a bind Error code to a failure. ACTION_REJECTED and codes the picker does not name fall back to 'rejected', so the copy never implies ownership. */
 export function bindFailureFor(code: string): BindFailure {
   switch (code) {
     case 'ALREADY_BOUND':
