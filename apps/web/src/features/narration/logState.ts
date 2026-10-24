@@ -213,6 +213,7 @@ export function narrationLogReducer(
     case 'DeathSaveRequired':
     case 'TpkChoiceRequired':
     case 'StateSync':
+    case 'SeatPrivateRoundSync':
     case 'PresenceChanged':
     case 'ChatMessage':
     case 'ChatHistory':
@@ -224,6 +225,9 @@ export function narrationLogReducer(
     case 'SeatAuthenticated':
     case 'SeatClaimPending':
     case 'SeatResumeChallenge':
+    case 'SeatCharacterBound':
+    case 'SeatCharacterReleased':
+    case 'SeatCharacterBoundPrivate':
       return state;
   }
 }

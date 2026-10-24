@@ -12,6 +12,7 @@ import {
   CombatCommandSchema,
   CastRestVoteSchema,
   PlayerActionSchema,
+  BindCharacterSchema,
   EditActionSchema,
   ClarificationAnswerSchema,
   WithdrawActionSchema,
@@ -136,11 +137,19 @@ export function installGateway(
       if (!auth) return reply.code(401).send({ error: 'unauthorized' });
       const sessionId = request.body?.sessionId;
       if (sessionId && !/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(sessionId))
-        return reply.code(400).send({ error: 'sessionId' });
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
       const eligible = await eligibleSession(db, auth.account_id, sessionId);
-      if (!eligible) return reply.code(403).send({ error: 'not seated' });
+      if (!eligible)
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
       const seatId = await currentSeatId(db, auth.account_id, eligible);
-      if (!seatId) return reply.code(403).send({ error: 'not seated' });
+      if (!seatId)
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
       return {
         ticket: await issueTicket(
           db,
@@ -864,6 +873,45 @@ export function installGateway(
               throw new RoomSeatRequiredError();
             return roomSeat;
           };
+          if (msg.type === 'BindCharacter') {
+            const command = BindCharacterSchema.safeParse(msg);
+            if (!command.success) return;
+            if (room.hasActionId(msg.actionId)) return;
+            if (!room.reserveActionMutation(identity.accountId, 'bind')) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'RATE_LIMITED',
+                  message: 'Too many requests.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .bindSeatCharacter(
+                identity.accountId,
+                command.data.payload.characterId,
+                command.data.payload.expectedRevision,
+                async () => {
+                  const current = await requireCurrentCommandSeat();
+                  return current.seatId === identity.seatId;
+                },
+                msg.actionId,
+              )
+              .catch(() =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ACTION_REJECTED',
+                    message: 'Character could not be bound.',
+                    actionId: msg.actionId,
+                  },
+                }),
+              );
+          }
           if (msg.type === 'CastRestVote') {
             const action = CastRestVoteSchema.safeParse(msg);
             if (!action.success) {
@@ -1493,7 +1541,18 @@ export function installGateway(
                           actionId: edit.data.actionId,
                         },
                       });
-                  });
+                  })
+                  .catch(() =>
+                    send({
+                      seq: room.seq,
+                      type: 'Error',
+                      payload: {
+                        code: 'ACTION_REJECTED',
+                        message: 'Edit request could not be accepted.',
+                        actionId: edit.data.actionId,
+                      },
+                    }),
+                  );
               });
           }
           if (msg.type === 'WithdrawAction') {
@@ -1536,7 +1595,18 @@ export function installGateway(
                       actionId: withdraw.data.actionId,
                     },
                   });
-              });
+              })
+              .catch(() =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ACTION_REJECTED',
+                    message: 'Withdraw request could not be accepted.',
+                    actionId: withdraw.data.actionId,
+                  },
+                }),
+              );
           }
           if (msg.type === 'ClarificationAnswer') {
             const answer = ClarificationAnswerSchema.safeParse(msg);

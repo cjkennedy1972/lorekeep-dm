@@ -658,9 +658,14 @@ export function Game() {
       {room.roundsEnabled && (
         <RoundPanel
           round={room.round}
+          closeAnnouncement={live.roundCloseAnnouncement}
           seats={room.seats}
-          myActionId={pendingAction?.id}
-          myText={pendingAction?.text}
+          myActionId={live.privateRoundSubmission?.actionId}
+          myText={
+            room.roundsEnabled
+              ? live.privateRoundSubmission?.text
+              : pendingAction?.text
+          }
           connected={live.status === 'connected'}
           send={live.send}
           onEdited={(text) =>

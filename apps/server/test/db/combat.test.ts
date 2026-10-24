@@ -249,7 +249,7 @@ async function seedTable(
 ) {
   const table = randomUUID();
   await db.query(
-    'INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)',
+    "INSERT INTO sessions(id,owner_account_id,name,mode) VALUES($1,$2,$3,'solo')",
     [table, owner.id, 'Crypt'],
   );
   sessionIds.push(table);
@@ -461,6 +461,14 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         );
       const nearest = [...foes].sort((a, b) => reach(me, a) - reach(me, b))[0];
       const optionsReply = await client.command({ command: 'options' });
+      if (
+        optionsReply.type === 'Error' &&
+        optionsReply.payload?.message === 'It is not your turn.'
+      ) {
+        // CombatTracker is a broadcast snapshot; the turn can advance while this
+        // command is queued. Re-read it on the next loop before choosing an action.
+        continue;
+      }
       if (
         optionsReply.type === 'Error' &&
         optionsReply.payload?.message === 'Resolve the pending reaction first.'

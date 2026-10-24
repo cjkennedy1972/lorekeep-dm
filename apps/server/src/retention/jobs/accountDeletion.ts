@@ -86,6 +86,7 @@ interface Scrub {
   placeholder: string;
   charPlaceholder: string;
   charIds: Set<string>;
+  seatIds: Set<string>;
 }
 
 interface EventRow {
@@ -179,6 +180,7 @@ async function deleteAccount(
     )
   ).rows;
   const charIds = new Set<string>();
+  const deletedSeatIds = new Set<string>();
   for (const { id, character_id } of owned) {
     await fenceSession(ctx, client, fenced, id);
     if (character_id) charIds.add(character_id);
@@ -206,6 +208,26 @@ async function deleteAccount(
     }
   }
 
+  // Private seat bindings retain the account-to-seat mapping and immutable snapshot even
+  // when the public event stream only contains an identifier-only binding event.
+  const boundRows = (
+    await client.query<{
+      session_id: string;
+      seat_id: string;
+      character_id: string | null;
+      character_snapshot: unknown;
+    }>(
+      'SELECT session_id,seat_id,character_id,character_snapshot FROM session_seat_characters WHERE account_id=$1',
+      [accountId],
+    )
+  ).rows;
+  for (const row of boundRows) {
+    deletedSeatIds.add(row.seat_id);
+    if (row.character_id) charIds.add(row.character_id);
+    const snapshot = row.character_snapshot as { id?: unknown } | null;
+    if (snapshot && typeof snapshot.id === 'string') charIds.add(snapshot.id);
+  }
+
   const accountPattern = `%${accountId}%`;
   // Fence every session that mentions the account before reading its rows, so a live
   // Room cannot commit between our read and our write.
@@ -213,6 +235,8 @@ async function deleteAccount(
     MENTIONING_SQL,
     [accountPattern],
   );
+  for (const { session_id } of boundRows)
+    await fenceSession(ctx, client, fenced, session_id);
   for (const { session_id } of mentioning.rows.sort((a, b) =>
     a.session_id.localeCompare(b.session_id),
   ))
@@ -371,6 +395,7 @@ async function deleteAccount(
         placeholder: await placeholderFor(row.session_id),
         charPlaceholder,
         charIds,
+        seatIds: deletedSeatIds,
       },
       row.type === 'chat.committed',
     );
@@ -418,6 +443,7 @@ async function deleteAccount(
       placeholder: await placeholderFor(row.session_id),
       charPlaceholder,
       charIds,
+      seatIds: deletedSeatIds,
     });
     if (JSON.stringify(scrubbed) === JSON.stringify(row.state)) continue;
     await client.query(
@@ -535,7 +561,26 @@ function scrub(value: unknown, s: Scrub, preserveChatText = false): unknown {
   const owned = obj.accountId === s.accountId;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(obj)) {
-    if (key === s.accountId || s.charIds.has(key)) continue;
+    if (
+      key === s.accountId ||
+      s.charIds.has(key) ||
+      (key === 'characters' &&
+        isRecord(child) &&
+        Object.keys(child).some((seatId) => s.seatIds.has(seatId)))
+    ) {
+      if (key === 'characters' && isRecord(child))
+        out[key] = Object.fromEntries(
+          Object.entries(child)
+            .filter(
+              ([seatId]) =>
+                seatId !== s.accountId &&
+                !s.seatIds.has(seatId) &&
+                !s.charIds.has(seatId),
+            )
+            .map(([seatId, item]) => [seatId, scrub(item, s)]),
+        );
+      continue;
+    }
     if (CACHE_KEYS.includes(key)) continue;
     if (key === 'restVote' && isRecord(child)) {
       const redactedVote = { ...child };

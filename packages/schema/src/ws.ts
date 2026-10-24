@@ -25,6 +25,19 @@ export const PlayerActionSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const BindCharacterSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('BindCharacter'),
+    payload: z
+      .object({
+        characterId: z.uuid(),
+        expectedRevision: z.int().nonnegative(),
+      })
+      .strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const WithdrawActionSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -277,6 +290,23 @@ export const StateSyncSchema = z.object({
     round: RoundSnapshotSchema.optional(),
   }),
 });
+export const SeatPrivateRoundSyncSchema = z.object({
+  seq: z.int().nonnegative(),
+  type: z.literal('SeatPrivateRoundSync'),
+  payload: z
+    .object({
+      roundId: z.uuid(),
+      submission: z
+        .object({
+          actionId: z.uuid(),
+          text: z.string(),
+          queued: z.boolean(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+});
 export const PresenceChangedSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('PresenceChanged'),
@@ -317,6 +347,8 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RoundClosedEmpty',
       'RoundTimerConfigured',
       'SeatRevoked',
+      'SeatCharacterBound',
+      'SeatCharacterReleased',
       'SeatTakenOver',
       'HostTransferred',
       'HostSeatChanged',
@@ -353,6 +385,12 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     payload: z.record(z.string(), z.unknown()),
   }),
   StateSyncSchema,
+  SeatPrivateRoundSyncSchema,
+  z.object({
+    seq: z.int().nonnegative(),
+    type: z.literal('SeatCharacterBoundPrivate'),
+    payload: z.object({ seatId: z.uuid() }).strict(),
+  }),
   z.object({
     seq: z.int().nonnegative(),
     type: z.literal('CombatTracker'),

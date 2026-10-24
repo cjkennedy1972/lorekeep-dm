@@ -86,6 +86,9 @@ export class RoomRegistry {
         lease,
         await this.store.loadLatest(sessionId),
         this.turnRunner,
+        undefined,
+        (await this.store.loadActiveSeatCharacterBindings?.(sessionId)) ?? [],
+        (await this.store.loadSessionMode?.(sessionId)) === 'party',
       );
       this.rooms.set(sessionId, room);
       this.lastUsed.set(sessionId, Date.now());

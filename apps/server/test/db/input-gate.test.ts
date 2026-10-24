@@ -39,6 +39,7 @@ const rooms = new RoomRegistry(
 installGateway(app, db, rooms);
 let base: string;
 let tokens: string[];
+let room: Room;
 
 // ws can emit several frames synchronously from one TCP chunk, so a once('message')
 // registered after an await drops every frame that lands before it. Each socket gets
@@ -134,7 +135,7 @@ beforeAll(async () => {
   tokens = await Promise.all(
     accounts.map((id) => createSession(db, id, 'test')),
   );
-  const room = await rooms.get(sessionId);
+  room = await rooms.get(sessionId);
   await room.seat(accounts[0]!, 'Gate 0', false, hashToken(tokens[0]!));
   await joinSeated(
     room,
@@ -195,6 +196,47 @@ describe('gateway input gate', () => {
     expect(submit).not.toHaveBeenCalled();
     ws.close();
     submit.mockRestore();
+  }, 30_000);
+
+  it('a revoked seat receives the generic closed-clarification error', async () => {
+    gate = { check: async () => 'allow' };
+    const actionId = randomUUID();
+    room.state.openClarifications = {
+      [actionId]: {
+        accountId: accounts[0],
+        playerName: 'Gate 0',
+        text: 'choose a route',
+        question: 'Which route?',
+        deadlineAt: Date.now() + 60_000,
+      },
+    } as never;
+    const ws = await openSocket(tokens[0]!);
+    // Keep the authenticated transport alive to exercise a delayed answer that
+    // arrives after the seat has already been revoked from room state.
+    const originalSeats = room.state.seats;
+    room.state.seats = originalSeats.filter(
+      (seat) => seat.accountId !== accounts[0],
+    );
+    ws.send(
+      JSON.stringify({
+        actionId,
+        type: 'ClarificationAnswer',
+        payload: { actionId, answer: 'north' },
+        lastSeq: 0,
+      }),
+    );
+    let reply = await nextMessage(ws);
+    while (reply.type !== 'Error') reply = await nextMessage(ws);
+    expect(reply).toMatchObject({
+      type: 'Error',
+      payload: {
+        code: 'clarification-closed',
+        message: 'This question is no longer open.',
+        actionId,
+      },
+    });
+    room.state.seats = originalSeats;
+    ws.close();
   }, 30_000);
 
   it('a blocked clarification answer is rejected privately and never reaches the Room', async () => {

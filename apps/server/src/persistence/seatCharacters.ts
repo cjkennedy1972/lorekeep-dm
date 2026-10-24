@@ -151,8 +151,31 @@ export class SeatCharacterRepository {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
+      const result = await this.bindWithClient(client, input);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Bind within a caller-owned transaction so the Room event can commit atomically. */
+  async bindWithClient(
+    client: import('pg').PoolClient,
+    input: {
+      sessionId: string;
+      seatId: string;
+      accountId: string;
+      characterId: string;
+      expectedRevision: number;
+    },
+  ) {
+    try {
       const session = await client.query<{ mode: string; status: string }>(
-        'SELECT mode,status FROM sessions WHERE id=$1 FOR UPDATE',
+        'SELECT mode,status FROM sessions WHERE id=$1 FOR SHARE',
         [input.sessionId],
       );
       if (!session.rowCount) throw new SeatCharacterError('NOT_FOUND');
@@ -207,19 +230,16 @@ export class SeatCharacterRepository {
           JSON.stringify(sheet),
         ],
       );
-      await client.query('COMMIT');
       return {
         bindingId: inserted.rows[0]!.id as string,
         characterRevision: row.revision,
         snapshotHash,
+        characterSnapshot: sheet,
       };
     } catch (error) {
-      await client.query('ROLLBACK');
       if ((error as { code?: string }).code === '23505')
         throw new SeatCharacterError('ALREADY_BOUND');
       throw error;
-    } finally {
-      client.release();
     }
   }
 
@@ -227,8 +247,34 @@ export class SeatCharacterRepository {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
+      const released = await this.releaseWithClient(
+        client,
+        sessionId,
+        seatId,
+        accountId,
+      );
+      await client.query('COMMIT');
+      return released;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Release within the Room event transaction. The caller owns commit and rollback. */
+  async releaseWithClient(
+    client: import('pg').PoolClient,
+    sessionId: string,
+    seatId: string,
+    accountId: string,
+    /** Seat revocation must release even for ended sessions or inactive accounts. */
+    unconditional = false,
+  ) {
+    if (!unconditional) {
       const session = await client.query<{ status: string }>(
-        'SELECT status FROM sessions WHERE id=$1 FOR UPDATE',
+        'SELECT status FROM sessions WHERE id=$1 FOR SHARE',
         [sessionId],
       );
       if (!session.rowCount) throw new SeatCharacterError('NOT_FOUND');
@@ -240,19 +286,13 @@ export class SeatCharacterRepository {
       );
       if (account.rows[0]?.status !== 'active')
         throw new SeatCharacterError('ACCOUNT_INACTIVE');
-      const result = await client.query(
-        `UPDATE session_seat_characters SET binding_status='released', unbound_at=now()
-         WHERE session_id=$1 AND seat_id=$2 AND account_id=$3 AND binding_status='active' RETURNING id`,
-        [sessionId, seatId, accountId],
-      );
-      await client.query('COMMIT');
-      return result.rowCount === 1;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
     }
+    const result = await client.query(
+      `UPDATE session_seat_characters SET binding_status='released', unbound_at=now()
+       WHERE session_id=$1 AND seat_id=$2 AND account_id=$3 AND binding_status='active' RETURNING id`,
+      [sessionId, seatId, accountId],
+    );
+    return result.rowCount === 1;
   }
 
   /** Called only inside the ADR-017 deletion transaction. Retains anonymous mechanics, not links. */

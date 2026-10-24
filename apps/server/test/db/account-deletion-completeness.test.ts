@@ -49,10 +49,16 @@ describe('account deletion completeness', () => {
       'INSERT INTO sessions(id,owner_account_id,character_id,character) VALUES($1,$2,$3,$4)',
       [session, gone, charId, sheet(charId, 'SecretName')],
     );
+    await q(
+      `INSERT INTO session_seat_characters(session_id,seat_id,account_id,character_snapshot,binding_status)
+       VALUES($1,$2,$3,$4,'released')`,
+      [session, seatId, gone, { id: charId, name: 'SecretName', hp: 7 }],
+    );
 
     const gameState = {
       characters: {
         [gone]: sheet(charId, 'SecretName'),
+        [seatId]: sheet(charId, 'SecretName'),
         [friend]: sheet(friendCharId, 'Friend'),
       },
       gameEngine: {
@@ -74,7 +80,10 @@ describe('account deletion completeness', () => {
       failForward: { accountId: gone, narrative: 'SecretNarr' },
       checkpoint: {
         gameState: {
-          characters: { [gone]: sheet(charId, 'SecretName') },
+          characters: {
+            [gone]: sheet(charId, 'SecretName'),
+            [seatId]: sheet(charId, 'SecretName'),
+          },
           lastPlayerText: 'SecretText',
         },
       },
@@ -194,6 +203,20 @@ describe('account deletion completeness', () => {
     expect(state.gameState.characters).toEqual({
       [friend]: sheet(friendCharId, 'Friend'),
     });
+    expect(state.gameState.checkpoint).toMatchObject({
+      gameState: { characters: {} },
+    });
+    const [binding] = await q(
+      'SELECT binding_status,account_id,character_id,character_snapshot FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2',
+      [session, seatId],
+    );
+    expect(binding).toMatchObject({
+      binding_status: 'redacted',
+      account_id: null,
+      character_id: null,
+      character_snapshot: { name: 'Deleted player', hp: 7 },
+    });
+    expect(binding.character_snapshot).not.toHaveProperty('id');
     expect(state.gameState.lastPlayerText).toBeUndefined();
     expect(
       state.seats.find((s) => s.displayName === 'Deleted player'),

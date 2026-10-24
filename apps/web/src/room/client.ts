@@ -189,7 +189,7 @@ export function createRoomClient(opts: RoomClientOptions) {
 
   const scheduleReconnect = (connectionGeneration: number) => {
     if (!isActive(connectionGeneration)) return;
-    set({ status: 'reconnecting' });
+    set({ status: 'reconnecting', privateRoundSubmission: undefined });
     const delay = Math.min(max, base * 2 ** attempt++);
     timer = setTimeout(() => void connect(connectionGeneration), delay);
   };

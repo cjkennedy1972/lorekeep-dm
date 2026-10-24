@@ -159,6 +159,7 @@ export class Room {
       return;
     } else return;
     this.broadcastState();
+    this.sendSeatPrivateRoundSync(accountId);
   }
 
   private submission(seat: Seat, actionId: string, text: string): Submission {
@@ -220,6 +221,28 @@ export class Room {
     for (const set of this.conns.values()) for (const send of set) send(msg);
   }
 
+  private sendSeatPrivateRoundSync(accountId: string) {
+    const submission =
+      this.submissions.get(accountId) ?? this.queued.get(accountId);
+    for (const send of this.conns.get(accountId) ?? [])
+      send({
+        seq: this.seq,
+        type: 'SeatPrivateRoundSync',
+        payload: {
+          roundId: this.roundId,
+          ...(submission
+            ? {
+                submission: {
+                  actionId: submission.actionId,
+                  text: submission.text,
+                  queued: this.queued.has(accountId),
+                },
+              }
+            : {}),
+        },
+      } as ServerMessage);
+  }
+
   private broadcastState() {
     const msg: ServerMessage = {
       seq: ++this.seq,
@@ -257,6 +280,7 @@ export class Room {
     // The protocol has no seat-added message: a new seat is announced by re-syncing everyone.
     if (fresh) for (const c of this.conns.values()) for (const s of c) s(sync);
     else send(sync);
+    this.sendSeatPrivateRoundSync(account.id);
     return () => {
       set.delete(send);
       if (set.size === 0) this.setPresence(seat, 'disconnected');

@@ -6,6 +6,7 @@ import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
 import { currentMemberSql } from '../room/membership.js';
+import { SeatCharacterRepository } from './seatCharacters.js';
 import {
   findRewindTarget,
   REVERTED_TURN_EXCLUSION,
@@ -14,6 +15,16 @@ import {
 
 export type { EventInput, StoredEvent } from './events.js';
 export type { Snapshot } from './snapshots.js';
+
+export type SeatCharacterTransition =
+  | {
+      kind: 'bind';
+      seatId: string;
+      accountId: string;
+      characterId: string;
+      expectedRevision: number;
+    }
+  | { kind: 'release'; seatId: string; accountId: string };
 
 export interface RewindPlan {
   turnId: string;
@@ -331,9 +342,38 @@ export class Persistence {
     expectedHeadSeq?: number,
     registryTurnId?: string,
     rewoundTurnIds: readonly string[] = [],
-  ): Promise<{ events: StoredEvent[]; snapshot: Snapshot }> {
+    seatCharacterTransition?: SeatCharacterTransition,
+  ): Promise<{
+    events: StoredEvent[];
+    snapshot: Snapshot;
+    binding?: {
+      seatId: string;
+      accountId: string;
+      characterSnapshot: Record<string, unknown>;
+    };
+  }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
+      let binding:
+        | Awaited<ReturnType<SeatCharacterRepository['bindWithClient']>>
+        | undefined;
+      if (seatCharacterTransition?.kind === 'bind') {
+        binding = await new SeatCharacterRepository(this.pool).bindWithClient(
+          client,
+          {
+            sessionId,
+            ...seatCharacterTransition,
+          },
+        );
+      } else if (seatCharacterTransition?.kind === 'release') {
+        await new SeatCharacterRepository(this.pool).releaseWithClient(
+          client,
+          sessionId,
+          seatCharacterTransition.seatId,
+          seatCharacterTransition.accountId,
+          true,
+        );
+      }
       if (expectedHeadSeq !== undefined) {
         const head = await client.query<{ seq: string }>(
           'SELECT COALESCE(MAX(seq), 0)::text AS seq FROM events WHERE session_id = $1',
@@ -369,6 +409,8 @@ export class Persistence {
           : event,
       );
       const inserted = await appendEvents(client, sessionId, replayEvents);
+      // Binding data is never returned as a message payload; it remains server-private.
+      void binding;
       const last = inserted.at(-1);
       if (!last) throw new Error('A turn needs at least one event');
       await client.query(
@@ -421,7 +463,19 @@ export class Persistence {
         );
       }
       const snapshot = await insertSnapshot(client, sessionId, last.seq, state);
-      return { events: inserted, snapshot };
+      return {
+        events: inserted,
+        snapshot,
+        ...(binding
+          ? {
+              binding: {
+                seatId: seatCharacterTransition!.seatId,
+                accountId: seatCharacterTransition!.accountId,
+                characterSnapshot: binding.characterSnapshot,
+              },
+            }
+          : {}),
+      };
     });
   }
 
@@ -551,6 +605,38 @@ export class Persistence {
     } finally {
       client.release();
     }
+  }
+
+  /** Persisted session mode is the only authority for party-mode gating. */
+  async loadSessionMode(sessionId: string): Promise<'solo' | 'party'> {
+    const { rows } = await this.pool.query<{ mode: string }>(
+      'SELECT mode FROM sessions WHERE id=$1',
+      [sessionId],
+    );
+    return rows[0]?.mode === 'party' ? 'party' : 'solo';
+  }
+
+  async loadActiveSeatCharacterBindings(sessionId: string): Promise<
+    Array<{
+      seatId: string;
+      accountId: string | null;
+      characterSnapshot: Record<string, unknown>;
+    }>
+  > {
+    const { rows } = await this.pool.query<{
+      seat_id: string;
+      account_id: string | null;
+      character_snapshot: Record<string, unknown>;
+    }>(
+      `SELECT seat_id,account_id,character_snapshot FROM session_seat_characters
+        WHERE session_id=$1 AND binding_status='active' ORDER BY seat_id`,
+      [sessionId],
+    );
+    return rows.map((row) => ({
+      seatId: row.seat_id,
+      accountId: row.account_id,
+      characterSnapshot: row.character_snapshot,
+    }));
   }
 
   async loadLatest(sessionId: string): Promise<LatestState> {

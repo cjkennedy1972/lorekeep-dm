@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
+import { Persistence } from '../../src/persistence/index.js';
 import { runAccountDeletions } from '../../src/retention/jobs/accountDeletion.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL, max: 8 });
@@ -48,6 +49,179 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
+  it('returns the committed binding and releases its row on revocation without a Room cache entry', async () => {
+    const f = await fixture();
+    try {
+      const store = new Persistence(db);
+      const bound = await store.writeTurn(
+        f.sessionId,
+        [
+          {
+            seq: 3,
+            turnId: randomUUID(),
+            type: 'SeatCharacterBound',
+            payload: { seatId: f.seatA },
+          },
+        ],
+        {},
+        undefined,
+        [],
+        undefined,
+        undefined,
+        [],
+        {
+          kind: 'bind',
+          seatId: f.seatA,
+          accountId: f.accountId,
+          characterId: f.character.id,
+          expectedRevision: f.revision,
+        },
+      );
+      expect(bound.binding).toMatchObject({
+        seatId: f.seatA,
+        accountId: f.accountId,
+        characterSnapshot: { id: f.character.id },
+      });
+
+      await store.writeTurn(
+        f.sessionId,
+        [
+          {
+            seq: 4,
+            turnId: randomUUID(),
+            type: 'SeatRevoked',
+            payload: { seatId: f.seatA, accountId: f.accountId },
+          },
+          {
+            seq: 5,
+            turnId: randomUUID(),
+            type: 'SeatCharacterReleased',
+            payload: { seatId: f.seatA, reason: 'left' },
+          },
+        ],
+        {},
+        undefined,
+        [],
+        undefined,
+        undefined,
+        [],
+        { kind: 'release', seatId: f.seatA, accountId: f.accountId },
+      );
+      expect(
+        await db.query(
+          "SELECT 1 FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2 AND binding_status='active'",
+          [f.sessionId, f.seatA],
+        ),
+      ).toMatchObject({ rowCount: 0 });
+    } finally {
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  });
+  it('rolls back binding when event append fails after the binding insert', async () => {
+    const f = await fixture();
+    try {
+      const store = new Persistence(db);
+      await expect(
+        store.writeTurn(
+          f.sessionId,
+          [
+            {
+              seq: 999,
+              turnId: randomUUID(),
+              type: 'SeatCharacterBound',
+              payload: { seatId: f.seatA },
+            },
+          ],
+          {},
+          undefined,
+          [],
+          undefined,
+          undefined,
+          [],
+          {
+            kind: 'bind',
+            seatId: f.seatA,
+            accountId: f.accountId,
+            characterId: f.character.id,
+            expectedRevision: f.revision,
+          },
+        ),
+      ).rejects.toThrow('Non-contiguous event seq');
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM session_seat_characters WHERE session_id=$1',
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+      expect(
+        (
+          await db.query(
+            "SELECT 1 FROM events WHERE session_id=$1 AND type='SeatCharacterBound'",
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+    } finally {
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  });
+
+  it('rolls back event append when snapshot writing fails after the event insert', async () => {
+    const f = await fixture();
+    try {
+      const store = new Persistence(db);
+      await expect(
+        store.writeTurn(
+          f.sessionId,
+          [
+            {
+              seq: 2,
+              turnId: randomUUID(),
+              type: 'SeatCharacterBound',
+              payload: { seatId: f.seatA },
+            },
+          ],
+          { notJson: 1n },
+          undefined,
+          [],
+          undefined,
+          undefined,
+          [],
+          {
+            kind: 'bind',
+            seatId: f.seatA,
+            accountId: f.accountId,
+            characterId: f.character.id,
+            expectedRevision: f.revision,
+          },
+        ),
+      ).rejects.toThrow();
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM session_seat_characters WHERE session_id=$1',
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+      expect(
+        (
+          await db.query(
+            "SELECT 1 FROM events WHERE session_id=$1 AND type='SeatCharacterBound'",
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+    } finally {
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  });
+
   it('rejects binding into non-active sessions', async () => {
     const f = await fixture();
     try {
@@ -69,6 +243,69 @@ describe('party seat-character persistence', () => {
     } finally {
       await db.query('SELECT purge_session($1)', [f.sessionId]);
       await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  });
+
+  it('releases bindings on revocation after the session ends or account becomes inactive', async () => {
+    for (const inactive of ['session', 'account'] as const) {
+      const f = await fixture();
+      try {
+        await f.repo.bind({
+          sessionId: f.sessionId,
+          seatId: f.seatA,
+          accountId: f.accountId,
+          characterId: f.character.id,
+          expectedRevision: f.revision,
+        });
+
+        if (inactive === 'session')
+          await db.query("UPDATE sessions SET status='ended' WHERE id=$1", [
+            f.sessionId,
+          ]);
+        else
+          await db.query("UPDATE accounts SET status='deleting' WHERE id=$1", [
+            f.accountId,
+          ]);
+
+        const currentSeq = Number(
+          (
+            await db.query(
+              'SELECT MAX(seq) AS seq FROM events WHERE session_id=$1',
+              [f.sessionId],
+            )
+          ).rows[0].seq,
+        );
+        await new Persistence(db).writeTurn(
+          f.sessionId,
+          [
+            {
+              seq: currentSeq + 1,
+              turnId: randomUUID(),
+              type: 'SeatRevoked',
+              payload: { seatId: f.seatA, accountId: f.accountId },
+            },
+          ],
+          {},
+          undefined,
+          [],
+          undefined,
+          undefined,
+          [],
+          { kind: 'release', seatId: f.seatA, accountId: f.accountId },
+        );
+
+        expect(
+          (
+            await db.query(
+              'SELECT binding_status FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2',
+              [f.sessionId, f.seatA],
+            )
+          ).rows[0],
+        ).toEqual({ binding_status: 'released' });
+      } finally {
+        await db.query('SELECT purge_session($1)', [f.sessionId]);
+        await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+      }
     }
   });
 

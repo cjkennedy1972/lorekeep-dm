@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RoundSnapshot, Seat } from '@game/schema';
 import './round.css';
 
@@ -69,6 +69,11 @@ type Props = {
   send: RoomSend;
   /** Called with the new text once an edit is sent, so the own-action text stays current. */
   onEdited?: (text: string) => void;
+  closeAnnouncement?: {
+    roundId: string;
+    closeReason: NonNullable<Round['closeReason']>;
+    summary: string;
+  };
 };
 
 /** Collect-then-resolve round: who has submitted, time left, and this player's own action. */
@@ -80,12 +85,17 @@ export function RoundPanel({
   connected,
   send,
   onEdited,
+  closeAnnouncement,
 }: Props) {
   const now = useNow(Boolean(round?.deadlineAt));
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing) setDraft(myText ?? '');
+  }, [myText, editing]);
   const [note, setNote] = useState('');
   const [announcement, setAnnouncement] = useState('');
+  const announcedRoundClose = useRef<string | undefined>(undefined);
 
   const open = round?.status === 'open';
   const mine = round?.submissions.find((s) => isOwnSubmission(s, myActionId));
@@ -109,8 +119,17 @@ export function RoundPanel({
 
   // Announce only submission progress and close reasons; the per-second timer stays out of the live region.
   useEffect(() => {
+    if (closeAnnouncement) {
+      if (announcedRoundClose.current !== closeAnnouncement.roundId) {
+        announcedRoundClose.current = closeAnnouncement.roundId;
+        setAnnouncement(
+          `${closeAnnouncement.summary} ${CLOSE_REASON[closeAnnouncement.closeReason]}`,
+        );
+      }
+      return;
+    }
     setAnnouncement(closing ? `${summary} ${closing}` : summary);
-  }, [summary, closing]);
+  }, [summary, closing, closeAnnouncement]);
 
   const left = round ? secondsLeft(round, now) : null;
 

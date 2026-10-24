@@ -68,8 +68,8 @@ async function account(optOut = false) {
 async function table(host: string) {
   const sessionId = randomUUID();
   await db.query(
-    `INSERT INTO sessions(id,owner_account_id,name,moderation_verified,content_tier,endpoint_allows_mature)
-     VALUES($1,$2,'Cap table',true,'standard',true)`,
+    `INSERT INTO sessions(id,owner_account_id,name,mode,moderation_verified,content_tier,endpoint_allows_mature)
+     VALUES($1,$2,'Cap table','solo',true,'standard',true)`,
     [sessionId, host],
   );
   await db.query(
