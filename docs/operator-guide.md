@@ -2,6 +2,8 @@
 
 For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-provider-adapter-tool-fallback.md), [ADR-012](adr/012-eval-strategy.md), [endpoint egress runbook](security/m2-endpoint-egress.md). Placeholders such as `<your-key>` are never real values; do not paste real keys into docs, tickets, or shell history you share.
 
+Party play (M4) operator and player behavior, including what is not shipped yet, is in [operator/party-play.md](operator/party-play.md).
+
 ## 1. Server environment
 
 "Production" below means `NODE_ENV` is unset or anything other than `development` or `test`. An unset `NODE_ENV` is production, so the boot checks fail closed.
