@@ -83,18 +83,18 @@ async function closeSocket(ws: WebSocket) {
   ws.close();
   await result;
 }
-async function waitForReleasedSocket(seatId: string) {
+async function waitForReleasedSocket(seatId: string, forSession = sessionId) {
   for (let attempt = 0; attempt < 50; attempt++) {
     const result = await db.query<{ active_socket_id: string | null }>(
       'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
-      [sessionId, seatId],
+      [forSession, seatId],
     );
     if (!result.rows[0]?.active_socket_id) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error('socket control claim was not released after close');
 }
-async function ticket(token: string) {
+async function ticket(token: string, forSession = sessionId) {
   const res = await fetch(`${base}/api/ws-ticket`, {
     method: 'POST',
     headers: {
@@ -102,7 +102,7 @@ async function ticket(token: string) {
       cookie: `sid=${token}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ sessionId }),
+    body: JSON.stringify({ sessionId: forSession }),
   });
   expect(res.status).toBe(200);
   const body = (await res.json()) as { ticket: string };
@@ -111,7 +111,11 @@ async function ticket(token: string) {
   ticketOwners.set(body.ticket, token);
   return body.ticket;
 }
-function connect(t: string, proofOverride?: string, saveResumeToken = true) {
+function connect(
+  t: string,
+  proofOverride?: string | null,
+  saveResumeToken = true,
+) {
   const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?ticket=${t}`, {
     origin: base,
   });
@@ -124,16 +128,21 @@ function connect(t: string, proofOverride?: string, saveResumeToken = true) {
       payload?: { resumeToken?: string };
     };
     seenMessageTypes.get(ws)!.push(message.type ?? 'unknown');
-    if (message.type === 'SeatResumeChallenge')
+    if (message.type === 'SeatResumeChallenge') {
       ws.send(
         JSON.stringify({
           type: 'ResumeSeat',
           payload: {
-            resumeToken:
-              proofOverride ?? resumeTokens.get(ticketOwners.get(t)!),
+            ...(proofOverride === null
+              ? {}
+              : {
+                  resumeToken:
+                    proofOverride ?? resumeTokens.get(ticketOwners.get(t)!),
+                }),
           },
         }),
       );
+    }
     if (message.type === 'SeatAuthenticated' && message.payload?.resumeToken) {
       const owner = ticketOwners.get(t);
       if (saveResumeToken && owner)
@@ -186,6 +195,45 @@ afterAll(async () => {
   await db.end();
 });
 describe('one-time gateway', () => {
+  it('restores a solo owner after restart with a stale or absent seat token', async () => {
+    const soloSessionId = randomUUID();
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'solo')",
+      [soloSessionId, accounts[0]],
+    );
+    const room = await rooms.get(soloSessionId);
+    const initialToken = await room.seat(accounts[0], 'Solo owner');
+    expect(initialToken).toBeTruthy();
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    room.completeSeatResumeTokenDelivery(accounts[0]!);
+
+    // A stale token is recoverable for the verified solo owner, without a host.
+    const staleTokenSocket = connect(
+      await ticket(tokens[0]!, soloSessionId),
+      'stale-after-restart',
+      false,
+    );
+    await nextOfType(staleTokenSocket, 'SeatAuthenticated');
+    await nextOfType(staleTokenSocket, 'StateSync');
+    await closeSocket(staleTokenSocket);
+    await waitForReleasedSocket(seatId, soloSessionId);
+
+    // A missing row models a restarted server with no usable token state.
+    await db.query(
+      'DELETE FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [soloSessionId, seatId],
+    );
+    const tokenlessSocket = connect(
+      await ticket(tokens[0]!, soloSessionId),
+      null,
+      false,
+    );
+    await nextOfType(tokenlessSocket, 'SeatAuthenticated');
+    await nextOfType(tokenlessSocket, 'StateSync');
+    await closeSocket(tokenlessSocket);
+  });
   it('creates a resume-token row whenever a seat is created', async () => {
     const createdSession = randomUUID();
     await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [

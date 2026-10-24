@@ -17,6 +17,7 @@ export async function authorizeSeatSocket(
   presentedToken: string | undefined,
   hostApprovedClaim = false,
   accountId?: string,
+  allowSoloOwnerRecovery = false,
 ): Promise<SeatSocketAuthorization> {
   const client = await db.connect();
   try {
@@ -38,6 +39,21 @@ export async function authorizeSeatSocket(
       [sessionId, seatId],
     );
     const row = result.rows[0];
+    let soloOwnerRecovery = false;
+    if (allowSoloOwnerRecovery && accountId) {
+      const recovery = await client.query<{ allowed: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM sessions s JOIN events j ON j.session_id=s.id
+            WHERE s.id=$1 AND s.status='active' AND s.mode='solo'
+              AND s.owner_account_id=$3::uuid AND j.type='SeatJoined'
+              AND j.payload->>'seatId'=$2 AND j.payload->>'accountId'=$3::text
+              AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=j.session_id
+                AND r.type='SeatRevoked' AND r.payload->>'seatId'=$2 AND r.seq>j.seq)
+         ) AS allowed`,
+        [sessionId, seatId, accountId],
+      );
+      soloOwnerRecovery = recovery.rows[0]?.allowed === true;
+    }
     if (hostApprovedClaim) {
       if (!row || !accountId) {
         await client.query('ROLLBACK');
@@ -62,12 +78,13 @@ export async function authorizeSeatSocket(
       await client.query('ROLLBACK');
       return { status: 'active-socket' };
     }
-    // A missing row is not a first-use bootstrap path: legacy or otherwise
-    // uninitialized seats must use the host-approved recovery flow.
+    // Missing or stale tokens require host approval except for a current solo
+    // owner, whose ownership and seat membership were verified above.
     if (
-      !row ||
+      (!row && !soloOwnerRecovery) ||
       (!hostApprovedClaim &&
-        (!presentedToken || hash(presentedToken) !== row.token_hash))
+        !soloOwnerRecovery &&
+        (!presentedToken || hash(presentedToken) !== row?.token_hash))
     ) {
       await client.query('ROLLBACK');
       return { status: 'invalid-token' };

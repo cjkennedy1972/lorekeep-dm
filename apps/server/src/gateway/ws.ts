@@ -295,6 +295,9 @@ export function installGateway(
           seatId,
           socketId,
           presentedToken ?? room.pendingSeatResumeToken(identity.accountId),
+          false,
+          identity.accountId,
+          true,
         );
         if (authorization.status === 'invalid-token') {
           if (
