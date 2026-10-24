@@ -22,7 +22,7 @@ A socket may recover a seat without presenting its current resume token or recei
 4. The live-socket check runs first. A healthy first socket, as defined by ADR-031 §3.6, is never displaced by this exception. Recovery is considered only when the existing socket is closed or declared lost.
 5. All other ADR-031 §3.5 checks pass: the ticket is valid and not revoked, the seat is still seated and not retired, and the ticket account owns the seat. The connection still receives control only after the check; the client remains read-only until snapshot acknowledgement under ADR-031 §3.1–§3.2.
 
-The server determines solo status, ownership, and seat history from authoritative session/seat state. Client claims or flags cannot invoke the exception. No resume-token value is accepted or required for this path. On success, issue a fresh resume token and rotate the server-side stored hash as on an authenticated connection under ADR-031 §3.6. The recovered socket becomes the seat’s single controlling socket. This is not a general valid-ticket reconnect rule.
+The server determines solo status, ownership, and seat history from authoritative session/seat state. Client claims or flags cannot invoke the exception. No resume-token value is accepted or required for this path. On success, issue a fresh resume token and rotate the server-side stored hash as on an authenticated connection under ADR-031 §3.6. The recovery ticket MUST be single-use and bound to both the target seat and the authenticated session; reject reuse or any seat/session mismatch. The recovered socket becomes the seat’s single controlling socket and the server MUST emit `SeatTakenOver` immediately under ADR-031 §2.8, exempt from coalescing, with a notice delivered to the owner's other device/connections. This is not a general valid-ticket reconnect rule.
 
 A seat that has any later `SeatRevoked` event is ineligible even if the account still owns the session. Revocation remains terminal under ADR-031 §2.7. A party seat is never eligible, including a seat owned by the session owner.
 
@@ -32,9 +32,9 @@ The authenticated session is an adequate substitute for host approval only in th
 
 The relevant threats are:
 
-- **Stolen session cookie:** already grants the attacker access to the account session and the ability to mint a ticket. This exception does not create a new account-level capability; it permits that verified account to reclaim only its own active solo seat.
+- **Stolen session cookie:** already grants the attacker access to the account session and the ability to mint a ticket. Under this exception, the attacker can take over the owner's closed solo seat and rotate its resume token, locking the owner's old device out. This is an accepted residual risk contingent on explicit owner confirmation; session-cookie protection remains essential.
 - **XSS on the origin:** can act with the victim’s authenticated session and is not prevented by requiring the resume token, which is available to the same browser context. Existing origin and session protections remain necessary.
-- **Leaked ticket within its TTL:** in a solo session, a valid ticket can be used to attempt recovery only for the owner’s active, non-revoked seat, only when no healthy socket holds it. Ticket validity alone grants no party-seat recovery. Normal ticket expiry and revocation checks continue to apply.
+- **Leaked ticket:** ADR-014's WebSocket ticket is one-time with a 30 s TTL. If leaked before use, the ticket plus the matching owner account can reclaim a CLOSED solo seat (subject to the checks and controls below); a ticket by itself does not satisfy account matching. The recovered socket rotates the resume token, so this remains part of the accepted residual risk and can lock out the owner's old device. Party seats remain ineligible.
 
 These assumptions do not make session-cookie theft, XSS, or ticket leakage harmless. They bound the additional recovery authority to the same account and its solo seat.
 
@@ -44,8 +44,9 @@ The exception retains all controls that do not depend on host approval or posses
 
 - At most one controlling socket per seat; a healthy first socket is never displaced.
 - A successful recovery rotates the resume token. The token remains 128-bit random, server-generated, stored only as a server-side hash, and delivered only over the authenticated socket, never in a URL.
-- ADR-031 §3.6 transport limits remain mandatory: at most 5 socket-authentication attempts per minute per seat, plus per-IP and per-account limits.
+- ADR-031 §3.6 transport limits remain mandatory: at most 5 socket-authentication attempts per minute per seat, including recovery attempts, plus per-IP and per-account limits.
 - Ticket validity, expiry, revocation, owner-account matching, and live seat status are re-checked at control grant under ADR-031 §3.5.
+- `SeatTakenOver` is emitted immediately on recovery as required by ADR-031 §2.8 (not coalesced), and the owner's other device/connections receive a takeover notice.
 - Snapshot acknowledgement and read-only restore behavior remain unchanged under ADR-031 §3.1–§3.2.
 
 The 60 s host-approval window remains in force for party-seat claims and any other claims outside this exception.
@@ -62,7 +63,7 @@ The implementation must prove the following at the authenticated control-grant s
 - **Missing token:** the verified solo session owner can recover without a token when no live socket exists.
 - **Revoked seat:** the owner cannot recover a seat with a later `SeatRevoked`, even with a valid account session and ticket.
 - **Party seat:** a party seat is refused without its current token or host approval, including when the claimant is the session owner.
-- **Healthy socket first:** a second socket cannot displace a healthy first socket, even for the solo owner and even with a valid ticket.
+- **Healthy socket first:** a second socket cannot displace a healthy first socket, even for the solo owner and even with a valid ticket; recovery never displaces a live healthy socket.
 - **Limits and restore:** repeated authentication is still subject to ADR-031 §3.6 rate limits, and successful recovery remains read-only until snapshot acknowledgement.
 
 ## Alternatives considered
@@ -80,7 +81,7 @@ The implementation must prove the following at the authenticated control-grant s
 
 ## Product-security decision needed
 
-**Needs owner confirmation:** accept the solo-owner recovery exception described here, including its cookie/XSS/ticket threat assumptions. **Default: accept.** If not accepted, PR #278’s recovery behavior must remain disabled; ADR-031 §3.5–§3.6 continue to govern without exception.
+**Needs owner confirmation:** accept the solo-owner recovery exception in the narrowed form described here, including the accepted residual risk that a stolen authenticated session cookie or a leaked one-time 30 s ticket combined with the matching account can take over a closed solo seat, rotate its token, and lock out the owner's old device. **Recommended: accept narrowed form; effective only after owner confirmation.** Required controls: recovery only for the active solo owner seat and matching authenticated account/session; no recovery after revocation or party conversion; never displace a live healthy socket; ticket is single-use, 30 s TTL, and bound to the target seat and session; emit immediate `SeatTakenOver` and notify the owner's other device/connections; enforce the existing 5 socket-auth attempts/minute/seat plus per-IP and per-account limits; rotate the resume token; keep snapshot-ack/read-only restore. If not confirmed, PR #278’s recovery behavior must remain disabled; ADR-031 §3.5–§3.6 continue to govern without exception.
 
 ## Verification
 
