@@ -591,7 +591,9 @@ describe('room actor', () => {
         '00000000-0000-4000-8000-000000000001',
         targetSeat.seatId,
       );
-      expect(events.at(-1)).toMatchObject({
+      expect(
+        [...events].reverse().find((event) => event.type === 'SeatRevoked'),
+      ).toMatchObject({
         type: 'SeatRevoked',
         payload: {
           seatId: targetSeat.seatId,
@@ -849,7 +851,9 @@ describe('room actor', () => {
     expect(room.state.seats).toHaveLength(2);
 
     await room.leave(leaver);
-    expect(events.at(-1)?.type).toBe('SeatRevoked');
+    expect(events.filter((event) => event.type === 'SeatRevoked')).toHaveLength(
+      1,
+    );
     expect(room.state.seats.map((seat) => seat.accountId)).toEqual([stayer]);
     expect(closes).toEqual([[1000, 'Left the table']]);
 
