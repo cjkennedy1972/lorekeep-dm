@@ -87,7 +87,12 @@ export function CharacterBinding({
   // Terminal outcomes without an Error: no reply in time, a dropped socket, or a resync that replaces the state.
   // A bind that already landed (bound) wins over any of these, even when it arrives in the same update as a resync.
   useEffect(() => {
-    if (!pending || bound) return;
+    if (bound) {
+      setPending(null);
+      setFailure(null);
+      return;
+    }
+    if (!pending) return;
     if (!connected || resyncing) {
       setPending(null);
       setFailure('interrupted');
