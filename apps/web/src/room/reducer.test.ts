@@ -61,16 +61,18 @@ const syncWithRound = (
 });
 
 describe('roomReducer bound seats', () => {
-  const bound = (seq: number, id = seatId): ServerMessage => ({
-    seq,
-    type: 'SeatCharacterBound',
-    payload: { seatId: id },
-  } as ServerMessage);
-  const released = (seq: number): ServerMessage => ({
-    seq,
-    type: 'SeatCharacterReleased',
-    payload: { seatId, reason: 'removed' },
-  } as ServerMessage);
+  const bound = (seq: number, id = seatId): ServerMessage =>
+    ({
+      seq,
+      type: 'SeatCharacterBound',
+      payload: { seatId: id },
+    }) as ServerMessage;
+  const released = (seq: number): ServerMessage =>
+    ({
+      seq,
+      type: 'SeatCharacterReleased',
+      payload: { seatId, reason: 'removed' },
+    }) as ServerMessage;
   const live = roomReducer(initialRoomView, sync(1));
 
   test('starts with no bound seats', () => {

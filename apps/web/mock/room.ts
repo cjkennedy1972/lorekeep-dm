@@ -126,7 +126,8 @@ export class Room {
     const seat = this.seats.get(accountId);
     if (!seat) return;
     const body = (payload ?? {}) as Record<string, unknown>;
-    if (type === 'BindCharacter') return this.bindCharacter(seat, actionId, body);
+    if (type === 'BindCharacter')
+      return this.bindCharacter(seat, actionId, body);
     const mine = this.submissions.get(accountId) ?? this.queued.get(accountId);
     if (type === 'PlayerAction' && typeof body.text === 'string') {
       // Like the server, a seat acting while the round is closing lands in the queue.
@@ -167,7 +168,11 @@ export class Room {
   }
 
   /** Mirrors the server's BindCharacter rules. Every rejection is one ACTION_REJECTED, as gateway/ws.ts sends it. */
-  private bindCharacter(seat: Seat, actionId: string, body: Record<string, unknown>) {
+  private bindCharacter(
+    seat: Seat,
+    actionId: string,
+    body: Record<string, unknown>,
+  ) {
     const character =
       typeof body.characterId === 'string'
         ? characterById(body.characterId)
