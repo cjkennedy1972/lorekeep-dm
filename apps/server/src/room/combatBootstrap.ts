@@ -8,6 +8,7 @@ import {
 } from '@game/rules-engine';
 import { rleDecode, type Battlemap, type GridPos } from '@game/schema';
 import { runMonsters } from './combatEngine.js';
+import { seatEntityId } from './seatEntity.js';
 import type {
   CombatAttack,
   CombatEntity,
@@ -40,6 +41,11 @@ type ToolAttack = {
   reachFt?: number;
   range?: { normalFt: number; longFt?: number };
 };
+/** Party sessions: seat id -> immutable binding snapshot. Entity ids are derived from the seat id. */
+export type PartyBindings = ReadonlyMap<
+  string,
+  { characterSnapshot: Record<string, unknown> }
+>;
 export type Reconciled = { gameState: GameState; events: Ev[] };
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -116,6 +122,54 @@ function partySpawn(
           cell.y < t.pos.y + t.size,
       ),
   );
+}
+
+/**
+ * ADR-035: re-key the engine's PC entities to the seat-derived stable id and attach the immutable
+ * binding snapshot, so party ownership never depends on client ids or reusable character ids.
+ */
+function bindParty(game: GameState, party: PartyBindings): GameState {
+  const ids = new Map<string, string>();
+  const characters: Record<string, CharacterInput> = {};
+  for (const [seatId, binding] of party) {
+    const snapshot = binding.characterSnapshot as unknown as CharacterInput;
+    const id = seatEntityId(seatId);
+    ids.set(snapshot.id, id);
+    characters[seatId] = { ...snapshot, id };
+  }
+  const engine = game.gameEngine as Record<string, any> | undefined;
+  if (!engine) return game;
+  const remap = (id: string) => ids.get(id) ?? id;
+  const rekey = (record: Record<string, any> | undefined) =>
+    record &&
+    Object.fromEntries(Object.entries(record).map(([k, v]) => [remap(k), v]));
+  return {
+    ...game,
+    characters,
+    gameEngine: {
+      ...engine,
+      entities: (engine.entities as EngineEntity[] | undefined)?.map((e) => ({
+        ...e,
+        id: remap(e.id),
+      })),
+      ac: rekey(engine.ac),
+      // Preserve engine-owned HP across party id remapping and later combat settle.
+      hp: rekey(engine.hp),
+      attacks:
+        engine.attacks &&
+        Object.fromEntries(
+          Object.entries(engine.attacks as Record<string, ToolAttack>).map(
+            ([k, v]) => [k, { ...v, ownerId: remap(v.ownerId) }],
+          ),
+        ),
+      combat: engine.combat && {
+        ...engine.combat,
+        initiative: (
+          engine.combat.initiative as { entityId: string; total: number }[]
+        ).map((i) => ({ ...i, entityId: remap(i.entityId) })),
+      },
+    },
+  };
 }
 
 function buildRoomCombat(
@@ -214,6 +268,7 @@ export function reconcileCombat(
   game: GameState,
   catalog: Catalog,
   now: number,
+  party?: PartyBindings,
 ): Reconciled | null {
   const engineCombat = game.gameEngine?.combat as
     | { initiative?: unknown[] }
@@ -231,7 +286,7 @@ export function reconcileCombat(
     };
   }
   if (!engineActive || (room && !room.ended)) return null;
-  const built = buildRoomCombat(game, catalog);
+  const built = buildRoomCombat(party ? bindParty(game, party) : game, catalog);
   if (!built) return null;
   const events: Ev[] = [
     {
@@ -249,7 +304,7 @@ export function reconcileCombat(
     gameState: {
       ...game,
       combatRoom: run.state,
-      combatActors: built.actors,
+      combatActors: party ? {} : built.actors,
     },
     events: [...events, ...run.events],
   };

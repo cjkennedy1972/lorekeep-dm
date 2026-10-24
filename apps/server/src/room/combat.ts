@@ -20,7 +20,11 @@ import {
   settle,
   withHp,
 } from './combatEngine.js';
-import { reconcileCombat, type Reconciled } from './combatBootstrap.js';
+import {
+  reconcileCombat,
+  type PartyBindings,
+  type Reconciled,
+} from './combatBootstrap.js';
 import { areaOptions, castCommand } from './combatSpell.js';
 import {
   type CombatCommandError,
@@ -51,7 +55,11 @@ export type CombatRuntime = {
     ctx?: CombatContext,
   ): CombatTransition | CombatCommandError;
   /** Derive/clear the Room's combat from the engine state a DM turn produced. */
-  reconcile(game: Record<string, unknown>, now?: number): Reconciled | null;
+  reconcile(
+    game: Record<string, unknown>,
+    now?: number,
+    party?: PartyBindings,
+  ): Reconciled | null;
   /** Auto-decline a reaction prompt whose deadline passed. */
   expire(state: RoomCombatState, now: number): CombatTransition | null;
 };
@@ -151,8 +159,8 @@ export function createCombatRuntime(
         actorId,
       );
     },
-    reconcile(game, now = Date.now()) {
-      return reconcileCombat(game, catalog, now);
+    reconcile(game, now = Date.now(), party) {
+      return reconcileCombat(game, catalog, now, party);
     },
     expire: expireReaction,
     execute(state, actorId, command, ctx) {

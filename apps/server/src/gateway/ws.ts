@@ -12,6 +12,7 @@ import {
   CombatCommandSchema,
   CastRestVoteSchema,
   PlayerActionSchema,
+  BindCharacterSchema,
   EditActionSchema,
   ClarificationAnswerSchema,
   WithdrawActionSchema,
@@ -872,6 +873,44 @@ export function installGateway(
               throw new RoomSeatRequiredError();
             return roomSeat;
           };
+          if (msg.type === 'BindCharacter') {
+            const command = BindCharacterSchema.safeParse(msg);
+            if (!command.success) return;
+            if (room.hasActionId(msg.actionId)) return;
+            if (!room.reserveActionMutation(identity.accountId, 'host')) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'RATE_LIMITED',
+                  message: 'Too many requests.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            return room
+              .bindSeatCharacter(
+                identity.accountId,
+                command.data.payload.characterId,
+                command.data.payload.expectedRevision,
+                async () => {
+                  const current = await requireCurrentCommandSeat();
+                  return current.seatId === identity.seatId;
+                },
+              )
+              .catch(() =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ACTION_REJECTED',
+                    message: 'Character could not be bound.',
+                    actionId: msg.actionId,
+                  },
+                }),
+              );
+          }
           if (msg.type === 'CastRestVote') {
             const action = CastRestVoteSchema.safeParse(msg);
             if (!action.success) {
@@ -1501,7 +1540,18 @@ export function installGateway(
                           actionId: edit.data.actionId,
                         },
                       });
-                  });
+                  })
+                  .catch(() =>
+                    send({
+                      seq: room.seq,
+                      type: 'Error',
+                      payload: {
+                        code: 'ACTION_REJECTED',
+                        message: 'Edit request could not be accepted.',
+                        actionId: edit.data.actionId,
+                      },
+                    }),
+                  );
               });
           }
           if (msg.type === 'WithdrawAction') {
@@ -1544,7 +1594,18 @@ export function installGateway(
                       actionId: withdraw.data.actionId,
                     },
                   });
-              });
+              })
+              .catch(() =>
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'ACTION_REJECTED',
+                    message: 'Withdraw request could not be accepted.',
+                    actionId: withdraw.data.actionId,
+                  },
+                }),
+              );
           }
           if (msg.type === 'ClarificationAnswer') {
             const answer = ClarificationAnswerSchema.safeParse(msg);

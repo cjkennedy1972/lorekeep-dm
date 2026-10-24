@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
+import { Persistence } from '../../src/persistence/index.js';
 import { runAccountDeletions } from '../../src/retention/jobs/accountDeletion.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL, max: 8 });
@@ -48,6 +49,110 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
+  it('rolls back binding when event append fails after the binding insert', async () => {
+    const f = await fixture();
+    try {
+      const store = new Persistence(db);
+      await expect(
+        store.writeTurn(
+          f.sessionId,
+          [
+            {
+              seq: 999,
+              turnId: randomUUID(),
+              type: 'SeatCharacterBound',
+              payload: { seatId: f.seatA },
+            },
+          ],
+          {},
+          undefined,
+          [],
+          undefined,
+          undefined,
+          [],
+          {
+            kind: 'bind',
+            seatId: f.seatA,
+            accountId: f.accountId,
+            characterId: f.character.id,
+            expectedRevision: f.revision,
+          },
+        ),
+      ).rejects.toThrow('Non-contiguous event seq');
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM session_seat_characters WHERE session_id=$1',
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+      expect(
+        (
+          await db.query(
+            "SELECT 1 FROM events WHERE session_id=$1 AND type='SeatCharacterBound'",
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+    } finally {
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  });
+
+  it('rolls back event append when snapshot writing fails after the event insert', async () => {
+    const f = await fixture();
+    try {
+      const store = new Persistence(db);
+      await expect(
+        store.writeTurn(
+          f.sessionId,
+          [
+            {
+              seq: 2,
+              turnId: randomUUID(),
+              type: 'SeatCharacterBound',
+              payload: { seatId: f.seatA },
+            },
+          ],
+          { notJson: 1n },
+          undefined,
+          [],
+          undefined,
+          undefined,
+          [],
+          {
+            kind: 'bind',
+            seatId: f.seatA,
+            accountId: f.accountId,
+            characterId: f.character.id,
+            expectedRevision: f.revision,
+          },
+        ),
+      ).rejects.toThrow();
+      expect(
+        (
+          await db.query(
+            'SELECT 1 FROM session_seat_characters WHERE session_id=$1',
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+      expect(
+        (
+          await db.query(
+            "SELECT 1 FROM events WHERE session_id=$1 AND type='SeatCharacterBound'",
+            [f.sessionId],
+          )
+        ).rowCount,
+      ).toBe(0);
+    } finally {
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+    }
+  });
+
   it('rejects binding into non-active sessions', async () => {
     const f = await fixture();
     try {

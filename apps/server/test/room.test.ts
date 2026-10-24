@@ -197,51 +197,86 @@ describe('room actor', () => {
     const actionId = randomUUID();
     const revokedMessages: unknown[] = [];
     const roundId = randomUUID();
-    const room = new Room(store, lease, {
-      snapshot: {
-        sessionId: id,
-        seq: 1,
-        createdAt: new Date(),
-        state: {
+    const room = new Room(
+      store,
+      lease,
+      {
+        snapshot: {
           sessionId: id,
-          phase: 'lobby',
-          seats: [
-            { seatId, accountId, displayName: 'Player', presence: 'offline' },
-          ],
-          gameState: {},
-          round: {
-            roundId,
-            status: 'open',
-            eligibleSeatIds: [seatId],
-            deadlineAt: null,
-            submissions: [
-              {
-                seatId,
-                accountId,
-                actionId,
-                originalActionId: actionId,
-                actionIds: [actionId],
-                text: 'private action text',
-                playerName: 'Player',
-                receiptSeq: 2,
-              },
+          seq: 1,
+          createdAt: new Date(),
+          state: {
+            sessionId: id,
+            phase: 'lobby',
+            seats: [
+              { seatId, accountId, displayName: 'Player', presence: 'offline' },
             ],
-            queuedSubmissions: [],
+            gameState: {},
+            round: {
+              roundId,
+              status: 'open',
+              eligibleSeatIds: [seatId],
+              deadlineAt: null,
+              submissions: [
+                {
+                  seatId,
+                  accountId,
+                  actionId,
+                  originalActionId: actionId,
+                  actionIds: [actionId],
+                  text: 'private action text',
+                  playerName: 'Player',
+                  receiptSeq: 2,
+                },
+              ],
+              queuedSubmissions: [],
+            },
           },
         },
+        events: [],
       },
-      events: [],
+      undefined,
+      undefined,
+      [
+        {
+          seatId,
+          accountId,
+          characterSnapshot: {
+            name: 'Secret sheet name',
+            privateNotes: 'never wire this',
+          },
+        },
+      ],
+    );
+    const sent: unknown[] = [];
+    await room.subscribe(accountId, { send: (message) => sent.push(message) });
+    const sync = sent.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as {
+      payload: { state: unknown; round?: Record<string, unknown> };
+    };
+    expect(StateSyncSchema.parse(sync).payload.round).toBeDefined();
+    expect(sync.payload.round).toMatchObject({
+      roundId,
+      status: 'open',
+      eligibleSeatIds: [seatId],
+      submissions: [
+        { seatId, actionId, actionIds: [actionId], playerName: 'Player' },
+      ],
+      queuedSubmissions: [],
     });
-    await room.subscribe(accountId, {
-      send: (message) => revokedMessages.push(message),
-    });
-    revokedMessages.length = 0;
+    expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
+    expect(JSON.stringify(sync)).not.toContain('private action text');
+    expect(JSON.stringify(sync)).not.toContain('Secret sheet name');
+    expect(JSON.stringify(sync)).not.toContain('never wire this');
+
+    sent.length = 0;
     room.state.seats[0]!.presence = 'revoked';
     (
       room as unknown as { sendSeatPrivateRoundSync: (id: string) => void }
     ).sendSeatPrivateRoundSync(accountId);
     expect(
-      revokedMessages.some(
+      sent.some(
         (message) =>
           (message as { type?: string }).type === 'SeatPrivateRoundSync',
       ),

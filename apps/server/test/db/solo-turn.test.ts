@@ -84,7 +84,7 @@ async function createUser() {
 async function createTable(ownerId: string, seat = true) {
   const id = randomUUID();
   await db.query(
-    'INSERT INTO sessions(id,owner_account_id,name) VALUES($1,$2,$3)',
+    "INSERT INTO sessions(id,owner_account_id,name,mode) VALUES($1,$2,$3,'solo')",
     [id, ownerId, 'Solo table'],
   );
   sessionIds.push(id);

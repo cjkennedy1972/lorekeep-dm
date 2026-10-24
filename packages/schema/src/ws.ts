@@ -25,6 +25,19 @@ export const PlayerActionSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const BindCharacterSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('BindCharacter'),
+    payload: z
+      .object({
+        characterId: z.uuid(),
+        expectedRevision: z.int().nonnegative(),
+      })
+      .strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const WithdrawActionSchema = z
   .object({
     actionId: ActionIdSchema,

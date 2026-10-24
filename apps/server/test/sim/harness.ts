@@ -4,9 +4,12 @@ import WebSocket from 'ws';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { hashToken } from '../../src/accounts/signup.js';
+import { quickBuild } from '@game/rules-engine';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
 import type { LlmAdapter } from '../../src/llm/adapter.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { Persistence } from '../../src/persistence/index.js';
+import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
@@ -137,13 +140,22 @@ export class SimTable {
       base,
     );
     const room = await rooms.get(sessionId);
-    for (const [index, id] of accountIds.entries())
+    const seatCharacters = new SeatCharacterRepository(db);
+    const catalog = loadCatalog();
+    for (const [index, id] of accountIds.entries()) {
       await room.seat(
         id,
         `${options.namePrefix ?? 'Sim '}${index + 1}`,
         false,
         hashToken(tokens[index]!),
       );
+      const character = {
+        ...quickBuild(catalog, undefined, index + 1, 1).character,
+        id: randomUUID(),
+      };
+      const revision = await seatCharacters.saveOwnedCharacter(id, character);
+      await room.bindSeatCharacter(id, character.id, revision, async () => true);
+    }
     // Same lifecycle step as POST /api/tables: rounds only open once game state exists.
     await room.persistGameState({ premise: 'Sim table', worldSeeded: true });
     return table;
