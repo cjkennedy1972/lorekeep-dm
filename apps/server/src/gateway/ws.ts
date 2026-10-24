@@ -136,11 +136,19 @@ export function installGateway(
       if (!auth) return reply.code(401).send({ error: 'unauthorized' });
       const sessionId = request.body?.sessionId;
       if (sessionId && !/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(sessionId))
-        return reply.code(400).send({ error: 'sessionId' });
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
       const eligible = await eligibleSession(db, auth.account_id, sessionId);
-      if (!eligible) return reply.code(403).send({ error: 'not seated' });
+      if (!eligible)
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
       const seatId = await currentSeatId(db, auth.account_id, eligible);
-      if (!seatId) return reply.code(403).send({ error: 'not seated' });
+      if (!seatId)
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
       return {
         ticket: await issueTicket(
           db,

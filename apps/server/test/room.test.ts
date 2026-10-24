@@ -63,11 +63,139 @@ function fixture() {
 }
 
 describe('room actor', () => {
-  it('includes a complete public round snapshot in StateSync', async () => {
+  it('resyncs a public round snapshot without other seats’ private text', async () => {
+    const { store } = fixture();
+    const accountId = randomUUID();
+    const seatId = randomUUID();
+    const otherAccountId = randomUUID();
+    const otherSeatId = randomUUID();
+    const actionId = randomUUID();
+    const otherActionId = randomUUID();
+    const roundId = randomUUID();
+    const room = new Room(store, lease, {
+      snapshot: {
+        sessionId: id,
+        seq: 1,
+        createdAt: new Date(),
+        state: {
+          sessionId: id,
+          phase: 'lobby',
+          seats: [
+            { seatId, accountId, displayName: 'Player', presence: 'offline' },
+            {
+              seatId: otherSeatId,
+              accountId: otherAccountId,
+              displayName: 'Other',
+              presence: 'offline',
+            },
+          ],
+          gameState: {},
+          round: {
+            roundId,
+            status: 'open',
+            eligibleSeatIds: [seatId, otherSeatId],
+            deadlineAt: Date.now() + 30_000,
+            submissions: [
+              {
+                seatId,
+                accountId,
+                actionId,
+                originalActionId: actionId,
+                actionIds: [actionId],
+                text: 'private action text',
+                playerName: 'Player',
+                receiptSeq: 2,
+              },
+              {
+                seatId: otherSeatId,
+                accountId: otherAccountId,
+                actionId: otherActionId,
+                originalActionId: otherActionId,
+                actionIds: [otherActionId],
+                text: 'other private action',
+                playerName: 'Other',
+                receiptSeq: 3,
+              },
+            ],
+            queuedSubmissions: [],
+          },
+        },
+      },
+      events: [],
+    });
+    const sent: unknown[] = [];
+    const otherSent: unknown[] = [];
+    await room.subscribe(accountId, { send: (message) => sent.push(message) });
+    await room.subscribe(otherAccountId, {
+      send: (message) => otherSent.push(message),
+    });
+    const sync = sent.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as {
+      payload: { state: unknown; round?: Record<string, unknown> };
+    };
+    expect(StateSyncSchema.parse(sync).payload.round).toBeDefined();
+    expect(sync.payload.round).toMatchObject({
+      roundId,
+      status: 'open',
+      eligibleSeatIds: [seatId, otherSeatId],
+      submissions: [
+        { seatId, actionId, actionIds: [actionId], playerName: 'Player' },
+        {
+          seatId: otherSeatId,
+          actionId: otherActionId,
+          actionIds: [otherActionId],
+          playerName: 'Other',
+        },
+      ],
+      queuedSubmissions: [],
+    });
+    expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
+    expect(JSON.stringify(sync)).not.toContain('private action text');
+    expect(JSON.stringify(sync)).not.toContain('other private action');
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'SeatPrivateRoundSync',
+        payload: {
+          roundId,
+          submission: { actionId, text: 'private action text', queued: false },
+        },
+      }),
+    );
+    const otherPrivate = otherSent.find(
+      (message) =>
+        (message as { type?: string }).type === 'SeatPrivateRoundSync',
+    );
+    expect(otherPrivate).toMatchObject({
+      payload: {
+        roundId,
+        submission: {
+          actionId: otherActionId,
+          text: 'other private action',
+          queued: false,
+        },
+      },
+    });
+    expect(JSON.stringify(otherPrivate)).not.toContain('private action text');
+    const resyncedSeatB: unknown[] = [];
+    await room.subscribe(
+      otherAccountId,
+      { send: (message) => resyncedSeatB.push(message) },
+      -1,
+    );
+    expect(resyncedSeatB).toContainEqual(
+      expect.objectContaining({ type: 'StateSync' }),
+    );
+    expect(JSON.stringify(resyncedSeatB)).not.toContain('private action text');
+    expect(JSON.stringify(resyncedSeatB)).toContain('other private action');
+  });
+
+  it('does not send private round submissions to revoked or left seats', async () => {
     const { store } = fixture();
     const accountId = randomUUID();
     const seatId = randomUUID();
     const actionId = randomUUID();
+    const revokedMessages: unknown[] = [];
     const roundId = randomUUID();
     const room = new Room(store, lease, {
       snapshot: {
@@ -85,7 +213,7 @@ describe('room actor', () => {
             roundId,
             status: 'open',
             eligibleSeatIds: [seatId],
-            deadlineAt: Date.now() + 30_000,
+            deadlineAt: null,
             submissions: [
               {
                 seatId,
@@ -104,25 +232,39 @@ describe('room actor', () => {
       },
       events: [],
     });
-    const sent: unknown[] = [];
-    await room.subscribe(accountId, { send: (message) => sent.push(message) });
-    const sync = sent.find(
-      (message) => (message as { type?: string }).type === 'StateSync',
-    ) as {
-      payload: { state: unknown; round?: Record<string, unknown> };
-    };
-    expect(StateSyncSchema.parse(sync).payload.round).toBeDefined();
-    expect(sync.payload.round).toMatchObject({
-      roundId,
-      status: 'open',
-      eligibleSeatIds: [seatId],
-      submissions: [
-        { seatId, actionId, actionIds: [actionId], playerName: 'Player' },
-      ],
-      queuedSubmissions: [],
+    await room.subscribe(accountId, {
+      send: (message) => revokedMessages.push(message),
     });
-    expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
-    expect(JSON.stringify(sync)).not.toContain('private action text');
+    revokedMessages.length = 0;
+    room.state.seats[0]!.presence = 'revoked';
+    (
+      room as unknown as { sendSeatPrivateRoundSync: (id: string) => void }
+    ).sendSeatPrivateRoundSync(accountId);
+    expect(
+      revokedMessages.some(
+        (message) =>
+          (message as { type?: string }).type === 'SeatPrivateRoundSync',
+      ),
+    ).toBe(false);
+
+    const left = randomUUID();
+    await room.seat(left, 'Left');
+    const leftMessages: unknown[] = [];
+    await room.subscribe(left, {
+      send: (message) => leftMessages.push(message),
+    });
+    await room.leave(left);
+    leftMessages.length = 0;
+    (
+      room as unknown as { sendSeatPrivateRoundSync: (id: string) => void }
+    ).sendSeatPrivateRoundSync(left);
+    expect(
+      leftMessages.some(
+        (message) =>
+          (message as { type?: string }).type === 'SeatPrivateRoundSync',
+      ),
+    ).toBe(false);
+    await room.drain();
   });
 
   it('places exploration admission at a committed scene or resolved-round boundary and combat admission at a round boundary', () => {
@@ -841,6 +983,10 @@ describe('room actor', () => {
     await room.seat(accountA, 'A');
     await room.seat(accountB, 'B');
     await room.persistGameState({});
+    const messagesA: unknown[] = [];
+    await room.subscribe(accountA, {
+      send: (message) => messagesA.push(message),
+    });
     expect(
       await room.submitAction(
         accountA,
@@ -869,11 +1015,20 @@ describe('room actor', () => {
     ]);
     const resolved = events.filter((event) => event.type === 'RoundResolved');
     expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.payload).toMatchObject({
+      closeReason: 'all-submitted',
+    });
     expect(
       (
         resolved[0]?.payload as { actions: { receiptSeq: number }[] }
       ).actions.map((action) => action.receiptSeq),
     ).toEqual([11, 22]);
+    expect(messagesA).toContainEqual(
+      expect.objectContaining({
+        type: 'RoundResolved',
+        payload: expect.objectContaining({ closeReason: 'all-submitted' }),
+      }),
+    );
     expect(room.state.round?.status).toBe('open');
   });
   it('scopes party action idempotency to the submitting seat', async () => {

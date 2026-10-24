@@ -213,6 +213,7 @@ export function narrationLogReducer(
     case 'DeathSaveRequired':
     case 'TpkChoiceRequired':
     case 'StateSync':
+    case 'SeatPrivateRoundSync':
     case 'PresenceChanged':
     case 'ChatMessage':
     case 'ChatHistory':

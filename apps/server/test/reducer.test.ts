@@ -44,6 +44,19 @@ function stored(type: string, payload: unknown): StoredEvent {
 }
 
 describe('Room event replay', () => {
+  it('replays legacy RoundResolved events without a close reason', () => {
+    const state = resolvingState();
+    state.round!.status = 'closing';
+    const next = reduceRoom(
+      state,
+      stored('RoundResolved', {
+        roundId: state.round!.roundId,
+        actions: state.round!.submissions,
+      }),
+    );
+    expect(next.round?.status).toBe('resolving');
+  });
+
   it('withdraws a queued action without removing the frozen submission', () => {
     const state = resolvingState();
     const next = reduceRoom(

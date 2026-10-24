@@ -338,14 +338,6 @@ export function registerTableRoutes(
         | (Record<string, unknown> & { state?: Record<string, unknown> })
         | undefined;
       if (!row) {
-        const exists = await db.query(
-          "SELECT id,mode,owner_account_id FROM sessions WHERE id=$1 AND mode='solo'",
-          [request.params.id],
-        );
-        if (exists.rowCount)
-          return reply
-            .code(403)
-            .send({ code: 'FORBIDDEN', message: 'You do not own this game.' });
         return reply
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });

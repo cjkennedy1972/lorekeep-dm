@@ -323,11 +323,25 @@ describe('solo turn persisted lifecycle', () => {
       headers: { cookie: `sid=${outsider.token}` },
     });
     expect(outsiderResponse.status).toBe(404);
+    const outsiderBody = await outsiderResponse.text();
+    const nonexistentResponse = await fetch(
+      `${base}/api/tables/${randomUUID()}`,
+      {
+        headers: { cookie: `sid=${outsider.token}` },
+      },
+    );
+    expect(nonexistentResponse.status).toBe(outsiderResponse.status);
+    expect([...nonexistentResponse.headers]).toEqual([
+      ...outsiderResponse.headers,
+    ]);
+    expect(await nonexistentResponse.text()).toBe(outsiderBody);
     await room.leave(member.id);
     const revokedResponse = await fetch(`${base}/api/tables/${id}`, {
       headers: { cookie: `sid=${member.token}` },
     });
     expect(revokedResponse.status).toBe(404);
+    expect([...revokedResponse.headers]).toEqual([...outsiderResponse.headers]);
+    expect(await revokedResponse.text()).toBe(outsiderBody);
   });
 
   it('deduplicates across reconnect and serializes one in-flight turn per table', async () => {
@@ -759,8 +773,20 @@ describe('solo turn persisted lifecycle', () => {
       },
       body: JSON.stringify({ sessionId: secondTable }),
     });
-    expect(rejected.status).toBe(403);
-    expect(await rejected.json()).toEqual({ error: 'not seated' });
+    expect(rejected.status).toBe(404);
+    const rejectedBody = await rejected.text();
+    const nonexistent = await fetch(`${base}/api/ws-ticket`, {
+      method: 'POST',
+      headers: {
+        origin: base,
+        cookie: `sid=${firstToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId: randomUUID() }),
+    });
+    expect(nonexistent.status).toBe(rejected.status);
+    expect([...nonexistent.headers]).toEqual([...rejected.headers]);
+    expect(await nonexistent.text()).toBe(rejectedBody);
     expect(firstTable).not.toBe(secondTable);
     // Positive control: the same request for the member's own table succeeds, so the 403
     // above is the authorization decision and not a parsing or setup artifact.
@@ -789,8 +815,24 @@ describe('solo turn persisted lifecycle', () => {
       },
       body: JSON.stringify({ sessionId: table }),
     });
-    expect(rejected.status).toBe(403);
-    expect(await rejected.json()).toEqual({ error: 'not seated' });
+    expect(rejected.status).toBe(404);
+    const deniedBody = await rejected.text();
+    expect(JSON.parse(deniedBody)).toEqual({
+      code: 'NOT_FOUND',
+      message: 'Not found.',
+    });
+    const nonexistent = await fetch(`${base}/api/ws-ticket`, {
+      method: 'POST',
+      headers: {
+        origin: base,
+        cookie: `sid=${outsider.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId: randomUUID() }),
+    });
+    expect(nonexistent.status).toBe(rejected.status);
+    expect([...nonexistent.headers]).toEqual([...rejected.headers]);
+    expect(await nonexistent.text()).toBe(deniedBody);
     const anonymous = await fetch(`${base}/api/ws-ticket`, {
       method: 'POST',
       headers: { origin: base, 'content-type': 'application/json' },
@@ -920,8 +962,11 @@ describe('solo turn persisted lifecycle', () => {
     const forbidden = await fetch(`${base}/api/tables/${gameId}`, {
       headers: { cookie: `sid=${outsider.token}` },
     });
-    expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({ code: 'FORBIDDEN' });
+    expect(forbidden.status).toBe(404);
+    expect(await forbidden.json()).toEqual({
+      code: 'NOT_FOUND',
+      message: 'Not found.',
+    });
   }, 180_000);
 
   it('second unchanged resume makes zero metered LLM calls', async () => {

@@ -602,6 +602,7 @@ export class Room {
           },
         });
       this.sendCombatSnapshot(connection);
+      this.sendSeatPrivateRoundSync(accountId);
       for (const [actionId, open] of Object.entries(
         this.state.openClarifications ?? {},
       ))
@@ -640,7 +641,11 @@ export class Room {
   }
 
   async loadChatHistory(accountId: string): Promise<ChatHistoryEntry[]> {
-    if (!this.state.seats.some((seat) => seat.accountId === accountId))
+    if (
+      !this.state.seats.some(
+        (seat) => seat.accountId === accountId && seat.presence !== 'revoked',
+      )
+    )
       throw new RoomSeatRequiredError();
     if (!this.store.loadChatHistory)
       throw new Error('Chat history unavailable');
@@ -657,7 +662,12 @@ export class Room {
       return await this.enqueue(async () => {
         if (!this.store.writeChat)
           throw new Error('Chat persistence unavailable');
-        if (!this.state.seats.some((seat) => seat.accountId === accountId))
+        if (
+          !this.state.seats.some(
+            (seat) =>
+              seat.accountId === accountId && seat.presence !== 'revoked',
+          )
+        )
           throw new RoomSeatRequiredError();
         let stored: StoredEvent;
         try {
@@ -819,6 +829,38 @@ export class Room {
       connection.send(reactionMessage(this.seq, combat.pendingReaction));
   }
 
+  private sendSeatPrivateRoundSync(accountId: string): void {
+    const connection = this.connections.get(accountId);
+    const round = this.state.round;
+    if (
+      !connection ||
+      !round ||
+      !this.state.seats.some(
+        (seat) => seat.accountId === accountId && seat.presence !== 'revoked',
+      )
+    )
+      return;
+    const submission =
+      round.submissions.find((item) => item.accountId === accountId) ??
+      round.queuedSubmissions.find((item) => item.accountId === accountId);
+    connection.send({
+      seq: this.seq,
+      type: 'SeatPrivateRoundSync',
+      payload: {
+        roundId: round.roundId,
+        ...(submission
+          ? {
+              submission: {
+                actionId: submission.actionId,
+                text: submission.text,
+                queued: round.queuedSubmissions.includes(submission),
+              },
+            }
+          : {}),
+      },
+    } as ServerMessage);
+  }
+
   private sendRoundSnapshot(connection: Connection): void {
     const round = this.state.round;
     if (!round) return;
@@ -897,6 +939,7 @@ export class Room {
       this.connections.set(accountId, connection);
       this.sendCombatSnapshot(connection);
       this.sendRoundSnapshot(connection);
+      this.sendSeatPrivateRoundSync(accountId);
       const initialConnection = seat.presence === 'offline';
       const connectedPresence = initialConnection ? 'connected' : 'returning';
       if (seat.presence !== connectedPresence) {
@@ -930,6 +973,7 @@ export class Room {
         });
       this.sendCombatSnapshot(connection);
       this.sendRoundSnapshot(connection);
+      this.sendSeatPrivateRoundSync(accountId);
     });
   }
 
@@ -1973,6 +2017,7 @@ export class Room {
             receiptSeq: existing.receiptSeq,
           },
         } as ServerMessage);
+        this.sendSeatPrivateRoundSync(seat.accountId);
         continue;
       }
       if (
@@ -2003,6 +2048,7 @@ export class Room {
           receiptSeq,
         },
       } as ServerMessage);
+      this.sendSeatPrivateRoundSync(seat.accountId);
     }
   }
 
@@ -2059,6 +2105,8 @@ export class Room {
         promoted: previousQueue.map(publicRoundSubmission),
       },
     } as ServerMessage);
+    for (const seat of this.state.seats)
+      this.sendSeatPrivateRoundSync(seat.accountId);
     this.scheduleRoundTimer();
   }
 
@@ -2729,8 +2777,10 @@ export class Room {
           return;
         }
         // Re-check eligibility at close; accepted submissions from seats that became away stay in the batch.
+        const closeReason = round.closeReason ?? reason;
         await this.persist('RoundResolved', {
           roundId: round.roundId,
+          closeReason,
           actions: batch,
         });
         this.broadcast({
@@ -2738,6 +2788,7 @@ export class Room {
           type: 'RoundResolved',
           payload: {
             roundId: round.roundId,
+            closeReason,
             actions: batch.map(publicRoundSubmission),
           },
         } as ServerMessage);
@@ -2940,6 +2991,7 @@ export class Room {
           receiptSeq: order,
         },
       } as ServerMessage);
+      this.sendSeatPrivateRoundSync(accountId);
       if (!queued) {
         const required = this.state.round!.eligibleSeatIds.filter((seatId) =>
           this.state.seats.some(
@@ -3073,6 +3125,7 @@ export class Room {
         editedAt,
       };
       await this.persist('RoundActionEdited', { submission: updated, queued });
+      this.sendSeatPrivateRoundSync(accountId);
       return 'edited';
     });
   }
@@ -3228,6 +3281,7 @@ export class Room {
           type: 'RoundActionWithdrawn',
           payload: { roundId: round.roundId, seatId: submission.seatId },
         } as ServerMessage);
+        this.sendSeatPrivateRoundSync(accountId);
         if (
           !queued &&
           round.eligibleSeatIds.every((seatId) =>
