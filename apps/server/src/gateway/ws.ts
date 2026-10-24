@@ -82,9 +82,7 @@ function bindFailureCode(error: unknown): string {
     case 'ACCOUNT_INACTIVE':
       return error.code;
     case 'ALREADY_BOUND':
-      // Bound character cards are public to all seated clients.
-      return 'ALREADY_BOUND';
-    case 'CHARACTER_BOUND':
+      // This reports only an existing active binding, never who owns it.
       return 'ALREADY_BOUND';
     default:
       return 'ACTION_REJECTED';

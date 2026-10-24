@@ -1450,31 +1450,16 @@ describe('party character binding WebSocket authorization', () => {
     }
   });
 
-  it('reports ALREADY_BOUND when another seat already holds the public character card', async () => {
+  it('returns the neutral ownership error when another seat requests a bound character', async () => {
     const f = await fixture();
     try {
-      const otherSeat = f.room.state.seats.find(
-        (seat) => seat.accountId === accounts[1],
-      )!;
-      // Seed the other seat's active public card to exercise the character uniqueness collision.
-      await db.query(
-        `INSERT INTO session_seat_characters
-           (session_id,seat_id,account_id,character_id,character_revision,character_snapshot)
-         VALUES($1,$2,$3,$4,$5,$6::jsonb)`,
-        [
-          f.id,
-          otherSeat.seatId,
-          accounts[0],
-          f.owned.id,
-          f.revision,
-          JSON.stringify({ name: f.owned.name }),
-        ],
-      );
+      await bind(f.owner, f.room, f.owned.id, f.revision);
+      await nextOfType(f.guest, 'SeatCharacterBound');
 
-      const actionId = await bind(f.owner, f.room, f.owned.id, f.revision);
-      await expect(nextOfType(f.owner, 'Error')).resolves.toMatchObject({
+      const actionId = await bind(f.guest, f.room, f.owned.id, f.revision);
+      await expect(nextOfType(f.guest, 'Error')).resolves.toMatchObject({
         payload: {
-          code: 'ALREADY_BOUND',
+          code: 'ACTION_REJECTED',
           message: 'Character could not be bound.',
           actionId,
         },
