@@ -1,8 +1,10 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
+import type { IncomingMessage } from 'node:http';
 import pino, { type DestinationStream } from 'pino';
 import { startSpan } from './telemetry.js';
 import { originScope } from './middleware/origin.js';
+import { getClientIp, type TrustProxy } from './gateway/clientIp.js';
 import { ConsoleEmailSender, type EmailSender } from './email/sender.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { isDevelopmentOrTest } from './accounts/sessions.js';
@@ -54,6 +56,12 @@ const redact = [
   '*.LLM_API_KEY',
   'req.headers["x-api-key"]',
 ];
+declare module 'fastify' {
+  interface FastifyInstance {
+    clientIpForUpgrade(request: IncomingMessage): string;
+  }
+}
+
 export function createLogger(stream?: DestinationStream) {
   return pino(
     {
@@ -101,6 +109,9 @@ export function createApp(
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
   });
+  app.decorate('clientIpForUpgrade', (request: IncomingMessage) =>
+    getClientIp(request, trustProxy as TrustProxy),
+  );
   app.decorate(
     'inputGate',
     options.inputGate ??
