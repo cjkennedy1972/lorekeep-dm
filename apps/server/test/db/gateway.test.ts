@@ -261,6 +261,68 @@ describe('pending first-token handoff', () => {
 });
 
 describe('one-time gateway', () => {
+  it('serializes solo recovery behind a concurrent seat join', async () => {
+    const id = randomUUID();
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'solo')",
+      [id, accounts[0]],
+    );
+    const room = await rooms.get(id);
+    await room.seat(accounts[0]!, 'Solo owner');
+    const ownerSeatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    const joiningClient = await db.connect();
+    try {
+      await joiningClient.query('BEGIN');
+      await joiningClient.query(
+        'SELECT id FROM sessions WHERE id=$1 FOR UPDATE',
+        [id],
+      );
+      const seq = Number(
+        (
+          await joiningClient.query<{ seq: string }>(
+            'SELECT COALESCE(MAX(seq),0)::text AS seq FROM events WHERE session_id=$1',
+            [id],
+          )
+        ).rows[0]!.seq,
+      );
+      const secondSeatId = randomUUID();
+      await joiningClient.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         VALUES($1,$2,$3,'SeatJoined',$4::jsonb)`,
+        [
+          id,
+          seq + 1,
+          randomUUID(),
+          JSON.stringify({ seatId: secondSeatId, accountId: accounts[1] }),
+        ],
+      );
+
+      let settled = false;
+      const recovery = authorizeSeatSocket(
+        db,
+        id,
+        ownerSeatId,
+        randomUUID(),
+        undefined,
+        false,
+        accounts[0],
+        true,
+      ).then((result) => {
+        settled = true;
+        return result;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(settled).toBe(false);
+      await joiningClient.query('COMMIT');
+      expect(await recovery).toEqual({ status: 'invalid-token' });
+    } finally {
+      await joiningClient.query('ROLLBACK').catch(() => undefined);
+      joiningClient.release();
+    }
+  });
+
   it('refuses solo recovery when a second current seat exists', async () => {
     const id = randomUUID();
     await db.query(
@@ -272,6 +334,9 @@ describe('one-time gateway', () => {
     await room.seat(accounts[1]!, 'Unexpected second seat');
     const ownerSeatId = room.state.seats.find(
       (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    const secondSeatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[1],
     )!.seatId;
     expect(
       await authorizeSeatSocket(
@@ -294,6 +359,32 @@ describe('one-time gateway', () => {
     expect(
       await soloOwnerRecoveryTicket(db, recoveryTicket, id),
     ).toBeUndefined();
+
+    await room.kickSeat(accounts[0]!, randomUUID(), secondSeatId);
+    const recoverySocketId = randomUUID();
+    const recovered = await authorizeSeatSocket(
+      db,
+      id,
+      ownerSeatId,
+      recoverySocketId,
+      undefined,
+      false,
+      accounts[0],
+      true,
+    );
+    expect(recovered).toMatchObject({
+      status: 'authorized',
+      soloOwnerRecovery: true,
+    });
+    expect(await soloOwnerRecoveryTicket(db, recoveryTicket, id)).toMatchObject(
+      {
+        accountId: accounts[0],
+        sessionId: id,
+        seatId: ownerSeatId,
+      },
+    );
+    if (recovered.status === 'authorized')
+      await releaseSeatSocket(db, id, ownerSeatId, recoverySocketId);
   });
 
   it('throttles the sixth wrong-cookie solo recovery precheck within one minute', async () => {
