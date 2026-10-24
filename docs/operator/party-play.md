@@ -166,7 +166,7 @@ Migration `0037_seat_character_bindings.sql` adds:
 
 Per ADR-035, `sessions.character_id` stays solo-only.
 
-The authenticated `GET /api/me/characters` endpoint returns `{ characters: [...] }`, where each picker item contains only `id`, `revision`, `name`, `classId`, `speciesId`, and `level`. The class and species fields are catalog identifiers; clients resolve them to display names through the catalog. The picker endpoint never returns the full sheet. `POST /api/me/characters` creates or updates account-owned sheets. Account deletion removes reusable rows from `account_characters`; historical seat bindings retain only the anonymous mechanics snapshot needed for replay.
+The authenticated `GET /api/me/characters` endpoint returns `{ characters: [...] }`, where each picker item contains only `id`, `revision`, `name`, `classId`, `speciesId`, and `level`. The class and species fields are catalog identifiers; clients resolve them to display names through the catalog. The picker endpoint never returns the full sheet. `POST /api/me/characters` creates a sheet from `{ character }` without an `id`; the server generates its UUID and returns the picker item. To update, send `{ id, expectedRevision, character }`, also without an `id` inside `character`. A missing or another account's ID returns the same `404 NOT_FOUND` response. Account deletion removes reusable rows from `account_characters`; historical seat bindings retain only the anonymous mechanics snapshot needed for replay.
 
 There is no player-facing character selection UI and no character entry during late join yet. Do not describe party character selection as available.
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { quickBuild } from '@game/rules-engine';
+import { CharacterSchema } from '@game/schema';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
@@ -27,10 +28,9 @@ describe('account-owned character API', () => {
     const strangerToken = await createSession(db, stranger, 'test');
     const app = createApp(db, { cookieSecret: 'test-secret' });
     const headers = { cookie: `sid=${ownerToken}` };
-    const character = {
-      ...quickBuild(loadCatalog(), undefined, 0x35, 1).character,
-      id: randomUUID(),
-    };
+    const character = CharacterSchema.omit({ id: true }).parse(
+      quickBuild(loadCatalog(), undefined, 0x35, 1).character,
+    );
     const post = (token: string, payload: unknown) =>
       app.inject({
         method: 'POST',
@@ -41,11 +41,27 @@ describe('account-owned character API', () => {
     try {
       const created = await post(ownerToken, { character });
       expect(created.statusCode).toBe(201);
-      expect(created.json()).toEqual({ id: character.id, revision: 1 });
+      const createdItem = created.json();
+      expect(Object.keys(createdItem).sort()).toEqual(
+        ['id', 'revision', 'name', 'classId', 'speciesId', 'level'].sort(),
+      );
+      expect(createdItem).toMatchObject({
+        revision: 1,
+        name: character.name,
+        classId: character.classId,
+        speciesId: character.speciesId,
+        level: character.level,
+      });
+      expect(createdItem.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      const characterId = createdItem.id as string;
 
-      const duplicate = await post(ownerToken, { character });
-      expect(duplicate.statusCode).toBe(409);
-      expect(duplicate.json().code).toBe('ALREADY_EXISTS');
+      const clientId = await post(ownerToken, {
+        character: { ...character, id: randomUUID() },
+      });
+      expect(clientId.statusCode).toBe(400);
+      expect(clientId.json().code).toBe('INVALID_CHARACTER');
 
       const listed = await app.inject({
         method: 'GET',
@@ -61,7 +77,7 @@ describe('account-owned character API', () => {
         ['classId', 'id', 'level', 'name', 'revision', 'speciesId'].sort(),
       );
       expect(listedCharacters[0]).toEqual({
-        id: character.id,
+        id: characterId,
         revision: 1,
         name: character.name,
         classId: character.classId,
@@ -71,17 +87,42 @@ describe('account-owned character API', () => {
 
       const updatedCharacter = { ...character, name: 'Updated picker name' };
       const updated = await post(ownerToken, {
+        id: characterId,
         character: updatedCharacter,
         expectedRevision: 1,
       });
       expect(updated.statusCode).toBe(200);
-      expect(updated.json()).toEqual({ id: character.id, revision: 2 });
+      expect(updated.json()).toEqual({
+        id: characterId,
+        revision: 2,
+        name: 'Updated picker name',
+        classId: character.classId,
+        speciesId: character.speciesId,
+        level: character.level,
+      });
       expect(
-        (await post(ownerToken, { character, expectedRevision: 1 })).statusCode,
+        (
+          await post(ownerToken, {
+            id: characterId,
+            character,
+            expectedRevision: 1,
+          })
+        ).statusCode,
       ).toBe(409);
 
-      const foreign = await post(strangerToken, { character });
-      expect(foreign.statusCode).toBe(409);
+      const foreign = await post(strangerToken, {
+        id: characterId,
+        character,
+        expectedRevision: 1,
+      });
+      const unknown = await post(strangerToken, {
+        id: randomUUID(),
+        character,
+        expectedRevision: 1,
+      });
+      expect(foreign.statusCode).toBe(404);
+      expect(foreign.statusCode).toBe(unknown.statusCode);
+      expect(foreign.json()).toEqual(unknown.json());
       const strangerList = await app.inject({
         method: 'GET',
         url: '/api/me/characters',
@@ -181,10 +222,9 @@ describe('account-owned character API', () => {
     } as unknown as Pool;
     const raceApp = createApp(raceDb, { cookieSecret: 'test-secret' });
     try {
-      const character = {
-        ...quickBuild(loadCatalog(), undefined, 0x35, 1).character,
-        id: randomUUID(),
-      };
+      const character = CharacterSchema.omit({ id: true }).parse(
+        quickBuild(loadCatalog(), undefined, 0x35, 1).character,
+      );
       const inactivePost = await raceApp.inject({
         method: 'POST',
         url: '/api/me/characters',
