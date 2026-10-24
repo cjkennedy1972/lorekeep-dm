@@ -42,6 +42,7 @@ import {
 } from '../room/Room.js';
 import {
   consumeTicket,
+  soloOwnerRecoveryTicketAuthHash,
   eligibleSession,
   isConfiguredOriginAllowed,
   issueTicket,
@@ -181,6 +182,19 @@ export function installGateway(
         return;
       }
       void (async () => {
+        if (soloOwnerRecoveryEnabled) {
+          const authTokenHash = await soloOwnerRecoveryTicketAuthHash(
+            db,
+            ticket,
+          );
+          if (
+            authTokenHash &&
+            !ticketCookieMatches(request.headers.cookie, authTokenHash)
+          ) {
+            reject();
+            return;
+          }
+        }
         const identity = await consumeTicket(db, ticket, sessionId);
         if (!identity) {
           reject();

@@ -164,6 +164,47 @@ describe('rooms + invites (postgres)', () => {
     ).toBe(404);
   });
 
+  it('pending late-join responses never include recap memory', async () => {
+    const host = await account();
+    const guest202 = await account();
+    const guest409 = await account();
+    const made = await call(host, 'POST', '/api/rooms', {
+      name: 'Memory boundary',
+    });
+    expect(made.statusCode).toBe(201);
+    const room = made.json().room as { id: string; code: string };
+    await (await rooms.get(room.id)).persistGameState({ turn: 1 });
+    await db.query(
+      'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+      [room.id, 'private-scene', 'DistinctiveSceneMemory-9f71'],
+    );
+    const entry = await db.query<{ id: string }>(
+      `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document)
+       VALUES($1,'npc',$2,1,'Private NPC','{}','') RETURNING id`,
+      [room.id, randomUUID()],
+    );
+    await db.query('INSERT INTO registry_facts(entry_id,fact) VALUES($1,$2)', [
+      entry.rows[0]!.id,
+      'DistinctiveRegistryMemory-2ac4',
+    ]);
+
+    const accepted = await call(
+      guest202,
+      'POST',
+      `/api/invites/${room.code}/late-join`,
+    );
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json()).not.toHaveProperty('recap');
+    expect(accepted.body).not.toContain('DistinctiveSceneMemory-9f71');
+    expect(accepted.body).not.toContain('DistinctiveRegistryMemory-2ac4');
+
+    const pending = await call(guest409, 'POST', `/api/join/${room.code}`);
+    expect(pending.statusCode).toBe(409);
+    expect(pending.json()).not.toHaveProperty('recap');
+    expect(pending.body).not.toContain('DistinctiveSceneMemory-9f71');
+    expect(pending.body).not.toContain('DistinctiveRegistryMemory-2ac4');
+  });
+
   it('party table pins the rules catalog so its GET resolves', async () => {
     const host = await account();
     const made = await call(host, 'POST', '/api/rooms', { name: 'Pinned' });

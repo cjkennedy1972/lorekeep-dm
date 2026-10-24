@@ -15,16 +15,7 @@ import {
 } from '../rooms/invites.js';
 import type { RoomRegistry } from '../room/registry.js';
 import { BoundedCounter } from '../accounts/throttle.js';
-import {
-  buildResumeRecap,
-  gateRecap,
-  SAFE_RECAP_FALLBACK,
-} from '../dm/recap.js';
-import { createEndpointJudge } from '../safety/inputGate.js';
-import {
-  loadContentTierState,
-  loadSeatedContentBoundaries,
-} from '../safety/tierLoader.js';
+import { loadContentTierState } from '../safety/tierLoader.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 
 type Seater = Pick<RoomRegistry, 'get'>;
@@ -94,13 +85,12 @@ export function registerSessionRoutes(
       ...(code ? { code } : {}),
       ...(tierCap !== undefined ? { tierCap } : {}),
     }) as RoomInfo;
-  const recapModerator = createEndpointJudge(db);
-  const onboarding = async (
+  const onboardingSettings = async (
     sessionId: string,
     accountId: string,
     optedOut: boolean,
   ) => {
-    const [session, tierState, boundaries] = await Promise.all([
+    const [session, tierState, personal] = await Promise.all([
       db.query<{
         content_tier: 'family' | 'standard' | 'mature';
         host_tier_cap: 'family' | 'standard' | null;
@@ -108,38 +98,23 @@ export function registerSessionRoutes(
         sessionId,
       ]),
       loadContentTierState(db, sessionId, false),
-      loadSeatedContentBoundaries(db, sessionId),
+      db.query<{
+        content_lines: string[];
+        content_veils: string[];
+      }>('SELECT content_lines, content_veils FROM accounts WHERE id=$1', [
+        accountId,
+      ]),
     ]);
-    const settings = session.rows[0];
-    if (!settings) throw new Error('Table settings unavailable');
+    const sessionSettings = session.rows[0];
+    if (!sessionSettings) throw new Error('Table settings unavailable');
     const tier =
       optedOut && tierState.tier === 'mature' ? 'standard' : tierState.tier;
-    const personal = await db.query<{
-      content_lines: string[];
-      content_veils: string[];
-    }>('SELECT content_lines, content_veils FROM accounts WHERE id=$1', [
-      accountId,
-    ]);
-    const tableLines = [
-      ...boundaries.lines.map((line) => `line: ${line}`),
-      ...boundaries.veils.map((veil) => `veil: ${veil}`),
-      ...(personal.rows[0]?.content_lines ?? []).map((line) => `line: ${line}`),
-      ...(personal.rows[0]?.content_veils ?? []).map((veil) => `veil: ${veil}`),
-    ];
-    const built = await buildResumeRecap({ db, sessionId });
-    const screened = await gateRecap(built, recapModerator, tier, tableLines);
     return {
-      settings: {
-        contentTier: tier,
-        hostTierCap: settings.host_tier_cap,
-        matureOptOut: optedOut,
-        lines: personal.rows[0]?.content_lines ?? [],
-        veils: personal.rows[0]?.content_veils ?? [],
-      },
-      recap:
-        tier === 'mature' && !optedOut
-          ? undefined
-          : screened.recap || SAFE_RECAP_FALLBACK,
+      contentTier: tier,
+      hostTierCap: sessionSettings.host_tier_cap,
+      matureOptOut: optedOut,
+      lines: personal.rows[0]?.content_lines ?? [],
+      veils: personal.rows[0]?.content_veils ?? [],
     };
   };
   const seatProfile = async (accountId: string) => {
@@ -377,7 +352,7 @@ export function registerSessionRoutes(
             accountId,
             optOut,
           ]);
-        const { settings } = await onboarding(
+        const settings = await onboardingSettings(
           found.id,
           accountId,
           matureOptOut,
@@ -477,7 +452,7 @@ export function registerSessionRoutes(
             accountId,
             optOut,
           ]);
-        const { settings } = await onboarding(
+        const settings = await onboardingSettings(
           found.id,
           accountId,
           typeof optOut === 'boolean' ? optOut : profile.matureOptOut,

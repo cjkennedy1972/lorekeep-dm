@@ -342,9 +342,18 @@ describe('one-time gateway', () => {
       'DELETE FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
       [soloSessionId, seatId],
     );
-    const tokenlessTicket = await ticket(tokens[0]!, soloSessionId);
-    const wrongCookieSocket = connect(tokenlessTicket, null, false, tokens[1]!);
+    const wrongCookieTicket = await ticket(tokens[0]!, soloSessionId);
+    const wrongCookieSocket = connect(
+      wrongCookieTicket,
+      null,
+      false,
+      tokens[1]!,
+    );
     expect(await closed(wrongCookieSocket)).toBe(1008);
+    const tokenlessTicket = await ticket(tokens[0]!, soloSessionId);
+    const noCookieSocket = connect(tokenlessTicket, null, false, null);
+    expect(await closed(noCookieSocket)).toBe(1008);
+    // Cookie-less and mismatched-cookie attempts do not consume the ticket.
     const tokenlessSocket = connect(tokenlessTicket, null, false);
     await nextOfType(tokenlessSocket, 'SeatAuthenticated');
     await nextOfType(tokenlessSocket, 'StateSync');
