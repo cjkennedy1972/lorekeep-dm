@@ -381,6 +381,16 @@ describe('ADR-035 party seat gating', () => {
     ).rejects.toBeInstanceOf(RoomSeatRequiredError);
   });
 
+  it('runs seat release on leave in a solo session without a binding', async () => {
+    const { room, writes, accountA } = party({
+      bindA: false,
+      partyMode: false,
+    });
+    await room.leave(accountA);
+    expect(writes.at(-1)?.events).toContain('SeatRevoked');
+    expect(writes.at(-1)?.transition).toMatchObject({ kind: 'release' });
+  });
+
   it('attempts an account-scoped release when a seat was never bound in memory', async () => {
     const { room, writes, accountB, seatB } = party();
     await room.leave(accountB);

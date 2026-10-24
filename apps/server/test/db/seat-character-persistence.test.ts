@@ -246,6 +246,69 @@ describe('party seat-character persistence', () => {
     }
   });
 
+  it('releases bindings on revocation after the session ends or account becomes inactive', async () => {
+    for (const inactive of ['session', 'account'] as const) {
+      const f = await fixture();
+      try {
+        await f.repo.bind({
+          sessionId: f.sessionId,
+          seatId: f.seatA,
+          accountId: f.accountId,
+          characterId: f.character.id,
+          expectedRevision: f.revision,
+        });
+
+        if (inactive === 'session')
+          await db.query("UPDATE sessions SET status='ended' WHERE id=$1", [
+            f.sessionId,
+          ]);
+        else
+          await db.query("UPDATE accounts SET status='deleting' WHERE id=$1", [
+            f.accountId,
+          ]);
+
+        const currentSeq = Number(
+          (
+            await db.query(
+              'SELECT MAX(seq) AS seq FROM events WHERE session_id=$1',
+              [f.sessionId],
+            )
+          ).rows[0].seq,
+        );
+        await new Persistence(db).writeTurn(
+          f.sessionId,
+          [
+            {
+              seq: currentSeq + 1,
+              turnId: randomUUID(),
+              type: 'SeatRevoked',
+              payload: { seatId: f.seatA, accountId: f.accountId },
+            },
+          ],
+          {},
+          undefined,
+          [],
+          undefined,
+          undefined,
+          [],
+          { kind: 'release', seatId: f.seatA, accountId: f.accountId },
+        );
+
+        expect(
+          (
+            await db.query(
+              'SELECT binding_status FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2',
+              [f.sessionId, f.seatA],
+            )
+          ).rows[0],
+        ).toEqual({ binding_status: 'released' });
+      } finally {
+        await db.query('SELECT purge_session($1)', [f.sessionId]);
+        await db.query('DELETE FROM accounts WHERE id=$1', [f.accountId]);
+      }
+    }
+  });
+
   it('serializes simultaneous bindings so one character cannot bind to two seats', async () => {
     const f = await fixture();
     try {
