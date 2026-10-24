@@ -277,6 +277,23 @@ export const StateSyncSchema = z.object({
     round: RoundSnapshotSchema.optional(),
   }),
 });
+export const SeatPrivateRoundSyncSchema = z.object({
+  seq: z.int().nonnegative(),
+  type: z.literal('SeatPrivateRoundSync'),
+  payload: z
+    .object({
+      roundId: z.uuid(),
+      submission: z
+        .object({
+          actionId: z.uuid(),
+          text: z.string(),
+          queued: z.boolean(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+});
 export const PresenceChangedSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('PresenceChanged'),
@@ -353,6 +370,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     payload: z.record(z.string(), z.unknown()),
   }),
   StateSyncSchema,
+  SeatPrivateRoundSyncSchema,
   z.object({
     seq: z.int().nonnegative(),
     type: z.literal('CombatTracker'),

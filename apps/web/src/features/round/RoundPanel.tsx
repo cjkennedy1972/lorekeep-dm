@@ -84,6 +84,9 @@ export function RoundPanel({
   const now = useNow(Boolean(round?.deadlineAt));
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing) setDraft(myText ?? '');
+  }, [myText, editing]);
   const [note, setNote] = useState('');
   const [announcement, setAnnouncement] = useState('');
 

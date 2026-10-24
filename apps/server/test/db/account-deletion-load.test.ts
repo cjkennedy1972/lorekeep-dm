@@ -443,6 +443,58 @@ describe('account deletion: holds, idempotence, and nested checkpoints', () => {
     expect(dump).not.toContain('SecretText');
   });
 
+  it('redacts canonical round-action text while preserving replay mechanics', async () => {
+    const gone = await account('deleting', 'SecretName');
+    const heir = await account('active', 'Heir');
+    const session = await seedJoinedSession(gone, heir);
+    const seatId = randomUUID();
+    const actionId = randomUUID();
+    const roundId = randomUUID();
+    await q(
+      'INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,3,$1,$2,$3)',
+      [
+        session,
+        'RoundActionAccepted',
+        {
+          roundId,
+          queued: false,
+          submission: {
+            seatId,
+            accountId: gone,
+            actionId,
+            originalActionId: actionId,
+            actionIds: [actionId],
+            text: 'SecretText',
+            playerName: 'SecretName',
+            receiptSeq: 3,
+          },
+        },
+      ],
+    );
+    await sweep();
+    const row = (
+      await q(
+        'SELECT seq,type,payload FROM events WHERE session_id=$1 AND type=$2',
+        [session, 'RoundActionAccepted'],
+      )
+    )[0] as { seq: number; type: string; payload: Record<string, unknown> };
+    expect(row).toMatchObject({ seq: '3', type: 'RoundActionAccepted' });
+    expect(JSON.stringify(row.payload)).not.toContain('SecretText');
+    expect(JSON.stringify(row.payload)).not.toContain('SecretName');
+    expect(row.payload).toMatchObject({
+      roundId,
+      submission: {
+        seatId,
+        actionId,
+        originalActionId: actionId,
+        actionIds: [actionId],
+      },
+    });
+    expect(
+      (row.payload.submission as Record<string, unknown>).text,
+    ).toBeUndefined();
+  });
+
   it('scrubs lastPlayerText from a commit that carries no account id', async () => {
     const gone = await account('deleting', 'SecretName');
     const heir = await account('active', 'Heir');

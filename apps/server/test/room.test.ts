@@ -67,7 +67,10 @@ describe('room actor', () => {
     const { store } = fixture();
     const accountId = randomUUID();
     const seatId = randomUUID();
+    const otherAccountId = randomUUID();
+    const otherSeatId = randomUUID();
     const actionId = randomUUID();
+    const otherActionId = randomUUID();
     const roundId = randomUUID();
     const room = new Room(store, lease, {
       snapshot: {
@@ -79,12 +82,18 @@ describe('room actor', () => {
           phase: 'lobby',
           seats: [
             { seatId, accountId, displayName: 'Player', presence: 'offline' },
+            {
+              seatId: otherSeatId,
+              accountId: otherAccountId,
+              displayName: 'Other',
+              presence: 'offline',
+            },
           ],
           gameState: {},
           round: {
             roundId,
             status: 'open',
-            eligibleSeatIds: [seatId],
+            eligibleSeatIds: [seatId, otherSeatId],
             deadlineAt: Date.now() + 30_000,
             submissions: [
               {
@@ -97,6 +106,16 @@ describe('room actor', () => {
                 playerName: 'Player',
                 receiptSeq: 2,
               },
+              {
+                seatId: otherSeatId,
+                accountId: otherAccountId,
+                actionId: otherActionId,
+                originalActionId: otherActionId,
+                actionIds: [otherActionId],
+                text: 'other private action',
+                playerName: 'Other',
+                receiptSeq: 3,
+              },
             ],
             queuedSubmissions: [],
           },
@@ -105,7 +124,11 @@ describe('room actor', () => {
       events: [],
     });
     const sent: unknown[] = [];
+    const otherSent: unknown[] = [];
     await room.subscribe(accountId, { send: (message) => sent.push(message) });
+    await room.subscribe(otherAccountId, {
+      send: (message) => otherSent.push(message),
+    });
     const sync = sent.find(
       (message) => (message as { type?: string }).type === 'StateSync',
     ) as {
@@ -115,14 +138,45 @@ describe('room actor', () => {
     expect(sync.payload.round).toMatchObject({
       roundId,
       status: 'open',
-      eligibleSeatIds: [seatId],
+      eligibleSeatIds: [seatId, otherSeatId],
       submissions: [
         { seatId, actionId, actionIds: [actionId], playerName: 'Player' },
+        {
+          seatId: otherSeatId,
+          actionId: otherActionId,
+          actionIds: [otherActionId],
+          playerName: 'Other',
+        },
       ],
       queuedSubmissions: [],
     });
     expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
     expect(JSON.stringify(sync)).not.toContain('private action text');
+    expect(JSON.stringify(sync)).not.toContain('other private action');
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'SeatPrivateRoundSync',
+        payload: {
+          roundId,
+          submission: { actionId, text: 'private action text', queued: false },
+        },
+      }),
+    );
+    const otherPrivate = otherSent.find(
+      (message) =>
+        (message as { type?: string }).type === 'SeatPrivateRoundSync',
+    );
+    expect(otherPrivate).toMatchObject({
+      payload: {
+        roundId,
+        submission: {
+          actionId: otherActionId,
+          text: 'other private action',
+          queued: false,
+        },
+      },
+    });
+    expect(JSON.stringify(otherPrivate)).not.toContain('private action text');
   });
 
   it('places exploration admission at a committed scene or resolved-round boundary and combat admission at a round boundary', () => {
@@ -841,6 +895,10 @@ describe('room actor', () => {
     await room.seat(accountA, 'A');
     await room.seat(accountB, 'B');
     await room.persistGameState({});
+    const messagesA: unknown[] = [];
+    await room.subscribe(accountA, {
+      send: (message) => messagesA.push(message),
+    });
     expect(
       await room.submitAction(
         accountA,
@@ -869,11 +927,20 @@ describe('room actor', () => {
     ]);
     const resolved = events.filter((event) => event.type === 'RoundResolved');
     expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.payload).toMatchObject({
+      closeReason: 'all-submitted',
+    });
     expect(
       (
         resolved[0]?.payload as { actions: { receiptSeq: number }[] }
       ).actions.map((action) => action.receiptSeq),
     ).toEqual([11, 22]);
+    expect(messagesA).toContainEqual(
+      expect.objectContaining({
+        type: 'RoundResolved',
+        payload: expect.objectContaining({ closeReason: 'all-submitted' }),
+      }),
+    );
     expect(room.state.round?.status).toBe('open');
   });
   it('scopes party action idempotency to the submitting seat', async () => {

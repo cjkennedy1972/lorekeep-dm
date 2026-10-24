@@ -10,6 +10,12 @@ export interface RoomView {
   lastSeq: number;
   /** True when a seq gap was seen; the client must send a resync request. */
   needsResync: boolean;
+  privateRoundSubmission?: {
+    roundId: string;
+    actionId: string;
+    text: string;
+    queued: boolean;
+  };
 }
 
 export const initialRoomView: RoomView = {
@@ -21,6 +27,13 @@ export const initialRoomView: RoomView = {
 /** Pure reducer: StateSync replaces; sequenced patches apply only when seq === lastSeq + 1. */
 export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
   switch (msg.type) {
+    case 'SeatPrivateRoundSync':
+      return {
+        ...view,
+        privateRoundSubmission: msg.payload.submission
+          ? { roundId: msg.payload.roundId, ...msg.payload.submission }
+          : undefined,
+      };
     case 'StateSync':
       // While a resync is pending, a snapshot at the stored seq answers it (thin Round* broadcasts don't advance lastSeq); older ones stay stale.
       if (
@@ -33,7 +46,18 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
         room: { ...msg.payload.state, round: msg.payload.round },
         lastSeq: msg.seq,
         needsResync: false,
+        privateRoundSubmission: undefined,
       };
+    case 'RoundResolved': {
+      const roundId = String(msg.payload.roundId ?? '');
+      return {
+        ...view,
+        needsResync: true,
+        ...(view.privateRoundSubmission?.roundId === roundId
+          ? { privateRoundSubmission: undefined }
+          : {}),
+      };
+    }
     case 'PresenceChanged': {
       if (msg.seq <= view.lastSeq) return view; // duplicate or out-of-order
       if (!view.room || msg.seq !== view.lastSeq + 1)
@@ -56,7 +80,6 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RoundActionEdited':
     case 'RoundActionWithdrawn':
     case 'RoundClosing':
-    case 'RoundResolved':
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':

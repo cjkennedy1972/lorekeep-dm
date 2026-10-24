@@ -61,9 +61,49 @@ const syncWithRound = (
 });
 
 describe('roomReducer', () => {
+  test('private round sync restores only the current seat draft and omission clears it', () => {
+    const synced = roomReducer(initialRoomView, {
+      seq: 3,
+      type: 'SeatPrivateRoundSync',
+      payload: {
+        roundId: round.roundId,
+        submission: { actionId, text: 'my draft', queued: true },
+      },
+    });
+    expect(synced.privateRoundSubmission).toEqual({
+      roundId: round.roundId,
+      actionId,
+      text: 'my draft',
+      queued: true,
+    });
+    const cleared = roomReducer(synced, {
+      seq: 4,
+      type: 'SeatPrivateRoundSync',
+      payload: { roundId: round.roundId },
+    });
+    expect(cleared.privateRoundSubmission).toBeUndefined();
+  });
+  test('resolved round clears its private draft', () => {
+    const synced = roomReducer(initialRoomView, {
+      seq: 3,
+      type: 'SeatPrivateRoundSync',
+      payload: {
+        roundId: round.roundId,
+        submission: { actionId, text: 'my draft', queued: false },
+      },
+    });
+    const resolved = roomReducer(synced, {
+      seq: 4,
+      type: 'RoundResolved',
+      payload: { roundId: round.roundId, actions: [] },
+    });
+    expect(resolved.privateRoundSubmission).toBeUndefined();
+    expect(resolved.needsResync).toBe(true);
+  });
+
   test('StateSync replaces state', () => {
     const v = roomReducer(initialRoomView, sync(3));
-    expect(v).toEqual({ room: state, lastSeq: 3, needsResync: false });
+    expect(v).toMatchObject({ room: state, lastSeq: 3, needsResync: false });
   });
   test('StateSync stores the public round snapshot', () => {
     const v = roomReducer(initialRoomView, syncWithRound(3, round));

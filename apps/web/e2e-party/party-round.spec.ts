@@ -144,7 +144,7 @@ test.describe.serial('party round and host panels (real server)', () => {
       await resumeButton.click();
       await expect(hostRound).toBeVisible();
     }
-    const guestView = await openAs(browser, guest, table, path);
+    let guestView = await openAs(browser, guest, table, path);
     const scoutView = await openAs(browser, scout, table, path);
     try {
       await expect(guestView.page.locator('.round-summary')).toHaveText(
@@ -168,41 +168,52 @@ test.describe.serial('party round and host panels (real server)', () => {
             .getByText('Round Guest: submitted'),
         ).toBeVisible();
       }
+      for (const view of [hostView, scoutView])
+        await expect(
+          view.page.getByText('I search the hall', { exact: true }),
+        ).toHaveCount(0);
+      await closeAs(guestView);
+      guestView = await openAs(browser, guest, table, path);
+      await expect(
+        guestView.page.getByRole('heading', { name: 'Your action' }),
+      ).toBeVisible();
+      await guestView.page.getByRole('button', { name: 'Edit action' }).click();
+      await expect(guestView.page.getByLabel('Edit your action')).toHaveValue(
+        'I search the hall',
+      );
     } finally {
       await Promise.all([hostView, guestView, scoutView].map(closeAs));
     }
   });
 
-  // ponytail: the scout's "resolved" copy exists only while the round is `resolving`; the client gets no close reason from the thin RoundResolved, so a Resync that lands after the turn completes never shows it. Fails 3 of 5 runs. Unblock: server includes closeReason in RoundResolved, or assert the reopened round instead. Tracked in card 72ebe2cd.
-  test.fixme(
-    'the host resolves the round from the keyboard alone',
-    async ({ browser }) => {
-      const { table, host, scout } = state();
-      const path = `/rooms/${table}/game`;
-      const hostView = await openAs(browser, host, table, path);
-      const scoutView = await openAs(browser, scout, table, path);
-      try {
-        await expect(
-          hostView.page.getByRole('heading', { name: 'Host controls' }),
-        ).toBeVisible();
-        await tabTo(hostView.page, 'Resolve round now');
-        await hostView.page.keyboard.press('Enter');
+  test('the host resolves the round from the keyboard alone', async ({
+    browser,
+  }) => {
+    const { table, host, scout } = state();
+    const path = `/rooms/${table}/game`;
+    const hostView = await openAs(browser, host, table, path);
+    const scoutView = await openAs(browser, scout, table, path);
+    try {
+      await expect(
+        hostView.page.getByRole('heading', { name: 'Host controls' }),
+      ).toBeVisible();
+      await tabTo(hostView.page, 'Resolve round now');
+      await hostView.page.keyboard.press('Enter');
 
-        await expect(
-          hostView.page
-            .getByRole('status')
-            .filter({ hasText: 'Round resolve requested.' }),
-        ).toBeVisible();
-        await expect(
-          scoutView.page
-            .getByRole('status')
-            .filter({ hasText: 'The host resolved the round.' }),
-        ).toBeVisible({ timeout: 60_000 });
-      } finally {
-        await Promise.all([closeAs(hostView), closeAs(scoutView)]);
-      }
-    },
-  );
+      await expect(
+        hostView.page
+          .getByRole('status')
+          .filter({ hasText: 'Round resolve requested.' }),
+      ).toBeVisible();
+      await expect(
+        scoutView.page
+          .getByRole('status')
+          .filter({ hasText: 'The host resolved the round.' }),
+      ).toBeVisible({ timeout: 60_000 });
+    } finally {
+      await Promise.all([closeAs(hostView), closeAs(scoutView)]);
+    }
+  });
 
   test('a late joiner is told the join is pending while a game is running', async ({
     browser,
@@ -463,10 +474,7 @@ test.describe.serial('party round and host panels (real server)', () => {
     }
   });
 
-  // Still blocked: the table route (routes/tables.ts:329) and the socket (gateway/ws.ts:296-305)
-  // both require an existing seat, so an unseated account gets the "Game unavailable" page before a
-  // socket opens and never reaches the "Not seated" + Rejoin state (Game.tsx:491). Unblock once a
-  // seat can be lost while a tab stays open. Tracked in card 72ebe2cd.
+  // Gated on owner confirmation of the connected-client Not-seated presentation; generic HTTP 404 behavior is covered separately.
   test.fixme(
     'an unseated player sees Not seated and can rejoin',
     async () => {},
