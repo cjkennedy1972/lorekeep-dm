@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { IncomingMessage } from 'node:http';
 import { getClientIp } from '../../src/gateway/clientIp.js';
 
-function request(remoteAddress: string, forwardedFor?: string): IncomingMessage {
+function request(
+  remoteAddress: string,
+  forwardedFor?: string,
+): IncomingMessage {
   return {
     socket: { remoteAddress },
-    headers: forwardedFor === undefined ? {} : { 'x-forwarded-for': forwardedFor },
+    headers:
+      forwardedFor === undefined ? {} : { 'x-forwarded-for': forwardedFor },
   } as IncomingMessage;
 }
 
@@ -38,7 +42,9 @@ describe('WebSocket upgrade client IP', () => {
   });
 
   it('falls back to the socket address for malformed or missing headers', () => {
-    expect(getClientIp(request('10.0.0.1', 'not-an-ip'), true)).toBe('10.0.0.1');
+    expect(getClientIp(request('10.0.0.1', 'not-an-ip'), true)).toBe(
+      '10.0.0.1',
+    );
     expect(getClientIp(request('10.0.0.1'), true)).toBe('10.0.0.1');
   });
 });

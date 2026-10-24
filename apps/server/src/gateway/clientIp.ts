@@ -13,10 +13,15 @@ type ProxyAddress = {
 };
 
 // Use the same proxy-addr implementation Fastify uses for request.ip.
-const fastifyRequire = createRequire(createRequire(import.meta.url).resolve('fastify'));
+const fastifyRequire = createRequire(
+  createRequire(import.meta.url).resolve('fastify'),
+);
 const proxyAddress = fastifyRequire('@fastify/proxy-addr') as ProxyAddress;
 
-export function getClientIp(request: IncomingMessage, trustProxy: TrustProxy): string {
+export function getClientIp(
+  request: IncomingMessage,
+  trustProxy: TrustProxy,
+): string {
   const socketAddress = request.socket.remoteAddress;
   if (!socketAddress) return 'unknown';
   if (!trustProxy) return socketAddress;
@@ -34,7 +39,8 @@ export function getClientIp(request: IncomingMessage, trustProxy: TrustProxy): s
     const header = request.headers['x-forwarded-for'];
     if (typeof header === 'string') {
       const addresses = header.split(',').map((address) => address.trim());
-      if (addresses.some((address) => isIP(address) === 0)) return socketAddress;
+      if (addresses.some((address) => isIP(address) === 0))
+        return socketAddress;
     }
     const addresses = proxyAddress.all(request, trust);
     return addresses.at(-1) ?? socketAddress;
