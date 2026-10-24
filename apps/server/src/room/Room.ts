@@ -835,7 +835,9 @@ export class Room {
     if (
       !connection ||
       !round ||
-      !this.state.seats.some((seat) => seat.accountId === accountId)
+      !this.state.seats.some(
+        (seat) => seat.accountId === accountId && seat.presence !== 'revoked',
+      )
     )
       return;
     const submission =

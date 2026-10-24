@@ -179,6 +179,81 @@ describe('room actor', () => {
     expect(JSON.stringify(otherPrivate)).not.toContain('private action text');
   });
 
+  it('does not send private round submissions to revoked or left seats', async () => {
+    const { store } = fixture();
+    const accountId = randomUUID();
+    const seatId = randomUUID();
+    const actionId = randomUUID();
+    const revokedMessages: unknown[] = [];
+    const roundId = randomUUID();
+    const room = new Room(store, lease, {
+      snapshot: {
+        sessionId: id,
+        seq: 1,
+        createdAt: new Date(),
+        state: {
+          sessionId: id,
+          phase: 'lobby',
+          seats: [
+            { seatId, accountId, displayName: 'Player', presence: 'offline' },
+          ],
+          gameState: {},
+          round: {
+            roundId,
+            status: 'open',
+            eligibleSeatIds: [seatId],
+            deadlineAt: null,
+            submissions: [
+              {
+                seatId,
+                accountId,
+                actionId,
+                originalActionId: actionId,
+                actionIds: [actionId],
+                text: 'private action text',
+                playerName: 'Player',
+                receiptSeq: 2,
+              },
+            ],
+            queuedSubmissions: [],
+          },
+        },
+      },
+      events: [],
+    });
+    await room.subscribe(accountId, {
+      send: (message) => revokedMessages.push(message),
+    });
+    revokedMessages.length = 0;
+    room.state.seats[0]!.presence = 'revoked';
+    (
+      room as unknown as { sendSeatPrivateRoundSync: (id: string) => void }
+    ).sendSeatPrivateRoundSync(accountId);
+    expect(
+      revokedMessages.some(
+        (message) =>
+          (message as { type?: string }).type === 'SeatPrivateRoundSync',
+      ),
+    ).toBe(false);
+
+    const left = randomUUID();
+    await room.seat(left, 'Left');
+    const leftMessages: unknown[] = [];
+    await room.subscribe(left, { send: (message) => leftMessages.push(message) });
+    await room.leave(left);
+    leftMessages.length = 0;
+    (
+      room as unknown as { sendSeatPrivateRoundSync: (id: string) => void }
+    ).sendSeatPrivateRoundSync(left);
+    expect(
+      leftMessages.some(
+        (message) =>
+          (message as { type?: string }).type === 'SeatPrivateRoundSync',
+      ),
+    ).toBe(false);
+    await room.drain();
+  });
+
   it('places exploration admission at a committed scene or resolved-round boundary and combat admission at a round boundary', () => {
     expect(
       nextLateJoinBoundary({
