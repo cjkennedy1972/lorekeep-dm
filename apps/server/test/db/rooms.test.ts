@@ -8,6 +8,7 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { installGateway } from '../../src/gateway/ws.js';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const rooms = new RoomRegistry(
@@ -161,6 +162,22 @@ describe('rooms + invites (postgres)', () => {
     expect(
       (await call(late, 'POST', `/api/join/${regen.code}`)).statusCode,
     ).toBe(404);
+  });
+
+  it('party table pins the rules catalog so its GET resolves', async () => {
+    const host = await account();
+    const made = await call(host, 'POST', '/api/rooms', { name: 'Pinned' });
+    expect(made.statusCode).toBe(201);
+    const room = made.json().room;
+    const fetched = await call(host, 'GET', `/api/tables/${room.id}`);
+    expect(fetched.json().code).toBeUndefined();
+    expect(fetched.statusCode).toBe(200);
+    const row = (
+      await db.query('SELECT catalog_version FROM sessions WHERE id=$1', [
+        room.id,
+      ])
+    ).rows[0];
+    expect(row.catalog_version).toBe(loadCatalog().catalogVersion);
   });
 
   it('unverified account gets 403 on create', async () => {
