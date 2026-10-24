@@ -25,6 +25,7 @@ function party(
     bindB?: boolean;
     partyMode?: boolean;
     gameState?: (seatA: string) => unknown;
+    round?: (seatA: string, seatB: string) => unknown;
     runtime?: CombatRuntime;
     hostA?: boolean;
     roundsEnabled?: boolean;
@@ -116,6 +117,7 @@ function party(
           ...(options.roundsEnabled ? { roundsEnabled: true } : {}),
           seats: [seat(seatA, accountA), seat(seatB, accountB)],
           gameState: options.gameState?.(seatA) ?? {},
+          ...(options.round ? { round: options.round(seatA, seatB) } : {}),
         },
       },
       events: [],
@@ -195,6 +197,84 @@ describe('ADR-035 party seat gating', () => {
           .payload as { boundSeatIds: string[] }
       ).boundSeatIds,
     ).toEqual([f.seatA]);
+  });
+
+  it('includes only active bound seats in a RESYNC StateSync', async () => {
+    const f = party({ bindB: true, hostA: true });
+    await f.room.kickSeat(f.accountA, randomUUID(), f.seatB);
+    const messages: Record<string, unknown>[] = [];
+    await f.room.subscribe(
+      f.accountA,
+      { send: (message) => messages.push(message) },
+      -1,
+    );
+
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(sync.payload).toHaveProperty('boundSeatIds', [f.seatA]);
+
+    const empty = party({ bindA: false, bindB: false });
+    const emptyMessages: Record<string, unknown>[] = [];
+    await empty.room.subscribe(empty.accountA, {
+      send: (message) => emptyMessages.push(message),
+    }, -1);
+    expect(
+      emptyMessages.find((message) => message.type === 'StateSync')!.payload,
+    ).not.toHaveProperty('boundSeatIds');
+  });
+
+  it('includes active bound seats in the round StateSync and excludes released seats', async () => {
+    const f = party({
+      bindB: true,
+      roundsEnabled: true,
+      round: (seatA, seatB) => ({
+        roundId: randomUUID(),
+        status: 'open',
+        eligibleSeatIds: [seatA, seatB],
+        deadlineAt: null,
+        submissions: [],
+        queuedSubmissions: [],
+      }),
+    });
+    await f.room.leave(f.accountB);
+    const messages: Record<string, unknown>[] = [];
+    await f.room.join(
+      f.accountA,
+      { send: (message) => messages.push(message) },
+      'A',
+      false,
+      -1,
+      { requireExistingSeat: true },
+    );
+
+    const sync = messages.find((message) => message.type === 'StateSync')!;
+    expect(sync.payload).toHaveProperty('boundSeatIds', [f.seatA]);
+    expect(sync.payload).toHaveProperty('round');
+
+    const empty = party({
+      bindA: false,
+      bindB: false,
+      roundsEnabled: true,
+      round: (seatA) => ({
+        roundId: randomUUID(),
+        status: 'open',
+        eligibleSeatIds: [seatA],
+        deadlineAt: null,
+        submissions: [],
+        queuedSubmissions: [],
+      }),
+    });
+    const emptyMessages: Record<string, unknown>[] = [];
+    await empty.room.join(
+      empty.accountA,
+      { send: (message) => emptyMessages.push(message) },
+      'A',
+      false,
+      -1,
+      { requireExistingSeat: true },
+    );
+    expect(
+      emptyMessages.find((message) => message.type === 'StateSync')!.payload,
+    ).not.toHaveProperty('boundSeatIds');
   });
 
   it('rejects round actions from an unbound seat', async () => {
