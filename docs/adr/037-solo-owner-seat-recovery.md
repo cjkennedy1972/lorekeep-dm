@@ -21,8 +21,9 @@ A socket may recover a seat without presenting its current resume token or recei
 1. The table is an active solo session: it has exactly one seat and has not been converted to a party session.
 2. The authenticated account on the ticket is the session owner account.
 3. The target seat is that session’s owner seat, and the event history contains `SeatJoined` for it with no later `SeatRevoked` event.
-4. The live-socket check runs first. A healthy first socket, as defined by ADR-031 §3.6, is never displaced by this exception. Recovery is considered only when the existing socket is closed or declared lost.
+4. The live-socket check runs first. A healthy first socket means its heartbeat is fresh under ADR-031 §2.1 and §3.6; it is never displaced by this exception. Recovery is considered only when the existing socket is closed or declared lost.
 5. All other ADR-031 §3.5 checks pass: the ticket is valid and not revoked, the seat is still seated and not retired, and the ticket account owns the seat. The connection still receives control only after the check; the client remains read-only until snapshot acknowledgement under ADR-031 §3.1–§3.2.
+6. The recovery request is made with the authenticated owner cookie session; a ticket without that session is insufficient, even when the ticket is valid and bound to the owner account.
 
 The server determines solo status, ownership, and seat history from authoritative session/seat state. Client claims or flags cannot invoke the exception. No resume-token value is accepted or required for this path. On success, issue a fresh resume token and rotate the server-side stored hash as on an authenticated connection under ADR-031 §3.6. The recovery ticket MUST be single-use and bound to both the target seat and the authenticated session; reject reuse or any seat/session mismatch. The recovered socket becomes the seat’s single controlling socket and the server MUST emit `SeatTakenOver` immediately under ADR-031 §2.8, exempt from coalescing, with a notice delivered to the owner's other device/connections. This is not a general valid-ticket reconnect rule.
 
