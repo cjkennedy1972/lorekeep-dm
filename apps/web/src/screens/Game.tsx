@@ -140,6 +140,8 @@ export function Game() {
         setChatMessages((current) =>
           mergeChatHistory(current, message.payload.messages),
         );
+      if (message.type === 'SeatTakenOver')
+        setSafetyNotice('Your seat was recovered on another connection.');
       if (message.type === 'SafetyFlag' && message.payload.kind === 'x-card')
         setSafetyNotice(
           'An X-card was used. The DM will steer away next turn.',

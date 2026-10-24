@@ -100,12 +100,15 @@ describe('seat revocation at the gateway', () => {
   });
 
   it('a socket for a revoked seat is refused with 1008 at upgrade', async () => {
+    const room = await rooms.get(sessionId);
+    await joinSeated(room, leaver, { send() {} }, 'Leaver again');
     const ticket = await issueTicket(
       db,
       leaver,
       sessionId,
       hashToken(leaverToken),
     );
+    await room.leave(leaver);
     const ws = connect(ticket);
     const close = await closed(ws);
     expect(close.code).toBe(1008);

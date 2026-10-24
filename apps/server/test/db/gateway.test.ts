@@ -26,7 +26,8 @@ const rooms = new RoomRegistry(
   'gateway-test',
 );
 const connections = new ConnectionRegistry(db);
-installGateway(app, db, rooms, connections);
+// Explicit test-only opt-in exercises ADR-037 recovery; production defaults off.
+installGateway(app, db, rooms, connections, 15_000, true);
 let base: string;
 const accounts = [randomUUID(), randomUUID(), randomUUID()];
 const sessionId = randomUUID();
@@ -194,8 +195,33 @@ afterAll(async () => {
   await app.close();
   await db.end();
 });
+describe('gateway seat authentication limits', () => {
+  it('refuses the sixth authentication attempt for one seat in a minute', () => {
+    const key = `${sessionId}:${randomUUID()}`;
+    for (let attempt = 0; attempt < 5; attempt++)
+      expect(connections.consumeSeatAuthAttempt(key, 10_000)).toBe(true);
+    expect(connections.consumeSeatAuthAttempt(key, 10_001)).toBe(false);
+  });
+});
+
 describe('one-time gateway', () => {
   it('restores a solo owner after restart with a stale or absent seat token', async () => {
+    const priorResumeToken = resumeTokens.get(tokens[0]!);
+    const otherSessionId = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      otherSessionId,
+      accounts[0],
+    ]);
+    const otherRoom = await rooms.get(otherSessionId);
+    const otherInitialToken = await otherRoom.seat(
+      accounts[0]!,
+      'Other device',
+    );
+    resumeTokens.set(tokens[0]!, otherInitialToken!);
+    const otherSessionSocket = connect(
+      await ticket(tokens[0]!, otherSessionId),
+    );
+    await nextOfType(otherSessionSocket, 'StateSync');
     const soloSessionId = randomUUID();
     await db.query(
       "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'solo')",
@@ -207,7 +233,45 @@ describe('one-time gateway', () => {
     const seatId = room.state.seats.find(
       (seat) => seat.accountId === accounts[0],
     )!.seatId;
+    resumeTokens.set(tokens[0]!, initialToken!);
     room.completeSeatResumeTokenDelivery(accounts[0]!);
+
+    expect(
+      await authorizeSeatSocket(
+        db,
+        soloSessionId,
+        seatId,
+        randomUUID(),
+        undefined,
+        false,
+        accounts[0],
+        false,
+      ),
+    ).toEqual({ status: 'invalid-token' });
+    expect(
+      await authorizeSeatSocket(
+        db,
+        soloSessionId,
+        randomUUID(),
+        randomUUID(),
+        undefined,
+        false,
+        accounts[0],
+        true,
+      ),
+    ).toEqual({ status: 'invalid-token' });
+
+    const live = connect(await ticket(tokens[0]!, soloSessionId));
+    await nextOfType(live, 'SeatAuthenticated');
+    await nextOfType(live, 'StateSync');
+    const deniedWhileLive = connect(
+      await ticket(tokens[0]!, soloSessionId),
+      null,
+      false,
+    );
+    expect(await closed(deniedWhileLive)).toBe(1008);
+    await closeSocket(live);
+    await waitForReleasedSocket(seatId, soloSessionId);
 
     // A stale token is recoverable for the verified solo owner, without a host.
     const staleTokenSocket = connect(
@@ -215,6 +279,12 @@ describe('one-time gateway', () => {
       'stale-after-restart',
       false,
     );
+    expect(
+      (await nextOfType(staleTokenSocket, 'SeatTakenOver')).payload,
+    ).toMatchObject({ seatId });
+    expect(
+      (await nextOfType(otherSessionSocket, 'SeatTakenOver')).payload,
+    ).toMatchObject({ seatId });
     await nextOfType(staleTokenSocket, 'SeatAuthenticated');
     await nextOfType(staleTokenSocket, 'StateSync');
     await closeSocket(staleTokenSocket);
@@ -233,6 +303,9 @@ describe('one-time gateway', () => {
     await nextOfType(tokenlessSocket, 'SeatAuthenticated');
     await nextOfType(tokenlessSocket, 'StateSync');
     await closeSocket(tokenlessSocket);
+    await closeSocket(otherSessionSocket);
+    if (priorResumeToken) resumeTokens.set(tokens[0]!, priorResumeToken);
+    else resumeTokens.delete(tokens[0]!);
   });
   it('refuses a second tokenless socket while the first delivery is in flight', async () => {
     const firstSessionId = randomUUID();
@@ -491,6 +564,16 @@ describe('one-time gateway', () => {
     );
     expect(staleAuth).toMatchObject({ status: 'invalid-token' });
   });
+  it('cannot replay an already-redeemed ticket after its authorized socket closes', async () => {
+    const t = await ticket(tokens[0]);
+    const first = connect(t);
+    await nextOfType(first, 'SeatAuthenticated');
+    await nextOfType(first, 'StateSync');
+    await closeSocket(first);
+    const replay = connect(t);
+    expect(await closed(replay)).toBe(1008);
+  });
+
   it('keeps pending late-join identity details host-only', async () => {
     const host = connect(await ticket(tokens[0]));
     const guest = connect(await ticket(tokens[1]));
@@ -566,8 +649,13 @@ describe('one-time gateway', () => {
       hashToken(tokens[0]),
     );
     expect(await consumeTicket(db, t, randomUUID())).toBeUndefined();
-    expect(await consumeTicket(db, t, sessionId)).toMatchObject({
+    const redeemed = await consumeTicket(db, t, sessionId);
+    expect(redeemed).toMatchObject({
       accountId: accounts[0],
+      sessionId,
+      seatId: (await rooms.get(sessionId)).state.seats.find(
+        (seat) => seat.accountId === accounts[0],
+      )!.seatId,
     });
     expect(await consumeTicket(db, t, sessionId)).toBeUndefined();
     const expired = await issueTicket(
@@ -581,6 +669,18 @@ describe('one-time gateway', () => {
       [createHash('sha256').update(expired).digest('hex')],
     );
     expect(await consumeTicket(db, expired)).toBeUndefined();
+  });
+  it("refuses to redeem a ticket whose bound seat is not the account's current seat", async () => {
+    const mismatchedSeatTicket = await issueTicket(
+      db,
+      accounts[0],
+      sessionId,
+      hashToken(tokens[0]),
+      randomUUID(),
+    );
+    expect(
+      await consumeTicket(db, mismatchedSeatTicket, sessionId),
+    ).toBeUndefined();
   });
   it('syncs two real sockets and broadcasts disconnect', async () => {
     const first = connect(await ticket(tokens[0]));

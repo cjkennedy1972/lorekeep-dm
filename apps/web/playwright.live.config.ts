@@ -7,6 +7,8 @@ const stateFile = resolve('test-results/live-state.json');
 const apiPort = Number(process.env.LIVE_API_PORT ?? 8799);
 const webPort = Number(process.env.LIVE_WEB_PORT ?? 5174);
 process.env.LIVE_STATE_FILE = stateFile;
+// Live browser harness exercises solo restart/recovery with explicit test-only opt-in.
+process.env.SOLO_OWNER_RESUME_RECOVERY_ENABLED = 'true';
 
 export default defineConfig({
   testDir: './e2e-live',
@@ -26,6 +28,7 @@ export default defineConfig({
       env: {
         LIVE_STATE_FILE: stateFile,
         LIVE_PORT: String(apiPort),
+        SOLO_OWNER_RESUME_RECOVERY_ENABLED: 'true',
         DATABASE_URL: process.env.DATABASE_URL ?? '',
       },
       reuseExistingServer: false,

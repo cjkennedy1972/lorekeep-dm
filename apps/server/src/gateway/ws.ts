@@ -47,6 +47,7 @@ import {
   validOrigin as validWebSocketOrigin,
 } from './tickets.js';
 import { ConnectionRegistry } from './connections.js';
+import { SOLO_OWNER_RESUME_RECOVERY_ENABLED } from './recoveryPolicy.js';
 import { ChatPolicy } from '../chat/policy.js';
 import { applyAutomaticChatMute } from '../chat/mutes.js';
 import {
@@ -110,6 +111,7 @@ export function installGateway(
   rooms: RoomRegistry,
   connections: ConnectionRegistry = new ConnectionRegistry(db),
   revalidateMs = 15_000,
+  soloOwnerRecoveryEnabled = SOLO_OWNER_RESUME_RECOVERY_ENABLED,
 ): () => Promise<void> {
   const chatPolicy = new ChatPolicy();
   app.post<{ Body?: { sessionId?: string } }>(
@@ -143,6 +145,7 @@ export function installGateway(
           auth.account_id,
           eligible,
           auth.token_hash,
+          seatId,
         ),
       };
     },
@@ -191,11 +194,16 @@ export function installGateway(
           reject();
           return;
         }
-        const seatId = await currentSeatId(db, identity.accountId, eligible);
-        if (!seatId) {
+        const currentSeat = await currentSeatId(
+          db,
+          identity.accountId,
+          eligible,
+        );
+        if (!currentSeat || currentSeat !== identity.seatId) {
           reject();
           return;
         }
+        const seatId = identity.seatId;
         const seatKey = `${identity.sessionId}:${seatId}`;
         const ipAddress = request.socket.remoteAddress ?? 'unknown';
         if (
@@ -303,7 +311,7 @@ export function installGateway(
           presentedToken ?? firstDeliveryToken,
           false,
           identity.accountId,
-          true,
+          soloOwnerRecoveryEnabled,
         );
         if (authorization.status === 'invalid-token') {
           if (
@@ -368,12 +376,22 @@ export function installGateway(
           return;
         }
         seatAuthorized = true;
-        connections.add(ws, identity.authTokenHash, seatKey);
+        connections.add(
+          ws,
+          identity.authTokenHash,
+          seatKey,
+          identity.accountId,
+        );
         await connections.sweep();
         if (ws.readyState !== WebSocket.OPEN) return;
-        if (reservation.takenOver) await room.recordSeatTakenOver(seatId);
-        // ADR-037 (pending): solo-owner recovery treats the authenticated owner
-        // session as host approval; party seats never use this exception.
+        if (reservation.takenOver || authorization.soloOwnerRecovery)
+          await room.recordSeatTakenOver(seatId);
+        if (authorization.soloOwnerRecovery)
+          connections.notifyAccount(identity.accountId, {
+            seq: room.seq,
+            type: 'SeatTakenOver',
+            payload: { seatId, at: Date.now() },
+          });
         let tokenCommitted = false;
         try {
           tokenCommitted = await commitSeatResumeToken(

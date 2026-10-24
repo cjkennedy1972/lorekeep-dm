@@ -11,7 +11,12 @@ export interface SeatReservationResult {
 export class ConnectionRegistry {
   private readonly sockets = new Map<
     WebSocket,
-    { authTokenHash: string; seatKey?: string; lastPongAt: number }
+    {
+      authTokenHash: string;
+      accountId: string;
+      seatKey?: string;
+      lastPongAt: number;
+    }
   >();
   private readonly seatReservations = new Map<string, WebSocket>();
   private readonly seatSockets = new Map<string, WebSocket>();
@@ -87,12 +92,28 @@ export class ConnectionRegistry {
     this.accountAuthAttempts.clear();
     this.ipAuthAttempts.clear();
   }
-  add(ws: WebSocket, authTokenHash: string, seatKey: string): void {
+  add(
+    ws: WebSocket,
+    authTokenHash: string,
+    seatKey: string,
+    accountId: string,
+  ): void {
     if (this.seatReservations.get(seatKey) !== ws)
       throw new Error('Seat socket was not reserved');
     this.seatReservations.delete(seatKey);
     this.seatSockets.set(seatKey, ws);
-    this.sockets.set(ws, { authTokenHash, seatKey, lastPongAt: Date.now() });
+    this.sockets.set(ws, {
+      authTokenHash,
+      accountId,
+      seatKey,
+      lastPongAt: Date.now(),
+    });
+  }
+  notifyAccount(accountId: string, frame: unknown): void {
+    const serialized = JSON.stringify(frame);
+    for (const [ws, details] of this.sockets)
+      if (details.accountId === accountId && ws.readyState === 1)
+        ws.send(serialized);
   }
   markPong(ws: WebSocket): void {
     const details = this.sockets.get(ws);

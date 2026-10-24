@@ -74,6 +74,8 @@ it('serves the restartable Adventure #1 scripted server', async () => {
   if (!url || !stateFile)
     throw new Error('DATABASE_URL and LIVE_STATE_FILE required');
   process.env.NODE_ENV = 'test';
+  // The Adventure resume browser flow explicitly covers opt-in solo recovery.
+  process.env.SOLO_OWNER_RESUME_RECOVERY_ENABLED = 'true';
   const db = new Pool({ connectionString: url });
   let seed: StateFile;
   if (existsSync(stateFile)) {

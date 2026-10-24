@@ -29,6 +29,8 @@ it('serves the recorded combat stack for browser e2e', async () => {
   if (!isLocalDatabaseUrl(url))
     throw new Error('refusing to seed a non-local DATABASE_URL');
   process.env.NODE_ENV = 'test';
+  // Explicit test-only opt-in for the solo restart/recovery browser flow.
+  process.env.SOLO_OWNER_RESUME_RECOVERY_ENABLED = 'true';
   process.env.LLM_FIXTURE_MODE = 'strict';
   const db = new Pool({ connectionString: url });
   const runner = new ProductionSoloTurnRunner(

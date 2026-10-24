@@ -189,6 +189,37 @@ describe('room actor', () => {
     }
   });
 
+  it('persists SeatTakenOver immediately during the presence coalescing window', async () => {
+    const { store, events } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accountId = randomUUID();
+    await room.seat(accountId, 'Player');
+    await room.join(accountId, { send() {} });
+    const seatId = room.state.seats[0]!.seatId;
+    vi.useFakeTimers();
+    try {
+      const disconnected = room.disconnect(accountId);
+      await vi.advanceTimersByTimeAsync(2);
+      await disconnected;
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        false,
+      );
+
+      const takeover = room.recordSeatTakenOver(seatId);
+      await vi.advanceTimersByTimeAsync(2);
+      await takeover;
+      expect(
+        events.filter((event) => event.type === 'SeatTakenOver'),
+      ).toHaveLength(1);
+      expect(events.some((event) => event.type === 'SeatDisconnected')).toBe(
+        false,
+      );
+    } finally {
+      await room.drain();
+      vi.useRealTimers();
+    }
+  });
+
   it('moves through disconnected, returning, and connected; only confirmed absence pauses the table', async () => {
     const { store, events } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id));
