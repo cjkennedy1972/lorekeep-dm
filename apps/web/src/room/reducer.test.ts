@@ -60,6 +60,52 @@ const syncWithRound = (
   payload: snapshot ? { state, round: snapshot } : { state },
 });
 
+describe('roomReducer bound seats', () => {
+  const bound = (seq: number, id = seatId): ServerMessage =>
+    ({
+      seq,
+      type: 'SeatCharacterBound',
+      payload: { seatId: id },
+    }) as ServerMessage;
+  const released = (seq: number): ServerMessage =>
+    ({
+      seq,
+      type: 'SeatCharacterReleased',
+      payload: { seatId, reason: 'removed' },
+    }) as ServerMessage;
+  const live = roomReducer(initialRoomView, sync(1));
+
+  test('starts with no bound seats', () => {
+    expect(initialRoomView.boundSeatIds).toEqual([]);
+  });
+
+  test('a sequenced bind adds the seat and a release removes it', () => {
+    const boundView = roomReducer(live, bound(2));
+    expect(boundView.boundSeatIds).toEqual([seatId]);
+    expect(boundView.lastSeq).toBe(2);
+    const releasedView = roomReducer(boundView, released(3));
+    expect(releasedView.boundSeatIds).toEqual([]);
+  });
+
+  test('a repeated bind does not duplicate the seat', () => {
+    const once = roomReducer(live, bound(2));
+    const twice = roomReducer(once, bound(3));
+    expect(twice.boundSeatIds).toEqual([seatId]);
+  });
+
+  test('a bind that skips a sequence number requests resync and leaves the set unchanged', () => {
+    const gap = roomReducer(live, bound(5));
+    expect(gap.needsResync).toBe(true);
+    expect(gap.boundSeatIds).toEqual([]);
+  });
+
+  test('StateSync keeps the bound set it already tracked', () => {
+    const boundView = roomReducer(live, bound(2));
+    const resynced = roomReducer(boundView, sync(3));
+    expect(resynced.boundSeatIds).toEqual([seatId]);
+  });
+});
+
 describe('roomReducer', () => {
   test('private round sync restores only the current seat draft and omission clears it', () => {
     const synced = roomReducer(initialRoomView, {

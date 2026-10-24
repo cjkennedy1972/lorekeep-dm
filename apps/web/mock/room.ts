@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { characterById } from './characters.js';
 import {
   AccountIdSchema,
   SeatIdSchema,
@@ -57,6 +58,8 @@ export class Room {
   private closeReason: RoundCloseReason | undefined;
   private deadlineAt: number | null = null;
   private queued = new Map<string, Submission>();
+  /** seatId -> bound characterId, the table-side binding the server keeps per seat. */
+  private bound = new Map<string, string>();
   private chatSeq = 0;
   readonly sessionId = SessionIdSchema.parse(
     '00000000-0000-4000-8000-0000000000c1',
@@ -123,6 +126,8 @@ export class Room {
     const seat = this.seats.get(accountId);
     if (!seat) return;
     const body = (payload ?? {}) as Record<string, unknown>;
+    if (type === 'BindCharacter')
+      return this.bindCharacter(seat, actionId, body);
     const mine = this.submissions.get(accountId) ?? this.queued.get(accountId);
     if (type === 'PlayerAction' && typeof body.text === 'string') {
       // Like the server, a seat acting while the round is closing lands in the queue.
@@ -160,6 +165,59 @@ export class Room {
     } else return;
     this.broadcastState();
     this.sendSeatPrivateRoundSync(accountId);
+  }
+
+  /** Mirrors the server's BindCharacter rules. Every rejection is one ACTION_REJECTED, as gateway/ws.ts sends it. */
+  private bindCharacter(
+    seat: Seat,
+    actionId: string,
+    body: Record<string, unknown>,
+  ) {
+    const character =
+      typeof body.characterId === 'string'
+        ? characterById(body.characterId)
+        : undefined;
+    const rejected =
+      !character ||
+      character.accountId !== seat.accountId ||
+      character.revision !== body.expectedRevision ||
+      this.bound.has(seat.seatId) ||
+      [...this.bound.values()].includes(character.id);
+    if (rejected || !character) {
+      const error = {
+        seq: this.seq,
+        type: 'Error',
+        payload: {
+          code: 'ACTION_REJECTED',
+          message: 'Character could not be bound.',
+          actionId,
+        },
+      } as ServerMessage;
+      for (const send of this.conns.get(seat.accountId) ?? []) send(error);
+      return;
+    }
+    this.bound.set(seat.seatId, character.id);
+    this.emit({
+      seq: ++this.seq,
+      type: 'SeatCharacterBound',
+      payload: { seatId: seat.seatId },
+    } as ServerMessage);
+    for (const send of this.conns.get(seat.accountId) ?? [])
+      send({
+        seq: this.seq,
+        type: 'SeatCharacterBoundPrivate',
+        payload: { seatId: seat.seatId },
+      } as ServerMessage);
+  }
+
+  /** Sends one message to every connected seat. */
+  private emit(msg: ServerMessage) {
+    for (const set of this.conns.values()) for (const send of set) send(msg);
+  }
+
+  /** The seat id this account holds, for SeatAuthenticated. */
+  seatIdOf(accountId: string) {
+    return this.seats.get(accountId)?.seatId;
   }
 
   private submission(seat: Seat, actionId: string, text: string): Submission {
@@ -310,6 +368,13 @@ export class Room {
 
   /** Removes a deleted account's seat. */
   remove(accountId: string) {
+    const seat = this.seats.get(accountId);
+    if (seat && this.bound.delete(seat.seatId))
+      this.emit({
+        seq: ++this.seq,
+        type: 'SeatCharacterReleased',
+        payload: { seatId: seat.seatId },
+      } as ServerMessage);
     this.seats.delete(accountId);
     this.conns.delete(accountId);
   }

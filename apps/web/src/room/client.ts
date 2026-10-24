@@ -18,6 +18,8 @@ export interface RoomSnapshot extends RoomView {
   removed: Removal | null;
   /** Set when the server reports this account has no seat; the client stops and waits for a manual rejoin. */
   unseated: boolean;
+  /** This connection's own seat, from SeatAuthenticated; null until authenticated. */
+  mySeatId: string | null;
 }
 
 // ponytail: Room.ts kickSeat/endTable close with these exact code+reason pairs; the kick pair is the only host-removal signal.
@@ -48,6 +50,7 @@ const initial: RoomSnapshot = {
   error: null,
   removed: null,
   unseated: false,
+  mySeatId: null,
 };
 
 export function createRoomClient(opts: RoomClientOptions) {
@@ -129,7 +132,11 @@ export function createRoomClient(opts: RoomClientOptions) {
         }
       }
       attempt = 0;
-      set({ status: 'connected', error: null });
+      set({
+        status: 'connected',
+        error: null,
+        mySeatId: authenticatedSeatId ?? null,
+      });
       return;
     }
     if (msg.type === 'SeatClaimPending') {

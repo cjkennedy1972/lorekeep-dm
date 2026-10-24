@@ -21,12 +21,15 @@ export interface RoomView {
     closeReason: NonNullable<RoundSnapshot['closeReason']>;
     summary: string;
   };
+  /** Seats with a bound party character, tracked from SeatCharacterBound/Released since this page loaded. */
+  boundSeatIds: string[];
 }
 
 export const initialRoomView: RoomView = {
   room: null,
   lastSeq: 0,
   needsResync: false,
+  boundSeatIds: [],
 };
 
 function needsRoundResync(view: RoomView, msg: ServerMessage): RoomView {
@@ -58,6 +61,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
         room: { ...msg.payload.state, round: msg.payload.round },
         lastSeq: msg.seq,
         needsResync: false,
+        boundSeatIds: view.boundSeatIds,
         ...(view.privateRoundSubmission &&
         msg.payload.round?.roundId === view.privateRoundSubmission.roundId
           ? { privateRoundSubmission: view.privateRoundSubmission }
@@ -149,6 +153,21 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
       // make React batch away the only chance to announce the close.
       return needsRoundResync(view, msg);
     }
+    case 'SeatCharacterBound':
+    case 'SeatCharacterReleased': {
+      // Only an in-sequence event changes the set; duplicates and gaps defer to the resync path.
+      if (!view.room || msg.seq !== view.lastSeq + 1)
+        return needsRoundResync(view, msg);
+      const next = { ...view, lastSeq: msg.seq, needsResync: true };
+      const seatId = String(msg.payload.seatId ?? '');
+      const boundSeatIds =
+        msg.type === 'SeatCharacterBound'
+          ? view.boundSeatIds.includes(seatId)
+            ? view.boundSeatIds
+            : [...view.boundSeatIds, seatId]
+          : view.boundSeatIds.filter((id) => id !== seatId);
+      return { ...next, boundSeatIds };
+    }
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':
@@ -198,8 +217,6 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'SeatAuthenticated':
     case 'SeatClaimPending':
     case 'SeatResumeChallenge':
-    case 'SeatCharacterBound':
-    case 'SeatCharacterReleased':
     case 'SeatCharacterBoundPrivate':
       return view; // surfaced by the client, not part of room state
   }
