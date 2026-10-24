@@ -658,6 +658,7 @@ export function Game() {
       {room.roundsEnabled && (
         <RoundPanel
           round={room.round}
+          closeAnnouncement={live.roundCloseAnnouncement}
           seats={room.seats}
           myActionId={live.privateRoundSubmission?.actionId}
           myText={

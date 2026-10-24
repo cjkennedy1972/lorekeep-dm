@@ -70,6 +70,10 @@ async function openAs(
     }),
   );
   await page.goto(path);
+  if (new URL(path, origin).pathname.endsWith('/game'))
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Connected to the room.' }),
+    ).toBeVisible({ timeout: 30_000 });
   return { accountId: account.accountId, context, page, frames };
 }
 
@@ -197,6 +201,19 @@ test.describe.serial('party round and host panels (real server)', () => {
       await expect(
         hostView.page.getByRole('heading', { name: 'Host controls' }),
       ).toBeVisible();
+      await expect(
+        scoutView.page.getByRole('status').filter({
+          hasText: 'Connected to the room.',
+        }),
+      ).toBeVisible();
+      const resume = hostView.page.getByRole('button', {
+        name: 'Resume table',
+      });
+      if (await resume.isVisible()) {
+        await expect(resume).toBeEnabled();
+        await resume.click();
+        await expect(resume).toBeHidden();
+      }
       await tabTo(hostView.page, 'Resolve round now');
       await hostView.page.keyboard.press('Enter');
 
@@ -205,6 +222,11 @@ test.describe.serial('party round and host panels (real server)', () => {
           .getByRole('status')
           .filter({ hasText: 'Round resolve requested.' }),
       ).toBeVisible();
+      await expect
+        .poll(() =>
+          scoutView.frames.some((frame) => frame.type === 'RoundClosing'),
+        )
+        .toBe(true);
       await expect(
         scoutView.page
           .getByRole('status')
@@ -488,6 +510,12 @@ test.describe.serial('party round and host panels (real server)', () => {
     const hostView = await openAs(browser, guest, table, path);
     const seatedView = await openAs(browser, host, table, path);
     try {
+      for (const view of [hostView, seatedView])
+        await expect(
+          view.page.getByRole('status').filter({
+            hasText: 'Connected to the room.',
+          }),
+        ).toBeVisible();
       await hostView.page
         .getByRole('button', { name: 'End the table', exact: true })
         .click();

@@ -63,7 +63,7 @@ function fixture() {
 }
 
 describe('room actor', () => {
-  it('includes a complete public round snapshot in StateSync', async () => {
+  it('resyncs a public round snapshot without other seats’ private text', async () => {
     const { store } = fixture();
     const accountId = randomUUID();
     const seatId = randomUUID();
@@ -177,6 +177,17 @@ describe('room actor', () => {
       },
     });
     expect(JSON.stringify(otherPrivate)).not.toContain('private action text');
+    const resyncedSeatB: unknown[] = [];
+    await room.subscribe(
+      otherAccountId,
+      { send: (message) => resyncedSeatB.push(message) },
+      -1,
+    );
+    expect(resyncedSeatB).toContainEqual(
+      expect.objectContaining({ type: 'StateSync' }),
+    );
+    expect(JSON.stringify(resyncedSeatB)).not.toContain('private action text');
+    expect(JSON.stringify(resyncedSeatB)).toContain('other private action');
   });
 
   it('does not send private round submissions to revoked or left seats', async () => {
@@ -239,7 +250,9 @@ describe('room actor', () => {
     const left = randomUUID();
     await room.seat(left, 'Left');
     const leftMessages: unknown[] = [];
-    await room.subscribe(left, { send: (message) => leftMessages.push(message) });
+    await room.subscribe(left, {
+      send: (message) => leftMessages.push(message),
+    });
     await room.leave(left);
     leftMessages.length = 0;
     (

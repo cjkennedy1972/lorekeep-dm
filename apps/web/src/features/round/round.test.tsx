@@ -433,7 +433,7 @@ describe('HostControls', () => {
 });
 
 describe('roomReducer round events', () => {
-  it('asks for a resync without advancing lastSeq, so the StateSync is applied', () => {
+  it('advances the round event seq and accepts an equal-sequence StateSync', () => {
     const synced = roomReducer(initialRoomView, {
       seq: 5,
       type: 'StateSync',
@@ -451,7 +451,7 @@ describe('roomReducer round events', () => {
       payload: {},
     } as never);
     expect(afterRound.needsResync).toBe(true);
-    expect(afterRound.lastSeq).toBe(5);
+    expect(afterRound.lastSeq).toBe(6);
     const resynced = roomReducer(afterRound, {
       seq: 6,
       type: 'StateSync',

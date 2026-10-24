@@ -16,6 +16,11 @@ export interface RoomView {
     text: string;
     queued: boolean;
   };
+  roundCloseAnnouncement?: {
+    roundId: string;
+    closeReason: NonNullable<RoundSnapshot['closeReason']>;
+    summary: string;
+  };
 }
 
 export const initialRoomView: RoomView = {
@@ -23,6 +28,13 @@ export const initialRoomView: RoomView = {
   lastSeq: 0,
   needsResync: false,
 };
+
+function needsRoundResync(view: RoomView, msg: ServerMessage): RoomView {
+  if (msg.seq <= view.lastSeq) return view;
+  if (!view.room || msg.seq !== view.lastSeq + 1)
+    return view.needsResync ? view : { ...view, needsResync: true };
+  return { ...view, lastSeq: msg.seq, needsResync: true };
+}
 
 /** Pure reducer: StateSync replaces; sequenced patches apply only when seq === lastSeq + 1. */
 export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
@@ -35,7 +47,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
           : undefined,
       };
     case 'StateSync':
-      // While a resync is pending, a snapshot at the stored seq answers it (thin Round* broadcasts don't advance lastSeq); older ones stay stale.
+      // While a resync is pending, an equal-sequence snapshot answers it; older ones stay stale.
       if (
         view.room &&
         (msg.seq < view.lastSeq ||
@@ -46,13 +58,66 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
         room: { ...msg.payload.state, round: msg.payload.round },
         lastSeq: msg.seq,
         needsResync: false,
-        privateRoundSubmission: undefined,
+        ...(view.privateRoundSubmission &&
+        msg.payload.round?.roundId === view.privateRoundSubmission.roundId
+          ? { privateRoundSubmission: view.privateRoundSubmission }
+          : { privateRoundSubmission: undefined }),
+        ...(view.roundCloseAnnouncement
+          ? { roundCloseAnnouncement: view.roundCloseAnnouncement }
+          : {}),
       };
-    case 'RoundResolved': {
+    case 'RoundClosing': {
+      if (msg.seq <= view.lastSeq) return view;
       const roundId = String(msg.payload.roundId ?? '');
+      const round = view.room?.round;
+      const closeReason = msg.payload.closeReason;
+      const roundCloseAnnouncement =
+        typeof closeReason === 'string'
+          ? {
+              roundId,
+              closeReason: closeReason as NonNullable<
+                RoundSnapshot['closeReason']
+              >,
+              summary: round
+                ? `${round.eligibleSeatIds.filter((id) => round.submissions.some((item) => item.seatId === id)).length} of ${round.eligibleSeatIds.length} submitted.`
+                : 'Round closed.',
+            }
+          : view.roundCloseAnnouncement;
+      if (!view.room || msg.seq !== view.lastSeq + 1)
+        return {
+          ...view,
+          ...(roundCloseAnnouncement ? { roundCloseAnnouncement } : {}),
+          needsResync: true,
+        };
       return {
         ...view,
-        needsResync: true,
+        lastSeq: msg.seq,
+        ...(roundCloseAnnouncement ? { roundCloseAnnouncement } : {}),
+        room: {
+          ...view.room,
+          ...(round?.roundId === roundId
+            ? {
+                round: {
+                  ...round,
+                  status: 'closing',
+                  ...(typeof closeReason === 'string'
+                    ? {
+                        closeReason: closeReason as NonNullable<
+                          RoundSnapshot['closeReason']
+                        >,
+                      }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+      };
+    }
+    case 'RoundResolved': {
+      const roundId = String(msg.payload.roundId ?? '');
+      const next = needsRoundResync(view, msg);
+      return {
+        ...next,
         ...(view.privateRoundSubmission?.roundId === roundId
           ? { privateRoundSubmission: undefined }
           : {}),
@@ -61,7 +126,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'PresenceChanged': {
       if (msg.seq <= view.lastSeq) return view; // duplicate or out-of-order
       if (!view.room || msg.seq !== view.lastSeq + 1)
-        return view.needsResync ? view : { ...view, needsResync: true };
+        return needsRoundResync(view, msg);
       const { seatId, presence } = msg.payload;
       return {
         ...view,
@@ -78,8 +143,15 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RoundActionAccepted':
     case 'RoundActionQueued':
     case 'RoundActionEdited':
-    case 'RoundActionWithdrawn':
-    case 'RoundClosing':
+    case 'RoundActionWithdrawn': {
+      const next = needsRoundResync(view, msg);
+      if (!view.roundCloseAnnouncement) return next;
+      const roundId = String(msg.payload.roundId ?? '');
+      if (roundId === view.roundCloseAnnouncement.roundId) return next;
+      const { roundCloseAnnouncement: _closed, ...withoutCloseAnnouncement } =
+        next;
+      return withoutCloseAnnouncement;
+    }
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':
@@ -92,7 +164,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'TableEnded':
     case 'ChatMuteChanged':
       // Round broadcasts carry thin payloads, not full submissions; the full round arrives in a StateSync after a Resync.
-      return view.needsResync ? view : { ...view, needsResync: true };
+      return needsRoundResync(view, msg);
     case 'ActionQueued':
     case 'ActionWithdrawn':
     case 'TurnThinking':
