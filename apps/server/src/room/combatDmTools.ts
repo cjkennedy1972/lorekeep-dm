@@ -14,6 +14,16 @@ export type RoomOptionHandles = NonNullable<RoomCombatState['optionHandles']>;
 export const roomTurnKey = (room: RoomCombatState) =>
   room.turnId ?? `r${room.combat.round}:${room.combat.activeEntityId}`;
 
+/** Spend a used area handle (ADR-022 §2.2: single-use); other handles stay. */
+export function consumeOptionHandle(
+  room: RoomCombatState,
+  ref: string,
+): RoomCombatState {
+  if (!room.optionHandles?.[ref]) return room;
+  const { [ref]: _used, ...rest } = room.optionHandles;
+  return { ...room, optionHandles: rest };
+}
+
 /**
  * `move_to` / `suggest_area_target` against the authoritative Room combat state. Pure: the
  * returned room differs from the input only when the engine accepted the call, so a rejected
@@ -86,20 +96,12 @@ export function runCombatMapTool(
         'unreachable',
         `No entity, marker, feature, or current option matches ${ref}.`,
       );
-    const handles = Object.fromEntries(
-      Object.entries(room.optionHandles ?? {}).filter(
-        ([, h]) => h.expiresTurn === turnId,
-      ),
-    );
-    const result = execute(
-      { ...base, optionHandles: handles } as ToolExecutorState,
-      call,
-      room.seed ?? 1,
-    );
+    const result = execute(base, call, room.seed ?? 1);
     if (!result.ok) return { result, room };
     const moved = (result.value as { state: Move['state']; pending: unknown[] })
       .state;
     const pending = (result.value as Move).pending;
+    // Refused until M4-6d: the reaction lifecycle (ADR-018) is not wired to DM tools yet.
     if (pending.length)
       return reject(
         'unreachable',

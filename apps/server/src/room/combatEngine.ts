@@ -177,9 +177,11 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
     const entity = state.entities.find((e) => e.id === nextId);
     if (!entity || !alive(entity)) continue;
     events.push({ type: 'TurnStarted', entityId: nextId, round });
+    // Area handles expire at turn end (ADR-022 §2.2).
+    const { optionHandles: _expired, ...carried } = state;
     return {
       state: {
-        ...state,
+        ...carried,
         // The engine identifies the next entity here; Room keeps its command
         // window closed until the previous turn's narration has committed.
         phase: state.turnId ? 'narrating' : 'awaiting-command',

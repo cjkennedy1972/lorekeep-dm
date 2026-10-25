@@ -98,8 +98,7 @@ export const DMToolArgsSchema = {
   }),
   move_to: strict({
     entityId: entityRef,
-    // An engine-issued area option (suggest_area_target) is also a legal destination reference.
-    targetRef: targetRef.or(z.string().regex(/^opt_[a-z0-9]{4,8}$/)),
+    targetRef,
     mode: z.enum(['adjacent', 'within', 'retreat', 'cover']),
   }),
   suggest_area_target: strict({

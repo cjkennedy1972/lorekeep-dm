@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { runCombatMapTool } from '../../src/room/combatDmTools.js';
+import {
+  consumeOptionHandle,
+  runCombatMapTool,
+} from '../../src/room/combatDmTools.js';
 import { runMonsters } from '../../src/room/combatEngine.js';
 import { advanceTurn } from '../../src/room/combatEngine.js';
 import { bootstrapped, catalog, hero, placed } from './combatFixtures.js';
@@ -75,6 +78,35 @@ describe('DM map tools against Room combatRoom', () => {
     expect(out.room).toBe(hiddenRoom);
   });
 
+  it('hidden goblin in reach is refused in adjacent mode with the same generic error as an unknown id', () => {
+    const room = placed(ariaTurn(), { 'ent_goblin-minion_1': { x: 8, y: 2 } });
+    const hiddenRoom = {
+      ...room,
+      entities: room.entities.map((e) =>
+        e.id === 'ent_goblin-minion_1' ? { ...e, hidden: true } : e,
+      ),
+    };
+    const adjacent = (targetRef: string) => ({
+      name: 'move_to' as const,
+      args: { entityId: hero.id, targetRef, mode: 'adjacent' },
+    });
+    const hidden = runCombatMapTool(
+      hiddenRoom,
+      adjacent('ent_goblin-minion_1'),
+      env,
+    );
+    const unknown = runCombatMapTool(hiddenRoom, adjacent('ent_nobody'), env);
+    expect(hidden.result.ok).toBe(false);
+    expect(hidden.room).toBe(hiddenRoom);
+    const shape = (r: { error?: string; hint?: string }, ref: string) => ({
+      error: r.error,
+      hint: r.hint?.replace(ref, '<ref>'),
+    });
+    expect(shape(hidden.result as never, 'ent_goblin-minion_1')).toEqual(
+      shape(unknown.result as never, 'ent_nobody'),
+    );
+  });
+
   it('refuses a route that would open a reaction window', () => {
     const room = placed(ariaTurn(), { 'ent_goblin-minion_1': { x: 6, y: 2 } });
     const out = runCombatMapTool(room, move('mk_entrance'), env);
@@ -82,7 +114,7 @@ describe('DM map tools against Room combatRoom', () => {
     expect(out.room).toBe(room);
   });
 
-  it('area aim issues turn-bound handles that previews list, hidden units omitted, and move_to accepts only while fresh', () => {
+  it('area aim issues turn-bound handles that previews list, hidden units omitted, and ', () => {
     const room = placed(ariaTurn(), {
       'ent_goblin-minion_1': { x: 8, y: 2 },
       'ent_goblin-minion_2': { x: 9, y: 2 },
@@ -111,18 +143,38 @@ describe('DM map tools against Room combatRoom', () => {
         (h) => h.expiresTurn === 'later',
       ),
     ).toBe(true);
-    // an option reference is a well-formed move_to destination, resolved by the engine (not a coordinate)
+    // handles are DM-only: move_to takes no option reference (schema rejects it; engine finds no match)
     const viaOption = runCombatMapTool(
       out.room,
       move(Object.keys(handles)[0]!),
       env,
     );
-    expect(JSON.stringify(viaOption.result)).not.toContain('schema-violation');
+    expect(viaOption.result.ok).toBe(false);
   });
 
   it('replays identically', () => {
     const run = () => runCombatMapTool(ariaTurn(), move('mk_entrance'), env);
     expect(run()).toEqual(run());
+  });
+});
+
+describe('area option handles are single-use and end with the turn', () => {
+  it('consumeOptionHandle spends only the used handle', () => {
+    const room = runCombatMapTool(
+      placed(ariaTurn(), { 'ent_goblin-minion_1': { x: 8, y: 2 } }),
+      area,
+      env,
+    ).room;
+    const [first, ...others] = Object.keys(room.optionHandles!);
+    const spent = consumeOptionHandle(room, first!);
+    expect(spent.optionHandles).not.toHaveProperty(first!);
+    expect(Object.keys(spent.optionHandles!)).toEqual(others);
+  });
+
+  it('advancing the turn clears every handle', () => {
+    const room = runCombatMapTool(ariaTurn(), area, env).room;
+    expect(Object.keys(room.optionHandles!).length).toBeGreaterThan(0);
+    expect(advanceTurn(room).state.optionHandles).toBeUndefined();
   });
 });
 
