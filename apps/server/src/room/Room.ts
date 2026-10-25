@@ -303,6 +303,13 @@ export class LateJoinRequestConflictError extends Error {
   }
 }
 
+export class LateJoinUnavailableError extends Error {
+  constructor() {
+    super('Late-join table unavailable');
+    this.name = 'LateJoinUnavailableError';
+  }
+}
+
 export class RoomSeatRequiredError extends Error {
   constructor() {
     super('Player is not seated at this table');
@@ -2527,7 +2534,7 @@ export class Room {
     authTokenHash?: string,
   ): Promise<string> {
     return this.enqueue(async () => {
-      if (this.state.ended) throw new Error('Table ended');
+      if (this.state.ended) throw new LateJoinUnavailableError();
       const requestKey = `${accountId}:${actionId}`;
       const priorRequest = (this.state.lateJoinRequests ?? []).find(
         (request) =>
@@ -2612,8 +2619,8 @@ export class Room {
     requestId: string,
   ): Promise<void> {
     return this.enqueue(async () => {
-      if (this.actionIds.has(actionId)) return;
       const actor = await this.requireHost(accountId);
+      if (this.actionIds.has(actionId)) return;
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );
@@ -2791,11 +2798,11 @@ export class Room {
     requestId: string,
   ): Promise<void> {
     return this.enqueue(async () => {
+      const actor = await this.requireHost(accountId);
       if (this.actionIds.has(actionId)) {
         if (this.state.lateJoinActionOwners?.[actionId] === accountId) return;
         throw new RoomSeatRequiredError();
       }
-      const actor = await this.requireHost(accountId);
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );

@@ -26,6 +26,7 @@ import { SeatCharacterError } from '../persistence/seatCharacters.js';
 import {
   LateJoinLimitedError,
   LateJoinRequestConflictError,
+  LateJoinUnavailableError,
 } from '../room/Room.js';
 
 type Seater = Pick<RoomRegistry, 'get' | 'getByLateJoinRequestId'>;
@@ -572,6 +573,11 @@ export function registerSessionRoutes(
           status: 'pending',
         });
       } catch (error) {
+        if (error instanceof LateJoinUnavailableError)
+          return reply.code(404).send({
+            code: 'INVITE_INVALID',
+            message: 'This invite link is no longer valid.',
+          });
         if (error instanceof LateJoinLimitedError)
           return (
             error.retryAfterSeconds !== undefined

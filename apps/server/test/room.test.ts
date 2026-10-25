@@ -8,6 +8,7 @@ import { advanceTurn } from '../src/room/combatEngine.js';
 import {
   Room,
   LateJoinRequestConflictError,
+  LateJoinUnavailableError,
   nextLateJoinBoundary,
   type RoomStore,
 } from '../src/room/Room.js';
@@ -119,6 +120,16 @@ describe('room actor', () => {
     expect(
       recovered.clientState(hostAccountId).lateJoinRequests ?? [],
     ).not.toContainEqual(expect.objectContaining({ requestId }));
+  });
+
+  it('reports a neutral unavailable error when the table ends before a late-join request', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    room.state.ended = true;
+
+    await expect(
+      room.requestLateJoin(randomUUID(), randomUUID(), 1, randomUUID()),
+    ).rejects.toBeInstanceOf(LateJoinUnavailableError);
   });
 
   it('resyncs a public round snapshot without other seats’ private text', async () => {
@@ -809,6 +820,7 @@ describe('room actor', () => {
     it('bounds persisted late-join request replay results', async () => {
       const { store } = fixture();
       const room = new Room(store, lease, await store.loadLatest(id));
+      const cancelActionIds: string[] = [];
       for (let index = 0; index < 260; index++) {
         const requester = randomUUID();
         const requestId = await room.requestLateJoin(
@@ -817,10 +829,67 @@ describe('room actor', () => {
           1,
           randomUUID(),
         );
-        await room.cancelLateJoin(requester, randomUUID(), requestId);
+        const cancelActionId = randomUUID();
+        cancelActionIds.push(cancelActionId);
+        await room.cancelLateJoin(requester, cancelActionId, requestId);
       }
       expect(Object.keys(room.state.lateJoinRequestResults ?? {})).toHaveLength(
         256,
+      );
+      expect(Object.keys(room.state.lateJoinActionOwners ?? {})).toHaveLength(
+        256,
+      );
+      expect(room.state.lateJoinActionOwners).not.toHaveProperty(
+        cancelActionIds[0]!,
+      );
+      expect(room.state.lateJoinActionOwners).toHaveProperty(
+        cancelActionIds.at(-1)!,
+      );
+    });
+
+    it('requires host authorization before replaying committed late-join actions', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      const player = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.seat(player, 'Player');
+
+      const approvedRequestId = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const approveActionId = randomUUID();
+      await room.approveLateJoin(host, approveActionId, approvedRequestId);
+      const committedApproveError = await room
+        .approveLateJoin(player, approveActionId, randomUUID())
+        .catch((error: unknown) => error);
+      const freshApproveError = await room
+        .approveLateJoin(player, randomUUID(), randomUUID())
+        .catch((error: unknown) => error);
+      expect((committedApproveError as Error).message).toBe(
+        (freshApproveError as Error).message,
+      );
+
+      const deniedRequestId = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const denyActionId = randomUUID();
+      await room.denyLateJoin(host, denyActionId, deniedRequestId);
+      const committedDenyError = await room
+        .denyLateJoin(player, denyActionId, randomUUID())
+        .catch((error: unknown) => error);
+      const freshDenyError = await room
+        .denyLateJoin(player, randomUUID(), randomUUID())
+        .catch((error: unknown) => error);
+      expect((committedDenyError as Error).message).toBe(
+        (freshDenyError as Error).message,
       );
     });
 

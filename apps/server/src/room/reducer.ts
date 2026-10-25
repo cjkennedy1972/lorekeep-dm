@@ -317,6 +317,7 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
         ? { [`${request.accountId}:${request.actionId}`]: request.characterId }
         : {}),
     };
+    // Terminal actions do not prune replay results; retain the newest 256 FIFO entries.
     const boundedRequestResults = Object.fromEntries(
       Object.entries(requestResults).slice(-256),
     );
@@ -368,8 +369,12 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       ...(actionId && actorAccountId
         ? {
             lateJoinActionOwners: {
-              ...(state.lateJoinActionOwners ?? {}),
-              [actionId]: actorAccountId,
+              ...Object.fromEntries(
+                Object.entries({
+                  ...(state.lateJoinActionOwners ?? {}),
+                  [actionId]: actorAccountId,
+                }).slice(-256),
+              ),
             },
           }
         : {}),
