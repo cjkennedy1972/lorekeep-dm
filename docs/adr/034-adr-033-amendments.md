@@ -1,6 +1,6 @@
 # ADR-034: ADR-033 follow-ups and amendments
 
-Status: Proposed (draft PR) · Date: 2026-10-22 · Owner: Sage · Depends on: ADR-002, ADR-003, ADR-022, ADR-029, ADR-030, ADR-031, ADR-033
+Status: Accepted (2026-10-25) · Date: 2026-10-22 · Owner: Sage · Depends on: ADR-002, ADR-003, ADR-022, ADR-029, ADR-030, ADR-031, ADR-033
 
 Append-only: this ADR adds contracts and amends the merged ADR-030 and ADR-022 without editing them. It also amends ADR-033 (merged). Each amendment below names the section it changes and the ADR-033 lines it supersedes. Nothing here edits `docs/architecture.md`. Its event types are declared as additions to the v0.2 event list in architecture §15.6.
 
@@ -120,3 +120,14 @@ These codes are declared here as an extension of the ADR-022 §2.4 enum, as ADR-
 - Read: ADR-030 (§§1.6, 1.7, 4.8, 6.1, 7.2, 8, "Decisions needed" item 5 at merged line 143), ADR-022 (§§1 T3–T5, 2.3 items 7, 10, 17, 2.4, 4.2), ADR-033 as merged in `1a0a1db` (§§1, 3, 4, 5, 6, 7, 8, D12, D19, D20).
 - Not verified: the full ADR-031 text on hidden-entity presence; the architecture §15.6 current event list. §5 of this ADR states the complete set for this decision.
 - Prettier is run on this file before commit.
+
+## Status update (2026-10-25)
+
+Accepted. Merged in `b64b02d` (#270). The decision text above is unchanged. Checked against `origin/main` (27a1347, #309):
+
+- **§1 rest-vote cancel on combat start:** shipped. `cancelRestVoteForCombat()` in `apps/server/src/room/restVote.ts` returns `outcome: failed` with `closeReason: cancelled-combat`, and `Room.ts` applies it in the same mailbox pass as `CombatStarted`. The code emits the field as `closeReason`, so the §1 rename matches shipped code. ADR-030's own text still says `reason` and stays unedited, as the amendment requires.
+- **§6 admission codes:** `not-your-turn`, `move-in-progress`, `reaction-window-open`, and `narration-in-progress` are shipped in `combat.ts`. `seat-mismatch`, `prompt-closed`, and `combat-start-unauthorized` are not in the tree yet.
+- **§3 hidden reactors and §5 event split:** not implemented. Depends on the reaction prompt events, which ADR-033 §7.1 declares but the code does not emit (see the ADR-033 status update).
+- **§2 combat narration tool scope and §4 host-revoke behavior:** not verified in code. Narration turns are not implemented yet, and no bounded revoke path was found.
+
+No code was changed by this status update.
