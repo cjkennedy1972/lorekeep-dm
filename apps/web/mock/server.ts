@@ -16,7 +16,14 @@ import {
   type Account,
   type ExportJob,
 } from '@game/schema';
-import { bumpRevision, characterById, charactersFor } from './characters.js';
+import {
+  allowWrite,
+  bumpRevision,
+  characterById,
+  charactersFor,
+  createCharacter,
+  parseCreateBody,
+} from './characters.js';
 import { Room, type RoundScript } from './room.js';
 
 // The contract has no HTTP error schema yet; reuse the WS Error payload shape {code, message}.
@@ -320,6 +327,29 @@ export function createMock(
           }),
         ),
       });
+    // Mirrors POST /api/me/characters (create only): strict body, server-generated id, 201 with the picker fields.
+    if (route === 'POST /api/me/characters') {
+      const sheet = parseCreateBody(await readBody(req));
+      if (!sheet)
+        return err(
+          res,
+          400,
+          'INVALID_CHARACTER',
+          'Character could not be saved.',
+        );
+      if (!allowWrite(account.id))
+        return err(
+          res,
+          429,
+          'RATE_LIMITED',
+          'Too many requests. Try again later.',
+        );
+      const { id, revision, name, classId, speciesId, level } = createCharacter(
+        account.id,
+        sheet,
+      );
+      return json(res, 201, { id, revision, name, classId, speciesId, level });
+    }
     if (url.pathname.startsWith('/api/operator/'))
       return err(res, 404, 'NOT_FOUND', 'Not found.');
     if (route === 'GET /api/me')

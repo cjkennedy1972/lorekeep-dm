@@ -8,6 +8,7 @@ import {
 import type { Character } from '@game/schema';
 import { gameStore } from '../../state/store';
 import { loadCharacterCatalog } from './catalog';
+import { SaveToAccount } from './SaveToAccount';
 
 const catalog = loadCharacterCatalog();
 const classes = catalog.entries.filter((entry) => entry.kind === 'class');
@@ -37,6 +38,7 @@ export function QuickBuild({
   };
 
   if (saved) {
+    const built = gameStore.getState().character;
     return (
       <section aria-labelledby="quick-build-title">
         <h1 id="quick-build-title">Your hero is ready</h1>
@@ -45,6 +47,7 @@ export function QuickBuild({
           character.
         </p>
         <Link to="/characters/edit">Edit this character in the wizard</Link>
+        {built && <SaveToAccount character={built} />}
       </section>
     );
   }
