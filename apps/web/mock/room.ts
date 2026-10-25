@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { characterById } from './characters.js';
 import {
   AccountIdSchema,
   SeatIdSchema,
@@ -47,6 +48,8 @@ const SCRIPTED = {
 export class Room {
   private seq = 0;
   private seats = new Map<string, Seat>();
+  /** Accounts whose seat was created by reserveSeat; their first join announces it, as a fresh seat would. */
+  private reserved = new Set<string>();
   private conns = new Map<string, Set<Send>>();
   private timer: NodeJS.Timeout | undefined;
   private paused = false;
@@ -57,6 +60,8 @@ export class Room {
   private closeReason: RoundCloseReason | undefined;
   private deadlineAt: number | null = null;
   private queued = new Map<string, Submission>();
+  /** seatId -> bound characterId, the table-side binding the server keeps per seat. */
+  private bound = new Map<string, string>();
   private chatSeq = 0;
   readonly sessionId = SessionIdSchema.parse(
     '00000000-0000-4000-8000-0000000000c1',
@@ -97,7 +102,15 @@ export class Room {
   /** StateSync payload: the round rides beside the state, as the server sends it (clientSyncPayload). */
   syncPayload() {
     const { round, ...state } = this.state();
-    return { state, round: round && this.publicRound(round) };
+    const boundSeatIds = [...this.bound.keys()].map((id) =>
+      SeatIdSchema.parse(id),
+    );
+    return {
+      state,
+      round: round && this.publicRound(round),
+      // Omitted when empty, as the server sends it: clients treat absent as no bound seats.
+      ...(boundSeatIds.length ? { boundSeatIds } : {}),
+    };
   }
 
   /** Strips submission text and accountId, which the strict RoundSnapshot schema rejects. */
@@ -123,6 +136,8 @@ export class Room {
     const seat = this.seats.get(accountId);
     if (!seat) return;
     const body = (payload ?? {}) as Record<string, unknown>;
+    if (type === 'BindCharacter')
+      return this.bindCharacter(seat, actionId, body);
     const mine = this.submissions.get(accountId) ?? this.queued.get(accountId);
     if (type === 'PlayerAction' && typeof body.text === 'string') {
       // Like the server, a seat acting while the round is closing lands in the queue.
@@ -160,6 +175,83 @@ export class Room {
     } else return;
     this.broadcastState();
     this.sendSeatPrivateRoundSync(accountId);
+  }
+
+  /** Mirrors the server's BindCharacter rejections: each sends one typed Error with the request actionId echoed. */
+  private bindCharacter(
+    seat: Seat,
+    actionId: string,
+    body: Record<string, unknown>,
+  ) {
+    const character =
+      typeof body.characterId === 'string'
+        ? characterById(body.characterId)
+        : undefined;
+    const reject = (code: string, message: string) => {
+      const error = {
+        seq: this.seq,
+        type: 'Error',
+        payload: { code, message, actionId },
+      } as ServerMessage;
+      for (const send of this.conns.get(seat.accountId) ?? []) send(error);
+    };
+    // Foreign and unknown ids get the same neutral rejection, so the client never learns whether a character exists.
+    if (!character || character.accountId !== seat.accountId)
+      return reject('ACTION_REJECTED', "That character can't be bound.");
+    if (character.revision !== body.expectedRevision)
+      return reject(
+        'STALE_REVISION',
+        'The character changed. Reload and retry.',
+      );
+    if (this.bound.has(seat.seatId))
+      return reject(
+        'ALREADY_BOUND',
+        'This seat already has a character bound.',
+      );
+    // Bound to another seat at this table: the real server answers with the neutral rejection, not ALREADY_BOUND.
+    if ([...this.bound.values()].includes(character.id))
+      return reject('ACTION_REJECTED', "That character can't be bound.");
+    this.bound.set(seat.seatId, character.id);
+    this.emit({
+      seq: ++this.seq,
+      type: 'SeatCharacterBound',
+      payload: { seatId: seat.seatId },
+    } as ServerMessage);
+    for (const send of this.conns.get(seat.accountId) ?? [])
+      send({
+        seq: ++this.seq,
+        type: 'SeatCharacterBoundPrivate',
+        payload: { seatId: seat.seatId },
+      } as ServerMessage);
+  }
+
+  /** Sends one message to every connected seat. */
+  private emit(msg: ServerMessage) {
+    for (const set of this.conns.values()) for (const send of set) send(msg);
+  }
+
+  /**
+   * Creates the account's seat without sending anything, so SeatAuthenticated can carry its id before join's frames.
+   * Returns null when the table is full.
+   */
+  reserveSeat(account: Account, isHost = false): string | null {
+    const existing = this.seats.get(account.id);
+    if (existing) return existing.seatId;
+    if (this.seats.size >= 6) return null;
+    this.seats.set(account.id, this.newSeat(account, isHost));
+    this.reserved.add(account.id);
+    return this.seats.get(account.id)!.seatId;
+  }
+
+  private newSeat(account: Account, isHost: boolean): Seat {
+    return {
+      seatId: SeatIdSchema.parse(crypto.randomUUID()),
+      accountId: account.id,
+      displayName: account.displayName,
+      presence: 'offline',
+      isHost,
+      matureOptOut: false,
+    };
   }
 
   private submission(seat: Seat, actionId: string, text: string): Submission {
@@ -255,18 +347,12 @@ export class Room {
   /** Seats the account (max 6), sends StateSync to it, broadcasts presence. Returns leave(). */
   join(account: Account, send: Send, isHost = false): (() => void) | null {
     let seat = this.seats.get(account.id);
-    const fresh = !seat;
+    let fresh = this.reserved.delete(account.id);
     if (!seat) {
       if (this.seats.size >= 6) return null;
-      seat = {
-        seatId: SeatIdSchema.parse(crypto.randomUUID()),
-        accountId: account.id,
-        displayName: account.displayName,
-        presence: 'offline',
-        isHost,
-        matureOptOut: false,
-      };
+      seat = this.newSeat(account, isHost);
       this.seats.set(account.id, seat);
+      fresh = true;
     }
     const set = this.conns.get(account.id) ?? new Set<Send>();
     set.add(send);
@@ -310,6 +396,13 @@ export class Room {
 
   /** Removes a deleted account's seat. */
   remove(accountId: string) {
+    const seat = this.seats.get(accountId);
+    if (seat && this.bound.delete(seat.seatId))
+      this.emit({
+        seq: ++this.seq,
+        type: 'SeatCharacterReleased',
+        payload: { seatId: seat.seatId },
+      } as ServerMessage);
     this.seats.delete(accountId);
     this.conns.delete(accountId);
   }

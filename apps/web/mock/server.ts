@@ -16,6 +16,7 @@ import {
   type Account,
   type ExportJob,
 } from '@game/schema';
+import { bumpRevision, characterById, charactersFor } from './characters.js';
 import { Room, type RoundScript } from './room.js';
 
 // The contract has no HTTP error schema yet; reuse the WS Error payload shape {code, message}.
@@ -295,6 +296,30 @@ export function createMock(
       }
       return json(res, 200, {});
     }
+    // Test-only: bumps a character's revision so an already-chosen binding goes stale.
+    const revisionRoute = /^\/api\/test\/characters\/([^/]+)\/revision$/.exec(
+      url.pathname,
+    );
+    if (req.method === 'POST' && revisionRoute) {
+      const owned = characterById(revisionRoute[1]!);
+      if (owned?.accountId !== account.id)
+        return err(res, 404, 'NOT_FOUND', 'Not found.');
+      return json(res, 200, { revision: bumpRevision(owned.id)?.revision });
+    }
+    // Mirrors GET /api/me/characters: only this account's characters, as ids plus picker fields.
+    if (route === 'GET /api/me/characters')
+      return json(res, 200, {
+        characters: charactersFor(account.id).map(
+          ({ id, revision, name, classId, speciesId, level }) => ({
+            id,
+            revision,
+            name,
+            classId,
+            speciesId,
+            level,
+          }),
+        ),
+      });
     if (url.pathname.startsWith('/api/operator/'))
       return err(res, 404, 'NOT_FOUND', 'Not found.');
     if (route === 'GET /api/me')
@@ -660,10 +685,12 @@ export function createMock(
             return void ws.close(1008, 'Host approval required');
           }
           resumeTokens.set(tokenKey, randomBytes(16).toString('base64url'));
+          const seatId = room.reserveSeat(account, owner === account.id);
+          if (!seatId) return void ws.close(1008, 'room full');
           send({
             seq: 0,
             type: 'SeatAuthenticated',
-            payload: { resumeToken: resumeTokens.get(tokenKey) },
+            payload: { seatId, resumeToken: resumeTokens.get(tokenKey) },
           });
           leave = room.join(account, send, owner === account.id) ?? undefined;
           if (!leave) return void ws.close(1008, 'room full');
