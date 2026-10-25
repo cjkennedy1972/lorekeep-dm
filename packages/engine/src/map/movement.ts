@@ -384,10 +384,7 @@ export function resolveReaction(
     // Forced movement has separate rules and is intentionally outside this revalidation.
     if (pending.mode !== 'forced') {
       const moverConditions = conditionsOf(resumed, liveMover);
-      if (
-        hpOf(resumed, liveMover) <= 0 ||
-        moverConditions.has('incapacitated')
-      )
+      if (hpOf(resumed, liveMover) <= 0 || moverConditions.has('incapacitated'))
         return {
           ok: true,
           state: resumed,
@@ -395,10 +392,7 @@ export function resolveReaction(
           pending: [],
           movementEnd: 'incapacitated',
         };
-      if (
-        moverConditions.has('restrained') ||
-        moverConditions.has('grappled')
-      )
+      if (moverConditions.has('restrained') || moverConditions.has('grappled'))
         return {
           ok: true,
           state: resumed,
