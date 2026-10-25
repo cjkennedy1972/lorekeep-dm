@@ -14,7 +14,7 @@ M4 is not exit-ready until all four architecture gates below have evidence. A me
 ## Scope and interpretation
 
 - The M4 breakdown items 0–5 have merged implementations (see PRs #263, #266, #268, #271/#274/#281, #278, and #273 respectively), but item-level implementation does not by itself satisfy these four milestone exit gates.
-- Item 6 is partial: phase admission, lifecycle events, and movement/reaction continuation shipped in #307–#309; single-turn narration lifecycle remains draft in #310.
+- Item 6 is partial: phase admission, lifecycle events, and movement/reaction continuation shipped in #307–#309; single-turn narration lifecycle merged in #310 (469dc416); the turn timer (6b), reaction prompt lifecycle (6d), narration contract (6c) and map tools (item 7) remain open.
 - Item 7 is missing a dedicated Workboard task. M1/M2 already provide the engine reference/path movement and area-target tools and deterministic monster policy; M4 still needs the production Room bridge from authoritative `combatRoom` state into those DM tools and persisted results. See new card `252ee21b`.
 - Item 8 remains open; the host-control UI PRs do not prove the complete accessible map-combat path.
 - Item 9 has a green baseline simulation and a measured spotlight result, but the combat-specific simulation additions and real playtest are still outstanding.
