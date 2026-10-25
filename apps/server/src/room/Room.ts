@@ -2088,7 +2088,7 @@ export class Room {
         ...nextCombat,
         phase: 'awaiting-command',
         turnId: nextTurnId,
-        turnDeadline: deadline ?? undefined,
+        ...this.turnClockFields(deadline),
       };
       events.push({
         type: 'TurnOpened',
@@ -2193,8 +2193,13 @@ export class Room {
           : {}),
       });
       this.scheduleRestVoteTimer();
-      if (paused) await this.freezeRoundTimer();
-      else await this.resumeRoundTimer();
+      if (paused) {
+        await this.freezeRoundTimer();
+        await this.freezeTurnTimer();
+      } else {
+        await this.resumeRoundTimer();
+        await this.thawTurnTimer();
+      }
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3329,6 +3334,7 @@ export class Room {
         cause: 'no-connected-seats',
       });
       await this.freezeRoundTimer();
+      await this.freezeTurnTimer();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3341,6 +3347,7 @@ export class Room {
     ) {
       await this.persist('TablePaused', { paused: false });
       await this.resumeRoundTimer();
+      await this.thawTurnTimer();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3535,6 +3542,16 @@ export class Room {
     return (
       this.state.turnTimerMs ?? (this.bindingEnforced ? TURN_DEADLINE_MS : null)
     );
+  }
+
+  /** A turn that opens while the table is paused starts frozen with its full length. */
+  private turnClockFields(
+    deadline: number | null,
+  ): Pick<RoomCombatState, 'turnDeadline' | 'turnTimerRemainingMs'> {
+    if (deadline === null) return {};
+    return this.state.paused
+      ? { turnTimerRemainingMs: this.turnTimerMs() ?? 0 }
+      : { turnDeadline: deadline };
   }
 
   private newTurnDeadline(): number | null {
@@ -4658,7 +4675,7 @@ export class Room {
               phase: 'awaiting-command',
               turnId: openedId,
               narrationAttempts: 0,
-              turnDeadline: deadline ?? undefined,
+              ...this.turnClockFields(deadline),
             },
           };
           combatEvents.push({
@@ -4698,7 +4715,7 @@ export class Room {
                 phase: 'awaiting-command' as const,
                 turnId: nextTurnId,
                 narrationAttempts: 0,
-                turnDeadline: deadline ?? undefined,
+                ...this.turnClockFields(deadline),
                 turnNarrationEvents: undefined,
                 turnNarrationEventIds: undefined,
               };
@@ -5195,6 +5212,45 @@ export class Room {
       delete next.turnTimerRemainingMs;
     }
     return next;
+  }
+
+  /** Table pause: keep the remaining time instead of a deadline (ADR-033 §5.2, §7.2). */
+  private async freezeTurnTimer(): Promise<void> {
+    clearTimeout(this.turnTimer);
+    this.turnTimer = undefined;
+    const combat = roomGameState(this.state);
+    if (!combat?.turnId || combat.turnDeadline === undefined) return;
+    const remainingMs = Math.max(0, combat.turnDeadline - Date.now());
+    const rest = { ...combat };
+    delete rest.turnDeadline;
+    await this.commitGameState(
+      {
+        ...(this.state.gameState as Record<string, unknown>),
+        combatRoom: { ...rest, turnTimerRemainingMs: remainingMs },
+      },
+      [{ type: 'TurnTimerPaused', turnId: combat.turnId, remainingMs }],
+    );
+  }
+
+  private async thawTurnTimer(): Promise<void> {
+    const combat = roomGameState(this.state);
+    if (
+      !combat?.turnId ||
+      combat.turnTimerRemainingMs === undefined ||
+      combat.pendingReaction // the reaction answer thaws it
+    )
+      return;
+    const rest = { ...combat };
+    delete rest.turnTimerRemainingMs;
+    const deadline = Date.now() + combat.turnTimerRemainingMs;
+    await this.commitGameState(
+      {
+        ...(this.state.gameState as Record<string, unknown>),
+        combatRoom: { ...rest, turnDeadline: deadline },
+      },
+      [{ type: 'TurnTimerResumed', turnId: combat.turnId, deadline }],
+    );
+    this.scheduleTurnTimer();
   }
 
   private scheduleTurnTimer(): void {

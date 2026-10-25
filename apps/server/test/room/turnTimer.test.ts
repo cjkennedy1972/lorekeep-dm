@@ -57,6 +57,15 @@ describe('host turn timer setting (ADR-033 §5.1)', () => {
 });
 
 const START = 2_000_000;
+/** A fresh Room recovers every seat as unknown, which pauses the table until a seat is connected (ADR-031 §4.7, 10 s hold). */
+const BASE = START + 10_000;
+async function seatUp(
+  room: ReturnType<ReturnType<typeof memoryTable>['boot']>,
+  table: ReturnType<typeof memoryTable>,
+) {
+  await joinSeated(room, account, table.connection);
+  await vi.advanceTimersByTimeAsync(10_000);
+}
 
 /** A party-first combat whose Aria turn is open with a running timer; a stub DM counts narrations. */
 function openTurn(
@@ -100,7 +109,7 @@ describe('turn timer expiry (ADR-033 §5.3-5.4)', () => {
   it('fires at the deadline, not before: TurnTimedOut, Dodge, one resolution, one narration, next turn opens', async () => {
     const { table, narrations, of } = openTurn();
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     await vi.advanceTimersByTimeAsync(89_999);
     expect(of('TurnTimedOut')).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
@@ -130,7 +139,7 @@ describe('turn timer expiry (ADR-033 §5.3-5.4)', () => {
       state: { turnTimerMs: 90_000, turnTimeoutAction: 'hold' },
     });
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     await vi.advanceTimersByTimeAsync(90_000);
     await room.drain();
     expect(of('TurnTimedOut')[0]!.payload).toMatchObject({ action: 'hold' });
@@ -157,7 +166,7 @@ describe('turn timer expiry (ADR-033 §5.3-5.4)', () => {
       },
     );
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     await vi.advanceTimersByTimeAsync(90_000);
     await room.drain();
     expect(of('TurnTimedOut')[0]!.payload).toMatchObject({ action: 'hold' });
@@ -167,7 +176,7 @@ describe('turn timer expiry (ADR-033 §5.3-5.4)', () => {
   it('a solo table with no setting has no timer and no deadline on the next turn', async () => {
     const { table, of } = openTurn({ state: {} }, { turnDeadline: undefined });
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(of('TurnTimedOut')).toHaveLength(0);
     await room.submitCombatCommand(account, crypto.randomUUID(), {
@@ -181,12 +190,11 @@ describe('turn timer expiry (ADR-033 §5.3-5.4)', () => {
   it('the next turn gets a fresh absolute deadline from the configured length', async () => {
     const { table, of } = openTurn({ state: { turnTimerMs: 45_000 } });
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     await vi.advanceTimersByTimeAsync(90_000);
     await room.drain();
     const opened = of('TurnOpened')[0]!.payload as { deadline: number };
-    expect(opened.deadline).toBeGreaterThanOrEqual(START + 45_000);
-    expect(opened.deadline).toBeLessThanOrEqual(START + 90_000 + 45_000);
+    expect(opened.deadline).toBe(BASE + 90_000 + 45_000);
   });
 });
 
@@ -199,7 +207,7 @@ describe('one resolution per turn: player command vs timer', () => {
   it('a command that lands first wins; the timer then does nothing', async () => {
     const { table, of } = openTurn();
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     await vi.advanceTimersByTimeAsync(89_999);
     await endTurn(room);
     await vi.advanceTimersByTimeAsync(5_000);
@@ -211,7 +219,7 @@ describe('one resolution per turn: player command vs timer', () => {
   it('an expiry that lands first wins; the late command is rejected', async () => {
     const { table, of } = openTurn();
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     vi.advanceTimersByTime(90_000); // timer callback queued in the mailbox
     await endTurn(room);
     await vi.advanceTimersByTimeAsync(1);
@@ -224,8 +232,8 @@ describe('one resolution per turn: player command vs timer', () => {
   it('a command queued ahead of the expiry in the same tick wins', async () => {
     const { table, of } = openTurn();
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
-    vi.setSystemTime(START + 90_000);
+    await seatUp(room, table);
+    vi.setSystemTime(BASE + 90_000);
     const pending = endTurn(room);
     vi.advanceTimersByTime(0);
     await vi.advanceTimersByTimeAsync(1);
@@ -250,7 +258,7 @@ describe('turn timer freezes during a reaction window (ADR-033 §5.2)', () => {
       },
     );
     const room = table.boot();
-    await joinSeated(room, account, table.connection);
+    await seatUp(room, table);
     await vi.advanceTimersByTimeAsync(30_000);
     await room.submitCombatCommand(account, crypto.randomUUID(), {
       command: 'move',
@@ -265,11 +273,100 @@ describe('turn timer freezes during a reaction window (ADR-033 §5.2)', () => {
     const thawed = table.game().combatRoom as RoomCombatState;
     expect(thawed.pendingReaction).toBeUndefined();
     expect(thawed.turnTimerRemainingMs).toBeUndefined();
-    expect(thawed.turnDeadline).toBe(START + 45_000 + 60_000);
+    expect(thawed.turnDeadline).toBe(BASE + 45_000 + 60_000);
     await vi.advanceTimersByTimeAsync(44_999); // T0+90 s: the old deadline
     expect(of('TurnTimedOut')).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(15_001);
     await room.drain();
     expect(of('TurnTimedOut')).toHaveLength(1);
+  });
+});
+
+describe('turn timer across pause and restart (ADR-033 §5.2, §7.2, §8)', () => {
+  const tracked = (table: ReturnType<typeof openTurn>['table']) =>
+    table.game().combatRoom as RoomCombatState;
+
+  it('a pause keeps the remaining time and resume continues from it', async () => {
+    const { table, of } = openTurn();
+    const room = table.boot();
+    await seatUp(room, table);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await room.setPaused(account, true, true);
+    expect(tracked(table).turnDeadline).toBeUndefined();
+    expect(tracked(table).turnTimerRemainingMs).toBe(60_000);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await room.setPaused(account, false, true);
+    expect(tracked(table).turnDeadline).toBe(BASE + 30_000 + 600_000 + 60_000);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    await room.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+  });
+
+  it('a restart while paused stays frozen and resumes with the stored remaining time', async () => {
+    const { table, of } = openTurn();
+    const first = table.boot();
+    await seatUp(first, table);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await first.setPaused(account, true, true);
+    await first.drain();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    const second = table.boot();
+    await second.join(account, table.connection);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await second.setPaused(account, false, true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await second.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+  });
+
+  it('a restart with nobody reconnecting still fires at the persisted absolute deadline', async () => {
+    const { table, of } = openTurn();
+    const first = table.boot();
+    await seatUp(first, table);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await first.drain();
+    const second = table.boot(); // no join: the persisted epoch-ms deadline is re-armed
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    await second.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+  });
+
+  it('a reconnect after restart holds the table, then spends only the stored remaining time', async () => {
+    const { table, of } = openTurn();
+    const first = table.boot();
+    await seatUp(first, table);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await first.drain();
+    const second = table.boot();
+    await second.join(account, table.connection);
+    await vi.advanceTimersByTimeAsync(39_999); // 10 s reconnect hold, then 30 s left
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    await second.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+  });
+
+  it('a turn that expired while the process was down resolves exactly once', async () => {
+    const { table, narrations, of } = openTurn();
+    const first = table.boot();
+    await first.drain();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    const second = table.boot();
+    await vi.advanceTimersByTimeAsync(1);
+    await second.drain();
+    // A third boot (a second crash) finds the turn already resolved and narrated.
+    const third = table.boot();
+    await third.join(account, table.connection);
+    await vi.advanceTimersByTimeAsync(10_001);
+    await third.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+    expect(of('TurnResolved')).toHaveLength(1);
+    expect(narrations).toHaveLength(1);
   });
 });
