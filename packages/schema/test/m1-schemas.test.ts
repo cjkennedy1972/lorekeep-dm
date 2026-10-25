@@ -151,6 +151,29 @@ describe('combat lifecycle event compatibility', () => {
   });
 
   test('does not accept malformed lifecycle event payloads', () => {
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'CombatStarted',
+        combatId: 'combat-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'CombatStarted',
+        combatId: 'combat-1',
+        order: ['a'],
+      }).success,
+    ).toBe(false);
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'CombatStarted',
+        encounterId: 'encounter-1',
+        entityIds: ['a'],
+      }).success,
+    ).toBe(false);
+    expect(EngineEventSchema.safeParse({ type: 'CombatEnded' }).success).toBe(
+      false,
+    );
     expect(EngineEventSchema.safeParse({ type: 'TurnTimedOut' }).success).toBe(
       false,
     );

@@ -31,7 +31,7 @@ function begun(seed: number): { state: CombatState; events: CombatEvent[] } {
 }
 
 describe('combat state and commands', () => {
-  test('replays a legacy combat log deterministically', () => {
+  test('replays a legacy engine CombatEvent log idempotently', () => {
     const oldLog: CombatEvent[] = [
       {
         type: 'CombatStarted',

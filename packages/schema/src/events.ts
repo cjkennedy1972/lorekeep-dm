@@ -61,6 +61,7 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   ev('TurnOpened', {
     turnId: z.string().min(1),
     entityId,
+    /** Absolute wall-clock deadline in Unix epoch milliseconds; never monotonic. */
     deadline: z.number().int().nonnegative(),
   }),
   ev('TurnResolved', {
