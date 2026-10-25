@@ -263,6 +263,8 @@ export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 
 /** Default party turn timer (ADR-033 §5.1); solo tables default to off. */
 const TURN_DEADLINE_MS = 90_000;
+/** ADR-033 §5.5: fixed bound on a turn whose controller is away or unknown, whatever the timer setting. Not configurable. */
+const AWAY_BOUND_MS = 90_000;
 const DRAIN_DEADLINE_MS = 30_000;
 const DEFAULT_ROUND_MS = 120_000;
 const ROUND_GATE_GRACE_MS = 5_000;
@@ -372,6 +374,13 @@ export class Room {
   private combatRoundForLateJoin = 0;
   private reactionTimer?: NodeJS.Timeout;
   private turnTimer?: NodeJS.Timeout;
+  private awayBoundTimer?: NodeJS.Timeout;
+  /** In-memory by design: a restart restarts it at most AWAY_BOUND_MS after boot (every seat recovers as unknown). */
+  private awayBound?: {
+    turnId: string;
+    deadlineAt?: number;
+    remainingMs?: number;
+  };
   private restVoteTimer?: NodeJS.Timeout;
   private turnInFlight = false;
   private turnAbort?: AbortController;
@@ -496,6 +505,7 @@ export class Room {
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     this.scheduleReaction();
     this.scheduleTurnTimer();
+    this.scheduleAwayBound();
     this.scheduleRestVoteTimer();
     for (const [actionId, open] of Object.entries(
       this.state.openClarifications ?? {},
@@ -708,6 +718,7 @@ export class Room {
         candidate.seatId === seatId ? { ...candidate, presence } : candidate,
       ),
     });
+    this.scheduleAwayBound();
     const now = Date.now();
     const priorPending = this.pendingPresenceEvents.get(seatId);
     if (presence === 'returning' && priorPending?.type === 'SeatDisconnected') {
@@ -2196,9 +2207,11 @@ export class Room {
       if (paused) {
         await this.freezeRoundTimer();
         await this.freezeTurnTimer();
+        this.scheduleAwayBound();
       } else {
         await this.resumeRoundTimer();
         await this.thawTurnTimer();
+        this.scheduleAwayBound();
       }
       this.broadcast({
         seq: this.seq,
@@ -3335,6 +3348,7 @@ export class Room {
       });
       await this.freezeRoundTimer();
       await this.freezeTurnTimer();
+      this.scheduleAwayBound();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3348,6 +3362,7 @@ export class Room {
       await this.persist('TablePaused', { paused: false });
       await this.resumeRoundTimer();
       await this.thawTurnTimer();
+      this.scheduleAwayBound();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -5173,6 +5188,7 @@ export class Room {
       this.broadcast(reactionMessage(this.seq, state.pendingReaction));
     this.scheduleReaction();
     this.scheduleTurnTimer();
+    this.scheduleAwayBound();
     if (
       events.some(
         (event) =>
@@ -5306,6 +5322,107 @@ export class Room {
         );
       }, 1_000);
       this.turnTimer.unref?.();
+      return;
+    }
+    await this.applyTimeoutAction(current);
+  }
+
+  /**
+   * ADR-033 §5.5 bounded resolution in awaiting-command and moving, with the
+   * timer on or off: a revoked controller resolves at once; an away or unknown
+   * one after AWAY_BOUND_MS from the change. The bound freezes with the table
+   * and with a reaction window, and a returning seat clears it.
+   */
+  private scheduleAwayBound(): void {
+    clearTimeout(this.awayBoundTimer);
+    this.awayBoundTimer = undefined;
+    const combat = roomGameState(this.state);
+    const turnId = combat?.turnId;
+    const activeId = combat?.combat?.activeEntityId;
+    if (
+      !this.accepting ||
+      !combat ||
+      !turnId ||
+      !activeId ||
+      combat.ended ||
+      combat.phase === 'narrating'
+    ) {
+      this.awayBound = undefined;
+      return;
+    }
+    const presence = this.reactionSeatPresence(activeId);
+    if (presence === 'revoked') {
+      void this.enqueue(() => this.resolveByPresence(turnId, 'revoked')).catch(
+        () => undefined,
+      );
+      return;
+    }
+    if (presence !== 'away' && presence !== 'unknown') {
+      this.awayBound = undefined;
+      return;
+    }
+    let bound =
+      this.awayBound?.turnId === turnId
+        ? this.awayBound
+        : { turnId, deadlineAt: Date.now() + AWAY_BOUND_MS };
+    if (this.state.paused || combat.pendingReaction) {
+      if (bound.deadlineAt !== undefined)
+        bound = {
+          turnId,
+          remainingMs: Math.max(0, bound.deadlineAt - Date.now()),
+        };
+      this.awayBound = bound;
+      return;
+    }
+    if (bound.deadlineAt === undefined)
+      bound = { turnId, deadlineAt: Date.now() + (bound.remainingMs ?? 0) };
+    this.awayBound = bound;
+    this.awayBoundTimer = setTimeout(
+      () => {
+        this.awayBoundTimer = undefined;
+        void this.enqueue(() => this.resolveByPresence(turnId, 'bound')).catch(
+          () => undefined,
+        );
+      },
+      Math.max(0, bound.deadlineAt! - Date.now()),
+    );
+    this.awayBoundTimer.unref?.();
+  }
+
+  private async resolveByPresence(
+    turnId: string,
+    kind: 'revoked' | 'bound',
+  ): Promise<void> {
+    const current = roomGameState(this.state);
+    const activeId = current?.combat.activeEntityId;
+    if (
+      !current ||
+      !activeId ||
+      current.turnId !== turnId ||
+      current.ended ||
+      current.pendingReaction ||
+      current.phase === 'narrating' ||
+      this.state.paused
+    )
+      return;
+    const presence = this.reactionSeatPresence(activeId);
+    const bound = this.awayBound;
+    const due =
+      kind === 'revoked'
+        ? presence === 'revoked'
+        : (presence === 'away' || presence === 'unknown') &&
+          bound?.turnId === turnId &&
+          bound.deadlineAt !== undefined &&
+          Date.now() >= bound.deadlineAt;
+    if (!due) return;
+    if (this.turnInFlight) {
+      // ponytail: poll once a second while a DM turn is in flight.
+      const retry = setTimeout(() => {
+        void this.enqueue(() => this.resolveByPresence(turnId, kind)).catch(
+          () => undefined,
+        );
+      }, 1_000);
+      retry.unref?.();
       return;
     }
     await this.applyTimeoutAction(current);
@@ -5558,13 +5675,19 @@ export class Room {
     const accountId = Object.entries(game?.combatActors ?? {}).find(
       ([, actor]) => actor === entityId,
     )?.[0];
-    return this.state.seats.find((seat) => seat.accountId === accountId)
-      ?.presence;
+    return (
+      this.state.seats.find((seat) => seat.accountId === accountId)?.presence ??
+      // A seat that left or was kicked moves to revokedSeats and can no longer act.
+      (this.state.revokedSeats?.some((seat) => seat.accountId === accountId)
+        ? 'revoked'
+        : undefined)
+    );
   }
 
   /** The retained PC entity is now uncontrolled: decline its reaction and defend on its turn (ADR-035 §2). */
   private afterSeatReleased(): void {
     this.scheduleReaction();
+    this.scheduleAwayBound();
     this.queueAwayAutopilot();
   }
 
@@ -5690,6 +5813,7 @@ export class Room {
     this.draining = true;
     clearTimeout(this.reactionTimer);
     clearTimeout(this.turnTimer);
+    clearTimeout(this.awayBoundTimer);
     clearTimeout(this.restVoteTimer);
     for (const timer of this.lateJoinExpiryTimers.values()) clearTimeout(timer);
     this.lateJoinExpiryTimers.clear();
