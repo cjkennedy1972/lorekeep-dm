@@ -124,6 +124,9 @@ describe('SaveToAccount', () => {
         screen.getByRole('button', { name: 'Save to my account' }),
       ).toBeEnabled();
       expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: 'Save again anyway' }),
+      ).toBeNull();
     },
   );
 
@@ -141,18 +144,29 @@ describe('SaveToAccount', () => {
 
   test('a dropped response says the save may have happened and offers no plain retry', async () => {
     failWith(0, 'NETWORK');
-    renderSave();
+    const { container } = renderSave();
     fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
       'We may or may not have saved this character. Check your characters in the party lobby before trying again.',
     );
     expect(
       screen.queryByRole('button', { name: 'Save to my account' }),
     ).toBeNull();
     expect(
-      screen.getByRole('link', { name: 'Go to my games' }),
+      screen.getByRole('link', { name: 'Check your characters' }),
     ).toHaveAttribute('href', '/rooms');
+    expect(
+      screen.getByText(/Saving again may create a second character/),
+    ).toBeInTheDocument();
     expect(apiMock).toHaveBeenCalledTimes(1);
+
+    // Focus lands on the alert; in tab order the link comes before the explicit button, which is last.
+    expect(alert).toHaveFocus();
+    const tabStops = Array.from(
+      container.querySelectorAll<HTMLElement>('a[href], button'),
+    ).map((el) => el.textContent);
+    expect(tabStops).toEqual(['Check your characters', 'Save again anyway']);
   });
 
   test('a thrown network error is treated as uncertain too', async () => {

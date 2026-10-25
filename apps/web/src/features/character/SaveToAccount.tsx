@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Character } from '@game/schema';
 import { api } from '../../api';
@@ -32,6 +32,13 @@ export function SaveToAccount({ character }: { character: Character }) {
   const [state, setState] = useState<SaveState>({ kind: 'idle' });
   // A ref, not state, so a second click before the first response is ignored.
   const inFlight = useRef(false);
+  const alertRef = useRef<HTMLParagraphElement>(null);
+  const uncertain = state.kind === 'failed' && state.failure === 'uncertain';
+
+  // Focus the uncertain alert so the next Tab reaches "Check your characters" before the explicit button.
+  useEffect(() => {
+    if (uncertain) alertRef.current?.focus();
+  }, [uncertain]);
 
   if (!account) return null;
 
@@ -58,8 +65,6 @@ export function SaveToAccount({ character }: { character: Character }) {
     }
   }
 
-  const uncertain = state.kind === 'failed' && state.failure === 'uncertain';
-
   return (
     <section aria-labelledby={headingId}>
       <h2 id={headingId}>Save to my account</h2>
@@ -81,13 +86,15 @@ export function SaveToAccount({ character }: { character: Character }) {
           </p>
           {uncertain ? (
             <>
-              <p role="alert">{saveFailureMessage('uncertain')}</p>
-              <p>
-                <Link to="/rooms">Go to my games</Link>
+              <p role="alert" tabIndex={-1} ref={alertRef}>
+                {saveFailureMessage('uncertain')}
               </p>
               <p>
-                Saving again creates a second copy if the first save went
-                through.
+                <Link to="/rooms">Check your characters</Link>
+              </p>
+              <p>
+                Saving again may create a second character if the first save
+                went through.
               </p>
               <button type="button" onClick={() => void save()}>
                 Save again anyway

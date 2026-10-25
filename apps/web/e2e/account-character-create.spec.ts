@@ -109,22 +109,30 @@ test('a dropped save response is uncertain; "Save again anyway" creates a second
   expect(armed.ok()).toBe(true);
 
   await page.getByRole('button', { name: 'Save to my account' }).click();
-  await expect(
-    page
-      .getByRole('alert')
-      .filter({ hasText: 'We may or may not have saved this character' }),
-  ).toBeVisible();
+  const alert = page
+    .getByRole('alert')
+    .filter({ hasText: 'We may or may not have saved this character' });
+  await expect(alert).toBeFocused();
   // No plain retry: the only way to post again is the explicit button.
   await expect(
     page.getByRole('button', { name: 'Save to my account' }),
   ).toHaveCount(0);
+
+  // Keyboard order: the link comes first, and the explicit button is the last stop.
+  await page.keyboard.press('Tab');
+  await expect(
+    page.getByRole('link', { name: 'Check your characters' }),
+  ).toBeFocused();
+  await page.keyboard.press('Tab');
+  const again = page.getByRole('button', { name: 'Save again anyway' });
+  await expect(again).toBeFocused();
 
   // The server did create the character even though the client never heard back.
   const afterDrop = await ownCharacterNames(context);
   expect(afterDrop).toHaveLength(seeded + 1);
   const name = afterDrop[seeded]!;
 
-  await page.getByRole('button', { name: 'Save again anyway' }).click();
+  await page.keyboard.press('Enter');
   await expect(
     page
       .getByRole('status')
