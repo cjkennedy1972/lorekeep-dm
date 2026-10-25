@@ -1308,9 +1308,16 @@ describe('Room: one persisted narration per resolved combat turn', () => {
         expect.any(String),
       ]),
     });
-    expect((resolved?.payload as { eventIds: string[] }).eventIds).toContain(
-      String(dodge?.seq),
+    const eventIds = (resolved?.payload as { eventIds: string[] }).eventIds;
+    expect(eventIds).toContain(String(dodge?.seq));
+    expect(eventIds.map(Number)).toEqual(
+      [...eventIds].map(Number).sort((left, right) => left - right),
     );
+    expect(
+      eventIds.every((id) =>
+        table.events.some((event) => String(event.seq) === id),
+      ),
+    ).toBe(true);
     const narratedFacts = table.game().combatRoom as RoomCombatState;
     expect(narratedFacts.turnNarrationEvents).toBeUndefined();
     expect(
@@ -1455,6 +1462,49 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     expect(
       table.events.filter((event) => event.type === 'TurnOpened'),
     ).toHaveLength(1);
+  });
+
+  it('persists endpoint-error fallback and advances a combat turn', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'narrating',
+      turnId: 'endpoint-failure-turn',
+      narrationAttempts: 0,
+      turnNarrationEvents: [
+        { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+      ],
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    const runner = {
+      async run() {
+        narrationStarted();
+        throw new Error('narration endpoint unavailable');
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.setPaused(account, false, true);
+    await started;
+    await room.drain();
+
+    expect(table.events.find((event) => event.type === 'TurnFallback')?.payload)
+      .toMatchObject({ turnId: 'endpoint-failure-turn', reason: 'endpoint-error' });
+    expect(table.events.filter((event) => event.type === 'NarrationCommitted'))
+      .toHaveLength(1);
+    expect(table.events.filter((event) => event.type === 'TurnOpened')).toHaveLength(1);
   });
 
   it('commits the ADR-022 fallback without another DM call after two interrupted attempts', async () => {
