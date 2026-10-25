@@ -44,6 +44,8 @@ export interface BuildPromptInput {
   session: PromptSession;
   turn: PromptTurn;
   activeMode: 'exploration' | 'combat';
+  /** Combat narration turn: only the read-only tools exist (ADR-034 §2). */
+  readOnlyTools?: boolean;
   /** Optional versioned JSON schemas for schema-registry integrations. */
   toolSchemas?: Readonly<Record<string, unknown>>;
 }
@@ -90,6 +92,11 @@ export function estimateTokens(text: string): number {
 export const TOKEN_ESTIMATE_METHOD =
   'UTF-8 bytes / 3, rounded up (conservative English approximation; typically within ±35%, not a model tokenizer)';
 
+/** ADR-022 §2.3 items 10 and 17: the only tools that cannot change state. */
+export const READ_ONLY_TOOLS: readonly string[] = [
+  'suggest_area_target',
+  'rules_lookup',
+];
 export const COMBAT_ONLY_TOOLS: readonly string[] = [
   'attack',
   'cast_spell',
@@ -103,6 +110,7 @@ function makeStatic(input: BuildPromptInput): string {
   const modeTools = DMToolCallSchema.options
     .map((tool) => tool.shape.name.value)
     .filter((name) => {
+      if (input.readOnlyTools) return READ_ONLY_TOOLS.includes(name);
       if (input.activeMode === 'combat') return true;
       return ![...COMBAT_ONLY_TOOLS, 'start_combat'].includes(name);
     });

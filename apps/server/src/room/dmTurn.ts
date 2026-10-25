@@ -17,6 +17,8 @@ export interface SoloTurnRequest {
   allowClarification?: boolean;
   clarificationAsked?: boolean;
   steerAway?: boolean;
+  /** Combat narration turn: read-only tool scope (ADR-034 §2). */
+  combatNarration?: boolean;
   signal?: AbortSignal;
 }
 

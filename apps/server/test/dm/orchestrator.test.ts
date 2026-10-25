@@ -981,3 +981,65 @@ describe('DM orchestrator turn order in combat', () => {
     );
   });
 });
+
+describe('DM orchestrator: combat narration tool scope (ADR-034 §2)', () => {
+  it('offers only read-only tools and refuses a mutating call without executing it', async () => {
+    const execute = vi.fn(() => ({
+      ok: true,
+      summary: 'applied',
+      events: ['HpChanged'],
+      output: { events: [{ type: 'HpChanged' }], nextState: { mutated: true } },
+    }));
+    const { input, requests, events } = setup(
+      [
+        [
+          call('c1', 'attack', {
+            attackerId: 'ent_ayla',
+            targetId: 'ent_goblin',
+            attackId: 'srd:attack/longsword',
+          }),
+        ],
+        [{ type: 'text', delta: narration }],
+      ],
+      execute,
+    );
+    input.prompt.activeMode = 'combat';
+    input.prompt.readOnlyTools = true;
+    input.allowClarification = true;
+    const result = await runTurn(input);
+    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual([
+      'rules_lookup',
+      'suggest_area_target',
+    ]);
+    expect(execute).not.toHaveBeenCalled();
+    expect(input.context.state).toEqual({ unchanged: true });
+    expect(
+      result.events.some((e) => (e as { type?: string }).type === 'HpChanged'),
+    ).toBe(false);
+    expect(
+      events.some(
+        (e) =>
+          (e as { type?: string; error?: string }).type ===
+            'ToolCallRejected' &&
+          (e as { error?: string }).error === 'unknown-tool',
+      ),
+    ).toBe(true);
+    expect(result.narration).toBe(narration);
+  });
+
+  it('still runs read-only tools', async () => {
+    const execute = vi.fn(() => ({ ok: true, summary: 'ok', events: [] }));
+    const { input } = setup(
+      [
+        [call('c1', 'rules_lookup', { topic: 'opportunity attack' })],
+        [{ type: 'text', delta: narration }],
+      ],
+      execute,
+    );
+    input.context.rulesLookup = async () => [];
+    input.prompt.activeMode = 'combat';
+    input.prompt.readOnlyTools = true;
+    await runTurn(input);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+});

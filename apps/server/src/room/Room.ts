@@ -4369,6 +4369,7 @@ export class Room {
           allowClarification: !clarificationAsked,
           clarificationAsked,
           steerAway: xCardAtStart.requested > xCardAtStart.steered,
+          ...(combatTurnId ? { combatNarration: true } : {}),
           signal: AbortSignal.any([this.drainAbort.signal, turnAbort.signal]),
         },
         (event) => {

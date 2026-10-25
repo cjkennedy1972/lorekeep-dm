@@ -1135,8 +1135,10 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     const started = new Promise<void>((resolve) => {
       narrationStarted = resolve;
     });
+    const requests: { combatNarration?: boolean }[] = [];
     const runner = {
       async run(request: unknown) {
+        requests.push(request as { combatNarration?: boolean });
         narrationStarted();
         return {
           narration: 'The encounter ends.',
@@ -1173,6 +1175,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     expect(
       table.events.filter((event) => event.type === 'NarrationCommitted'),
     ).toHaveLength(1);
+    expect(requests.map((r) => r.combatNarration)).toEqual([true]);
     expect(table.events.some((event) => event.type === 'TurnOpened')).toBe(
       false,
     );

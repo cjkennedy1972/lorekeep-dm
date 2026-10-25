@@ -839,6 +839,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 }
               : {}),
           },
+          ...(request.combatNarration ? { readOnlyTools: true } : {}),
           activeMode:
             state &&
             typeof state === 'object' &&
