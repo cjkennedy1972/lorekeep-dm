@@ -1464,6 +1464,64 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     ).toBe(true);
   });
 
+  it('narrates a no-op turn exactly once and does not re-narrate after recovery', async () => {
+    const e = bootstrapped();
+    const requests: { text?: string }[] = [];
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    const runner = {
+      async run(request: unknown) {
+        requests.push(request as { text?: string });
+        narrationStarted();
+        return {
+          narration: 'Nothing happens.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const game = {
+      ...e.game,
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: {
+        ...e.state,
+        phase: 'awaiting-command',
+        turnId: 'noop-turn',
+        narrationAttempts: 0,
+        combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+      } as RoomCombatState,
+    };
+    const table = memoryTable(game, runner);
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    await room.setPaused(account, false, true);
+    await started;
+    await room.drain();
+    expect(requests).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'NarrationCommitted'),
+    ).toHaveLength(1);
+
+    // A restart after the commit sees an open next turn, not an unnarrated one.
+    const committed = table.game().combatRoom as RoomCombatState;
+    expect(committed.phase).toBe('awaiting-command');
+    const again = memoryTable(
+      { ...table.game(), combatRoom: committed },
+      runner,
+    );
+    const rebooted = again.boot();
+    await joinSeated(rebooted, account, again.connection);
+    await rebooted.setPaused(account, false, true);
+    await rebooted.drain();
+    expect(requests).toHaveLength(1);
+  });
+
   it('excludes hidden-entity facts from recovered combat narration input', async () => {
     const e = bootstrapped();
     let promptText = '';
