@@ -1404,7 +1404,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     await room.setPaused(account, false, true);
     await room.drain();
     expect(promptText).not.toContain('ent_goblin-minion_1');
-    expect(promptText).not.toContain('delta\":-9');
+    expect(promptText).not.toContain('delta:-9');
     expect(promptText).toContain('ent_aria');
   });
 
