@@ -5061,7 +5061,10 @@ export class Room {
         eventIds: turnNarrationEventIds,
       });
     }
-    combatState = this.turnClockAfterCommit(beforeCombat ?? undefined, combatState);
+    combatState = this.turnClockAfterCommit(
+      beforeCombat ?? undefined,
+      combatState,
+    );
     const committedEvents = [...result.events, ...lifecycleEvents];
     const gameState = settleEngine(
       {
