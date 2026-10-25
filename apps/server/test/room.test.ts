@@ -101,22 +101,57 @@ describe('room actor', () => {
     const { store, events } = fixture();
     const requestId = randomUUID();
     const accountId = randomUUID();
+    const pendingSeatId = randomUUID();
     events.push({
       sessionId: id,
       seq: 1,
+      turnId: randomUUID(),
+      type: 'SeatJoined',
+      payload: {
+        seatId: pendingSeatId,
+        accountId,
+        displayName: 'Legacy player',
+        presence: 'offline',
+      },
+      ts: new Date(),
+    });
+    events.push({
+      sessionId: id,
+      seq: 2,
       turnId: randomUUID(),
       type: 'LateJoinRequested',
       payload: { requestId, accountId, displayName: 'Legacy player' },
       ts: new Date(),
     });
 
-    const recovered = new Room(store, lease, await store.loadLatest(id));
+    const recovered = new Room(
+      store,
+      lease,
+      await store.loadLatest(id),
+      undefined,
+      undefined,
+      [{ seatId: pendingSeatId, accountId, characterSnapshot: {} }],
+      true,
+    );
     const hostAccountId = randomUUID();
     await recovered.seat(hostAccountId, 'Host');
     await recovered.drain();
 
     expect(recovered.state.lateJoinRequests).toEqual([]);
     expect(events.map((event) => event.type)).toContain('LateJoinExpired');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'SeatRevoked',
+        payload: expect.objectContaining({
+          seatId: pendingSeatId,
+          accountId,
+          cause: 'late-join-expired',
+        }),
+      }),
+    );
+    expect(events.map((event) => event.type)).toContain(
+      'SeatCharacterReleased',
+    );
     expect(
       recovered.clientState(hostAccountId).lateJoinRequests ?? [],
     ).not.toContainEqual(expect.objectContaining({ requestId }));
@@ -130,6 +165,22 @@ describe('room actor', () => {
     await expect(
       room.requestLateJoin(randomUUID(), randomUUID(), 1, randomUUID()),
     ).rejects.toBeInstanceOf(LateJoinUnavailableError);
+  });
+
+  it('does not count revoked seats toward the six-seat cap', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accounts = Array.from({ length: 6 }, () => randomUUID());
+    for (const [index, accountId] of accounts.entries())
+      await room.seat(accountId, `Player ${index}`);
+
+    await room.leave(accounts[0]!);
+    await expect(
+      room.seat(randomUUID(), 'Replacement'),
+    ).resolves.toBeUndefined();
+    expect(
+      room.state.seats.filter((seat) => seat.presence !== 'revoked'),
+    ).toHaveLength(6);
   });
 
   it('resyncs a public round snapshot without other seats’ private text', async () => {

@@ -1224,7 +1224,11 @@ export class Room {
         await this.declineExpiredReaction();
       if (!seat) {
         if (options.requireExistingSeat) throw new RoomSeatRequiredError();
-        if (this.state.seats.length >= 6) throw new Error('Room is full');
+        if (
+          this.state.seats.filter((item) => item.presence !== 'revoked')
+            .length >= 6
+        )
+          throw new Error('Room is full');
         seat = {
           seatId: randomUUID() as RoomState['seats'][number]['seatId'],
           accountId: accountId as RoomState['seats'][number]['accountId'],
@@ -1313,7 +1317,11 @@ export class Room {
         (item) => item.accountId === accountId,
       );
       if (existing) return undefined;
-      if (this.state.seats.length >= 6) throw new Error('Room is full');
+      if (
+        this.state.seats.filter((item) => item.presence !== 'revoked').length >=
+        6
+      )
+        throw new Error('Room is full');
       const seatId = randomUUID();
       await this.persist('SeatJoined', {
         seatId,

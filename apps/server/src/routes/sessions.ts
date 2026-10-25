@@ -443,6 +443,11 @@ export function registerSessionRoutes(
         authTokenHash,
       );
     } catch (error) {
+      if (error instanceof LateJoinUnavailableError)
+        return reply.code(404).send({
+          code: 'INVITE_INVALID',
+          message: 'This invite link is no longer valid.',
+        });
       if (error instanceof LateJoinLimitedError)
         return (
           error.retryAfterSeconds !== undefined

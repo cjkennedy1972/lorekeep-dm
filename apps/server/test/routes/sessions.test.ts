@@ -125,6 +125,69 @@ describe('room routes', () => {
     }
   });
 
+  it('maps an ended late-join table to the same neutral invalid-invite response on /api/join', async () => {
+    const code = newInviteCode();
+    const db = {
+      connect: async () => undefined,
+      query: async (sql: string) => {
+        if (sql.includes('UPDATE auth_sessions s SET last_active_at'))
+          return {
+            rows: [{ account_id: 'account', token_hash: hashToken(token) }],
+            rowCount: 1,
+          };
+        if (sql.includes('s.invite_hash=$1'))
+          return {
+            rows: [
+              {
+                id: 'session',
+                name: 'Room',
+                owner: 'host',
+                status: 'active',
+                host_tier_cap: null,
+              },
+            ],
+            rowCount: 1,
+          };
+        if (sql.includes('SELECT display_name, mature_opt_out'))
+          return {
+            rows: [{ display_name: 'Player', mature_opt_out: false }],
+            rowCount: 1,
+          };
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    const a = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({
+          state: { seats: [], gameState: {} },
+          requestLateJoin: async () => {
+            throw new LateJoinUnavailableError();
+          },
+        }),
+      } as never,
+    });
+    try {
+      const response = await a.inject({
+        method: 'POST',
+        url: `/api/join/${code}`,
+        headers: cookie,
+        payload: {
+          characterId: randomUUID(),
+          expectedRevision: 1,
+          actionId: randomUUID(),
+        },
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        code: 'INVITE_INVALID',
+        message: 'This invite link is no longer valid.',
+      });
+    } finally {
+      await a.close();
+    }
+  });
+
   it('enforces the late-join account burst of 3 then one request every 2 minutes', () => {
     const limit = createLateJoinRateLimiter();
     const attempt = (now: number) =>
