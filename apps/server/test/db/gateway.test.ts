@@ -1450,6 +1450,52 @@ describe('party character binding WebSocket authorization', () => {
     }
   });
 
+  it('keeps the owner binding unchanged after a rejected cross-seat bind (card 35780bbc)', async () => {
+    const f = await fixture();
+    try {
+      await bind(f.owner, f.room, f.owned.id, f.revision);
+      await nextOfType(f.owner, 'SeatCharacterBound');
+      await nextOfType(f.owner, 'SeatCharacterBoundPrivate');
+      const liveRows = () =>
+        db.query<{
+          id: string;
+          seat_id: string;
+          account_id: string;
+          character_id: string;
+          character_revision: number;
+          binding_status: string;
+        }>(
+          `SELECT id,seat_id,account_id,character_id,character_revision,binding_status
+             FROM session_seat_characters WHERE session_id=$1 ORDER BY id`,
+          [f.id],
+        );
+      const before = (await liveRows()).rows;
+      expect(before).toHaveLength(1);
+      const ownerFramesBefore = seenMessageTypes.get(f.owner)!.length;
+
+      const actionId = await bind(f.guest, f.room, f.owned.id, f.revision);
+      await expect(nextOfType(f.guest, 'Error')).resolves.toMatchObject({
+        payload: {
+          code: 'ACTION_REJECTED',
+          message: 'Character could not be bound.',
+          actionId,
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect((await liveRows()).rows).toEqual(before);
+      // The owner's socket must not hear about the rejected attempt.
+      const ownerFramesAfter = seenMessageTypes
+        .get(f.owner)!
+        .slice(ownerFramesBefore);
+      expect(ownerFramesAfter).not.toContain('Error');
+      expect(ownerFramesAfter).not.toContain('SeatCharacterBound');
+      expect(ownerFramesAfter).not.toContain('SeatCharacterBoundPrivate');
+    } finally {
+      await shutdown(f);
+    }
+  });
+
   it('returns the neutral ownership error when another seat requests a bound character', async () => {
     const f = await fixture();
     try {
