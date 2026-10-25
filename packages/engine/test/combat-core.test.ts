@@ -31,6 +31,36 @@ function begun(seed: number): { state: CombatState; events: CombatEvent[] } {
 }
 
 describe('combat state and commands', () => {
+  test('replays a legacy combat log deterministically', () => {
+    const oldLog: CombatEvent[] = [
+      {
+        type: 'CombatStarted',
+        combatants: [
+          { id: 'a', initiativeModifier: 2, speed: 30 },
+          { id: 'b', initiativeModifier: 1, speed: 25 },
+        ],
+      },
+      { type: 'InitiativeRolled', entityId: 'a', total: 16 },
+      { type: 'InitiativeRolled', entityId: 'b', total: 11 },
+      { type: 'TurnStarted', entityId: 'a', round: 1 },
+      { type: 'ActionSpent', entityId: 'a' },
+      { type: 'MovementSpent', entityId: 'a', feet: 10 },
+      { type: 'TurnEnded', entityId: 'a' },
+      { type: 'TurnStarted', entityId: 'b', round: 1 },
+    ];
+
+    const firstReplay = replay(emptyCombatState(), oldLog);
+    expect(replay(emptyCombatState(), oldLog)).toEqual(firstReplay);
+    expect(replay(firstReplay, oldLog)).toEqual(firstReplay);
+    expect(firstReplay).toMatchObject({
+      round: 1,
+      activeEntityId: 'b',
+      resources: {
+        a: { action: false, movementRemaining: 20 },
+      },
+    });
+  });
+
   test('initiative is deterministic and ties sort by higher Dex then participant order', () => {
     const first = begun(1234);
     expect(first.state.initiative).toEqual(begun(1234).state.initiative);
