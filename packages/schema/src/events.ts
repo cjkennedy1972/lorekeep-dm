@@ -36,9 +36,15 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     spellId: z.string().min(1).optional(),
   }),
   ev('CombatStarted', {
-    combatId: z.string().min(1),
-    entityIds: z.array(entityId),
-  }),
+    combatId: z.string().min(1).optional(),
+    entityIds: z.array(entityId).optional(),
+    encounterId: z.string().min(1).optional(),
+    order: z.array(entityId).optional(),
+  }).refine(
+    (event) =>
+      (event.combatId !== undefined && event.entityIds !== undefined) ||
+      (event.encounterId !== undefined && event.order !== undefined),
+  ),
   ev('InitiativeRolled', { entityId, total: z.int() }),
   ev('ReactionAvailable', { entityId, trigger: z.string().min(1) }),
   ev('ReactionResolved', {
@@ -46,7 +52,28 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     used: z.boolean(),
     reactionId: z.string().optional(),
   }),
-  ev('CombatEnded', { combatId: z.string().min(1) }),
+  ev('CombatEnded', {
+    combatId: z.string().min(1).optional(),
+    encounterId: z.string().min(1).optional(),
+  }).refine(
+    (event) => event.combatId !== undefined || event.encounterId !== undefined,
+  ),
+  ev('TurnOpened', {
+    turnId: z.string().min(1),
+    entityId,
+    /** Absolute wall-clock deadline in Unix epoch milliseconds; never monotonic. */
+    deadline: z.number().int().nonnegative(),
+  }),
+  ev('TurnResolved', {
+    turnId: z.string().min(1),
+    entityId,
+    eventIds: z.array(z.string().min(1)),
+  }),
+  ev('TurnTimedOut', {
+    turnId: z.string().min(1),
+    entityId,
+    action: z.enum(['dodge', 'hold']),
+  }),
   ev('MapLoaded', { mapId: z.string().min(1) }),
   ev('EntityPlaced', { entityId, pos }),
   ev('LateJoinSpawned', {

@@ -121,6 +121,73 @@ test('Character parses valid and rejects invalid', () => {
   ).toBe(false);
 });
 
+describe('combat lifecycle event compatibility', () => {
+  test.each([
+    { type: 'CombatStarted', combatId: 'combat-1', entityIds: ['a', 'b'] },
+    { type: 'CombatStarted', encounterId: 'encounter-1', order: ['a', 'b'] },
+    { type: 'CombatEnded', combatId: 'combat-1' },
+    { type: 'CombatEnded', encounterId: 'encounter-1' },
+    {
+      type: 'TurnOpened',
+      turnId: 'turn-1',
+      entityId: 'a',
+      deadline: 1_792_900_800_000,
+    },
+    {
+      type: 'TurnResolved',
+      turnId: 'turn-1',
+      entityId: 'a',
+      eventIds: ['event-1'],
+    },
+    {
+      type: 'TurnTimedOut',
+      turnId: 'turn-1',
+      entityId: 'a',
+      action: 'dodge',
+    },
+    { type: 'ReactionResolved', entityId: 'a', used: true },
+  ])('accepts additive lifecycle event $type', (event) => {
+    expect(EngineEventSchema.parse(event)).toEqual(event);
+  });
+
+  test('does not accept malformed lifecycle event payloads', () => {
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'CombatStarted',
+        combatId: 'combat-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'CombatStarted',
+        combatId: 'combat-1',
+        order: ['a'],
+      }).success,
+    ).toBe(false);
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'CombatStarted',
+        encounterId: 'encounter-1',
+        entityIds: ['a'],
+      }).success,
+    ).toBe(false);
+    expect(EngineEventSchema.safeParse({ type: 'CombatEnded' }).success).toBe(
+      false,
+    );
+    expect(EngineEventSchema.safeParse({ type: 'TurnTimedOut' }).success).toBe(
+      false,
+    );
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'TurnTimedOut',
+        turnId: 'turn-1',
+        entityId: 'a',
+        action: 'attack',
+      }).success,
+    ).toBe(false);
+  });
+});
+
 const combat = {
   round: 1,
   turnIndex: 0,
@@ -193,6 +260,9 @@ function label(e: EngineEvent): string {
     case 'ReactionAvailable':
     case 'ReactionResolved':
     case 'CombatEnded':
+    case 'TurnOpened':
+    case 'TurnResolved':
+    case 'TurnTimedOut':
     case 'MapLoaded':
     case 'EntityPlaced':
     case 'LateJoinSpawned':
