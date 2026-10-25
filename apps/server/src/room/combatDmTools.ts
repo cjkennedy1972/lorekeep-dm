@@ -20,7 +20,8 @@ export function consumeOptionHandle(
   ref: string,
 ): RoomCombatState {
   if (!room.optionHandles?.[ref]) return room;
-  const { [ref]: _used, ...rest } = room.optionHandles;
+  const rest = { ...room.optionHandles };
+  delete rest[ref];
   return { ...room, optionHandles: rest };
 }
 

@@ -178,7 +178,8 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
     if (!entity || !alive(entity)) continue;
     events.push({ type: 'TurnStarted', entityId: nextId, round });
     // Area handles expire at turn end (ADR-022 §2.2).
-    const { optionHandles: _expired, ...carried } = state;
+    const carried = { ...state };
+    delete carried.optionHandles;
     return {
       state: {
         ...carried,

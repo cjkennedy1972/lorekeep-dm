@@ -61,7 +61,11 @@ import {
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
-import { roomTurnKey, runCombatMapTool } from './combatDmTools.js';
+import {
+  consumeOptionHandle,
+  roomTurnKey,
+  runCombatMapTool,
+} from './combatDmTools.js';
 import {
   LiveDmRestrictedError,
   type SoloTurnRequest,
@@ -506,6 +510,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     // Authoritative Room combat state for map tools; tracks every commit within this DM turn.
     let liveRoom = state.combatRoom;
     let pendingRoom: RoomCombatState | undefined;
+    let spentHandle: string | undefined;
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
@@ -593,7 +598,14 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 },
               }
             : combatRoom;
-        const committedRoom = pendingRoom ?? updatedCombatRoom;
+        const spent = spentHandle;
+        spentHandle = undefined;
+        const afterCast = updatedCombatRoom ?? combatRoom;
+        const committedRoom =
+          pendingRoom ??
+          (spent && afterCast
+            ? consumeOptionHandle(afterCast, spent)
+            : updatedCombatRoom);
         pendingRoom = undefined;
         liveRoom = committedRoom;
         return {
@@ -667,12 +679,27 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           );
           if (!out.result.ok) return { ...out.result, events: [] };
           pendingRoom = out.room;
-          const events = (out.result.value as { events?: unknown[] }).events;
+          const mapValue = out.result.value as {
+            events?: unknown[];
+            options?: { optionId: string; affected: unknown[] }[];
+          };
           return {
             ok: true,
             summary: out.result.summary,
             events: out.result.events,
-            value: { events: events ?? [], state: current },
+            value: {
+              events: mapValue.events ?? [],
+              state: current,
+              // executeTool only reads options from value.options; this is how the model gets the handles.
+              ...(mapValue.options
+                ? {
+                    options: mapValue.options.map((o) => ({
+                      optionId: o.optionId,
+                      label: `Area hitting ${o.affected.length} visible creature(s)`,
+                    })),
+                  }
+                : {}),
+            },
           };
         }
         const spellCasterId = (
@@ -699,6 +726,17 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               seed,
             );
         if (!result.ok) return { ...result, events: [] };
+        // An area handle is single-use (ADR-022 §2.2): spend it on the cast that used it.
+        const castTarget = (
+          request.args as { target?: { kind?: string; ref?: string } }
+        ).target;
+        if (
+          request.name === 'cast_spell' &&
+          liveRoom &&
+          castTarget?.kind === 'option' &&
+          castTarget.ref
+        )
+          spentHandle = castTarget.ref;
         const value = result.value as
           | {
               events?: readonly unknown[];
