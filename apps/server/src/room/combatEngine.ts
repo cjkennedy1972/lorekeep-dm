@@ -338,7 +338,15 @@ function monsterTurn(
       moved.pending,
       now,
     );
-    events.push({ type: 'MoveEnded', entityId: id });
+    if (!moved.pending.length)
+      events.push({
+        type: 'MoveEnded',
+        entityId: id,
+        reason:
+          moved.state.hp?.[id] !== undefined && moved.state.hp[id]! <= 0
+            ? 'incapacitated'
+            : 'complete',
+      });
     if (decision.kind === 'flee' && !moved.pending.length)
       state = {
         ...state,

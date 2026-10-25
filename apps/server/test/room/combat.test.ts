@@ -328,6 +328,11 @@ describe('Room combat command seam', () => {
         'EntityMoved',
         'MoveEnded',
       ]);
+    if (!('code' in valid))
+      expect(valid.events.at(-1)).toMatchObject({
+        type: 'MoveEnded',
+        reason: 'complete',
+      });
     const invalid = runtime.execute(combat, 'ent_hero', {
       command: 'move',
       destination: { x: 8, y: 8 },

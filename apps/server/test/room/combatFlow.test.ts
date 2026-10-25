@@ -555,9 +555,11 @@ describe('opportunity attack reactions', () => {
       x: 7,
       y: 6,
     });
-    expect(types(moved.events)).toEqual(
-      expect.arrayContaining(['MoveStarted', 'MoveEnded']),
-    );
+    expect(types(moved.events)).toContain('MoveStarted');
+    expect(types(moved.events)).not.toContain('MoveEnded');
+    expect(moved.events.filter((e) => e.type === 'MoveStarted')).toEqual([
+      expect.objectContaining({ type: 'MoveStarted', entityId: 'ent_aria' }),
+    ]);
     expect(moved.state.phase).toBe('reaction-pending');
   });
 
@@ -595,6 +597,12 @@ describe('opportunity attack reactions', () => {
       used: true,
     });
     expect(taken.state.pendingReaction).toBeUndefined();
+    expect(types(taken.events)).not.toContain('MoveStarted');
+    expect(taken.events).toContainEqual({
+      type: 'MoveEnded',
+      entityId: 'ent_aria',
+      reason: 'complete',
+    });
     expect(taken.state.combat.resources['ent_goblin-minion_1']?.reaction).toBe(
       false,
     );
@@ -624,6 +632,19 @@ describe('opportunity attack reactions', () => {
       used: false,
     });
     expect(types(declined.events)).not.toContain('RollEvent');
+    expect(types(declined.events)).not.toContain('MoveStarted');
+    expect(declined.events).toContainEqual({
+      type: 'MoveEnded',
+      entityId: 'ent_aria',
+      reason: 'complete',
+    });
+    expect(
+      [...moved.events, ...declined.events]
+        .filter((event) =>
+          ['MoveStarted', 'MoveEnded'].includes(String(event.type)),
+        )
+        .map((event) => event.type),
+    ).toEqual(['MoveStarted', 'MoveEnded']);
     expect(declined.state.entities.find((e) => e.id === 'ent_aria')!.hp).toBe(
       30,
     );
@@ -701,6 +722,18 @@ describe('opportunity attack reactions', () => {
       used: false,
     });
     expect(result.state.pendingReaction).toBeUndefined();
+    expect(
+      [...moved.events, ...result.events]
+        .filter((event) =>
+          ['MoveStarted', 'MoveEnded'].includes(String(event.type)),
+        )
+        .map((event) => event.type),
+    ).toEqual(['MoveStarted', 'MoveEnded']);
+    expect(result.events).toContainEqual({
+      type: 'MoveEnded',
+      entityId: 'ent_aria',
+      reason: 'complete',
+    });
   });
 });
 

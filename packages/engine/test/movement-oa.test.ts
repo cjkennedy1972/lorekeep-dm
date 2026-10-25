@@ -74,6 +74,12 @@ describe('movement and opportunity attacks', () => {
       paused.pending[0]!.reactionId,
       'decline',
     );
+    expect(resumed.events.filter((e) => e.type === 'MoveStarted')).toHaveLength(
+      0,
+    );
+    expect(resumed.events.filter((e) => e.type === 'MoveEnded')).toEqual([
+      { type: 'MoveEnded', entityId: 'mover', reason: 'complete' },
+    ]);
     expect(
       'ok' in resumed &&
         resumed.state.entities.find((e) => e.id === 'mover')?.pos,
@@ -96,6 +102,37 @@ describe('movement and opportunity attacks', () => {
           .filter((e) => e.type === 'MovementSpent')
           .reduce((n, e) => n + e.feet, 0),
       );
+  });
+
+  test('an illegal remaining step ends the paused move as blocked at the current cell', () => {
+    const paused = moveAlong(state(), 'mover', [...route, { x: 4, y: 0 }]);
+    if (!('ok' in paused)) throw new Error('expected reaction pause');
+    const blockedMap: Battlemap = {
+      ...map,
+      palette: [
+        ...map.palette,
+        { ...map.palette[0]!, terrainId: 'wall', blocksMove: true },
+      ],
+      cells: rleEncode(
+        Array.from({ length: 12 }, (_, index) => (index === 4 ? 1 : 0)),
+      ),
+    };
+    const resumed = resolveReaction(
+      { ...paused.state, map: blockedMap },
+      paused.pending[0]!.reactionId,
+      'decline',
+    );
+    expect('ok' in resumed).toBe(true);
+    if (!('ok' in resumed)) return;
+    expect(resumed.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+      x: 3,
+      y: 0,
+    });
+    expect(resumed.events).toContainEqual({
+      type: 'MoveEnded',
+      entityId: 'mover',
+      reason: 'blocked',
+    });
   });
   test('disengage and forced movement suppress reactions', () => {
     for (const mode of ['disengage', 'forced'] as const) {

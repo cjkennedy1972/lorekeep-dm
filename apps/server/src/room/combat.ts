@@ -389,8 +389,17 @@ export function createCombatRuntime(
                   cost: route.cost,
                 },
               ]),
-          { type: 'MoveEnded', entityId: actorId },
         ];
+        if (!moved.pending.length)
+          events.push({
+            type: 'MoveEnded',
+            entityId: actorId,
+            reason:
+              moved.state.hp?.[actorId] !== undefined &&
+              moved.state.hp[actorId]! <= 0
+                ? 'incapacitated'
+                : 'complete',
+          });
         return { state: next, events };
       }
       return reject(

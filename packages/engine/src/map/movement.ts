@@ -29,7 +29,11 @@ export type MovementCombatant = ThreatEntity & {
 export type MovementMode = 'normal' | 'disengage' | 'forced';
 export type MovementEvent =
   | { type: 'MoveStarted'; entityId: string; path: GridPos[] }
-  | { type: 'MoveEnded'; entityId: string }
+  | {
+      type: 'MoveEnded';
+      entityId: string;
+      reason: 'complete' | 'blocked' | 'incapacitated' | 'timed-out';
+    }
   | { type: 'MovementSpent'; entityId: string; feet: number }
   | { type: 'EntityMoved'; entityId: string; path: GridPos[]; cost: number }
   | { type: 'OpportunityTriggered'; moverId: string; attackerId: string }
@@ -339,7 +343,23 @@ export function resolveReaction(
     return {
       ok: true,
       state: current,
-      events,
+      events: [
+        ...events,
+        ...(Object.values(current.pendingReactions ?? {}).some(
+          (item) => item.moverId === mover.id,
+        )
+          ? []
+          : [
+              {
+                type: 'MoveEnded' as const,
+                entityId: mover.id,
+                reason:
+                  hpOf(current, mover) <= 0
+                    ? ('incapacitated' as const)
+                    : ('complete' as const),
+              },
+            ]),
+      ],
       pending: Object.values(current.pendingReactions ?? {}).filter(
         (p) => p.moverId === mover.id,
       ),
@@ -349,27 +369,34 @@ export function resolveReaction(
   ).filter((p) => p.moverId === mover.id);
   if (unresolvedForMover.length)
     return { ok: true, state: current, events, pending: unresolvedForMover };
-  const liveMover = current.entities.find((e) => e.id === mover.id)!;
-  const continuation = moveAlong(
-    current,
-    mover.id,
-    [liveMover.pos, ...pending.remainingPath],
-    pending.mode,
-  );
-  events.push({
-    type: 'MoveStarted',
-    entityId: mover.id,
-    path: [liveMover.pos, ...pending.remainingPath],
-  });
-  if ('error' in continuation) {
-    events.push({ type: 'MoveEnded', entityId: mover.id });
-    return { ok: true, state: current, events, pending: [] };
+  let resumed = current;
+  for (const step of pending.remainingPath) {
+    const liveMover = resumed.entities.find((e) => e.id === mover.id)!;
+    const continuation = moveAlong(
+      resumed,
+      mover.id,
+      [liveMover.pos, step],
+      pending.mode,
+    );
+    if ('error' in continuation) {
+      events.push({ type: 'MoveEnded', entityId: mover.id, reason: 'blocked' });
+      return { ok: true, state: resumed, events, pending: [] };
+    }
+    resumed = continuation.state;
+    events.push(...continuation.events);
+    if (continuation.pending.length)
+      return {
+        ok: true,
+        state: resumed,
+        events,
+        pending: continuation.pending,
+      };
+    if (hpOf(resumed, mover) <= 0) break;
   }
-  events.push({ type: 'MoveEnded', entityId: mover.id });
-  return {
-    ok: true,
-    state: continuation.state,
-    events: [...events, ...continuation.events],
-    pending: continuation.pending,
-  };
+  events.push({
+    type: 'MoveEnded',
+    entityId: mover.id,
+    reason: hpOf(resumed, mover) <= 0 ? 'incapacitated' : 'complete',
+  });
+  return { ok: true, state: resumed, events, pending: [] };
 }
