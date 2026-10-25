@@ -5050,11 +5050,16 @@ export class Room {
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
   ): void {
-    if (events.length)
+    // TurnResolved is log/DM-input only (ADR-034 §5): its filtered eventIds
+    // still disclose hidden-event count through sequence gaps.
+    const clientEvents = events.filter(
+      (event) => event.type !== 'TurnResolved',
+    );
+    if (clientEvents.length)
       this.broadcast({
         seq: this.seq,
         type: 'CombatEvents',
-        payload: { events: events.map(toWireEvent) },
+        payload: { events: clientEvents.map(toWireEvent) },
       } as ServerMessage);
     const ended = events.find((event) => event.type === 'CombatEnded');
     const roundBoundary = events.some(
@@ -5171,16 +5176,39 @@ export class Room {
       accountId ??
       this.state.seats.find((seat) => seat.accountId)?.accountId ??
       undefined;
-    if (!owner) return;
+    if (!owner) {
+      if (combatTurnId)
+        void this.commitCombatFallback(combatTurnId).catch(() => undefined);
+      return;
+    }
+    const combat = roomGameState(this.state);
+    const hiddenEntityIds = new Set(
+      (combat?.entities ?? [])
+        .filter((entity) => entity.hidden)
+        .map((entity) => entity.id),
+    );
     const facts = events
-      .filter((event) =>
-        [
-          'HpChanged',
-          'EntityMoved',
-          'CombatEnded',
-          'ReactionResolved',
-        ].includes(String(event.type)),
-      )
+      .filter((event) => {
+        const referencesHiddenEntity = Object.entries(event).some(
+          ([key, value]) => {
+            if (!/(?:entity|mover|attacker|reactor).*ids?$/i.test(key))
+              return false;
+            const ids = Array.isArray(value) ? value : [value];
+            return ids.some(
+              (id) => typeof id === 'string' && hiddenEntityIds.has(id),
+            );
+          },
+        );
+        return (
+          !referencesHiddenEntity &&
+          [
+            'HpChanged',
+            'EntityMoved',
+            'CombatEnded',
+            'ReactionResolved',
+          ].includes(String(event.type))
+        );
+      })
       .slice(0, 12)
       .map((event) => JSON.stringify(event));
     const actionId = randomUUID();

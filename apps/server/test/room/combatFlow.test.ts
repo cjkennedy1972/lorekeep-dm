@@ -1350,6 +1350,57 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     ).toBe(true);
   });
 
+  it('excludes hidden-entity facts from recovered combat narration input', async () => {
+    const e = bootstrapped();
+    let promptText = '';
+    const runner = {
+      async run(request: unknown) {
+        promptText = String((request as { text?: unknown }).text ?? '');
+        return {
+          narration: 'The turn resolves.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'narrating',
+      turnId: 'hidden-fact-turn',
+      narrationAttempts: 0,
+      entities: e.state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, hidden: true }
+          : entity,
+      ),
+      turnNarrationEvents: [
+        {
+          type: 'HpChanged',
+          entityId: 'ent_goblin-minion_1',
+          delta: -9,
+          hp: 1,
+        },
+        { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+      ],
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await room.setPaused(account, false, true);
+    await room.drain();
+    expect(promptText).not.toContain('ent_goblin-minion_1');
+    expect(promptText).not.toContain('delta\":-9');
+    expect(promptText).toContain('ent_aria');
+  });
+
   it('retries an interrupted narration once after recovery with the persisted attempt count', async () => {
     const e = bootstrapped();
     let narrationStarted!: () => void;

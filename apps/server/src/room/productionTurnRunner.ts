@@ -834,14 +834,19 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             registryFacts: memoryContext.registryFacts,
             retrievedMemory: memoryContext.retrievedMemory,
             playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
-            turns: state.lastNarration
-              ? [
-                  {
-                    playerText: state.lastPlayerText ?? '',
-                    narration: state.lastNarration,
-                  },
-                ]
-              : [],
+            turns:
+              state &&
+              typeof state === 'object' &&
+              (state as { combatRoom?: unknown }).combatRoom
+                ? []
+                : state.lastNarration
+                  ? [
+                      {
+                        playerText: state.lastPlayerText ?? '',
+                        narration: state.lastNarration,
+                      },
+                    ]
+                  : [],
           },
         },
         context,
