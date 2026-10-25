@@ -6,6 +6,8 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { CharacterBinding, type BindServerError } from './CharacterBinding';
 
 const apiMock = vi.hoisted(() => vi.fn());
@@ -33,19 +35,25 @@ function listed(characters = [ALDRIC, BRENNA]) {
   apiMock.mockResolvedValue({ ok: true, status: 200, data: { characters } });
 }
 
+/** The picker links to character creation; the wrapper also persists across rerender. */
+function renderInRouter(ui: ReactElement) {
+  return render(ui, { wrapper: MemoryRouter });
+}
+
 /** Live socket, not resyncing; override per test. */
 const LIVE = { connected: true, resyncing: false } as const;
 
 beforeEach(() => {
   apiMock.mockReset();
 });
+
 afterEach(() => cleanup());
 
 describe('CharacterBinding', () => {
   test('lists owned characters and binds the chosen one at its revision', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    render(
+    renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -67,7 +75,7 @@ describe('CharacterBinding', () => {
 
   test('shows the bound state with no picker once the seat is bound', () => {
     listed();
-    render(
+    renderInRouter(
       <CharacterBinding bound send={vi.fn()} serverError={null} {...LIVE} />,
     );
     expect(screen.getByRole('status').textContent).toMatch(/bound/i);
@@ -77,7 +85,7 @@ describe('CharacterBinding', () => {
   test('a server error for this bind is shown as its mapped message', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    const { rerender } = render(
+    const { rerender } = renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -111,7 +119,7 @@ describe('CharacterBinding', () => {
   test('an error for a different action is ignored', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    const { rerender } = render(
+    const { rerender } = renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -141,7 +149,7 @@ describe('CharacterBinding', () => {
   test('a stale revision offers a reload that refetches the list', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    const { rerender } = render(
+    const { rerender } = renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -172,7 +180,7 @@ describe('CharacterBinding', () => {
   test('ACTION_REJECTED shows the neutral rejection, not an ownership message', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    const { rerender } = render(
+    const { rerender } = renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -206,7 +214,7 @@ describe('CharacterBinding', () => {
   test('a silent server clears the pending bind after the reply timeout', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    render(
+    renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -229,7 +237,7 @@ describe('CharacterBinding', () => {
   test('losing the socket while a bind is pending reports it as interrupted', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    const { rerender } = render(
+    const { rerender } = renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -258,7 +266,7 @@ describe('CharacterBinding', () => {
   test('a resync starting while a bind is pending reports it as interrupted', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    const { rerender } = render(
+    const { rerender } = renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -286,7 +294,7 @@ describe('CharacterBinding', () => {
   test('a bind that lands in the same update as a resync shows bound, not interrupted', async () => {
     listed();
     const send = vi.fn(() => ACTION);
-    const { rerender } = render(
+    const { rerender } = renderInRouter(
       <CharacterBinding
         bound={false}
         send={send}
@@ -313,7 +321,7 @@ describe('CharacterBinding', () => {
 
   test('reports when the socket is closed instead of sending', async () => {
     listed();
-    render(
+    renderInRouter(
       <CharacterBinding
         bound={false}
         send={vi.fn((): string | false => false)}
@@ -329,7 +337,7 @@ describe('CharacterBinding', () => {
 
   test('explains when the account has no characters', async () => {
     listed([]);
-    render(
+    renderInRouter(
       <CharacterBinding
         bound={false}
         send={vi.fn()}
@@ -343,6 +351,22 @@ describe('CharacterBinding', () => {
     expect(screen.queryByRole('button', { name: 'Bind character' })).toBeNull();
   });
 
+  test('the empty state links to character creation', async () => {
+    listed([]);
+    renderInRouter(
+      <CharacterBinding
+        bound={false}
+        send={vi.fn()}
+        serverError={null}
+        {...LIVE}
+      />,
+    );
+    const link = await screen.findByRole('link', {
+      name: 'Create a character',
+    });
+    expect(link.getAttribute('href')).toBe('/characters/new');
+  });
+
   test('a failed list load shows an alert with a retry', async () => {
     apiMock.mockResolvedValueOnce({
       ok: false,
@@ -351,7 +375,7 @@ describe('CharacterBinding', () => {
       message: 'boom',
     });
     listed();
-    render(
+    renderInRouter(
       <CharacterBinding
         bound={false}
         send={vi.fn()}

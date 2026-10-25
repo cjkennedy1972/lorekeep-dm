@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import { loadCharacterCatalog } from '../character/catalog';
 import {
@@ -149,7 +150,8 @@ export function CharacterBinding({
       ) : characters.length === 0 ? (
         <p>
           You have no characters on this account yet, so there is nothing to
-          bind.
+          bind. <Link to="/characters/new">Create a character</Link> to bind one
+          here.
         </p>
       ) : (
         <form onSubmit={onSubmit}>

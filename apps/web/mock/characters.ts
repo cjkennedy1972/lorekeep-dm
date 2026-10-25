@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { CharacterSchema } from '@game/schema';
 
 /** Owned-character record for the mock; the list response mirrors GET /api/me/characters (ids, not display strings). */
 export interface MockCharacter {
@@ -50,6 +51,70 @@ export function charactersFor(accountId: string): MockCharacter[] {
 
 export function characterById(id: string): MockCharacter | undefined {
   return byId.get(id);
+}
+
+/** Body for POST /api/me/characters: exactly one key, `character`, holding the sheet without an id. */
+const CreateCharacterBody = CharacterSchema.omit({ id: true });
+
+/** Validates a create body the way the real route does. Returns the sheet, or undefined when it must be rejected with INVALID_CHARACTER. */
+export function parseCreateBody(body: unknown) {
+  if (typeof body !== 'object' || body === null || Array.isArray(body))
+    return undefined;
+  // An update (expectedRevision) is not mocked; the web client never sends one.
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || keys[0] !== 'character') return undefined;
+  const sheet: unknown = (body as { character: unknown }).character;
+  if (typeof sheet === 'object' && sheet !== null && 'id' in sheet)
+    return undefined;
+  const parsed = CreateCharacterBody.safeParse(sheet);
+  return parsed.success ? parsed.data : undefined;
+}
+
+const dropNextCreate = new Set<string>();
+
+/** Test driver: the account's next create is saved, then its response is cut before it reaches the client. */
+export function armDroppedCreateResponse(accountId: string): void {
+  dropNextCreate.add(accountId);
+}
+
+/** Consumes the drop flag. True when this create's response must be dropped. */
+export function takeDroppedCreateResponse(accountId: string): boolean {
+  return dropNextCreate.delete(accountId);
+}
+
+const WRITE_WINDOW_MS = 60_000;
+const WRITES_PER_WINDOW = 10;
+const writes = new Map<string, { count: number; resetAt: number }>();
+
+/** Mirrors the real route's per-account write budget: the 11th valid write inside a minute is refused. */
+export function allowWrite(accountId: string, now = Date.now()): boolean {
+  const window = writes.get(accountId);
+  if (!window || now >= window.resetAt) {
+    writes.set(accountId, { count: 1, resetAt: now + WRITE_WINDOW_MS });
+    return true;
+  }
+  window.count += 1;
+  return window.count <= WRITES_PER_WINDOW;
+}
+
+/** Creates a character with a server-generated id and revision 1, appended to the account's list. */
+export function createCharacter(
+  accountId: string,
+  sheet: Omit<MockCharacter, 'id' | 'accountId' | 'revision'>,
+): MockCharacter {
+  const list = charactersFor(accountId);
+  const character: MockCharacter = {
+    id: randomUUID(),
+    accountId,
+    name: sheet.name,
+    classId: sheet.classId,
+    speciesId: sheet.speciesId,
+    level: sheet.level,
+    revision: 1,
+  };
+  byId.set(character.id, character);
+  list.push(character);
+  return character;
 }
 
 /** Test driver: bumps a character's revision so a previously loaded binding choice goes stale. */
