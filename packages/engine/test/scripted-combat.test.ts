@@ -10,9 +10,26 @@ const goldenPath = fileURLToPath(
   new URL('./golden/scripted-combat.json', import.meta.url),
 );
 
+function expectBalancedMovement(
+  events: readonly { type: string; entityId?: string }[],
+) {
+  const open = new Set<string>();
+  for (const event of events) {
+    if (event.type === 'MoveStarted') {
+      expect(open.has(event.entityId!)).toBe(false);
+      open.add(event.entityId!);
+    } else if (event.type === 'MoveEnded') {
+      expect(open.has(event.entityId!)).toBe(true);
+      open.delete(event.entityId!);
+    }
+  }
+  expect([...open]).toEqual([]);
+}
+
 describe('scripted crypt solo combat', () => {
   test('fixed-seed run satisfies encounter acceptance and matches the golden event log', () => {
     const run = runCryptScenario(2901);
+    expectBalancedMovement(run.events);
     expect(run.finalState.outcome).toBe('CombatEnded');
     expect(run.events.map((event) => event.type)).toContain(
       'OpportunityTriggered',

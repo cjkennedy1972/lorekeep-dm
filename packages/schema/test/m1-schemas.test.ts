@@ -146,6 +146,16 @@ describe('combat lifecycle event compatibility', () => {
       action: 'dodge',
     },
     { type: 'ReactionResolved', entityId: 'a', used: true },
+    {
+      type: 'MoveStarted',
+      entityId: 'a',
+      turnId: 'turn-1',
+      path: [
+        { x: 1, y: 2 },
+        { x: 2, y: 2 },
+      ],
+    },
+    { type: 'MoveEnded', entityId: 'a', reason: 'complete' },
   ])('accepts additive lifecycle event $type', (event) => {
     expect(EngineEventSchema.parse(event)).toEqual(event);
   });
@@ -185,6 +195,26 @@ describe('combat lifecycle event compatibility', () => {
         action: 'attack',
       }).success,
     ).toBe(false);
+    expect(
+      EngineEventSchema.safeParse({ type: 'MoveEnded', entityId: 'a' }).success,
+    ).toBe(false);
+    expect(
+      EngineEventSchema.safeParse({
+        type: 'MoveEnded',
+        entityId: 'a',
+        reason: 'stopped',
+      }).success,
+    ).toBe(false);
+  });
+
+  test('legacy engine event logs without movement lifecycle events remain readable', () => {
+    const legacyEvents = [
+      { type: 'CombatStarted', combatId: 'combat-1', entityIds: ['a'] },
+      { type: 'EntityMoved', entityId: 'a', path: [{ x: 2, y: 2 }], cost: 5 },
+    ];
+    expect(legacyEvents.map((event) => EngineEventSchema.parse(event))).toEqual(
+      legacyEvents,
+    );
   });
 });
 
@@ -267,6 +297,8 @@ function label(e: EngineEvent): string {
     case 'EntityPlaced':
     case 'LateJoinSpawned':
     case 'EntityMoved':
+    case 'MoveStarted':
+    case 'MoveEnded':
     case 'OpportunityTriggered':
     case 'AreaResolved':
     case 'HpChanged':

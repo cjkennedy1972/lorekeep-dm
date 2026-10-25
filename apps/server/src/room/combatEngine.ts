@@ -329,8 +329,17 @@ function monsterTurn(
       decision.kind === 'flee' ? 'forced' : 'normal',
     );
     if ('error' in moved) break;
-    events.push(...(moved.events as unknown as Ev[]));
-    state = applyMovement(state, id, moved.state, moved.pending, now);
+    events.push(
+      { type: 'MoveStarted', entityId: id, path: decision.path } as Ev,
+      ...(moved.events as unknown as Ev[]),
+    );
+    state = applyMovement(
+      { ...state, phase: 'moving' },
+      id,
+      moved.state,
+      moved.pending,
+      now,
+    );
     if (decision.kind === 'flee' && !moved.pending.length)
       state = {
         ...state,
@@ -339,6 +348,11 @@ function monsterTurn(
         ),
       };
     if (state.pendingReaction) return { state, events, paused: true };
+    events.push({
+      type: 'MoveEnded',
+      entityId: id,
+      reason: moved.movementEnd ?? 'complete',
+    } as Ev);
     if (decision.kind === 'flee') break;
   }
   return { state, events };
@@ -412,8 +426,14 @@ export function answerReaction(
   if ('error' in result)
     return { code: 'COMMAND_REJECTED', message: result.hint };
   const events = result.events as unknown as Ev[];
+  if (result.movementEnd)
+    events.push({
+      type: 'MoveEnded',
+      entityId: prompt.moverId,
+      reason: result.movementEnd,
+    } as Ev);
   const next = applyMovement(
-    { ...state, seed: nextSeed(state.seed ?? 1) },
+    { ...state, phase: 'moving', seed: nextSeed(state.seed ?? 1) },
     prompt.moverId,
     result.state,
     result.pending,

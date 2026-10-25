@@ -20,6 +20,24 @@ afterEach(() => vi.useRealTimers());
 const NOW = 1_000_000;
 const types = (events: readonly Record<string, unknown>[]) =>
   events.map((event) => String(event.type));
+const expectBalancedMovement = (
+  events: readonly Record<string, unknown>[],
+  paused: readonly string[] = [],
+) => {
+  const open = new Set<string>();
+  for (const event of events) {
+    if (event.type === 'MoveStarted') {
+      const id = String(event.entityId);
+      expect(open.has(id), `nested movement for ${id}`).toBe(false);
+      open.add(id);
+    } else if (event.type === 'MoveEnded') {
+      const id = String(event.entityId);
+      expect(open.has(id), `orphan MoveEnded for ${id}`).toBe(true);
+      open.delete(id);
+    }
+  }
+  expect([...open].sort()).toEqual([...paused].sort());
+};
 const ok = <T extends object>(value: T | { code: string }) => {
   if ('code' in value) throw new Error(`rejected: ${value.code}`);
   return value;
@@ -530,6 +548,19 @@ describe('action economy for spells', () => {
 
 describe('opportunity attack reactions', () => {
   const leave = { command: 'move', destination: { x: 7, y: 6 } } as const;
+  it('balances an uninterrupted move', () => {
+    const { runtime, state } = engaged();
+    const moved = ok(
+      runtime.execute(
+        state,
+        'ent_aria',
+        { command: 'move', destination: { x: 7, y: 3 } },
+        { now: NOW },
+      ),
+    );
+    expectBalancedMovement(moved.events);
+  });
+
   const provoke = () => {
     const e = engaged();
     const moved = ok(
@@ -555,6 +586,13 @@ describe('opportunity attack reactions', () => {
       x: 7,
       y: 6,
     });
+    expect(types(moved.events)).toContain('MoveStarted');
+    expect(types(moved.events)).not.toContain('MoveEnded');
+    expect(moved.events.filter((e) => e.type === 'MoveStarted')).toEqual([
+      expect.objectContaining({ type: 'MoveStarted', entityId: 'ent_aria' }),
+    ]);
+    expect(moved.state.phase).toBe('reaction-pending');
+    expectBalancedMovement(moved.events, ['ent_aria']);
   });
 
   it('refuses every other command while the prompt is open', () => {
@@ -591,6 +629,12 @@ describe('opportunity attack reactions', () => {
       used: true,
     });
     expect(taken.state.pendingReaction).toBeUndefined();
+    expect(types(taken.events)).not.toContain('MoveStarted');
+    expect(taken.events).toContainEqual({
+      type: 'MoveEnded',
+      entityId: 'ent_aria',
+      reason: 'complete',
+    });
     expect(taken.state.combat.resources['ent_goblin-minion_1']?.reaction).toBe(
       false,
     );
@@ -598,6 +642,7 @@ describe('opportunity attack reactions', () => {
       x: 7,
       y: 6,
     });
+    expectBalancedMovement([...moved.events, ...taken.events]);
   });
 
   it('decline: no attack is made and the move continues', () => {
@@ -620,6 +665,20 @@ describe('opportunity attack reactions', () => {
       used: false,
     });
     expect(types(declined.events)).not.toContain('RollEvent');
+    expect(types(declined.events)).not.toContain('MoveStarted');
+    expect(declined.events).toContainEqual({
+      type: 'MoveEnded',
+      entityId: 'ent_aria',
+      reason: 'complete',
+    });
+    expect(
+      [...moved.events, ...declined.events]
+        .filter((event) =>
+          ['MoveStarted', 'MoveEnded'].includes(String(event.type)),
+        )
+        .map((event) => event.type),
+    ).toEqual(['MoveStarted', 'MoveEnded']);
+    expectBalancedMovement([...moved.events, ...declined.events]);
     expect(declined.state.entities.find((e) => e.id === 'ent_aria')!.hp).toBe(
       30,
     );
@@ -629,6 +688,142 @@ describe('opportunity attack reactions', () => {
       x: 7,
       y: 6,
     });
+  });
+
+  it('ends a queued reaction-paused move once when the first OA is lethal', () => {
+    const { runtime, state } = engaged();
+    const adjacent = placed(state, {
+      ent_aria: { x: 7, y: 2 },
+      'ent_goblin-minion_1': { x: 6, y: 2 },
+      'ent_goblin-minion_2': { x: 6, y: 3 },
+    });
+    const fragile = {
+      ...adjacent,
+      entities: [
+        ...adjacent.entities.map((entity) => ({
+          ...entity,
+          ...(entity.id === 'ent_aria' ? { hp: 1 } : {}),
+          ...(entity.team === 'enemies' && entity.attacks?.length
+            ? {
+                attacks: entity.attacks.map((attack) => ({
+                  ...attack,
+                  attackBonus: 100,
+                })),
+              }
+            : {}),
+        })),
+        {
+          ...adjacent.entities.find((entity) => entity.id === 'ent_aria')!,
+          id: 'ent_bob',
+          name: 'Bob',
+          pos: { x: 2, y: 2 },
+          hp: 20,
+        },
+      ],
+    };
+    const moved = ok(
+      runtime.execute(
+        fragile,
+        'ent_aria',
+        { command: 'move', destination: { x: 10, y: 2 } },
+        { now: NOW },
+      ),
+    );
+    expect(
+      moved.events.filter((event) => event.type === 'MoveStarted'),
+    ).toHaveLength(1);
+    expect(
+      moved.events.filter((event) => event.type === 'MoveEnded'),
+    ).toHaveLength(0);
+
+    const firstPrompt = moved.state.pendingReaction!;
+    const first = ok(
+      runtime.execute(
+        moved.state,
+        firstPrompt.entityId,
+        {
+          command: 'reaction',
+          reactionId: firstPrompt.reactionId,
+          choice: 'take',
+        },
+        { now: NOW + 1 },
+      ),
+    );
+    expect(
+      first.state.entities.find((entity) => entity.id === 'ent_aria')?.hp,
+    ).toBe(0);
+    expect(first.state.pendingReaction).toBeDefined();
+    expect(
+      first.events.filter((event) => event.type === 'MoveEnded'),
+    ).toHaveLength(0);
+
+    const secondPrompt = first.state.pendingReaction!;
+    const second = ok(
+      runtime.execute(
+        first.state,
+        secondPrompt.entityId,
+        {
+          command: 'reaction',
+          reactionId: secondPrompt.reactionId,
+          choice: 'take',
+        },
+        { now: NOW + 2 },
+      ),
+    );
+    const lifecycle = [
+      ...moved.events,
+      ...first.events,
+      ...second.events,
+    ].filter(
+      (event) =>
+        (event.type === 'MoveStarted' || event.type === 'MoveEnded') &&
+        event.entityId === 'ent_aria',
+    );
+    expect(lifecycle).toEqual([
+      expect.objectContaining({ type: 'MoveStarted', entityId: 'ent_aria' }),
+      { type: 'MoveEnded', entityId: 'ent_aria', reason: 'incapacitated' },
+    ]);
+    expectBalancedMovement([
+      ...moved.events,
+      ...first.events,
+      ...second.events,
+    ]);
+  });
+
+  it('does not resume an interrupted path when a later step has become illegal', () => {
+    const { runtime, moved } = provoke();
+    const prompt = moved.state.pendingReaction!;
+    const pending = moved.state.engineReactions![prompt.reactionId]!;
+    const next = pending.remainingPath[0]!;
+    const mover = moved.state.entities.find(
+      (entity) => entity.id === 'ent_aria',
+    )!;
+    const blocked = {
+      ...moved.state,
+      map: {
+        ...moved.state.map,
+        edges: [
+          ...moved.state.map.edges,
+          { a: mover.pos, b: next, kind: 'wall' as const },
+        ],
+      },
+    };
+    const declined = ok(
+      runtime.execute(
+        blocked,
+        prompt.entityId,
+        {
+          command: 'reaction',
+          reactionId: prompt.reactionId,
+          choice: 'decline',
+        },
+        { now: NOW + 1000 },
+      ),
+    );
+    expect(
+      declined.state.entities.find((entity) => entity.id === 'ent_aria')!.pos,
+    ).toEqual(mover.pos);
+    expect(declined.state.pendingReaction).toBeUndefined();
   });
 
   it('is idempotent: answering a resolved reaction is rejected without change', () => {
@@ -661,6 +856,19 @@ describe('opportunity attack reactions', () => {
       used: false,
     });
     expect(result.state.pendingReaction).toBeUndefined();
+    expect(
+      [...moved.events, ...result.events]
+        .filter((event) =>
+          ['MoveStarted', 'MoveEnded'].includes(String(event.type)),
+        )
+        .map((event) => event.type),
+    ).toEqual(['MoveStarted', 'MoveEnded']);
+    expectBalancedMovement([...moved.events, ...result.events]);
+    expect(result.events).toContainEqual({
+      type: 'MoveEnded',
+      entityId: 'ent_aria',
+      reason: 'complete',
+    });
   });
 });
 
@@ -788,10 +996,38 @@ describe('Room: reaction deadline survives restarts', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('does not let a seat answer an uncontrolled NPC reaction and declines it at the fake-clock deadline', async () => {
+    vi.useFakeTimers();
+    const { table, moved } = await stage();
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const prompt = moved.state.pendingReaction!;
+    expect(prompt.entityId).toBe('ent_goblin-minion_1');
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'reaction',
+      reactionId: prompt.reactionId,
+      choice: 'take',
+    });
+    expect(
+      table.events.some((event) => event.type === 'ReactionResolved'),
+    ).toBe(false);
+    await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS + 1);
+    await room.drain();
+    expect(
+      table.events.filter((event) => event.type === 'ReactionResolved'),
+    ).toHaveLength(1);
+    expect(
+      table.events.find((event) => event.type === 'ReactionResolved')?.payload,
+    ).toMatchObject({ used: false, entityId: 'ent_goblin-minion_1' });
+  });
+
   it('a restart mid-prompt resumes with the remaining time, then declines', async () => {
     vi.useFakeTimers();
     const { table } = await stage();
     const first = table.boot();
+    const initial = table.game().combatRoom as RoomCombatState;
+    expect(initial.phase).toBe('reaction-pending');
+    expect(Object.keys(initial.engineReactions ?? {})).not.toHaveLength(0);
     await vi.advanceTimersByTimeAsync(10_000);
     await first.drain(); // process dies with the prompt still open
     expect(table.events.some((e) => e.type === 'ReactionResolved')).toBe(false);

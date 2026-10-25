@@ -74,6 +74,10 @@ describe('movement and opportunity attacks', () => {
       paused.pending[0]!.reactionId,
       'decline',
     );
+    expect(resumed.events.filter((e) => e.type === 'MoveStarted')).toHaveLength(
+      0,
+    );
+    expect('ok' in resumed && resumed.movementEnd).toBe('complete');
     expect(
       'ok' in resumed &&
         resumed.state.entities.find((e) => e.id === 'mover')?.pos,
@@ -96,6 +100,33 @@ describe('movement and opportunity attacks', () => {
           .filter((e) => e.type === 'MovementSpent')
           .reduce((n, e) => n + e.feet, 0),
       );
+  });
+
+  test('an illegal remaining step ends the paused move as blocked at the current cell', () => {
+    const paused = moveAlong(state(), 'mover', [...route, { x: 4, y: 0 }]);
+    if (!('ok' in paused)) throw new Error('expected reaction pause');
+    const blockedMap: Battlemap = {
+      ...map,
+      palette: [
+        ...map.palette,
+        { ...map.palette[0]!, terrainId: 'wall', blocksMove: true },
+      ],
+      cells: rleEncode(
+        Array.from({ length: 12 }, (_, index) => (index === 4 ? 1 : 0)),
+      ),
+    };
+    const resumed = resolveReaction(
+      { ...paused.state, map: blockedMap },
+      paused.pending[0]!.reactionId,
+      'decline',
+    );
+    expect('ok' in resumed).toBe(true);
+    if (!('ok' in resumed)) return;
+    expect(resumed.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+      x: 3,
+      y: 0,
+    });
+    expect(resumed.movementEnd).toBe('blocked');
   });
   test('disengage and forced movement suppress reactions', () => {
     for (const mode of ['disengage', 'forced'] as const) {
@@ -140,6 +171,70 @@ describe('movement and opportunity attacks', () => {
         result.state.entities.find((e) => e.id === 'mover')?.pos,
     ).toEqual({ x: 2, y: 0 });
     expect('ok' in result && result.state.hp?.mover).toBe(0);
+  });
+  test('the last queued OA after a lethal OA ends the movement exactly once', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, hp: 1 },
+      s.entities[1]!,
+      {
+        id: 'orc2',
+        team: 'foes',
+        pos: { x: 0, y: 1 },
+        size: 1,
+        hp: 10,
+      },
+    ];
+    const paused = moveAlong(s, 'mover', route);
+    if (!('ok' in paused)) throw new Error(paused.error);
+    const lethal = resolveReaction(
+      paused.state,
+      paused.pending[0]!.reactionId,
+      'take',
+    );
+    if (!('ok' in lethal)) throw new Error(lethal.error);
+    expect(lethal.movementEnd).toBeUndefined();
+    const last = resolveReaction(
+      lethal.state,
+      lethal.pending[0]!.reactionId,
+      'take',
+    );
+    expect('ok' in last && last.movementEnd).toBe('incapacitated');
+    expect('ok' in last && last.pending).toHaveLength(0);
+  });
+  test('resumed movement stops when an OA leaves the mover incapacitated', () => {
+    const paused = moveAlong(state(), 'mover', route);
+    if (!('ok' in paused)) throw new Error(paused.error);
+    const resumed = resolveReaction(
+      {
+        ...paused.state,
+        conditions: { mover: ['stunned'] },
+      },
+      paused.pending[0]!.reactionId,
+      'decline',
+    );
+    expect('ok' in resumed && resumed.movementEnd).toBe('incapacitated');
+    expect(
+      'ok' in resumed &&
+        resumed.state.entities.find((e) => e.id === 'mover')?.pos,
+    ).toEqual({ x: 2, y: 0 });
+  });
+  test('restrained mover ends a resumed move as blocked', () => {
+    const paused = moveAlong(state(), 'mover', route);
+    if (!('ok' in paused)) throw new Error(paused.error);
+    const resumed = resolveReaction(
+      {
+        ...paused.state,
+        conditions: { mover: ['restrained'] },
+      },
+      paused.pending[0]!.reactionId,
+      'decline',
+    );
+    expect('ok' in resumed && resumed.movementEnd).toBe('blocked');
+    expect(
+      'ok' in resumed &&
+        resumed.state.entities.find((e) => e.id === 'mover')?.pos,
+    ).toEqual({ x: 2, y: 0 });
   });
   test('more than one eligible hostile each gets exactly one reaction prompt', () => {
     const s = state();

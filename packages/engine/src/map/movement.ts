@@ -28,6 +28,12 @@ export type MovementCombatant = ThreatEntity & {
 };
 export type MovementMode = 'normal' | 'disengage' | 'forced';
 export type MovementEvent =
+  | { type: 'MoveStarted'; entityId: string; path: GridPos[] }
+  | {
+      type: 'MoveEnded';
+      entityId: string;
+      reason: 'complete' | 'blocked' | 'incapacitated' | 'timed-out';
+    }
   | { type: 'MovementSpent'; entityId: string; feet: number }
   | { type: 'EntityMoved'; entityId: string; path: GridPos[]; cost: number }
   | { type: 'OpportunityTriggered'; moverId: string; attackerId: string }
@@ -70,6 +76,7 @@ export type MovementCommandResult = {
   state: MovementCommandState;
   events: MovementEvent[];
   pending: PendingReaction[];
+  movementEnd?: 'complete' | 'blocked' | 'incapacitated' | 'timed-out';
 };
 export type MovementError = { error: string; hint: string; reason: string };
 export type ReactionResult = MovementCommandResult | MovementError;
@@ -256,7 +263,16 @@ export function moveAlong(
       return { ok: true, state: current, events, pending };
     }
   }
-  return { ok: true, state: current, events, pending };
+  return {
+    ok: true,
+    state: current,
+    events,
+    pending,
+    movementEnd:
+      current.hp?.[entityId] !== undefined && current.hp[entityId]! <= 0
+        ? 'incapacitated'
+        : 'complete',
+  };
 }
 
 /** Resolve or decline one opportunity attack, then continue the interrupted path. */
@@ -292,6 +308,11 @@ export function resolveReaction(
         },
       ],
       pending: [],
+      ...(!Object.values(pendingReactions).some(
+        (item) => item.moverId === mover.id,
+      )
+        ? { movementEnd: 'incapacitated' as const }
+        : {}),
     };
   }
   let current: MovementCommandState = {
@@ -341,25 +362,76 @@ export function resolveReaction(
       pending: Object.values(current.pendingReactions ?? {}).filter(
         (p) => p.moverId === mover.id,
       ),
+      ...(!Object.values(current.pendingReactions ?? {}).some(
+        (item) => item.moverId === mover.id,
+      )
+        ? {
+            movementEnd:
+              hpOf(current, mover) <= 0
+                ? ('incapacitated' as const)
+                : ('complete' as const),
+          }
+        : {}),
     };
   const unresolvedForMover = Object.values(
     current.pendingReactions ?? {},
   ).filter((p) => p.moverId === mover.id);
   if (unresolvedForMover.length)
     return { ok: true, state: current, events, pending: unresolvedForMover };
-  const liveMover = current.entities.find((e) => e.id === mover.id)!;
-  const continuation = moveAlong(
-    current,
-    mover.id,
-    [liveMover.pos, ...pending.remainingPath],
-    pending.mode,
-  );
-  if ('error' in continuation)
-    return { ok: true, state: current, events, pending: [] };
+  let resumed = current;
+  for (const step of pending.remainingPath) {
+    const liveMover = resumed.entities.find((e) => e.id === mover.id)!;
+    // Forced movement has separate rules and is intentionally outside this revalidation.
+    if (pending.mode !== 'forced') {
+      const moverConditions = conditionsOf(resumed, liveMover);
+      if (hpOf(resumed, liveMover) <= 0 || moverConditions.has('incapacitated'))
+        return {
+          ok: true,
+          state: resumed,
+          events,
+          pending: [],
+          movementEnd: 'incapacitated',
+        };
+      if (moverConditions.has('restrained') || moverConditions.has('grappled'))
+        return {
+          ok: true,
+          state: resumed,
+          events,
+          pending: [],
+          movementEnd: 'blocked',
+        };
+    }
+    const continuation = moveAlong(
+      resumed,
+      mover.id,
+      [liveMover.pos, step],
+      pending.mode,
+    );
+    if ('error' in continuation) {
+      return {
+        ok: true,
+        state: resumed,
+        events,
+        pending: [],
+        movementEnd: 'blocked',
+      };
+    }
+    resumed = continuation.state;
+    events.push(...continuation.events);
+    if (continuation.pending.length)
+      return {
+        ok: true,
+        state: resumed,
+        events,
+        pending: continuation.pending,
+      };
+    if (hpOf(resumed, mover) <= 0) break;
+  }
   return {
     ok: true,
-    state: continuation.state,
-    events: [...events, ...continuation.events],
-    pending: continuation.pending,
+    state: resumed,
+    events,
+    pending: [],
+    movementEnd: hpOf(resumed, mover) <= 0 ? 'incapacitated' : 'complete',
   };
 }

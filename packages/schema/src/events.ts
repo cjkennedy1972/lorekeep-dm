@@ -88,6 +88,17 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     path: z.array(pos).min(1),
     cost: z.int().nonnegative(),
   }),
+  ev('MoveStarted', {
+    entityId,
+    path: z.array(pos).min(2),
+    // TurnOpened has no producer until PR 4; this becomes required in practice then.
+    turnId: z.string().min(1).optional(),
+  }),
+  ev('MoveEnded', {
+    entityId,
+    turnId: z.string().min(1).optional(),
+    reason: z.enum(['complete', 'blocked', 'incapacitated', 'timed-out']),
+  }),
   ev('OpportunityTriggered', { moverId: entityId, attackerId: entityId }),
   ev('AreaResolved', { cells: z.array(pos), affected: z.array(entityId) }),
   ev('HpChanged', { entityId, delta: z.int(), hp: z.int() }),

@@ -320,8 +320,19 @@ describe('Room combat command seam', () => {
           expect.objectContaining({ id: 'ent_hero', pos: { x: 3, y: 1 } }),
         ]),
       },
-      events: [{ type: 'EntityMoved', cost: 10 }],
     });
+    expect(valid).not.toHaveProperty('code');
+    if (!('code' in valid))
+      expect(valid.events.map((event) => event.type)).toEqual([
+        'MoveStarted',
+        'EntityMoved',
+        'MoveEnded',
+      ]);
+    if (!('code' in valid))
+      expect(valid.events.at(-1)).toMatchObject({
+        type: 'MoveEnded',
+        reason: 'complete',
+      });
     const invalid = runtime.execute(combat, 'ent_hero', {
       command: 'move',
       destination: { x: 8, y: 8 },
