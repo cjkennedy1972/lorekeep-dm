@@ -450,6 +450,11 @@ export class Room {
     );
     this.scheduleRoundTimer();
     queueMicrotask(() => {
+      void this.enqueue(async () => {
+        for (const request of [...(this.state.lateJoinRequests ?? [])])
+          if (request.expiresAt === undefined)
+            await this.expireLateJoinRequestNow(request.requestId);
+      }).catch(() => undefined);
       void this.resumeRecoveredRound().catch(() => undefined);
       void this.cancelScrubbedRecoveredVote().catch((error) =>
         console.error(`Rest vote recovery failed for ${this.sessionId}`, error),
@@ -519,7 +524,10 @@ export class Room {
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );
-      if (request?.expiresAt !== undefined && request.expiresAt <= Date.now())
+      if (
+        request &&
+        (request.expiresAt === undefined || request.expiresAt <= Date.now())
+      )
         await this.expireLateJoinRequestNow(requestId);
     });
   }
@@ -2549,8 +2557,7 @@ export class Room {
       for (const request of this.state.lateJoinRequests ?? [])
         if (
           request.accountId === accountId &&
-          request.expiresAt !== undefined &&
-          request.expiresAt <= Date.now()
+          (request.expiresAt === undefined || request.expiresAt <= Date.now())
         )
           await this.expireLateJoinRequestNow(request.requestId);
       const existing = (this.state.lateJoinRequests ?? []).find(
@@ -2617,7 +2624,7 @@ export class Room {
         request.expectedRevision === undefined
       )
         throw new RoomSeatRequiredError();
-      if (request.expiresAt !== undefined && request.expiresAt <= Date.now()) {
+      if (request.expiresAt === undefined || request.expiresAt <= Date.now()) {
         await this.expireLateJoinRequestNow(requestId);
         return;
       }
@@ -2793,7 +2800,7 @@ export class Room {
         (item) => item.requestId === requestId,
       );
       if (!request) throw new RoomSeatRequiredError();
-      if (request.expiresAt !== undefined && request.expiresAt <= Date.now()) {
+      if (request.expiresAt === undefined || request.expiresAt <= Date.now()) {
         await this.expireLateJoinRequestNow(requestId);
         return;
       }
@@ -2857,7 +2864,7 @@ export class Room {
       }
       if (!request || request.accountId !== accountId)
         throw new RoomSeatRequiredError();
-      if (request.expiresAt !== undefined && request.expiresAt <= Date.now()) {
+      if (request.expiresAt === undefined || request.expiresAt <= Date.now()) {
         await this.expireLateJoinRequestNow(requestId);
         return;
       }

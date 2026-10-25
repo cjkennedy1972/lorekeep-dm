@@ -96,7 +96,7 @@ function fixture() {
 }
 
 describe('room actor', () => {
-  it('recovers a legacy late-join event without rollout-only fields', async () => {
+  it('expires a legacy late-join request without expiresAt during recovery', async () => {
     const { store, events } = fixture();
     const requestId = randomUUID();
     const accountId = randomUUID();
@@ -110,10 +110,15 @@ describe('room actor', () => {
     });
 
     const recovered = new Room(store, lease, await store.loadLatest(id));
+    const hostAccountId = randomUUID();
+    await recovered.seat(hostAccountId, 'Host');
+    await recovered.drain();
 
-    expect(recovered.state.lateJoinRequests).toEqual([
-      { requestId, accountId, displayName: 'Legacy player' },
-    ]);
+    expect(recovered.state.lateJoinRequests).toEqual([]);
+    expect(events.map((event) => event.type)).toContain('LateJoinExpired');
+    expect(
+      recovered.clientState(hostAccountId).lateJoinRequests ?? [],
+    ).not.toContainEqual(expect.objectContaining({ requestId }));
   });
 
   it('resyncs a public round snapshot without other seats’ private text', async () => {
@@ -758,14 +763,19 @@ describe('room actor', () => {
         ),
       ).rejects.toThrow();
 
+      const deniedAccountId = randomUUID();
       const denied = await room.requestLateJoin(
-        randomUUID(),
+        deniedAccountId,
         randomUUID(),
         1,
         randomUUID(),
       );
       const denyAction = randomUUID();
-      await room.denyLateJoin(host, denyAction, denied);
+      const originalDenyResult = await room.denyLateJoin(
+        host,
+        denyAction,
+        denied,
+      );
       const afterDenyRestart = new Room(
         store,
         lease,
@@ -773,10 +783,27 @@ describe('room actor', () => {
       );
       await expect(
         afterDenyRestart.denyLateJoin(host, denyAction, denied),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(originalDenyResult);
       await expect(
         afterDenyRestart.denyLateJoin(randomUUID(), denyAction, denied),
       ).rejects.toThrow();
+      const retryActionId = randomUUID();
+      const retryCharacterId = randomUUID();
+      const retryId = await afterDenyRestart.requestLateJoin(
+        deniedAccountId,
+        retryCharacterId,
+        1,
+        retryActionId,
+      );
+      expect(retryId).not.toBe(denied);
+      await expect(
+        afterDenyRestart.requestLateJoin(
+          deniedAccountId,
+          retryCharacterId,
+          1,
+          retryActionId,
+        ),
+      ).resolves.toBe(retryId);
     });
 
     it('bounds persisted late-join request replay results', async () => {
@@ -1337,6 +1364,8 @@ describe('room actor', () => {
         'SeatCharacterReleased',
       );
       expect(events.map((event) => event.type)).toContain('LateJoinDenied');
+      for (let index = 0; index < 4; index++)
+        await room.seat(randomUUID(), `Other player ${index}`);
       const retryId = await room.requestLateJoin(
         requester,
         randomUUID(),
@@ -1345,6 +1374,9 @@ describe('room actor', () => {
       );
       expect(retryId).not.toBe('');
       expect(retryId).not.toBe(requestId);
+      expect(
+        room.state.seats.filter((seat) => seat.presence !== 'revoked'),
+      ).toHaveLength(5);
     });
   });
 
