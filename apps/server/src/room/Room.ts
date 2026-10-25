@@ -3554,9 +3554,10 @@ export class Room {
 
   /** Configured turn timer in ms, or null when off (ADR-033 §5.1: 90 s party, off solo). */
   private turnTimerMs(): number | null {
-    return (
-      this.state.turnTimerMs ?? (this.bindingEnforced ? TURN_DEADLINE_MS : null)
-    );
+    // undefined = never configured (default); explicit null = host turned it off.
+    if (this.state.turnTimerMs === undefined)
+      return this.bindingEnforced ? TURN_DEADLINE_MS : null;
+    return this.state.turnTimerMs;
   }
 
   /** A turn that opens while the table is paused starts frozen with its full length. */

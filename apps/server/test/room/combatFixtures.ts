@@ -122,7 +122,11 @@ export function placed(
 
 import { randomUUID } from 'node:crypto';
 import type { ServerMessage } from '@game/schema';
-import { Room, type RoomStore } from '../../src/room/Room.js';
+import {
+  Room,
+  type PrivateSeatCharacterBinding,
+  type RoomStore,
+} from '../../src/room/Room.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 
@@ -199,14 +203,14 @@ export function memoryTable(
       return { events: stored };
     },
   };
-  const boot = () =>
+  const boot = (bindings: PrivateSeatCharacterBinding[] = []) =>
     new Room(
       store,
       lease,
       { snapshot, events: [] },
       runner,
       undefined,
-      [],
+      bindings,
       opts.party ?? false,
     );
   const messages: ServerMessage[] = [];

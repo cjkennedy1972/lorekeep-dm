@@ -198,6 +198,57 @@ describe('turn timer expiry (ADR-033 §5.3-5.4)', () => {
   });
 });
 
+describe('host turned the timer off at a party table (ADR-033 §5.1)', () => {
+  type TestRoom = ReturnType<ReturnType<typeof memoryTable>['boot']>;
+  /** The deadline the next opened turn would get (what TurnOpened.deadline carries). */
+  const nextDeadline = (room: TestRoom) =>
+    (room as unknown as { newTurnDeadline(): number | null }).newTurnDeadline();
+
+  it('keeps null (not the 90 s party default): no deadline, no TurnTimedOut', async () => {
+    const { table, of } = openTurn(
+      { party: true, state: { turnTimerMs: null } },
+      { turnDeadline: undefined },
+    );
+    const room = table.boot();
+    expect(room.state.turnTimerMs).toBeNull();
+    await seatUp(room, table);
+    expect(nextDeadline(room)).toBeNull();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+  });
+
+  it('stays off after the host switches it off and the Room restarts (null survives replay)', async () => {
+    const { table, of } = openTurn(
+      { party: true, state: {} },
+      { turnDeadline: undefined },
+    );
+    const first = table.boot();
+    await joinSeated(first, account, table.connection);
+    await first.configureTurnTimer(account, null);
+    const stored = table.events.find((e) => e.type === 'TurnTimerConfigured');
+    expect(JSON.parse(JSON.stringify(stored!.payload))).toMatchObject({
+      durationMs: null,
+    });
+    const room = table.boot();
+    expect(room.state.turnTimerMs).toBeNull();
+    await seatUp(room, table);
+    expect(nextDeadline(room)).toBeNull();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+  });
+
+  it('a party table that never configured it still defaults to 90 s', async () => {
+    const { table } = openTurn(
+      { party: true, state: {} },
+      { turnDeadline: undefined },
+    );
+    const room = table.boot();
+    expect(room.state.turnTimerMs).toBeUndefined();
+    await seatUp(room, table);
+    expect(nextDeadline(room)).toBe(Date.now() + 90_000);
+  });
+});
+
 describe('one resolution per turn: player command vs timer', () => {
   const endTurn = (room: ReturnType<ReturnType<typeof memoryTable>['boot']>) =>
     room.submitCombatCommand(account, crypto.randomUUID(), {
