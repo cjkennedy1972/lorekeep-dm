@@ -146,6 +146,15 @@ describe('combat lifecycle event compatibility', () => {
       action: 'dodge',
     },
     { type: 'ReactionResolved', entityId: 'a', used: true },
+    {
+      type: 'MoveStarted',
+      entityId: 'a',
+      path: [
+        { x: 1, y: 2 },
+        { x: 2, y: 2 },
+      ],
+    },
+    { type: 'MoveEnded', entityId: 'a' },
   ])('accepts additive lifecycle event $type', (event) => {
     expect(EngineEventSchema.parse(event)).toEqual(event);
   });
@@ -267,6 +276,8 @@ function label(e: EngineEvent): string {
     case 'EntityPlaced':
     case 'LateJoinSpawned':
     case 'EntityMoved':
+    case 'MoveStarted':
+    case 'MoveEnded':
     case 'OpportunityTriggered':
     case 'AreaResolved':
     case 'HpChanged':

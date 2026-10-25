@@ -329,8 +329,16 @@ function monsterTurn(
       decision.kind === 'flee' ? 'forced' : 'normal',
     );
     if ('error' in moved) break;
+    events.push({ type: 'MoveStarted', entityId: id, path: decision.path });
     events.push(...(moved.events as unknown as Ev[]));
-    state = applyMovement(state, id, moved.state, moved.pending, now);
+    state = applyMovement(
+      { ...state, phase: 'moving' },
+      id,
+      moved.state,
+      moved.pending,
+      now,
+    );
+    events.push({ type: 'MoveEnded', entityId: id });
     if (decision.kind === 'flee' && !moved.pending.length)
       state = {
         ...state,
@@ -413,7 +421,7 @@ export function answerReaction(
     return { code: 'COMMAND_REJECTED', message: result.hint };
   const events = result.events as unknown as Ev[];
   const next = applyMovement(
-    { ...state, seed: nextSeed(state.seed ?? 1) },
+    { ...state, phase: 'moving', seed: nextSeed(state.seed ?? 1) },
     prompt.moverId,
     result.state,
     result.pending,

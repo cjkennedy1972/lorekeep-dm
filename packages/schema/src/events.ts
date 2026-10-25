@@ -88,6 +88,8 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     path: z.array(pos).min(1),
     cost: z.int().nonnegative(),
   }),
+  ev('MoveStarted', { entityId, path: z.array(pos).min(2) }),
+  ev('MoveEnded', { entityId }),
   ev('OpportunityTriggered', { moverId: entityId, attackerId: entityId }),
   ev('AreaResolved', { cells: z.array(pos), affected: z.array(entityId) }),
   ev('HpChanged', { entityId, delta: z.int(), hp: z.int() }),

@@ -370,23 +370,27 @@ export function createCombatRuntime(
         const moved = moveAlong(mv, actorId, route.path, 'normal');
         if ('error' in moved) return reject(moved.hint);
         const next = applyMovement(
-          state,
+          { ...state, phase: 'moving' },
           actorId,
           moved.state,
           moved.pending,
           now,
         );
         // One EntityMoved for the whole path unless a reaction interrupted it.
-        const events: Record<string, unknown>[] = moved.pending.length
-          ? (moved.events as unknown as Record<string, unknown>[])
-          : [
-              {
-                type: 'EntityMoved',
-                entityId: actorId,
-                path: route.path,
-                cost: route.cost,
-              },
-            ];
+        const events: Record<string, unknown>[] = [
+          { type: 'MoveStarted', entityId: actorId, path: route.path },
+          ...(moved.pending.length
+            ? (moved.events as unknown as Record<string, unknown>[])
+            : [
+                {
+                  type: 'EntityMoved',
+                  entityId: actorId,
+                  path: route.path,
+                  cost: route.cost,
+                },
+              ]),
+          { type: 'MoveEnded', entityId: actorId },
+        ];
         return { state: next, events };
       }
       return reject(

@@ -28,6 +28,8 @@ export type MovementCombatant = ThreatEntity & {
 };
 export type MovementMode = 'normal' | 'disengage' | 'forced';
 export type MovementEvent =
+  | { type: 'MoveStarted'; entityId: string; path: GridPos[] }
+  | { type: 'MoveEnded'; entityId: string }
   | { type: 'MovementSpent'; entityId: string; feet: number }
   | { type: 'EntityMoved'; entityId: string; path: GridPos[]; cost: number }
   | { type: 'OpportunityTriggered'; moverId: string; attackerId: string }
@@ -354,8 +356,16 @@ export function resolveReaction(
     [liveMover.pos, ...pending.remainingPath],
     pending.mode,
   );
-  if ('error' in continuation)
+  events.push({
+    type: 'MoveStarted',
+    entityId: mover.id,
+    path: [liveMover.pos, ...pending.remainingPath],
+  });
+  if ('error' in continuation) {
+    events.push({ type: 'MoveEnded', entityId: mover.id });
     return { ok: true, state: current, events, pending: [] };
+  }
+  events.push({ type: 'MoveEnded', entityId: mover.id });
   return {
     ok: true,
     state: continuation.state,

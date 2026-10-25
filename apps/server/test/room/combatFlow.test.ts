@@ -555,6 +555,10 @@ describe('opportunity attack reactions', () => {
       x: 7,
       y: 6,
     });
+    expect(types(moved.events)).toEqual(
+      expect.arrayContaining(['MoveStarted', 'MoveEnded']),
+    );
+    expect(moved.state.phase).toBe('reaction-pending');
   });
 
   it('refuses every other command while the prompt is open', () => {
@@ -629,6 +633,42 @@ describe('opportunity attack reactions', () => {
       x: 7,
       y: 6,
     });
+  });
+
+  it('does not resume an interrupted path when a later step has become illegal', () => {
+    const { runtime, moved } = provoke();
+    const prompt = moved.state.pendingReaction!;
+    const pending = moved.state.engineReactions![prompt.reactionId]!;
+    const next = pending.remainingPath[0]!;
+    const mover = moved.state.entities.find(
+      (entity) => entity.id === 'ent_aria',
+    )!;
+    const blocked = {
+      ...moved.state,
+      map: {
+        ...moved.state.map,
+        edges: [
+          ...moved.state.map.edges,
+          { a: mover.pos, b: next, kind: 'wall' as const },
+        ],
+      },
+    };
+    const declined = ok(
+      runtime.execute(
+        blocked,
+        prompt.entityId,
+        {
+          command: 'reaction',
+          reactionId: prompt.reactionId,
+          choice: 'decline',
+        },
+        { now: NOW + 1000 },
+      ),
+    );
+    expect(
+      declined.state.entities.find((entity) => entity.id === 'ent_aria')!.pos,
+    ).toEqual(mover.pos);
+    expect(declined.state.pendingReaction).toBeUndefined();
   });
 
   it('is idempotent: answering a resolved reaction is rejected without change', () => {
@@ -788,10 +828,38 @@ describe('Room: reaction deadline survives restarts', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('does not let a seat answer an uncontrolled NPC reaction and declines it at the fake-clock deadline', async () => {
+    vi.useFakeTimers();
+    const { table, moved } = await stage();
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const prompt = moved.state.pendingReaction!;
+    expect(prompt.entityId).toBe('ent_goblin-minion_1');
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'reaction',
+      reactionId: prompt.reactionId,
+      choice: 'take',
+    });
+    expect(
+      table.events.some((event) => event.type === 'ReactionResolved'),
+    ).toBe(false);
+    await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS + 1);
+    await room.drain();
+    expect(
+      table.events.filter((event) => event.type === 'ReactionResolved'),
+    ).toHaveLength(1);
+    expect(
+      table.events.find((event) => event.type === 'ReactionResolved')?.payload,
+    ).toMatchObject({ used: false, entityId: 'ent_goblin-minion_1' });
+  });
+
   it('a restart mid-prompt resumes with the remaining time, then declines', async () => {
     vi.useFakeTimers();
     const { table } = await stage();
     const first = table.boot();
+    const initial = table.game().combatRoom as RoomCombatState;
+    expect(initial.phase).toBe('reaction-pending');
+    expect(Object.keys(initial.engineReactions ?? {})).not.toHaveLength(0);
     await vi.advanceTimersByTimeAsync(10_000);
     await first.drain(); // process dies with the prompt still open
     expect(table.events.some((e) => e.type === 'ReactionResolved')).toBe(false);
