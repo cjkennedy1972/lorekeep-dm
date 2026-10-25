@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { AccountIdSchema, type RoomState, type Seat } from '@game/schema';
+import { type RoomState, type Seat } from '@game/schema';
 import { roomReducer, initialRoomView } from '../../room/reducer';
 import { RoundPanel, isOwnSubmission, secondsLeft } from './RoundPanel';
 import { HostControls, clampTimerSeconds } from './HostControls';
@@ -394,14 +394,9 @@ describe('HostControls', () => {
           {
             requestId,
             expiresAt: Date.now() + 60_000,
-            accountId: AccountIdSchema.parse(
-              '00000000-0000-4000-8000-0000000000c1',
-            ),
-            characterId: '55555555-5555-4555-8555-555555555556',
-            expectedRevision: 1,
-            actionId: '55555555-5555-4555-8555-555555555557',
             displayName: 'Cy',
-            character: { name: 'Cy', classId: 'fighter', level: 2 },
+            classId: 'fighter',
+            level: 2,
           },
         ]}
       />,

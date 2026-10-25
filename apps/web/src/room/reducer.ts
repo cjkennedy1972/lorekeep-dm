@@ -1,7 +1,11 @@
-import type { RoomState, RoundSnapshot, ServerMessage } from '@game/schema';
+import type {
+  ClientRoomState as SyncedRoomState,
+  RoundSnapshot,
+  ServerMessage,
+} from '@game/schema';
 
 /** Client room view: the StateSync round is the public snapshot, which omits submission text. */
-export type ClientRoomState = Omit<RoomState, 'round'> & {
+export type ClientRoomState = Omit<SyncedRoomState, 'round'> & {
   round?: RoundSnapshot;
 };
 

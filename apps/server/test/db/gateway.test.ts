@@ -946,17 +946,23 @@ describe('one-time gateway', () => {
     } while (
       !hostSync.payload.state.lateJoinRequests?.some(
         (request) =>
-          JSON.stringify(request.character) === JSON.stringify(publicCharacter),
+          request.displayName === publicCharacter.name &&
+          request.classId === publicCharacter.classId &&
+          request.level === publicCharacter.level,
       )
     );
     const publicRequest = hostSync.payload.state.lateJoinRequests?.find(
       (request) =>
-        JSON.stringify(request.character) === JSON.stringify(publicCharacter),
+        request.displayName === publicCharacter.name &&
+        request.classId === publicCharacter.classId &&
+        request.level === publicCharacter.level,
     );
     expect(publicRequest).toEqual({
       requestId: expect.any(String),
       displayName: character.name,
-      character: publicCharacter,
+      classId: character.classId,
+      level: character.level,
+      expiresAt: expect.any(Number),
     });
     const guestSync = await nextOfType(guest, 'StateSync');
     expect(guestSync.payload.state).not.toHaveProperty('lateJoinRequests');

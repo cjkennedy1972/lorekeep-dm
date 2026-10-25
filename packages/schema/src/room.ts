@@ -130,11 +130,11 @@ export const RoomStateSchema = z.object({
       z
         .object({
           requestId: z.uuid(),
-          expiresAt: z.number().int().positive(),
+          expiresAt: z.number().int().positive().optional(),
           accountId: AccountIdSchema,
-          characterId: z.uuid(),
-          expectedRevision: z.int().positive(),
-          actionId: z.uuid(),
+          characterId: z.uuid().optional(),
+          expectedRevision: z.int().positive().optional(),
+          actionId: z.uuid().optional(),
           displayName: z.string().min(1),
           character: z
             .object({
@@ -142,7 +142,8 @@ export const RoomStateSchema = z.object({
               classId: z.string().min(1),
               level: z.number().int().positive(),
             })
-            .strict(),
+            .strict()
+            .optional(),
           matureOptOut: z.boolean().optional(),
           approved: z.boolean().optional(),
         })
@@ -151,6 +152,8 @@ export const RoomStateSchema = z.object({
     .optional(),
   /** Internal idempotency results; never returned in a client state projection. */
   lateJoinRequestResults: z.record(z.string(), z.uuid()).optional(),
+  /** Internal actor ownership for idempotent host decisions and cancellation. */
+  lateJoinActionOwners: z.record(z.string(), AccountIdSchema).optional(),
   openClarifications: z
     .record(
       z.string(),
@@ -164,6 +167,20 @@ export const RoomStateSchema = z.object({
     )
     .optional(),
 });
+export const LateJoinHostRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    displayName: z.string().min(1),
+    classId: z.string().min(1),
+    level: z.number().int().positive(),
+    expiresAt: z.number().int().positive(),
+  })
+  .strict();
+export type LateJoinHostRequest = z.infer<typeof LateJoinHostRequestSchema>;
+export const ClientRoomStateSchema = RoomStateSchema.extend({
+  lateJoinRequests: z.array(LateJoinHostRequestSchema).optional(),
+});
+export type ClientRoomState = z.infer<typeof ClientRoomStateSchema>;
 export type Presence = z.infer<typeof PresenceSchema>;
 export type Seat = z.infer<typeof SeatSchema>;
 export type RoomState = z.infer<typeof RoomStateSchema>;

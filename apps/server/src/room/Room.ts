@@ -76,6 +76,39 @@ function clientGameState(
   for (const key of CLIENT_GAME_STATE_FIELDS) {
     if (!(key in source)) continue;
     if (
+      key === 'combatRoom' &&
+      source.combatRoom &&
+      typeof source.combatRoom === 'object'
+    ) {
+      const combatRoom = source.combatRoom as Record<string, unknown>;
+      const entities = Array.isArray(combatRoom.entities)
+        ? combatRoom.entities.map((entity) => {
+            if (!entity || typeof entity !== 'object' || Array.isArray(entity))
+              return entity;
+            const entry = entity as Record<string, unknown>;
+            const seatId =
+              typeof entry.id === 'string'
+                ? seatIdFromEntityId(entry.id)
+                : undefined;
+            const isOwner =
+              viewerAccountId !== undefined &&
+              seatId !== undefined &&
+              bindings?.get(seatId)?.accountId === viewerAccountId;
+            if (isOwner) return entry;
+            const publicEntity = { ...entry };
+            delete publicEntity.abilities;
+            delete publicEntity.saves;
+            delete publicEntity.attacks;
+            return publicEntity;
+          })
+        : undefined;
+      result[key] = {
+        ...combatRoom,
+        ...(entities ? { entities } : {}),
+      };
+      continue;
+    }
+    if (
       key !== 'characters' ||
       !source.characters ||
       typeof source.characters !== 'object'
@@ -458,7 +491,8 @@ export class Room {
       this.scheduleClarificationTimer(actionId, open.deadlineAt);
     }
     for (const request of this.state.lateJoinRequests ?? [])
-      this.scheduleLateJoinExpiry(request.requestId, request.expiresAt);
+      if (request.expiresAt !== undefined)
+        this.scheduleLateJoinExpiry(request.requestId, request.expiresAt);
   }
 
   private scheduleLateJoinExpiry(requestId: string, expiresAt: number): void {
@@ -511,7 +545,7 @@ export class Room {
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );
-      if (request && request.expiresAt <= Date.now())
+      if (request?.expiresAt !== undefined && request.expiresAt <= Date.now())
         await this.expireLateJoinRequestNow(requestId);
     });
   }
@@ -1007,7 +1041,9 @@ export class Room {
   }
 
   /** Last-turn narration and player text feed the next DM prompt only; they never go to clients. */
-  clientState(viewerAccountId?: string): RoomState {
+  clientState(
+    viewerAccountId?: string,
+  ): import('@game/schema').ClientRoomState {
     const seats = this.state.seats.map((seat) => {
       const clientSeat = { ...seat };
       if (
@@ -1025,25 +1061,40 @@ export class Room {
       delete clientSeat.matureOptOut;
       return clientSeat;
     });
-    const clientVisibleState = { ...this.state, revokedSeats };
-    delete clientVisibleState.lateJoinRequestResults;
+    const {
+      lateJoinRequests,
+      lateJoinRequestResults,
+      lateJoinActionOwners,
+      ...visibleRoomState
+    } = this.state;
+    void lateJoinRequestResults;
+    void lateJoinActionOwners;
+    const clientVisibleState: import('@game/schema').ClientRoomState = {
+      ...visibleRoomState,
+      revokedSeats,
+    };
     const isHostViewer = this.state.seats.some(
       (seat) => seat.accountId === viewerAccountId && seat.isHost,
     );
     if (!isHostViewer) {
       delete clientVisibleState.lateJoinRequests;
-    } else if (clientVisibleState.lateJoinRequests) {
-      clientVisibleState.lateJoinRequests =
-        clientVisibleState.lateJoinRequests.map(
-          (request) =>
-            ({
+    } else if (lateJoinRequests) {
+      clientVisibleState.lateJoinRequests = lateJoinRequests.flatMap(
+        (request) => {
+          if (request.approved) return [];
+          const character = request.character;
+          if (!character || request.expiresAt === undefined) return [];
+          return [
+            {
               requestId: request.requestId,
-              // Legacy host-controls label; identical to the public card name.
-              displayName: request.character.name,
-              character: request.character,
-              ...(request.approved ? { approved: true } : {}),
-            }) as (typeof clientVisibleState.lateJoinRequests)[number],
-        );
+              displayName: character.name,
+              classId: character.classId,
+              level: character.level,
+              expiresAt: request.expiresAt,
+            },
+          ];
+        },
+      );
     }
     delete clientVisibleState.round;
     delete clientVisibleState.closedRoundSubmissions;
@@ -2493,12 +2544,26 @@ export class Room {
   ): Promise<string> {
     return this.enqueue(async () => {
       if (this.state.ended) throw new Error('Table ended');
-      if (this.actionIds.has(actionId))
-        return this.state.lateJoinRequestResults?.[actionId] ?? '';
-      if (this.state.seats.some((seat) => seat.accountId === accountId))
+      const requestKey = `${accountId}:${actionId}`;
+      const priorRequest = (this.state.lateJoinRequests ?? []).find(
+        (request) =>
+          request.accountId === accountId && request.actionId === actionId,
+      );
+      if (priorRequest) return priorRequest.requestId;
+      const priorResult = this.state.lateJoinRequestResults?.[requestKey];
+      if (priorResult) return priorResult;
+      if (
+        this.state.seats.some(
+          (seat) => seat.accountId === accountId && seat.presence !== 'revoked',
+        )
+      )
         throw new Error('Already seated');
       for (const request of this.state.lateJoinRequests ?? [])
-        if (request.accountId === accountId && request.expiresAt <= Date.now())
+        if (
+          request.accountId === accountId &&
+          request.expiresAt !== undefined &&
+          request.expiresAt <= Date.now()
+        )
           await this.expireLateJoinRequestNow(request.requestId);
       const existing = (this.state.lateJoinRequests ?? []).find(
         (request) => request.accountId === accountId,
@@ -2506,7 +2571,11 @@ export class Room {
       if (existing) return existing.requestId;
       if ((this.state.lateJoinRequests ?? []).length >= 3)
         throw new LateJoinLimitedError();
-      if (this.state.seats.length >= 6) throw new Error('Room is full');
+      if (
+        this.state.seats.filter((seat) => seat.presence !== 'revoked').length >=
+        6
+      )
+        throw new Error('Room is full');
       const character = await this.store.validateLateJoinCharacter?.(
         accountId,
         characterId,
@@ -2549,12 +2618,22 @@ export class Room {
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );
-      if (!request || request.approved) throw new RoomSeatRequiredError();
-      if (request.expiresAt <= Date.now()) {
+      if (
+        !request ||
+        request.approved ||
+        request.characterId === undefined ||
+        request.expectedRevision === undefined
+      )
+        throw new RoomSeatRequiredError();
+      if (request.expiresAt !== undefined && request.expiresAt <= Date.now()) {
         await this.expireLateJoinRequestNow(requestId);
         return;
       }
-      if (this.state.seats.length >= 6) throw new Error('Room is full');
+      if (
+        this.state.seats.filter((seat) => seat.presence !== 'revoked').length >=
+        6
+      )
+        throw new Error('Room is full');
       await this.persist('LateJoinApproved', {
         requestId,
         actorSeatId: actor.seatId,
@@ -2713,13 +2792,16 @@ export class Room {
     requestId: string,
   ): Promise<void> {
     return this.enqueue(async () => {
-      if (this.actionIds.has(actionId)) return;
+      if (this.actionIds.has(actionId)) {
+        if (this.state.lateJoinActionOwners?.[actionId] === accountId) return;
+        throw new RoomSeatRequiredError();
+      }
       const actor = await this.requireHost(accountId);
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );
       if (!request) throw new RoomSeatRequiredError();
-      if (request.expiresAt <= Date.now()) {
+      if (request.expiresAt !== undefined && request.expiresAt <= Date.now()) {
         await this.expireLateJoinRequestNow(requestId);
         return;
       }
@@ -2742,6 +2824,7 @@ export class Room {
       await this.persist('LateJoinDenied', {
         requestId,
         actorSeatId: actor.seatId,
+        actorAccountId: accountId,
         actionId,
       });
       this.lateJoinAuthTokenHashes.delete(requestId);
@@ -2762,13 +2845,16 @@ export class Room {
     requestId: string,
   ): Promise<void> {
     return this.enqueue(async () => {
-      if (this.actionIds.has(actionId)) return;
+      if (this.actionIds.has(actionId)) {
+        if (this.state.lateJoinActionOwners?.[actionId] === accountId) return;
+        throw new RoomSeatRequiredError();
+      }
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );
       if (!request || request.accountId !== accountId)
         throw new RoomSeatRequiredError();
-      if (request.expiresAt <= Date.now()) {
+      if (request.expiresAt !== undefined && request.expiresAt <= Date.now()) {
         await this.expireLateJoinRequestNow(requestId);
         return;
       }
@@ -2786,7 +2872,11 @@ export class Room {
         });
         connection?.close?.(1008, 'Late join cancelled');
       }
-      await this.persist('LateJoinCancelled', { requestId, actionId });
+      await this.persist('LateJoinCancelled', {
+        requestId,
+        actionId,
+        actorAccountId: accountId,
+      });
       this.lateJoinAuthTokenHashes.delete(requestId);
       const timer = this.lateJoinExpiryTimers.get(requestId);
       if (timer) clearTimeout(timer);
@@ -2805,6 +2895,11 @@ export class Room {
     );
     for (const request of approved) {
       if (
+        request.characterId === undefined ||
+        request.expectedRevision === undefined
+      )
+        continue;
+      if (
         this.store.isAccountActive &&
         !(await this.store.isAccountActive(request.accountId))
       )
@@ -2813,7 +2908,11 @@ export class Room {
         (item) => item.accountId === request.accountId,
       );
       if (!seat) {
-        if (this.state.seats.length >= 6) break;
+        if (
+          this.state.seats.filter((item) => item.presence !== 'revoked')
+            .length >= 6
+        )
+          break;
         seat = {
           seatId: randomUUID() as Seat['seatId'],
           accountId: request.accountId,
@@ -2942,12 +3041,12 @@ export class Room {
       if (combatRoom && !combatRoom.ended) {
         const [die, seed] = nextDie(combatRoom.seed ?? 1, 20);
         const total = die + sheet.initiative;
-        const activeIndex = combatRoom.combat.initiative.findIndex(
+        const initiative = [...combatRoom.combat.initiative];
+        const activeIndex = initiative.findIndex(
           (entry) => entry.entityId === combatRoom.combat.activeEntityId,
         );
-        const initiative = [...combatRoom.combat.initiative];
         initiative.splice(
-          activeIndex < 0 ? initiative.length : activeIndex + 1,
+          activeIndex < 0 ? initiative.length : activeIndex,
           0,
           {
             entityId,
@@ -2987,7 +3086,7 @@ export class Room {
           },
           seed,
         };
-        initiativeEffectiveRound = combatRoom.combat.round;
+        initiativeEffectiveRound = combatRoom.combat.round + 1;
         initiativeEvent = {
           type: 'InitiativeRolled',
           payload: { entityId, total },

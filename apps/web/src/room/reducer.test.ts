@@ -3,14 +3,14 @@ import {
   SeatIdSchema,
   SessionIdSchema,
   AccountIdSchema,
-  type RoomState,
+  type ClientRoomState,
   type RoundSnapshot,
   type ServerMessage,
 } from '@game/schema';
 import { initialRoomView, roomReducer } from './reducer.js';
 
 const seatId = SeatIdSchema.parse('00000000-0000-4000-8000-0000000000b1');
-const state: RoomState = {
+const state: ClientRoomState = {
   sessionId: SessionIdSchema.parse('00000000-0000-4000-8000-0000000000c1'),
   phase: 'lobby',
   seats: [

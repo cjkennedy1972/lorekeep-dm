@@ -49,6 +49,40 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
+  it('allows only one concurrent binding for a character in a session', async () => {
+    const f = await fixture();
+    const results = await Promise.allSettled([
+      f.repo.bind({
+        sessionId: f.sessionId,
+        seatId: f.seatA,
+        accountId: f.accountId,
+        characterId: f.character.id,
+        expectedRevision: f.revision,
+      }),
+      f.repo.bind({
+        sessionId: f.sessionId,
+        seatId: f.seatB,
+        accountId: f.accountId,
+        characterId: f.character.id,
+        expectedRevision: f.revision,
+      }),
+    ]);
+
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect((rejected as PromiseRejectedResult).reason).toMatchObject({
+      code: 'ALREADY_BOUND',
+    });
+    const active = await db.query(
+      `SELECT seat_id FROM session_seat_characters
+        WHERE session_id=$1 AND character_id=$2 AND binding_status='active'`,
+      [f.sessionId, f.character.id],
+    );
+    expect(active.rowCount).toBe(1);
+  });
+
   it('returns the committed binding and releases its row on revocation without a Room cache entry', async () => {
     const f = await fixture();
     try {

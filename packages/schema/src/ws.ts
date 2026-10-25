@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ActionIdSchema, SeatIdSchema } from './ids.js';
-import { PresenceSchema, RoomStateSchema } from './room.js';
+import { ClientRoomStateSchema, PresenceSchema } from './room.js';
 import { GridPosSchema } from './combat.js';
 
 export const ClientEnvelopeSchema = z.object({
@@ -237,14 +237,6 @@ export const LateJoinHttpRequestSchema = RequestLateJoinPayloadSchema.extend({
 export const CancelLateJoinRequestSchema = z
   .object({ requestId: z.uuid(), actionId: ActionIdSchema })
   .strict();
-export const RequestLateJoinSchema = z
-  .object({
-    actionId: ActionIdSchema,
-    type: z.literal('RequestLateJoin'),
-    payload: RequestLateJoinPayloadSchema.omit({ actionId: true }),
-    lastSeq: z.int().nonnegative(),
-  })
-  .strict();
 export const DenyLateJoinSchema = hostCommand(
   'DenyLateJoin',
   z.object({ requestId: z.uuid() }).strict(),
@@ -310,7 +302,7 @@ export const StateSyncSchema = z.object({
   seq: z.int().nonnegative(),
   type: z.literal('StateSync'),
   payload: z.object({
-    state: RoomStateSchema,
+    state: ClientRoomStateSchema,
     /**
      * Identifier-only readiness projection. Absent means no seats are bound;
      * clients must treat absent as [] on every StateSync so releases are

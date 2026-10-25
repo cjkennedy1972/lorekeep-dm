@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { rleEncode, type Battlemap } from '@game/schema';
+import { advanceTurn } from '../src/room/combatEngine.js';
 import {
   Room,
   nextLateJoinBoundary,
@@ -94,6 +95,86 @@ function fixture() {
 }
 
 describe('room actor', () => {
+  it('recovers a legacy late-join event without rollout-only fields', async () => {
+    const { store, events } = fixture();
+    const requestId = randomUUID();
+    const accountId = randomUUID();
+    events.push({
+      sessionId: id,
+      seq: 1,
+      turnId: randomUUID(),
+      type: 'LateJoinRequested',
+      payload: { requestId, accountId, displayName: 'Legacy player' },
+      ts: new Date(),
+    });
+
+    const recovered = new Room(store, lease, await store.loadLatest(id));
+
+    expect(recovered.state.lateJoinRequests).toEqual([
+      { requestId, accountId, displayName: 'Legacy player' },
+    ]);
+  });
+
+  it('projects combat sheet details only to the owning seat', async () => {
+    const { store, setCharacterSnapshot } = fixture();
+    const firstAccount = randomUUID();
+    const secondAccount = randomUUID();
+    const character = quickBuild(loadCatalog(), undefined, 0x39, 1).character;
+    setCharacterSnapshot(character);
+    const room = new Room(store, lease, await store.loadLatest(id));
+    await room.seat(firstAccount, 'First');
+    await room.seat(secondAccount, 'Second');
+    const firstSeat = room.state.seats.find(
+      (seat) => seat.accountId === firstAccount,
+    )!;
+    const secondSeat = room.state.seats.find(
+      (seat) => seat.accountId === secondAccount,
+    )!;
+    await room.bindSeatCharacter(
+      firstAccount,
+      character.id,
+      1,
+      async () => true,
+      randomUUID(),
+    );
+    await room.bindSeatCharacter(
+      secondAccount,
+      character.id,
+      1,
+      async () => true,
+      randomUUID(),
+    );
+    await room.persistGameState({
+      combatRoom: {
+        entities: [
+          {
+            id: `ent_seat_${firstSeat.seatId}`,
+            abilities: { str: 18 },
+            saves: { str: 5 },
+            attacks: [{ name: 'Private attack' }],
+          },
+          {
+            id: `ent_seat_${secondSeat.seatId}`,
+            abilities: { dex: 18 },
+            saves: { dex: 5 },
+            attacks: [{ name: 'Other private attack' }],
+          },
+        ],
+      },
+    });
+
+    const firstView = room.clientState(firstAccount).gameState as {
+      combatRoom: { entities: Record<string, unknown>[] };
+    };
+    const firstEntity = firstView.combatRoom.entities[0]!;
+    const secondEntity = firstView.combatRoom.entities[1]!;
+    expect(firstEntity).toHaveProperty('abilities', { str: 18 });
+    expect(firstEntity).toHaveProperty('attacks', [{ name: 'Private attack' }]);
+    expect(secondEntity).not.toHaveProperty('abilities');
+    expect(secondEntity).not.toHaveProperty('saves');
+    expect(secondEntity).not.toHaveProperty('attacks');
+  });
+
   it('resyncs a public round snapshot without other seats’ private text', async () => {
     const { store } = fixture();
     const accountId = randomUUID();
@@ -615,9 +696,16 @@ describe('room actor', () => {
         {
           requestId,
           displayName: 'Public Hero',
-          character: { name: 'Public Hero', classId: 'fighter', level: 2 },
+          classId: 'fighter',
+          level: 2,
+          expiresAt: expect.any(Number),
         },
       ]);
+      const hostView = room.clientState(host).lateJoinRequests?.[0];
+      expect(hostView).not.toHaveProperty('accountId');
+      expect(hostView).not.toHaveProperty('characterId');
+      expect(hostView).not.toHaveProperty('revision');
+      expect(hostView).not.toHaveProperty('expectedRevision');
       expect(room.clientState(randomUUID())).not.toHaveProperty(
         'lateJoinRequests',
       );
@@ -641,6 +729,77 @@ describe('room actor', () => {
       expect(
         events.filter((event) => event.type === 'LateJoinRequested'),
       ).toHaveLength(1);
+    });
+
+    it('scopes request action replay to the requesting account', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const actionId = randomUUID();
+      const first = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        actionId,
+      );
+      const second = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        actionId,
+      );
+      expect(second).not.toBe(first);
+    });
+
+    it('replays cancel and deny action IDs only to their original actor', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      const requester = randomUUID();
+      const cancelled = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const cancelAction = randomUUID();
+      await room.cancelLateJoin(requester, cancelAction, cancelled);
+      const afterCancelRestart = new Room(
+        store,
+        lease,
+        await store.loadLatest(id),
+      );
+      await expect(
+        afterCancelRestart.cancelLateJoin(requester, cancelAction, cancelled),
+      ).resolves.toBeUndefined();
+      await expect(
+        afterCancelRestart.cancelLateJoin(
+          randomUUID(),
+          cancelAction,
+          cancelled,
+        ),
+      ).rejects.toThrow();
+
+      const denied = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const denyAction = randomUUID();
+      await room.denyLateJoin(host, denyAction, denied);
+      const afterDenyRestart = new Room(
+        store,
+        lease,
+        await store.loadLatest(id),
+      );
+      await expect(
+        afterDenyRestart.denyLateJoin(host, denyAction, denied),
+      ).resolves.toBeUndefined();
+      await expect(
+        afterDenyRestart.denyLateJoin(randomUUID(), denyAction, denied),
+      ).rejects.toThrow();
     });
 
     it('requires a current host and enforces timer bounds server-side', async () => {
@@ -797,6 +956,125 @@ describe('room actor', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('admits a combat join after its joining round and starts it next round', async () => {
+      const { store, events, setCharacterSnapshot } = fixture();
+      const host = randomUUID();
+      const hostEntityId = 'host-entity';
+      const character = quickBuild(loadCatalog(), undefined, 0x38, 1).character;
+      setCharacterSnapshot(character);
+      store.validateLateJoinCharacter = async () => ({
+        name: character.name,
+        classId: character.classId,
+        level: character.level,
+      });
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const map: Battlemap = {
+        mapId: 'combat-map',
+        w: 3,
+        h: 2,
+        palette: [
+          {
+            terrainId: 'floor',
+            moveCost: 1,
+            blocksMove: false,
+            blocksSight: false,
+            cover: 'none',
+            elevation: 0,
+          },
+        ],
+        cells: rleEncode(Array(6).fill(0)),
+        edges: [],
+        features: [],
+        markers: [
+          { markerId: 'party-entry', cell: { x: 0, y: 0 }, label: 'Entry' },
+        ],
+        zones: [
+          {
+            zoneId: 'player-entry',
+            kind: 'spawn',
+            cells: [
+              { x: 1, y: 0 },
+              { x: 2, y: 0 },
+            ],
+          },
+        ],
+        diagonalRule: '5ft',
+      };
+      const entity = {
+        id: hostEntityId,
+        name: 'Host hero',
+        kind: 'character',
+        team: 'party',
+        pos: { x: 0, y: 0 },
+        size: 1,
+        hp: 10,
+        maxHp: 10,
+        speed: 30,
+      };
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({
+        sceneId: 'scene-combat',
+        combatActors: { [host]: hostEntityId },
+        gameEngine: { map, entities: [entity] },
+        combatRoom: {
+          map,
+          entities: [entity],
+          combat: {
+            round: 1,
+            activeEntityId: hostEntityId,
+            initiative: [{ entityId: hostEntityId, total: 20 }],
+            resources: {
+              [hostEntityId]: {
+                action: true,
+                bonusAction: true,
+                reaction: true,
+                movementRemaining: 30,
+              },
+            },
+          },
+          seed: 1,
+        },
+      });
+      const requester = randomUUID();
+      const requestId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      expect(
+        room.state.lateJoinRequests?.some(
+          (item) => item.requestId === requestId,
+        ),
+      ).toBe(true);
+
+      await room.submitCombatCommand(host, randomUUID(), {
+        command: 'end-turn',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const admission = events.find(
+        (event) => event.type === 'LateJoinSpawned',
+      );
+      expect(admission?.payload.initiativeEffectiveRound).toBe(3);
+      const combat = (
+        room.state.gameState as {
+          combatRoom: import('../src/room/combatTypes.js').RoomCombatState;
+        }
+      ).combatRoom;
+      const transition = advanceTurn(combat);
+      expect(transition.events).toContainEqual({
+        type: 'TurnStarted',
+        entityId: admission?.payload.entityId,
+        round: 3,
+      });
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(true);
+    });
+
     it('does not admit an approved late join after their account becomes inactive', async () => {
       const { store, events, inactiveAccounts } = fixture();
       const host = randomUUID();
@@ -898,7 +1176,10 @@ describe('room actor', () => {
         async () => true,
         randomUUID(),
       );
-      await room.persistGameState({ sceneId: 'scene-1', gameEngine: { map } });
+      await room.persistGameState({
+        sceneId: 'scene-1',
+        gameEngine: { map, entities: [] },
+      });
       const requester = randomUUID();
       const requestId = await room.requestLateJoin(
         requester,
@@ -925,6 +1206,17 @@ describe('room actor', () => {
       expect(
         room.seatCharacters.has(
           room.state.seats.find((seat) => seat.accountId === requester)!.seatId,
+        ),
+      ).toBe(true);
+      const spawned = events.find((event) => event.type === 'LateJoinSpawned')!;
+      const restarted = new Room(store, lease, await store.loadLatest(id));
+      expect(
+        (
+          restarted.state.gameState as {
+            gameEngine?: { entities?: { id: string }[] };
+          }
+        ).gameEngine?.entities?.some(
+          (entity) => entity.id === spawned.payload.entityId,
         ),
       ).toBe(true);
     });
@@ -1050,6 +1342,14 @@ describe('room actor', () => {
         'SeatCharacterReleased',
       );
       expect(events.map((event) => event.type)).toContain('LateJoinDenied');
+      const retryId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      expect(retryId).not.toBe('');
+      expect(retryId).not.toBe(requestId);
     });
   });
 

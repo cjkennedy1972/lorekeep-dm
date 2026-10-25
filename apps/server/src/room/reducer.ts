@@ -304,6 +304,15 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     const request = event.payload as NonNullable<
       RoomState['lateJoinRequests']
     >[number];
+    const requestResults = {
+      ...(state.lateJoinRequestResults ?? {}),
+      ...(typeof request.actionId === 'string'
+        ? { [`${request.accountId}:${request.actionId}`]: request.requestId }
+        : {}),
+    };
+    const boundedRequestResults = Object.fromEntries(
+      Object.entries(requestResults).slice(-256),
+    );
     return RoomStateSchema.parse({
       ...state,
       lateJoinRequests: [
@@ -312,12 +321,7 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
         ),
         request,
       ],
-      lateJoinRequestResults: {
-        ...(state.lateJoinRequestResults ?? {}),
-        ...(typeof request.actionId === 'string'
-          ? { [request.actionId]: request.requestId }
-          : {}),
-      },
+      lateJoinRequestResults: boundedRequestResults,
     });
   }
   if (event.type === 'LateJoinApproved') {
@@ -335,9 +339,37 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     event.type === 'LateJoinExpired' ||
     event.type === 'LateJoinCancelled'
   ) {
-    const { requestId } = event.payload as { requestId: string };
+    const { requestId, actionId, actorAccountId } = event.payload as {
+      requestId: string;
+      actionId?: string;
+      actorAccountId?: string;
+    };
+    const request = (state.lateJoinRequests ?? []).find(
+      (item) => item.requestId === requestId,
+    );
+    const requestResults = {
+      ...(state.lateJoinRequestResults ?? {}),
+      ...(actionId && request?.accountId
+        ? { [`${request.accountId}:${actionId}`]: requestId }
+        : {}),
+    };
     return RoomStateSchema.parse({
       ...state,
+      ...(actionId && actorAccountId
+        ? {
+            lateJoinActionOwners: {
+              ...(state.lateJoinActionOwners ?? {}),
+              [actionId]: actorAccountId,
+            },
+          }
+        : {}),
+      ...(actionId && request?.accountId
+        ? {
+            lateJoinRequestResults: Object.fromEntries(
+              Object.entries(requestResults).slice(-256),
+            ),
+          }
+        : {}),
       lateJoinRequests: (state.lateJoinRequests ?? []).filter(
         (item) => item.requestId !== requestId,
       ),
