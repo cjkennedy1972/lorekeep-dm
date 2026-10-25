@@ -370,3 +370,96 @@ describe('turn timer across pause and restart (ADR-033 §5.2, §7.2, §8)', () =
     expect(narrations).toHaveLength(1);
   });
 });
+
+describe('bounded resolution for an absent controller, timer off (ADR-033 §5.5)', () => {
+  // The away seat keeps getting autopilot turns afterwards, so count only the turn under test.
+  const turnOne = (
+    events: { type: string; payload: unknown }[],
+    type: string,
+  ) =>
+    events.filter(
+      (e) =>
+        e.type === type &&
+        (e.payload as { turnId?: string }).turnId === 'turn-1',
+    );
+  const other = '22222222-2222-4222-8222-222222222222';
+  /** Solo-style table (timer off) with Aria's seat and a second connected seat that keeps the table running. */
+  async function table2() {
+    const staged = openTurn({ state: {} }, { turnDeadline: undefined });
+    const room = staged.table.boot();
+    await joinSeated(room, account, staged.table.connection);
+    await joinSeated(room, other, { send() {} });
+    await vi.advanceTimersByTimeAsync(10_000);
+    return { ...staged, room };
+  }
+
+  it('an away controller resolves 90 s after going away, not before', async () => {
+    const { table, room, of } = await table2();
+    await room.disconnect(account);
+    await vi.advanceTimersByTimeAsync(30_000); // disconnected -> away
+    await vi.advanceTimersByTimeAsync(89_999);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    await room.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+    expect(of('TurnTimedOut')[0]!.payload).toMatchObject({ action: 'dodge' });
+    expect(turnOne(table.events, 'TurnResolved')).toHaveLength(1);
+  });
+
+  it('a controller who returns in time clears the bound', async () => {
+    const { table, room, of } = await table2();
+    await room.disconnect(account);
+    await vi.advanceTimersByTimeAsync(30_000 + 60_000);
+    await room.join(account, table.connection);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    await room.drain();
+    expect(of('TurnTimedOut')).toHaveLength(0);
+  });
+
+  it('a connected controller with the timer off is never bounded', async () => {
+    const { room, of } = await table2();
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    await room.drain();
+    expect(of('TurnTimedOut')).toHaveLength(0);
+  });
+
+  it('the bound freezes while the table is paused', async () => {
+    // Aria's seat is unknown (never reconnected after a restart), which is bounded like away.
+    const staged = openTurn({ state: {} }, { turnDeadline: undefined });
+    const { table, of } = staged;
+    const room = table.boot();
+    await joinSeated(room, other, { send() {} });
+    await vi.advanceTimersByTimeAsync(10_000 + 50_000); // the bound started at boot: 30 s left
+    await room.setPaused(other, true, true);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await room.setPaused(other, false, true);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(of('TurnTimedOut')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    await room.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+  });
+
+  it('a revoked controller resolves at once', async () => {
+    const { table, room, of } = await table2();
+    await room.leave(account);
+    await vi.advanceTimersByTimeAsync(1);
+    await room.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+    expect(turnOne(table.events, 'TurnResolved')).toHaveLength(1);
+  });
+
+  it('the bound and the timer together still resolve the turn once', async () => {
+    const { table, of } = openTurn({ state: { turnTimerMs: 90_000 } });
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await joinSeated(room, other, { send() {} });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await room.disconnect(account);
+    await vi.advanceTimersByTimeAsync(120_000 + 90_000);
+    await room.drain();
+    expect(of('TurnTimedOut')).toHaveLength(1);
+    expect(turnOne(table.events, 'TurnResolved')).toHaveLength(1);
+  });
+});
