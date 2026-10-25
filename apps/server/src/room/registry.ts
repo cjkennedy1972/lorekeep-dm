@@ -58,6 +58,10 @@ export class RoomRegistry {
   peek(sessionId: string): Room | undefined {
     return this.rooms.get(sessionId);
   }
+  async getByLateJoinRequestId(requestId: string): Promise<Room | undefined> {
+    const sessionId = await this.store.findSessionForLateJoinRequest(requestId);
+    return sessionId ? this.get(sessionId) : undefined;
+  }
   async get(sessionId: string): Promise<Room> {
     await this.evicting.get(sessionId);
     const existing = this.rooms.get(sessionId);

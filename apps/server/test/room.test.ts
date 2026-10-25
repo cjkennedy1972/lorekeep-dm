@@ -7,6 +7,7 @@ import { rleEncode, type Battlemap } from '@game/schema';
 import { advanceTurn } from '../src/room/combatEngine.js';
 import {
   Room,
+  LateJoinRequestConflictError,
   nextLateJoinBoundary,
   type RoomStore,
 } from '../src/room/Room.js';
@@ -649,6 +650,9 @@ describe('room actor', () => {
       expect(room.clientState(randomUUID())).not.toHaveProperty(
         'lateJoinRequests',
       );
+      expect(room.clientState(host)).not.toHaveProperty(
+        'lateJoinRequestCharacterIds',
+      );
       expect(
         events.find((event) => event.type === 'LateJoinRequested')?.payload,
       ).toMatchObject({
@@ -671,23 +675,45 @@ describe('room actor', () => {
       ).toHaveLength(1);
     });
 
-    it('scopes request action replay to the requesting account', async () => {
+    it('rejects an action ID replay when its request result is unavailable for that account', async () => {
       const { store } = fixture();
       const room = new Room(store, lease, await store.loadLatest(id));
       const actionId = randomUUID();
-      const first = await room.requestLateJoin(
-        randomUUID(),
-        randomUUID(),
+      await room.requestLateJoin(randomUUID(), randomUUID(), 1, actionId);
+      await expect(
+        room.requestLateJoin(randomUUID(), randomUUID(), 1, actionId),
+      ).rejects.toBeInstanceOf(LateJoinRequestConflictError);
+    });
+
+    it('rejects a different character selection while the requester has a pending request', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const requester = randomUUID();
+      await room.requestLateJoin(requester, randomUUID(), 1, randomUUID());
+      await expect(
+        room.requestLateJoin(requester, randomUUID(), 1, randomUUID()),
+      ).rejects.toBeInstanceOf(LateJoinRequestConflictError);
+    });
+
+    it('rejects a changed character on request replay after cancellation while preserving the equivalent replay result', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const requester = randomUUID();
+      const characterId = randomUUID();
+      const actionId = randomUUID();
+      const requestId = await room.requestLateJoin(
+        requester,
+        characterId,
         1,
         actionId,
       );
-      const second = await room.requestLateJoin(
-        randomUUID(),
-        randomUUID(),
-        1,
-        actionId,
-      );
-      expect(second).not.toBe(first);
+      await room.cancelLateJoin(requester, randomUUID(), requestId);
+      await expect(
+        room.requestLateJoin(requester, randomUUID(), 1, actionId),
+      ).rejects.toBeInstanceOf(LateJoinRequestConflictError);
+      await expect(
+        room.requestLateJoin(requester, characterId, 1, actionId),
+      ).resolves.toBe(requestId);
     });
 
     it('replays cancel and deny action IDs only to their original actor', async () => {

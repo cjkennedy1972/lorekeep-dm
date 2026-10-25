@@ -8,11 +8,14 @@ export function lateJoinSpawnCell(
   size = 1,
 ): GridPos | null {
   const terrain = rleDecode(map.cells);
+  const spawnZones = map.zones.filter((zone) => zone.kind === 'spawn');
   const spawnZone =
     map.zones.find(
       (zone) =>
         zone.kind === 'spawn' && /party|pc|player|hero/.test(zone.zoneId),
-    ) ?? null;
+    ) ??
+    spawnZones.find((zone) => !/foe|enemy|monster/.test(zone.zoneId)) ??
+    null;
   const anchorMarkerId =
     spawnZone?.anchorMarkerId ??
     map.zones.find(
@@ -52,7 +55,7 @@ export function lateJoinSpawnCell(
           y: Math.floor(index / map.w),
         }))
       : [];
-  const start = anchor ?? spawnZone?.cells[0];
+  const start = anchor;
   const reachable = new Set<string>();
   if (start) {
     const mover: MovementEntity = {

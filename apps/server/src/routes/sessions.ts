@@ -23,9 +23,12 @@ import { BoundedCounter } from '../accounts/throttle.js';
 import { loadContentTierState } from '../safety/tierLoader.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterError } from '../persistence/seatCharacters.js';
-import { LateJoinLimitedError } from '../room/Room.js';
+import {
+  LateJoinLimitedError,
+  LateJoinRequestConflictError,
+} from '../room/Room.js';
 
-type Seater = Pick<RoomRegistry, 'get'>;
+type Seater = Pick<RoomRegistry, 'get' | 'getByLateJoinRequestId'>;
 const JOIN_LIMIT = 10;
 export const MAX_ACTIVE_ROOMS = 20;
 export const CREATE_PER_HOUR = 10;
@@ -33,6 +36,44 @@ export const ROOM_LIST_SQL = `SELECT s.id,s.name,s.owner_account_id=$1 AS is_hos
   WHERE s.status='active' AND (s.owner_account_id=$1 OR ${currentMemberSql('$1')})`;
 const catalog = loadCatalog();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function createLateJoinRateLimiter() {
+  const hits = new Map<string, number[]>();
+  return (
+    accountId: string,
+    ip: string,
+    inviteCode: string,
+    now = Date.now(),
+  ): number | undefined => {
+    const keys = [
+      [`account:${accountId}`, 10 * 60_000, 3, 2 * 60_000],
+      [`ip:${ip}`, 10 * 60_000, 10, 0],
+      [`invite:${inviteCode}`, 10 * 60_000, 5, 0],
+    ] as const;
+    const live = keys.map(([key, windowMs, limit, interval]) => {
+      const prior = (hits.get(key) ?? []).filter((at) => now - at < windowMs);
+      // ADR-035: count every well-formed authenticated attempt; after the burst, allow one per 2 minutes.
+      const rejected = key.startsWith('account:')
+        ? prior.length >= limit && now - (prior.at(-1) ?? now) < interval
+        : prior.length >= limit;
+      const retryMs = rejected
+        ? key.startsWith('account:')
+          ? interval - (now - (prior.at(-1) ?? now))
+          : windowMs - (now - (prior[0] ?? now))
+        : 0;
+      return { key, prior, rejected, retryMs };
+    });
+    const blocked = live.find((item) => item.rejected);
+    if (blocked) return Math.max(1, Math.ceil(blocked.retryMs / 1000));
+    for (const item of live) hits.set(item.key, [...item.prior, now]);
+    if (hits.size > 10_000) {
+      for (const [key, timestamps] of hits)
+        if (!timestamps.length || now - timestamps.at(-1)! > 10 * 60_000)
+          hits.delete(key);
+    }
+    return undefined;
+  };
+}
 
 /** Room endpoints. `/api/rooms` is what the web calls; `/api/sessions` and `/api/join/:code` are the ticket's names. */
 export function registerSessionRoutes(
@@ -46,42 +87,7 @@ export function registerSessionRoutes(
   const createPerHour = limits.createPerHour ?? CREATE_PER_HOUR;
   const createHits = new BoundedCounter(3_600_000);
   const joinHits = new BoundedCounter(60_000);
-  const lateJoinHits = new Map<string, number[]>();
-  const consumeLateJoinLimit = (
-    accountId: string,
-    ip: string,
-    inviteCode: string,
-    now = Date.now(),
-  ): number | undefined => {
-    const keys = [
-      [`account:${accountId}`, 10 * 60_000, 3, 2 * 60_000],
-      [`ip:${ip}`, 10 * 60_000, 10, 0],
-      [`invite:${inviteCode}`, 10 * 60_000, 5, 0],
-    ] as const;
-    const live = keys.map(([key, windowMs, limit, interval]) => {
-      const prior = (lateJoinHits.get(key) ?? []).filter(
-        (at) => now - at < windowMs,
-      );
-      const rejected = key.startsWith('account:')
-        ? prior.length >= limit && now - (prior.at(-1) ?? now) < interval
-        : prior.length >= limit;
-      const retryMs = rejected
-        ? key.startsWith('account:')
-          ? interval - (now - (prior.at(-1) ?? now))
-          : windowMs - (now - (prior[0] ?? now))
-        : 0;
-      return { key, prior, rejected, retryMs };
-    });
-    const blocked = live.find((item) => item.rejected);
-    if (blocked) return Math.max(1, Math.ceil(blocked.retryMs / 1000));
-    for (const item of live) lateJoinHits.set(item.key, [...item.prior, now]);
-    if (lateJoinHits.size > 10_000) {
-      for (const [key, timestamps] of lateJoinHits)
-        if (!timestamps.length || now - timestamps.at(-1)! > 10 * 60_000)
-          lateJoinHits.delete(key);
-    }
-    return undefined;
-  };
+  const consumeLateJoinLimit = createLateJoinRateLimiter();
   const throttled = (key: string) => joinHits.hit(key) > joinLimit;
   // ponytail: in-process map, move to shared store when running >1 node.
   /** Resolves the signed-in account, or sends 401 (anonymous) / 403 (account exists but is unverified). */
@@ -444,6 +450,11 @@ export function registerSessionRoutes(
         )
           .code(429)
           .send({ code: 'request_limited', message: 'Request limited.' });
+      if (error instanceof LateJoinRequestConflictError)
+        return reply.code(409).send({
+          code: 'LATE_JOIN_REQUEST_CONFLICT',
+          message: 'Late-join request conflicts with an existing request.',
+        });
       if (error instanceof SeatCharacterError)
         return error.code === 'NOT_FOUND'
           ? reply.code(404).send({
@@ -569,6 +580,11 @@ export function registerSessionRoutes(
           )
             .code(429)
             .send({ code: 'request_limited', message: 'Request limited.' });
+        if (error instanceof LateJoinRequestConflictError)
+          return reply.code(409).send({
+            code: 'LATE_JOIN_REQUEST_CONFLICT',
+            message: 'Late-join request conflicts with an existing request.',
+          });
         if (error instanceof SeatCharacterError)
           return error.code === 'NOT_FOUND'
             ? reply.code(404).send({
@@ -617,20 +633,14 @@ export function registerSessionRoutes(
           message: 'Late-join cancellation is invalid.',
         });
       try {
-        const roomsForSession = await db.query<{ session_id: string }>(
-          `SELECT session_id FROM events
-            WHERE type='LateJoinRequested' AND payload->>'requestId'=$1
-            ORDER BY seq DESC LIMIT 1`,
-          [request.params.requestId],
+        const room = await rooms.getByLateJoinRequestId(
+          request.params.requestId,
         );
-        const sessionId = roomsForSession.rows[0]?.session_id;
-        if (!sessionId)
+        if (!room)
           return reply
             .code(404)
             .send({ code: 'NOT_FOUND', message: 'Not found.' });
-        await (
-          await rooms.get(sessionId)
-        ).cancelLateJoin(
+        await room.cancelLateJoin(
           accountId,
           parsed.data.actionId,
           parsed.data.requestId,

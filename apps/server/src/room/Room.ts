@@ -296,6 +296,13 @@ export class LateJoinLimitedError extends Error {
   }
 }
 
+export class LateJoinRequestConflictError extends Error {
+  constructor() {
+    super('Late-join request conflicts with an existing request');
+    this.name = 'LateJoinRequestConflictError';
+  }
+}
+
 export class RoomSeatRequiredError extends Error {
   constructor() {
     super('Player is not seated at this table');
@@ -1031,10 +1038,12 @@ export class Room {
     const {
       lateJoinRequests,
       lateJoinRequestResults,
+      lateJoinRequestCharacterIds,
       lateJoinActionOwners,
       ...visibleRoomState
     } = this.state;
     void lateJoinRequestResults;
+    void lateJoinRequestCharacterIds;
     void lateJoinActionOwners;
     const clientVisibleState: import('@game/schema').ClientRoomState = {
       ...visibleRoomState,
@@ -2516,9 +2525,21 @@ export class Room {
         (request) =>
           request.accountId === accountId && request.actionId === actionId,
       );
-      if (priorRequest) return priorRequest.requestId;
+      if (priorRequest) {
+        if (priorRequest.characterId !== characterId)
+          throw new LateJoinRequestConflictError();
+        return priorRequest.requestId;
+      }
       const priorResult = this.state.lateJoinRequestResults?.[requestKey];
-      if (priorResult) return priorResult;
+      if (priorResult) {
+        if (
+          this.state.lateJoinRequestCharacterIds?.[requestKey] === characterId
+        )
+          return priorResult;
+        throw new LateJoinRequestConflictError();
+      }
+      if (this.actionIds.has(actionId))
+        throw new LateJoinRequestConflictError();
       if (
         this.state.seats.some(
           (seat) => seat.accountId === accountId && seat.presence !== 'revoked',
@@ -2535,7 +2556,11 @@ export class Room {
       const existing = (this.state.lateJoinRequests ?? []).find(
         (request) => request.accountId === accountId,
       );
-      if (existing) return existing.requestId;
+      if (existing) {
+        if (existing.characterId !== characterId)
+          throw new LateJoinRequestConflictError();
+        return existing.requestId;
+      }
       if ((this.state.lateJoinRequests ?? []).length >= 3)
         throw new LateJoinLimitedError();
       if (
@@ -3105,6 +3130,8 @@ export class Room {
           payload: { requestId: request.requestId, seatId: seat.seatId },
         },
       ];
+      // `LateJoinAdmitted` is the final event in this atomic event batch; reduceRoom receives
+      // that final seq while writeTurn numbers every preceding spawn event from the old head.
       const nextState = reduceRoom(this.state, {
         sessionId: this.sessionId,
         seq: this.seq + eventInputs.length,

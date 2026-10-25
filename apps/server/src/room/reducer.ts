@@ -310,6 +310,13 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
         ? { [`${request.accountId}:${request.actionId}`]: request.requestId }
         : {}),
     };
+    const requestCharacterIds = {
+      ...(state.lateJoinRequestCharacterIds ?? {}),
+      ...(typeof request.actionId === 'string' &&
+      typeof request.characterId === 'string'
+        ? { [`${request.accountId}:${request.actionId}`]: request.characterId }
+        : {}),
+    };
     const boundedRequestResults = Object.fromEntries(
       Object.entries(requestResults).slice(-256),
     );
@@ -322,6 +329,9 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
         request,
       ],
       lateJoinRequestResults: boundedRequestResults,
+      lateJoinRequestCharacterIds: Object.fromEntries(
+        Object.entries(requestCharacterIds).slice(-256),
+      ),
     });
   }
   if (event.type === 'LateJoinApproved') {

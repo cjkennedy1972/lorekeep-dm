@@ -50,4 +50,37 @@ describe('lateJoinSpawnCell', () => {
       ]),
     ).toBeNull();
   });
+
+  it('restricts candidates to a non-party spawn zone when that is the only authored zone', () => {
+    const nonPartyZone = {
+      ...map([{ x: 3, y: 2 }]),
+      zones: [
+        {
+          zoneId: 'guest-entry',
+          kind: 'spawn' as const,
+          cells: [{ x: 3, y: 2 }],
+        },
+      ],
+    };
+    expect(lateJoinSpawnCell(nonPartyZone, [])).toEqual({ x: 3, y: 2 });
+  });
+
+  it('uses row then column ordering for a zone without an anchor', () => {
+    const noAnchor = {
+      ...map([]),
+      markers: [],
+      zones: [
+        {
+          zoneId: 'guest-entry',
+          kind: 'spawn' as const,
+          cells: [
+            { x: 3, y: 0 },
+            { x: 0, y: 1 },
+            { x: 1, y: 0 },
+          ],
+        },
+      ],
+    };
+    expect(lateJoinSpawnCell(noAnchor, [])).toEqual({ x: 1, y: 0 });
+  });
 });

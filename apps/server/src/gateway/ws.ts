@@ -24,7 +24,6 @@ import {
   TransferHostSchema,
   ApproveLateJoinSchema,
   DenyLateJoinSchema,
-  DeclineLateJoinSchema,
   ApproveSeatClaimSchema,
   DenySeatClaimSchema,
   StateSyncAckSchema,
@@ -1053,15 +1052,6 @@ export function installGateway(
             ],
             DenyLateJoin: [
               DenyLateJoinSchema,
-              (payload: { requestId: string }) =>
-                room.denyLateJoin(
-                  identity.accountId,
-                  msg.actionId,
-                  payload.requestId,
-                ),
-            ],
-            DeclineLateJoin: [
-              DeclineLateJoinSchema,
               (payload: { requestId: string }) =>
                 room.denyLateJoin(
                   identity.accountId,

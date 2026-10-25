@@ -159,7 +159,16 @@ describe('account deletion completeness', () => {
           expectedRevision: 1,
           actionId: randomUUID(),
           displayName: 'SecretName',
-          character: { name: 'SecretName', classId: 'fighter', level: 1 },
+          character: {
+            id: charId,
+            name: 'SecretName',
+            classId: 'fighter',
+            level: 1,
+            abilities: { str: 18 },
+            saves: { str: 5 },
+            attacks: [{ name: 'Private attack' }],
+            privateNote: 'SecretSheetNote',
+          },
         },
       ],
     ];
@@ -177,6 +186,10 @@ describe('account deletion completeness', () => {
         gameState,
         actionIds: [],
         openClarifications: gameState.openClarifications,
+        lateJoinRequestResults: { [`${gone}:${randomUUID()}`]: randomUUID() },
+        lateJoinRequestCharacterIds: {
+          [`${gone}:${randomUUID()}`]: charId,
+        },
       },
     ]);
 
@@ -232,8 +245,30 @@ describe('account deletion completeness', () => {
     });
     expect(binding.character_snapshot).not.toHaveProperty('id');
     expect(state.gameState.lastPlayerText).toBeUndefined();
+    expect(state).toMatchObject({
+      lateJoinRequestResults: {},
+      lateJoinRequestCharacterIds: {},
+    });
     expect(
       state.seats.find((s) => s.displayName === 'Deleted player'),
     ).toBeDefined();
+    const [lateJoinEvent] = await q(
+      "SELECT payload FROM events WHERE session_id=$1 AND type='LateJoinRequested'",
+      [session],
+    );
+    expect(lateJoinEvent.payload).toMatchObject({
+      displayName: 'Deleted player',
+      character: { classId: 'fighter', level: 1 },
+    });
+    expect(lateJoinEvent.payload.character).not.toHaveProperty('name');
+    expect(lateJoinEvent.payload.character).not.toHaveProperty('id');
+    expect(lateJoinEvent.payload.character).not.toHaveProperty('abilities');
+    expect(lateJoinEvent.payload.character).not.toHaveProperty('saves');
+    expect(lateJoinEvent.payload.character).not.toHaveProperty('attacks');
+    expect(lateJoinEvent.payload.character).not.toHaveProperty('privateNote');
+    expect(Object.keys(lateJoinEvent.payload.character).sort()).toEqual([
+      'classId',
+      'level',
+    ]);
   });
 });

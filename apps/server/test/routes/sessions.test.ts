@@ -9,6 +9,7 @@ import {
 } from '../../src/rooms/invites.js';
 import { hashToken } from '../../src/accounts/signup.js';
 import { LateJoinLimitedError } from '../../src/room/Room.js';
+import { createLateJoinRateLimiter } from '../../src/routes/sessions.js';
 
 const token = 'a'.repeat(43);
 function fakeDb(account: 'none' | 'active' | 'pending') {
@@ -59,6 +60,19 @@ describe('invite codes', () => {
 });
 
 describe('room routes', () => {
+  it('enforces the late-join account burst of 3 then one request every 2 minutes', () => {
+    const limit = createLateJoinRateLimiter();
+    const attempt = (now: number) =>
+      limit('account', 'ip', `invite-${now}`, now);
+    expect(attempt(0)).toBeUndefined();
+    expect(attempt(1)).toBeUndefined();
+    expect(attempt(2)).toBeUndefined();
+    expect(attempt(3)).toBe(120);
+    expect(attempt(120_002)).toBeUndefined();
+    expect(attempt(120_003)).toBe(120);
+    expect(attempt(240_002)).toBeUndefined();
+  });
+
   it('unauthenticated join -> 401 with login + returnTo hint', async () => {
     const res = await app('none').inject({
       method: 'POST',

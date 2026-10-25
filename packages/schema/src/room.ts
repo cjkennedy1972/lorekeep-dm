@@ -152,6 +152,8 @@ export const RoomStateSchema = z.object({
     .optional(),
   /** Internal idempotency results; never returned in a client state projection. */
   lateJoinRequestResults: z.record(z.string(), z.uuid()).optional(),
+  /** Private selection ids retained only to reject non-equivalent replay attempts. */
+  lateJoinRequestCharacterIds: z.record(z.string(), z.uuid()).optional(),
   /** Internal actor ownership for idempotent host decisions and cancellation. */
   lateJoinActionOwners: z.record(z.string(), AccountIdSchema).optional(),
   openClarifications: z

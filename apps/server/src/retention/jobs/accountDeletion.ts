@@ -424,6 +424,26 @@ async function deleteAccount(
         no: null,
       };
     }
+    if (
+      row.type === 'LateJoinRequested' &&
+      payload.accountId === accountId &&
+      isRecord(scrubbed) &&
+      isRecord(payload.character)
+    ) {
+      const character = payload.character;
+      // A pending request replays only its anonymous public card; sheet/build fields are not needed.
+      scrubbed = {
+        ...scrubbed,
+        character: {
+          ...(typeof character.classId === 'string'
+            ? { classId: character.classId }
+            : {}),
+          ...(typeof character.level === 'number'
+            ? { level: character.level }
+            : {}),
+        },
+      };
+    }
     if (JSON.stringify(scrubbed) === JSON.stringify(payload)) continue;
     await client.query('SELECT redact_event($1,$2,$3)', [
       row.session_id,
@@ -583,6 +603,18 @@ function scrub(value: unknown, s: Scrub, preserveChatText = false): unknown {
       continue;
     }
     if (CACHE_KEYS.includes(key)) continue;
+    if (
+      (key === 'lateJoinRequestResults' ||
+        key === 'lateJoinRequestCharacterIds') &&
+      isRecord(child)
+    ) {
+      out[key] = Object.fromEntries(
+        Object.entries(child)
+          .filter(([requestKey]) => !requestKey.startsWith(`${s.accountId}:`))
+          .map(([requestKey, item]) => [requestKey, scrub(item, s)]),
+      );
+      continue;
+    }
     if (owned && key === 'character' && isRecord(child)) {
       out[key] = { ...child, name: ANON_NAME };
       continue;

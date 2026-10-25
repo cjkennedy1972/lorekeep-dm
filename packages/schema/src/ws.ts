@@ -241,10 +241,6 @@ export const DenyLateJoinSchema = hostCommand(
   'DenyLateJoin',
   z.object({ requestId: z.uuid() }).strict(),
 );
-export const DeclineLateJoinSchema = hostCommand(
-  'DeclineLateJoin',
-  z.object({ requestId: z.uuid() }).strict(),
-);
 export const ApproveSeatClaimSchema = hostCommand(
   'ApproveSeatClaim',
   z.object({ claimId: z.uuid() }).strict(),
