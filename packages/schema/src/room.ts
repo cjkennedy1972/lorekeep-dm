@@ -130,14 +130,27 @@ export const RoomStateSchema = z.object({
       z
         .object({
           requestId: z.uuid(),
+          expiresAt: z.number().int().positive(),
           accountId: AccountIdSchema,
+          characterId: z.uuid(),
+          expectedRevision: z.int().positive(),
+          actionId: z.uuid(),
           displayName: z.string().min(1),
+          character: z
+            .object({
+              name: z.string().min(1),
+              classId: z.string().min(1),
+              level: z.number().int().positive(),
+            })
+            .strict(),
           matureOptOut: z.boolean().optional(),
           approved: z.boolean().optional(),
         })
         .strict(),
     )
     .optional(),
+  /** Internal idempotency results; never returned in a client state projection. */
+  lateJoinRequestResults: z.record(z.string(), z.uuid()).optional(),
   openClarifications: z
     .record(
       z.string(),

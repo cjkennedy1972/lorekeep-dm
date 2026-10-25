@@ -312,6 +312,12 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
         ),
         request,
       ],
+      lateJoinRequestResults: {
+        ...(state.lateJoinRequestResults ?? {}),
+        ...(typeof request.actionId === 'string'
+          ? { [request.actionId]: request.requestId }
+          : {}),
+      },
     });
   }
   if (event.type === 'LateJoinApproved') {
@@ -323,7 +329,12 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       ),
     });
   }
-  if (event.type === 'LateJoinDenied' || event.type === 'LateJoinAdmitted') {
+  if (
+    event.type === 'LateJoinDenied' ||
+    event.type === 'LateJoinAdmitted' ||
+    event.type === 'LateJoinExpired' ||
+    event.type === 'LateJoinCancelled'
+  ) {
     const { requestId } = event.payload as { requestId: string };
     return RoomStateSchema.parse({
       ...state,

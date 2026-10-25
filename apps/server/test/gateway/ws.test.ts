@@ -5,6 +5,7 @@ import {
   KickSeatSchema,
   TransferHostSchema,
   ApproveLateJoinSchema,
+  RequestLateJoinSchema,
   DenyLateJoinSchema,
   EndTableSchema,
   ConfigureRoundTimerSchema,
@@ -37,6 +38,23 @@ describe('gateway envelope', () => {
         payload: { requestId },
       }).success,
     ).toBe(true);
+    expect(
+      RequestLateJoinSchema.safeParse({
+        ...base,
+        type: 'RequestLateJoin',
+        payload: { characterId: crypto.randomUUID(), expectedRevision: 1 },
+      }).success,
+    ).toBe(true);
+    expect(
+      RequestLateJoinSchema.safeParse({
+        ...base,
+        type: 'RequestLateJoin',
+        payload: {
+          characterId: crypto.randomUUID(),
+          expectedRevision: 0,
+        },
+      }).success,
+    ).toBe(false);
     expect(
       DenyLateJoinSchema.safeParse({
         ...base,

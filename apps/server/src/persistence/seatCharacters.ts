@@ -52,6 +52,40 @@ export class SeatCharacterError extends Error {
 export class SeatCharacterRepository {
   constructor(private readonly db: Pool) {}
 
+  async validateLateJoinSelection(
+    accountId: string,
+    characterId: string,
+    expectedRevision: number,
+  ): Promise<{ name: string; classId: string; level: number }> {
+    const account = await this.db.query<{ status: string }>(
+      'SELECT status FROM accounts WHERE id=$1',
+      [accountId],
+    );
+    if (account.rows[0]?.status !== 'active')
+      throw new SeatCharacterError('ACCOUNT_INACTIVE');
+    const result = await this.db.query<{
+      character: unknown;
+      revision: number;
+    }>(
+      `SELECT character,revision FROM account_characters
+        WHERE id=$1 AND account_id=$2`,
+      [characterId, accountId],
+    );
+    // Keep foreign and unknown character IDs observationally identical.
+    const row = result.rows[0];
+    if (!row) throw new SeatCharacterError('NOT_FOUND');
+    if (row.revision !== expectedRevision)
+      throw new SeatCharacterError('STALE_REVISION');
+    const parsed = CharacterSchema.safeParse(row.character);
+    if (!parsed.success || validateCharacter(parsed.data, catalog).length)
+      throw new SeatCharacterError('INVALID_CHARACTER');
+    return {
+      name: parsed.data.name,
+      classId: parsed.data.classId,
+      level: parsed.data.level,
+    };
+  }
+
   async listOwnedCharacters(accountId: string) {
     const result = await this.db.query<{
       id: string;

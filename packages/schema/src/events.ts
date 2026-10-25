@@ -49,6 +49,13 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   ev('CombatEnded', { combatId: z.string().min(1) }),
   ev('MapLoaded', { mapId: z.string().min(1) }),
   ev('EntityPlaced', { entityId, pos }),
+  ev('LateJoinSpawned', {
+    seatId: z.uuid(),
+    entityId,
+    sceneId: z.string().min(1),
+    pos,
+    initiativeEffectiveRound: z.int().positive().optional(),
+  }),
   ev('EntityMoved', {
     entityId,
     path: z.array(pos).min(1),

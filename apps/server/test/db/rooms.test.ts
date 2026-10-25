@@ -8,7 +8,9 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { installGateway } from '../../src/gateway/ws.js';
+import { quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 const rooms = new RoomRegistry(
@@ -188,17 +190,37 @@ describe('rooms + invites (postgres)', () => {
       'DistinctiveRegistryMemory-2ac4',
     ]);
 
+    const repo = new SeatCharacterRepository(db);
+    const selectionFor = async (owner: string) => {
+      const character = {
+        ...quickBuild(loadCatalog(), undefined, 0x35, 1).character,
+        id: randomUUID(),
+      };
+      await repo.saveOwnedCharacter(owner, character);
+      return {
+        characterId: character.id,
+        expectedRevision: 1,
+        actionId: randomUUID(),
+      };
+    };
+
     const accepted = await call(
       guest202,
       'POST',
       `/api/invites/${room.code}/late-join`,
+      await selectionFor(guest202.id),
     );
     expect(accepted.statusCode).toBe(202);
     expect(accepted.json()).not.toHaveProperty('recap');
     expect(accepted.body).not.toContain('DistinctiveSceneMemory-9f71');
     expect(accepted.body).not.toContain('DistinctiveRegistryMemory-2ac4');
 
-    const pending = await call(guest409, 'POST', `/api/join/${room.code}`);
+    const pending = await call(
+      guest409,
+      'POST',
+      `/api/join/${room.code}`,
+      await selectionFor(guest409.id),
+    );
     expect(pending.statusCode).toBe(409);
     expect(pending.json()).not.toHaveProperty('recap');
     expect(pending.body).not.toContain('DistinctiveSceneMemory-9f71');

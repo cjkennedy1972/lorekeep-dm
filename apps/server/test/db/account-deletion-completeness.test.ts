@@ -148,6 +148,20 @@ describe('account deletion completeness', () => {
       [6, 'CharacterDied', { accountId: gone, entityId: charId }],
       [7, 'ResurrectionOrNewCharacterOffered', { accountId: gone }],
       [8, 'FailForwardChosen', { accountId: gone, narrative: 'SecretNarr' }],
+      [
+        9,
+        'LateJoinRequested',
+        {
+          requestId: randomUUID(),
+          expiresAt: Date.now() + 60_000,
+          accountId: gone,
+          characterId: charId,
+          expectedRevision: 1,
+          actionId: randomUUID(),
+          displayName: 'SecretName',
+          character: { name: 'SecretName', classId: 'fighter', level: 1 },
+        },
+      ],
     ];
     for (const [seq, type, payload] of events) {
       await q(

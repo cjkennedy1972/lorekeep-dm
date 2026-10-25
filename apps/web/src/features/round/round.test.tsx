@@ -393,10 +393,15 @@ describe('HostControls', () => {
         lateJoinRequests={[
           {
             requestId,
+            expiresAt: Date.now() + 60_000,
             accountId: AccountIdSchema.parse(
               '00000000-0000-4000-8000-0000000000c1',
             ),
+            characterId: '55555555-5555-4555-8555-555555555556',
+            expectedRevision: 1,
+            actionId: '55555555-5555-4555-8555-555555555557',
             displayName: 'Cy',
+            character: { name: 'Cy', classId: 'fighter', level: 2 },
           },
         ]}
       />,

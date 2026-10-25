@@ -6,6 +6,7 @@ import { CharacterSchema } from '@game/schema';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 afterAll(() => db.end());
@@ -56,6 +57,29 @@ describe('account-owned character API', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
       const characterId = createdItem.id as string;
+      const characters = new SeatCharacterRepository(db);
+      expect(
+        await characters.validateLateJoinSelection(owner, characterId, 1),
+      ).toEqual({
+        name: character.name,
+        classId: character.classId,
+        level: character.level,
+      });
+      const unavailable = await Promise.allSettled([
+        characters.validateLateJoinSelection(stranger, characterId, 1),
+        characters.validateLateJoinSelection(stranger, randomUUID(), 1),
+      ]);
+      expect(unavailable.map((result) => result.status)).toEqual([
+        'rejected',
+        'rejected',
+      ]);
+      expect(
+        unavailable.map((result) =>
+          result.status === 'rejected'
+            ? (result.reason as Error & { code?: string }).code
+            : undefined,
+        ),
+      ).toEqual(['NOT_FOUND', 'NOT_FOUND']);
 
       const clientId = await post(ownerToken, {
         character: { ...character, id: randomUUID() },

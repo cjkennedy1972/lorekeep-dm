@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import type { registerAuthRoutes } from './auth.js';
 import type { Pool } from 'pg';
-import { CreateRoomInputSchema, type RoomInfo } from '@game/schema';
+import {
+  CreateRoomInputSchema,
+  CancelLateJoinRequestSchema,
+  LateJoinHttpRequestSchema,
+  type RoomInfo,
+} from '@game/schema';
 import { authenticateRequest } from '../middleware/auth.js';
 import { tokenFromCookie } from '../accounts/sessions.js';
 import { hashToken } from '../accounts/signup.js';
@@ -17,6 +22,8 @@ import type { RoomRegistry } from '../room/registry.js';
 import { BoundedCounter } from '../accounts/throttle.js';
 import { loadContentTierState } from '../safety/tierLoader.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { SeatCharacterError } from '../persistence/seatCharacters.js';
+import { LateJoinLimitedError } from '../room/Room.js';
 
 type Seater = Pick<RoomRegistry, 'get'>;
 const JOIN_LIMIT = 10;
@@ -39,6 +46,42 @@ export function registerSessionRoutes(
   const createPerHour = limits.createPerHour ?? CREATE_PER_HOUR;
   const createHits = new BoundedCounter(3_600_000);
   const joinHits = new BoundedCounter(60_000);
+  const lateJoinHits = new Map<string, number[]>();
+  const consumeLateJoinLimit = (
+    accountId: string,
+    ip: string,
+    inviteCode: string,
+    now = Date.now(),
+  ): number | undefined => {
+    const keys = [
+      [`account:${accountId}`, 10 * 60_000, 3, 2 * 60_000],
+      [`ip:${ip}`, 10 * 60_000, 10, 0],
+      [`invite:${inviteCode}`, 10 * 60_000, 5, 0],
+    ] as const;
+    const live = keys.map(([key, windowMs, limit, interval]) => {
+      const prior = (lateJoinHits.get(key) ?? []).filter(
+        (at) => now - at < windowMs,
+      );
+      const rejected = key.startsWith('account:')
+        ? prior.length >= limit && now - (prior.at(-1) ?? now) < interval
+        : prior.length >= limit;
+      const retryMs = rejected
+        ? key.startsWith('account:')
+          ? interval - (now - (prior.at(-1) ?? now))
+          : windowMs - (now - (prior[0] ?? now))
+        : 0;
+      return { key, prior, rejected, retryMs };
+    });
+    const blocked = live.find((item) => item.rejected);
+    if (blocked) return Math.max(1, Math.ceil(blocked.retryMs / 1000));
+    for (const item of live) lateJoinHits.set(item.key, [...item.prior, now]);
+    if (lateJoinHits.size > 10_000) {
+      for (const [key, timestamps] of lateJoinHits)
+        if (!timestamps.length || now - timestamps.at(-1)! > 10 * 60_000)
+          lateJoinHits.delete(key);
+    }
+    return undefined;
+  };
   const throttled = (key: string) => joinHits.hit(key) > joinLimit;
   // ponytail: in-process map, move to shared store when running >1 node.
   /** Resolves the signed-in account, or sends 401 (anonymous) / 403 (account exists but is unverified). */
@@ -314,12 +357,13 @@ export function registerSessionRoutes(
     const authToken = tokenFromCookie(request.headers.cookie);
     const authTokenHash = authToken ? hashToken(authToken) : undefined;
     const { code } = request.params;
-    if (throttled(`${request.ip}:${code}`))
+    const found = await sessionForCode(db, code);
+    // Preserve the invite-code oracle throttle for repeated invalid codes.
+    if (!found && throttled(`${request.ip}:${code}`))
       return reply.code(429).send({
         code: 'RATE_LIMITED',
         message: 'Too many attempts. Wait a minute.',
       });
-    const found = await sessionForCode(db, code);
     if (
       !found ||
       (found.status === 'archived' &&
@@ -341,8 +385,23 @@ export function registerSessionRoutes(
         !room.state?.seats?.some((seat) => seat.accountId === accountId) &&
         room.state?.gameState
       ) {
+        const selection = LateJoinHttpRequestSchema.safeParse(request.body);
+        if (!selection.success)
+          return reply.code(400).send({
+            code: 'INVALID_LATE_JOIN_REQUEST',
+            message: 'Choose a valid character before requesting to join.',
+          });
+        const retryAfter = consumeLateJoinLimit(accountId, request.ip, code);
+        if (retryAfter)
+          return reply
+            .header('Retry-After', String(retryAfter))
+            .code(429)
+            .send({ code: 'request_limited', message: 'Request limited.' });
         const requestId = await room.requestLateJoin(
           accountId,
+          selection.data.characterId,
+          selection.data.expectedRevision,
+          selection.data.actionId,
           profile.displayName,
           matureOptOut,
           authTokenHash,
@@ -365,6 +424,11 @@ export function registerSessionRoutes(
           requestId,
         });
       }
+      if (throttled(`${request.ip}:${code}`))
+        return reply.code(429).send({
+          code: 'RATE_LIMITED',
+          message: 'Too many attempts. Wait a minute.',
+        });
       await room.seat(
         accountId,
         profile.displayName,
@@ -372,6 +436,27 @@ export function registerSessionRoutes(
         authTokenHash,
       );
     } catch (error) {
+      if (error instanceof LateJoinLimitedError)
+        return (
+          error.retryAfterSeconds !== undefined
+            ? reply.header('Retry-After', String(error.retryAfterSeconds))
+            : reply
+        )
+          .code(429)
+          .send({ code: 'request_limited', message: 'Request limited.' });
+      if (error instanceof SeatCharacterError)
+        return error.code === 'NOT_FOUND'
+          ? reply.code(404).send({
+              code: 'CHARACTER_UNAVAILABLE',
+              message: 'Character could not be selected.',
+            })
+          : reply.code(error.code === 'STALE_REVISION' ? 409 : 400).send({
+              code:
+                error.code === 'STALE_REVISION'
+                  ? 'CHARACTER_CHANGED'
+                  : 'INVALID_CHARACTER',
+              message: 'Character could not be selected.',
+            });
       if (error instanceof Error && error.message === 'Room is full')
         return reply
           .code(409)
@@ -424,11 +509,6 @@ export function registerSessionRoutes(
       if (!accountId) return reply;
       const authToken = tokenFromCookie(request.headers.cookie);
       const authTokenHash = authToken ? hashToken(authToken) : undefined;
-      if (throttled(`${request.ip}:${request.params.code}`))
-        return reply.code(429).send({
-          code: 'RATE_LIMITED',
-          message: 'Too many attempts. Wait a minute.',
-        });
       const found = await sessionForCode(db, request.params.code);
       if (!found || found.status !== 'active')
         return reply.code(404).send({
@@ -436,13 +516,31 @@ export function registerSessionRoutes(
           message: 'This invite link is no longer valid.',
         });
       const profile = await seatProfile(accountId);
-      const optOut = (request.body as { matureOptOut?: unknown } | null)
-        ?.matureOptOut;
+      const selection = LateJoinHttpRequestSchema.safeParse(request.body);
+      if (!selection.success)
+        return reply.code(400).send({
+          code: 'INVALID_LATE_JOIN_REQUEST',
+          message: 'Choose a valid character before requesting to join.',
+        });
+      const retryAfter = consumeLateJoinLimit(
+        accountId,
+        request.ip,
+        request.params.code,
+      );
+      if (retryAfter)
+        return reply
+          .header('Retry-After', String(retryAfter))
+          .code(429)
+          .send({ code: 'request_limited', message: 'Request limited.' });
+      const optOut = selection.data.matureOptOut;
       try {
         const requestId = await (
           await rooms.get(found.id)
         ).requestLateJoin(
           accountId,
+          selection.data.characterId,
+          selection.data.expectedRevision,
+          selection.data.actionId,
           profile.displayName,
           typeof optOut === 'boolean' ? optOut : profile.matureOptOut,
           authTokenHash,
@@ -463,6 +561,27 @@ export function registerSessionRoutes(
           status: 'pending',
         });
       } catch (error) {
+        if (error instanceof LateJoinLimitedError)
+          return (
+            error.retryAfterSeconds !== undefined
+              ? reply.header('Retry-After', String(error.retryAfterSeconds))
+              : reply
+          )
+            .code(429)
+            .send({ code: 'request_limited', message: 'Request limited.' });
+        if (error instanceof SeatCharacterError)
+          return error.code === 'NOT_FOUND'
+            ? reply.code(404).send({
+                code: 'CHARACTER_UNAVAILABLE',
+                message: 'Character could not be selected.',
+              })
+            : reply.code(error.code === 'STALE_REVISION' ? 409 : 400).send({
+                code:
+                  error.code === 'STALE_REVISION'
+                    ? 'CHARACTER_CHANGED'
+                    : 'INVALID_CHARACTER',
+                message: 'Character could not be selected.',
+              });
         if (error instanceof Error && error.message === 'Room is full')
           return reply
             .code(409)
@@ -486,4 +605,42 @@ export function registerSessionRoutes(
   );
   app.post<{ Params: { code: string } }>('/api/invites/:code/join', join);
   app.post<{ Params: { code: string } }>('/api/join/:code', join);
+  app.post<{ Params: { requestId: string } }>(
+    '/api/late-join/:requestId/cancel',
+    async (request, reply) => {
+      const accountId = await member(request, reply);
+      if (!accountId) return reply;
+      const parsed = CancelLateJoinRequestSchema.safeParse(request.body);
+      if (!parsed.success || parsed.data.requestId !== request.params.requestId)
+        return reply.code(400).send({
+          code: 'INVALID_LATE_JOIN_REQUEST',
+          message: 'Late-join cancellation is invalid.',
+        });
+      try {
+        const roomsForSession = await db.query<{ session_id: string }>(
+          `SELECT session_id FROM events
+            WHERE type='LateJoinRequested' AND payload->>'requestId'=$1
+            ORDER BY seq DESC LIMIT 1`,
+          [request.params.requestId],
+        );
+        const sessionId = roomsForSession.rows[0]?.session_id;
+        if (!sessionId)
+          return reply
+            .code(404)
+            .send({ code: 'NOT_FOUND', message: 'Not found.' });
+        await (
+          await rooms.get(sessionId)
+        ).cancelLateJoin(
+          accountId,
+          parsed.data.actionId,
+          parsed.data.requestId,
+        );
+        return { ok: true };
+      } catch {
+        return reply
+          .code(404)
+          .send({ code: 'NOT_FOUND', message: 'Not found.' });
+      }
+    },
+  );
 }

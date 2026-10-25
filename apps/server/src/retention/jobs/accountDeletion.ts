@@ -527,6 +527,7 @@ function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
   }
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
+    if (key === 'characterId' && typeof child === 'string') out.add(child);
     const id = (child as { id?: unknown } | null)?.id;
     if (key === accountId && typeof id === 'string') out.add(id);
     collectCharIds(child, accountId, out);
@@ -582,6 +583,10 @@ function scrub(value: unknown, s: Scrub, preserveChatText = false): unknown {
       continue;
     }
     if (CACHE_KEYS.includes(key)) continue;
+    if (owned && key === 'character' && isRecord(child)) {
+      out[key] = { ...child, name: ANON_NAME };
+      continue;
+    }
     if (key === 'restVote' && isRecord(child)) {
       const redactedVote = { ...child };
       delete redactedVote.eligibleSeats;

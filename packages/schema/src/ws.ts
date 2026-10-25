@@ -224,8 +224,33 @@ export const ApproveLateJoinSchema = hostCommand(
   'ApproveLateJoin',
   z.object({ requestId: z.uuid() }).strict(),
 );
+export const RequestLateJoinPayloadSchema = z
+  .object({
+    characterId: z.uuid(),
+    expectedRevision: z.int().positive(),
+    actionId: ActionIdSchema,
+  })
+  .strict();
+export const LateJoinHttpRequestSchema = RequestLateJoinPayloadSchema.extend({
+  matureOptOut: z.boolean().optional(),
+}).strict();
+export const CancelLateJoinRequestSchema = z
+  .object({ requestId: z.uuid(), actionId: ActionIdSchema })
+  .strict();
+export const RequestLateJoinSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('RequestLateJoin'),
+    payload: RequestLateJoinPayloadSchema.omit({ actionId: true }),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 export const DenyLateJoinSchema = hostCommand(
   'DenyLateJoin',
+  z.object({ requestId: z.uuid() }).strict(),
+);
+export const DeclineLateJoinSchema = hostCommand(
+  'DeclineLateJoin',
   z.object({ requestId: z.uuid() }).strict(),
 );
 export const ApproveSeatClaimSchema = hostCommand(
