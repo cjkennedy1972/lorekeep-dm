@@ -71,6 +71,12 @@ function renderJoin() {
   );
 }
 
+type JoinBody = { actionId: string } & Record<string, unknown>;
+
+function joinBodies(): JoinBody[] {
+  return joinCalls().map(([, body]) => body as JoinBody);
+}
+
 function joinCalls() {
   return apiMock.mock.calls.filter(
     ([path]) => path === `/api/invites/${CODE}/join`,
@@ -106,13 +112,13 @@ describe('Join: late-join character selection', () => {
     await waitFor(() => expect(alert).toHaveFocus());
     expect(picker).toBeDisabled();
 
-    const [[, body]] = joinCalls();
+    const [body] = joinBodies();
     expect(body).toMatchObject({
       matureOptOut: false,
       characterId: ALDRIC.id,
       expectedRevision: ALDRIC.revision,
     });
-    expect((body as { actionId: string }).actionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body?.actionId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   test('a retry of the same pending pick reuses its actionId so the server returns the prior result', async () => {
@@ -132,10 +138,8 @@ describe('Join: late-join character selection', () => {
     await userEvent.click(join);
 
     await waitFor(() => expect(joinCalls()).toHaveLength(2));
-    const [[, first], [, second]] = joinCalls();
-    expect((first as { actionId: string }).actionId).toBe(
-      (second as { actionId: string }).actionId,
-    );
+    const [first, second] = joinBodies();
+    expect(first?.actionId).toBe(second?.actionId);
   });
 
   test('a changed character is a new request with a new actionId', async () => {
@@ -157,14 +161,12 @@ describe('Join: late-join character selection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
 
     await waitFor(() => expect(joinCalls()).toHaveLength(2));
-    const [[, first], [, second]] = joinCalls();
+    const [first, second] = joinBodies();
     expect(second).toMatchObject({
       characterId: BRENNA.id,
       expectedRevision: 1,
     });
-    expect((second as { actionId: string }).actionId).not.toBe(
-      (first as { actionId: string }).actionId,
-    );
+    expect(second?.actionId).not.toBe(first?.actionId);
   });
 
   test('a failed character list shows a neutral message with a retry, and Join waits for it', async () => {
