@@ -1,6 +1,6 @@
 # ADR-033: Combat turn and reaction orchestration in the Room
 
-Status: Proposed (draft PR for Atlas review) · Date: 2026-10-22 · Owner: Sage · Work item: M4 item 6 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-005, ADR-018, ADR-022, ADR-029 (§§1, 4, 5, 7, 8, 11; round lifecycle §§2–3), ADR-030, ADR-031, ADR-032
+Status: Accepted (2026-10-25) · Date: 2026-10-22 · Owner: Sage · Work item: M4 item 6 (`docs/plan/m4-breakdown.md`) · Depends on: ADR-002, ADR-003, ADR-005, ADR-018, ADR-022, ADR-029 (§§1, 4, 5, 7, 8, 11; round lifecycle §§2–3), ADR-030, ADR-031, ADR-032
 
 Append-only: this ADR adds contracts. It does not edit ADR-001 through ADR-032 or `docs/architecture.md`. Its event types are declared as additions to the v0.2 event list in architecture §15.6, as ADR-031 does.
 
@@ -201,3 +201,17 @@ Admission rules:
   - The M1 engine's current list of trigger types. §2.5 assumes only opportunity attacks are emitted in M4.
   - The M4 item 3 upper bound on the turn timer.
 - Prettier is run on this file before commit (see the PR for the command and result).
+
+## Status update (2026-10-25)
+
+Accepted. ADR-033 merged in `1a0a1db` (#269) and ADR-034 amends it in `b64b02d` (#270). The decision text above is unchanged. This section records what the code on `origin/main` (27a1347, #309) does against the contract.
+
+Checked against the code:
+
+- **Shipped and matching §7.1 shapes:** `CombatStarted` and `CombatEnded` (schema accepts both id forms, #308); `MoveStarted` and `MoveEnded` (the `reason` enum matches §4.6). Movement continuation and the `moving` phase shipped in #309.
+- **Schema only, no producer yet:** `TurnOpened`, `TurnResolved`, `TurnTimedOut` (#308). Nothing emits them.
+- **Not in code:** `ReactionPromptOpened`, `ReactionAnswered`, `ReactionDeclined`, `NarrationCommitted`. The turn timer, the 30 s minimum, the 45 s reaction-wait budget, and the 90 s away/unknown bound (§5, §3.8) have no constants in `apps/server` or `packages/engine`. The 15 s window is shipped as `REACTION_TIMEOUT_MS` in `combatTypes.ts`.
+- **Admission codes (§1):** `not-your-turn`, `move-in-progress`, `reaction-window-open`, and `narration-in-progress` are in `combat.ts`. The reactor-only check and the phase gate match the §1 table.
+- **M2 events still valid:** `InitiativeRolled`, `ReactionAvailable`, `ReactionResolved`, `OpportunityTriggered`, `EntityMoved`, `HpChanged`, `ConditionApplied`, `ConditionRemoved`, `SlotSpent`, `AreaResolved`. ADR-033 neither supersedes nor mentions `ReactionAvailable` and `ReactionResolved`. Still open: whether the §3 prompt events replace them or sit beside them. That needs a follow-up decision.
+
+Not yet implemented, so the contract is ahead of the code: the reaction prompt lifecycle (§3), the per-turn narration and its DM turn (§6), the timer and bounded resolution (§5), and persistence and restart (§7.4). The M4 item 6 tests in the Verification list are the acceptance bar for those.
