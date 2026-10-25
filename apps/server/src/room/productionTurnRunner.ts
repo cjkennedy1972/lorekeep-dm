@@ -61,6 +61,7 @@ import {
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
+import { roomTurnKey, runCombatMapTool } from './combatDmTools.js';
 import {
   LiveDmRestrictedError,
   type SoloTurnRequest,
@@ -502,6 +503,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ],
         ),
       );
+    // Authoritative Room combat state for map tools; tracks every commit within this DM turn.
+    let liveRoom = state.combatRoom;
+    let pendingRoom: RoomCombatState | undefined;
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
@@ -589,10 +593,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 },
               }
             : combatRoom;
+        const committedRoom = pendingRoom ?? updatedCombatRoom;
+        pendingRoom = undefined;
+        liveRoom = committedRoom;
         return {
           ...(previous as GameState),
           gameEngine: withoutCatalog(nextEngine),
-          ...(updatedCombatRoom ? { combatRoom: updatedCombatRoom } : {}),
+          ...(committedRoom ? { combatRoom: committedRoom } : {}),
           characters: Object.fromEntries(
             Object.entries((previous as GameState).characters ?? actors).map(
               ([accountId, character]) => [
@@ -647,6 +654,27 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           : undefined;
         const rejection = worldMutationRejection(request.name ?? '', isHost);
         if (rejection) return { ...rejection, events: [] };
+        if (
+          (request.name === 'move_to' ||
+            request.name === 'suggest_area_target') &&
+          liveRoom &&
+          !liveRoom.ended
+        ) {
+          const out = runCombatMapTool(
+            liveRoom,
+            { name: request.name, args: request.args },
+            { catalog: current.catalog, actors: current.actors },
+          );
+          if (!out.result.ok) return { ...out.result, events: [] };
+          pendingRoom = out.room;
+          const events = (out.result.value as { events?: unknown[] }).events;
+          return {
+            ok: true,
+            summary: out.result.summary,
+            events: out.result.events,
+            value: { events: events ?? [], state: current },
+          };
+        }
         const spellCasterId = (
           request.args as { casterId?: string } | undefined
         )?.casterId;
@@ -655,6 +683,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             ? {
                 ...current,
                 spellMap: combatSpellMap(state.combatRoom, spellCasterId),
+                turnId: roomTurnKey(liveRoom ?? state.combatRoom),
+                options: Object.fromEntries(
+                  Object.entries(liveRoom?.optionHandles ?? {}).map(
+                    ([optionId, handle]) => [optionId, { optionId, ...handle }],
+                  ),
+                ),
               }
             : current;
         const result = worldExecute

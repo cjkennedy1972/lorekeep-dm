@@ -190,3 +190,12 @@ test('client endpoint config excludes key material', () => {
     }).success,
   ).toBe(false);
 });
+
+test('move_to accepts engine option handles but not coordinates or free text', () => {
+  const base = { entityId: 'ent_ayla', mode: 'within' };
+  const parse = (targetRef: string) =>
+    DMToolArgsSchema.move_to.safeParse({ ...base, targetRef }).success;
+  expect(parse('opt_a1b2c3d4')).toBe(true);
+  expect(parse('3,4')).toBe(false);
+  expect(parse('opt_')).toBe(false);
+});

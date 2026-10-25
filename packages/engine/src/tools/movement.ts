@@ -208,11 +208,11 @@ export function executeSuggestAreaTarget(state: AreaToolState, args: unknown) {
     })
     .slice(0, 4);
   const options = chosen.map((option) => {
-    const suffix = option.optionId
-      .replace(/[^a-z0-9]/gi, '')
-      .slice(-8)
-      .toLowerCase()
-      .padStart(4, '0');
+    // FNV-1a of the full engine id: distinct placements never share a handle suffix.
+    let hash = 0x811c9dc5;
+    for (const char of option.optionId)
+      hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
+    const suffix = hash.toString(36).padStart(4, '0');
     const optionId = `opt_${suffix}`;
     return { optionId, anchor: option.anchor, affected: option.affected };
   });
