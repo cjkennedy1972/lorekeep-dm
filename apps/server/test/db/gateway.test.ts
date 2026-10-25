@@ -1481,16 +1481,19 @@ describe('party character binding WebSocket authorization', () => {
           actionId,
         },
       });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Deterministic marker instead of a sleep: the room handles commands serially, so the
+      // owner's own re-bind reply (ALREADY_BOUND) can only arrive after any broadcast the
+      // guest's rejected attempt would have caused.
+      const markerId = await bind(f.owner, f.room, f.owned.id, f.revision);
+      await expect(nextOfType(f.owner, 'Error')).resolves.toMatchObject({
+        payload: { code: 'ALREADY_BOUND', actionId: markerId },
+      });
 
       expect((await liveRows()).rows).toEqual(before);
-      // The owner's socket must not hear about the rejected attempt.
-      const ownerFramesAfter = seenMessageTypes
-        .get(f.owner)!
-        .slice(ownerFramesBefore);
-      expect(ownerFramesAfter).not.toContain('Error');
-      expect(ownerFramesAfter).not.toContain('SeatCharacterBound');
-      expect(ownerFramesAfter).not.toContain('SeatCharacterBoundPrivate');
+      // Between the guest's attempt and the marker the owner heard nothing but the marker itself.
+      expect(seenMessageTypes.get(f.owner)!.slice(ownerFramesBefore)).toEqual([
+        'Error',
+      ]);
     } finally {
       await shutdown(f);
     }

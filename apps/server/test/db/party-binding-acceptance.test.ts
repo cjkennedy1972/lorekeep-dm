@@ -455,6 +455,7 @@ describe('ADR-035 step 5: party seat binding acceptance', () => {
       [leaving],
     );
     const result = await runAccountDeletions(
+      // The accountDeletion job reads only ctx.db, ctx.log and ctx.drainRoom, never ctx.store; give it a real store if that changes.
       { db, store: {} as never, now: new Date(), log: () => {} },
       [leaving],
     );
@@ -491,7 +492,7 @@ describe('ADR-035 step 5: party seat binding acceptance', () => {
     ]);
   });
 
-  it('reloads identical seat-to-account ownership from the database after a restart', async () => {
+  it('reloads identical seat-to-account ownership from the database through a fresh connection pool', async () => {
     const owner = await makeAccount();
     const sessionId = await makeSession(owner);
     const seats = [];
@@ -514,7 +515,7 @@ describe('ADR-035 step 5: party seat binding acceptance', () => {
     const beforeRestart = await new Persistence(
       db,
     ).loadActiveSeatCharacterBindings(sessionId);
-    // A brand-new pool stands in for a process restart.
+    // A brand-new pool proves ownership is read from the database, not memory; it is not a process restart.
     const restarted = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
       const afterRestart = await new Persistence(
