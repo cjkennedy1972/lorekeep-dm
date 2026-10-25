@@ -241,6 +241,7 @@ function buildRoomCombat(
   return {
     actors,
     state: {
+      phase: 'awaiting-command',
       map: engine.map,
       entities,
       combat: {

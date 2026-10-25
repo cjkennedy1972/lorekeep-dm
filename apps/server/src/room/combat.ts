@@ -106,6 +106,63 @@ const reject = (message: string): CombatCommandError => ({
   message,
 });
 
+const rejectAdmission = (
+  code: Extract<
+    CombatCommandError['code'],
+    | 'not-your-turn'
+    | 'move-in-progress'
+    | 'reaction-window-open'
+    | 'narration-in-progress'
+  >,
+): CombatCommandError => ({
+  code,
+  message: {
+    'not-your-turn': 'It is not your turn.',
+    'move-in-progress': 'Your movement is still resolving.',
+    'reaction-window-open': 'Resolve the open reaction first.',
+    'narration-in-progress': 'The DM is narrating this turn.',
+  }[code],
+});
+
+function admissionError(
+  state: RoomCombatState,
+  actorId: string,
+  command: CombatCommand['payload'],
+): CombatCommandError | null {
+  const active =
+    state.combat.activeEntityId ?? state.combat.initiative[0]?.entityId;
+  const phase = state.pendingReaction
+    ? 'reaction-pending'
+    : (state.phase ?? 'awaiting-command');
+  const isActive = actorId === active;
+  // Room derives actorId from the authenticated seat's server-side entity binding.
+  // Only the reactor's controller (entityId), never the mover, may answer.
+  const isReactor = actorId === state.pendingReaction?.entityId;
+
+  // Authorization precedes phase: a non-active party seat gets not-your-turn
+  // even during reaction-pending, before any phase-specific rejection can reveal it.
+  // OOC chat does not enter this admission path; Room.commitChat accepts it independently of combat phase.
+  if (command.command === 'reaction' && !isReactor)
+    return rejectAdmission('not-your-turn');
+  if (command.command !== 'reaction' && !isActive)
+    return rejectAdmission('not-your-turn');
+  if (phase === 'awaiting-command')
+    return command.command === 'reaction'
+      ? rejectAdmission('reaction-window-open')
+      : null;
+  if (phase === 'moving')
+    return rejectAdmission(
+      command.command === 'reaction'
+        ? 'reaction-window-open'
+        : 'move-in-progress',
+    );
+  if (phase === 'reaction-pending')
+    return command.command === 'reaction' && isReactor
+      ? null
+      : rejectAdmission('reaction-window-open');
+  return rejectAdmission('narration-in-progress');
+}
+
 export function createCombatRuntime(
   catalog: Catalog = defaultCatalog(),
 ): CombatRuntime {
@@ -166,6 +223,8 @@ export function createCombatRuntime(
     execute(state, actorId, command, ctx) {
       const now = ctx?.now ?? Date.now();
       if (state.ended) return reject('Combat is over.');
+      const denied = admissionError(state, actorId, command);
+      if (denied) return denied;
       if (command.command === 'reaction')
         return answerReaction(
           state,
@@ -174,12 +233,9 @@ export function createCombatRuntime(
           command.choice,
           now,
         );
-      if (state.pendingReaction)
-        return reject('Resolve the pending reaction first.');
       const active =
         state.combat.activeEntityId ?? state.combat.initiative[0]?.entityId;
-      if (actorId !== active)
-        return { code: 'NOT_YOUR_TURN', message: 'It is not your turn.' };
+      if (actorId !== active) return rejectAdmission('not-your-turn');
       if (command.command === 'options') {
         const preview = runtime.preview(state, actorId, ctx) as Record<
           string,

@@ -43,7 +43,14 @@ export type CombatResourcesState = {
   reaction: boolean;
   movementRemaining: number;
 };
+export type CombatPhase =
+  | 'awaiting-command'
+  | 'moving'
+  | 'reaction-pending'
+  | 'narrating';
 export type RoomCombatState = {
+  /** Missing only in legacy snapshots; runtime admission infers it from pendingReaction. */
+  phase?: CombatPhase;
   map: Battlemap;
   entities: CombatEntity[];
   combat: {
@@ -79,7 +86,12 @@ export type CombatTransition = {
   slots?: { entityId: string; slots: SlotPatch };
 };
 export type CombatCommandError = {
-  code: 'NOT_YOUR_TURN' | 'COMMAND_REJECTED';
+  code:
+    | 'COMMAND_REJECTED'
+    | 'not-your-turn'
+    | 'move-in-progress'
+    | 'reaction-window-open'
+    | 'narration-in-progress';
   message: string;
 };
 export type CombatContext = {

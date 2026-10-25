@@ -230,7 +230,7 @@ describe('Room combat command seam', () => {
       command: 'move',
       destination: { x: 4, y: 1 },
     });
-    expect(denied).toMatchObject({ code: 'NOT_YOUR_TURN' });
+    expect(denied).toMatchObject({ code: 'not-your-turn' });
     expect(combat.entities[0]?.pos).toEqual({ x: 1, y: 1 });
     expect(events).toHaveLength(4);
   });

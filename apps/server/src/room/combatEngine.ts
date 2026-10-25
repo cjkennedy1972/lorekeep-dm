@@ -97,6 +97,7 @@ export function applyMovement(
   delete rest.engineReactions;
   return {
     ...rest,
+    phase: first ? 'reaction-pending' : 'awaiting-command',
     entities: state.entities.map((e) => {
       const live = moved.entities.find((item) => item.id === e.id);
       return live
@@ -138,6 +139,7 @@ export function settle(state: RoomCombatState): CombatTransition {
   return {
     state: {
       ...rest,
+      phase: 'awaiting-command',
       ended: { outcome },
       combat: { ...state.combat, activeEntityId: null },
     },
@@ -166,6 +168,7 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
     return {
       state: {
         ...state,
+        phase: 'awaiting-command',
         dodging: (state.dodging ?? []).filter((id) => id !== nextId),
         combat: {
           ...state.combat,
@@ -432,7 +435,7 @@ export function expireReaction(
   const prompt = state.pendingReaction;
   if (!prompt || now < prompt.deadlineAt) return null;
   if (!state.engineReactions?.[prompt.reactionId]) {
-    const next = { ...state };
+    const next = { ...state, phase: 'awaiting-command' as const };
     delete next.pendingReaction;
     return {
       state: next,
