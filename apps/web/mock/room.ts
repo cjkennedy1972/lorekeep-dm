@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { characterById } from './characters.js';
 import {
   AccountIdSchema,
+  ClientRoomStateSchema,
   SeatIdSchema,
   SessionIdSchema,
   type Account,
@@ -101,7 +102,8 @@ export class Room {
 
   /** StateSync payload: the round rides beside the state, as the server sends it (clientSyncPayload). */
   syncPayload() {
-    const { round, ...state } = this.state();
+    const { round, ...rawState } = this.state();
+    const state = ClientRoomStateSchema.parse(rawState);
     const boundSeatIds = [...this.bound.keys()].map((id) =>
       SeatIdSchema.parse(id),
     );

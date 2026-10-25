@@ -25,6 +25,8 @@ export function recoverRoom(
         'HostTransferred',
         'LateJoinApproved',
         'LateJoinDenied',
+        'LateJoinExpired',
+        'LateJoinCancelled',
         'TableEnded',
         'ChatMuteChanged',
         'RoundTimerConfigured',

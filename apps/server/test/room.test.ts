@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { StateSyncSchema } from '@game/schema';
 import { describe, expect, it, vi } from 'vitest';
+import { quickBuild } from '@game/rules-engine';
+import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { rleEncode, type Battlemap } from '@game/schema';
+import { advanceTurn } from '../src/room/combatEngine.js';
 import {
   Room,
+  LateJoinRequestConflictError,
+  LateJoinUnavailableError,
   nextLateJoinBoundary,
   type RoomStore,
 } from '../src/room/Room.js';
@@ -22,9 +28,13 @@ function fixture() {
   const registryWrites: RegistryEvent[][] = [];
   const inactiveAccounts = new Set<string>();
   let snapshot: LatestState['snapshot'] = null;
+  let characterSnapshot: Record<string, unknown> | undefined;
   const store: RoomStore = {
     async isAccountActive(accountId) {
       return !inactiveAccounts.has(accountId);
+    },
+    async validateLateJoinCharacter() {
+      return { name: 'Public Hero', classId: 'fighter', level: 2 };
     },
     async persistRegistryEvents(_sessionId, registryEvents) {
       registryWrites.push([...registryEvents]);
@@ -35,7 +45,17 @@ function fixture() {
         events: events.filter((event) => event.seq > (snapshot?.seq ?? 0)),
       };
     },
-    async writeTurn(_sessionId, inputs, state) {
+    async writeTurn(
+      _sessionId,
+      inputs,
+      state,
+      _lease,
+      _registryEvents,
+      _expectedHeadSeq,
+      _registryTurnId,
+      _rewoundTurnIds,
+      transition,
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 1));
       const stored = inputs.map((input) => ({
         ...input,
@@ -50,7 +70,18 @@ function fixture() {
         state,
         createdAt: new Date(),
       };
-      return { events: stored };
+      return {
+        events: stored,
+        ...(transition?.kind === 'bind' && characterSnapshot
+          ? {
+              binding: {
+                seatId: transition.seatId,
+                accountId: transition.accountId,
+                characterSnapshot,
+              },
+            }
+          : {}),
+      };
     },
   };
   return {
@@ -58,11 +89,100 @@ function fixture() {
     events,
     registryWrites,
     inactiveAccounts,
+    setCharacterSnapshot(value: Record<string, unknown>) {
+      characterSnapshot = value;
+    },
     latest: () => store.loadLatest(id),
   };
 }
 
 describe('room actor', () => {
+  it('expires a legacy late-join request without expiresAt during recovery', async () => {
+    const { store, events } = fixture();
+    const requestId = randomUUID();
+    const accountId = randomUUID();
+    const pendingSeatId = randomUUID();
+    events.push({
+      sessionId: id,
+      seq: 1,
+      turnId: randomUUID(),
+      type: 'SeatJoined',
+      payload: {
+        seatId: pendingSeatId,
+        accountId,
+        displayName: 'Legacy player',
+        presence: 'offline',
+      },
+      ts: new Date(),
+    });
+    events.push({
+      sessionId: id,
+      seq: 2,
+      turnId: randomUUID(),
+      type: 'LateJoinRequested',
+      payload: { requestId, accountId, displayName: 'Legacy player' },
+      ts: new Date(),
+    });
+
+    const recovered = new Room(
+      store,
+      lease,
+      await store.loadLatest(id),
+      undefined,
+      undefined,
+      [{ seatId: pendingSeatId, accountId, characterSnapshot: {} }],
+      true,
+    );
+    const hostAccountId = randomUUID();
+    await recovered.seat(hostAccountId, 'Host');
+    await recovered.drain();
+
+    expect(recovered.state.lateJoinRequests).toEqual([]);
+    expect(events.map((event) => event.type)).toContain('LateJoinExpired');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'SeatRevoked',
+        payload: expect.objectContaining({
+          seatId: pendingSeatId,
+          accountId,
+          cause: 'late-join-expired',
+        }),
+      }),
+    );
+    expect(events.map((event) => event.type)).toContain(
+      'SeatCharacterReleased',
+    );
+    expect(
+      recovered.clientState(hostAccountId).lateJoinRequests ?? [],
+    ).not.toContainEqual(expect.objectContaining({ requestId }));
+  });
+
+  it('reports a neutral unavailable error when the table ends before a late-join request', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    room.state.ended = true;
+
+    await expect(
+      room.requestLateJoin(randomUUID(), randomUUID(), 1, randomUUID()),
+    ).rejects.toBeInstanceOf(LateJoinUnavailableError);
+  });
+
+  it('does not count revoked seats toward the six-seat cap', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const accounts = Array.from({ length: 6 }, () => randomUUID());
+    for (const [index, accountId] of accounts.entries())
+      await room.seat(accountId, `Player ${index}`);
+
+    await room.leave(accounts[0]!);
+    await expect(
+      room.seat(randomUUID(), 'Replacement'),
+    ).resolves.toBeUndefined();
+    expect(
+      room.state.seats.filter((seat) => seat.presence !== 'revoked'),
+    ).toHaveLength(6);
+  });
+
   it('resyncs a public round snapshot without other seats’ private text', async () => {
     const { store } = fixture();
     const accountId = randomUUID();
@@ -524,6 +644,319 @@ describe('room actor', () => {
   });
 
   describe('host controls', () => {
+    it('does not persist rejected selections and caps pending requests without creating a fourth record', async () => {
+      const { store, events } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      store.validateLateJoinCharacter = async () => {
+        throw new Error('invalid selection');
+      };
+      await expect(
+        room.requestLateJoin(randomUUID(), randomUUID(), 1, randomUUID()),
+      ).rejects.toThrow('invalid selection');
+      expect(events.map((event) => event.type)).not.toContain(
+        'LateJoinRequested',
+      );
+      store.validateLateJoinCharacter = async () => ({
+        name: 'Hero',
+        classId: 'fighter',
+        level: 1,
+      });
+      for (let index = 0; index < 3; index++)
+        await room.requestLateJoin(randomUUID(), randomUUID(), 1, randomUUID());
+      await expect(
+        room.requestLateJoin(randomUUID(), randomUUID(), 1, randomUUID()),
+      ).rejects.toThrow('request_limited');
+      expect(
+        events.filter((event) => event.type === 'LateJoinRequested'),
+      ).toHaveLength(3);
+    });
+
+    it('validates the selected character before persisting and exposes only its public card to the host', async () => {
+      const { store, events } = fixture();
+      const host = randomUUID();
+      const requester = randomUUID();
+      const characterId = randomUUID();
+      const actionId = randomUUID();
+      const validate = vi.fn(async () => ({
+        name: 'Public Hero',
+        classId: 'fighter',
+        level: 2,
+      }));
+      store.validateLateJoinCharacter = validate;
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+
+      const requestId = await room.requestLateJoin(
+        requester,
+        characterId,
+        3,
+        actionId,
+        'Private account name',
+        true,
+      );
+
+      expect(validate).toHaveBeenCalledWith(requester, characterId, 3);
+      expect(room.clientState(host).lateJoinRequests).toEqual([
+        {
+          requestId,
+          displayName: 'Public Hero',
+          classId: 'fighter',
+          level: 2,
+          expiresAt: expect.any(Number),
+        },
+      ]);
+      const hostView = room.clientState(host).lateJoinRequests?.[0];
+      expect(hostView).not.toHaveProperty('accountId');
+      expect(hostView).not.toHaveProperty('characterId');
+      expect(hostView).not.toHaveProperty('revision');
+      expect(hostView).not.toHaveProperty('expectedRevision');
+      expect(room.clientState(randomUUID())).not.toHaveProperty(
+        'lateJoinRequests',
+      );
+      expect(room.clientState(host)).not.toHaveProperty(
+        'lateJoinRequestCharacterIds',
+      );
+      expect(
+        events.find((event) => event.type === 'LateJoinRequested')?.payload,
+      ).toMatchObject({
+        accountId: requester,
+        characterId,
+        matureOptOut: true,
+      });
+      expect(
+        await room.requestLateJoin(
+          requester,
+          characterId,
+          3,
+          actionId,
+          'Private account name',
+          true,
+        ),
+      ).toBe(requestId);
+      expect(
+        events.filter((event) => event.type === 'LateJoinRequested'),
+      ).toHaveLength(1);
+    });
+
+    it('rejects an action ID replay when its request result is unavailable for that account', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const actionId = randomUUID();
+      await room.requestLateJoin(randomUUID(), randomUUID(), 1, actionId);
+      await expect(
+        room.requestLateJoin(randomUUID(), randomUUID(), 1, actionId),
+      ).rejects.toBeInstanceOf(LateJoinRequestConflictError);
+    });
+
+    it('rejects a different character selection while the requester has a pending request', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const requester = randomUUID();
+      await room.requestLateJoin(requester, randomUUID(), 1, randomUUID());
+      await expect(
+        room.requestLateJoin(requester, randomUUID(), 1, randomUUID()),
+      ).rejects.toBeInstanceOf(LateJoinRequestConflictError);
+    });
+
+    it('rejects a changed character on request replay after cancellation while preserving the equivalent replay result', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const requester = randomUUID();
+      const characterId = randomUUID();
+      const actionId = randomUUID();
+      const requestId = await room.requestLateJoin(
+        requester,
+        characterId,
+        1,
+        actionId,
+      );
+      await room.cancelLateJoin(requester, randomUUID(), requestId);
+      await expect(
+        room.requestLateJoin(requester, randomUUID(), 1, actionId),
+      ).rejects.toBeInstanceOf(LateJoinRequestConflictError);
+      await expect(
+        room.requestLateJoin(requester, characterId, 1, actionId),
+      ).resolves.toBe(requestId);
+    });
+
+    it('replays cancel and deny action IDs only to their original actor', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      const requester = randomUUID();
+      const cancelled = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const cancelAction = randomUUID();
+      await room.cancelLateJoin(requester, cancelAction, cancelled);
+      const afterCancelRestart = new Room(
+        store,
+        lease,
+        await store.loadLatest(id),
+      );
+      await expect(
+        afterCancelRestart.cancelLateJoin(requester, cancelAction, cancelled),
+      ).resolves.toBeUndefined();
+      const foreignAccount = randomUUID();
+      const foreignError = await afterCancelRestart
+        .cancelLateJoin(foreignAccount, cancelAction, cancelled)
+        .catch((error: unknown) => error);
+      const unknownRequestError = await afterCancelRestart
+        .cancelLateJoin(foreignAccount, cancelAction, randomUUID())
+        .catch((error: unknown) => error);
+      expect(foreignError).toBeInstanceOf(Error);
+      expect((foreignError as Error).message).toBe(
+        (unknownRequestError as Error).message,
+      );
+      await expect(
+        afterCancelRestart.cancelLateJoin(
+          foreignAccount,
+          cancelAction,
+          cancelled,
+        ),
+      ).rejects.toThrow();
+
+      const deniedAccountId = randomUUID();
+      const denied = await room.requestLateJoin(
+        deniedAccountId,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const denyAction = randomUUID();
+      const originalDenyResult = await room.denyLateJoin(
+        host,
+        denyAction,
+        denied,
+      );
+      const afterDenyRestart = new Room(
+        store,
+        lease,
+        await store.loadLatest(id),
+      );
+      await expect(
+        afterDenyRestart.denyLateJoin(host, denyAction, denied),
+      ).resolves.toBe(originalDenyResult);
+      const otherDeniedAccountId = randomUUID();
+      const otherDenied = await afterDenyRestart.requestLateJoin(
+        otherDeniedAccountId,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await expect(
+        afterDenyRestart.denyLateJoin(host, denyAction, otherDenied),
+      ).rejects.toThrow();
+      expect(afterDenyRestart.state.lateJoinRequests).toContainEqual(
+        expect.objectContaining({ requestId: otherDenied }),
+      );
+      await expect(
+        afterDenyRestart.denyLateJoin(randomUUID(), denyAction, denied),
+      ).rejects.toThrow();
+      const retryActionId = randomUUID();
+      const retryCharacterId = randomUUID();
+      const retryId = await afterDenyRestart.requestLateJoin(
+        deniedAccountId,
+        retryCharacterId,
+        1,
+        retryActionId,
+      );
+      expect(retryId).not.toBe(denied);
+      await expect(
+        afterDenyRestart.requestLateJoin(
+          deniedAccountId,
+          retryCharacterId,
+          1,
+          retryActionId,
+        ),
+      ).resolves.toBe(retryId);
+    });
+
+    it('bounds persisted late-join request replay results', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      const cancelActionIds: string[] = [];
+      for (let index = 0; index < 260; index++) {
+        const requester = randomUUID();
+        const requestId = await room.requestLateJoin(
+          requester,
+          randomUUID(),
+          1,
+          randomUUID(),
+        );
+        const cancelActionId = randomUUID();
+        cancelActionIds.push(cancelActionId);
+        await room.cancelLateJoin(requester, cancelActionId, requestId);
+      }
+      expect(Object.keys(room.state.lateJoinRequestResults ?? {})).toHaveLength(
+        256,
+      );
+      expect(Object.keys(room.state.lateJoinActionOwners ?? {})).toHaveLength(
+        256,
+      );
+      expect(room.state.lateJoinActionOwners).not.toHaveProperty(
+        cancelActionIds[0]!,
+      );
+      expect(room.state.lateJoinActionOwners).toHaveProperty(
+        cancelActionIds.at(-1)!,
+      );
+    });
+
+    it('requires host authorization before replaying committed late-join actions', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      const player = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.seat(player, 'Player');
+
+      const approvedRequestId = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const approveActionId = randomUUID();
+      await room.approveLateJoin(host, approveActionId, approvedRequestId);
+      const committedApproveError = await room
+        .approveLateJoin(player, approveActionId, randomUUID())
+        .catch((error: unknown) => error);
+      const freshApproveError = await room
+        .approveLateJoin(player, randomUUID(), randomUUID())
+        .catch((error: unknown) => error);
+      expect((committedApproveError as Error).message).toBe(
+        (freshApproveError as Error).message,
+      );
+
+      const deniedRequestId = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      const denyActionId = randomUUID();
+      await room.denyLateJoin(host, denyActionId, deniedRequestId);
+      const committedDenyError = await room
+        .denyLateJoin(player, denyActionId, randomUUID())
+        .catch((error: unknown) => error);
+      const freshDenyError = await room
+        .denyLateJoin(player, randomUUID(), randomUUID())
+        .catch((error: unknown) => error);
+      expect((committedDenyError as Error).message).toBe(
+        (freshDenyError as Error).message,
+      );
+    });
+
     it('requires a current host and enforces timer bounds server-side', async () => {
       const { store } = fixture();
       const owner = randomUUID();
@@ -666,11 +1099,141 @@ describe('room actor', () => {
       await room.persistGameState({
         combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
       });
-      const requestId = await room.requestLateJoin(randomUUID(), 'Late');
+      const requestId = await room.requestLateJoin(
+        randomUUID(),
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
 
       await expect(
         room.approveLateJoin(host, randomUUID(), requestId),
       ).resolves.toBeUndefined();
+    });
+
+    it('admits a combat join after its joining round and starts it next round', async () => {
+      const { store, events, setCharacterSnapshot } = fixture();
+      const host = randomUUID();
+      const hostEntityId = 'host-entity';
+      const character = quickBuild(loadCatalog(), undefined, 0x38, 1).character;
+      setCharacterSnapshot(character);
+      store.validateLateJoinCharacter = async () => ({
+        name: character.name,
+        classId: character.classId,
+        level: character.level,
+      });
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const map: Battlemap = {
+        mapId: 'combat-map',
+        w: 3,
+        h: 2,
+        palette: [
+          {
+            terrainId: 'floor',
+            moveCost: 1,
+            blocksMove: false,
+            blocksSight: false,
+            cover: 'none',
+            elevation: 0,
+          },
+        ],
+        cells: rleEncode(Array(6).fill(0)),
+        edges: [],
+        features: [],
+        markers: [
+          { markerId: 'party-entry', cell: { x: 0, y: 0 }, label: 'Entry' },
+        ],
+        zones: [
+          {
+            zoneId: 'player-entry',
+            kind: 'spawn',
+            cells: [
+              { x: 1, y: 0 },
+              { x: 2, y: 0 },
+            ],
+          },
+        ],
+        diagonalRule: '5ft',
+      };
+      const entity = {
+        id: hostEntityId,
+        name: 'Host hero',
+        kind: 'character',
+        team: 'party',
+        pos: { x: 0, y: 0 },
+        size: 1,
+        hp: 10,
+        maxHp: 10,
+        speed: 30,
+      };
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({
+        sceneId: 'scene-combat',
+        combatActors: { [host]: hostEntityId },
+        gameEngine: { map, entities: [entity] },
+        combatRoom: {
+          map,
+          entities: [entity],
+          combat: {
+            round: 1,
+            activeEntityId: hostEntityId,
+            initiative: [{ entityId: hostEntityId, total: 20 }],
+            resources: {
+              [hostEntityId]: {
+                action: true,
+                bonusAction: true,
+                reaction: true,
+                movementRemaining: 30,
+              },
+            },
+          },
+          seed: 1,
+        },
+      });
+      const requester = randomUUID();
+      const requestId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      expect(
+        room.state.lateJoinRequests?.some(
+          (item) => item.requestId === requestId,
+        ),
+      ).toBe(true);
+
+      await room.submitCombatCommand(host, randomUUID(), {
+        command: 'end-turn',
+      });
+      // Wait for the admission itself instead of a fixed sleep; slow runners need more than 30 ms.
+      await vi.waitFor(
+        () =>
+          expect(events.some((event) => event.type === 'LateJoinSpawned')).toBe(
+            true,
+          ),
+        { timeout: 5000 },
+      );
+      const admission = events.find(
+        (event) => event.type === 'LateJoinSpawned',
+      );
+      expect(admission?.payload.initiativeEffectiveRound).toBe(3);
+      const combat = (
+        room.state.gameState as {
+          combatRoom: import('../src/room/combatTypes.js').RoomCombatState;
+        }
+      ).combatRoom;
+      const transition = advanceTurn(combat);
+      expect(transition.events).toContainEqual({
+        type: 'TurnStarted',
+        entityId: admission?.payload.entityId,
+        round: 3,
+      });
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(true);
     });
 
     it('does not admit an approved late join after their account becomes inactive', async () => {
@@ -681,7 +1244,12 @@ describe('room actor', () => {
       await room.seat(host, 'Host');
       await room.persistGameState({});
       const requester = randomUUID();
-      const requestId = await room.requestLateJoin(requester, 'Late');
+      const requestId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
       await room.approveLateJoin(host, randomUUID(), requestId);
       inactiveAccounts.add(requester);
 
@@ -696,8 +1264,47 @@ describe('room actor', () => {
     });
 
     it('admits approved exploration joiners at a committed scene boundary', async () => {
-      const { store, events } = fixture();
+      const { store, events, setCharacterSnapshot } = fixture();
       const host = randomUUID();
+      const character = quickBuild(loadCatalog(), undefined, 0x35, 1).character;
+      setCharacterSnapshot(character);
+      store.validateLateJoinCharacter = async () => ({
+        name: character.name,
+        classId: character.classId,
+        level: character.level,
+      });
+      const map: Battlemap = {
+        mapId: 'scene-map',
+        w: 3,
+        h: 2,
+        palette: [
+          {
+            terrainId: 'floor',
+            moveCost: 1,
+            blocksMove: false,
+            blocksSight: false,
+            cover: 'none',
+            elevation: 0,
+          },
+        ],
+        cells: rleEncode(Array(6).fill(0)),
+        edges: [],
+        features: [],
+        markers: [
+          { markerId: 'party-entry', cell: { x: 0, y: 0 }, label: 'Entry' },
+        ],
+        zones: [
+          {
+            zoneId: 'player-entry',
+            kind: 'spawn',
+            cells: [
+              { x: 1, y: 0 },
+              { x: 2, y: 0 },
+            ],
+          },
+        ],
+        diagonalRule: '5ft',
+      };
       store.isTableHost = async (_sessionId, accountId) => accountId === host;
       const runner: SoloTurnRunner = {
         async run(request) {
@@ -713,11 +1320,34 @@ describe('room actor', () => {
           };
         },
       };
-      const room = new Room(store, lease, await store.loadLatest(id), runner);
+      const room = new Room(
+        store,
+        lease,
+        await store.loadLatest(id),
+        runner,
+        undefined,
+        [],
+        true,
+      );
       await room.seat(host, 'Host');
-      await room.persistGameState({});
+      await room.bindSeatCharacter(
+        host,
+        character.id,
+        1,
+        async () => true,
+        randomUUID(),
+      );
+      await room.persistGameState({
+        sceneId: 'scene-1',
+        gameEngine: { map, entities: [] },
+      });
       const requester = randomUUID();
-      const requestId = await room.requestLateJoin(requester, 'Late');
+      const requestId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
       ).toBe(false);
@@ -732,6 +1362,160 @@ describe('room actor', () => {
       ).toBe(true);
       expect(events.map((event) => event.type)).toContain('LateJoinApproved');
       expect(events.map((event) => event.type)).toContain('LateJoinAdmitted');
+      expect(events.map((event) => event.type)).toContain('LateJoinSpawned');
+      expect(events.map((event) => event.type)).toContain('EntityPlaced');
+      expect(
+        room.seatCharacters.has(
+          room.state.seats.find((seat) => seat.accountId === requester)!.seatId,
+        ),
+      ).toBe(true);
+      const spawned = events.find((event) => event.type === 'LateJoinSpawned')!;
+      const restarted = new Room(store, lease, await store.loadLatest(id));
+      expect(
+        (
+          restarted.state.gameState as {
+            gameEngine?: { entities?: { id: string }[] };
+          }
+        ).gameEngine?.entities?.some(
+          (entity) => entity.id === spawned.payload.entityId,
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps an approved join pending without a legal spawn and releases its binding when declined', async () => {
+      const { store, events, setCharacterSnapshot } = fixture();
+      const host = randomUUID();
+      const requester = randomUUID();
+      const character = quickBuild(loadCatalog(), undefined, 0x36, 1).character;
+      setCharacterSnapshot(character);
+      store.validateLateJoinCharacter = async () => ({
+        name: character.name,
+        classId: character.classId,
+        level: character.level,
+      });
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const runner: SoloTurnRunner = {
+        async run(request) {
+          return {
+            narration: 'The scene closes.',
+            events: [
+              { type: 'TurnStarted', turnId: 'turn-no-spawn' },
+              {
+                type: 'SceneClosed',
+                sceneId: 'scene-no-spawn',
+                summary: 'Done.',
+              },
+            ],
+            state: request.state as Record<string, unknown>,
+            turnSeed: '0x0000000000000001',
+            usage: { in: 1, out: 1 },
+          };
+        },
+      };
+      const room = new Room(
+        store,
+        lease,
+        await store.loadLatest(id),
+        runner,
+        undefined,
+        [],
+        true,
+      );
+      await room.seat(host, 'Host');
+      await room.bindSeatCharacter(
+        host,
+        character.id,
+        1,
+        async () => true,
+        randomUUID(),
+      );
+      await room.persistGameState({
+        sceneId: 'scene-no-spawn',
+        gameEngine: {
+          map: {
+            mapId: 'no-space',
+            w: 2,
+            h: 1,
+            palette: [
+              {
+                terrainId: 'floor',
+                moveCost: 1,
+                blocksMove: false,
+                blocksSight: false,
+                cover: 'none',
+                elevation: 0,
+              },
+            ],
+            cells: rleEncode([0, 0]),
+            edges: [],
+            features: [],
+            markers: [
+              { markerId: 'party-entry', cell: { x: 0, y: 0 }, label: 'Entry' },
+            ],
+            zones: [
+              {
+                zoneId: 'player-entry',
+                kind: 'spawn',
+                cells: [{ x: 1, y: 0 }],
+              },
+            ],
+            diagonalRule: '5ft',
+          },
+          entities: [
+            {
+              id: 'party-already-here',
+              team: 'party',
+              size: 1,
+              pos: { x: 1, y: 0 },
+            },
+          ],
+        },
+      });
+      const requestId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      await room.submitAction(host, randomUUID(), 'close the scene');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const pendingSeat = room.state.seats.find(
+        (seat) => seat.accountId === requester,
+      )!;
+      expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(true);
+      expect(
+        room.state.lateJoinRequests?.some(
+          (item) => item.requestId === requestId,
+        ),
+      ).toBe(true);
+      expect(events.map((event) => event.type)).not.toContain(
+        'LateJoinSpawned',
+      );
+      await expect(
+        room.submitAction(requester, randomUUID(), 'take a turn'),
+      ).rejects.toThrow();
+
+      await room.denyLateJoin(host, randomUUID(), requestId);
+
+      expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
+      expect(events.map((event) => event.type)).toContain(
+        'SeatCharacterReleased',
+      );
+      expect(events.map((event) => event.type)).toContain('LateJoinDenied');
+      for (let index = 0; index < 4; index++)
+        await room.seat(randomUUID(), `Other player ${index}`);
+      const retryId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      expect(retryId).not.toBe('');
+      expect(retryId).not.toBe(requestId);
+      expect(
+        room.state.seats.filter((seat) => seat.presence !== 'revoked'),
+      ).toHaveLength(5);
     });
   });
 

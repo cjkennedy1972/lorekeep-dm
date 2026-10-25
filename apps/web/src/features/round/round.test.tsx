@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { AccountIdSchema, type RoomState, type Seat } from '@game/schema';
+import { type RoomState, type Seat } from '@game/schema';
 import { roomReducer, initialRoomView } from '../../room/reducer';
 import { RoundPanel, isOwnSubmission, secondsLeft } from './RoundPanel';
 import { HostControls, clampTimerSeconds } from './HostControls';
@@ -393,10 +393,10 @@ describe('HostControls', () => {
         lateJoinRequests={[
           {
             requestId,
-            accountId: AccountIdSchema.parse(
-              '00000000-0000-4000-8000-0000000000c1',
-            ),
+            expiresAt: Date.now() + 60_000,
             displayName: 'Cy',
+            classId: 'fighter',
+            level: 2,
           },
         ]}
       />,

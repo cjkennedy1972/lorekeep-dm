@@ -1,5 +1,10 @@
 import { useState, type FormEvent } from 'react';
-import type { RoomState, RoundSnapshot, Seat } from '@game/schema';
+import type {
+  LateJoinHostRequest,
+  RoomState,
+  RoundSnapshot,
+  Seat,
+} from '@game/schema';
 import type { RoomSend } from './RoundPanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import './round.css';
@@ -19,8 +24,6 @@ export function clampTimerSeconds(seconds: number): number {
   );
 }
 
-type LateJoinRequest = NonNullable<RoomState['lateJoinRequests']>[number];
-
 type Props = {
   round: RoundSnapshot | undefined;
   roundDurationMs: RoomState['roundDurationMs'];
@@ -31,7 +34,7 @@ type Props = {
   seats?: Seat[];
   /** The host's own seat, excluded from kick and transfer. */
   selfSeatId?: string;
-  lateJoinRequests?: LateJoinRequest[];
+  lateJoinRequests?: LateJoinHostRequest[];
 };
 
 type Confirming =
@@ -60,7 +63,7 @@ export function HostControls({
   const [confirming, setConfirming] = useState<Confirming>(null);
   const canResolve = connected && round?.status === 'open' && !paused;
   const others = seats.filter((seat) => seat.seatId !== selfSeatId);
-  const pendingRequests = lateJoinRequests.filter((req) => !req.approved);
+  const pendingRequests = lateJoinRequests;
 
   function sendHost(
     type: string,

@@ -94,6 +94,28 @@ async function applyHostTierCap(
 
 export class Persistence {
   readonly db: Pool;
+  validateLateJoinCharacter(
+    accountId: string,
+    characterId: string,
+    expectedRevision: number,
+  ) {
+    return new SeatCharacterRepository(this.pool).validateLateJoinSelection(
+      accountId,
+      characterId,
+      expectedRevision,
+    );
+  }
+  async findSessionForLateJoinRequest(
+    requestId: string,
+  ): Promise<string | undefined> {
+    const { rows } = await this.pool.query<{ session_id: string }>(
+      `SELECT session_id FROM events
+        WHERE type='LateJoinRequested' AND payload->>'requestId'=$1
+        ORDER BY seq DESC LIMIT 1`,
+      [requestId],
+    );
+    return rows[0]?.session_id;
+  }
   async createSeatResumeToken(
     sessionId: string,
     seatId: string,

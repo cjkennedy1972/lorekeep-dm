@@ -165,6 +165,14 @@ const events: EngineEvent[] = [
   { type: 'CombatEnded', combatId: 'c' },
   { type: 'MapLoaded', mapId: 'm' },
   { type: 'EntityPlaced', entityId: 'a', pos: p },
+  {
+    type: 'LateJoinSpawned',
+    seatId: '00000000-0000-4000-8000-000000000001',
+    entityId: 'pc_1',
+    sceneId: 'scene-1',
+    pos: p,
+    initiativeEffectiveRound: 2,
+  },
   { type: 'EntityMoved', entityId: 'a', path: [p], cost: 5 },
   { type: 'OpportunityTriggered', moverId: 'a', attackerId: 'b' },
   { type: 'AreaResolved', cells: [p], affected: ['a'] },
@@ -187,6 +195,7 @@ function label(e: EngineEvent): string {
     case 'CombatEnded':
     case 'MapLoaded':
     case 'EntityPlaced':
+    case 'LateJoinSpawned':
     case 'EntityMoved':
     case 'OpportunityTriggered':
     case 'AreaResolved':

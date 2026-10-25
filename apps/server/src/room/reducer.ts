@@ -304,6 +304,23 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     const request = event.payload as NonNullable<
       RoomState['lateJoinRequests']
     >[number];
+    const requestResults = {
+      ...(state.lateJoinRequestResults ?? {}),
+      ...(typeof request.actionId === 'string'
+        ? { [`${request.accountId}:${request.actionId}`]: request.requestId }
+        : {}),
+    };
+    const requestCharacterIds = {
+      ...(state.lateJoinRequestCharacterIds ?? {}),
+      ...(typeof request.actionId === 'string' &&
+      typeof request.characterId === 'string'
+        ? { [`${request.accountId}:${request.actionId}`]: request.characterId }
+        : {}),
+    };
+    // Terminal actions do not prune replay results; retain the newest 256 FIFO entries.
+    const boundedRequestResults = Object.fromEntries(
+      Object.entries(requestResults).slice(-256),
+    );
     return RoomStateSchema.parse({
       ...state,
       lateJoinRequests: [
@@ -312,6 +329,10 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
         ),
         request,
       ],
+      lateJoinRequestResults: boundedRequestResults,
+      lateJoinRequestCharacterIds: Object.fromEntries(
+        Object.entries(requestCharacterIds).slice(-256),
+      ),
     });
   }
   if (event.type === 'LateJoinApproved') {
@@ -323,10 +344,47 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
       ),
     });
   }
-  if (event.type === 'LateJoinDenied' || event.type === 'LateJoinAdmitted') {
-    const { requestId } = event.payload as { requestId: string };
+  if (
+    event.type === 'LateJoinDenied' ||
+    event.type === 'LateJoinAdmitted' ||
+    event.type === 'LateJoinExpired' ||
+    event.type === 'LateJoinCancelled'
+  ) {
+    const { requestId, actionId, actorAccountId } = event.payload as {
+      requestId: string;
+      actionId?: string;
+      actorAccountId?: string;
+    };
+    const request = (state.lateJoinRequests ?? []).find(
+      (item) => item.requestId === requestId,
+    );
+    const requestResults = {
+      ...(state.lateJoinRequestResults ?? {}),
+      ...(actionId && request?.accountId
+        ? { [`${request.accountId}:${actionId}`]: requestId }
+        : {}),
+    };
     return RoomStateSchema.parse({
       ...state,
+      ...(actionId && actorAccountId
+        ? {
+            lateJoinActionOwners: {
+              ...Object.fromEntries(
+                Object.entries({
+                  ...(state.lateJoinActionOwners ?? {}),
+                  [actionId]: actorAccountId,
+                }).slice(-256),
+              ),
+            },
+          }
+        : {}),
+      ...(actionId && request?.accountId
+        ? {
+            lateJoinRequestResults: Object.fromEntries(
+              Object.entries(requestResults).slice(-256),
+            ),
+          }
+        : {}),
       lateJoinRequests: (state.lateJoinRequests ?? []).filter(
         (item) => item.requestId !== requestId,
       ),

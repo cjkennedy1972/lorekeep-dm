@@ -77,7 +77,7 @@ export function createApp(
     rateLimit?: number;
     joinRateLimit?: number;
     roomLimits?: { maxRooms?: number; createPerHour?: number };
-    rooms?: Pick<RoomRegistry, 'get' | 'peek'>;
+    rooms?: Pick<RoomRegistry, 'get' | 'peek' | 'getByLateJoinRequestId'>;
     connections?: Pick<ConnectionRegistry, 'sweep'>;
     isOperator?: (accountId: string) => Promise<boolean>;
     trustProxy?: boolean | number | string[];

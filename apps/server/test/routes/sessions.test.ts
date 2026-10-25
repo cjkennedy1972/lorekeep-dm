@@ -1,11 +1,18 @@
 import { allowInputGate } from '../support/allowInputGate.js';
 import { describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { createApp, scrubUrl } from '../../src/app.js';
 import {
   hashInvite,
   newInviteCode,
   plausibleCode,
 } from '../../src/rooms/invites.js';
+import { hashToken } from '../../src/accounts/signup.js';
+import {
+  LateJoinLimitedError,
+  LateJoinUnavailableError,
+} from '../../src/room/Room.js';
+import { createLateJoinRateLimiter } from '../../src/routes/sessions.js';
 
 const token = 'a'.repeat(43);
 function fakeDb(account: 'none' | 'active' | 'pending') {
@@ -56,6 +63,144 @@ describe('invite codes', () => {
 });
 
 describe('room routes', () => {
+  it('returns the neutral invite-unavailable response when a table ends during a late-join request', async () => {
+    const code = newInviteCode();
+    const db = {
+      connect: async () => undefined,
+      query: async (sql: string) => {
+        if (sql.includes('UPDATE auth_sessions s SET last_active_at'))
+          return {
+            rows: [{ account_id: 'account', token_hash: hashToken(token) }],
+            rowCount: 1,
+          };
+        if (sql.includes('s.invite_hash=$1'))
+          return {
+            rows: [
+              {
+                id: 'session',
+                name: 'Room',
+                owner: 'host',
+                status: 'active',
+                host_tier_cap: null,
+              },
+            ],
+            rowCount: 1,
+          };
+        if (sql.includes('SELECT display_name, mature_opt_out'))
+          return {
+            rows: [{ display_name: 'Player', mature_opt_out: false }],
+            rowCount: 1,
+          };
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    const a = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({
+          requestLateJoin: async () => {
+            throw new LateJoinUnavailableError();
+          },
+        }),
+      } as never,
+    });
+    try {
+      const response = await a.inject({
+        method: 'POST',
+        url: `/api/invites/${code}/late-join`,
+        headers: cookie,
+        payload: {
+          characterId: randomUUID(),
+          expectedRevision: 1,
+          actionId: randomUUID(),
+        },
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        code: 'INVITE_INVALID',
+        message: 'This invite link is no longer valid.',
+      });
+    } finally {
+      await a.close();
+    }
+  });
+
+  it('maps an ended late-join table to the same neutral invalid-invite response on /api/join', async () => {
+    const code = newInviteCode();
+    const db = {
+      connect: async () => undefined,
+      query: async (sql: string) => {
+        if (sql.includes('UPDATE auth_sessions s SET last_active_at'))
+          return {
+            rows: [{ account_id: 'account', token_hash: hashToken(token) }],
+            rowCount: 1,
+          };
+        if (sql.includes('s.invite_hash=$1'))
+          return {
+            rows: [
+              {
+                id: 'session',
+                name: 'Room',
+                owner: 'host',
+                status: 'active',
+                host_tier_cap: null,
+              },
+            ],
+            rowCount: 1,
+          };
+        if (sql.includes('SELECT display_name, mature_opt_out'))
+          return {
+            rows: [{ display_name: 'Player', mature_opt_out: false }],
+            rowCount: 1,
+          };
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    const a = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({
+          state: { seats: [], gameState: {} },
+          requestLateJoin: async () => {
+            throw new LateJoinUnavailableError();
+          },
+        }),
+      } as never,
+    });
+    try {
+      const response = await a.inject({
+        method: 'POST',
+        url: `/api/join/${code}`,
+        headers: cookie,
+        payload: {
+          characterId: randomUUID(),
+          expectedRevision: 1,
+          actionId: randomUUID(),
+        },
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        code: 'INVITE_INVALID',
+        message: 'This invite link is no longer valid.',
+      });
+    } finally {
+      await a.close();
+    }
+  });
+
+  it('enforces the late-join account burst of 3 then one request every 2 minutes', () => {
+    const limit = createLateJoinRateLimiter();
+    const attempt = (now: number) =>
+      limit('account', 'ip', `invite-${now}`, now);
+    expect(attempt(0)).toBeUndefined();
+    expect(attempt(1)).toBeUndefined();
+    expect(attempt(2)).toBeUndefined();
+    expect(attempt(3)).toBe(120);
+    expect(attempt(120_002)).toBeUndefined();
+    expect(attempt(120_003)).toBe(120);
+    expect(attempt(240_002)).toBeUndefined();
+  });
+
   it('unauthenticated join -> 401 with login + returnTo hint', async () => {
     const res = await app('none').inject({
       method: 'POST',
@@ -111,6 +256,193 @@ describe('room routes', () => {
     expect((await hit()).statusCode).toBe(404);
     expect((await hit()).statusCode).toBe(404);
     expect((await hit()).statusCode).toBe(429);
+  });
+
+  it('enforces late-join account, IP, invite, and pending-request limits over HTTP', async () => {
+    const codes = new Map<string, { id: string; owner: string }>();
+    const accounts = new Map<string, string>();
+    const tokens = Array.from({ length: 12 }, (_, index) =>
+      String.fromCharCode(97 + index).repeat(43),
+    );
+    tokens.forEach((value, index) =>
+      accounts.set(hashToken(value), `account-${index}`),
+    );
+    const db = {
+      connect: async () => undefined,
+      query: async (sql: string, values: unknown[] = []) => {
+        if (sql.includes('UPDATE auth_sessions s SET last_active_at')) {
+          const tokenHash = String(values[0]);
+          return {
+            rows: accounts.has(tokenHash)
+              ? [{ account_id: accounts.get(tokenHash), token_hash: tokenHash }]
+              : [],
+            rowCount: accounts.has(tokenHash) ? 1 : 0,
+          };
+        }
+        if (sql.includes('s.invite_hash=$1')) {
+          const room = codes.get(String(values[0]));
+          return {
+            rows: room
+              ? [
+                  {
+                    id: room.id,
+                    name: 'Room',
+                    owner: room.owner,
+                    status: 'active',
+                    host_tier_cap: null,
+                  },
+                ]
+              : [],
+            rowCount: room ? 1 : 0,
+          };
+        }
+        if (sql.includes('SELECT content_tier, moderation_verified'))
+          return {
+            rows: [
+              {
+                content_tier: 'standard',
+                moderation_verified: true,
+                host_tier_cap: null,
+                endpoint_allows_mature: false,
+              },
+            ],
+            rowCount: 1,
+          };
+        if (sql.includes('SELECT content_tier, host_tier_cap'))
+          return {
+            rows: [{ content_tier: 'standard', host_tier_cap: null }],
+            rowCount: 1,
+          };
+        if (sql.includes('SELECT display_name, mature_opt_out'))
+          return {
+            rows: [{ display_name: 'Player', mature_opt_out: false }],
+            rowCount: 1,
+          };
+        if (sql.includes('SELECT content_lines, content_veils'))
+          return {
+            rows: [{ content_lines: [], content_veils: [] }],
+            rowCount: 1,
+          };
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    const addCode = () => {
+      const code = newInviteCode();
+      codes.set(hashInvite(code), { id: randomUUID(), owner: 'host' });
+      return code;
+    };
+    const a = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({ requestLateJoin: async () => randomUUID() }),
+      } as never,
+    });
+    const hit = (
+      server: ReturnType<typeof createApp>,
+      tokenValue: string,
+      code: string,
+    ) =>
+      server.inject({
+        method: 'POST',
+        url: `/api/invites/${code}/late-join`,
+        headers: { cookie: `sid=${tokenValue}` },
+        payload: {
+          characterId: randomUUID(),
+          expectedRevision: 1,
+          actionId: randomUUID(),
+        },
+      });
+    try {
+      const accountCode = [addCode(), addCode(), addCode(), addCode()];
+      for (const code of accountCode.slice(0, 3))
+        expect((await hit(a, tokens[0]!, code)).statusCode).toBe(202);
+      expect((await hit(a, tokens[0]!, accountCode[3]!)).statusCode).toBe(429);
+    } finally {
+      await a.close();
+    }
+
+    const ipCodes = Array.from({ length: 11 }, addCode);
+    const ipApp = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({ requestLateJoin: async () => randomUUID() }),
+      } as never,
+    });
+    try {
+      for (let index = 0; index < 10; index++)
+        expect(
+          (await hit(ipApp, tokens[index]!, ipCodes[index]!)).statusCode,
+        ).toBe(202);
+      expect((await hit(ipApp, tokens[10]!, ipCodes[10]!)).statusCode).toBe(
+        429,
+      );
+    } finally {
+      await ipApp.close();
+    }
+
+    const inviteCode = addCode();
+    const inviteApp = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({ requestLateJoin: async () => randomUUID() }),
+      } as never,
+    });
+    try {
+      for (let index = 0; index < 5; index++)
+        expect(
+          (
+            await inviteApp.inject({
+              method: 'POST',
+              url: `/api/invites/${inviteCode}/late-join`,
+              headers: { cookie: `sid=${tokens[index + 1]}` },
+              payload: {
+                characterId: randomUUID(),
+                expectedRevision: 1,
+                actionId: randomUUID(),
+              },
+            })
+          ).statusCode,
+        ).toBe(202);
+      const limited = await inviteApp.inject({
+        method: 'POST',
+        url: `/api/invites/${inviteCode}/late-join`,
+        headers: { cookie: `sid=${tokens[6]}` },
+        payload: {
+          characterId: randomUUID(),
+          expectedRevision: 1,
+          actionId: randomUUID(),
+        },
+      });
+      expect(limited.statusCode).toBe(429);
+    } finally {
+      await inviteApp.close();
+    }
+
+    let pendingCount = 0;
+    const pendingApp = createApp(db as never, {
+      inputGate: allowInputGate,
+      rooms: {
+        get: async () => ({
+          requestLateJoin: async () => {
+            if (pendingCount >= 3) throw new LateJoinLimitedError();
+            pendingCount++;
+            return randomUUID();
+          },
+        }),
+      } as never,
+    });
+    const pendingCode = addCode();
+    try {
+      for (let index = 0; index < 3; index++)
+        expect(
+          (await hit(pendingApp, tokens[index]!, pendingCode)).statusCode,
+        ).toBe(202);
+      expect((await hit(pendingApp, tokens[3]!, pendingCode)).statusCode).toBe(
+        429,
+      );
+    } finally {
+      await pendingApp.close();
+    }
   });
 
   it('does not persist a changed opt-out when invite seating fails', async () => {

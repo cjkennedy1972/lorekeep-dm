@@ -914,17 +914,56 @@ describe('one-time gateway', () => {
     await nextOfType(host, 'StateSync');
     await nextOfType(guest, 'StateSync');
     const requestAccountId = randomUUID();
+    await db.query(
+      `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'hash','Late joiner','active',true,now(),'v1',now())`,
+      [requestAccountId, `${requestAccountId}@example.test`],
+    );
+    const character = {
+      ...quickBuild(loadCatalog(), undefined, 0x35, 1).character,
+      id: randomUUID(),
+    };
+    await new SeatCharacterRepository(db).saveOwnedCharacter(
+      requestAccountId,
+      character,
+    );
+    const publicCharacter = {
+      name: character.name,
+      classId: character.classId,
+      level: character.level,
+    };
     await (
       await rooms.get(sessionId)
-    ).requestLateJoin(requestAccountId, 'Private requester name');
+    ).requestLateJoin(
+      requestAccountId,
+      character.id,
+      1,
+      randomUUID(),
+      'Private requester name',
+    );
     let hostSync: Awaited<ReturnType<typeof nextOfType>>;
     do {
       hostSync = await nextOfType(host, 'StateSync');
     } while (
       !hostSync.payload.state.lateJoinRequests?.some(
-        (request) => request.accountId === requestAccountId,
+        (request) =>
+          request.displayName === publicCharacter.name &&
+          request.classId === publicCharacter.classId &&
+          request.level === publicCharacter.level,
       )
     );
+    const publicRequest = hostSync.payload.state.lateJoinRequests?.find(
+      (request) =>
+        request.displayName === publicCharacter.name &&
+        request.classId === publicCharacter.classId &&
+        request.level === publicCharacter.level,
+    );
+    expect(publicRequest).toEqual({
+      requestId: expect.any(String),
+      displayName: character.name,
+      classId: character.classId,
+      level: character.level,
+      expiresAt: expect.any(Number),
+    });
     const guestSync = await nextOfType(guest, 'StateSync');
     expect(guestSync.payload.state).not.toHaveProperty('lateJoinRequests');
     await Promise.all([closeSocket(host), closeSocket(guest)]);
