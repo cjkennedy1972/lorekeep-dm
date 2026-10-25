@@ -57,9 +57,9 @@ function fixture() {
       transition,
     ) {
       await new Promise((resolve) => setTimeout(resolve, 1));
-      const stored = inputs.map((input) => ({
+      const stored = inputs.map((input, index) => ({
         ...input,
-        seq: events.length + 1,
+        seq: events.length + index + 1,
         sessionId: id,
         ts: new Date(),
       })) as StoredEvent[];
