@@ -1305,7 +1305,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     expect(JSON.stringify(otherMessages)).not.toMatch(/eventIds/);
   });
 
-  it('refuses a combat commit whose stored seqs are not contiguous', async () => {
+  it('keeps the room consistent with the store when stored seqs have a gap', async () => {
     const e = bootstrapped();
     const combat: RoomCombatState = {
       ...e.state,
@@ -1319,14 +1319,28 @@ describe('Room: one persisted narration per resolved combat turn', () => {
       combatActors: { [account]: 'ent_aria' },
       combatRoom: combat,
     });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const room = table.boot();
     await joinSeated(room, account, table.connection);
     table.faults.gapAfterIndex = 0;
-    await expect(
-      room.submitCombatCommand(account, crypto.randomUUID(), {
+    // The durable write succeeded, so the command must not throw.
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    table.faults.gapAfterIndex = -1;
+    // A second end-turn must be refused from the updated (narrating) state.
+    await room
+      .submitCombatCommand(account, crypto.randomUUID(), {
         command: 'end-turn',
-      }),
-    ).rejects.toThrow(/non-contiguous seq/);
+      })
+      .catch(() => undefined);
+    expect(
+      table.events.filter((event) => event.type === 'TurnResolved'),
+    ).toHaveLength(1);
+    expect(errors).toHaveBeenCalledWith(
+      expect.stringMatching(/non-contiguous/),
+    );
+    errors.mockRestore();
   });
 
   it('persists TurnResolved and holds the next turn in narrating phase', async () => {

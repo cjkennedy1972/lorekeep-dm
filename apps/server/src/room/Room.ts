@@ -5052,10 +5052,14 @@ export class Room {
       (event, index) => event.seq === firstSeq + index,
     );
     this.seq = stored.events.at(-1)?.seq ?? this.seq;
-    if (!contiguous)
-      throw new Error('combat turn events were stored with non-contiguous seq');
+    // Never throw after the durable write: memory must follow the store or a
+    // retry would accept the turn again from stale state.
     this.state = { ...this.state, gameState } as RoomState;
     if (actionId) this.actionIds.add(actionId);
+    if (!contiguous)
+      console.error(
+        `Combat turn events were stored with non-contiguous seq for ${this.sessionId}`,
+      );
     this.announceCombat(combatState, committedEvents, accountId);
   }
 
@@ -5193,7 +5197,9 @@ export class Room {
       undefined;
     if (!owner) {
       if (combatTurnId)
-        void this.commitCombatFallback(combatTurnId).catch(() => undefined);
+        void this.enqueue(() => this.commitCombatFallback(combatTurnId)).catch(
+          () => undefined,
+        );
       return;
     }
     const combat = roomGameState(this.state);

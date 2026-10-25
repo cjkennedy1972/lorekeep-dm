@@ -129,6 +129,24 @@ function liveTurnActorId(state: unknown): string | null {
     room.combat.activeEntityId ?? room.combat.initiative[0]?.entityId ?? null
   );
 }
+/** A combat is in progress (present and not ended). */
+function combatLive(state: unknown): boolean {
+  const room = (state as { combatRoom?: { ended?: unknown } } | undefined)
+    ?.combatRoom;
+  return !!room && !room.ended;
+}
+/** Narration-facing actor id: a hidden next combatant must not leak (ADR-034 §3). */
+function narrationActorId(state: unknown): string | null {
+  const id = liveTurnActorId(state);
+  const room = (
+    state as {
+      combatRoom?: { entities?: readonly { id: string; hidden?: boolean }[] };
+    }
+  ).combatRoom;
+  return room?.entities?.some((entity) => entity.id === id && entity.hidden)
+    ? null
+    : id;
+}
 function combatSpellMap(room: RoomCombatState, casterId: string) {
   const caster = room.entities.find((entity) => entity.id === casterId);
   if (!caster) return undefined;
@@ -830,23 +848,20 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           turn: {
             state: { characters: Object.values(actors) },
             lastRestVoteResult: request.lastRestVoteResult,
-            activeActorId: liveTurnActorId(state),
+            activeActorId: narrationActorId(state),
             registryFacts: memoryContext.registryFacts,
             retrievedMemory: memoryContext.retrievedMemory,
             playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
-            turns:
-              state &&
-              typeof state === 'object' &&
-              (state as { combatRoom?: unknown }).combatRoom
-                ? []
-                : state.lastNarration
-                  ? [
-                      {
-                        playerText: state.lastPlayerText ?? '',
-                        narration: state.lastNarration,
-                      },
-                    ]
-                  : [],
+            turns: combatLive(state)
+              ? []
+              : state.lastNarration
+                ? [
+                    {
+                      playerText: state.lastPlayerText ?? '',
+                      narration: state.lastNarration,
+                    },
+                  ]
+                : [],
           },
         },
         context,
