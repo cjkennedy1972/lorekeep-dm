@@ -26,6 +26,8 @@ async function narrationRequest(
     combatNarration?: boolean;
     text?: string;
     displayName?: string;
+    boundary?: string;
+    sceneId?: string;
   } = {},
 ) {
   const accountId = randomUUID();
@@ -34,6 +36,11 @@ async function narrationRequest(
     [accountId, `${accountId}@example.test`],
   );
   accountIds.push(accountId);
+  if (extra.boundary)
+    await db.query(
+      'UPDATE accounts SET content_lines=$2, content_veils=$2 WHERE id=$1',
+      [accountId, [extra.boundary]],
+    );
   const sessionId = randomUUID();
   await db.query(
     'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
@@ -79,6 +86,7 @@ async function narrationRequest(
       state: {
         lastNarration: 'Earlier tale.',
         lastPlayerText: 'Earlier ask.',
+        ...(extra.sceneId ? { sceneId: extra.sceneId } : {}),
         ...(extra.displayName
           ? {
               characters: {
@@ -173,7 +181,7 @@ describe('combat narration request through ProductionSoloTurnRunner', () => {
     // Prompt data blocks are base64; check the decoded text as well as the wire form.
     const request = [
       raw,
-      ...[...raw.matchAll(/encoding=base64>>>\\n([A-Za-z0-9+/=]+)\\n/g)].map(
+      ...[...raw.matchAll(/encoding=base64>>>\\+n([A-Za-z0-9+/=]+)\\+n/g)].map(
         (match) => Buffer.from(match[1]!, 'base64').toString('utf8'),
       ),
     ].join('\n');
@@ -185,5 +193,37 @@ describe('combat narration request through ProductionSoloTurnRunner', () => {
       lastNarration: 'Earlier tale.',
       lastPlayerText: 'Earlier ask.',
     });
+  });
+
+  it('omits player-typed boundaries, scene text and next scenes from the combat request', async () => {
+    const boundary = 'no-spiders-xyzzy';
+    const decode = (raw: string) =>
+      [
+        raw,
+        ...[
+          ...raw.matchAll(/encoding=base64>>>\\+n([A-Za-z0-9+/=]+)\\+n/g),
+        ].map((match) => Buffer.from(match[1]!, 'base64').toString('utf8')),
+      ].join('\n');
+    const extra = { boundary, sceneId: 'scene-marowfell-well' };
+    const combat = decode(
+      await narrationRequest(combatRoom('ent_aria'), {
+        ...extra,
+        combatNarration: true,
+      }),
+    );
+    for (const leaked of [
+      boundary,
+      'dead lamps',
+      'Marrowfell Well',
+      'scene-broken-gatehouse',
+      'Broken Gatehouse',
+    ])
+      expect(combat).not.toContain(leaked);
+    // Control: the same seed does reach an ordinary (non-combat) turn.
+    const ordinary = decode(
+      await narrationRequest(combatRoom('ent_aria', true), extra),
+    );
+    expect(ordinary).toContain(boundary);
+    expect(ordinary).toContain('Broken Gatehouse');
   });
 });

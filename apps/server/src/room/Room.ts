@@ -307,6 +307,7 @@ const NARRATION_FACT_FIELDS: Record<string, readonly string[]> = {
   HpChanged: ['entityId', 'delta', 'hp'],
   EntityMoved: ['entityId', 'path', 'cost'],
   CombatEnded: [],
+  // reactionId is only safe while it stays a catalog handle; HANDLE below is the sole guard if that changes.
   ReactionResolved: ['entityId', 'used', 'reactionId'],
 };
 const HANDLE = /^[A-Za-z0-9_:./-]{1,64}$/;
@@ -322,6 +323,10 @@ function narrationValue(value: unknown): unknown {
         .map((key) => [key, (value as never)[key]]),
     );
   return undefined;
+}
+/** Own keys only: `in` would admit inherited names like constructor/__proto__. */
+export function isNarrationFactType(type: string): boolean {
+  return Object.hasOwn(NARRATION_FACT_FIELDS, type);
 }
 export function narrationFact(event: Record<string, unknown>) {
   return {
@@ -5255,7 +5260,7 @@ export class Room {
           },
         );
         return (
-          !referencesHiddenEntity && String(event.type) in NARRATION_FACT_FIELDS
+          !referencesHiddenEntity && isNarrationFactType(String(event.type))
         );
       })
       .slice(0, 12)

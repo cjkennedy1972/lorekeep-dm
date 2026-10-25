@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { narrationFact } from '../../src/room/Room.js';
+import { isNarrationFactType, narrationFact } from '../../src/room/Room.js';
 
 describe('combat narration fact projection (ADR-033 §6.8)', () => {
   it('keeps allowlisted handle/number fields and drops free text and unknown keys', () => {
@@ -32,5 +32,11 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
     ).toEqual({
       type: 'CombatEnded',
     });
+  });
+
+  it('rejects inherited object keys as event types (fail closed)', () => {
+    for (const type of ['constructor', '__proto__', 'toString'])
+      expect(isNarrationFactType(type)).toBe(false);
+    expect(isNarrationFactType('HpChanged')).toBe(true);
   });
 });

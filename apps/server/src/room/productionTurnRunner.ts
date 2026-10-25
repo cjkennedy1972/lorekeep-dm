@@ -817,8 +817,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           session: {
             contentTier: attemptTier,
             safetySettings: {
-              lines: boundaries.lines,
-              veils: boundaries.veils,
+              // Player-typed boundaries stay out of combat narration; they still reach output moderation via tableLines.
+              lines: narrating ? [] : boundaries.lines,
+              veils: narrating ? [] : boundaries.veils,
               ...(attemptTier === 'mature'
                 ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
                 : {}),
@@ -835,7 +836,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               ? ''
               : (state.sceneSummary ??
                 'The party is at the beginning of its adventure.'),
-            ...(currentScene
+            ...(currentScene && !narrating
               ? {
                   currentScene: {
                     id: currentScene.id,
