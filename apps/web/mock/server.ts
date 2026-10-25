@@ -18,11 +18,13 @@ import {
 } from '@game/schema';
 import {
   allowWrite,
+  armDroppedCreateResponse,
   bumpRevision,
   characterById,
   charactersFor,
   createCharacter,
   parseCreateBody,
+  takeDroppedCreateResponse,
 } from './characters.js';
 import { Room, type RoundScript } from './room.js';
 
@@ -175,6 +177,8 @@ export function createMock(
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://mock');
     const route = `${req.method} ${url.pathname}`;
+    // Close each connection after its response. Browsers silently retry a request whose reused keep-alive socket dies, which would hide a dropped response.
+    res.setHeader('connection', 'close');
     // Dev-only CORS reflect so a Vite dev server on another port can call the mock.
     if (req.headers.origin) {
       res.setHeader('access-control-allow-origin', req.headers.origin);
@@ -313,6 +317,11 @@ export function createMock(
         return err(res, 404, 'NOT_FOUND', 'Not found.');
       return json(res, 200, { revision: bumpRevision(owned.id)?.revision });
     }
+    // Test-only: the account's next create is saved, then its response is dropped (simulates a lost connection).
+    if (route === 'POST /api/test/me/characters/drop-next-response') {
+      armDroppedCreateResponse(account.id);
+      return json(res, 200, {});
+    }
     // Mirrors GET /api/me/characters: only this account's characters, as ids plus picker fields.
     if (route === 'GET /api/me/characters')
       return json(res, 200, {
@@ -348,6 +357,8 @@ export function createMock(
         account.id,
         sheet,
       );
+      // The character exists; the response never arrives, so the client cannot tell whether it saved.
+      if (takeDroppedCreateResponse(account.id)) return req.socket.destroy();
       return json(res, 201, { id, revision, name, classId, speciesId, level });
     }
     if (url.pathname.startsWith('/api/operator/'))

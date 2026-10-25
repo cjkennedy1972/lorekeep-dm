@@ -70,6 +70,18 @@ export function parseCreateBody(body: unknown) {
   return parsed.success ? parsed.data : undefined;
 }
 
+const dropNextCreate = new Set<string>();
+
+/** Test driver: the account's next create is saved, then its response is cut before it reaches the client. */
+export function armDroppedCreateResponse(accountId: string): void {
+  dropNextCreate.add(accountId);
+}
+
+/** Consumes the drop flag. True when this create's response must be dropped. */
+export function takeDroppedCreateResponse(accountId: string): boolean {
+  return dropNextCreate.delete(accountId);
+}
+
 const WRITE_WINDOW_MS = 60_000;
 const WRITES_PER_WINDOW = 10;
 const writes = new Map<string, { count: number; resetAt: number }>();

@@ -59,12 +59,20 @@ describe('saveFailureMessage', () => {
     'account-inactive',
     'unauthenticated',
     'other',
+    'uncertain',
   ];
 
   test('every failure has its own non-empty copy', () => {
     const messages = failures.map(saveFailureMessage);
     expect(messages.every((m) => m.trim().length > 0)).toBe(true);
     expect(new Set(messages).size).toBe(failures.length);
+  });
+
+  test('the uncertain copy says the save may have happened and points to the lobby', () => {
+    expect(saveFailureMessage('uncertain')).toMatch(
+      /may or may not have saved/,
+    );
+    expect(saveFailureMessage('uncertain')).toMatch(/party lobby/);
   });
 
   test('the session-ended copy points to signing in', () => {

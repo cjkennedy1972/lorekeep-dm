@@ -111,7 +111,6 @@ describe('SaveToAccount', () => {
     [400, 'INVALID_CHARACTER', /some details are not valid/],
     [429, 'RATE_LIMITED', /Too many saves right now/],
     [403, 'ACCOUNT_INACTIVE', /account is inactive/],
-    [0, 'NETWORK', /Check your connection/],
   ])(
     '%s %s shows its own alert and keeps the save available',
     async (status, code, copy) => {
@@ -140,6 +139,69 @@ describe('SaveToAccount', () => {
     );
   });
 
+  test('a dropped response says the save may have happened and offers no plain retry', async () => {
+    failWith(0, 'NETWORK');
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'We may or may not have saved this character. Check your characters in the party lobby before trying again.',
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Save to my account' }),
+    ).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Go to my games' }),
+    ).toHaveAttribute('href', '/rooms');
+    expect(apiMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('a thrown network error is treated as uncertain too', async () => {
+    apiMock.mockRejectedValueOnce(new Error('socket hang up'));
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /We may or may not have saved this character/,
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Save to my account' }),
+    ).toBeNull();
+  });
+
+  test('after an uncertain save, only an explicit "Save again anyway" posts again', async () => {
+    failWith(0, 'NETWORK');
+    apiMock.mockResolvedValueOnce({ ok: true, status: 201, data: SAVED });
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    await screen.findByRole('alert');
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    // No second POST until the user chooses the explicit button.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save again anyway' }));
+    expect(
+      await screen.findByText(/Mira is saved to your account/),
+    ).toBeInTheDocument();
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(apiMock.mock.calls[1]![0]).toBe('/api/me/characters');
+  });
+
+  test('a definite error after an uncertain one keeps its own copy and retry', async () => {
+    failWith(0, 'NETWORK');
+    failWith(429, 'RATE_LIMITED');
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Save again anyway' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /Too many saves right now/,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Save to my account' }),
+    ).toBeEnabled();
+  });
+
   test('a retry after a failure can succeed', async () => {
     failWith(429, 'RATE_LIMITED');
     apiMock.mockResolvedValueOnce({ ok: true, status: 201, data: SAVED });
@@ -154,6 +216,14 @@ describe('SaveToAccount', () => {
       ),
     );
     expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('the uncertain state has no axe violations', async () => {
+    failWith(0, 'NETWORK');
+    const { container } = renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    await screen.findByRole('alert');
+    expect((await axe(container)).violations).toEqual([]);
   });
 
   test('has no axe violations before and after saving', async () => {

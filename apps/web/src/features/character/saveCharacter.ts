@@ -6,7 +6,8 @@ export type SaveFailure =
   | 'rate-limited'
   | 'account-inactive'
   | 'unauthenticated'
-  | 'other';
+  | 'other'
+  | 'uncertain';
 
 /** Body for POST /api/me/characters. The server assigns the id, so the local id is dropped. */
 export function createCharacterBody(character: Character) {
@@ -41,6 +42,8 @@ const SAVE_FAILURE_MESSAGE: Record<SaveFailure, string> = {
     'Your session has ended. Sign in again to save this character.',
   other:
     'The character could not be saved. Check your connection, then try again.',
+  uncertain:
+    'We may or may not have saved this character. Check your characters in the party lobby before trying again.',
 };
 
 export function saveFailureMessage(failure: SaveFailure): string {

@@ -39,14 +39,26 @@ export function SaveToAccount({ character }: { character: Character }) {
     if (inFlight.current) return;
     inFlight.current = true;
     setState({ kind: 'saving' });
-    const res = await api<SavedCharacter>(
-      '/api/me/characters',
-      createCharacterBody(character),
-    );
-    inFlight.current = false;
-    if (res.ok) setState({ kind: 'saved', name: res.data.name });
-    else setState({ kind: 'failed', failure: saveFailureFor(res.code) });
+    try {
+      const res = await api<SavedCharacter>(
+        '/api/me/characters',
+        createCharacterBody(character),
+      );
+      if (res.ok) setState({ kind: 'saved', name: res.data.name });
+      // Status 0 means no HTTP response arrived, so the server may have created the character.
+      else
+        setState({
+          kind: 'failed',
+          failure: res.status === 0 ? 'uncertain' : saveFailureFor(res.code),
+        });
+    } catch {
+      setState({ kind: 'failed', failure: 'uncertain' });
+    } finally {
+      inFlight.current = false;
+    }
   }
+
+  const uncertain = state.kind === 'failed' && state.failure === 'uncertain';
 
   return (
     <section aria-labelledby={headingId}>
@@ -67,11 +79,27 @@ export function SaveToAccount({ character }: { character: Character }) {
             Saving keeps this character on your account, so you can bind it to a
             seat at any table you join.
           </p>
-          <button type="button" onClick={() => void save()}>
-            Save to my account
-          </button>
+          {uncertain ? (
+            <>
+              <p role="alert">{saveFailureMessage('uncertain')}</p>
+              <p>
+                <Link to="/rooms">Go to my games</Link>
+              </p>
+              <p>
+                Saving again creates a second copy if the first save went
+                through.
+              </p>
+              <button type="button" onClick={() => void save()}>
+                Save again anyway
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => void save()}>
+              Save to my account
+            </button>
+          )}
           {state.kind === 'saving' && <p role="status">Saving…</p>}
-          {state.kind === 'failed' && (
+          {state.kind === 'failed' && !uncertain && (
             <p role="alert">
               {saveFailureMessage(state.failure)}{' '}
               {state.failure === 'unauthenticated' && (

@@ -77,3 +77,61 @@ test('a built character is saved to the account, then bound from the lobby picke
     page.getByText('Your character is bound. Your seat is ready to play.'),
   ).toBeVisible();
 });
+
+async function ownCharacterNames(context: BrowserContext) {
+  const res = await context.request.get(`${API}/api/me/characters`);
+  expect(res.ok()).toBe(true);
+  return (
+    (await res.json()) as { characters: { name: string }[] }
+  ).characters.map((c) => c.name);
+}
+
+// Documents the duplicate risk: the response is dropped after the server saved the character,
+// so the uncertain state is shown, and "Save again anyway" then creates a second copy.
+test('a dropped save response is uncertain; "Save again anyway" creates a second copy', async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  await signedIn(context, 'Nell');
+  const page = await context.newPage();
+
+  await page.goto('/characters/new');
+  await page.getByRole('heading', { name: 'Quick build' }).waitFor();
+  await page.getByRole('button', { name: 'Build and save character' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Your hero is ready' }),
+  ).toBeVisible();
+
+  const seeded = (await ownCharacterNames(context)).length;
+  const armed = await context.request.post(
+    `${API}/api/test/me/characters/drop-next-response`,
+  );
+  expect(armed.ok()).toBe(true);
+
+  await page.getByRole('button', { name: 'Save to my account' }).click();
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'We may or may not have saved this character' }),
+  ).toBeVisible();
+  // No plain retry: the only way to post again is the explicit button.
+  await expect(
+    page.getByRole('button', { name: 'Save to my account' }),
+  ).toHaveCount(0);
+
+  // The server did create the character even though the client never heard back.
+  const afterDrop = await ownCharacterNames(context);
+  expect(afterDrop).toHaveLength(seeded + 1);
+  const name = afterDrop[seeded]!;
+
+  await page.getByRole('button', { name: 'Save again anyway' }).click();
+  await expect(
+    page
+      .getByRole('status')
+      .filter({ hasText: `${name} is saved to your account` }),
+  ).toBeVisible();
+
+  const afterAgain = await ownCharacterNames(context);
+  expect(afterAgain).toHaveLength(seeded + 2);
+  expect(afterAgain.filter((n) => n === name)).toHaveLength(2);
+});
