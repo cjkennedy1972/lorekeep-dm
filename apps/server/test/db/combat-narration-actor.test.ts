@@ -20,7 +20,14 @@ let dir: string;
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
 
-async function narrationRequest(combatRoom: Record<string, unknown>) {
+async function narrationRequest(
+  combatRoom: Record<string, unknown>,
+  extra: {
+    combatNarration?: boolean;
+    text?: string;
+    displayName?: string;
+  } = {},
+) {
   const accountId = randomUUID();
   await db.query(
     `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'hash','Solo','active',true,now(),'v1',now())`,
@@ -61,22 +68,55 @@ async function narrationRequest(combatRoom: Record<string, unknown>) {
     undefined,
     async () => true,
   );
-  await runner.run(
+  const result = await runner.run(
     {
       sessionId,
       accountId,
       actionId: randomUUID(),
-      text: 'Narrate.',
+      text: extra.text ?? 'Narrate.',
+      ...(extra.combatNarration ? { combatNarration: true } : {}),
+      playerName: extra.displayName,
       state: {
         lastNarration: 'Earlier tale.',
         lastPlayerText: 'Earlier ask.',
+        ...(extra.displayName
+          ? {
+              characters: {
+                [accountId]: {
+                  id: 'ent_aria',
+                  name: extra.displayName,
+                  speciesId: 'srd:species/human',
+                  classId: 'srd:class/fighter',
+                  backgroundId: 'srd:background/soldier',
+                  level: 1,
+                  abilities: {
+                    str: 15,
+                    dex: 12,
+                    con: 13,
+                    int: 10,
+                    wis: 11,
+                    cha: 8,
+                  },
+                  proficiencies: { skills: [], saves: [], tools: [] },
+                  equipment: [],
+                  spellsKnown: [],
+                  spellsPrepared: [],
+                  slots: {},
+                  hp: { current: 10, max: 10, temp: 0 },
+                  conditions: [],
+                },
+              },
+            }
+          : {}),
         combatRoom,
       },
     },
     () => undefined,
   );
+  narrationResult = result;
   return JSON.stringify(calls);
 }
+let narrationResult: { state: unknown } | undefined;
 
 // Recent turns reach the prompt base64-encoded.
 const EARLIER = Buffer.from('Earlier tale.').toString('base64');
@@ -122,5 +162,28 @@ describe('combat narration request through ProductionSoloTurnRunner', () => {
     expect(await narrationRequest(combatRoom('ent_aria', true))).toContain(
       EARLIER,
     );
+  });
+
+  it('carries only engine handles and keeps post-combat continuity clean', async () => {
+    const raw = await narrationRequest(combatRoom('ent_aria'), {
+      combatNarration: true,
+      displayName: 'Zorbo the Display',
+      text: '[Combat resolved by the engine; narrate it, do not change it] {"type":"HpChanged","entityId":"ent_aria","delta":-3,"hp":7}',
+    });
+    // Prompt data blocks are base64; check the decoded text as well as the wire form.
+    const request = [
+      raw,
+      ...[...raw.matchAll(/encoding=base64>>>\\n([A-Za-z0-9+/=]+)\\n/g)].map(
+        (match) => Buffer.from(match[1]!, 'base64').toString('utf8'),
+      ),
+    ].join('\n');
+    expect(request).toContain('"type":"HpChanged"');
+    for (const leaked of ['Zorbo', 'Earlier', 'Narrate.'])
+      expect(request).not.toContain(leaked);
+    expect(raw).not.toContain(EARLIER);
+    expect(narrationResult!.state).toMatchObject({
+      lastNarration: 'Earlier tale.',
+      lastPlayerText: 'Earlier ask.',
+    });
   });
 });

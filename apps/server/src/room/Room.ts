@@ -302,6 +302,39 @@ export class NotTableHostError extends Error {
   }
 }
 
+/** ADR-033 §6.8: the only engine event fields a combat narration prompt may carry. */
+const NARRATION_FACT_FIELDS: Record<string, readonly string[]> = {
+  HpChanged: ['entityId', 'delta', 'hp'],
+  EntityMoved: ['entityId', 'path', 'cost'],
+  CombatEnded: [],
+  ReactionResolved: ['entityId', 'used', 'reactionId'],
+};
+const HANDLE = /^[A-Za-z0-9_:./-]{1,64}$/;
+/** Keeps ids matching the handle shape, booleans, integers and {x,y} cells; drops any other (possibly free-text) value. */
+function narrationValue(value: unknown): unknown {
+  if (typeof value === 'string') return HANDLE.test(value) ? value : undefined;
+  if (typeof value === 'boolean' || Number.isInteger(value)) return value;
+  if (Array.isArray(value)) return value.map(narrationValue);
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      ['x', 'y']
+        .filter((key) => Number.isInteger((value as never)[key]))
+        .map((key) => [key, (value as never)[key]]),
+    );
+  return undefined;
+}
+export function narrationFact(event: Record<string, unknown>) {
+  return {
+    type: event.type,
+    ...Object.fromEntries(
+      NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
+        const value = narrationValue(event[key]);
+        return value === undefined ? [] : [[key, value]];
+      }),
+    ),
+  };
+}
+
 export class RoomPausedError extends Error {
   constructor() {
     super('Resolve now is unavailable while the table is paused');
@@ -5222,17 +5255,11 @@ export class Room {
           },
         );
         return (
-          !referencesHiddenEntity &&
-          [
-            'HpChanged',
-            'EntityMoved',
-            'CombatEnded',
-            'ReactionResolved',
-          ].includes(String(event.type))
+          !referencesHiddenEntity && String(event.type) in NARRATION_FACT_FIELDS
         );
       })
       .slice(0, 12)
-      .map((event) => JSON.stringify(event));
+      .map((event) => JSON.stringify(narrationFact(event)));
     const actionId = randomUUID();
     this.pendingActions.add(actionId);
     this.queuedActions.push({
