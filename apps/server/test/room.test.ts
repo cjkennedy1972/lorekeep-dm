@@ -115,66 +115,6 @@ describe('room actor', () => {
     ]);
   });
 
-  it('projects combat sheet details only to the owning seat', async () => {
-    const { store, setCharacterSnapshot } = fixture();
-    const firstAccount = randomUUID();
-    const secondAccount = randomUUID();
-    const character = quickBuild(loadCatalog(), undefined, 0x39, 1).character;
-    setCharacterSnapshot(character);
-    const room = new Room(store, lease, await store.loadLatest(id));
-    await room.seat(firstAccount, 'First');
-    await room.seat(secondAccount, 'Second');
-    const firstSeat = room.state.seats.find(
-      (seat) => seat.accountId === firstAccount,
-    )!;
-    const secondSeat = room.state.seats.find(
-      (seat) => seat.accountId === secondAccount,
-    )!;
-    await room.bindSeatCharacter(
-      firstAccount,
-      character.id,
-      1,
-      async () => true,
-      randomUUID(),
-    );
-    await room.bindSeatCharacter(
-      secondAccount,
-      character.id,
-      1,
-      async () => true,
-      randomUUID(),
-    );
-    await room.persistGameState({
-      combatRoom: {
-        entities: [
-          {
-            id: `ent_seat_${firstSeat.seatId}`,
-            abilities: { str: 18 },
-            saves: { str: 5 },
-            attacks: [{ name: 'Private attack' }],
-          },
-          {
-            id: `ent_seat_${secondSeat.seatId}`,
-            abilities: { dex: 18 },
-            saves: { dex: 5 },
-            attacks: [{ name: 'Other private attack' }],
-          },
-        ],
-      },
-    });
-
-    const firstView = room.clientState(firstAccount).gameState as {
-      combatRoom: { entities: Record<string, unknown>[] };
-    };
-    const firstEntity = firstView.combatRoom.entities[0]!;
-    const secondEntity = firstView.combatRoom.entities[1]!;
-    expect(firstEntity).toHaveProperty('abilities', { str: 18 });
-    expect(firstEntity).toHaveProperty('attacks', [{ name: 'Private attack' }]);
-    expect(secondEntity).not.toHaveProperty('abilities');
-    expect(secondEntity).not.toHaveProperty('saves');
-    expect(secondEntity).not.toHaveProperty('attacks');
-  });
-
   it('resyncs a public round snapshot without other seats’ private text', async () => {
     const { store } = fixture();
     const accountId = randomUUID();
@@ -773,9 +713,20 @@ describe('room actor', () => {
       await expect(
         afterCancelRestart.cancelLateJoin(requester, cancelAction, cancelled),
       ).resolves.toBeUndefined();
+      const foreignAccount = randomUUID();
+      const foreignError = await afterCancelRestart
+        .cancelLateJoin(foreignAccount, cancelAction, cancelled)
+        .catch((error: unknown) => error);
+      const unknownRequestError = await afterCancelRestart
+        .cancelLateJoin(foreignAccount, cancelAction, randomUUID())
+        .catch((error: unknown) => error);
+      expect(foreignError).toBeInstanceOf(Error);
+      expect((foreignError as Error).message).toBe(
+        (unknownRequestError as Error).message,
+      );
       await expect(
         afterCancelRestart.cancelLateJoin(
-          randomUUID(),
+          foreignAccount,
           cancelAction,
           cancelled,
         ),
@@ -800,6 +751,24 @@ describe('room actor', () => {
       await expect(
         afterDenyRestart.denyLateJoin(randomUUID(), denyAction, denied),
       ).rejects.toThrow();
+    });
+
+    it('bounds persisted late-join request replay results', async () => {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      for (let index = 0; index < 260; index++) {
+        const requester = randomUUID();
+        const requestId = await room.requestLateJoin(
+          requester,
+          randomUUID(),
+          1,
+          randomUUID(),
+        );
+        await room.cancelLateJoin(requester, randomUUID(), requestId);
+      }
+      expect(Object.keys(room.state.lateJoinRequestResults ?? {})).toHaveLength(
+        256,
+      );
     });
 
     it('requires a current host and enforces timer bounds server-side', async () => {

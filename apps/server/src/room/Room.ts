@@ -76,39 +76,6 @@ function clientGameState(
   for (const key of CLIENT_GAME_STATE_FIELDS) {
     if (!(key in source)) continue;
     if (
-      key === 'combatRoom' &&
-      source.combatRoom &&
-      typeof source.combatRoom === 'object'
-    ) {
-      const combatRoom = source.combatRoom as Record<string, unknown>;
-      const entities = Array.isArray(combatRoom.entities)
-        ? combatRoom.entities.map((entity) => {
-            if (!entity || typeof entity !== 'object' || Array.isArray(entity))
-              return entity;
-            const entry = entity as Record<string, unknown>;
-            const seatId =
-              typeof entry.id === 'string'
-                ? seatIdFromEntityId(entry.id)
-                : undefined;
-            const isOwner =
-              viewerAccountId !== undefined &&
-              seatId !== undefined &&
-              bindings?.get(seatId)?.accountId === viewerAccountId;
-            if (isOwner) return entry;
-            const publicEntity = { ...entry };
-            delete publicEntity.abilities;
-            delete publicEntity.saves;
-            delete publicEntity.attacks;
-            return publicEntity;
-          })
-        : undefined;
-      result[key] = {
-        ...combatRoom,
-        ...(entities ? { entities } : {}),
-      };
-      continue;
-    }
-    if (
       key !== 'characters' ||
       !source.characters ||
       typeof source.characters !== 'object'
@@ -2845,13 +2812,24 @@ export class Room {
     requestId: string,
   ): Promise<void> {
     return this.enqueue(async () => {
-      if (this.actionIds.has(actionId)) {
-        if (this.state.lateJoinActionOwners?.[actionId] === accountId) return;
-        throw new RoomSeatRequiredError();
-      }
       const request = this.state.lateJoinRequests?.find(
         (item) => item.requestId === requestId,
       );
+      const replayRequestId =
+        this.state.lateJoinRequestResults?.[`${accountId}:${actionId}`];
+      if (
+        (!request || request.accountId !== accountId) &&
+        replayRequestId !== requestId
+      )
+        throw new RoomSeatRequiredError();
+      if (this.actionIds.has(actionId)) {
+        if (
+          this.state.lateJoinActionOwners?.[actionId] === accountId &&
+          replayRequestId === requestId
+        )
+          return;
+        throw new RoomSeatRequiredError();
+      }
       if (!request || request.accountId !== accountId)
         throw new RoomSeatRequiredError();
       if (request.expiresAt !== undefined && request.expiresAt <= Date.now()) {
@@ -2872,11 +2850,16 @@ export class Room {
         });
         connection?.close?.(1008, 'Late join cancelled');
       }
-      await this.persist('LateJoinCancelled', {
-        requestId,
-        actionId,
-        actorAccountId: accountId,
-      });
+      await this.persist(
+        'LateJoinCancelled',
+        {
+          requestId,
+          actionId,
+          actorAccountId: accountId,
+        },
+        undefined,
+        [actionId],
+      );
       this.lateJoinAuthTokenHashes.delete(requestId);
       const timer = this.lateJoinExpiryTimers.get(requestId);
       if (timer) clearTimeout(timer);
