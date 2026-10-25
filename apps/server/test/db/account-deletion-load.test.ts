@@ -349,6 +349,17 @@ describe('account deletion: the scrubbed room still loads and plays', () => {
     const f = await seedCombatRoom({ clarification: false });
     await sweep();
     const room = await reload(f.session);
+    // A recovered table starts with unknown presence; connect the surviving
+    // controllers so narration can commit between initiative turns.
+    const messages: { type: string; payload?: unknown }[] = [];
+    const connection = {
+      send(message: unknown) {
+        messages.push(message as { type: string; payload?: unknown });
+      },
+    };
+    await room.join(f.heir, connection, 'Heir');
+    await room.join(f.third, connection, 'Third');
+    await room.setPaused(f.heir, false, true);
     const combat = combatOf(room);
     const ids = combat.entities.map((e) => e.id);
     expect(ids).not.toContain(f.goneChar);
@@ -376,6 +387,9 @@ describe('account deletion: the scrubbed room still loads and plays', () => {
         command: 'end-turn',
       });
       await settle(room);
+      expect(messages.filter((message) => message.type === 'Error')).toEqual(
+        [],
+      );
       expect(combatOf(room).combat.activeEntityId).not.toBe(current);
     }
     expect(combatOf(room).combat.round).toBeGreaterThanOrEqual(startRound + 2);

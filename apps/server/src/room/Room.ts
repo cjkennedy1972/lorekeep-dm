@@ -76,6 +76,19 @@ function clientGameState(
   for (const key of CLIENT_GAME_STATE_FIELDS) {
     if (!(key in source)) continue;
     if (
+      key === 'combatRoom' &&
+      source.combatRoom &&
+      typeof source.combatRoom === 'object' &&
+      !Array.isArray(source.combatRoom)
+    ) {
+      const combatRoom = { ...(source.combatRoom as Record<string, unknown>) };
+      delete combatRoom.turnNarrationEvents;
+      delete combatRoom.narrationAttempts;
+      delete combatRoom.turnNarrationEventIds;
+      result[key] = combatRoom;
+      continue;
+    }
+    if (
       key !== 'characters' ||
       !source.characters ||
       typeof source.characters !== 'object'
@@ -247,6 +260,13 @@ interface PendingSeatClaim {
 }
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Advertised turn deadline carried by TurnOpened (ADR-033 §7.1 requires the
+ * field). Informational only: nothing enforces expiry yet. The timer and the
+ * TurnTimedOut producer are M4-6b, a separate PR.
+ */
+const TURN_DEADLINE_MS = 90_000;
 const DRAIN_DEADLINE_MS = 30_000;
 const DEFAULT_ROUND_MS = 120_000;
 const ROUND_GATE_GRACE_MS = 5_000;
@@ -376,6 +396,7 @@ export class Room {
     receiptSeq: number;
     editedAt?: number;
     clarificationAsked?: boolean;
+    combatTurnId?: string;
   }[] = [];
   private nextActionReceiptSeq = 0;
   private readonly clarificationTimers = new Map<string, NodeJS.Timeout>();
@@ -466,6 +487,14 @@ export class Room {
       void this.cancelScrubbedRecoveredVote().catch((error) =>
         console.error(`Rest vote recovery failed for ${this.sessionId}`, error),
       );
+      const combat = roomGameState(this.state);
+      if (combat?.phase === 'narrating' && combat.turnId) {
+        this.queueNarration(
+          combat.turnNarrationEvents ?? [],
+          undefined,
+          combat.turnId,
+        );
+      }
     });
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     this.scheduleReaction();
@@ -2029,6 +2058,64 @@ export class Room {
   private assertNotNarrating(): void {
     if (this.turnInFlight)
       throw new Error('The DM is still narrating; try again in a moment.');
+  }
+
+  private async commitCombatFallback(turnId: string): Promise<void> {
+    const combat = roomGameState(this.state);
+    if (!combat || combat.turnId !== turnId) return;
+    const narration =
+      'The tale pauses — the storyteller has lost the thread. Your action was not resolved; try again.';
+    const narrationId = randomUUID();
+    const events: Record<string, unknown>[] = [
+      {
+        type: 'NarrationCompleted',
+        actionId: narrationId,
+        narration,
+        fallback: 'endpoint-error',
+      },
+      { type: 'TurnFallback', turnId, reason: 'endpoint-error' },
+      { type: 'NarrationCommitted', turnId, narrationId },
+    ];
+    let nextCombat: RoomCombatState = {
+      ...combat,
+      narrationAttempts: 0,
+      turnNarrationEvents: undefined,
+      turnNarrationEventIds: undefined,
+    };
+    if (!combat.ended && combat.combat.activeEntityId) {
+      const nextTurnId = randomUUID();
+      const deadline = Date.now() + TURN_DEADLINE_MS;
+      nextCombat = {
+        ...nextCombat,
+        phase: 'awaiting-command',
+        turnId: nextTurnId,
+        turnDeadline: deadline,
+      };
+      events.push({
+        type: 'TurnOpened',
+        turnId: nextTurnId,
+        entityId: combat.combat.activeEntityId,
+        deadline,
+      });
+    } else {
+      delete nextCombat.phase;
+      delete nextCombat.turnId;
+      delete nextCombat.turnDeadline;
+    }
+    await this.commitGameState(
+      {
+        ...(this.state.gameState as Record<string, unknown>),
+        combatRoom: nextCombat,
+      },
+      events,
+    );
+    const openedTurn = events.find((event) => event.type === 'TurnOpened');
+    if (openedTurn) this.announceCombat(nextCombat, [openedTurn], undefined);
+    this.broadcast({
+      seq: this.seq,
+      type: 'NarrationCompleted',
+      payload: { turnId, text: narration },
+    } as ServerMessage);
   }
 
   private async commitGameState(
@@ -4098,12 +4185,41 @@ export class Room {
       } as ServerMessage);
       this.turnAccountId = action.accountId;
       try {
+        if (action.combatTurnId) {
+          const combat = roomGameState(this.state);
+          if (!combat || combat.turnId !== action.combatTurnId) {
+            this.pendingActions.delete(action.actionId);
+            continue;
+          }
+          if ((combat.narrationAttempts ?? 0) >= 2) {
+            await this.commitCombatFallback(action.combatTurnId);
+            this.pendingActions.delete(action.actionId);
+            continue;
+          }
+          const nextCombat = {
+            ...combat,
+            narrationAttempts: (combat.narrationAttempts ?? 0) + 1,
+          };
+          const gameState = {
+            ...(this.state.gameState as Record<string, unknown>),
+            combatRoom: nextCombat,
+          };
+          await this.commitGameState(gameState, [
+            {
+              type: 'NarrationAttemptStarted',
+              turnId: action.combatTurnId,
+              attempt: nextCombat.narrationAttempts,
+            },
+          ]);
+        }
         await this.resolveTurn(
           action.accountId,
           action.actionId,
           action.text,
           action.playerName,
           action.clarificationAsked === true,
+          undefined,
+          action.combatTurnId,
         );
         if (this.sceneBoundaryPending)
           await this.enqueue(async () => {
@@ -4111,6 +4227,13 @@ export class Room {
             await this.admitApprovedLateJoins();
           });
       } catch (error) {
+        if (action.combatTurnId) {
+          // A combat narration failure must not leave the resolved turn open.
+          // The engine-written ADR-022 fallback is the committed narration.
+          await this.commitCombatFallback(action.combatTurnId);
+          this.pendingActions.delete(action.actionId);
+          continue;
+        }
         // A turn that throws (e.g. no endpoint configured, table state unavailable) must not
         // leave the player waiting forever. Nothing was committed, so the same action can be
         // resubmitted. The message is deliberately generic: no error text, prompt or secret.
@@ -4156,6 +4279,7 @@ export class Room {
       }
     this.turnAccountId = undefined;
     this.turnInFlight = false;
+    this.queueAwayAutopilot();
   }
 
   private async withdrawSeatActions(seat: Seat): Promise<void> {
@@ -4216,6 +4340,7 @@ export class Room {
     playerName: string,
     clarificationAsked: boolean,
     roundId?: string,
+    combatTurnId?: string,
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
     const startGame = structuredClone(this.state.gameState ?? {}) as Record<
@@ -4295,7 +4420,7 @@ export class Room {
       )
         throw new XCardAbortError();
       // Endpoint fallback invalidates all partial engine effects; only successful results are saved.
-      if (result.fallback !== 'endpoint-error') {
+      if (result.fallback !== 'endpoint-error' || combatTurnId) {
         const turnId = result.events.find(
           (event) => (event as { type?: string }).type === 'TurnStarted',
         ) as { turnId?: string } | undefined;
@@ -4469,7 +4594,79 @@ export class Room {
           ...(hurt?.events ?? []),
           ...(reconciled?.events ?? []),
         ];
-        const turnGameState = reconciled?.gameState ?? incoming;
+        let turnGameState = reconciled?.gameState ?? incoming;
+        const initialCombat = (
+          turnGameState as { combatRoom?: RoomCombatState }
+        ).combatRoom;
+        if (
+          combatEvents.some((event) => event.type === 'CombatStarted') &&
+          initialCombat &&
+          !initialCombat.pendingReaction &&
+          initialCombat.combat.activeEntityId
+        ) {
+          const openedId = randomUUID();
+          const deadline = Date.now() + TURN_DEADLINE_MS;
+          turnGameState = {
+            ...turnGameState,
+            combatRoom: {
+              ...initialCombat,
+              phase: 'awaiting-command',
+              turnId: openedId,
+              narrationAttempts: 0,
+              turnDeadline: deadline,
+            },
+          };
+          combatEvents.push({
+            type: 'TurnOpened',
+            turnId: openedId,
+            entityId: initialCombat.combat.activeEntityId,
+            deadline,
+          });
+        }
+        let openedTurn: Record<string, unknown> | undefined;
+        if (combatTurnId) {
+          const combatRoom = (turnGameState as { combatRoom?: RoomCombatState })
+            .combatRoom;
+          if (combatRoom?.turnId === combatTurnId) {
+            if (combatRoom.ended) {
+              const completedCombat = { ...combatRoom };
+              delete completedCombat.phase;
+              delete completedCombat.turnId;
+              delete completedCombat.turnDeadline;
+              completedCombat.narrationAttempts = 0;
+              completedCombat.turnNarrationEvents = undefined;
+              completedCombat.turnNarrationEventIds = undefined;
+              turnGameState = {
+                ...turnGameState,
+                combatRoom: completedCombat,
+              };
+            } else if (combatRoom.pendingReaction) {
+              turnGameState = {
+                ...turnGameState,
+                combatRoom: { ...combatRoom, phase: 'reaction-pending' },
+              };
+            } else {
+              const nextTurnId = randomUUID();
+              const deadline = Date.now() + TURN_DEADLINE_MS;
+              const nextCombat = {
+                ...combatRoom,
+                phase: 'awaiting-command' as const,
+                turnId: nextTurnId,
+                narrationAttempts: 0,
+                turnDeadline: deadline,
+                turnNarrationEvents: undefined,
+                turnNarrationEventIds: undefined,
+              };
+              turnGameState = { ...turnGameState, combatRoom: nextCombat };
+              openedTurn = {
+                type: 'TurnOpened',
+                turnId: nextTurnId,
+                entityId: nextCombat.combat.activeEntityId,
+                deadline,
+              };
+            }
+          }
+        }
         for (const event of combatEvents)
           writes.push({
             seq: undefined,
@@ -4477,6 +4674,21 @@ export class Room {
             type: String(event.type),
             payload: event,
           });
+        if (combatTurnId) {
+          writes.push({
+            seq: undefined,
+            turnId: combatTurnId,
+            type: 'NarrationCommitted',
+            payload: { turnId: combatTurnId, narrationId: actionId },
+          });
+          if (openedTurn)
+            writes.push({
+              seq: undefined,
+              turnId: combatTurnId,
+              type: 'TurnOpened',
+              payload: openedTurn,
+            });
+        }
         const deadlineAt = Date.now() + CLARIFICATION_TIMEOUT_MS;
         const restVoteClosePayload = writes.find(
           (write) => write.type === 'RestVoteClosed',
@@ -4588,6 +4800,7 @@ export class Room {
         this.state = nextState;
         if (stored.events.some((event) => event.type === 'SceneClosed'))
           this.sceneBoundaryPending = true;
+        if (openedTurn) combatEvents.push(openedTurn as never);
         const opened = stored.events.find(
           (event) => event.type === 'RestVoteOpened',
         );
@@ -4706,15 +4919,6 @@ export class Room {
         );
         return true;
       }
-      if (this.turnInFlight) {
-        this.sendError(
-          accountId,
-          'COMMAND_REJECTED',
-          'The DM is still narrating; try again in a moment.',
-          actionId,
-        );
-        return true;
-      }
       const result = this.combatRuntime.execute(current, actorId, command, {
         character: bound
           ? ({ ...bound.characterSnapshot, id: actorId } as never)
@@ -4723,6 +4927,17 @@ export class Room {
       });
       if ('code' in result) {
         this.sendError(accountId, result.code, result.message, actionId);
+        return true;
+      }
+      // Ask the combat admission table first. Its authorization-first result is
+      // stable even while an asynchronous narration is in flight.
+      if (this.turnInFlight) {
+        this.sendError(
+          accountId,
+          'COMMAND_REJECTED',
+          'The DM is still narrating; try again in a moment.',
+          actionId,
+        );
         return true;
       }
       if (!result.events.length && !result.state.pendingReaction) {
@@ -4746,14 +4961,70 @@ export class Room {
     accountId: string | undefined,
     actionId?: string,
   ): Promise<void> {
+    const beforeCombat = roomGameState(this.state);
+    const resolved =
+      result.events.some((event) => event.type === 'TurnEnded') ||
+      result.events.some((event) => event.type === 'CombatEnded');
+    let combatState = result.state;
+    const priorTurnEvents = beforeCombat?.turnNarrationEvents ?? [];
+    const priorTurnEventIds = beforeCombat?.turnNarrationEventIds ?? [];
+    const hiddenEntityIds = new Set(
+      combatState.entities
+        .filter((entity) => entity.hidden)
+        .map((entity) => entity.id),
+    );
+    const currentTurnEventIds = result.events.flatMap((event, index) => {
+      const referencesHiddenEntity = Object.entries(
+        event as Record<string, unknown>,
+      ).some(([key, value]) => {
+        if (!/(?:entity|mover|attacker|reactor).*ids?$/i.test(key))
+          return false;
+        const ids = Array.isArray(value) ? value : [value];
+        return ids.some(
+          (id) => typeof id === 'string' && hiddenEntityIds.has(id),
+        );
+      });
+      return referencesHiddenEntity ? [] : [String(this.seq + index + 1)];
+    });
+    const turnNarrationEvents = [
+      ...priorTurnEvents,
+      ...result.events.map((event) => ({ ...event })),
+    ];
+    const turnNarrationEventIds = [
+      ...priorTurnEventIds,
+      ...currentTurnEventIds,
+    ];
+    if (beforeCombat)
+      combatState = {
+        ...combatState,
+        turnNarrationEvents,
+        turnNarrationEventIds,
+      };
+    const lifecycleEvents: Record<string, unknown>[] = [];
+    if (beforeCombat && resolved && !combatState.pendingReaction) {
+      const turnId = beforeCombat.turnId ?? randomUUID();
+      combatState = {
+        ...combatState,
+        phase: 'narrating',
+        turnId,
+        narrationAttempts: 0,
+      };
+      lifecycleEvents.push({
+        type: 'TurnResolved',
+        turnId,
+        entityId: beforeCombat.combat.activeEntityId ?? 'unknown',
+        eventIds: turnNarrationEventIds,
+      });
+    }
+    const committedEvents = [...result.events, ...lifecycleEvents];
     const gameState = settleEngine(
       {
         ...(this.state.gameState as Record<string, unknown> | undefined),
-        combatRoom: result.state,
+        combatRoom: combatState,
       },
       result.slots,
     );
-    const writes = result.events.map((event) => ({
+    const writes = committedEvents.map((event) => ({
       seq: undefined,
       turnId,
       type: String(event.type),
@@ -4774,10 +5045,22 @@ export class Room {
       { ...this.state, gameState, actionIds },
       this.lease,
     );
+    // TurnResolved.eventIds were derived from `this.seq + index + 1` before the
+    // write; they are only correct if the store assigned contiguous seqs.
+    const firstSeq = this.seq + 1;
+    const contiguous = stored.events.every(
+      (event, index) => event.seq === firstSeq + index,
+    );
     this.seq = stored.events.at(-1)?.seq ?? this.seq;
+    // Never throw after the durable write: memory must follow the store or a
+    // retry would accept the turn again from stale state.
     this.state = { ...this.state, gameState } as RoomState;
     if (actionId) this.actionIds.add(actionId);
-    this.announceCombat(result.state, result.events, accountId);
+    if (!contiguous)
+      console.error(
+        `Combat turn events were stored with non-contiguous seq for ${this.sessionId}`,
+      );
+    this.announceCombat(combatState, committedEvents, accountId);
   }
 
   /** Broadcast what changed, arm the reaction deadline and queue the DM's narration. */
@@ -4786,11 +5069,16 @@ export class Room {
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
   ): void {
-    if (events.length)
+    // TurnResolved is log/DM-input only (ADR-034 §5): its filtered eventIds
+    // still disclose hidden-event count through sequence gaps.
+    const clientEvents = events.filter(
+      (event) => event.type !== 'TurnResolved',
+    );
+    if (clientEvents.length)
       this.broadcast({
         seq: this.seq,
         type: 'CombatEvents',
-        payload: { events: events.map(toWireEvent) },
+        payload: { events: clientEvents.map(toWireEvent) },
       } as ServerMessage);
     const ended = events.find((event) => event.type === 'CombatEnded');
     const roundBoundary = events.some(
@@ -4825,12 +5113,15 @@ export class Room {
       )
     )
       this.queueAwayAutopilot();
-    const narrate = events.some((event) =>
-      ['MonsterPolicy', 'CombatEnded', 'ReactionResolved'].includes(
-        String(event.type),
-      ),
-    );
-    if (narrate && this.turnRunner) this.queueNarration(events, accountId);
+    const resolvedEvent = events.find((event) => event.type === 'TurnResolved');
+    const narrate = resolvedEvent !== undefined;
+    const combatTurnId = resolvedEvent?.turnId as string | undefined;
+    if (narrate && (this.turnRunner || combatTurnId))
+      this.queueNarration(
+        [...(state.turnNarrationEvents ?? []), resolvedEvent],
+        accountId,
+        combatTurnId,
+      );
   }
 
   private queueAwayAutopilot(): void {
@@ -4898,21 +5189,47 @@ export class Room {
   private queueNarration(
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
+    combatTurnId?: string,
   ): void {
     const owner =
       accountId ??
       this.state.seats.find((seat) => seat.accountId)?.accountId ??
       undefined;
-    if (!owner) return;
+    if (!owner) {
+      if (combatTurnId)
+        void this.enqueue(() => this.commitCombatFallback(combatTurnId)).catch(
+          () => undefined,
+        );
+      return;
+    }
+    const combat = roomGameState(this.state);
+    const hiddenEntityIds = new Set(
+      (combat?.entities ?? [])
+        .filter((entity) => entity.hidden)
+        .map((entity) => entity.id),
+    );
     const facts = events
-      .filter((event) =>
-        [
-          'HpChanged',
-          'EntityMoved',
-          'CombatEnded',
-          'ReactionResolved',
-        ].includes(String(event.type)),
-      )
+      .filter((event) => {
+        const referencesHiddenEntity = Object.entries(event).some(
+          ([key, value]) => {
+            if (!/(?:entity|mover|attacker|reactor).*ids?$/i.test(key))
+              return false;
+            const ids = Array.isArray(value) ? value : [value];
+            return ids.some(
+              (id) => typeof id === 'string' && hiddenEntityIds.has(id),
+            );
+          },
+        );
+        return (
+          !referencesHiddenEntity &&
+          [
+            'HpChanged',
+            'EntityMoved',
+            'CombatEnded',
+            'ReactionResolved',
+          ].includes(String(event.type))
+        );
+      })
       .slice(0, 12)
       .map((event) => JSON.stringify(event));
     const actionId = randomUUID();
@@ -4925,6 +5242,7 @@ export class Room {
       text: `[Combat resolved by the engine; narrate it, do not change it] ${facts.join(' ')}`,
       playerName: 'Combat',
       receiptSeq: ++this.nextActionReceiptSeq,
+      ...(combatTurnId ? { combatTurnId } : {}),
     });
     if (!this.turnInFlight) {
       this.turnInFlight = true;

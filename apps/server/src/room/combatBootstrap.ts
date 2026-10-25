@@ -25,6 +25,7 @@ type GameState = Record<string, unknown> & {
 type EngineEntity = {
   id: string;
   name?: string;
+  hidden?: boolean;
   team: string;
   pos: GridPos;
   size: number;
@@ -221,6 +222,7 @@ function buildRoomCombat(
     return {
       id: entity.id,
       ...(entity.name ? { name: entity.name } : {}),
+      ...(entity.hidden ? { hidden: true } : {}),
       kind: character ? 'character' : 'monster',
       team: entity.team,
       pos: entity.pos,

@@ -143,6 +143,28 @@ describe('tracker', () => {
     expect(result.state.phase).toBe('awaiting-command');
   });
 
+  it('terminates an open move when CombatEnded closes the encounter', () => {
+    const e = engaged();
+    const moving = ok(
+      e.runtime.execute(
+        e.state,
+        'ent_aria',
+        { command: 'move', destination: { x: 7, y: 6 } },
+        { now: NOW },
+      ),
+    );
+    expect(moving.state.pendingReaction).toBeDefined();
+    const ended = settle({
+      ...moving.state,
+      entities: moving.state.entities.map((entity) =>
+        entity.team === 'enemies' ? { ...entity, hp: 0 } : entity,
+      ),
+    });
+
+    expectBalancedMovement([...moving.events, ...ended.events]);
+    expect(types(ended.events)).toContain('CombatEnded');
+  });
+
   it('does not expose the internal phase in the client projection', () => {
     const { state } = bootstrapped();
     expect(combatTracker(state)).not.toHaveProperty('phase');
@@ -947,6 +969,10 @@ describe('monster turns', () => {
             choice: 'decline',
           }),
         ).state;
+      // The runtime test has no Room/narrator; model the persisted narration
+      // commit boundary before the next initiative turn.
+      if (current.phase === 'narrating')
+        current = { ...current, phase: 'awaiting-command' };
     }
     expect(current.ended?.outcome).toMatch(/party-victory|party-defeated/);
     expect(log.filter((t) => t === 'CombatEnded')).toHaveLength(1);
@@ -1089,5 +1115,545 @@ describe('Room: reaction deadline survives restarts', () => {
     });
     expect(table.events).toHaveLength(count);
     await room.drain();
+  });
+});
+
+describe('Room: one persisted narration per resolved combat turn', () => {
+  it('closes a terminal combat turn after its single narration commits', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'awaiting-command',
+      turnId: 'combat-turn-final',
+      narrationAttempts: 0,
+      entities: e.state.entities.map((entity) =>
+        entity.team === 'enemies' ? { ...entity, hp: 0 } : entity,
+      ),
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    const runner = {
+      async run(request: unknown) {
+        narrationStarted();
+        return {
+          narration: 'The encounter ends.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    await room.setPaused(account, false, true);
+    await started;
+    await room.drain();
+
+    const ended = table.game().combatRoom as RoomCombatState;
+    expect(table.events.some((event) => event.type === 'CombatEnded')).toBe(
+      true,
+    );
+    expect(
+      table.events.filter((event) => event.type === 'TurnResolved'),
+    ).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'NarrationCommitted'),
+    ).toHaveLength(1);
+    expect(table.events.some((event) => event.type === 'TurnOpened')).toBe(
+      false,
+    );
+    expect(ended.phase).toBeUndefined();
+    expect(ended.turnId).toBeUndefined();
+    expect(ended.turnDeadline).toBeUndefined();
+  });
+
+  it('admits by turn ownership before revealing an in-flight narration gate', async () => {
+    const e = bootstrapped();
+    const otherAccount = crypto.randomUUID();
+    let releaseNarration!: () => void;
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    const waitForNarration = new Promise<void>((resolve) => {
+      releaseNarration = resolve;
+    });
+    const runner = {
+      async run(request: unknown) {
+        narrationStarted();
+        await waitForNarration;
+        return {
+          narration: 'The turn resolves.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'awaiting-command',
+      turnId: 'combat-turn-admission',
+      narrationAttempts: 0,
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: {
+          [account]: 'ent_aria',
+          [otherAccount]: 'ent_goblin-minion_1',
+        },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const otherMessages: import('@game/schema').ServerMessage[] = [];
+    await joinSeated(room, otherAccount, {
+      send: (message) => otherMessages.push(message),
+    });
+
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    await room.setPaused(account, false, true);
+    await started;
+    await room.submitCombatCommand(otherAccount, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+
+    expect(otherMessages.at(-1)).toMatchObject({
+      type: 'Error',
+      payload: { code: 'not-your-turn' },
+    });
+    expect(JSON.stringify(otherMessages.at(-1))).not.toMatch(/narrat/i);
+    releaseNarration();
+    await room.drain();
+  });
+
+  it('keeps TurnResolved and its eventIds off the other seated player socket', async () => {
+    const e = bootstrapped();
+    const otherAccount = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'awaiting-command',
+      turnId: 'combat-turn-private-resolution',
+      narrationAttempts: 0,
+      entities: e.state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, hidden: true }
+          : entity,
+      ),
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const runner = {
+      async run(request: unknown) {
+        return {
+          narration: 'The turn resolves.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: {
+          [account]: 'ent_aria',
+          [otherAccount]: 'ent_goblin-minion_1',
+        },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const otherMessages: import('@game/schema').ServerMessage[] = [];
+    await joinSeated(room, otherAccount, {
+      send: (message) => otherMessages.push(message),
+    });
+
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    await room.setPaused(account, false, true);
+    await room.drain();
+
+    expect(table.events.some((event) => event.type === 'TurnResolved')).toBe(
+      true,
+    );
+    expect(
+      otherMessages.some((message) => message.type === 'TurnResolved'),
+    ).toBe(false);
+    expect(JSON.stringify(otherMessages)).not.toMatch(/eventIds/);
+  });
+
+  it('keeps the room consistent with the store when stored seqs have a gap', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'awaiting-command',
+      turnId: 'combat-turn-gap',
+      narrationAttempts: 0,
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: combat,
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    table.faults.gapAfterIndex = 0;
+    // The durable write succeeded, so the command must not throw.
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    table.faults.gapAfterIndex = -1;
+    // A second end-turn must be refused from the updated (narrating) state.
+    await room
+      .submitCombatCommand(account, crypto.randomUUID(), {
+        command: 'end-turn',
+      })
+      .catch(() => undefined);
+    expect(
+      table.events.filter((event) => event.type === 'TurnResolved'),
+    ).toHaveLength(1);
+    expect(errors).toHaveBeenCalledWith(
+      expect.stringMatching(/non-contiguous/),
+    );
+    errors.mockRestore();
+  });
+
+  it('persists TurnResolved and holds the next turn in narrating phase', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'awaiting-command',
+      turnId: 'combat-turn-1',
+      narrationAttempts: 0,
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    let calls = 0;
+    const runner = {
+      async run(request: unknown) {
+        calls++;
+        narrationStarted();
+        return {
+          narration: 'The turn resolves.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'dodge',
+    });
+    expect(calls).toBe(0);
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    await room.setPaused(account, false, true);
+    await started;
+    await room.drain();
+
+    expect(calls).toBe(1);
+    const resolved = table.events.find(
+      (event) => event.type === 'TurnResolved',
+    );
+    const dodge = table.events.find((event) => event.type === 'DodgeDeclared');
+    expect(
+      table.events.filter((event) => event.type === 'TurnResolved'),
+    ).toHaveLength(1);
+    expect(resolved?.payload).toMatchObject({
+      eventIds: expect.arrayContaining([
+        expect.any(String),
+        expect.any(String),
+      ]),
+    });
+    const eventIds = (resolved?.payload as { eventIds: string[] }).eventIds;
+    expect(eventIds).toContain(String(dodge?.seq));
+    expect(eventIds.map(Number)).toEqual(
+      [...eventIds].map(Number).sort((left, right) => left - right),
+    );
+    expect(
+      eventIds.every((id) =>
+        table.events.some((event) => String(event.seq) === id),
+      ),
+    ).toBe(true);
+    const narratedFacts = table.game().combatRoom as RoomCombatState;
+    expect(narratedFacts.turnNarrationEvents).toBeUndefined();
+    expect(
+      table.events.filter((event) => event.type === 'NarrationAttemptStarted'),
+    ).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'NarrationCommitted'),
+    ).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'TurnOpened'),
+    ).toHaveLength(1);
+    expect(
+      table.messages.some(
+        (message) =>
+          message.type === 'CombatEvents' &&
+          (message.payload as { events?: { type?: string }[] }).events?.some(
+            (event) => event.type === 'TurnOpened',
+          ),
+      ),
+    ).toBe(true);
+    expect((table.game().combatRoom as RoomCombatState).phase).toBe(
+      'awaiting-command',
+    );
+    const syncedCombat = table.messages
+      .filter((message) => message.type === 'StateSync')
+      .map(
+        (message) =>
+          (
+            message.payload as {
+              state?: { gameState?: { combatRoom?: Record<string, unknown> } };
+            }
+          ).state?.gameState?.combatRoom,
+      )
+      .filter((state): state is Record<string, unknown> => !!state);
+    expect(
+      syncedCombat.every((state) => !('turnNarrationEvents' in state)),
+    ).toBe(true);
+  });
+
+  it('excludes hidden-entity facts from recovered combat narration input', async () => {
+    const e = bootstrapped();
+    let promptText = '';
+    const runner = {
+      async run(request: unknown) {
+        promptText = String((request as { text?: unknown }).text ?? '');
+        return {
+          narration: 'The turn resolves.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'narrating',
+      turnId: 'hidden-fact-turn',
+      narrationAttempts: 0,
+      entities: e.state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, hidden: true }
+          : entity,
+      ),
+      turnNarrationEvents: [
+        {
+          type: 'HpChanged',
+          entityId: 'ent_goblin-minion_1',
+          delta: -9,
+          hp: 1,
+        },
+        { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+      ],
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await room.setPaused(account, false, true);
+    await room.drain();
+    expect(promptText).not.toContain('ent_goblin-minion_1');
+    expect(promptText).not.toContain('delta:-9');
+    expect(promptText).toContain('ent_aria');
+  });
+
+  it('retries an interrupted narration once after recovery with the persisted attempt count', async () => {
+    const e = bootstrapped();
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    const runner = {
+      async run(request: unknown) {
+        narrationStarted();
+        return {
+          narration: 'The recovered turn resolves.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'narrating',
+      turnId: 'saved-turn',
+      narrationAttempts: 1,
+      turnNarrationEvents: [
+        { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+      ],
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.setPaused(account, false, true);
+    await started;
+    await room.drain();
+
+    expect(
+      table.events.find((event) => event.type === 'NarrationAttemptStarted')
+        ?.payload,
+    ).toMatchObject({
+      turnId: 'saved-turn',
+      attempt: 2,
+    });
+    expect(
+      table.events.filter((event) => event.type === 'NarrationCommitted'),
+    ).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'TurnOpened'),
+    ).toHaveLength(1);
+  });
+
+  it('persists endpoint-error fallback and advances a combat turn', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'narrating',
+      turnId: 'endpoint-failure-turn',
+      narrationAttempts: 0,
+      turnNarrationEvents: [
+        { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+      ],
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    const runner = {
+      async run() {
+        narrationStarted();
+        throw new Error('narration endpoint unavailable');
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.setPaused(account, false, true);
+    await started;
+    await room.drain();
+
+    expect(
+      table.events.find((event) => event.type === 'TurnFallback')?.payload,
+    ).toMatchObject({
+      turnId: 'endpoint-failure-turn',
+      reason: 'endpoint-error',
+    });
+    expect(
+      table.events.filter((event) => event.type === 'NarrationCommitted'),
+    ).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'TurnOpened'),
+    ).toHaveLength(1);
+  });
+
+  it('commits the ADR-022 fallback without another DM call after two interrupted attempts', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'narrating',
+      turnId: 'saved-turn',
+      narrationAttempts: 2,
+      turnNarrationEvents: [
+        { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+      ],
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    let calls = 0;
+    const runner = {
+      async run() {
+        calls++;
+        throw new Error('fallback must not invoke the DM');
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.setPaused(account, false, true);
+    await room.drain();
+
+    expect(calls).toBe(0);
+    expect(
+      table.events.find((event) => event.type === 'NarrationCompleted')
+        ?.payload,
+    ).toMatchObject({
+      narration: expect.stringContaining('storyteller has lost the thread'),
+    });
+    expect(
+      table.events.filter((event) => event.type === 'NarrationCommitted'),
+    ).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'TurnOpened'),
+    ).toHaveLength(1);
   });
 });

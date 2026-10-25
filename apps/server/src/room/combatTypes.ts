@@ -16,6 +16,7 @@ export type CombatAttack = {
 export type CombatEntity = {
   id: string;
   name?: string;
+  hidden?: boolean;
   kind: 'character' | 'monster' | 'npc';
   team: string;
   pos: GridPos;
@@ -51,6 +52,14 @@ export type CombatPhase =
 export type RoomCombatState = {
   /** Missing only in legacy snapshots; runtime admission infers it from pendingReaction. */
   phase?: CombatPhase;
+  /** Stable identity and retry budget for the currently open combat turn. */
+  turnId?: string;
+  narrationAttempts?: number;
+  turnDeadline?: number;
+  /** Engine-only inputs retained with an open narration for deterministic restart retry. */
+  turnNarrationEvents?: Record<string, unknown>[];
+  /** Event-log sequence IDs for this turn, excluding hidden-combatant events. */
+  turnNarrationEventIds?: string[];
   map: Battlemap;
   entities: CombatEntity[];
   combat: {
