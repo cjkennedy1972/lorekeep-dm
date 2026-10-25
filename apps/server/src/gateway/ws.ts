@@ -20,6 +20,7 @@ import {
   PauseTableSchema,
   ResolveNowSchema,
   ConfigureRoundTimerSchema,
+  ConfigureTurnTimerSchema,
   KickSeatSchema,
   TransferHostSchema,
   ApproveLateJoinSchema,
@@ -1483,6 +1484,60 @@ export function installGateway(
                       error instanceof NotTableHostError
                         ? 'Only the table host can configure the round timer.'
                         : 'Round timer setting could not be accepted.',
+                    actionId: config.data.actionId,
+                  },
+                });
+              });
+          }
+          if (msg.type === 'ConfigureTurnTimer') {
+            const config = ConfigureTurnTimerSchema.safeParse(msg);
+            if (!config.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Turn timer setting is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
+            if (room.hasActionId(config.data.actionId)) return;
+            return requireCurrentCommandSeat()
+              .then(() => {
+                if (!room.reserveActionMutation(identity.accountId, 'host')) {
+                  send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'RATE_LIMITED',
+                      message: 'Too many requests. Try again later.',
+                      actionId: config.data.actionId,
+                    },
+                  });
+                  return;
+                }
+                return room.configureTurnTimer(
+                  identity.accountId,
+                  config.data.payload.durationMs,
+                  config.data.payload.timeoutAction,
+                  config.data.actionId,
+                );
+              })
+              .catch((error: unknown) => {
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code:
+                      error instanceof NotTableHostError
+                        ? 'NOT_HOST'
+                        : 'ACTION_REJECTED',
+                    message:
+                      error instanceof NotTableHostError
+                        ? 'Only the table host can configure the turn timer.'
+                        : 'Turn timer setting could not be accepted.',
                     actionId: config.data.actionId,
                   },
                 });

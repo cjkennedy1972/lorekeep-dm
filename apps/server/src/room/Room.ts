@@ -261,11 +261,7 @@ interface PendingSeatClaim {
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 
-/**
- * Advertised turn deadline carried by TurnOpened (ADR-033 §7.1 requires the
- * field). Informational only: nothing enforces expiry yet. The timer and the
- * TurnTimedOut producer are M4-6b, a separate PR.
- */
+/** Default party turn timer (ADR-033 §5.1); solo tables default to off. */
 const TURN_DEADLINE_MS = 90_000;
 const DRAIN_DEADLINE_MS = 30_000;
 const DEFAULT_ROUND_MS = 120_000;
@@ -647,6 +643,7 @@ export class Room {
       'TableEnded',
       'ChatMuteChanged',
       'RoundTimerConfigured',
+      'TurnTimerConfigured',
     ].includes(type)
       ? [
           ...(actionPayload.actionIds ?? []),
@@ -2084,12 +2081,12 @@ export class Room {
     };
     if (!combat.ended && combat.combat.activeEntityId) {
       const nextTurnId = randomUUID();
-      const deadline = Date.now() + TURN_DEADLINE_MS;
+      const deadline = this.newTurnDeadline();
       nextCombat = {
         ...nextCombat,
         phase: 'awaiting-command',
         turnId: nextTurnId,
-        turnDeadline: deadline,
+        turnDeadline: deadline ?? undefined,
       };
       events.push({
         type: 'TurnOpened',
@@ -3497,6 +3494,52 @@ export class Room {
     });
   }
 
+  /** Host-only (ADR-033 §5.1): turn timer 30-600 s or null (off), and the Dodge/hold timeout action. Applies from the next opened turn. */
+  configureTurnTimer(
+    accountId: string,
+    durationMs: number | null,
+    timeoutAction?: 'dodge' | 'hold',
+    actionId: string = randomUUID(),
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      if (
+        durationMs !== null &&
+        (!Number.isInteger(durationMs) ||
+          durationMs < 30_000 ||
+          durationMs > 600_000)
+      )
+        throw new Error('Turn timer must be between 30 and 600 seconds');
+      if (
+        !this.store.isTableHost ||
+        !(await this.store.isTableHost(this.sessionId, accountId))
+      )
+        throw new NotTableHostError('Only the table host can configure turns');
+      await this.persist('TurnTimerConfigured', {
+        durationMs,
+        ...(timeoutAction ? { timeoutAction } : {}),
+        actionId,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'TurnTimerConfigured',
+        payload: { durationMs, ...(timeoutAction ? { timeoutAction } : {}) },
+      } as ServerMessage);
+    });
+  }
+
+  /** Configured turn timer in ms, or null when off (ADR-033 §5.1: 90 s party, off solo). */
+  private turnTimerMs(): number | null {
+    return (
+      this.state.turnTimerMs ?? (this.bindingEnforced ? TURN_DEADLINE_MS : null)
+    );
+  }
+
+  private newTurnDeadline(): number | null {
+    const ms = this.turnTimerMs();
+    return ms === null ? null : Date.now() + ms;
+  }
+
   configureRoundTimer(
     accountId: string,
     durationMs: number | null,
@@ -4605,7 +4648,7 @@ export class Room {
           initialCombat.combat.activeEntityId
         ) {
           const openedId = randomUUID();
-          const deadline = Date.now() + TURN_DEADLINE_MS;
+          const deadline = this.newTurnDeadline();
           turnGameState = {
             ...turnGameState,
             combatRoom: {
@@ -4613,7 +4656,7 @@ export class Room {
               phase: 'awaiting-command',
               turnId: openedId,
               narrationAttempts: 0,
-              turnDeadline: deadline,
+              turnDeadline: deadline ?? undefined,
             },
           };
           combatEvents.push({
@@ -4647,13 +4690,13 @@ export class Room {
               };
             } else {
               const nextTurnId = randomUUID();
-              const deadline = Date.now() + TURN_DEADLINE_MS;
+              const deadline = this.newTurnDeadline();
               const nextCombat = {
                 ...combatRoom,
                 phase: 'awaiting-command' as const,
                 turnId: nextTurnId,
                 narrationAttempts: 0,
-                turnDeadline: deadline,
+                turnDeadline: deadline ?? undefined,
                 turnNarrationEvents: undefined,
                 turnNarrationEventIds: undefined,
               };

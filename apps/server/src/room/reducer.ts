@@ -248,6 +248,17 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
         .durationMs,
     });
   }
+  if (event.type === 'TurnTimerConfigured') {
+    const { durationMs, timeoutAction } = event.payload as {
+      durationMs: number | null;
+      timeoutAction?: 'dodge' | 'hold';
+    };
+    return RoomStateSchema.parse({
+      ...state,
+      turnTimerMs: durationMs,
+      ...(timeoutAction ? { turnTimeoutAction: timeoutAction } : {}),
+    });
+  }
   if (event.type === 'SeatJoined') {
     const seat = event.payload as Seat;
     if (state.seats.some((item) => item.accountId === seat.accountId))
