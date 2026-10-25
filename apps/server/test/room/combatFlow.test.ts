@@ -1256,7 +1256,9 @@ describe('Room: one persisted narration per resolved combat turn', () => {
       turnId: 'combat-turn-private-resolution',
       narrationAttempts: 0,
       entities: e.state.entities.map((entity) =>
-        entity.id === 'ent_goblin-minion_1' ? { ...entity, hidden: true } : entity,
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, hidden: true }
+          : entity,
       ),
       combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
     };
@@ -1294,7 +1296,9 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     await room.setPaused(account, false, true);
     await room.drain();
 
-    expect(table.events.some((event) => event.type === 'TurnResolved')).toBe(true);
+    expect(table.events.some((event) => event.type === 'TurnResolved')).toBe(
+      true,
+    );
     expect(
       otherMessages.some((message) => message.type === 'TurnResolved'),
     ).toBe(false);
@@ -1554,11 +1558,18 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     await started;
     await room.drain();
 
-    expect(table.events.find((event) => event.type === 'TurnFallback')?.payload)
-      .toMatchObject({ turnId: 'endpoint-failure-turn', reason: 'endpoint-error' });
-    expect(table.events.filter((event) => event.type === 'NarrationCommitted'))
-      .toHaveLength(1);
-    expect(table.events.filter((event) => event.type === 'TurnOpened')).toHaveLength(1);
+    expect(
+      table.events.find((event) => event.type === 'TurnFallback')?.payload,
+    ).toMatchObject({
+      turnId: 'endpoint-failure-turn',
+      reason: 'endpoint-error',
+    });
+    expect(
+      table.events.filter((event) => event.type === 'NarrationCommitted'),
+    ).toHaveLength(1);
+    expect(
+      table.events.filter((event) => event.type === 'TurnOpened'),
+    ).toHaveLength(1);
   });
 
   it('commits the ADR-022 fallback without another DM call after two interrupted attempts', async () => {
