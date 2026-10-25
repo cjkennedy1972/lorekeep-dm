@@ -377,29 +377,29 @@ export function createCombatRuntime(
           now,
         );
         // One EntityMoved for the whole path unless a reaction interrupted it.
-        const events: Record<string, unknown>[] = [
-          { type: 'MoveStarted', entityId: actorId, path: route.path },
-          ...(moved.pending.length
-            ? (moved.events as unknown as Record<string, unknown>[])
-            : [
-                {
-                  type: 'EntityMoved',
-                  entityId: actorId,
-                  path: route.path,
-                  cost: route.cost,
-                },
-              ]),
-        ];
-        if (!moved.pending.length)
-          events.push({
-            type: 'MoveEnded',
-            entityId: actorId,
-            reason:
-              moved.state.hp?.[actorId] !== undefined &&
-              moved.state.hp[actorId]! <= 0
-                ? 'incapacitated'
-                : 'complete',
-          });
+        const engineEvents = moved.events as unknown as Record<
+          string,
+          unknown
+        >[];
+        const events: Record<string, unknown>[] = moved.pending.length
+          ? [
+              { type: 'MoveStarted', entityId: actorId, path: route.path },
+              ...engineEvents,
+            ]
+          : [
+              { type: 'MoveStarted', entityId: actorId, path: route.path },
+              {
+                type: 'EntityMoved',
+                entityId: actorId,
+                path: route.path,
+                cost: route.cost,
+              },
+              {
+                type: 'MoveEnded',
+                entityId: actorId,
+                reason: moved.movementEnd ?? 'complete',
+              },
+            ];
         return { state: next, events };
       }
       return reject(

@@ -20,6 +20,24 @@
       ]
     },
     {
+      "type": "MoveStarted",
+      "entityId": "pc-aria",
+      "path": [
+        {
+          "x": 9,
+          "y": 4
+        },
+        {
+          "x": 9,
+          "y": 3
+        },
+        {
+          "x": 9,
+          "y": 2
+        }
+      ]
+    },
+    {
       "type": "EntityMoved",
       "entityId": "pc-aria",
       "path": [
@@ -136,6 +154,11 @@
         ],
         "total": 10
       }
+    },
+    {
+      "type": "MoveEnded",
+      "entityId": "pc-aria",
+      "reason": "complete"
     },
     {
       "type": "SlotSpent",

@@ -77,9 +77,7 @@ describe('movement and opportunity attacks', () => {
     expect(resumed.events.filter((e) => e.type === 'MoveStarted')).toHaveLength(
       0,
     );
-    expect(resumed.events.filter((e) => e.type === 'MoveEnded')).toEqual([
-      { type: 'MoveEnded', entityId: 'mover', reason: 'complete' },
-    ]);
+    expect('ok' in resumed && resumed.movementEnd).toBe('complete');
     expect(
       'ok' in resumed &&
         resumed.state.entities.find((e) => e.id === 'mover')?.pos,
@@ -128,11 +126,7 @@ describe('movement and opportunity attacks', () => {
       x: 3,
       y: 0,
     });
-    expect(resumed.events).toContainEqual({
-      type: 'MoveEnded',
-      entityId: 'mover',
-      reason: 'blocked',
-    });
+    expect(resumed.movementEnd).toBe('blocked');
   });
   test('disengage and forced movement suppress reactions', () => {
     for (const mode of ['disengage', 'forced'] as const) {

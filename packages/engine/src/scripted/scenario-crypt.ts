@@ -158,6 +158,15 @@ export function runCryptScenario(seed = 2901): ScriptedCombatLog {
     ],
   );
   if ('error' in movement) throw new Error(movement.error);
+  events.push({
+    type: 'MoveStarted',
+    entityId: 'pc-aria',
+    path: [
+      { x: 9, y: 4 },
+      { x: 9, y: 3 },
+      { x: 9, y: 2 },
+    ],
+  });
   append(events, movement.events);
   while (movement.pending.length) {
     const pending = movement.pending[0]!;
@@ -173,8 +182,15 @@ export function runCryptScenario(seed = 2901): ScriptedCombatLog {
       state: reaction.state,
       events: [],
       pending: reaction.pending,
+      movementEnd: reaction.movementEnd,
     };
   }
+  if (movement.movementEnd)
+    events.push({
+      type: 'MoveEnded',
+      entityId: 'pc-aria',
+      reason: movement.movementEnd,
+    });
   const pc = entities[0]!;
   pc.pos = movement.state.entities.find((e) => e.id === pc.id)!.pos;
   pc.hp = movement.state.hp?.[pc.id] ?? pc.hp;

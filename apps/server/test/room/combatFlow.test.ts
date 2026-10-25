@@ -20,6 +20,24 @@ afterEach(() => vi.useRealTimers());
 const NOW = 1_000_000;
 const types = (events: readonly Record<string, unknown>[]) =>
   events.map((event) => String(event.type));
+const expectBalancedMovement = (
+  events: readonly Record<string, unknown>[],
+  paused: readonly string[] = [],
+) => {
+  const open = new Set<string>();
+  for (const event of events) {
+    if (event.type === 'MoveStarted') {
+      const id = String(event.entityId);
+      expect(open.has(id), `nested movement for ${id}`).toBe(false);
+      open.add(id);
+    } else if (event.type === 'MoveEnded') {
+      const id = String(event.entityId);
+      expect(open.has(id), `orphan MoveEnded for ${id}`).toBe(true);
+      open.delete(id);
+    }
+  }
+  expect([...open].sort()).toEqual([...paused].sort());
+};
 const ok = <T extends object>(value: T | { code: string }) => {
   if ('code' in value) throw new Error(`rejected: ${value.code}`);
   return value;
@@ -530,6 +548,19 @@ describe('action economy for spells', () => {
 
 describe('opportunity attack reactions', () => {
   const leave = { command: 'move', destination: { x: 7, y: 6 } } as const;
+  it('balances an uninterrupted move', () => {
+    const { runtime, state } = engaged();
+    const moved = ok(
+      runtime.execute(
+        state,
+        'ent_aria',
+        { command: 'move', destination: { x: 7, y: 3 } },
+        { now: NOW },
+      ),
+    );
+    expectBalancedMovement(moved.events);
+  });
+
   const provoke = () => {
     const e = engaged();
     const moved = ok(
@@ -561,6 +592,7 @@ describe('opportunity attack reactions', () => {
       expect.objectContaining({ type: 'MoveStarted', entityId: 'ent_aria' }),
     ]);
     expect(moved.state.phase).toBe('reaction-pending');
+    expectBalancedMovement(moved.events, ['ent_aria']);
   });
 
   it('refuses every other command while the prompt is open', () => {
@@ -610,6 +642,7 @@ describe('opportunity attack reactions', () => {
       x: 7,
       y: 6,
     });
+    expectBalancedMovement([...moved.events, ...taken.events]);
   });
 
   it('decline: no attack is made and the move continues', () => {
@@ -645,6 +678,7 @@ describe('opportunity attack reactions', () => {
         )
         .map((event) => event.type),
     ).toEqual(['MoveStarted', 'MoveEnded']);
+    expectBalancedMovement([...moved.events, ...declined.events]);
     expect(declined.state.entities.find((e) => e.id === 'ent_aria')!.hp).toBe(
       30,
     );
@@ -729,6 +763,7 @@ describe('opportunity attack reactions', () => {
         )
         .map((event) => event.type),
     ).toEqual(['MoveStarted', 'MoveEnded']);
+    expectBalancedMovement([...moved.events, ...result.events]);
     expect(result.events).toContainEqual({
       type: 'MoveEnded',
       entityId: 'ent_aria',

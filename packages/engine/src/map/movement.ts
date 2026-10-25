@@ -76,6 +76,7 @@ export type MovementCommandResult = {
   state: MovementCommandState;
   events: MovementEvent[];
   pending: PendingReaction[];
+  movementEnd?: 'complete' | 'blocked' | 'incapacitated' | 'timed-out';
 };
 export type MovementError = { error: string; hint: string; reason: string };
 export type ReactionResult = MovementCommandResult | MovementError;
@@ -262,7 +263,16 @@ export function moveAlong(
       return { ok: true, state: current, events, pending };
     }
   }
-  return { ok: true, state: current, events, pending };
+  return {
+    ok: true,
+    state: current,
+    events,
+    pending,
+    movementEnd:
+      current.hp?.[entityId] !== undefined && current.hp[entityId]! <= 0
+        ? 'incapacitated'
+        : 'complete',
+  };
 }
 
 /** Resolve or decline one opportunity attack, then continue the interrupted path. */
@@ -298,6 +308,11 @@ export function resolveReaction(
         },
       ],
       pending: [],
+      ...(!Object.values(pendingReactions).some(
+        (item) => item.moverId === mover.id,
+      )
+        ? { movementEnd: 'incapacitated' as const }
+        : {}),
     };
   }
   let current: MovementCommandState = {
@@ -343,26 +358,20 @@ export function resolveReaction(
     return {
       ok: true,
       state: current,
-      events: [
-        ...events,
-        ...(Object.values(current.pendingReactions ?? {}).some(
-          (item) => item.moverId === mover.id,
-        )
-          ? []
-          : [
-              {
-                type: 'MoveEnded' as const,
-                entityId: mover.id,
-                reason:
-                  hpOf(current, mover) <= 0
-                    ? ('incapacitated' as const)
-                    : ('complete' as const),
-              },
-            ]),
-      ],
+      events,
       pending: Object.values(current.pendingReactions ?? {}).filter(
         (p) => p.moverId === mover.id,
       ),
+      ...(!Object.values(current.pendingReactions ?? {}).some(
+        (item) => item.moverId === mover.id,
+      )
+        ? {
+            movementEnd:
+              hpOf(current, mover) <= 0
+                ? ('incapacitated' as const)
+                : ('complete' as const),
+          }
+        : {}),
     };
   const unresolvedForMover = Object.values(
     current.pendingReactions ?? {},
@@ -379,8 +388,13 @@ export function resolveReaction(
       pending.mode,
     );
     if ('error' in continuation) {
-      events.push({ type: 'MoveEnded', entityId: mover.id, reason: 'blocked' });
-      return { ok: true, state: resumed, events, pending: [] };
+      return {
+        ok: true,
+        state: resumed,
+        events,
+        pending: [],
+        movementEnd: 'blocked',
+      };
     }
     resumed = continuation.state;
     events.push(...continuation.events);
@@ -393,10 +407,11 @@ export function resolveReaction(
       };
     if (hpOf(resumed, mover) <= 0) break;
   }
-  events.push({
-    type: 'MoveEnded',
-    entityId: mover.id,
-    reason: hpOf(resumed, mover) <= 0 ? 'incapacitated' : 'complete',
-  });
-  return { ok: true, state: resumed, events, pending: [] };
+  return {
+    ok: true,
+    state: resumed,
+    events,
+    pending: [],
+    movementEnd: hpOf(resumed, mover) <= 0 ? 'incapacitated' : 'complete',
+  };
 }
