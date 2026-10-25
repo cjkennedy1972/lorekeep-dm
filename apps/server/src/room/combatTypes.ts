@@ -55,7 +55,10 @@ export type RoomCombatState = {
   /** Stable identity and retry budget for the currently open combat turn. */
   turnId?: string;
   narrationAttempts?: number;
+  /** Absolute epoch-ms expiry of the running turn timer (ADR-033 §5, §7.2); absent when off or frozen. */
   turnDeadline?: number;
+  /** Time left on a frozen turn timer (reaction window, table pause); the deadline is rebuilt when it thaws. */
+  turnTimerRemainingMs?: number;
   /** Engine-only inputs retained with an open narration for deterministic restart retry. */
   turnNarrationEvents?: Record<string, unknown>[];
   /** Event-log sequence IDs for this turn, excluding hidden-combatant events. */
