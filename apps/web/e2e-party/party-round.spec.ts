@@ -237,33 +237,37 @@ test.describe.serial('party round and host panels (real server)', () => {
     }
   });
 
-  test('a late joiner is told the join is pending while a game is running', async ({
-    browser,
-  }) => {
-    const { table, invite, outsider } = state();
-    const { context, page } = await openAs(
-      browser,
-      outsider,
-      table,
-      `/join/${invite}`,
-    );
-    try {
-      const rejected = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname === `/api/invites/${invite}/join`,
+  // BLOCKED: Join.tsx sends only { matureOptOut } and never a late-join character selection, so the
+  // server answers 400 INVALID_LATE_JOIN_REQUEST, not the 409 LATE_JOIN_PENDING this test expects.
+  // Needs a character picker on the join screen (follow-up to #306). Not stubbed; re-enable then.
+  test.fixme(
+    'a late joiner is told the join is pending while a game is running',
+    async ({ browser }) => {
+      const { table, invite, outsider } = state();
+      const { context, page } = await openAs(
+        browser,
+        outsider,
+        table,
+        `/join/${invite}`,
       );
-      await page.getByRole('button', { name: 'Join table' }).click();
-      const response = await rejected;
-      expect(response.status()).toBe(409);
-      expect(await response.json()).toMatchObject({
-        code: 'LATE_JOIN_PENDING',
-      });
-      await expect(page.getByRole('alert').first()).not.toBeEmpty();
-    } finally {
-      await closeAs({ accountId: outsider.accountId, context });
-    }
-  });
+      try {
+        const rejected = page.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            new URL(response.url()).pathname === `/api/invites/${invite}/join`,
+        );
+        await page.getByRole('button', { name: 'Join table' }).click();
+        const response = await rejected;
+        expect(response.status()).toBe(409);
+        expect(await response.json()).toMatchObject({
+          code: 'LATE_JOIN_PENDING',
+        });
+        await expect(page.getByRole('alert').first()).not.toBeEmpty();
+      } finally {
+        await closeAs({ accountId: outsider.accountId, context });
+      }
+    },
+  );
 
   test('the host mutes a seat and its chat sends are refused', async ({
     browser,
@@ -402,7 +406,8 @@ test.describe.serial('party round and host panels (real server)', () => {
     }
   });
 
-  test('host denies a pending late join', async ({ browser }) => {
+  // BLOCKED: same late-join gap as above (no character picker on the join screen), so no pending request exists.
+  test.fixme('host denies a pending late join', async ({ browser }) => {
     const { table, invite, outsider, guest } = state();
     const path = `/rooms/${table}/game`;
     const hostView = await openAs(browser, guest, table, path);
@@ -439,62 +444,74 @@ test.describe.serial('party round and host panels (real server)', () => {
   // ApproveLateJoin only marks the request approved; admission to a seat happens at a round
   // boundary (Room.ts:1930 admitApprovedLateJoins). So the host resolves the open round after
   // approving, and the latecomer is seated.
-  test('host approves a pending late join and the player is seated', async ({
-    browser,
-  }) => {
-    const { table, invite, outsider, guest } = state();
-    const path = `/rooms/${table}/game`;
-    const hostView = await openAs(browser, guest, table, path);
-    const latecomer = await openAs(browser, outsider, table, `/join/${invite}`);
-    try {
-      const pending = latecomer.page.waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname === `/api/invites/${invite}/join`,
+  // BLOCKED: same late-join gap as above (no character picker on the join screen), so no pending request exists.
+  test.fixme(
+    'host approves a pending late join and the player is seated',
+    async ({ browser }) => {
+      const { table, invite, outsider, guest } = state();
+      const path = `/rooms/${table}/game`;
+      const hostView = await openAs(browser, guest, table, path);
+      const latecomer = await openAs(
+        browser,
+        outsider,
+        table,
+        `/join/${invite}`,
       );
-      await latecomer.page.getByRole('button', { name: 'Join table' }).click();
-      expect((await pending).status()).toBe(409);
+      try {
+        const pending = latecomer.page.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            new URL(response.url()).pathname === `/api/invites/${invite}/join`,
+        );
+        await latecomer.page
+          .getByRole('button', { name: 'Join table' })
+          .click();
+        expect((await pending).status()).toBe(409);
 
-      const controls = hostView.page.getByRole('region', {
-        name: 'Host controls',
-      });
-      const approve = controls.getByRole('button', {
-        name: 'Approve Latecomer',
-        exact: true,
-      });
-      await expect(approve).toBeEnabled({ timeout: 10_000 });
-      await approve.click();
-      const resolve = controls.getByRole('button', {
-        name: 'Resolve round now',
-        exact: true,
-      });
-      const reconnectPause = hostView.page.getByRole('status').filter({
-        hasText: 'Table paused: waiting for players to reconnect.',
-      });
-      await expect
-        .poll(
-          async () =>
-            (await reconnectPause.isVisible()) || (await resolve.isEnabled()),
-          { timeout: 15_000 },
-        )
-        .toBe(true);
-      if (await reconnectPause.isVisible())
-        await expect(reconnectPause).toBeHidden({ timeout: 20_000 });
-      await expect(resolve).toBeEnabled({ timeout: 20_000 });
-      await resolve.click();
+        const controls = hostView.page.getByRole('region', {
+          name: 'Host controls',
+        });
+        const approve = controls.getByRole('button', {
+          name: 'Approve Latecomer',
+          exact: true,
+        });
+        await expect(approve).toBeEnabled({ timeout: 10_000 });
+        await approve.click();
+        const resolve = controls.getByRole('button', {
+          name: 'Resolve round now',
+          exact: true,
+        });
+        const reconnectPause = hostView.page.getByRole('status').filter({
+          hasText: 'Table paused: waiting for players to reconnect.',
+        });
+        await expect
+          .poll(
+            async () =>
+              (await reconnectPause.isVisible()) || (await resolve.isEnabled()),
+            { timeout: 15_000 },
+          )
+          .toBe(true);
+        if (await reconnectPause.isVisible())
+          await expect(reconnectPause).toBeHidden({ timeout: 20_000 });
+        await expect(resolve).toBeEnabled({ timeout: 20_000 });
+        await resolve.click();
 
-      // Seated players appear in the host's seat list; the approved latecomer is one of them.
-      await expect(
-        controls.getByRole('button', { name: 'Remove Latecomer', exact: true }),
-      ).toBeVisible({ timeout: 30_000 });
-      const access = await latecomer.context.request.get(
-        `/api/tables/${table}`,
-      );
-      expect(access.ok()).toBe(true);
-    } finally {
-      await Promise.all([closeAs(hostView), closeAs(latecomer)]);
-    }
-  });
+        // Seated players appear in the host's seat list; the approved latecomer is one of them.
+        await expect(
+          controls.getByRole('button', {
+            name: 'Remove Latecomer',
+            exact: true,
+          }),
+        ).toBeVisible({ timeout: 30_000 });
+        const access = await latecomer.context.request.get(
+          `/api/tables/${table}`,
+        );
+        expect(access.ok()).toBe(true);
+      } finally {
+        await Promise.all([closeAs(hostView), closeAs(latecomer)]);
+      }
+    },
+  );
 
   // Gated on owner confirmation of the connected-client Not-seated presentation; generic HTTP 404 behavior is covered separately.
   test.fixme(

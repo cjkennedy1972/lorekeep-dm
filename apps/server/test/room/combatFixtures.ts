@@ -7,6 +7,7 @@ import {
   createCombatRuntime,
   type RoomCombatState,
 } from '../../src/room/combat.js';
+import type { PartyBindings } from '../../src/room/combatBootstrap.js';
 
 export const catalog = loadCatalog();
 const cryptJson = JSON.parse(
@@ -80,8 +81,8 @@ export function startCombat(
     enemies: [{ monsterId: 'srd:monster/goblin-minion', count: 2 }],
     ambushSide: 'party',
   },
+  game: ReturnType<typeof preCombatGame> = preCombatGame(),
 ) {
-  const game = preCombatGame();
   const result = execute(
     { ...game.gameEngine, catalog } as never,
     { name: 'start_combat', args },
@@ -96,6 +97,52 @@ export function startCombat(
       result.value,
     ),
   };
+}
+
+/** Pre-combat state for party seats: actors, attacks, and hp keyed by each sheet's own id. */
+export function partyPreCombatGame(
+  characters: Record<string, CharacterInput>,
+): ReturnType<typeof preCombatGame> {
+  const sheets = Object.values(characters);
+  const attack = (c: CharacterInput) => ({
+    id: `${c.id}-staff`,
+    ownerId: c.id,
+    attackBonus: 4,
+    damage: '1d6+2',
+    damageType: 'bludgeoning',
+    targetAc: 10,
+    targetKind: 'monster',
+  });
+  return {
+    characters,
+    gameEngine: {
+      actors: Object.fromEntries(sheets.map((c) => [c.id, c])),
+      attacks: Object.fromEntries(
+        sheets.map((c) => [`${c.id}-staff`, attack(c)]),
+      ),
+      hp: Object.fromEntries(sheets.map((c) => [c.id, c.hp.current])),
+      ac: Object.fromEntries(sheets.map((c) => [c.id, 12])),
+      conditions: {},
+      map: cryptMap,
+      world,
+    },
+  } as ReturnType<typeof preCombatGame>;
+}
+
+/**
+ * Start the real encounter over party sheets, then bootstrap it with the same seat bindings the
+ * live Room uses, so party entities come out as ent_seat_<seatId> exactly as in production.
+ */
+export function partyCombat(
+  seed: number,
+  characters: Record<string, CharacterInput>,
+  bindings: PartyBindings,
+  now = Date.now(),
+) {
+  const started = startCombat(seed, undefined, partyPreCombatGame(characters));
+  const rec = createCombatRuntime(catalog).reconcile(started, now, bindings);
+  if (!rec) throw new Error('party combat was not bootstrapped');
+  return rec.gameState;
 }
 
 /** Bootstrapped Room combat for a fixed seed, party first. */

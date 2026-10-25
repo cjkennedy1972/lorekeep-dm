@@ -191,3 +191,119 @@ describe('map keyboard movement', () => {
     );
   });
 });
+
+describe('map pointer equivalent', () => {
+  it('a cell pick enters move preview with visible Confirm and Cancel controls', async () => {
+    const store = setup();
+    const user = userEvent.setup();
+    render(
+      <MapKeyboard store={store}>
+        {(pickCell) => (
+          <button type="button" onClick={() => pickCell({ x: 3, y: 2 })}>
+            Pick 4,3
+          </button>
+        )}
+      </MapKeyboard>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Pick 4,3' }));
+    expect(
+      screen.getByRole('application', { name: 'Battle map' }),
+    ).toHaveAttribute('data-moving', 'true');
+    expect(screen.getByText(/Move preview: 15 feet/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm move' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Confirm move' }));
+    expect(
+      store.getState().mapEntities.find((item) => item.id === 'hero')?.pos,
+    ).toEqual({ x: 3, y: 2 });
+  });
+
+  it('Cancel move leaves the token where it was', async () => {
+    const store = setup();
+    const user = userEvent.setup();
+    render(
+      <MapKeyboard store={store}>
+        {(pickCell) => (
+          <button type="button" onClick={() => pickCell({ x: 3, y: 2 })}>
+            Pick 4,3
+          </button>
+        )}
+      </MapKeyboard>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Pick 4,3' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel move' }));
+    expect(screen.queryByRole('button', { name: 'Confirm move' })).toBeNull();
+    expect(
+      store.getState().mapEntities.find((item) => item.id === 'hero')?.pos,
+    ).toEqual({ x: 0, y: 2 });
+  });
+
+  it('Enter on Confirm activates the button without re-entering move mode', async () => {
+    const store = setup();
+    const user = userEvent.setup();
+    render(
+      <MapKeyboard store={store}>
+        {(pickCell) => (
+          <button type="button" onClick={() => pickCell({ x: 3, y: 2 })}>
+            Pick 4,3
+          </button>
+        )}
+      </MapKeyboard>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Pick 4,3' }));
+    screen.getByRole('button', { name: 'Confirm move' }).focus();
+    await user.keyboard('{Enter}');
+    expect(
+      store.getState().mapEntities.find((item) => item.id === 'hero')?.pos,
+    ).toEqual({ x: 3, y: 2 });
+  });
+});
+
+describe('reaction prompt keyboard focus', () => {
+  const prompt = {
+    reactionId: 'r1',
+    entityId: 'goblin',
+    moverId: 'hero',
+    trigger: 'leaves reach',
+  };
+
+  it('shows remaining seconds as text and keeps Tab inside the dialog', async () => {
+    const store = setup();
+    const user = userEvent.setup();
+    const onReactionChoice = vi.fn();
+    render(
+      <MapKeyboard
+        store={store}
+        reactionPrompt={prompt}
+        onReactionChoice={onReactionChoice}
+        reactionRemainingMs={14_200}
+      />,
+    );
+    expect(screen.getByText(/Respond within 15 seconds/)).toBeInTheDocument();
+    const accept = screen.getByRole('button', { name: 'Accept' });
+    const decline = screen.getByRole('button', { name: 'Decline' });
+    accept.focus();
+    await user.keyboard('{Tab}');
+    expect(decline).toHaveFocus();
+    await user.keyboard('{Tab}');
+    expect(accept).toHaveFocus();
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(decline).toHaveFocus();
+    expect(onReactionChoice).not.toHaveBeenCalled();
+  });
+
+  it('Escape declines through the existing take|decline wire', async () => {
+    const store = setup();
+    const user = userEvent.setup();
+    const onReactionChoice = vi.fn();
+    render(
+      <MapKeyboard
+        store={store}
+        reactionPrompt={prompt}
+        onReactionChoice={onReactionChoice}
+      />,
+    );
+    screen.getByRole('button', { name: 'Accept' }).focus();
+    await user.keyboard('{Escape}');
+    expect(onReactionChoice).toHaveBeenCalledWith('r1', 'decline');
+  });
+});
