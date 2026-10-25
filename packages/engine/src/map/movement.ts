@@ -381,6 +381,32 @@ export function resolveReaction(
   let resumed = current;
   for (const step of pending.remainingPath) {
     const liveMover = resumed.entities.find((e) => e.id === mover.id)!;
+    // Forced movement has separate rules and is intentionally outside this revalidation.
+    if (pending.mode !== 'forced') {
+      const moverConditions = conditionsOf(resumed, liveMover);
+      if (
+        hpOf(resumed, liveMover) <= 0 ||
+        moverConditions.has('incapacitated')
+      )
+        return {
+          ok: true,
+          state: resumed,
+          events,
+          pending: [],
+          movementEnd: 'incapacitated',
+        };
+      if (
+        moverConditions.has('restrained') ||
+        moverConditions.has('grappled')
+      )
+        return {
+          ok: true,
+          state: resumed,
+          events,
+          pending: [],
+          movementEnd: 'blocked',
+        };
+    }
     const continuation = moveAlong(
       resumed,
       mover.id,
