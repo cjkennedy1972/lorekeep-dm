@@ -1247,6 +1247,60 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     await room.drain();
   });
 
+  it('keeps TurnResolved and its eventIds off the other seated player socket', async () => {
+    const e = bootstrapped();
+    const otherAccount = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'awaiting-command',
+      turnId: 'combat-turn-private-resolution',
+      narrationAttempts: 0,
+      entities: e.state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1' ? { ...entity, hidden: true } : entity,
+      ),
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const runner = {
+      async run(request: unknown) {
+        return {
+          narration: 'The turn resolves.',
+          events: [],
+          state: (request as { state?: unknown }).state ?? {},
+          usage: { in: 1, out: 1 },
+        } as never;
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: {
+          [account]: 'ent_aria',
+          [otherAccount]: 'ent_goblin-minion_1',
+        },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const otherMessages: import('@game/schema').ServerMessage[] = [];
+    await joinSeated(room, otherAccount, {
+      send: (message) => otherMessages.push(message),
+    });
+
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'end-turn',
+    });
+    await room.setPaused(account, false, true);
+    await room.drain();
+
+    expect(table.events.some((event) => event.type === 'TurnResolved')).toBe(true);
+    expect(
+      otherMessages.some((message) => message.type === 'TurnResolved'),
+    ).toBe(false);
+    expect(JSON.stringify(otherMessages)).not.toMatch(/eventIds/);
+  });
+
   it('persists TurnResolved and holds the next turn in narrating phase', async () => {
     const e = bootstrapped();
     const combat: RoomCombatState = {
