@@ -6,7 +6,7 @@ import {
   type MovementEvent,
 } from '@game/rules-engine';
 import type { GridPos } from '@game/schema';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
 
 type Props = {
@@ -22,6 +22,10 @@ type Props = {
     trigger: string;
   } | null;
   onReactionChoice?: (reactionId: string, choice: 'take' | 'decline') => void;
+  /** Remaining server window for the prompt; shown as text so the deadline is not conveyed by motion or color. */
+  reactionRemainingMs?: number;
+  /** Map surface; receives pickCell so a pointer click enters the same move preview as the keyboard. */
+  children?: ReactNode | ((pickCell: (cell: GridPos) => void) => ReactNode);
 };
 
 const same = (a: GridPos, b: GridPos) => a.x === b.x && a.y === b.y;
@@ -35,6 +39,8 @@ export function MapKeyboard({
   onMove,
   reactionPrompt,
   onReactionChoice,
+  reactionRemainingMs,
+  children,
 }: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
   const [cursor, setCursor] = useState<GridPos | null>(null);
@@ -166,6 +172,25 @@ export function MapKeyboard({
       )[0];
     if (enemy) selectEntity(enemy.id);
   };
+  /** Pointer equivalent of arrow-key destination choice: an occupied cell selects that token, an empty cell sets the move cursor. */
+  const pickCell = (cell: GridPos) => {
+    if (!selectedId) return;
+    const occupant = placed.find((item) => same(item.pos, cell));
+    if (occupant) {
+      selectEntity(occupant.id);
+      return;
+    }
+    setCursor({ ...cell });
+    setMoving(true);
+    announce(
+      `Destination ${cell.x + 1}, ${cell.y + 1} selected. Confirm move or cancel.`,
+    );
+  };
+  const cancelMove = () => {
+    setMoving(false);
+    setCursor(start);
+    announce('Movement cancelled.');
+  };
   const confirm = () => {
     if (!movementState || !selectedId || !preview) return;
     if (preview.error) {
@@ -255,6 +280,8 @@ export function MapKeyboard({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Keys pressed on child buttons or the reaction dialog belong to those controls, not the map.
+    if (event.target !== event.currentTarget) return;
     if (reaction) return;
     if (
       ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)
@@ -351,7 +378,23 @@ export function MapKeyboard({
         {point ? `; cursor ${point.x + 1}, ${point.y + 1}` : ''}
       </p>
       {moving && (
-        <p>Move preview: {preview?.error ?? `${preview?.cost ?? 0} feet`}</p>
+        <>
+          <p>Move preview: {preview?.error ?? `${preview?.cost ?? 0} feet`}</p>
+          <div role="group" aria-label="Move confirmation">
+            <button
+              type="button"
+              onClick={confirm}
+              disabled={
+                !preview || Boolean(preview.error) || preview.path.length < 2
+              }
+            >
+              Confirm move
+            </button>
+            <button type="button" onClick={cancelMove}>
+              Cancel move
+            </button>
+          </div>
+        </>
       )}
       <div aria-live="polite" aria-atomic="true" role="status">
         {message}
@@ -367,6 +410,28 @@ export function MapKeyboard({
             if (event.key === 'Escape') {
               event.preventDefault();
               resolve('decline');
+              return;
+            }
+            // Focus stays inside the modal: Tab and Shift+Tab wrap between its two buttons.
+            if (event.key === 'Tab' && dialogRef) {
+              const focusable = Array.from(
+                dialogRef.querySelectorAll<HTMLButtonElement>('button'),
+              );
+              const first = focusable[0];
+              const last = focusable.at(-1);
+              if (!first || !last) return;
+              event.preventDefault();
+              const index = focusable.indexOf(
+                document.activeElement as HTMLButtonElement,
+              );
+              const next = event.shiftKey
+                ? index <= 0
+                  ? last
+                  : focusable[index - 1]!
+                : index === -1 || index === focusable.length - 1
+                  ? first
+                  : focusable[index + 1]!;
+              next.focus();
             }
           }}
         >
@@ -375,10 +440,17 @@ export function MapKeyboard({
             {reaction.hostileId} can make an opportunity attack against{' '}
             {reaction.moverId}.
           </p>
+          {reactionRemainingMs !== undefined && (
+            <p>
+              Respond within {Math.ceil(reactionRemainingMs / 1000)} seconds; no
+              answer declines.
+            </p>
+          )}
           <button onClick={() => resolve('take')}>Accept</button>
           <button onClick={() => resolve('decline')}>Decline</button>
         </div>
       )}
+      {typeof children === 'function' ? children(pickCell) : children}
     </div>
   );
 }

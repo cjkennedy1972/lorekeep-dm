@@ -1,5 +1,6 @@
 import { rleDecode, type Battlemap } from '@game/schema';
 import type { MapDrawCommand, MapRenderer, MapView } from './MapRenderer.js';
+import type { TeamMarker, TokenDrawCommand } from './tokens.js';
 
 /** Stable pattern identities keep terrain distinguishable without relying on hue. */
 export function terrainPatternId(terrainId: string): string {
@@ -89,10 +90,12 @@ export class Canvas2DRenderer implements MapRenderer {
     return createMapDrawCommands(map);
   }
 
+  /** Tokens come from the same tracker-ordered list as the initiative tracker, so the active ring always matches the first entry. */
   draw(
     context: CanvasRenderingContext2D,
     map: Readonly<Battlemap>,
     view: Readonly<MapView> = {},
+    tokens: readonly TokenDrawCommand[] = [],
   ): readonly MapDrawCommand[] {
     const commands = this.render(map, view);
     const size = view.cellSize ?? 32;
@@ -200,6 +203,79 @@ export class Canvas2DRenderer implements MapRenderer {
           break;
       }
     }
+    for (const token of tokens) drawToken(context, token, size);
     return commands;
   }
+}
+
+/** Draws a combatant as a team shape with a letter; the active ring is a double stroke, not a color cue. */
+function drawToken(
+  context: CanvasRenderingContext2D,
+  token: TokenDrawCommand,
+  size: number,
+): void {
+  const span = size * token.footprint;
+  const cx = token.x * size + span / 2;
+  const cy = token.y * size + span / 2;
+  const radius = span * 0.36;
+  context.save();
+  if (token.active) {
+    context.strokeStyle = '#111111';
+    context.lineWidth = 3;
+    context.beginPath();
+    context.arc(cx, cy, radius + 5, 0, Math.PI * 2);
+    context.stroke();
+    context.setLineDash([3, 3]);
+    context.beginPath();
+    context.arc(cx, cy, radius + 9, 0, Math.PI * 2);
+    context.stroke();
+    context.setLineDash([]);
+  }
+  context.fillStyle = '#fffdf6';
+  context.strokeStyle = '#1d1a16';
+  context.lineWidth = 2;
+  drawShape(context, token.teamMarker.shape, cx, cy, radius);
+  context.fill();
+  context.stroke();
+  context.fillStyle = '#171411';
+  context.font = `bold ${Math.max(10, radius * 1.1)}px sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(token.teamMarker.letter, cx, cy);
+  context.restore();
+}
+
+function drawShape(
+  context: CanvasRenderingContext2D,
+  shape: TeamMarker['shape'],
+  cx: number,
+  cy: number,
+  r: number,
+): void {
+  context.beginPath();
+  if (shape === 'circle') {
+    context.arc(cx, cy, r, 0, Math.PI * 2);
+    return;
+  }
+  if (shape === 'square') {
+    context.rect(cx - r, cy - r, r * 2, r * 2);
+    return;
+  }
+  const sides =
+    shape === 'triangle'
+      ? 3
+      : shape === 'diamond'
+        ? 4
+        : shape === 'hexagon'
+          ? 6
+          : 5;
+  const rotation = shape === 'diamond' ? 0 : -Math.PI / 2;
+  for (let i = 0; i < sides; i++) {
+    const angle = rotation + (i * Math.PI * 2) / sides;
+    const px = cx + Math.cos(angle) * r;
+    const py = cy + Math.sin(angle) * r;
+    if (i === 0) context.moveTo(px, py);
+    else context.lineTo(px, py);
+  }
+  context.closePath();
 }

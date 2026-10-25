@@ -10,6 +10,8 @@ import {
   EngineEventSchema,
 } from '@game/schema';
 import { Canvas2DRenderer } from '../features/map/Canvas2DRenderer.js';
+import { hitTestCell } from '../features/map/hitTest.js';
+import { DEFAULT_VIEWPORT } from '../features/map/viewport.js';
 import { createTokenDrawCommands } from '../features/map/tokens.js';
 import { MapKeyboard } from '../features/map/keyboard.js';
 import { TokenTable } from '../features/map/TokenTable.js';
@@ -26,6 +28,26 @@ import { gameStore } from '../state/store.js';
 import { ChatPanel } from '../features/chat/ChatPanel.js';
 
 const renderer = new Canvas2DRenderer();
+const NARROW_QUERY = '(max-width: 760px)';
+
+/** Narrow screens start in list-driven combat; the canvas is opt-in. */
+function useNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia(NARROW_QUERY).matches,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return narrow;
+}
 type Tracker = NonNullable<ReturnType<typeof gameStore.getState>['tracker']>;
 type Entity = {
   id: string;
@@ -306,6 +328,9 @@ export function Game() {
   mapRef.current = map;
   const resyncAsked = useRef(false);
   const [reaction, setReaction] = useState<Reaction | null>(null);
+  const narrow = useNarrowViewport();
+  const [mapShown, setMapShown] = useState(false);
+  const mapVisible = !narrow || mapShown;
   const [reactionRemainingMs, setReactionRemainingMs] = useState(0);
   useEffect(() => {
     if (!reaction) {
@@ -788,37 +813,72 @@ export function Game() {
             onReactionChoice={(reactionId, choice) =>
               send({ command: 'reaction', reactionId, choice })
             }
-          />
-          <div
-            className="game-map__canvas"
-            aria-label={`Battle map ${map.w} columns by ${map.h} rows; tokens listed below`}
+            reactionRemainingMs={reaction ? reactionRemainingMs : undefined}
           >
-            <canvas
-              aria-hidden="true"
-              width={canvasSize.width}
-              height={canvasSize.height}
-              ref={(canvas) => {
-                if (canvas)
-                  renderer.draw(canvas.getContext('2d')!, map, {
-                    cellSize: 32,
-                  });
-              }}
-              data-command-count={canvasCommands.length}
-            />
-            <ul aria-label="Combat tokens">
-              {tokenCommands.map((token) => (
-                <li
-                  key={token.entityId}
-                  data-active={token.entityId === trackerFirst}
-                  data-x={token.x}
-                  data-y={token.y}
-                >
-                  {token.teamMarker.shape} {token.name} — {token.hpLabel}
-                  {token.active ? ', active' : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
+            {(pickCell) => (
+              <div
+                className="game-map__canvas"
+                aria-label={`Battle map ${map.w} columns by ${map.h} rows; tokens listed below`}
+              >
+                {/* Pointer input is a shortcut only; keyboard users reach the same move flow through MapKeyboard. */}
+                {narrow && (
+                  <button
+                    type="button"
+                    aria-expanded={mapShown}
+                    aria-controls="game-map-canvas"
+                    onClick={() => setMapShown((shown) => !shown)}
+                  >
+                    {mapShown ? 'Hide map' : 'Show map'}
+                  </button>
+                )}
+                {mapVisible && (
+                  <canvas
+                    id="game-map-canvas"
+                    aria-hidden="true"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const scaleX = event.currentTarget.width / rect.width;
+                      const scaleY = event.currentTarget.height / rect.height;
+                      const cell = hitTestCell(
+                        (event.clientX - rect.left) * scaleX,
+                        (event.clientY - rect.top) * scaleY,
+                        DEFAULT_VIEWPORT,
+                        32,
+                        map.w,
+                        map.h,
+                      );
+                      if (cell) pickCell(cell);
+                    }}
+                    width={canvasSize.width}
+                    height={canvasSize.height}
+                    ref={(canvas) => {
+                      if (canvas)
+                        renderer.draw(
+                          canvas.getContext('2d')!,
+                          map,
+                          { cellSize: 32 },
+                          tokenCommands,
+                        );
+                    }}
+                    data-command-count={canvasCommands.length}
+                  />
+                )}
+                <ul aria-label="Combat tokens">
+                  {tokenCommands.map((token) => (
+                    <li
+                      key={token.entityId}
+                      data-active={token.entityId === trackerFirst}
+                      data-x={token.x}
+                      data-y={token.y}
+                    >
+                      {token.teamMarker.shape} {token.name} — {token.hpLabel}
+                      {token.active ? ', active' : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </MapKeyboard>
           <TokenTable store={gameStore} viewerId={active ?? undefined} />
           <Describe store={gameStore} viewerId={active ?? undefined} />
         </section>

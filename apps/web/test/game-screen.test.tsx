@@ -311,7 +311,7 @@ describe('Game screen (live Room)', () => {
     push('CombatTracker', tracker([HERO_ID, 'ent_goblin']));
     const canvas = container.querySelector('canvas')!;
     expect(canvas).toHaveAttribute('aria-hidden', 'true');
-    expect(canvas.onclick).toBeNull();
+    // A click on the canvas is a shortcut into the same keyboard-reachable move preview; pointerdown and drag stay absent.
     expect(canvas.onpointerdown).toBeNull();
     expect(container.querySelector('[draggable="true"]')).toBeNull();
     // the move that a pointer could do is available from the keyboard map and as buttons
@@ -322,6 +322,66 @@ describe('Game screen (live Room)', () => {
     expect(map).toHaveAttribute('data-moving', 'true');
     for (const button of screen.getAllByRole('button')) {
       expect(button.tagName).toBe('BUTTON');
+    }
+  });
+});
+
+describe('Game screen narrow viewport', () => {
+  const stubNarrow = () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    return () => {
+      window.matchMedia = original;
+    };
+  };
+
+  it('starts in list-driven combat, opens the map on request, and keeps reactions operable', async () => {
+    const restore = stubNarrow();
+    try {
+      const user = userEvent.setup();
+      const { container } = mount();
+      push('CombatTracker', tracker([HERO_ID, 'ent_goblin']));
+      expect(container.querySelector('canvas')).toBeNull();
+      expect(
+        screen.getByRole('list', { name: 'Combat tokens' }),
+      ).toBeInTheDocument();
+      const toggle = screen.getByRole('button', { name: 'Show map' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+      await user.click(toggle);
+      expect(container.querySelector('canvas')).not.toBeNull();
+      expect(screen.getByRole('button', { name: 'Hide map' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Hide map' }));
+      expect(container.querySelector('canvas')).toBeNull();
+
+      push('ReactionPrompt', {
+        reactionId: 'r1',
+        entityId: 'ent_goblin',
+        moverId: HERO_ID,
+        trigger: 'leaves reach',
+        timeoutMs: 15000,
+      });
+      expect(
+        await screen.findByRole('dialog', { name: 'Opportunity attack' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Decline' }),
+      ).toBeInTheDocument();
+    } finally {
+      restore();
     }
   });
 });
