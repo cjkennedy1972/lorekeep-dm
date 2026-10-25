@@ -99,6 +99,17 @@ describe('combat bootstrap from the DM start_combat result', () => {
 });
 
 describe('tracker', () => {
+  it('projects the persisted phase and infers awaiting-command for legacy snapshots', () => {
+    const { state } = bootstrapped();
+    expect(combatTracker(state).phase).toBe('awaiting-command');
+    expect(combatTracker({ ...state, phase: undefined }).phase).toBe(
+      'awaiting-command',
+    );
+    expect(combatTracker({ ...state, phase: 'narrating' }).phase).toBe(
+      'narrating',
+    );
+  });
+
   it('property: the highlighted token is always the first initiative entry, for any turn position', () => {
     const { state } = bootstrapped();
     let rng = 12345;
@@ -131,6 +142,63 @@ describe('tracker', () => {
 });
 
 describe('player commands', () => {
+  it.each([
+    ['awaiting-command', 'active', 'end-turn', undefined],
+    ['awaiting-command', 'other', 'end-turn', 'not-your-turn'],
+    ['moving', 'active', 'end-turn', 'move-in-progress'],
+    ['moving', 'other', 'end-turn', 'not-your-turn'],
+    ['reaction-pending', 'active', 'end-turn', 'reaction-window-open'],
+    ['reaction-pending', 'reactor', 'end-turn', 'reaction-window-open'],
+    ['reaction-pending', 'other', 'end-turn', 'not-your-turn'],
+    ['reaction-pending', 'reactor', 'reaction', undefined],
+    ['reaction-pending', 'active', 'reaction', undefined],
+    ['reaction-pending', 'other', 'reaction', 'reaction-window-open'],
+    ['narrating', 'active', 'end-turn', 'narration-in-progress'],
+    ['narrating', 'other', 'end-turn', 'not-your-turn'],
+    ['narrating', 'active', 'reaction', 'narration-in-progress'],
+  ] as const)(
+    'admits %s phase / %s seat / %s according to authorization-first precedence',
+    (phase, role, kind, expectedCode) => {
+      const { runtime, state } = engaged();
+      const actorId =
+        role === 'active'
+          ? state.combat.activeEntityId!
+          : role === 'reactor'
+            ? 'ent_aria'
+            : 'ent_goblin-minion_2';
+      const phased: RoomCombatState = {
+        ...state,
+        phase,
+        ...(phase === 'reaction-pending'
+          ? {
+              pendingReaction: {
+                reactionId: 'reaction-1',
+                entityId: 'ent_goblin-minion_1',
+                trigger: 'opportunityAttack',
+                moverId: 'ent_aria',
+                deadlineAt: NOW + 15_000,
+              },
+            }
+          : {}),
+      };
+      const result = runtime.execute(
+        phased,
+        actorId,
+        kind === 'reaction'
+          ? { command: 'reaction', reactionId: 'reaction-1', choice: 'decline' }
+          : { command: 'end-turn' },
+        { now: NOW },
+      );
+      if (expectedCode) expect(result).toMatchObject({ code: expectedCode });
+      else
+        expect(result).not.toMatchObject({
+          code: expect.stringMatching(
+            /not-your-turn|move-in-progress|reaction-window-open|narration-in-progress/,
+          ),
+        });
+    },
+  );
+
   it('rejects illegal commands and leaves the state untouched', () => {
     const { runtime, state } = engaged();
     const before = structuredClone(state);
@@ -141,7 +209,7 @@ describe('player commands', () => {
       });
     expect(
       runtime.execute(state, 'ent_goblin-minion_1', { command: 'end-turn' }),
-    ).toMatchObject({ code: 'NOT_YOUR_TURN' });
+    ).toMatchObject({ code: 'not-your-turn' });
     expect(
       hero_({
         command: 'attack',
@@ -444,7 +512,7 @@ describe('opportunity attack reactions', () => {
     const { runtime, moved } = provoke();
     expect(
       runtime.execute(moved.state, 'ent_aria', { command: 'end-turn' }),
-    ).toMatchObject({ code: 'COMMAND_REJECTED' });
+    ).toMatchObject({ code: 'reaction-window-open' });
   });
 
   it('accept: the goblin spends its reaction on an engine-resolved attack and the move continues', () => {

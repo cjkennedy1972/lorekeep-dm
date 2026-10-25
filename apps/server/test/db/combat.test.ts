@@ -471,7 +471,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       }
       if (
         optionsReply.type === 'Error' &&
-        optionsReply.payload?.message === 'Resolve the pending reaction first.'
+        optionsReply.payload?.code === 'reaction-window-open'
       ) {
         const prompt = client.last<Record<string, unknown>>('ReactionPrompt');
         if (!prompt?.reactionId)
