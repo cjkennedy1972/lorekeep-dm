@@ -139,6 +139,7 @@ export function settle(state: RoomCombatState): CombatTransition {
   return {
     state: {
       ...rest,
+      phase: 'awaiting-command',
       ended: { outcome },
       combat: { ...state.combat, activeEntityId: null },
     },

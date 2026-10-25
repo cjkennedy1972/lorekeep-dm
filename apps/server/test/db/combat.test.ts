@@ -402,7 +402,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 30_000);
 
-  it('start_combat populates the Room, monsters act, and the fight ends in CombatEnded with an accepted opportunity attack', async () => {
+  it('start_combat populates the Room, monsters act, and a non-controller cannot accept an opportunity attack', async () => {
     stack = await Stack.boot('combat-full');
     const user = await newUser();
     const table = await seedTable(stack, user, preCombat);
@@ -463,7 +463,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       const optionsReply = await client.command({ command: 'options' });
       if (
         optionsReply.type === 'Error' &&
-        optionsReply.payload?.message === 'It is not your turn.'
+        optionsReply.payload?.code === 'not-your-turn'
       ) {
         // CombatTracker is a broadcast snapshot; the turn can advance while this
         // command is queued. Re-read it on the next loop before choosing an action.
@@ -476,11 +476,29 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         const prompt = client.last<Record<string, unknown>>('ReactionPrompt');
         if (!prompt?.reactionId)
           throw new Error('Pending reaction has no websocket prompt.');
-        await client.command({
+        const reactionMark = client.log.length;
+        const answer = await client.command({
           command: 'reaction',
           reactionId: prompt.reactionId,
           choice: 'take',
         });
+        expect(answer).toMatchObject({
+          type: 'Error',
+          payload: { code: 'not-your-turn', message: 'It is not your turn.' },
+        });
+        const resolved = await client.until(
+          (message) =>
+            message.type === 'CombatEvents' &&
+            message.payload?.events.some(
+              (event: unknown) =>
+                (event as { type?: string }).type === 'ReactionResolved',
+            ),
+          reactionMark,
+          20_000,
+        );
+        expect(resolved.payload!.events).toContainEqual(
+          expect.objectContaining({ type: 'ReactionResolved', used: false }),
+        );
         continue;
       }
       if (optionsReply.type === 'Error')
@@ -545,11 +563,32 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
             defaultChoice: 'decline',
           });
           expect(prompt.payload!.timeoutMs).toBeLessThanOrEqual(15_000);
-          await client.command({
+          const reactionMark = client.log.length;
+          const answer = await client.command({
             command: 'reaction',
             reactionId: prompt.payload!.reactionId,
             choice: 'take',
           });
+          expect(answer).toMatchObject({
+            type: 'Error',
+            payload: {
+              code: 'not-your-turn',
+              message: 'It is not your turn.',
+            },
+          });
+          const resolved = await client.until(
+            (message) =>
+              message.type === 'CombatEvents' &&
+              message.payload?.events.some(
+                (event: unknown) =>
+                  (event as { type?: string }).type === 'ReactionResolved',
+              ),
+            reactionMark,
+            20_000,
+          );
+          expect(resolved.payload!.events).toContainEqual(
+            expect.objectContaining({ type: 'ReactionResolved', used: false }),
+          );
         }
       } else if (
         nearest &&
@@ -590,14 +629,13 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         'CombatStarted',
         'MonsterPolicy',
         'SpellCast',
-        'ReactionResolved',
         'CombatEnded',
       ]),
     );
     expect(
       (await storedTypes(table)).find((r) => r.type === 'ReactionResolved')!
         .payload,
-    ).toMatchObject({ used: true });
+    ).toMatchObject({ used: false });
     const end = await savedGame(table);
     expect(end.gameState.combatRoom?.ended?.outcome).toBe(
       ended.payload!.outcome,
@@ -610,7 +648,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     client.close();
   }, 60_000);
 
-  it('kill and restart mid-combat resumes the same turn, movement and pending reaction; the answer is idempotent', async () => {
+  it('kill and restart mid-combat resumes pending reaction state and rejects the non-controller', async () => {
     stack = await Stack.boot('combat-resume-1');
     const user = await newUser();
     const table = await seedTable(stack, user, (account) => {
@@ -675,71 +713,24 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       remaining,
     );
 
-    const actionId = randomUUID();
-    const answer = JSON.stringify({
-      type: 'CombatCommand',
-      actionId,
-      lastSeq: 0,
-      payload: {
+    const pendingBeforeAnswer = (await savedGame(table)).gameState.combatRoom!
+      .pendingReaction;
+    if (stillPending) {
+      const answer = await client.command({
         command: 'reaction',
         reactionId: prompt.payload!.reactionId,
         choice: 'take',
-      },
-    });
-    const mark2 = client.log.length;
-    client.ws.send(answer);
-    let answered = false;
-    if (stillPending) {
-      const outcome = await client.until(
-        (message) =>
-          (message.type === 'CombatEvents' &&
-            message.payload!.events.some(
-              (event: unknown) =>
-                (event as { type?: string }).type === 'ReactionResolved',
-            )) ||
-          (message.type === 'Error' && message.payload?.actionId === actionId),
-        mark2,
-      );
-      answered =
-        outcome.type === 'CombatEvents' &&
-        outcome.payload!.events.some(
-          (event: unknown) =>
-            (event as { type?: string; choice?: string }).type ===
-              'ReactionResolved' &&
-            (event as { choice?: string }).choice === 'take',
-        );
+      });
+      expect(answer).toMatchObject({
+        type: 'Error',
+        payload: { code: 'not-your-turn', message: 'It is not your turn.' },
+      });
+      expect(
+        (await savedGame(table)).gameState.combatRoom!.pendingReaction,
+      ).toBeDefined();
     } else {
-      await client.until(
-        (message) =>
-          message.type === 'Error' && message.payload?.actionId === actionId,
-        mark2,
-      );
+      expect(pendingBeforeAnswer).toBeUndefined();
     }
-    if (answered) {
-      const persistDeadline = Date.now() + 5000;
-      while (
-        !(await storedTypes(table)).some(
-          (event) => event.type === 'NarrationCompleted',
-        )
-      ) {
-        if (Date.now() > persistDeadline)
-          throw new Error('Combat narration was not persisted.');
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      const count = (await storedTypes(table)).length;
-      const mark3 = client.log.length;
-      client.ws.send(answer);
-      await client.until(
-        (message) =>
-          message.type === 'Error' &&
-          message.payload?.code === 'DUPLICATE_ACTION',
-        mark3,
-      );
-      expect((await storedTypes(table)).length).toBe(count);
-    }
-    expect(
-      (await savedGame(table)).gameState.combatRoom!.pendingReaction,
-    ).toBeUndefined();
     client.close();
   }, 30_000);
 
@@ -863,7 +854,12 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       const reply = await client.command(payload);
       expect(reply).toMatchObject({
         type: 'Error',
-        payload: { code: 'COMMAND_REJECTED' },
+        payload: {
+          code:
+            payload.command === 'reaction'
+              ? 'not-your-turn'
+              : 'COMMAND_REJECTED',
+        },
       });
     }
     expect((await storedTypes(table)).length).toBe(baseline.length);

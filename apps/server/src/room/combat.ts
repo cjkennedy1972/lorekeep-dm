@@ -77,9 +77,6 @@ export function combatTracker(state: RoomCombatState) {
     ...state.combat.initiative.slice(0, activeIndex),
   ];
   return {
-    phase:
-      state.phase ??
-      (state.pendingReaction ? 'reaction-pending' : 'awaiting-command'),
     round: state.combat.round,
     initiative: ordered.map(({ entityId, total }) => ({ entityId, total })),
     activeEntityId: active,
@@ -117,7 +114,15 @@ const rejectAdmission = (
     | 'reaction-window-open'
     | 'narration-in-progress'
   >,
-): CombatCommandError => ({ code, message: code });
+): CombatCommandError => ({
+  code,
+  message: {
+    'not-your-turn': 'It is not your turn.',
+    'move-in-progress': 'Your movement is still resolving.',
+    'reaction-window-open': 'Resolve the open reaction first.',
+    'narration-in-progress': 'The DM is narrating this turn.',
+  }[code],
+});
 
 function admissionError(
   state: RoomCombatState,
@@ -126,22 +131,24 @@ function admissionError(
 ): CombatCommandError | null {
   const active =
     state.combat.activeEntityId ?? state.combat.initiative[0]?.entityId;
-  const phase =
-    state.phase ??
-    (state.pendingReaction ? 'reaction-pending' : 'awaiting-command');
+  const phase = state.pendingReaction
+    ? 'reaction-pending'
+    : (state.phase ?? 'awaiting-command');
   const isActive = actorId === active;
-  // M2 movement prompts are answered by the mover; later controller-seat binding may also match entityId.
-  const isReactor =
-    actorId === state.pendingReaction?.entityId ||
-    actorId === state.pendingReaction?.moverId;
+  // Room derives actorId from the authenticated seat's server-side entity binding.
+  // Only the reactor's controller (entityId), never the mover, may answer.
+  const isReactor = actorId === state.pendingReaction?.entityId;
 
-  // Authorization precedes phase: a non-active seat's turn command is always not-your-turn.
+  // Authorization precedes phase: a non-active party seat gets not-your-turn
+  // even during reaction-pending, before any phase-specific rejection can reveal it.
   // OOC chat does not enter this admission path; Room.commitChat accepts it independently of combat phase.
+  if (command.command === 'reaction' && !isReactor)
+    return rejectAdmission('not-your-turn');
   if (command.command !== 'reaction' && !isActive)
     return rejectAdmission('not-your-turn');
   if (phase === 'awaiting-command')
     return command.command === 'reaction'
-      ? reject('There is no reaction to answer.')
+      ? rejectAdmission('reaction-window-open')
       : null;
   if (phase === 'moving')
     return rejectAdmission(
