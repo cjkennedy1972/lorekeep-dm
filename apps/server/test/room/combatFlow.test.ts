@@ -1305,6 +1305,30 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     expect(JSON.stringify(otherMessages)).not.toMatch(/eventIds/);
   });
 
+  it('refuses a combat commit whose stored seqs are not contiguous', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'awaiting-command',
+      turnId: 'combat-turn-gap',
+      narrationAttempts: 0,
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: combat,
+    });
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    table.faults.gapAfterIndex = 0;
+    await expect(
+      room.submitCombatCommand(account, crypto.randomUUID(), {
+        command: 'end-turn',
+      }),
+    ).rejects.toThrow(/non-contiguous seq/);
+  });
+
   it('persists TurnResolved and holds the next turn in narrating phase', async () => {
     const e = bootstrapped();
     const combat: RoomCombatState = {

@@ -136,6 +136,8 @@ export function memoryTable(gameState: unknown, runner?: SoloTurnRunner) {
     epoch: 1,
     expiresAt: new Date(Date.now() + 86_400_000),
   };
+  /** Test fault: skip one seq number after this write index (-1 = off). */
+  const faults = { gapAfterIndex: -1 };
   let snapshot: LatestState['snapshot'] = {
     sessionId,
     seq: 1,
@@ -164,7 +166,11 @@ export function memoryTable(gameState: unknown, runner?: SoloTurnRunner) {
     async writeTurn(_id, inputs, state) {
       const stored = inputs.map((input, index) => ({
         ...input,
-        seq: (snapshot?.seq ?? 0) + index + 1,
+        seq:
+          (snapshot?.seq ?? 0) +
+          index +
+          1 +
+          (faults.gapAfterIndex >= 0 && index > faults.gapAfterIndex ? 1 : 0),
         sessionId,
         ts: new Date(),
       })) as StoredEvent[];
@@ -183,6 +189,7 @@ export function memoryTable(gameState: unknown, runner?: SoloTurnRunner) {
   const connection = { send: (m: ServerMessage) => void messages.push(m) };
   return {
     boot,
+    faults,
     events,
     messages,
     connection,

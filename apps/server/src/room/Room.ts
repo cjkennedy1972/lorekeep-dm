@@ -260,6 +260,13 @@ interface PendingSeatClaim {
 }
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Advertised turn deadline carried by TurnOpened (ADR-033 §7.1 requires the
+ * field). Informational only: nothing enforces expiry yet. The timer and the
+ * TurnTimedOut producer are M4-6b, a separate PR.
+ */
+const TURN_DEADLINE_MS = 90_000;
 const DRAIN_DEADLINE_MS = 30_000;
 const DEFAULT_ROUND_MS = 120_000;
 const ROUND_GATE_GRACE_MS = 5_000;
@@ -2077,7 +2084,7 @@ export class Room {
     };
     if (!combat.ended && combat.combat.activeEntityId) {
       const nextTurnId = randomUUID();
-      const deadline = Date.now() + 90_000;
+      const deadline = Date.now() + TURN_DEADLINE_MS;
       nextCombat = {
         ...nextCombat,
         phase: 'awaiting-command',
@@ -4598,7 +4605,7 @@ export class Room {
           initialCombat.combat.activeEntityId
         ) {
           const openedId = randomUUID();
-          const deadline = Date.now() + 90_000;
+          const deadline = Date.now() + TURN_DEADLINE_MS;
           turnGameState = {
             ...turnGameState,
             combatRoom: {
@@ -4640,7 +4647,7 @@ export class Room {
               };
             } else {
               const nextTurnId = randomUUID();
-              const deadline = Date.now() + 90_000;
+              const deadline = Date.now() + TURN_DEADLINE_MS;
               const nextCombat = {
                 ...combatRoom,
                 phase: 'awaiting-command' as const,
@@ -5038,7 +5045,15 @@ export class Room {
       { ...this.state, gameState, actionIds },
       this.lease,
     );
+    // TurnResolved.eventIds were derived from `this.seq + index + 1` before the
+    // write; they are only correct if the store assigned contiguous seqs.
+    const firstSeq = this.seq + 1;
+    const contiguous = stored.events.every(
+      (event, index) => event.seq === firstSeq + index,
+    );
     this.seq = stored.events.at(-1)?.seq ?? this.seq;
+    if (!contiguous)
+      throw new Error('combat turn events were stored with non-contiguous seq');
     this.state = { ...this.state, gameState } as RoomState;
     if (actionId) this.actionIds.add(actionId);
     this.announceCombat(combatState, committedEvents, accountId);
