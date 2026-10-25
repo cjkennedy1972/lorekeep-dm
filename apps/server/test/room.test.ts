@@ -795,6 +795,19 @@ describe('room actor', () => {
       await expect(
         afterDenyRestart.denyLateJoin(host, denyAction, denied),
       ).resolves.toBe(originalDenyResult);
+      const otherDeniedAccountId = randomUUID();
+      const otherDenied = await afterDenyRestart.requestLateJoin(
+        otherDeniedAccountId,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await expect(
+        afterDenyRestart.denyLateJoin(host, denyAction, otherDenied),
+      ).rejects.toThrow();
+      expect(afterDenyRestart.state.lateJoinRequests).toContainEqual(
+        expect.objectContaining({ requestId: otherDenied }),
+      );
       await expect(
         afterDenyRestart.denyLateJoin(randomUUID(), denyAction, denied),
       ).rejects.toThrow();

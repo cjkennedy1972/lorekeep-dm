@@ -2800,7 +2800,17 @@ export class Room {
     return this.enqueue(async () => {
       const actor = await this.requireHost(accountId);
       if (this.actionIds.has(actionId)) {
-        if (this.state.lateJoinActionOwners?.[actionId] === accountId) return;
+        const replayMatchesRequest = Object.entries(
+          this.state.lateJoinRequestResults ?? {},
+        ).some(
+          ([key, resultRequestId]) =>
+            key.endsWith(`:${actionId}`) && resultRequestId === requestId,
+        );
+        if (
+          this.state.lateJoinActionOwners?.[actionId] === accountId &&
+          replayMatchesRequest
+        )
+          return;
         throw new RoomSeatRequiredError();
       }
       const request = this.state.lateJoinRequests?.find(
