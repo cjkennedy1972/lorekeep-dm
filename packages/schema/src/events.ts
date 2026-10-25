@@ -40,11 +40,13 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     entityIds: z.array(entityId).optional(),
     encounterId: z.string().min(1).optional(),
     order: z.array(entityId).optional(),
-  }).refine(
-    (event) =>
-      (event.combatId !== undefined && event.entityIds !== undefined) ||
-      (event.encounterId !== undefined && event.order !== undefined),
-  ),
+  })
+    .strict()
+    .refine(
+      (event) =>
+        (event.combatId !== undefined && event.entityIds !== undefined) ||
+        (event.encounterId !== undefined && event.order !== undefined),
+    ),
   ev('InitiativeRolled', { entityId, total: z.int() }),
   ev('ReactionAvailable', { entityId, trigger: z.string().min(1) }),
   ev('ReactionResolved', {
@@ -55,25 +57,28 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   ev('CombatEnded', {
     combatId: z.string().min(1).optional(),
     encounterId: z.string().min(1).optional(),
-  }).refine(
-    (event) => event.combatId !== undefined || event.encounterId !== undefined,
-  ),
+  })
+    .strict()
+    .refine(
+      (event) =>
+        event.combatId !== undefined || event.encounterId !== undefined,
+    ),
   ev('TurnOpened', {
     turnId: z.string().min(1),
     entityId,
     /** Absolute wall-clock deadline in Unix epoch milliseconds; never monotonic. */
     deadline: z.number().int().nonnegative(),
-  }),
+  }).strict(),
   ev('TurnResolved', {
     turnId: z.string().min(1),
     entityId,
     eventIds: z.array(z.string().min(1)),
-  }),
+  }).strict(),
   ev('TurnTimedOut', {
     turnId: z.string().min(1),
     entityId,
     action: z.enum(['dodge', 'hold']),
-  }),
+  }).strict(),
   ev('MapLoaded', { mapId: z.string().min(1) }),
   ev('EntityPlaced', { entityId, pos }),
   ev('LateJoinSpawned', {
@@ -91,14 +96,14 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
   ev('MoveStarted', {
     entityId,
     path: z.array(pos).min(2),
-    // TurnOpened has no producer until PR 4; this becomes required in practice then.
+    // Retain optionality for historical movement events without lifecycle IDs.
     turnId: z.string().min(1).optional(),
-  }),
+  }).strict(),
   ev('MoveEnded', {
     entityId,
     turnId: z.string().min(1).optional(),
     reason: z.enum(['complete', 'blocked', 'incapacitated', 'timed-out']),
-  }),
+  }).strict(),
   ev('OpportunityTriggered', { moverId: entityId, attackerId: entityId }),
   ev('AreaResolved', { cells: z.array(pos), affected: z.array(entityId) }),
   ev('HpChanged', { entityId, delta: z.int(), hp: z.int() }),

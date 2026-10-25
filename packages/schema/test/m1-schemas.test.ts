@@ -207,6 +207,18 @@ describe('combat lifecycle event compatibility', () => {
     ).toBe(false);
   });
 
+  test('rejects unknown fields on the new combat lifecycle events', () => {
+    const valid = {
+      type: 'TurnOpened',
+      turnId: 'turn-1',
+      entityId: 'a',
+      deadline: 1_792_900_800_000,
+    };
+    expect(
+      EngineEventSchema.safeParse({ ...valid, monotonicDeadline: 42 }).success,
+    ).toBe(false);
+  });
+
   test('legacy engine event logs without movement lifecycle events remain readable', () => {
     const legacyEvents = [
       { type: 'CombatStarted', combatId: 'combat-1', entityIds: ['a'] },

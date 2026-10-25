@@ -136,6 +136,18 @@ export function settle(state: RoomCombatState): CombatTransition {
   const rest = { ...state };
   delete rest.pendingReaction;
   delete rest.engineReactions;
+  const moverId = state.pendingReaction?.moverId;
+  const mover =
+    moverId && state.entities.find((entity) => entity.id === moverId);
+  const openMove = Boolean(moverId && state.pendingReaction);
+  const events: Ev[] = [];
+  if (openMove)
+    events.push({
+      type: 'MoveEnded',
+      entityId: moverId,
+      reason: !mover || mover.hp <= 0 ? 'incapacitated' : 'blocked',
+    });
+  events.push({ type: 'CombatEnded', outcome, xp: 0 });
   return {
     state: {
       ...rest,
@@ -143,7 +155,7 @@ export function settle(state: RoomCombatState): CombatTransition {
       ended: { outcome },
       combat: { ...state.combat, activeEntityId: null },
     },
-    events: [{ type: 'CombatEnded', outcome, xp: 0 }],
+    events,
   };
 }
 
@@ -168,7 +180,9 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
     return {
       state: {
         ...state,
-        phase: 'awaiting-command',
+        // The engine identifies the next entity here; Room keeps its command
+        // window closed until the previous turn's narration has committed.
+        phase: state.turnId ? 'narrating' : 'awaiting-command',
         dodging: (state.dodging ?? []).filter((id) => id !== nextId),
         combat: {
           ...state.combat,
