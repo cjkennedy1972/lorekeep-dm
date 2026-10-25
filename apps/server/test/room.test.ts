@@ -1208,8 +1208,14 @@ describe('room actor', () => {
       await room.submitCombatCommand(host, randomUUID(), {
         command: 'end-turn',
       });
-      await new Promise((resolve) => setTimeout(resolve, 30));
-
+      // Wait for the admission itself instead of a fixed sleep; slow runners need more than 30 ms.
+      await vi.waitFor(
+        () =>
+          expect(events.some((event) => event.type === 'LateJoinSpawned')).toBe(
+            true,
+          ),
+        { timeout: 5000 },
+      );
       const admission = events.find(
         (event) => event.type === 'LateJoinSpawned',
       );
