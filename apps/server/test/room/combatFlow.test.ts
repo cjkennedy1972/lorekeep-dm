@@ -690,6 +690,106 @@ describe('opportunity attack reactions', () => {
     });
   });
 
+  it('ends a queued reaction-paused move once when the first OA is lethal', () => {
+    const { runtime, state } = engaged();
+    const adjacent = placed(state, {
+      ent_aria: { x: 7, y: 2 },
+      'ent_goblin-minion_1': { x: 6, y: 2 },
+      'ent_goblin-minion_2': { x: 6, y: 3 },
+    });
+    const fragile = {
+      ...adjacent,
+      entities: [
+        ...adjacent.entities.map((entity) => ({
+          ...entity,
+          ...(entity.id === 'ent_aria' ? { hp: 1 } : {}),
+          ...(entity.team === 'enemies' && entity.attacks?.length
+            ? {
+                attacks: entity.attacks.map((attack) => ({
+                  ...attack,
+                  attackBonus: 100,
+                })),
+              }
+            : {}),
+        })),
+        {
+          ...adjacent.entities.find((entity) => entity.id === 'ent_aria')!,
+          id: 'ent_bob',
+          name: 'Bob',
+          pos: { x: 2, y: 2 },
+          hp: 20,
+        },
+      ],
+    };
+    const moved = ok(
+      runtime.execute(
+        fragile,
+        'ent_aria',
+        { command: 'move', destination: { x: 10, y: 2 } },
+        { now: NOW },
+      ),
+    );
+    expect(
+      moved.events.filter((event) => event.type === 'MoveStarted'),
+    ).toHaveLength(1);
+    expect(
+      moved.events.filter((event) => event.type === 'MoveEnded'),
+    ).toHaveLength(0);
+
+    const firstPrompt = moved.state.pendingReaction!;
+    const first = ok(
+      runtime.execute(
+        moved.state,
+        firstPrompt.entityId,
+        {
+          command: 'reaction',
+          reactionId: firstPrompt.reactionId,
+          choice: 'take',
+        },
+        { now: NOW + 1 },
+      ),
+    );
+    expect(
+      first.state.entities.find((entity) => entity.id === 'ent_aria')?.hp,
+    ).toBe(0);
+    expect(first.state.pendingReaction).toBeDefined();
+    expect(
+      first.events.filter((event) => event.type === 'MoveEnded'),
+    ).toHaveLength(0);
+
+    const secondPrompt = first.state.pendingReaction!;
+    const second = ok(
+      runtime.execute(
+        first.state,
+        secondPrompt.entityId,
+        {
+          command: 'reaction',
+          reactionId: secondPrompt.reactionId,
+          choice: 'take',
+        },
+        { now: NOW + 2 },
+      ),
+    );
+    const lifecycle = [
+      ...moved.events,
+      ...first.events,
+      ...second.events,
+    ].filter(
+      (event) =>
+        (event.type === 'MoveStarted' || event.type === 'MoveEnded') &&
+        event.entityId === 'ent_aria',
+    );
+    expect(lifecycle).toEqual([
+      expect.objectContaining({ type: 'MoveStarted', entityId: 'ent_aria' }),
+      { type: 'MoveEnded', entityId: 'ent_aria', reason: 'incapacitated' },
+    ]);
+    expectBalancedMovement([
+      ...moved.events,
+      ...first.events,
+      ...second.events,
+    ]);
+  });
+
   it('does not resume an interrupted path when a later step has become illegal', () => {
     const { runtime, moved } = provoke();
     const prompt = moved.state.pendingReaction!;
