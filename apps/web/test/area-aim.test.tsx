@@ -35,11 +35,7 @@ const names: Record<string, string> = {
 
 function mount(areas = [burning, empty], onCast = vi.fn()) {
   render(
-    <AreaAim
-      areas={areas}
-      nameOf={(id) => names[id] ?? id}
-      onCast={onCast}
-    />,
+    <AreaAim areas={areas} nameOf={(id) => names[id] ?? id} onCast={onCast} />,
   );
   return { onCast };
 }
@@ -89,13 +85,9 @@ describe('area aim list', () => {
     const user = userEvent.setup();
     mount();
     await user.tab();
-    expect(
-      screen.getByRole('radio', { name: /facing east/ }),
-    ).toHaveFocus();
+    expect(screen.getByRole('radio', { name: /facing east/ })).toHaveFocus();
     await user.keyboard('{ArrowDown}');
-    expect(
-      screen.getByRole('radio', { name: /facing south/ }),
-    ).toBeChecked();
+    expect(screen.getByRole('radio', { name: /facing south/ })).toBeChecked();
     expect(screen.getByText('No units affected.')).toBeInTheDocument();
   });
 
@@ -116,9 +108,7 @@ describe('area aim list', () => {
     await user.click(
       screen.getByRole('radio', { name: /facing east; 2 affected/ }),
     );
-    await user.click(
-      screen.getByRole('button', { name: 'Cancel area aim' }),
-    );
+    await user.click(screen.getByRole('button', { name: 'Cancel area aim' }));
     expect(screen.getByRole('button', { name: 'Cast area' })).toBeDisabled();
     expect(onCast).not.toHaveBeenCalled();
   });

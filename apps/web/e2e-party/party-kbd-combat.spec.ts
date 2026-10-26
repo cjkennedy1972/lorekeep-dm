@@ -18,6 +18,23 @@ import {
 
 const ARROWS = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'] as const;
 
+// The attacker's RollEvents from the server's CombatEvents frames. Attack rolls are not drawn in the
+// narration log (only saves are), so the websocket frame is the observable for a resolved attack.
+function attackerRolls(frames: unknown[], attackerId: string) {
+  return frames
+    .flatMap((frame) => {
+      const { type, payload } = frame as {
+        type?: string;
+        payload?: { events?: unknown[] };
+      };
+      return type === 'CombatEvents' ? (payload?.events ?? []) : [];
+    })
+    .filter((event) => {
+      const roll = event as { type?: string; actorId?: string };
+      return roll.type === 'RollEvent' && roll.actorId === attackerId;
+    });
+}
+
 async function openCombatTable(browser: Browser) {
   const { combat } = readState();
   const views: View[] = [];
@@ -75,6 +92,41 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
       ).toBeVisible();
       await expect(activeToken).toHaveAttribute('data-x', start.x!);
       await expect(activeToken).toHaveAttribute('data-y', start.y!);
+    });
+
+    await test.step('attack: the goblin in reach is attacked from the action list alone', async () => {
+      // Fixture: ent_goblin-minion_1 stands at (11,2), next to the first seat's start at (10,2). Adjacency
+      // is asserted, not assumed, so a fixture change fails here with the positions, not as a timeout.
+      const goblin = 'ent_goblin-minion_1';
+      const goblinToken = (await tokenTable(page)).find((t) => t.id === goblin);
+      expect(goblinToken, 'goblin is on the battlefield').toBeDefined();
+      const start = {
+        x: Number(await activeToken.getAttribute('data-x')),
+        y: Number(await activeToken.getAttribute('data-y')),
+      };
+      expect(
+        Math.max(
+          Math.abs(goblinToken!.x - start.x),
+          Math.abs(goblinToken!.y - start.y),
+        ),
+        'goblin is adjacent to the active seat',
+      ).toBe(1);
+      // Options are sent on request: the keyboard requests them, then the list offers the attack.
+      await tabTo(page, 'Refresh combat options');
+      await page.keyboard.press('Enter');
+      const attack = page.getByRole('button', { name: `Attack ${goblin}` });
+      await expect(attack).toBeVisible();
+      const framesBefore = active.frames.length;
+      await tabTo(page, `Attack ${goblin}`, 200);
+      await page.keyboard.press('Enter');
+      // The server resolves the attack and pushes its RollEvent for the attacking seat.
+      await expect
+        .poll(
+          () =>
+            attackerRolls(active.frames.slice(framesBefore), activeId).length,
+          { timeout: SYNC_BUDGET_MS * 5 },
+        )
+        .toBeGreaterThan(0);
     });
 
     await test.step('move confirm: preview reports a path, Enter sends it, every seat syncs within the budget', async () => {

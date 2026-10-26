@@ -14,7 +14,13 @@ export type CombatState = {
     Member
   >;
 };
-export type View = { member: Member; context: BrowserContext; page: Page };
+/** `frames` holds every JSON frame the server pushed to this page, in arrival order. */
+export type View = {
+  member: Member;
+  context: BrowserContext;
+  page: Page;
+  frames: unknown[];
+};
 type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
 export const readState = () =>
@@ -45,8 +51,19 @@ export async function openMember(
       { name: 'sid', value: member.token, url: origin },
     ]);
   const page = await context.newPage();
+  const frames: unknown[] = [];
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', (event) => {
+      if (typeof event.payload !== 'string') return;
+      try {
+        frames.push(JSON.parse(event.payload));
+      } catch {
+        // Non-JSON frames are not protocol messages; skip them.
+      }
+    }),
+  );
   await page.goto(`${origin}/rooms/${table}/game`);
-  return { member, context, page };
+  return { member, context, page, frames };
 }
 
 /** Saves the seat's storage (resume token, sid cookie) before closing, so the next open resumes the seat. */
