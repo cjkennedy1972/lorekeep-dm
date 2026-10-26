@@ -1305,29 +1305,34 @@ export class Room {
     state: NonNullable<ReturnType<typeof roomGameState>>,
   ): void {
     const prompt = state.pendingReaction;
-    if (
-      prompt &&
-      reactionPromptVisibleTo(
-        prompt,
-        hiddenIdsOf(state),
-        this.controlledBy(accountId),
-      )
-    )
-      connection.send(
-        this.entityControllerAccountId(prompt.entityId) === accountId
-          ? reactionMessage(this.seq, prompt)
-          : reactionOpenMessage(this.seq, prompt),
-      );
+    if (!prompt) return;
+    const controlled = this.controlledBy(accountId);
+    if (!reactionPromptVisibleTo(prompt, hiddenIdsOf(state), controlled))
+      return;
+    // ADR-033 §3.2: trigger and answers go to the reactor's controller only; others learn that a window is open.
+    const controller =
+      controlled.has(prompt.entityId) ||
+      this.entityControllerAccountId(prompt.entityId) === accountId;
+    connection.send(
+      controller
+        ? reactionMessage(this.seq, prompt)
+        : reactionOpenMessage(this.seq, prompt),
+    );
   }
 
+  /** Entity ids this account controls: its seat characters plus entities assigned to it (combatActors, seat entities). */
   private controlledBy(accountId: string): Set<string> {
-    return controlledEntityIds(
+    const ids = controlledEntityIds(
       (this.state.gameState as { characters?: unknown } | undefined)
         ?.characters,
       accountId,
       this.seatBindings,
       !this.bindingEnforced,
     );
+    for (const entity of roomGameState(this.state)?.entities ?? [])
+      if (this.entityControllerAccountId(entity.id) === accountId)
+        ids.add(entity.id);
+    return ids;
   }
 
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */
@@ -1354,7 +1359,6 @@ export class Room {
     return Object.entries(game?.combatActors ?? {}).find(
       ([, actor]) => actor === entityId,
     )?.[0];
-  }
   }
 
   private sendSeatPrivateRoundSync(accountId: string): void {

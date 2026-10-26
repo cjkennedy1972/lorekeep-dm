@@ -94,6 +94,7 @@ export const WIRE_MESSAGE_RULES: Readonly<
 > = {
   CombatTracker: 'projected',
   ReactionPrompt: 'projected',
+  ReactionPromptOpen: 'projected',
   CombatOptions: 'actor',
 };
 
