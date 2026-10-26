@@ -121,16 +121,10 @@ export async function combatCommand(
               frame.payload?.actionId === undefined))),
     );
     if (reply.payload?.code === 'narration-in-progress') {
-      const completed = client.inbox
-        .slice(mark)
-        .some((frame) => frame.type === 'NarrationCompleted');
-      if (!completed)
-        await pollFrom(
-          client,
-          client.inbox.length,
-          (frame) => frame.type === 'NarrationCompleted',
-          20_000,
-        );
+      // The rejected command never starts a narration, so NarrationCompleted for the
+      // prior turn may already be in the inbox or never come again. The DM's in-flight
+      // flag clears within a few hundred ms, so back off and re-send the same actionId.
+      await new Promise((resolve) => setTimeout(resolve, 250));
       continue;
     }
     if (reply.payload?.code === 'RATE_LIMITED') {
@@ -151,7 +145,7 @@ export async function pollFrom(
   client: SimClient,
   from: number,
   match: (frame: ServerFrame) => boolean,
-  timeoutMs = 8000,
+  timeoutMs = 20_000,
 ): Promise<ServerFrame> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
