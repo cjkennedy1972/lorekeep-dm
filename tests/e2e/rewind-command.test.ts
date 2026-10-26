@@ -41,21 +41,23 @@ test('RewindTurn is rejected for guests and when no turn is resolved', async () 
       );
 
     const guestAction = randomUUID();
-    send(g, guestAction);
-    const guestError = await g.waitFor(
+    const guestErrorFrame = g.waitFor(
       (m) =>
         m.type === 'Error' &&
         (m.payload as { actionId?: string }).actionId === guestAction,
     );
+    send(g, guestAction);
+    const guestError = await guestErrorFrame;
     expect(guestError.payload).toMatchObject({ code: 'NOT_HOST' });
 
     const hostAction = randomUUID();
-    send(h, hostAction);
-    const hostError = await h.waitFor(
+    const hostErrorFrame = h.waitFor(
       (m) =>
         m.type === 'Error' &&
         (m.payload as { actionId?: string }).actionId === hostAction,
     );
+    send(h, hostAction);
+    const hostError = await hostErrorFrame;
     expect(hostError.payload).toMatchObject({
       code: 'REWIND_REFUSED',
       message: 'There is no resolved turn to rewind.',
