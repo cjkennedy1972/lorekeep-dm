@@ -13,6 +13,11 @@ type Combatant = Placed & {
   speed: number;
   attackBonus: number;
   damage: string;
+  attacks?: {
+    id?: string;
+    name: string;
+    damage: { dice: string; type: string }[];
+  }[];
 };
 export type MonsterDecision =
   | { kind: 'attack'; targetId: string }
@@ -108,14 +113,17 @@ export function resolveMonsterAttack(
   target: Combatant,
   seed: number,
 ) {
+  const catalogAttack = monster.attacks?.[0];
+  const primaryDamage = catalogAttack?.damage[0];
   return attack({
     attackerId: monster.id,
     targetId: target.id,
-    attackId: 'scimitar',
+    attackId:
+      catalogAttack?.id ?? catalogAttack?.name.toLowerCase() ?? 'scimitar',
     seed,
     attackBonus: monster.attackBonus,
-    damage: monster.damage,
-    damageType: 'slashing',
+    damage: primaryDamage?.dice ?? monster.damage,
+    damageType: primaryDamage?.type ?? 'slashing',
     targetAc: target.ac,
     target: { hp: target.hp, kind: target.team === 'pc' ? 'pc' : 'monster' },
   });
