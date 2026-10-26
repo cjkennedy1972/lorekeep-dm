@@ -23,6 +23,18 @@ import { BoundedCounter } from '../accounts/throttle.js';
 import { loadContentTierState } from '../safety/tierLoader.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterError } from '../persistence/seatCharacters.js';
+import { buildLateJoinRecap } from '../dm/lateJoinRecap.js';
+import type { LlmAdapter } from '../llm/adapter.js';
+import type { Moderator } from '../safety/moderator.js';
+import { createEndpointJudge } from '../safety/inputGate.js';
+import { loadSeatedContentBoundaries } from '../safety/tierLoader.js';
+import {
+  createConfiguredAdapter,
+  createEndpointEgress,
+} from '../llm/config.js';
+import { MeteredLlmAdapter, PostgresUsageSink } from '../llm/metering.js';
+import { liveDmAllowed } from '../llm/liveDmGate.js';
+import { fixtureModeFromEnvironment } from '../llm/recorded.js';
 import {
   LateJoinLimitedError,
   LateJoinRequestConflictError,
@@ -83,12 +95,56 @@ export function registerSessionRoutes(
   rooms: Seater,
   joinLimit = JOIN_LIMIT,
   limits: { maxRooms?: number; createPerHour?: number } = {},
+  recapDeps: {
+    liveDmAllowlistOnly?: boolean;
+    moderator?: Moderator;
+    adapter?: (
+      accountId: string,
+      sessionId: string,
+    ) => Promise<LlmAdapter | undefined>;
+  } = {},
 ) {
   const maxRooms = limits.maxRooms ?? MAX_ACTIVE_ROOMS;
   const createPerHour = limits.createPerHour ?? CREATE_PER_HOUR;
   const createHits = new BoundedCounter(3_600_000);
   const joinHits = new BoundedCounter(60_000);
   const consumeLateJoinLimit = createLateJoinRateLimiter();
+  const recapHits = new BoundedCounter(60_000);
+  const RECAP_PER_MINUTE = 6;
+  // ponytail: per-process, per-request cache (owner-only reads) so retries are idempotent and cannot re-spend the LLM.
+  const recapCache = new Map<
+    string,
+    { body: Record<string, unknown>; expires: number }
+  >();
+  const recapModerator = recapDeps.moderator ?? createEndpointJudge(db);
+  const recapAdapter =
+    recapDeps.adapter ??
+    (async (accountId: string, sessionId: string) => {
+      const mode = fixtureModeFromEnvironment();
+      if (
+        !(await liveDmAllowed(
+          db,
+          accountId,
+          recapDeps.liveDmAllowlistOnly ?? true,
+          mode,
+        ))
+      )
+        return undefined;
+      try {
+        return new MeteredLlmAdapter(
+          await createConfiguredAdapter(db, 'fast', createEndpointEgress()),
+          new PostgresUsageSink(db),
+          {
+            sessionId,
+            turnId: randomUUID(),
+            purpose: 'summary',
+            modelId: 'fast',
+          },
+        );
+      } catch {
+        return undefined;
+      }
+    });
   const throttled = (key: string) => joinHits.hit(key) > joinLimit;
   // ponytail: in-process map, move to shared store when running >1 node.
   /** Resolves the signed-in account, or sends 401 (anonymous) / 403 (account exists but is unverified). */
@@ -632,6 +688,62 @@ export function registerSessionRoutes(
   );
   app.post<{ Params: { code: string } }>('/api/invites/:code/join', join);
   app.post<{ Params: { code: string } }>('/api/join/:code', join);
+  /** ADR-035 §3 / US-S3: recap + current table settings for the pending request's owner only, before the join commit. */
+  app.get<{ Params: { requestId: string } }>(
+    '/api/late-join/:requestId/recap',
+    async (request, reply) => {
+      const accountId = await member(request, reply);
+      if (!accountId) return reply;
+      const notFound = () =>
+        reply.code(404).send({ code: 'NOT_FOUND', message: 'Not found.' });
+      if (!UUID.test(request.params.requestId)) return notFound();
+      if (recapHits.hit(accountId) > RECAP_PER_MINUTE)
+        return reply
+          .header('Retry-After', '60')
+          .code(429)
+          .send({ code: 'request_limited', message: 'Request limited.' });
+      try {
+        const room = await rooms.getByLateJoinRequestId(
+          request.params.requestId,
+        );
+        const pending = room?.state?.lateJoinRequests?.find(
+          (item) => item.requestId === request.params.requestId,
+        );
+        // Same neutral 404 for unknown, other owner's, and already-committed requests.
+        if (!room || !pending || pending.accountId !== accountId)
+          return notFound();
+        const key = `${request.params.requestId}:${accountId}`;
+        const hit = recapCache.get(key);
+        if (hit && hit.expires > Date.now()) return hit.body;
+        const sessionId = room.state.sessionId as string;
+        const optedOut = pending.matureOptOut === true;
+        const settings = await onboardingSettings(
+          sessionId,
+          accountId,
+          optedOut,
+        );
+        const boundaries = await loadSeatedContentBoundaries(db, sessionId);
+        const result = await buildLateJoinRecap({
+          db,
+          sessionId,
+          moderator: recapModerator,
+          tier: settings.contentTier,
+          tableLines: [
+            ...boundaries.lines.map((line) => `line: ${line}`),
+            ...boundaries.veils.map((veil) => `veil: ${veil}`),
+          ],
+          adapter: await recapAdapter(accountId, sessionId),
+        });
+        const body = { recap: result.recap, settings };
+        recapCache.set(key, { body, expires: Date.now() + 5 * 60_000 });
+        if (recapCache.size > 500)
+          recapCache.delete(recapCache.keys().next().value!);
+        return body;
+      } catch {
+        return notFound();
+      }
+    },
+  );
   app.post<{ Params: { requestId: string } }>(
     '/api/late-join/:requestId/cancel',
     async (request, reply) => {
