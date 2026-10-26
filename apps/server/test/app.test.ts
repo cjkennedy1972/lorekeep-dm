@@ -4,6 +4,22 @@ import { createApp, createLogger } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 
 describe('server app', () => {
+  it('disables the WebSocket ticket cross-origin bypass by default', () => {
+    expect(
+      loadConfig({ DATABASE_URL: 'postgres://localhost/test' })
+        .WS_TICKET_ORIGIN_BYPASS_ENABLED,
+    ).toBe(false);
+  });
+
+  it('enables the WebSocket ticket cross-origin bypass only when configured', () => {
+    expect(
+      loadConfig({
+        DATABASE_URL: 'postgres://localhost/test',
+        WS_TICKET_ORIGIN_BYPASS_ENABLED: 'true',
+      }).WS_TICKET_ORIGIN_BYPASS_ENABLED,
+    ).toBe(true);
+  });
+
   it('answers liveness and readiness', async () => {
     const app = createApp({ query: async () => ({ rows: [] }) } as never, {
       inputGate: allowInputGate,

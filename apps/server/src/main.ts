@@ -62,7 +62,15 @@ if (
   app.log.warn(
     'NODE_ENV=test disables the live DM allowlist gate; never run production with NODE_ENV=test',
   );
-const closeGateway = installGateway(app, db, rooms, connections);
+const closeGateway = installGateway(
+  app,
+  db,
+  rooms,
+  connections,
+  undefined,
+  undefined,
+  config.WS_TICKET_ORIGIN_BYPASS_ENABLED,
+);
 // Disabled in tests or with SWEEP_INTERVAL_MS=0.
 const stopSweeper =
   config.NODE_ENV === 'test' || config.SWEEP_INTERVAL_MS === 0
