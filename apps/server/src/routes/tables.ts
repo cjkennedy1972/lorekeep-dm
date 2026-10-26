@@ -16,6 +16,7 @@ import adventure01 from '../../../../packages/engine/adventures/01/adventure.jso
 import { RegistryMemory } from '../dm/memory.js';
 import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
 import { authenticateRequest } from '../middleware/auth.js';
+import { concealedEntities } from '../room/eventVisibility.js';
 import { buildResumeRecap, gateRecap } from '../dm/recap.js';
 import {
   createConfiguredAdapter,
@@ -412,7 +413,9 @@ export function registerTableRoutes(
           /* deterministic recap remains available offline */
         }
       }
+      const room = await rooms.get(request.params.id);
       const generatedRecap = await buildResumeRecap({
+        hidden: concealedEntities(room?.state?.gameState),
         db,
         sessionId: request.params.id,
         lastEvents: recent,
@@ -430,7 +433,6 @@ export function registerTableRoutes(
           "UPDATE sessions SET last_active_at=now(),status='active' WHERE id=$1 AND owner_account_id=$2 AND mode='solo'",
           [request.params.id, accountId],
         );
-      const room = await rooms.get(request.params.id);
       await room.persistRecap({
         recap: recap.recap,
         memoryHash: recap.memoryHash,

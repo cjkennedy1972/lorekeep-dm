@@ -172,6 +172,7 @@ export function createApp(
           rooms,
           options.joinRateLimit,
           options.roomLimits,
+          { liveDmAllowlistOnly },
         ),
       );
       originScope(app, (scope) =>

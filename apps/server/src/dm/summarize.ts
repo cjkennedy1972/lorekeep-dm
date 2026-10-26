@@ -1,5 +1,9 @@
 import { RegistryMemory, type RegistryDiff } from './memory.js';
 import type { Pool } from 'pg';
+import {
+  EVENT_ID_RULES,
+  projectEventForViewer,
+} from '../room/eventVisibility.js';
 import type { LlmAdapter, LlmRequest } from '../llm/adapter.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
@@ -258,15 +262,69 @@ export interface CloseSceneInput extends SceneSummaryInput {
   tier: ContentTier;
   tableLines: readonly string[];
   turnId?: string;
+  /** Entities hidden from the table (ADR-034 §3); summary inputs and outputs are filtered to the public view. */
+  hidden?: readonly HiddenEntity[];
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export type HiddenEntity = { id: string; name?: string };
+
+/** Word-boundary matcher: ids always, names only when 3+ chars so short names do not redact normal prose. */
+export function hiddenMatcher(hidden: readonly HiddenEntity[]) {
+  const needles = hidden.flatMap((h) => [
+    h.id,
+    ...(h.name && h.name.trim().length >= 3 ? [h.name.trim()] : []),
+  ]);
+  const re = needles.length
+    ? new RegExp(
+        `(?<![\\w])(?:${needles.map(escapeRe).join('|')})(?![\\w])`,
+        'gi',
+      )
+    : undefined;
+  return {
+    mentions: (value: unknown) =>
+      !!re && ((re.lastIndex = 0), re.test(JSON.stringify(value))),
+    scrub: (text: string) =>
+      re ? text.replace(re, 'an unseen presence') : text,
+  };
+}
+
+/** Public-view events only: combat events via the schema-driven projection, others dropped if they mention a hidden id/name. */
+export function publicSceneEvents(
+  events: SceneSummaryInput['events'],
+  hidden: readonly HiddenEntity[],
+): SceneSummaryInput['events'] {
+  if (!hidden.length) return events;
+  const ids = new Set(hidden.map((h) => h.id));
+  const { mentions } = hiddenMatcher(hidden);
+  return events.flatMap((event) => {
+    const payload =
+      event.payload && typeof event.payload === 'object'
+        ? (event.payload as Record<string, unknown>)
+        : undefined;
+    const shown =
+      payload && event.type in EVENT_ID_RULES
+        ? projectEventForViewer(payload, ids, new Set())
+        : payload;
+    return shown && !mentions(shown)
+      ? [{ type: event.type, payload: shown }]
+      : [];
+  });
 }
 
 /** Persist a summary exactly once, then apply validated registry updates. */
 export async function closeScene(
   input: CloseSceneInput,
 ): Promise<SceneSummaryResult & { persisted: boolean }> {
-  const result = await summarizeScene(input);
-  let summary = result.summary;
-  let registryDiffs = result.registryDiffs;
+  const hidden = input.hidden ?? [];
+  const result = await summarizeScene({
+    ...input,
+    events: publicSceneEvents(input.events, hidden),
+  });
+  let summary = hiddenMatcher(hidden).scrub(result.summary);
+  let registryDiffs = result.registryDiffs.filter(
+    (diff) => !hiddenMatcher(hidden).mentions(diff),
+  );
   let fallback = result.fallback;
   const allowed = async (text: string) => {
     try {

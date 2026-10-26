@@ -558,7 +558,7 @@ export class Persistence {
         ? {
             sessionId,
             seq: Number(row.seq),
-            state: row.state,
+            state: await withLegacyConcealed(client, sessionId, row.state),
             createdAt: row.created_at,
           }
         : null;
@@ -678,7 +678,7 @@ export class Persistence {
         ? {
             sessionId,
             seq: Number(row.seq),
-            state: row.state,
+            state: await withLegacyConcealed(client, sessionId, row.state),
             createdAt: row.created_at,
           }
         : null;
@@ -711,4 +711,37 @@ export class Persistence {
       client.release();
     }
   }
+}
+
+/**
+ * Snapshots written before `gameState.concealed` existed carry no record. Rebuild it once from every retained
+ * committed state and snapshot (entities that were ever hidden); the empty array marks the rebuild as done,
+ * and the next commit persists it. ADR-034 §3; raw events past retention cannot be recovered.
+ */
+async function withLegacyConcealed(
+  client: Pick<PoolClient, 'query'>,
+  sessionId: string,
+  state: unknown,
+): Promise<unknown> {
+  const game = (state as { gameState?: Record<string, unknown> } | null)
+    ?.gameState;
+  if (!game || typeof game !== 'object' || 'concealed' in game) return state;
+  const entities = (path: string) =>
+    `CASE WHEN jsonb_typeof(${path})='array' THEN ${path} ELSE '[]'::jsonb END`;
+  const { rows } = await client.query<{ id: string; name: string | null }>(
+    `SELECT DISTINCT e->>'id' AS id, e->>'name' AS name
+       FROM events ev,
+            jsonb_array_elements(${entities("ev.payload->'gameState'->'combatRoom'->'entities'")}) e
+      WHERE ev.session_id=$1 AND ev.type='GameStateCommitted' AND e->>'hidden'='true'
+     UNION
+     SELECT DISTINCT e->>'id', e->>'name'
+       FROM snapshots sn,
+            jsonb_array_elements(${entities("sn.state->'gameState'->'combatRoom'->'entities'")}) e
+      WHERE sn.session_id=$1 AND e->>'hidden'='true'`,
+    [sessionId],
+  );
+  const concealed = rows
+    .filter((row) => row.id)
+    .map((row) => ({ id: row.id, ...(row.name ? { name: row.name } : {}) }));
+  return { ...(state as object), gameState: { ...game, concealed } };
 }

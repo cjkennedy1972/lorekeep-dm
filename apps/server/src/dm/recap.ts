@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { LlmAdapter } from '../llm/adapter.js';
 import { RegistryMemory } from './memory.js';
-import { boundSummary } from './summarize.js';
+import { boundSummary, hiddenMatcher, type HiddenEntity } from './summarize.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
 
@@ -147,11 +147,13 @@ export async function buildResumeRecap(input: {
   changed?: boolean;
   adapter?: LlmAdapter;
   signal?: AbortSignal;
+  hidden?: readonly HiddenEntity[];
 }): Promise<RecapResult> {
-  const memories = await new RegistryMemory(input.db).loadRecapMemory(
-    input.sessionId,
-  );
-  return buildRecap({
+  const scrub = hiddenMatcher(input.hidden ?? []).scrub;
+  const memories = (
+    await new RegistryMemory(input.db).loadRecapMemory(input.sessionId)
+  ).map(scrub);
+  const built = await buildRecap({
     memories,
     lastEvents: input.lastEvents,
     previousSnapshotRecap: input.previousSnapshotRecap,
@@ -159,4 +161,5 @@ export async function buildResumeRecap(input: {
     adapter: input.adapter,
     signal: input.signal,
   });
+  return { ...built, recap: scrub(built.recap) };
 }
