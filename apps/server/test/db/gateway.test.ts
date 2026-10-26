@@ -1360,7 +1360,13 @@ describe('one-time gateway', () => {
       // Real unmute converges everything.
       room.setChatMute = original;
       await send(false);
-      await until(async () => !muted() && (await lastEvent()) === 'false');
+      // Unmute appends the event first and deletes the row last: wait for the row.
+      await until(
+        async () =>
+          !muted() &&
+          (await lastEvent()) === 'false' &&
+          !(await muteRow()).rowCount,
+      );
       expect((await muteRow()).rowCount).toBe(0);
       expect(await lastEvent()).toBe('false');
     } finally {
