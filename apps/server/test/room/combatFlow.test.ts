@@ -929,6 +929,34 @@ describe('monster turns', () => {
     );
   });
 
+  it('resolves a live goblin turn with its catalog dagger damage type', () => {
+    const { runtime, state } = engaged();
+    const staged = {
+      ...state,
+      seed: 42,
+      entities: state.entities.map((entity) =>
+        entity.id === 'ent_aria'
+          ? { ...entity, ac: 1 }
+          : entity.id === 'ent_goblin-minion_1'
+            ? { ...entity, pos: { x: 8, y: 2 } }
+            : entity,
+      ),
+    };
+    const result = ok(
+      runtime.execute(
+        staged,
+        'ent_aria',
+        { command: 'end-turn' },
+        { now: NOW },
+      ),
+    );
+    const roll = result.events.find((event) => event.type === 'RollEvent');
+    const damage = result.events.find((event) => event.type === 'HpChanged');
+
+    expect(roll?.attackId).toBe('dagger');
+    expect(damage?.damageType).toBe('piercing');
+  });
+
   it('approach from across the map, then end combat when the rules say so', () => {
     const { runtime, state } = bootstrapped();
     let current = state;
