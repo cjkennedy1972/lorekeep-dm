@@ -204,6 +204,13 @@ class Client {
       // Admission rejects while the DM narrates the previous resolved turn
       // (phase `narrating`). Wait for that narration to finish (the Room commits
       // the next phase before it broadcasts NarrationCompleted), then resend.
+      // The Room also keeps turnInFlight set for a moment after it has broadcast
+      // NarrationCompleted and opened the next turn, and answers "still narrating;
+      // try again". No frame marks that clearing, so resend with a short bounded backoff.
+      if (reply.payload?.message?.includes('still narrating')) {
+        await new Promise((r) => setTimeout(r, 50));
+        continue;
+      }
       if (reply.payload?.code === 'narration-in-progress') {
         await this.until(
           (m) => m.type === 'NarrationCompleted',
