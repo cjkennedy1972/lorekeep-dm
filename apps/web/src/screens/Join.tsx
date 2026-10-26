@@ -27,8 +27,10 @@ export function Join() {
       lines?: string[];
       veils?: string[];
     };
-    recap?: string;
   }>();
+  const [requestId, setRequestId] = useState('');
+  const [recap, setRecap] = useState<{ text?: string; failed?: boolean }>();
+  const [withdrawn, setWithdrawn] = useState(false);
   const content = useMatureOptOut();
   const checked = draft ?? content.optOut ?? false;
   const [owned, setOwned] = useState<OwnedCharacter[] | null>(null);
@@ -77,6 +79,32 @@ export function Join() {
     if (pendingMessage) pendingRef.current?.focus();
   }, [pendingMessage]);
 
+  async function loadRecap(id: string) {
+    const r = await api<{ recap?: string }>(`/api/late-join/${id}/recap`);
+    setRecap(
+      r.ok && typeof r.data.recap === 'string'
+        ? { text: r.data.recap }
+        : { failed: true },
+    );
+  }
+
+  async function withdraw() {
+    const r = await api(`/api/late-join/${requestId}/cancel`, {
+      requestId,
+      actionId: crypto.randomUUID(),
+    });
+    if (!r.ok) {
+      setError('Your request could not be withdrawn. Try again.');
+      return;
+    }
+    attemptRef.current = null;
+    setRequestId('');
+    setRecap(undefined);
+    setOnboarding(undefined);
+    setPendingMessage('');
+    setWithdrawn(true);
+  }
+
   async function joinTable(e: FormEvent, invite: string) {
     e.preventDefault();
     const chosen = owned?.find((c) => c.id === characterId);
@@ -92,6 +120,7 @@ export function Join() {
       : undefined;
     setJoining(true);
     setError('');
+    setWithdrawn(false);
     const r = await api<{ room: RoomInfo }>(
       `/api/invites/${encodeURIComponent(invite)}/join`,
       { matureOptOut: checked, ...selection },
@@ -100,6 +129,11 @@ export function Join() {
     if (r.code === 'LATE_JOIN_PENDING') {
       attemptRef.current = selection ?? null;
       setOnboarding(r.data as typeof onboarding);
+      const id = (r.data as { requestId?: unknown }).requestId;
+      if (typeof id === 'string') {
+        setRequestId(id);
+        void loadRecap(id);
+      }
       setPendingMessage(r.message);
       setJoining(false);
       return;
@@ -178,9 +212,29 @@ export function Join() {
               {onboarding.settings?.veils?.length ? (
                 <p>Veils: {onboarding.settings.veils.join(', ')}</p>
               ) : null}
-              {onboarding.recap && <p>{onboarding.recap}</p>}
             </section>
           )}
+          {requestId && (
+            <section aria-label="Previously on">
+              <h2>Previously on…</h2>
+              <div aria-live="polite">
+                {recap === undefined ? (
+                  <p>Loading recap…</p>
+                ) : recap.failed ? (
+                  <p>
+                    The recap is not available right now. You can keep waiting
+                    or withdraw.
+                  </p>
+                ) : (
+                  <p>{recap.text}</p>
+                )}
+              </div>
+              <button type="button" onClick={() => void withdraw()}>
+                Withdraw request
+              </button>
+            </section>
+          )}
+          {withdrawn && <p role="status">Your join request was withdrawn.</p>}
           {pendingMessage && (
             <p role="alert" tabIndex={-1} ref={pendingRef}>
               {pendingMessage} <Link to="/rooms">Back to My tables</Link>
