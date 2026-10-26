@@ -82,14 +82,17 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      # The ~200 gstreamer/media packages WebKit needs are fetched from the Azure
-      # mirror, which intermittently stalls to a crawl (observed: 8 min timeouts on
-      # ~7% of runs; healthy runs take ~30s). Let apt retry transient fetch errors
-      # in one process. Do not wrap install-deps in an in-step retry: timing out
-      # pnpm can orphan apt-get with dpkg's lock held, making a retry self-block.
+      # The ~200 gstreamer/media packages WebKit needs can stall on the runner's
+      # Azure mirror. Use Ubuntu's canonical HTTPS archive; let apt retry transient
+      # fetch errors in one process. Do not wrap install-deps in an in-step retry:
+      # timing out pnpm can orphan apt-get with dpkg's lock held, making a retry
+      # self-block.
       - name: Install Firefox and WebKit system dependencies
         timeout-minutes: 12
         run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            /etc/apt/apt-mirrors.txt
+          grep -qF 'https://archive.ubuntu.com/ubuntu' /etc/apt/apt-mirrors.txt
           printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "20";' \
             'Acquire::https::Timeout "20";' 'DPkg::Lock::Timeout "120";' \
             | sudo tee /etc/apt/apt.conf.d/99ci-retries >/dev/null
