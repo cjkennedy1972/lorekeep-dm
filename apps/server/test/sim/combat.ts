@@ -118,14 +118,10 @@ export async function combatCommand(
             (frame.payload?.code === 'RATE_LIMITED' &&
               frame.payload?.actionId === undefined))),
     );
-    if (String(reply.payload?.message ?? '').includes('still narrating')) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      continue;
-    }
     if (reply.payload?.code === 'narration-in-progress') {
       await pollFrom(
         client,
-        client.inbox.indexOf(reply) + 1,
+        mark,
         (frame) => frame.type === 'NarrationCompleted',
         20_000,
       );
