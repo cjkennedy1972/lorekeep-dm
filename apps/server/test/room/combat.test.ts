@@ -8,6 +8,7 @@ import {
 } from '../../src/room/combat.js';
 import { advanceTurn } from '../../src/room/combatEngine.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
+import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import { joinSeated } from '../helpers/room.js';
 
 const sessionId = randomUUID();
@@ -134,7 +135,7 @@ describe('combat turn resource refresh', () => {
   });
 });
 
-function setup() {
+function setup(runner?: SoloTurnRunner) {
   const events: StoredEvent[] = [];
   let snapshot: LatestState['snapshot'] = null;
   const store: RoomStore = {
@@ -161,7 +162,7 @@ function setup() {
       return { events: stored };
     },
   };
-  const room = new Room(store, lease, { snapshot: null, events: [] });
+  const room = new Room(store, lease, { snapshot: null, events: [] }, runner);
   return { room, events, latestSnapshot: () => snapshot };
 }
 
@@ -306,6 +307,161 @@ describe('Room combat command seam', () => {
       }),
     ).toBe(true);
     expect(events).toHaveLength(count);
+  });
+
+  it('accepts and persists a command submitted synchronously by NarrationCompleted delivery', async () => {
+    const runner: SoloTurnRunner = {
+      async run(_request, emit) {
+        emit({ type: 'NarrationCompleted', narration: 'The turn ends.' });
+        return {
+          narration: 'The turn ends.',
+          events: [{ type: 'TurnStarted', turnId: 'dm-turn' }],
+          state: {},
+          turnSeed: '0x0000000000000001',
+          usage: { in: 1, out: 1 },
+        };
+      },
+    };
+    const { room, events, latestSnapshot } = setup(runner);
+    const owner = randomUUID();
+    let commandResult: Promise<boolean> | undefined;
+    const commandActionId = randomUUID();
+    let submitted!: (command: Promise<boolean>) => void;
+    const commandSubmitted = new Promise<Promise<boolean>>((resolve) => {
+      submitted = resolve;
+    });
+    await joinSeated(room, owner, {
+      send(message) {
+        if (message.type !== 'NarrationCompleted' || commandResult) return;
+        commandResult = room.submitCombatCommand(owner, commandActionId, {
+          command: 'move',
+          destination: { x: 3, y: 1 },
+        });
+        submitted(commandResult);
+      },
+    });
+    const initialCombat = {
+      ...combat,
+      phase: 'awaiting-command' as const,
+      turnId: 'initial-turn',
+    };
+    room.state = {
+      ...room.state,
+      gameState: {
+        combatRoom: initialCombat,
+        combatActors: { [owner]: 'ent_hero' },
+      },
+    };
+
+    await room.submitCombatCommand(owner, randomUUID(), {
+      command: 'end-turn',
+    });
+    const submittedCommand = await commandSubmitted;
+    expect(await submittedCommand).toBe(true);
+    const internals = room as unknown as { activeTurn: Promise<void> };
+    await internals.activeTurn;
+    // If delivery preceded the worker's commit, the retry uses its original ID.
+    await room.submitCombatCommand(owner, commandActionId, {
+      command: 'move',
+      destination: { x: 3, y: 1 },
+    });
+
+    expect(commandResult).toBeDefined();
+    const saved = latestSnapshot()?.state as {
+      gameState?: { combatRoom?: RoomCombatState };
+    };
+    expect(
+      saved.gameState?.combatRoom?.entities.find(
+        (entity) => entity.id === 'ent_hero',
+      )?.pos,
+    ).toEqual({ x: 3, y: 1 });
+    expect(
+      events.filter((event) => event.type === 'NarrationCompleted'),
+    ).toHaveLength(1);
+  });
+
+  it('rejects actionable combat commands without deadlocking the mailbox while narration commits', async () => {
+    const { room, events, latestSnapshot } = setup();
+    const owner = randomUUID();
+    const sent: { type: string; payload?: Record<string, unknown> }[] = [];
+    await joinSeated(room, owner, {
+      send: (message) => sent.push(message as never),
+    });
+    const eventsBeforeCommand = events.length;
+    room.state = {
+      ...room.state,
+      gameState: {
+        combatRoom: { ...combat, phase: 'awaiting-command' },
+        combatActors: { [owner]: 'ent_hero' },
+      },
+    };
+    let settle!: () => void;
+    const settling = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const internals = room as unknown as {
+      turnInFlight: boolean;
+      activeTurn: Promise<void>;
+    };
+    internals.turnInFlight = true;
+    internals.activeTurn = settling;
+
+    const actionId = randomUUID();
+    await room.submitCombatCommand(owner, actionId, {
+      command: 'move',
+      destination: { x: 3, y: 1 },
+    });
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'Error',
+        payload: expect.objectContaining({
+          code: 'narration-in-progress',
+          actionId,
+        }),
+      }),
+    );
+    expect(events).toHaveLength(eventsBeforeCommand);
+
+    // The turn's continuation can now enqueue/commit through the mailbox.
+    settle();
+    internals.turnInFlight = false;
+    await room.drain();
+    expect(latestSnapshot()).toBeDefined();
+  });
+
+  it('continues rejecting commands while combat narration is genuinely in flight', async () => {
+    const { room, events } = setup();
+    const owner = randomUUID();
+    const sent: { type: string; payload?: Record<string, unknown> }[] = [];
+    await joinSeated(room, owner, {
+      send: (message) => sent.push(message as never),
+    });
+    const eventsBeforeCommand = events.length;
+    room.state = {
+      ...room.state,
+      gameState: {
+        combatRoom: { ...combat, phase: 'narrating' },
+        combatActors: { [owner]: 'ent_hero' },
+      },
+    };
+    const internals = room as unknown as { turnInFlight: boolean };
+    internals.turnInFlight = true;
+
+    await room.submitCombatCommand(owner, randomUUID(), {
+      command: 'move',
+      destination: { x: 3, y: 1 },
+    });
+
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'Error',
+        payload: expect.objectContaining({
+          code: 'narration-in-progress',
+          message: 'The DM is narrating this turn.',
+        }),
+      }),
+    );
+    expect(events).toHaveLength(eventsBeforeCommand);
   });
 
   it('uses the engine path for valid movement and rejects an unreachable move unchanged', () => {

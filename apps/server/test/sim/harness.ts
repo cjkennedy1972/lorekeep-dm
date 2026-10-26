@@ -316,8 +316,11 @@ export class SimClient {
   }
 
   /** Sends a client envelope. Returns the actionId used. */
-  send(type: string, payload: Record<string, unknown>): string {
-    const actionId = randomUUID();
+  send(
+    type: string,
+    payload: Record<string, unknown>,
+    actionId = randomUUID(),
+  ): string {
     this.socket!.send(
       JSON.stringify({ actionId, type, payload, lastSeq: this.lastSeq }),
     );
