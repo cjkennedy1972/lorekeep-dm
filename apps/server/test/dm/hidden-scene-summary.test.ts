@@ -93,7 +93,7 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
       {
         capabilities: () => ({}),
         probe: async () => true,
-        complete: async function* () {
+        complete: () => {
           throw new Error('down');
         },
       } as never,
