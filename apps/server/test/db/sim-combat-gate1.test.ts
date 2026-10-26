@@ -188,6 +188,12 @@ describe('host removes a seat on that seat’s turn (host revoke mid-combat)', (
       // Timer off, so only the removal can resolve the turn. The configured action is still set.
       await configureTurnTimer(host, { durationMs: null, timeoutAction });
       await endTurnsUntil(t, owners, (id) => id === victimEntity);
+      // Barrier: the server runs turn-timer config through the same serial mailbox as the
+      // away-autopilot job queued when this turn opened. Once the reply arrives that job has
+      // run with the seat still present, so the kick below is the only trigger and the
+      // configured timeout path resolves the turn. Without it, a loaded runner can let the
+      // autopilot see the revoked seat first (AutopilotActed, no TurnTimedOut).
+      await configureTurnTimer(host, { durationMs: null, timeoutAction });
 
       host.send('KickSeat', { seatId: victimSeat.seatId });
 
