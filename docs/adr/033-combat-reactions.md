@@ -215,3 +215,11 @@ Checked against the code:
 - **M2 events still valid:** `InitiativeRolled`, `ReactionAvailable`, `ReactionResolved`, `OpportunityTriggered`, `EntityMoved`, `HpChanged`, `ConditionApplied`, `ConditionRemoved`, `SlotSpent`, `AreaResolved`. ADR-033 neither supersedes nor mentions `ReactionAvailable` and `ReactionResolved`. Still open: whether the §3 prompt events replace them or sit beside them. That needs a follow-up decision.
 
 Not yet implemented, so the contract is ahead of the code: the reaction prompt lifecycle (§3), the per-turn narration and its DM turn (§6), the timer and bounded resolution (§5), and persistence and restart (§7.4). The M4 item 6 tests in the Verification list are the acceptance bar for those.
+
+## Status note (2026-10-26)
+
+Status unchanged: Accepted (2026-10-25). The decision text above is unchanged. This note re-checks the 2026-10-25 status update against `origin/main` after #324 and #327–#329 merged.
+
+- **Reaction prompt lifecycle (§3) is in code.** #324 emits `ReactionPromptOpened`, `ReactionAnswered` and `ReactionDeclined{cause}`, with the 15 s window (§3.5) and the 45 s per-turn reaction budget (§3.8, D17). The 2026-10-25 "not in code" entry for these events is superseded. Reactor-only prompt rendering for non-reactor seats is a separate open item (Workboard card `1ee168bf`), not closed by this note.
+- **M2 combat events that stay valid:** unchanged from the 2026-10-25 note. Each name below is still present in server or engine source on `origin/main`: `InitiativeRolled`, `ReactionAvailable`, `ReactionResolved`, `OpportunityTriggered`, `EntityMoved`, `HpChanged`, `ConditionApplied`, `ConditionRemoved`, `SlotSpent`, `AreaResolved`.
+- **Still open:** whether the §3 prompt events replace `ReactionAvailable` and `ReactionResolved` or sit beside them. Both remain in `apps/server/src/room/combatEngine.ts`, so both stay valid until that decision is recorded.
