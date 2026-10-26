@@ -18,6 +18,7 @@ import {
 } from '../../src/gateway/resumeTokens.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { hashToken } from '../../src/accounts/signup.js';
+import { applyHostChatMute } from '../../src/chat/mutes.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
@@ -1287,6 +1288,169 @@ describe('one-time gateway', () => {
       }),
     );
   });
+  it('keeps chat_mutes, room state and events convergent when the mute event append fails', async () => {
+    const room = await rooms.get(sessionId);
+    const host = connect(await ticket(tokens[0]));
+    await nextOfType(host, 'StateSync');
+    const guest = connect(await ticket(tokens[1]));
+    await nextOfType(guest, 'StateSync');
+    const target = room.state.seats.find((s) => s.accountId === accounts[1])!;
+    const muted = () =>
+      room.state.seats.find((s) => s.seatId === target.seatId)!.chatMuted;
+    const until = async (ok: () => Promise<boolean> | boolean) => {
+      for (let i = 0; i < 100 && !(await ok()); i++)
+        await new Promise((r) => setTimeout(r, 20));
+    };
+    const muteRow = () =>
+      db.query(
+        'SELECT source FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
+        [sessionId, target.seatId],
+      );
+    const lastEvent = async () =>
+      (
+        await db.query(
+          "SELECT payload->>'muted' AS muted FROM events WHERE session_id=$1 AND type='ChatMuteChanged' AND payload->>'seatId'=$2 ORDER BY seq DESC LIMIT 1",
+          [sessionId, target.seatId],
+        )
+      ).rows[0]?.muted;
+    const send = async (muted: boolean) => {
+      const actionId = randomUUID();
+      host.send(
+        JSON.stringify({
+          type: 'MuteChat',
+          payload: { seatId: target.seatId, muted },
+          actionId,
+          lastSeq: room.seq,
+        }),
+      );
+      return actionId;
+    };
+    const original = room.setChatMute;
+    const failAppend = () => {
+      room.setChatMute = () => Promise.reject(new Error('append failed'));
+    };
+    try {
+      // Failed MUTE: no row, no muted state, no event.
+      failAppend();
+      const failedMute = await send(true);
+      await expect(nextOfType(host, 'Error')).resolves.toMatchObject({
+        payload: { code: 'ACTION_REJECTED', actionId: failedMute },
+      });
+      expect((await muteRow()).rowCount).toBe(0);
+      expect(muted()).toBeFalsy();
+      expect(await lastEvent()).toBeUndefined();
+
+      // Successful MUTE.
+      room.setChatMute = original;
+      await send(true);
+      await until(async () => muted() === true && !!(await lastEvent()));
+      expect((await muteRow()).rowCount).toBe(1);
+      expect(await lastEvent()).toBe('true');
+
+      // Failed UNMUTE: row restored (fail closed), state and event still muted.
+      failAppend();
+      const failedUnmute = await send(false);
+      await expect(nextOfType(host, 'Error')).resolves.toMatchObject({
+        payload: { code: 'ACTION_REJECTED', actionId: failedUnmute },
+      });
+      expect(await muteRow()).toMatchObject({ rows: [{ source: 'host' }] });
+      expect(muted()).toBe(true);
+      expect(await lastEvent()).toBe('true');
+
+      // Real unmute converges everything.
+      room.setChatMute = original;
+      await send(false);
+      // Unmute appends the event first and deletes the row last: wait for the row.
+      await until(
+        async () =>
+          !muted() &&
+          (await lastEvent()) === 'false' &&
+          !(await muteRow()).rowCount,
+      );
+      expect((await muteRow()).rowCount).toBe(0);
+      expect(await lastEvent()).toBe('false');
+    } finally {
+      room.setChatMute = original;
+      await Promise.all([closeSocket(host), closeSocket(guest)]);
+    }
+  }, 20_000);
+  it('serializes host mutes per seat and converges across restart', async () => {
+    const room0 = await rooms.get(sessionId);
+    const host = connect(await ticket(tokens[0]));
+    await nextOfType(host, 'StateSync');
+    const guest = connect(await ticket(tokens[1]));
+    await nextOfType(guest, 'StateSync');
+    const seatId = room0.state.seats.find(
+      (s) => s.accountId === accounts[1],
+    )!.seatId;
+    const hostAccount = accounts[0]!;
+    await closeSocket(host);
+    await closeSocket(guest);
+    const rows = async () =>
+      (
+        await db.query(
+          'SELECT 1 FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
+          [sessionId, seatId],
+        )
+      ).rowCount === 1;
+    const run = async (muted: boolean, failAfterMs?: number) => {
+      const room = await rooms.get(sessionId);
+      return applyHostChatMute(
+        db,
+        sessionId,
+        seatId,
+        muted,
+        hostAccount,
+        async () => {
+          if (failAfterMs !== undefined) {
+            await new Promise((r) => setTimeout(r, failAfterMs));
+            throw new Error('append failed');
+          }
+          await room.setChatMute(hostAccount, randomUUID(), seatId, muted);
+        },
+      );
+    };
+    const roomMuted = async () =>
+      !!(await rooms.get(sessionId)).state.seats.find(
+        (s) => s.seatId === seatId,
+      )?.chatMuted;
+    const restart = async () => {
+      await rooms.evictSession(sessionId);
+      return roomMuted();
+    };
+    try {
+      // Race: slow failing mute vs real mute must not restore a stale snapshot.
+      const [a, b] = await Promise.allSettled([run(true, 60), run(true)]);
+      expect([a.status, b.status]).toEqual(['rejected', 'fulfilled']);
+      expect(await rows()).toBe(true);
+      expect(await roomMuted()).toBe(true);
+      expect(await restart()).toBe(true);
+      expect(await rows()).toBe(true);
+
+      // Failed unmute then restart: still muted everywhere.
+      await expect(run(false, 1)).rejects.toThrow('append failed');
+      expect(await rows()).toBe(true);
+      expect(await restart()).toBe(true);
+
+      // Double concurrent unmute converges to unmuted.
+      await Promise.all([run(false), run(false)]);
+      expect(await rows()).toBe(false);
+      expect(await roomMuted()).toBe(false);
+      expect(await restart()).toBe(false);
+
+      // Failed mute then restart: no row, not muted.
+      await expect(run(true, 1)).rejects.toThrow('append failed');
+      expect(await rows()).toBe(false);
+      expect(await restart()).toBe(false);
+
+      // Concurrent mute + unmute: whatever order, row and room agree.
+      await Promise.allSettled([run(true), run(false)]);
+      expect(await rows()).toBe(await roomMuted());
+      expect(await restart()).toBe(await rows());
+    } finally {
+      await db.query('DELETE FROM chat_mutes WHERE session_id=$1', [sessionId]);
+    }
+  }, 30_000);
 });
 
 describe('party character binding WebSocket authorization', () => {
