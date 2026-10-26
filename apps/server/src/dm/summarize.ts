@@ -263,23 +263,40 @@ export interface CloseSceneInput extends SceneSummaryInput {
   tableLines: readonly string[];
   turnId?: string;
   /** Entities hidden from the table (ADR-034 §3); summary inputs and outputs are filtered to the public view. */
-  hidden?: readonly { id: string; name?: string }[];
+  hidden?: readonly HiddenEntity[];
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export type HiddenEntity = { id: string; name?: string };
+
+/** Word-boundary matcher: ids always, names only when 3+ chars so short names do not redact normal prose. */
+export function hiddenMatcher(hidden: readonly HiddenEntity[]) {
+  const needles = hidden.flatMap((h) => [
+    h.id,
+    ...(h.name && h.name.trim().length >= 3 ? [h.name.trim()] : []),
+  ]);
+  const re = needles.length
+    ? new RegExp(
+        `(?<![\\w])(?:${needles.map(escapeRe).join('|')})(?![\\w])`,
+        'gi',
+      )
+    : undefined;
+  return {
+    mentions: (value: unknown) =>
+      !!re && ((re.lastIndex = 0), re.test(JSON.stringify(value))),
+    scrub: (text: string) =>
+      re ? text.replace(re, 'an unseen presence') : text,
+  };
+}
 
 /** Public-view events only: combat events via the schema-driven projection, others dropped if they mention a hidden id/name. */
 export function publicSceneEvents(
   events: SceneSummaryInput['events'],
-  hidden: NonNullable<CloseSceneInput['hidden']>,
+  hidden: readonly HiddenEntity[],
 ): SceneSummaryInput['events'] {
   if (!hidden.length) return events;
   const ids = new Set(hidden.map((h) => h.id));
-  const needles = hidden.flatMap((h) => [h.id, h.name ?? ''].filter(Boolean));
-  const mentions = (value: unknown) => {
-    const text = JSON.stringify(value).toLowerCase();
-    return needles.some((n) => text.includes(n.toLowerCase()));
-  };
+  const { mentions } = hiddenMatcher(hidden);
   return events.flatMap((event) => {
     const payload =
       event.payload && typeof event.payload === 'object'
@@ -295,19 +312,6 @@ export function publicSceneEvents(
   });
 }
 
-function scrubHidden(
-  text: string,
-  hidden: NonNullable<CloseSceneInput['hidden']>,
-) {
-  return hidden
-    .flatMap((h) => [h.id, h.name ?? ''].filter(Boolean))
-    .reduce(
-      (out, n) =>
-        out.replace(new RegExp(escapeRe(n), 'gi'), 'an unseen presence'),
-      text,
-    );
-}
-
 /** Persist a summary exactly once, then apply validated registry updates. */
 export async function closeScene(
   input: CloseSceneInput,
@@ -317,10 +321,9 @@ export async function closeScene(
     ...input,
     events: publicSceneEvents(input.events, hidden),
   });
-  let summary = scrubHidden(result.summary, hidden);
+  let summary = hiddenMatcher(hidden).scrub(result.summary);
   let registryDiffs = result.registryDiffs.filter(
-    (diff) =>
-      scrubHidden(JSON.stringify(diff), hidden) === JSON.stringify(diff),
+    (diff) => !hiddenMatcher(hidden).mentions(diff),
   );
   let fallback = result.fallback;
   const allowed = async (text: string) => {

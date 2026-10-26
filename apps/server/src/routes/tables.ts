@@ -412,7 +412,23 @@ export function registerTableRoutes(
           /* deterministic recap remains available offline */
         }
       }
+      const room = await rooms.get(request.params.id);
       const generatedRecap = await buildResumeRecap({
+        hidden: (
+          (
+            room?.state?.gameState as
+              | {
+                  combatRoom?: {
+                    entities?: {
+                      id: string;
+                      name?: string;
+                      hidden?: boolean;
+                    }[];
+                  };
+                }
+              | undefined
+          )?.combatRoom?.entities ?? []
+        ).filter((entity) => entity.hidden),
         db,
         sessionId: request.params.id,
         lastEvents: recent,
@@ -430,7 +446,6 @@ export function registerTableRoutes(
           "UPDATE sessions SET last_active_at=now(),status='active' WHERE id=$1 AND owner_account_id=$2 AND mode='solo'",
           [request.params.id, accountId],
         );
-      const room = await rooms.get(request.params.id);
       await room.persistRecap({
         recap: recap.recap,
         memoryHash: recap.memoryHash,

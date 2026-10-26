@@ -1,7 +1,7 @@
 import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
-import { closeScene } from '../dm/summarize.js';
+import { closeScene, hiddenMatcher } from '../dm/summarize.js';
 import {
   createSceneCloseExecutor,
   judgeLeaveIntent,
@@ -981,6 +981,11 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       settled = await attempt(attemptTier);
     }
     const { result, narration } = settled;
+    const hiddenNow = [
+      ...((state as GameState).combatRoom?.entities ?? []),
+      ...((result.state as GameState).combatRoom?.entities ?? []),
+    ].filter((entity) => entity.hidden);
+    const publicRegistry = hiddenMatcher(hiddenNow);
     for (const event of narration) onEvent(event);
     // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
     const failed = result.fallback === 'endpoint-error';
@@ -1070,16 +1075,18 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           tier,
           tableLines,
           turnId: request.actionId,
-          hidden: [
-            ...((state as GameState).combatRoom?.entities ?? []),
-            ...((result.state as GameState).combatRoom?.entities ?? []),
-          ].filter((entity) => entity.hidden),
+          hidden: hiddenNow,
         });
       }
     }
     return {
       ...result,
-      events: [...tierEvents, ...result.events, ...registryEvents],
+      // ADR-034 §3: registry rows are served to every seat and to pending applicants.
+      events: [
+        ...tierEvents,
+        ...result.events,
+        ...registryEvents.filter((event) => !publicRegistry.mentions(event)),
+      ],
       state: {
         ...(result.state as GameState),
         ...(transitionedSceneId ? { sceneId: transitionedSceneId } : {}),

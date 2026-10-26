@@ -733,6 +733,21 @@ export function registerSessionRoutes(
             ...boundaries.veils.map((veil) => `veil: ${veil}`),
           ],
           adapter: await recapAdapter(accountId, sessionId),
+          hidden: (
+            (
+              room.state?.gameState as
+                | {
+                    combatRoom?: {
+                      entities?: {
+                        id: string;
+                        name?: string;
+                        hidden?: boolean;
+                      }[];
+                    };
+                  }
+                | undefined
+            )?.combatRoom?.entities ?? []
+          ).filter((entity) => entity.hidden),
         });
         const body = { recap: result.recap, settings };
         recapCache.set(key, { body, expires: Date.now() + 5 * 60_000 });

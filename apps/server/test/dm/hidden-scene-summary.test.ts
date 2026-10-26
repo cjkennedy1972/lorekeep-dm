@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { LlmAdapter, LlmChunk } from '../../src/llm/adapter.js';
-import { closeScene } from '../../src/dm/summarize.js';
+import {
+  closeScene,
+  hiddenMatcher,
+  publicSceneEvents,
+} from '../../src/dm/summarize.js';
+import { buildResumeRecap } from '../../src/dm/recap.js';
 import { buildLateJoinRecap } from '../../src/dm/lateJoinRecap.js';
 
 const HIDDEN = { id: 'ent_shade_77', name: 'Vexra the Shade' };
@@ -47,6 +52,7 @@ function capture() {
   } as never;
   return { rows, db };
 }
+const prompts: string[] = [];
 /** Echoes its whole prompt, so any hidden data given to the LLM appears in the stored summary. */
 const echo = (extra = ''): LlmAdapter =>
   ({
@@ -55,6 +61,7 @@ const echo = (extra = ''): LlmAdapter =>
     complete: async function* (req: {
       messages: { content: string }[];
     }): AsyncIterable<LlmChunk> {
+      prompts.push(req.messages.map((m) => m.content).join(' '));
       yield {
         type: 'text',
         delta: JSON.stringify({
@@ -125,5 +132,75 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
       tableLines: [],
     });
     expect(leaks(out.recap)).toBe(false);
+  });
+
+  it('never sends hidden ids or names to the LLM (input-side filter)', async () => {
+    prompts.length = 0;
+    await run(echo(), capture().db);
+    expect(prompts.length).toBeGreaterThan(0);
+    expect(prompts.some(leaks)).toBe(false);
+  });
+
+  it('does not over-redact: short hidden names and substrings keep normal events', () => {
+    const kept = publicSceneEvents(
+      [
+        {
+          type: 'SceneNote',
+          payload: { summary: 'The rope crashed onto the floor.' },
+        },
+      ],
+      [{ id: 'ent_ash', name: 'Ash' }],
+    );
+    expect(kept).toHaveLength(1);
+    const m = hiddenMatcher([{ id: 'ent_x', name: 'Vexra' }]);
+    expect(m.mentions({ summary: 'Vexra hides.' })).toBe(true);
+    expect(m.mentions({ summary: 'Vexrastone is a town.' })).toBe(false);
+  });
+
+  const preFixRows = {
+    query: async (sql: string) => ({
+      rows: sql.includes('FROM scene_summaries')
+        ? [{ text: 'Scene a: Vexra the Shade waits in the rafters.' }]
+        : sql.includes('FROM registry_entries')
+          ? [{ text: 'npc Vexra the Shade: waits in the rafters' }]
+          : [],
+    }),
+  } as never;
+
+  it('late-join recap scrubs hidden text from rows written before the filter existed', async () => {
+    prompts.length = 0;
+    const out = await buildLateJoinRecap({
+      db: preFixRows,
+      sessionId: 's',
+      moderator: allow,
+      tier: 'standard',
+      tableLines: [],
+      adapter: echo(),
+      hidden: [HIDDEN],
+    });
+    expect(prompts.some(leaks)).toBe(false);
+    expect(leaks(out.recap)).toBe(false);
+  });
+
+  it('seated resume recap scrubs the same rows', async () => {
+    prompts.length = 0;
+    const out = await buildResumeRecap({
+      db: preFixRows,
+      sessionId: 's',
+      adapter: echo(),
+      hidden: [HIDDEN],
+    });
+    expect(prompts.some(leaks)).toBe(false);
+    expect(leaks(out.recap)).toBe(false);
+  });
+
+  it('registry upserts naming a hidden entity are recognised for dropping', () => {
+    const m = hiddenMatcher([HIDDEN]);
+    expect(
+      m.mentions({ type: 'NpcUpserted', npc: { id: 'n1', name: HIDDEN.name } }),
+    ).toBe(true);
+    expect(
+      m.mentions({ type: 'NpcUpserted', npc: { id: 'n2', name: 'Warden' } }),
+    ).toBe(false);
   });
 });

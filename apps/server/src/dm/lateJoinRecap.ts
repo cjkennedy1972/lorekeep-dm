@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
+import { hiddenMatcher, type HiddenEntity } from './summarize.js';
 import {
   MAX_RECAP_CHARS,
   MAX_RECAP_WORDS,
@@ -37,6 +38,7 @@ export function scrubLateJoinText(
 async function loadMemories(
   db: Pick<Pool, 'query'>,
   sessionId: string,
+  hidden: readonly HiddenEntity[],
 ): Promise<{ memories: string[]; names: string[] }> {
   const bindings = await db.query<{ name: string | null; redacted: boolean }>(
     `SELECT character_snapshot->>'name' AS name, binding_status='redacted' AS redacted
@@ -63,7 +65,9 @@ async function loadMemories(
   );
   return {
     memories: [...summaries.rows, ...registry.rows]
-      .map((row) => scrubLateJoinText(row.text, names))
+      .map((row) =>
+        hiddenMatcher(hidden).scrub(scrubLateJoinText(row.text, names)),
+      )
       .filter(Boolean),
     names,
   };
@@ -83,11 +87,17 @@ export async function buildLateJoinRecap(input: {
   tableLines: readonly string[];
   adapter?: LlmAdapter;
   timeoutMs?: number;
+  /** Entities hidden at the table now; rows written before write-side filtering may still name them. */
+  hidden?: readonly HiddenEntity[];
 }): Promise<LateJoinRecapResult> {
   let memories: string[] = [];
   let names: string[] = [];
   try {
-    ({ memories, names } = await loadMemories(input.db, input.sessionId));
+    ({ memories, names } = await loadMemories(
+      input.db,
+      input.sessionId,
+      input.hidden ?? [],
+    ));
   } catch {
     // fall through to the neutral text
   }
