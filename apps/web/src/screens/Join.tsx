@@ -1,6 +1,14 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type RoomInfo } from '../api';
+import type { OwnedCharacter } from '../features/party/bindCharacter';
+import { LateJoinCharacterField } from '../features/party/LateJoinCharacterField';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
 export function Join() {
@@ -23,6 +31,15 @@ export function Join() {
   }>();
   const content = useMatureOptOut();
   const checked = draft ?? content.optOut ?? false;
+  const [owned, setOwned] = useState<OwnedCharacter[] | null>(null);
+  const [ownedError, setOwnedError] = useState('');
+  const [characterId, setCharacterId] = useState('');
+  const [pendingMessage, setPendingMessage] = useState('');
+  // The selection of a request still waiting on the host. A retry with the same character reuses its actionId, so the server returns the prior result.
+  const attemptRef = useRef<{ characterId: string; actionId: string } | null>(
+    null,
+  );
+  const pendingRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     if (!code) return;
@@ -37,17 +54,63 @@ export function Join() {
     return () => void (live = false);
   }, [code]);
 
+  const loadCharacters = useCallback(async () => {
+    setOwnedError('');
+    const r = await api<{ characters: OwnedCharacter[] }>('/api/me/characters');
+    if (!r.ok) {
+      setOwnedError('Your characters could not be loaded.');
+      return;
+    }
+    setOwned(r.data.characters);
+    setCharacterId((current) =>
+      r.data.characters.some((c) => c.id === current)
+        ? current
+        : (r.data.characters[0]?.id ?? ''),
+    );
+  }, []);
+
+  useEffect(() => {
+    if (code) void loadCharacters();
+  }, [code, loadCharacters]);
+
+  useEffect(() => {
+    if (pendingMessage) pendingRef.current?.focus();
+  }, [pendingMessage]);
+
   async function joinTable(e: FormEvent, invite: string) {
     e.preventDefault();
+    const chosen = owned?.find((c) => c.id === characterId);
+    const selection = chosen
+      ? {
+          characterId: chosen.id,
+          expectedRevision: chosen.revision,
+          actionId:
+            attemptRef.current?.characterId === chosen.id
+              ? attemptRef.current.actionId
+              : crypto.randomUUID(),
+        }
+      : undefined;
     setJoining(true);
     setError('');
     const r = await api<{ room: RoomInfo }>(
       `/api/invites/${encodeURIComponent(invite)}/join`,
-      { matureOptOut: checked },
+      { matureOptOut: checked, ...selection },
     );
     if (r.ok) return navigate(`/rooms/${r.data.room.id}`, { replace: true });
-    if (r.code === 'LATE_JOIN_PENDING')
+    if (r.code === 'LATE_JOIN_PENDING') {
+      attemptRef.current = selection ?? null;
       setOnboarding(r.data as typeof onboarding);
+      setPendingMessage(r.message);
+      setJoining(false);
+      return;
+    }
+    attemptRef.current = null;
+    if (
+      r.code === 'INVALID_CHARACTER' ||
+      r.code === 'CHARACTER_CHANGED' ||
+      r.code === 'CHARACTER_UNAVAILABLE'
+    )
+      void loadCharacters();
     setError(r.message);
     setJoining(false);
   }
@@ -89,6 +152,14 @@ export function Join() {
                   : 'Family'}
             </strong>
           </p>
+          <LateJoinCharacterField
+            characters={owned}
+            loadError={ownedError}
+            selectedId={characterId}
+            disabled={joining || pendingMessage !== ''}
+            onChange={setCharacterId}
+            onRetry={() => void loadCharacters()}
+          />
           <MatureOptOutField
             checked={checked}
             tierCap={preview.tierCap ?? null}
@@ -110,13 +181,21 @@ export function Join() {
               {onboarding.recap && <p>{onboarding.recap}</p>}
             </section>
           )}
+          {pendingMessage && (
+            <p role="alert" tabIndex={-1} ref={pendingRef}>
+              {pendingMessage} <Link to="/rooms">Back to My tables</Link>
+            </p>
+          )}
           {message && (
             <p role="alert">
               {message} <Link to="/rooms">Back to My tables</Link>
             </p>
           )}
           <div className="actions">
-            <button type="submit" disabled={joining}>
+            <button
+              type="submit"
+              disabled={joining || (owned === null && ownedError === '')}
+            >
               Join table
             </button>
           </div>
