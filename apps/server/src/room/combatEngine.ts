@@ -424,7 +424,8 @@ export function answerReaction(
       code: 'COMMAND_REJECTED',
       message: 'There is no such reaction waiting for an answer.',
     };
-  if (actorId !== prompt.entityId && actorId !== prompt.moverId)
+  // Reactor-only (ADR-033 §3.3): the mover provoked the reaction and never answers it.
+  if (actorId !== prompt.entityId)
     return {
       code: 'COMMAND_REJECTED',
       message: 'That reaction is not yours to answer.',
@@ -461,34 +462,46 @@ export function answerReaction(
   return { state: rest.state, events: [...events, ...rest.events] };
 }
 
-/** The 15 s deadline passed unanswered: decline on the table's behalf. */
+/** The 15 s deadline passed unanswered: decline on the table's behalf. Terminal: once past the deadline the prompt always closes. */
 export function expireReaction(
   state: RoomCombatState,
   now: number,
 ): CombatTransition | null {
   const prompt = state.pendingReaction;
   if (!prompt || now < prompt.deadlineAt) return null;
-  if (!state.engineReactions?.[prompt.reactionId]) {
-    const next = { ...state, phase: 'awaiting-command' as const };
-    delete next.pendingReaction;
-    return {
-      state: next,
-      events: [
-        {
-          type: 'ReactionResolved',
-          entityId: prompt.entityId,
-          used: false,
-          reactionId: prompt.reactionId,
-        },
-      ],
-    };
+  if (state.engineReactions?.[prompt.reactionId]) {
+    const result = answerReaction(
+      state,
+      prompt.entityId,
+      prompt.reactionId,
+      'decline',
+      now,
+    );
+    if (!('code' in result)) return result;
   }
-  const result = answerReaction(
-    state,
-    prompt.moverId,
-    prompt.reactionId,
-    'decline',
-    now,
-  );
-  return 'code' in result ? null : result;
+  return closeReaction(state);
+}
+
+/** Close the open prompt as declined without an engine continuation; ends the interrupted move if the engine held one. */
+export function closeReaction(state: RoomCombatState): CombatTransition {
+  const prompt = state.pendingReaction;
+  if (!prompt) return { state, events: [] };
+  const next = { ...state, phase: 'awaiting-command' as const };
+  delete next.pendingReaction;
+  delete next.engineReactions;
+  const events: Ev[] = [
+    {
+      type: 'ReactionResolved',
+      entityId: prompt.entityId,
+      used: false,
+      reactionId: prompt.reactionId,
+    },
+  ];
+  if (state.engineReactions?.[prompt.reactionId])
+    events.push({
+      type: 'MoveEnded',
+      entityId: prompt.moverId,
+      reason: 'blocked',
+    } as Ev);
+  return { state: next, events };
 }

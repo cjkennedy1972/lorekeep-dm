@@ -250,13 +250,16 @@ export function memoryTable(
       return { events: stored };
     },
   };
-  const boot = (bindings: PrivateSeatCharacterBinding[] = []) =>
+  const boot = (
+    bindings: PrivateSeatCharacterBinding[] = [],
+    runtime?: ConstructorParameters<typeof Room>[4],
+  ) =>
     new Room(
       store,
       lease,
       { snapshot, events: [] },
       runner,
-      undefined,
+      runtime,
       bindings,
       opts.party ?? false,
     );
