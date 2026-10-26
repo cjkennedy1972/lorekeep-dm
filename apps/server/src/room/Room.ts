@@ -5216,17 +5216,27 @@ export class Room {
             characters?: Record<string, never>;
           }
         | undefined;
-      // Bound seats act only as their own server-derived entity; the client never names one.
+      // Actor identity is always server-derived; an explicit combat assignment takes
+      // precedence over the seat's bound party entity (for example, a monster controller).
       const candidate = this.seatBindings.get(seat.seatId);
       const bound =
         candidate?.accountId === seat.accountId ? candidate : undefined;
-      const actorId = bound
-        ? seatEntityId(seat.seatId)
-        : gameState?.combatActors?.[accountId];
+      const assignedActorId = gameState?.combatActors?.[accountId];
+      const assignedActorIsActing =
+        assignedActorId !== undefined &&
+        (current?.combat.activeEntityId === assignedActorId ||
+          current?.pendingReaction?.entityId === assignedActorId);
+      const actorId =
+        assignedActorIsActing || !bound
+          ? (assignedActorId ?? (bound ? seatEntityId(seat.seatId) : undefined))
+          : seatEntityId(seat.seatId);
+      const actsAsBoundSeat =
+        bound !== undefined && actorId === seatEntityId(seat.seatId);
       if (
         !current ||
         !actorId ||
-        (bound && !current.entities.some((entity) => entity.id === actorId))
+        (actsAsBoundSeat &&
+          !current.entities.some((entity) => entity.id === actorId))
       ) {
         this.sendError(
           accountId,
@@ -5249,8 +5259,8 @@ export class Room {
         return true;
       }
       const result = this.combatRuntime.execute(current, actorId, command, {
-        character: bound
-          ? ({ ...bound.characterSnapshot, id: actorId } as never)
+        character: actsAsBoundSeat
+          ? ({ ...bound!.characterSnapshot, id: actorId } as never)
           : gameState?.characters?.[accountId],
         now: Date.now(),
       });

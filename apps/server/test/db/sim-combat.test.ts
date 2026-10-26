@@ -102,13 +102,7 @@ describe('reconnect mid-prompt', () => {
     expect(await t.events('ReactionDeclined')).toHaveLength(0);
   }, 40_000);
 
-  // Known product gap (see Workboard card for M4-9a). Room derives a seated account's actor from
-  // its own party seat (Room.ts actorId derivation), so the controller a monster is bound to via
-  // combatActors is always rejected as not-your-turn. The prompt reaches them; the answer cannot.
-  // Pinned to the exact current rejection, not to any failure. A plain `it` (not it.fails) is used
-  // so a timeout or broken helper fails this test instead of passing it. When the gap is fixed the
-  // answer becomes a CombatTracker, this assertion fails, and the test should be rewritten to expect success.
-  it('pins the monster-bound controller reaction answer as rejected with not-your-turn after reconnect', async () => {
+  it('lets a monster-bound controller answer its reaction after reconnect', async () => {
     const { table: t } = await startCombatTable();
     const [mover, controller] = t.clients as [SimClient, SimClient];
     const { leaveTo } = await startPartyCombat(t, controller);
@@ -126,8 +120,13 @@ describe('reconnect mid-prompt', () => {
       reactionId: replayed.payload.reactionId as string,
       choice: 'decline',
     });
-    expect(answer.type).toBe('Error');
-    expect(answer.payload?.code).toBe('not-your-turn');
+    expect(answer.type, JSON.stringify(answer.payload)).toBe('CombatTracker');
+    await eventually(
+      async () => (await t.events('ReactionAnswered')).length === 1,
+    );
+    expect((await t.events('ReactionAnswered'))[0]?.payload.choice).toBe(
+      'decline',
+    );
   }, 40_000);
 });
 
