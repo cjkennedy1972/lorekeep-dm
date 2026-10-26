@@ -821,6 +821,61 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(tracker.activeEntityId).toBe(seatEntityId(f.seatA));
   });
 
+  it("hides a PC's roll modifier, weapon and spell name from other seats, not from its controller", async () => {
+    const { f, entA } = await twoSeatCombat();
+    const state = f.room.state.gameState as { combatRoom: unknown };
+    const roll = (
+      extra: Record<string, unknown>,
+      expression: string,
+      bonus: number,
+    ) => ({
+      type: 'RollEvent',
+      entityId: entA,
+      breakdown: {
+        expression,
+        dice: [{ value: 14, kept: true }],
+        modifiers: [{ label: 'bonus', value: bonus }],
+        total: 14 + bonus,
+      },
+      ...extra,
+    });
+    const inbox = {
+      [f.accountA]: [] as Record<string, unknown>[],
+      [f.accountB]: [] as Record<string, unknown>[],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (m: Record<string, unknown>) => void inbox[account]!.push(m),
+      });
+    for (const list of Object.values(inbox)) list.length = 0;
+    (
+      f.room as unknown as { announceCombat(...a: unknown[]): void }
+    ).announceCombat(
+      state.combatRoom,
+      [
+        roll({ kind: 'attack', attackId: 'rapier' }, '1d20+5', 5),
+        roll(
+          { kind: 'save', spellId: 'fireball', dc: 13, success: true },
+          '1d20+3',
+          3,
+        ),
+        roll({ kind: 'damage', attackId: 'rapier' }, '1d8+3', 3),
+      ],
+      undefined,
+    );
+    const wire = (account: string) =>
+      JSON.stringify(inbox[account]!.filter((m) => m.type === 'CombatEvents'));
+    const mine = wire(f.accountA);
+    for (const secret of ['+5', '+3', 'rapier', 'fireball', '"modifier":5'])
+      expect(mine).toContain(secret);
+    const other = wire(f.accountB);
+    for (const secret of ['+5', '+3', 'rapier', 'fireball', 'modifier'])
+      expect(other).not.toContain(secret);
+    expect(other).toContain('"dice":"1d20"');
+    expect(other).toContain('"total":19');
+    expect(other).toContain('"rolls":[14]');
+  });
+
   it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {
     const { f, seen } = await twoSeatCombat();
     for (const account of [f.accountA, f.accountB]) {

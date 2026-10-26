@@ -509,8 +509,14 @@ function defaultCatalog(): Catalog {
 }
 
 /** Engine events as the wire schema (EngineEventSchema) spells them. */
+/**
+ * `concealStats`: the roller is a PC the viewer does not control (ADR-035). The natural dice and the total are
+ * table-visible; the modifier (attack/save/damage bonus), the weapon or spell name and any constant in the
+ * expression are the PC's non-public sheet and are dropped.
+ */
 export function toWireEvent(
   event: Readonly<Record<string, unknown>>,
+  concealStats = false,
 ): Record<string, unknown> {
   if (event.type === 'SlotSpent' && event.level === undefined)
     return { ...event, level: event.slotLevel };
@@ -519,10 +525,16 @@ export function toWireEvent(
     return {
       type: 'RollEvent',
       actorId: event.entityId,
-      label: `${String(event.kind)} ${String(event.attackId ?? event.spellId)}`,
-      dice: roll.expression,
+      label: concealStats
+        ? String(event.kind)
+        : `${String(event.kind)} ${String(event.attackId ?? event.spellId)}`,
+      dice: concealStats
+        ? (/^\d*d\d+/i.exec(roll.expression)?.[0] ?? roll.expression)
+        : roll.expression,
       rolls: roll.dice.filter((die) => die.kept).map((die) => die.value),
-      modifier: roll.modifiers.reduce((sum, m) => sum + m.value, 0),
+      ...(concealStats
+        ? {}
+        : { modifier: roll.modifiers.reduce((sum, m) => sum + m.value, 0) }),
       total: roll.total,
       ...(event.dc === undefined
         ? {}
