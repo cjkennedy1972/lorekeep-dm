@@ -84,9 +84,11 @@ Suggested reproduction: a unit test that resolves `resolveMonsterAttack` for `mo
 
 ## Reproduce
 
+Set `DATABASE_URL` in your shell to the Postgres 16 instance first. Do not paste the connection string into this doc.
+
 ```
 cd apps/server
-DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:55440/lorekeep \
+DATABASE_URL=$DATABASE_URL \
   pnpm exec vitest run test/db/zz-balance-dump.test.ts --testTimeout=400000
 ```
 
