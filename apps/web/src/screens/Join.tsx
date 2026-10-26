@@ -136,6 +136,7 @@ export function Join() {
       const id = (r.data as { requestId?: unknown }).requestId;
       if (typeof id === 'string') {
         liveRequestRef.current = id;
+        setRecap(undefined);
         setRequestId(id);
         void loadRecap(id);
       }
