@@ -81,10 +81,11 @@ function hpLabel(kind: string, hp: number, maxHp: number): string {
  * Enemies intentionally expose only qualitative HP; PCs retain exact values.
  */
 export function createTokenDrawCommands(
-  combat: Readonly<CombatState>,
+  combat: Readonly<CombatState> & { activeEntityId?: string | null },
   presentation: Readonly<Record<string, Readonly<TokenPresentation>>> = {},
 ): readonly TokenDrawCommand[] {
-  const activeId = combat.initiative[0]?.entityId ?? null;
+  // Active only: null/absent means no active token, never initiative[0].
+  const activeId = combat.activeEntityId ?? null;
   const teamNames = [
     ...new Set(
       combat.entities.map(

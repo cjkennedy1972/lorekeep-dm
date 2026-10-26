@@ -131,3 +131,15 @@ Accepted. Merged in `b64b02d` (#270). The decision text above is unchanged. Chec
 - **§2 combat narration tool scope and §4 host-revoke behavior:** not verified in code. Narration turns are not implemented yet, and no bounded revoke path was found.
 
 No code was changed by this status update.
+
+## Addendum (2026-10-25): hidden entities in client game state and events
+
+Recorded with PR #325 (card 2636a005). This extends §3 from reaction prompts to everything the server serializes to a client. Nothing above is changed.
+
+1. **Removal for non-controllers.** For every viewer except the controlling seat, a hidden entity is removed outright from `combatRoom` in `StateSync` (including checkpoints and reconnect or `Resync`) and from `CombatTracker`: entity record (no position, no HP, no existence), initiative, resources, dodge, concentration, and an open reaction whose reactor it is. The controlling seat receives it in full.
+2. **Active token.** While an entity hidden from a viewer acts, that viewer's `activeEntityId` is `null`. There is no fallback to the next visible combatant, and clients show no active token (an "unseen creature is acting" notice instead).
+3. **Committed events.** Each committed combat event type declares which fields hold entity ids (`apps/server/src/room/eventVisibility.ts`). An event whose subject id is hidden from a viewer is not sent to that viewer; hidden ids are removed from list fields (`CombatStarted.order` and `combatants`, `AreaResolved.affected`). An event type with no declaration is sent to no one (fail closed), and a test fails when the engine or room adds an undeclared type. The narration filter uses the same declarations. Clients never use `initiative[0]` as the active token.
+4. **Reaction prompts.** A `ReactionPrompt` for a hidden reactor goes only to its controller; every other seat receives nothing, not even that a prompt is open or its deadline, on live broadcast and on reconnect. A prompt whose mover is hidden from a viewer is withheld from that viewer unless it controls the reactor. For a visible reactor the broadcast is unchanged.
+5. **Engine-only fields.** `combatRoom.seed` and `combatRoom.engineReactions` are never sent to any client.
+6. **Public PC set (ADR-035).** For a character another seat controls, clients receive only name, kind, team, HP, max HP and position; AC, speed, abilities, saves and attacks go to the controller only. Visible monsters keep their full stats for now (revisit in M5 hardening, card ec1aa627).
+7. **Unchanged.** Authoritative state, the event log, replay and persistence are not altered; this is a per-viewer projection.

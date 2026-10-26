@@ -63,10 +63,13 @@ const combat = {
 
 describe('token drawing', () => {
   it('draws one token per tracker entry and marks only the first as active', () => {
-    const tokens = createTokenDrawCommands(combat, {
-      'pc-1': { name: 'Mira' },
-      'orc-1': { name: 'Orc' },
-    });
+    const tokens = createTokenDrawCommands(
+      { ...combat, activeEntityId: 'pc-1' },
+      {
+        'pc-1': { name: 'Mira' },
+        'orc-1': { name: 'Orc' },
+      },
+    );
     const { context, arcs, texts } = recordingContext();
     new Canvas2DRenderer().draw(context, map, { cellSize: 32 }, tokens);
 

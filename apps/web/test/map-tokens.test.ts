@@ -46,10 +46,13 @@ describe('map token draw commands', () => {
     expect(ogre?.hpLabel).not.toContain('15');
   });
 
-  it('highlights the first initiative entry, uses the entity footprint, and labels conditions', () => {
-    const [hero, ogre] = createTokenDrawCommands(combat, {
-      hero: { conditions: ['Poisoned', 'Prone'] },
-    });
+  it('highlights the active entity, uses the entity footprint, and labels conditions', () => {
+    const [hero, ogre] = createTokenDrawCommands(
+      { ...combat, activeEntityId: 'hero' },
+      {
+        hero: { conditions: ['Poisoned', 'Prone'] },
+      },
+    );
     expect(hero?.active).toBe(true);
     expect(ogre?.active).toBe(false);
     expect(ogre?.footprint).toBe(2);
@@ -57,5 +60,13 @@ describe('map token draw commands', () => {
       { icon: '☠', label: 'Poisoned' },
       { icon: '⌄', label: 'Prone' },
     ]);
+  });
+
+  it('marks no token active when activeEntityId is null, even with a populated initiative', () => {
+    const commands = createTokenDrawCommands({
+      ...combat,
+      activeEntityId: null,
+    });
+    expect(commands.filter((c) => c.active)).toHaveLength(0);
   });
 });

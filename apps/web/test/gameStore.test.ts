@@ -61,11 +61,17 @@ describe('gameStore', () => {
     expect(n).toBe(2);
   });
 
-  it('active combatant selector equals first initiative entry (US-B4 AC3)', () => {
+  it('active combatant selector reads activeEntityId, null when none', () => {
     const store = createGameStore();
     generateLog().forEach((e) => store.applyEvent(e));
     const s = store.getState();
-    expect(selectActiveCombatant(s)).toBe(s.combat.initiative[0]!.entityId);
+    expect(selectActiveCombatant(s)).toBe(s.combat.activeEntityId);
+    expect(
+      selectActiveCombatant({
+        ...s,
+        combat: { ...s.combat, activeEntityId: null },
+      }),
+    ).toBeNull();
     expect(selectTracker(s).order).toBe(s.combat.initiative);
   });
 
