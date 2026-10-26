@@ -270,4 +270,26 @@ describe('Join: late-join recap while pending', () => {
     );
     expect(cancel?.[1]).toMatchObject({ requestId: REQUEST_ID });
   });
+
+  test('a failed withdraw keeps the panel and shows a neutral error', async () => {
+    serve({
+      ...pendingRoutes(() => ({ recap: 'The party reached the hollow.' })),
+      [`/api/late-join/${REQUEST_ID}/cancel`]: () => ({
+        code: 'NOT_FOUND',
+        message: 'internal detail',
+      }),
+    });
+    renderJoin();
+    await screen.findByRole('combobox', { name: 'Your character' });
+    await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Withdraw request' }),
+    );
+
+    expect(
+      await screen.findByText(/could not be withdrawn/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('internal detail')).toBeNull();
+    expect(screen.getByText('The party reached the hollow.')).toBeVisible();
+  });
 });

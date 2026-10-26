@@ -31,6 +31,8 @@ export function Join() {
   const [requestId, setRequestId] = useState('');
   const [recap, setRecap] = useState<{ text?: string; failed?: boolean }>();
   const [withdrawn, setWithdrawn] = useState(false);
+  // The request whose recap may still be shown; a withdraw clears it so a late recap response is dropped.
+  const liveRequestRef = useRef('');
   const content = useMatureOptOut();
   const checked = draft ?? content.optOut ?? false;
   const [owned, setOwned] = useState<OwnedCharacter[] | null>(null);
@@ -81,6 +83,7 @@ export function Join() {
 
   async function loadRecap(id: string) {
     const r = await api<{ recap?: string }>(`/api/late-join/${id}/recap`);
+    if (liveRequestRef.current !== id) return;
     setRecap(
       r.ok && typeof r.data.recap === 'string'
         ? { text: r.data.recap }
@@ -98,6 +101,7 @@ export function Join() {
       return;
     }
     attemptRef.current = null;
+    liveRequestRef.current = '';
     setRequestId('');
     setRecap(undefined);
     setOnboarding(undefined);
@@ -131,6 +135,7 @@ export function Join() {
       setOnboarding(r.data as typeof onboarding);
       const id = (r.data as { requestId?: unknown }).requestId;
       if (typeof id === 'string') {
+        liveRequestRef.current = id;
         setRequestId(id);
         void loadRecap(id);
       }
