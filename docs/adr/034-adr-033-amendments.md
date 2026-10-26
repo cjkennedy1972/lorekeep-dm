@@ -143,3 +143,10 @@ Recorded with PR #325 (card 2636a005). This extends §3 from reaction prompts to
 5. **Engine-only fields.** `combatRoom.seed` and `combatRoom.engineReactions` are never sent to any client.
 6. **Public PC set (ADR-035).** For a character another seat controls, clients receive only name, kind, team, HP, max HP and position; AC, speed, abilities, saves and attacks go to the controller only. Visible monsters keep their full stats for now (revisit in M5 hardening, card ec1aa627).
 7. **Unchanged.** Authoritative state, the event log, replay and persistence are not altered; this is a per-viewer projection.
+
+## Status note (2026-10-26)
+
+Status unchanged: Accepted (2026-10-25). The decision text above is unchanged. This note re-checks the 2026-10-25 status update against `origin/main` after #324 and #327–#329 merged.
+
+- **§1 (rest vote cancelled at combat start)** and **§6 (admission codes)** are as recorded on 2026-10-25.
+- **§3 (hidden reactors):** #323 added the reaction visibility split and #325 the per-viewer projection. A Sentinel finding that non-reactor seats still see a reaction decision dialog is open on Workboard card `1ee168bf`. This note does not close it.
