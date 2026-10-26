@@ -98,12 +98,23 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
     });
   }
   if (event.type === 'RoundOpened') {
+    const promotedActionIds = new Set(
+      (event.payload as NonNullable<RoomState['round']>).submissions.flatMap(
+        (submission) => submission.actionIds,
+      ),
+    );
     const closedRoundSubmissions = [
       ...(state.closedRoundSubmissions ?? []),
       ...(state.round?.submissions ?? []).map((submission) => ({
         accountId: submission.accountId,
         actionIds: submission.actionIds,
       })),
+      ...(state.round?.queuedSubmissions ?? [])
+        .filter((submission) => !promotedActionIds.has(submission.actionId))
+        .map((submission) => ({
+          accountId: submission.accountId,
+          actionIds: submission.actionIds,
+        })),
     ].slice(-120);
     return RoomStateSchema.parse({
       ...state,

@@ -2753,20 +2753,30 @@ export class Room {
     )
       return;
     if (this.state.round?.status === 'open') return;
-    const previousQueue = [...(this.state.round?.queuedSubmissions ?? [])].sort(
-      (a, b) => a.receiptSeq - b.receiptSeq,
+    const eligibleSeatIds = this.state.seats
+      .filter(
+        (seat) =>
+          seat.presence !== 'away' &&
+          seat.presence !== 'revoked' &&
+          (!this.bindingEnforced || this.isPlayableSeat(seat)),
+      )
+      .map((seat) => seat.seatId);
+    const eligibleSeatIdSet = new Set(eligibleSeatIds);
+    const queuedSubmissions = this.state.round?.queuedSubmissions ?? [];
+    const previousQueue = queuedSubmissions
+      .filter((submission) => eligibleSeatIdSet.has(submission.seatId))
+      .sort((a, b) => a.receiptSeq - b.receiptSeq);
+    const promotedActionIds = new Set(
+      previousQueue.flatMap((submission) => submission.actionIds),
     );
+    for (const submission of queuedSubmissions)
+      if (!promotedActionIds.has(submission.actionId))
+        for (const actionId of submission.actionIds)
+          this.pendingActions.delete(actionId);
     const round = {
       roundId: randomUUID(),
       status: 'open' as const,
-      eligibleSeatIds: this.state.seats
-        .filter(
-          (seat) =>
-            seat.presence !== 'away' &&
-            seat.presence !== 'revoked' &&
-            (!this.bindingEnforced || this.isPlayableSeat(seat)),
-        )
-        .map((seat) => seat.seatId),
+      eligibleSeatIds,
       deadlineAt:
         this.state.roundDurationMs === null
           ? null

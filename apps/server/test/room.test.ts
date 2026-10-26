@@ -1591,6 +1591,108 @@ describe('room actor', () => {
     );
     await room.drain(100);
   });
+  it('does not promote a resolved-window queue item after its seat is revoked', async () => {
+    const { store, events } = fixture();
+    let startTurn!: () => void;
+    let finishTurn!: () => void;
+    const started = new Promise<void>((resolve) => (startTurn = resolve));
+    const hold = new Promise<void>((resolve) => (finishTurn = resolve));
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        startTurn();
+        await hold;
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    const revokedAccount = randomUUID();
+    await room.seat(host, 'Host');
+    await room.seat(revokedAccount, 'Revoked');
+    await room.persistGameState({});
+    await room.submitAction(host, randomUUID(), 'Host action', 'Host');
+    const revokedSeatId = room.state.seats.find(
+      (seat) => seat.accountId === revokedAccount,
+    )!.seatId;
+    await room.submitAction(revokedAccount, randomUUID(), 'Resolve', 'Revoked');
+    await started;
+    const queuedAction = randomUUID();
+    expect(
+      await room.submitAction(
+        revokedAccount,
+        queuedAction,
+        'Queued before revocation',
+        'Revoked',
+      ),
+    ).toBe(true);
+    // Model revocation after acceptance but before openRound computes eligibility.
+    room.state.seats.find((seat) => seat.seatId === revokedSeatId)!.presence =
+      'revoked';
+    finishTurn();
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (room.state.round?.status === 'open') break;
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    expect(room.state.round?.eligibleSeatIds).not.toContain(revokedSeatId);
+    expect(room.state.round?.submissions).toEqual([]);
+    expect(room.state.round?.queuedSubmissions).toEqual([]);
+    expect(room.hasActionId(queuedAction, undefined, revokedAccount)).toBe(
+      true,
+    );
+    expect(
+      events.filter((event) => event.type === 'RoundOpened').at(-1)?.payload,
+    ).toMatchObject({ submissions: [] });
+    await room.drain(100);
+  });
+  it('enforces queued-action caps in the resolving window', async () => {
+    for (const cap of ['seat', 'room'] as const) {
+      const { store } = fixture();
+      let startTurn!: () => void;
+      let finishTurn!: () => void;
+      const started = new Promise<void>((resolve) => (startTurn = resolve));
+      const hold = new Promise<void>((resolve) => (finishTurn = resolve));
+      const room = new Room(store, lease, await store.loadLatest(id), {
+        async run() {
+          startTurn();
+          await hold;
+          return {
+            narration: 'Resolved.',
+            events: [],
+            state: {},
+            turnSeed: 'seed',
+            usage: { in: 0, out: 0 },
+          };
+        },
+      });
+      const host = randomUUID();
+      await room.seat(host, 'Host');
+      await room.persistGameState({});
+      await room.submitAction(host, randomUUID(), 'Initial', 'Host');
+      await started;
+      const round = room.state.round!;
+      const count = cap === 'seat' ? 3 : 12;
+      round.queuedSubmissions = Array.from({ length: count }, (_, index) => ({
+        seatId: randomUUID(),
+        accountId: cap === 'seat' ? host : randomUUID(),
+        actionId: randomUUID(),
+        originalActionId: randomUUID(),
+        actionIds: [randomUUID()],
+        text: 'already queued',
+        playerName: 'Queued',
+        receiptSeq: index + 1,
+      }));
+      await expect(
+        room.submitAction(host, randomUUID(), 'Over cap', 'Host'),
+      ).rejects.toThrow('ACTION_REJECTED');
+      finishTurn();
+      await room.drain(100);
+    }
+  });
   it('accepts an action sent right after narration completes, before the next round opens', async () => {
     const { store } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id), {
@@ -1623,6 +1725,9 @@ describe('room actor', () => {
       await new Promise((resolve) => setTimeout(resolve, 2));
     expect(await followUpResult).toBe(true);
     await room.drain(100);
+    expect(room.state.round?.submissions).toMatchObject([
+      { actionId: followUp, text: 'Next' },
+    ]);
   });
   it('serializes interleaved joins and broadcasts increasing presence seq', async () => {
     const { store, events } = fixture();
