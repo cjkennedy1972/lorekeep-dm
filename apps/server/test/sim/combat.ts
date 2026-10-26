@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { RoomCombatState } from '../../src/room/combat.js';
 import { seatEntityId } from '../../src/room/seatEntity.js';
 import { partyCombat, placed } from '../room/combatFixtures.js';
@@ -101,12 +102,13 @@ export async function combatCommand(
   payload: Record<string, unknown>,
 ): Promise<ServerFrame> {
   let rateLimited = 0;
+  const actionId = randomUUID();
   for (let attempt = 0; attempt < 60; attempt++) {
     const wait = (lastSent.get(client) ?? 0) + MIN_GAP_MS - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     lastSent.set(client, Date.now());
     const mark = client.inbox.length;
-    const actionId = client.send('CombatCommand', payload);
+    client.send('CombatCommand', payload, actionId);
     const reply = await pollFrom(
       client,
       mark,
@@ -119,12 +121,16 @@ export async function combatCommand(
               frame.payload?.actionId === undefined))),
     );
     if (reply.payload?.code === 'narration-in-progress') {
-      await pollFrom(
-        client,
-        mark,
-        (frame) => frame.type === 'NarrationCompleted',
-        20_000,
-      );
+      const completed = client.inbox
+        .slice(mark)
+        .some((frame) => frame.type === 'NarrationCompleted');
+      if (!completed)
+        await pollFrom(
+          client,
+          client.inbox.length,
+          (frame) => frame.type === 'NarrationCompleted',
+          20_000,
+        );
       continue;
     }
     if (reply.payload?.code === 'RATE_LIMITED') {

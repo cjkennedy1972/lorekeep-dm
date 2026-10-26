@@ -5285,7 +5285,7 @@ export class Room {
       if (this.turnInFlight) {
         this.sendError(
           accountId,
-          'COMMAND_REJECTED',
+          'narration-in-progress',
           'The DM is still narrating; try again in a moment.',
           actionId,
         );
