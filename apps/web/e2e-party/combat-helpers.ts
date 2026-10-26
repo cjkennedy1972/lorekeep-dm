@@ -15,6 +15,7 @@ export type CombatState = {
   >;
 };
 export type View = { member: Member; context: BrowserContext; page: Page };
+type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
 export const readState = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as CombatState;
@@ -22,17 +23,41 @@ export const origin = `http://localhost:${process.env.LIVE_WEB_PORT ?? 5176}`;
 // The sync budget from the party acceptance criteria: a move must reach every other browser within 1 s.
 export const SYNC_BUDGET_MS = 1000;
 
+// A seat's resume token lives in the browser's localStorage. A fresh context that carries only the sid
+// cookie is a new device, so the server asks the host to approve the claim and the room never loads.
+// Keep each account's storageState between opens, as party-round.spec.ts does, so each reconnect resumes
+// its seat. Module-level so every combat spec in the same server boot shares the saved seats.
+const storageByAccount = new Map<string, StorageState>();
+
 export async function openMember(
   browser: Browser,
   member: Member,
   table: string,
   viewport?: { width: number; height: number },
 ): Promise<View> {
-  const context = await browser.newContext(viewport ? { viewport } : {});
-  await context.addCookies([{ name: 'sid', value: member.token, url: origin }]);
+  const saved = storageByAccount.get(member.accountId);
+  const context = await browser.newContext({
+    ...(viewport ? { viewport } : {}),
+    ...(saved ? { storageState: saved } : {}),
+  });
+  if (!saved)
+    await context.addCookies([
+      { name: 'sid', value: member.token, url: origin },
+    ]);
   const page = await context.newPage();
   await page.goto(`${origin}/rooms/${table}/game`);
   return { member, context, page };
+}
+
+/** Saves the seat's storage (resume token, sid cookie) before closing, so the next open resumes the seat. */
+export async function closeMember(view: View) {
+  storageByAccount.set(
+    view.member.accountId,
+    await view.context.storageState(),
+  );
+  await view.context.close();
+  // Let the server-side close handler release the seat claim before the next reconnect.
+  await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
 /** The tracker's first entry is the active combatant; the server names it in the "Active combatant:" line. */

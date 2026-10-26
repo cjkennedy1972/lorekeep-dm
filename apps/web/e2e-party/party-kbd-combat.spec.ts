@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Browser } from '@playwright/test';
 import {
   activeCombatantId,
+  closeMember,
   openMember,
   readState,
   SYNC_BUDGET_MS,
@@ -11,9 +12,9 @@ import {
 } from './combat-helpers.js';
 
 // Keyboard-only party combat on the real server (see serve.party.live.ts). No mouse and no locator clicks
-// for gameplay. All steps share one connected session: a second test in this file cannot reconnect the
-// same seats after the first closes its browsers (the room stays at "Waiting for room state…"; see the
-// evidence file for the measured failure). Each step is a `test.step` so failures name the step.
+// for gameplay. All steps share one connected session. Seats are closed with closeMember, which keeps each
+// seat's resume token, so specs that run later in the same server boot reconnect their seats (see
+// combat-helpers.ts). Each step is a `test.step` so failures name the step.
 
 const ARROWS = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'] as const;
 
@@ -160,6 +161,6 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
       await expect(map).toBeVisible();
     });
   } finally {
-    for (const view of views) await view.context.close();
+    for (const view of views) await closeMember(view);
   }
 });
