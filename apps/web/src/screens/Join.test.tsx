@@ -207,3 +207,89 @@ describe('Join: late-join character selection', () => {
     expect(screen.getByRole('button', { name: 'Join table' })).toBeEnabled();
   });
 });
+
+describe('Join: late-join recap while pending', () => {
+  const REQUEST_ID = '00000000-0000-4000-8000-0000000000aa';
+  const pendingRoutes = (recap: () => unknown) => ({
+    ...baseRoutes(),
+    [`/api/invites/${CODE}/join`]: () => ({
+      code: 'LATE_JOIN_PENDING',
+      message: PENDING_MESSAGE,
+      requestId: REQUEST_ID,
+      settings: { contentTier: 'standard', lines: ['spiders'] },
+    }),
+    [`/api/late-join/${REQUEST_ID}/recap`]: recap,
+  });
+
+  test('shows the recap with the table settings in a live region before approval', async () => {
+    serve(pendingRoutes(() => ({ recap: 'The party reached the hollow.' })));
+    renderJoin();
+    await screen.findByRole('combobox', { name: 'Your character' });
+    await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+
+    const text = await screen.findByText('The party reached the hollow.');
+    expect(text.parentElement).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText('Lines: spiders')).toBeInTheDocument();
+  });
+
+  test('a recap failure is neutral and does not block waiting or withdrawing', async () => {
+    serve(
+      pendingRoutes(() => ({ code: 'NOT_FOUND', message: 'internal detail' })),
+    );
+    renderJoin();
+    await screen.findByRole('combobox', { name: 'Your character' });
+    await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+
+    expect(
+      await screen.findByText(/recap is not available right now/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('internal detail')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Withdraw request' }),
+    ).toBeEnabled();
+  });
+
+  test('withdrawing cancels the request and clears the recap', async () => {
+    serve({
+      ...pendingRoutes(() => ({ recap: 'The party reached the hollow.' })),
+      [`/api/late-join/${REQUEST_ID}/cancel`]: () => ({ ok: true }),
+    });
+    renderJoin();
+    await screen.findByRole('combobox', { name: 'Your character' });
+    await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Withdraw request' }),
+    );
+
+    expect(
+      await screen.findByText('Your join request was withdrawn.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('The party reached the hollow.')).toBeNull();
+    const cancel = apiMock.mock.calls.find(
+      ([path]) => path === `/api/late-join/${REQUEST_ID}/cancel`,
+    );
+    expect(cancel?.[1]).toMatchObject({ requestId: REQUEST_ID });
+  });
+
+  test('a failed withdraw keeps the panel and shows a neutral error', async () => {
+    serve({
+      ...pendingRoutes(() => ({ recap: 'The party reached the hollow.' })),
+      [`/api/late-join/${REQUEST_ID}/cancel`]: () => ({
+        code: 'NOT_FOUND',
+        message: 'internal detail',
+      }),
+    });
+    renderJoin();
+    await screen.findByRole('combobox', { name: 'Your character' });
+    await userEvent.click(screen.getByRole('button', { name: 'Join table' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Withdraw request' }),
+    );
+
+    expect(
+      await screen.findByText(/could not be withdrawn/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('internal detail')).toBeNull();
+    expect(screen.getByText('The party reached the hollow.')).toBeVisible();
+  });
+});
