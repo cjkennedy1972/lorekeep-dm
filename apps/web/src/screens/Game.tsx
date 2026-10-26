@@ -16,6 +16,7 @@ import { createTokenDrawCommands } from '../features/map/tokens.js';
 import { MapKeyboard } from '../features/map/keyboard.js';
 import { TokenTable } from '../features/map/TokenTable.js';
 import { Describe } from '../features/map/Describe.js';
+import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
 import { ActionInput } from '../features/input/ActionInput.js';
 import { RoundPanel } from '../features/round/RoundPanel.js';
@@ -648,6 +649,13 @@ export function Game() {
   const actions = Array.isArray(asRecord(options).actions)
     ? (asRecord(options).actions as unknown[])
     : [];
+  const areas = (
+    Array.isArray(asRecord(options).areas)
+      ? (asRecord(options).areas as unknown[])
+      : []
+  ).filter(
+    (value): value is AreaOption => typeof asRecord(value).optionId === 'string',
+  );
   return (
     <main className="game-screen">
       <header>
@@ -986,13 +994,29 @@ export function Game() {
                     send({ command: 'move', destination: item.destination })
                   }
                 >
-                  Move to {String(asRecord(item.destination).x)},{' '}
-                  {String(asRecord(item.destination).y)} ({String(item.cost)}{' '}
+                  Move to {Number(asRecord(item.destination).x) + 1},{' '}
+                  {Number(asRecord(item.destination).y) + 1} ({String(item.cost)}{' '}
                   feet)
                 </button>
               );
             return null;
           })}
+          {areas.length > 0 && (
+            <AreaAim
+              areas={areas}
+              nameOf={(id) =>
+                entities.find((entity) => entity.id === id)?.name ?? id
+              }
+              onCast={(area) =>
+                send({
+                  command: 'cast',
+                  spellId: area.spellId,
+                  slotLevel: 1,
+                  target: { kind: 'option', ref: area.optionId },
+                })
+              }
+            />
+          )}
           <button type="button" onClick={() => send({ command: 'end-turn' })}>
             End turn
           </button>

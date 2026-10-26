@@ -173,10 +173,45 @@ describe('Game screen (live Room)', () => {
       targetId: 'ent_goblin',
       attackId: 'staff',
     });
-    await user.click(screen.getByRole('button', { name: /Move to 2, 2/ }));
+    // The label is 1-based like the keyboard announcements; the wire destination stays 0-based.
+    await user.click(screen.getByRole('button', { name: /Move to 3, 3/ }));
     expect(hoisted.send).toHaveBeenLastCalledWith('CombatCommand', {
       command: 'move',
       destination: { x: 2, y: 2 },
+    });
+  });
+
+  it('area aim: an aim previews its affected units and Cast sends the option ref', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    push('CombatOptions', {
+      actions: [],
+      areas: [
+        {
+          spellId: 'spell:burning-hands',
+          optionId: 'area:burning-hands:2,2:1,0',
+          anchor: { x: 2, y: 2 },
+          direction: { x: 1, y: 0 },
+          cells: [{ x: 2, y: 2 }],
+          affected: [{ id: 'ent_goblin', relation: 'enemy' }],
+        },
+      ],
+    });
+    await user.click(
+      screen.getByRole('radio', {
+        name: /burning hands at 3, 3, facing east; 1 affected/,
+      }),
+    );
+    expect(
+      screen.getByText('1 affected: ent_goblin (enemy).'),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cast area' }));
+    expect(hoisted.send).toHaveBeenLastCalledWith('CombatCommand', {
+      command: 'cast',
+      spellId: 'spell:burning-hands',
+      slotLevel: 1,
+      target: { kind: 'option', ref: 'area:burning-hands:2,2:1,0' },
     });
   });
 
