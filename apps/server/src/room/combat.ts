@@ -595,11 +595,15 @@ export function trackerMessage(
   seq: number,
   state: RoomCombatState,
   controlled?: ReadonlySet<string>,
+  actionId?: string,
 ): ServerMessage {
   return {
     seq,
     type: 'CombatTracker',
-    payload: combatTracker(state, controlled),
+    payload: {
+      ...combatTracker(state, controlled),
+      ...(actionId ? { commandActionId: actionId } : {}),
+    },
   } as ServerMessage;
 }
 /** The controlling seat's private prompt: trigger, mover and the answers it may give (ADR-033 §3.2). */
