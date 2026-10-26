@@ -51,16 +51,7 @@ export function AreaAim({ areas, nameOf, onCast }: Props) {
   return (
     <fieldset className="area-aim">
       <legend>Area aim</legend>
-      <div
-        role="radiogroup"
-        aria-label="Area aims"
-        onKeyDown={(event) => {
-          if (event.key === 'Escape' && selected) {
-            event.preventDefault();
-            setSelectedId(null);
-          }
-        }}
-      >
+      <div role="group" aria-label="Area aims">
         {areas.map((area) => (
           <label key={area.optionId} className="area-aim__option">
             <input
@@ -69,6 +60,12 @@ export function AreaAim({ areas, nameOf, onCast }: Props) {
               value={area.optionId}
               checked={area.optionId === selectedId}
               onChange={() => setSelectedId(area.optionId)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && selected) {
+                  event.preventDefault();
+                  setSelectedId(null);
+                }
+              }}
             />{' '}
             {labelOf(area)}
           </label>

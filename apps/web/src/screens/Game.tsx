@@ -654,7 +654,8 @@ export function Game() {
       ? (asRecord(options).areas as unknown[])
       : []
   ).filter(
-    (value): value is AreaOption => typeof asRecord(value).optionId === 'string',
+    (value): value is AreaOption =>
+      typeof asRecord(value).optionId === 'string',
   );
   return (
     <main className="game-screen">
@@ -995,8 +996,8 @@ export function Game() {
                   }
                 >
                   Move to {Number(asRecord(item.destination).x) + 1},{' '}
-                  {Number(asRecord(item.destination).y) + 1} ({String(item.cost)}{' '}
-                  feet)
+                  {Number(asRecord(item.destination).y) + 1} (
+                  {String(item.cost)} feet)
                 </button>
               );
             return null;
