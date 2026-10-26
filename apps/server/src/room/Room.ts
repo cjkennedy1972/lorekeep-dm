@@ -5274,7 +5274,7 @@ export class Room {
           this.connections.get(accountId)?.send({
             seq: this.seq,
             type: message.type,
-            payload: message.payload,
+            payload: { ...message.payload, commandActionId: actionId },
           } as ServerMessage);
         return true;
       }
@@ -5381,7 +5381,7 @@ export class Room {
       console.error(
         `Combat turn events were stored with non-contiguous seq for ${this.sessionId}`,
       );
-    this.announceCombat(combatState, committedEvents, accountId);
+    this.announceCombat(combatState, committedEvents, accountId, actionId);
   }
 
   /** Broadcast what changed, arm the reaction deadline and queue the DM's narration. */
@@ -5389,6 +5389,7 @@ export class Room {
     state: NonNullable<ReturnType<typeof roomGameState>>,
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
+    actionId?: string,
   ): void {
     for (const event of events)
       if (event.type === 'ReactionPromptOpened')
@@ -5452,7 +5453,7 @@ export class Room {
       } as ServerMessage);
     for (const [viewer, connection] of this.connections)
       connection.send(
-        trackerMessage(this.seq, state, this.controlledBy(viewer)),
+        trackerMessage(this.seq, state, this.controlledBy(viewer), actionId),
       );
     if (state.pendingReaction)
       for (const [viewer, connection] of this.connections)

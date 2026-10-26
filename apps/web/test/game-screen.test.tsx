@@ -350,6 +350,44 @@ describe('Game screen (live Room)', () => {
       expect(button.tagName).toBe('BUTTON');
     }
   });
+
+  it('gives a non-controlling seat a status notice only, never Accept/Decline controls', () => {
+    mount();
+    push('CombatTracker', tracker([HERO_ID, 'ent_goblin']));
+    push('ReactionPromptOpen', {
+      reactionId: 'r-open',
+      reactorEntityId: 'ent_goblin',
+      deadlineAt: new Date(Date.now() + 5000).toISOString(),
+      timeoutMs: 5000,
+    });
+    expect(
+      screen.getByText(/Reaction window open for ent_goblin/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Accept' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Decline' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('gives the controlling reactor the decision dialog from ReactionPrompt', () => {
+    mount();
+    push('CombatTracker', tracker([HERO_ID, 'ent_goblin']));
+    push('ReactionPrompt', {
+      reactionId: 'r-own',
+      entityId: 'ent_goblin',
+      moverId: HERO_ID,
+      trigger: 'opportunityAttack',
+      options: ['take', 'decline'],
+      defaultChoice: 'decline',
+      timeoutMs: 5000,
+    });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Decline' })).toBeInTheDocument();
+  });
 });
 
 describe('Game screen narrow viewport', () => {

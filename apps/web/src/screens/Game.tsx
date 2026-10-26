@@ -67,6 +67,11 @@ type Reaction = {
   trigger: string;
   timeoutMs: number;
 };
+type ReactionNotice = {
+  reactionId: string;
+  entityId: string;
+  timeoutMs: number;
+};
 type PendingAction = {
   id: string;
   text: string;
@@ -239,8 +244,10 @@ export function Game() {
             if (
               event.type === 'ReactionAnswered' ||
               event.type === 'ReactionDeclined'
-            )
+            ) {
               setReaction(null);
+              setReactionNotice(null);
+            }
             if (event.type === 'EntityMoved') {
               const last = event.path.at(-1)!;
               setEntities((current) =>
@@ -271,13 +278,11 @@ export function Game() {
       if (message.type === 'ReactionPrompt')
         setReaction(message.payload as Reaction);
       if (message.type === 'ReactionPromptOpen') {
-        // Non-controlling seat: only that a window is open and when it ends (ADR-033 §3.1).
+        // Non-controlling seat: only that a window is open and when it ends (ADR-033 §3.1). Never a decision.
         const open = asRecord(message.payload);
-        setReaction({
+        setReactionNotice({
           reactionId: String(open.reactionId),
           entityId: String(open.reactorEntityId),
-          moverId: '',
-          trigger: 'opportunityAttack',
           timeoutMs: Number(open.timeoutMs),
         });
       }
@@ -285,6 +290,7 @@ export function Game() {
         setOptions(asRecord(message.payload));
       if (message.type === 'CombatEnded') {
         setReaction(null);
+        setReactionNotice(null);
         setTracker((current) =>
           current
             ? {
@@ -351,7 +357,11 @@ export function Game() {
   const mapRef = useRef<Battlemap | null>(null);
   mapRef.current = map;
   const resyncAsked = useRef(false);
+  // Only the controlling reactor gets the decision (ReactionPrompt); other seats get a status-only notice.
   const [reaction, setReaction] = useState<Reaction | null>(null);
+  const [reactionNotice, setReactionNotice] = useState<ReactionNotice | null>(
+    null,
+  );
   const narrow = useNarrowViewport();
   const [mapShown, setMapShown] = useState(false);
   const mapVisible = !narrow || mapShown;
@@ -368,6 +378,19 @@ export function Game() {
     const timer = window.setInterval(update, 100);
     return () => window.clearInterval(timer);
   }, [reaction?.reactionId, reaction?.timeoutMs]);
+  const [noticeRemainingMs, setNoticeRemainingMs] = useState(0);
+  useEffect(() => {
+    if (!reactionNotice) {
+      setNoticeRemainingMs(0);
+      return;
+    }
+    const deadline = Date.now() + reactionNotice.timeoutMs;
+    const update = () =>
+      setNoticeRemainingMs(Math.max(0, deadline - Date.now()));
+    update();
+    const timer = window.setInterval(update, 100);
+    return () => window.clearInterval(timer);
+  }, [reactionNotice?.reactionId, reactionNotice?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
   const pendingActionRef = useRef<PendingAction | null>(null);
@@ -977,6 +1000,13 @@ export function Game() {
             <p role="status">
               {reaction.entityId} reaction: {reaction.trigger}. Resolve within{' '}
               {Math.ceil(reactionRemainingMs / 1000)} seconds.
+            </p>
+          )}
+          {!reaction && reactionNotice && (
+            <p role="status">
+              Reaction window open for {reactionNotice.entityId}. Waiting for
+              their response; closes in {Math.ceil(noticeRemainingMs / 1000)}{' '}
+              seconds.
             </p>
           )}
         </section>

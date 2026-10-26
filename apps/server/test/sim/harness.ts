@@ -4,7 +4,7 @@ import WebSocket from 'ws';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { hashToken } from '../../src/accounts/signup.js';
-import { quickBuild } from '@game/rules-engine';
+import { quickBuild, type CharacterInput } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import type { LlmAdapter } from '../../src/llm/adapter.js';
 import { installGateway } from '../../src/gateway/ws.js';
@@ -61,6 +61,8 @@ export interface SimTableOptions {
  */
 export class SimTable {
   readonly clients: SimClient[];
+  /** Seated characters, index-aligned with `clients`. Combat scenarios bind these to seats. */
+  readonly characters: CharacterInput[] = [];
   private readonly tokens: string[];
 
   private constructor(
@@ -153,6 +155,7 @@ export class SimTable {
         ...quickBuild(catalog, undefined, index + 1, 1).character,
         id: randomUUID(),
       };
+      table.characters.push(character);
       const revision = await seatCharacters.saveOwnedCharacter(id, character);
       await room.bindSeatCharacter(
         id,
