@@ -103,10 +103,11 @@ test('host can choose a lower table tier, which is visible to all players', asyn
     name: 'Table content tier',
   });
   expect(selector).toHaveValue('mature');
+  // The opt-out field renders only after /api/me resolves, so await it.
   expect(
-    within(screen.getByRole('group', { name: 'Mature content' })).getByText(
-      /Mature is on by default/,
-    ),
+    within(
+      await screen.findByRole('group', { name: 'Mature content' }),
+    ).getByText(/Mature is on by default/),
   ).toBeInTheDocument();
   expect(
     screen.getByText(/You can opt out of Mature content below/),
@@ -172,9 +173,9 @@ test('host lobby restores the saved content tier after loading room details', as
   ).toBeInTheDocument();
   expect(screen.queryByText(/Mature is on by default/)).not.toBeInTheDocument();
   expect(
-    within(screen.getByRole('group', { name: 'Mature content' })).getByText(
-      /Mature-tier content is unavailable under this cap/,
-    ),
+    within(
+      await screen.findByRole('group', { name: 'Mature content' }),
+    ).getByText(/Mature-tier content is unavailable under this cap/),
   ).toBeInTheDocument();
 });
 
