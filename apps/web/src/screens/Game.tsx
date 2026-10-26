@@ -21,6 +21,7 @@ import { NarrationLog } from '../features/narration/NarrationLog.js';
 import { ActionInput } from '../features/input/ActionInput.js';
 import { RoundPanel } from '../features/round/RoundPanel.js';
 import { HostControls } from '../features/round/HostControls.js';
+import { TurnTimerControl } from '../features/round/TurnTimerControl.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { ConnectionStatus } from '../room/ConnectionStatus.js';
 import { useRoom } from '../room/useRoom.js';
@@ -772,6 +773,12 @@ export function Game() {
             seats={room.seats}
             selfSeatId={selfSeat?.seatId}
             lateJoinRequests={room.lateJoinRequests}
+          />
+          <TurnTimerControl
+            turnTimerMs={room.turnTimerMs}
+            turnTimeoutAction={room.turnTimeoutAction}
+            connected={live.status === 'connected'}
+            send={live.send}
           />
           {seatClaims.length > 0 && (
             <section aria-label="Device claims">
