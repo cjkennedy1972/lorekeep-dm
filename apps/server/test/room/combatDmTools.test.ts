@@ -120,22 +120,32 @@ describe('DM map tools against Room combatRoom', () => {
     };
     const oa = 'That route would provoke an opportunity attack';
 
-    it('(a) hidden-only blocker gives the unknown-destination error and hint', () => {
+    it('(a) hidden-only blocker on a real marker looks like a terrain/range-unreachable destination', () => {
       const room = hide(
         placed(ariaTurn(), { 'ent_goblin-minion_1': { x: 6, y: 2 } }),
         'ent_goblin-minion_1',
       );
       const out = runCombatMapTool(room, move('mk_entrance'), env);
       expect(out.room).toBe(room);
-      expect(reply(out)).toEqual({
+      // mk_altar is a real marker beyond Aria's movement: the engine's own unreachable reply.
+      const unreachable = reply(
+        runCombatMapTool(ariaTurn(), move('mk_altar'), env),
+      );
+      expect(unreachable).toEqual({
         ok: false,
         error: 'unreachable',
-        hint: 'No entity, marker, feature, or current option matches mk_entrance.',
+        hint: 'Choose a reachable, unoccupied cell and check terrain or doors.',
       });
-      const unknown = reply(runCombatMapTool(room, move('mk_nowhere'), env));
-      expect(reply(out)).toEqual({
-        ...unknown,
-        hint: unknown.hint?.replace('mk_nowhere', 'mk_entrance'),
+      expect(reply(out)).toEqual(unreachable);
+    });
+
+    it('a nonexistent ref keeps the no-match reply', () => {
+      expect(
+        reply(runCombatMapTool(ariaTurn(), move('mk_nowhere'), env)),
+      ).toEqual({
+        ok: false,
+        error: 'unreachable',
+        hint: 'No entity, marker, feature, or current option matches mk_nowhere.',
       });
     });
 

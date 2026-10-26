@@ -208,7 +208,7 @@ export function executeSuggestAreaTarget(state: AreaToolState, args: unknown) {
     })
     .slice(0, 4);
   const options = chosen.map((option) => {
-    // FNV-1a of the full engine id: distinct placements never share a handle suffix.
+    // FNV-1a of the full engine id: collisions across distinct placements are improbable, not impossible.
     let hash = 0x811c9dc5;
     for (const char of option.optionId)
       hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;

@@ -110,7 +110,12 @@ export function runCombatMapTool(
     // Decide from visible blockers only: a hidden hostile must not change the reply (ADR-034 §3).
     if (pending.length) {
       if (!pending.some((p) => !byId.get(p.hostileId)?.hidden))
-        return unknownDestination();
+        // Same reply the engine gives a real but unreachable destination (path.ts), so a probe on a
+        // known marker cannot tell a hidden blocker from terrain or range.
+        return reject(
+          'unreachable',
+          'Choose a reachable, unoccupied cell and check terrain or doors.',
+        );
       return reject(
         'unreachable',
         'That route would provoke an opportunity attack; choose a destination that avoids enemy reach.',
