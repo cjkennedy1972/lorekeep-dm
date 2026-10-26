@@ -3,6 +3,15 @@ import type { CharacterInput, PendingReaction } from '@game/rules-engine';
 
 /** A reaction prompt auto-declines this long after it was issued. */
 export const REACTION_TIMEOUT_MS = 15_000;
+/** Cumulative open-window time one turn may spend on reactions before further triggers decline with `cap` (ADR-033 §3.8). */
+export const REACTION_BUDGET_MS = 45_000;
+export type ReactionDeclineCause =
+  | 'timeout'
+  | 'presence'
+  | 'no-controller'
+  | 'cap'
+  | 'combat-ended'
+  | 'restart';
 
 export type CombatAttack = {
   id: string;
@@ -61,6 +70,10 @@ export type RoomCombatState = {
   turnTimerRemainingMs?: number;
   /** Engine-only inputs retained with an open narration for deterministic restart retry. */
   turnNarrationEvents?: Record<string, unknown>[];
+  /** Party combat uses the ADR-033 prompt lifecycle events; absent for sandbox/legacy combat, which keeps ReactionAvailable/Resolved. */
+  promptEvents?: true;
+  /** Reaction-window time left this turn; absent means the full budget (reset when the next turn starts). */
+  reactionBudgetMs?: number;
   /** Event-log sequence IDs for this turn, excluding hidden-combatant events. */
   turnNarrationEventIds?: string[];
   map: Battlemap;
@@ -80,6 +93,12 @@ export type RoomCombatState = {
     trigger: string;
     moverId: string;
     deadlineAt: number;
+    /** Party combat: the window is open (ReactionPromptOpened emitted); until then it is only an engine trigger. */
+    opened?: true;
+    /** Length of the open window, for budget accounting. */
+    windowMs?: number;
+    /** Time left while the table is paused; deadlineAt is rebuilt on resume. */
+    frozenMs?: number;
   };
   /** Engine continuations (remaining path) for every unresolved reaction of the current mover. */
   engineReactions?: Record<string, PendingReaction>;

@@ -10,6 +10,7 @@ import {
   catalog,
   hero,
   memoryTable,
+  partyCombat,
   placed,
 } from './combatFixtures.js';
 import { joinSeated } from '../helpers/room.js';
@@ -1968,5 +1969,335 @@ describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
       table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
     ).toEqual([]);
     expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(false);
+  });
+});
+
+describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () => {
+  const leave = { command: 'move', destination: { x: 7, y: 6 } } as const;
+  const names = (table: ReturnType<typeof memoryTable>) =>
+    table.events.map((event) => event.type);
+  const payloads = (table: ReturnType<typeof memoryTable>, type: string) =>
+    table.events.filter((e) => e.type === type).map((e) => e.payload);
+  const combatOf = (table: ReturnType<typeof memoryTable>) =>
+    table.game().combatRoom as RoomCombatState;
+
+  /** ent_aria walks away from a goblin; `controlled` seats a second account as the goblin's controller. */
+  const stage = async (
+    opts: {
+      controlled?: boolean;
+      hidden?: boolean;
+      patch?: Partial<RoomCombatState>;
+    } = {},
+  ) => {
+    vi.useFakeTimers();
+    const e = engaged();
+    const reactor = crypto.randomUUID();
+    const table = memoryTable({
+      ...e.game,
+      combatActors: {
+        [account]: 'ent_aria',
+        ...(opts.controlled === false
+          ? {}
+          : { [reactor]: 'ent_goblin-minion_1' }),
+      },
+      combatRoom: {
+        ...e.state,
+        promptEvents: true,
+        ...(opts.hidden
+          ? {
+              entities: e.state.entities.map((entity) =>
+                entity.id === 'ent_goblin-minion_1'
+                  ? { ...entity, hidden: true }
+                  : entity,
+              ),
+            }
+          : {}),
+        ...opts.patch,
+      },
+    });
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const reactorInbox: import('@game/schema').ServerMessage[] = [];
+    if (opts.controlled !== false)
+      await joinSeated(room, reactor, {
+        send: (m) => void reactorInbox.push(m),
+      });
+    await room.submitCombatCommand(account, crypto.randomUUID(), leave);
+    await vi.advanceTimersByTimeAsync(0);
+    return { e, table, room, reactor, reactorInbox };
+  };
+
+  it('opens a window with ReactionPromptOpened instead of ReactionAvailable', async () => {
+    const { table, reactorInbox } = await stage();
+    expect(names(table)).toContain('ReactionPromptOpened');
+    expect(names(table)).not.toContain('ReactionAvailable');
+    const opened = payloads(table, 'ReactionPromptOpened')[0]!;
+    expect(opened).toMatchObject({ reactorEntityId: 'ent_goblin-minion_1' });
+    expect(combatOf(table).pendingReaction).toMatchObject({
+      opened: true,
+      windowMs: REACTION_TIMEOUT_MS,
+    });
+    expect(reactorInbox.some((m) => m.type === 'ReactionPrompt')).toBe(true);
+  });
+
+  it('a hidden reactor: Opened/Answered/Declined reach only its controller, who still gets the prompt', async () => {
+    const { table, room, reactor, reactorInbox } = await stage({
+      hidden: true,
+    });
+    expect(reactorInbox.some((m) => m.type === 'ReactionPrompt')).toBe(true);
+    const prompt = combatOf(table).pendingReaction!;
+    await room.submitCombatCommand(reactor, crypto.randomUUID(), {
+      command: 'reaction',
+      reactionId: prompt.reactionId,
+      choice: 'decline',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(names(table)).toEqual(
+      expect.arrayContaining(['ReactionPromptOpened', 'ReactionAnswered']),
+    );
+    const seen = table.messages.filter((m) => m.type === 'CombatEvents');
+    const wire = JSON.stringify(seen.map((m) => m.payload));
+    for (const type of ['ReactionPromptOpened', 'ReactionAnswered'])
+      expect(wire).not.toContain(type);
+    expect(wire).not.toContain('ent_goblin-minion_1');
+    expect(
+      table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
+    ).toEqual([]);
+  });
+
+  it('opens no TurnOpened while a reaction is pending (ADR-033 §6.6)', async () => {
+    const { table, room } = await stage();
+    expect(combatOf(table).pendingReaction).toBeDefined();
+    expect(names(table)).not.toContain('TurnOpened');
+    await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS - 1_000);
+    expect(names(table)).not.toContain('TurnOpened');
+    await room.drain();
+  });
+
+  it('the controller answers: ReactionAnswered, never ReactionResolved', async () => {
+    const { table, room, reactor } = await stage();
+    const prompt = combatOf(table).pendingReaction!;
+    await room.submitCombatCommand(reactor, crypto.randomUUID(), {
+      command: 'reaction',
+      reactionId: prompt.reactionId,
+      choice: 'take',
+    });
+    await room.drain();
+    expect(payloads(table, 'ReactionAnswered')).toEqual([
+      { type: 'ReactionAnswered', promptId: prompt.reactionId, choice: 'take' },
+    ]);
+    expect(names(table)).not.toContain('ReactionResolved');
+    expect(combatOf(table).pendingReaction).toBeUndefined();
+  });
+
+  it('expiry is ReactionDeclined{timeout} and charges the open time to the 45 s budget', async () => {
+    const { table, room } = await stage();
+    await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS + 1);
+    await room.drain();
+    expect(payloads(table, 'ReactionDeclined')).toMatchObject([
+      { cause: 'timeout' },
+    ]);
+    expect(names(table)).not.toContain('ReactionResolved');
+    expect(combatOf(table).reactionBudgetMs).toBe(45_000 - REACTION_TIMEOUT_MS);
+  });
+
+  it('an uncontrolled reactor declines at once (no-controller) and opens no window', async () => {
+    const { table } = await stage({ controlled: false });
+    expect(payloads(table, 'ReactionDeclined')).toMatchObject([
+      { cause: 'no-controller' },
+    ]);
+    expect(names(table)).not.toContain('ReactionPromptOpened');
+    expect(combatOf(table).pendingReaction).toBeUndefined();
+  });
+
+  it('a spent budget declines with cap; a small remainder shortens the window', async () => {
+    const capped = await stage({ patch: { reactionBudgetMs: 0 } });
+    expect(payloads(capped.table, 'ReactionDeclined')).toMatchObject([
+      { cause: 'cap' },
+    ]);
+    expect(names(capped.table)).not.toContain('ReactionPromptOpened');
+    await capped.room.drain();
+    vi.useRealTimers();
+    const short = await stage({ patch: { reactionBudgetMs: 5_000 } });
+    expect(combatOf(short.table).pendingReaction).toMatchObject({
+      windowMs: 5_000,
+    });
+    await short.room.drain();
+  });
+
+  it('the turn clock stays frozen for the whole window and thaws with its remaining time (6b)', async () => {
+    const turnMs = 90_000;
+    const { table, room } = await stage({
+      patch: {
+        turnId: 'turn-1',
+        narrationAttempts: 0,
+        turnDeadline: Date.now() + turnMs,
+      },
+    });
+    const open = combatOf(table);
+    expect(open.turnDeadline).toBeUndefined();
+    expect(open.turnTimerRemainingMs).toBeGreaterThan(turnMs - 1_000);
+    await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS + 1);
+    await room.drain();
+    expect(names(table)).not.toContain('TurnTimedOut');
+    const thawed = combatOf(table);
+    expect(thawed.turnTimerRemainingMs).toBeUndefined();
+    expect(thawed.turnDeadline! - Date.now()).toBeGreaterThan(turnMs - 2_000);
+  });
+
+  it('a pause freezes the window and its budget; resuming restores the remaining time', async () => {
+    const { table, room } = await stage();
+    await vi.advanceTimersByTimeAsync(4_000);
+    await room.setPaused(account, true, true);
+    expect(combatOf(table).pendingReaction?.frozenMs).toBe(
+      REACTION_TIMEOUT_MS - 4_000,
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(names(table)).not.toContain('ReactionDeclined');
+    await room.setPaused(account, false, true);
+    expect(combatOf(table).pendingReaction?.frozenMs).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS - 4_000 + 1);
+    await room.drain();
+    expect(payloads(table, 'ReactionDeclined')).toMatchObject([
+      { cause: 'timeout' },
+    ]);
+    // 4 s before the pause + 11 s after: the 60 s frozen gap is not charged.
+    expect(combatOf(table).reactionBudgetMs).toBe(45_000 - REACTION_TIMEOUT_MS);
+  });
+
+  it('a restart closes the open window as ReactionDeclined{restart}', async () => {
+    const { table, room } = await stage();
+    await room.drain();
+    const second = table.boot();
+    await vi.advanceTimersByTimeAsync(10);
+    await second.drain();
+    expect(payloads(table, 'ReactionDeclined')).toMatchObject([
+      { cause: 'restart' },
+    ]);
+  });
+
+  it('CombatEnded closes an open prompt as ReactionDeclined{combat-ended} and ends the move', () => {
+    const e = engaged();
+    const moved = ok(
+      e.runtime.execute({ ...e.state, promptEvents: true }, 'ent_aria', leave, {
+        now: NOW,
+      }),
+    );
+    const opened = {
+      ...moved.state,
+      pendingReaction: {
+        ...moved.state.pendingReaction!,
+        opened: true as const,
+      },
+    };
+    const ended = settle({
+      ...opened,
+      entities: opened.entities.map((entity) =>
+        entity.team === 'enemies' ? { ...entity, hp: 0 } : entity,
+      ),
+    });
+    expect(types(ended.events)).toEqual([
+      'ReactionDeclined',
+      'MoveEnded',
+      'CombatEnded',
+    ]);
+    expect(ended.state.pendingReaction).toBeUndefined();
+  });
+});
+
+describe('interrupted move is re-checked before it resumes (ADR-033 §4.3-4.5)', () => {
+  const provoked = () => {
+    const e = engaged();
+    const moved = ok(
+      e.runtime.execute(
+        e.state,
+        'ent_aria',
+        { command: 'move', destination: { x: 7, y: 6 } },
+        { now: NOW },
+      ),
+    );
+    const prompt = moved.state.pendingReaction!;
+    const next =
+      moved.state.engineReactions![prompt.reactionId]!.remainingPath[0]!;
+    const decline = (state: RoomCombatState) =>
+      ok(
+        e.runtime.execute(
+          state,
+          prompt.entityId,
+          {
+            command: 'reaction',
+            reactionId: prompt.reactionId,
+            choice: 'decline',
+          },
+          { now: NOW + 1000 },
+        ),
+      );
+    return { moved, next, decline };
+  };
+  const stops = (
+    result: { state: RoomCombatState; events: Record<string, unknown>[] },
+    from: RoomCombatState,
+  ) => {
+    const here = (s: RoomCombatState) =>
+      s.entities.find((entity) => entity.id === 'ent_aria')!.pos;
+    expect(here(result.state)).toEqual(here(from));
+    expect(
+      result.events.find((event) => event.type === 'MoveEnded'),
+    ).toMatchObject({ entityId: 'ent_aria', reason: 'blocked' });
+  };
+
+  it('stops when a later step has been occupied meanwhile', () => {
+    const { moved, next, decline } = provoked();
+    const occupied = {
+      ...moved.state,
+      entities: moved.state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_2' ? { ...entity, pos: next } : entity,
+      ),
+    };
+    stops(decline(occupied), moved.state);
+  });
+
+  it('stops when the remaining speed no longer covers the next step, forfeiting the rest', () => {
+    const { moved, decline } = provoked();
+    const slowed = {
+      ...moved.state,
+      combat: {
+        ...moved.state.combat,
+        resources: {
+          ...moved.state.combat.resources,
+          ent_aria: {
+            ...moved.state.combat.resources.ent_aria!,
+            movementRemaining: 0,
+          },
+        },
+      },
+    };
+    stops(decline(slowed), moved.state);
+  });
+
+  it('stops when the mover is down (incapacitated)', () => {
+    const { moved, decline } = provoked();
+    const down = {
+      ...moved.state,
+      entities: moved.state.entities.map((entity) =>
+        entity.id === 'ent_aria' ? { ...entity, hp: 0 } : entity,
+      ),
+    };
+    const result = decline(down);
+    expect(
+      result.events.find((event) => event.type === 'MoveEnded'),
+    ).toMatchObject({ reason: 'incapacitated' });
+  });
+});
+
+describe('combat started by a DM turn (reconcile) in party mode', () => {
+  it('marks the encounter for the prompt lifecycle and emits no legacy reaction events', () => {
+    const seat = crypto.randomUUID();
+    const bindings = new Map([[seat, { characterSnapshot: { ...hero } }]]);
+    const game = partyCombat(7, { [account]: hero }, bindings);
+    const room = (game as { combatRoom: RoomCombatState }).combatRoom;
+    expect(room.promptEvents).toBe(true);
+    // Sandbox/solo bootstrap keeps the M2 events: no flag.
+    expect(bootstrapped().state.promptEvents).toBeUndefined();
   });
 });

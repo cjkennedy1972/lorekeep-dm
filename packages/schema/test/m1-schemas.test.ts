@@ -290,6 +290,14 @@ const events: EngineEvent[] = [
   { type: 'ConditionRemoved', entityId: 'a', conditionId: 'condition:prone' },
   { type: 'SlotSpent', entityId: 'a', level: 1 },
   { type: 'ContentTierChanged', from: 'mature', to: 'standard' },
+  {
+    type: 'ReactionPromptOpened',
+    promptId: 'r1',
+    reactorEntityId: 'a',
+    deadline: 1000,
+  },
+  { type: 'ReactionAnswered', promptId: 'r1', choice: 'take' },
+  { type: 'ReactionDeclined', promptId: 'r1', cause: 'cap' },
 ];
 
 // Compile-time exhaustiveness: adding an event type without a case fails typecheck.
@@ -301,6 +309,9 @@ function label(e: EngineEvent): string {
     case 'InitiativeRolled':
     case 'ReactionAvailable':
     case 'ReactionResolved':
+    case 'ReactionPromptOpened':
+    case 'ReactionAnswered':
+    case 'ReactionDeclined':
     case 'CombatEnded':
     case 'TurnOpened':
     case 'TurnResolved':

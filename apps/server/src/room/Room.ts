@@ -52,6 +52,11 @@ import {
 } from './eventVisibility.js';
 import { attacksFor, settleEngine } from './combatBootstrap.js';
 import { closeReaction, withHp } from './combatEngine.js';
+import {
+  REACTION_BUDGET_MS,
+  REACTION_TIMEOUT_MS,
+  type ReactionDeclineCause,
+} from './combatTypes.js';
 import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
 import {
@@ -462,6 +467,10 @@ export class Room {
   private readonly combatRuntime: CombatRuntime;
   private combatRoundForLateJoin = 0;
   private reactionTimer?: NodeJS.Timeout;
+  /** promptId to reacting entity, so wire filtering can hide a hidden reactor's Answered/Declined events. */
+  private readonly promptReactors = new Map<string, string>();
+  /** A prompt that was already open when this Room booted: closing it is a `restart` decline. */
+  private recoveredPromptId?: string;
   private turnTimer?: NodeJS.Timeout;
   private awayBoundTimer?: NodeJS.Timeout;
   /** In-memory by design: a restart restarts it at most AWAY_BOUND_MS after boot (every seat recovers as unknown). */
@@ -592,6 +601,14 @@ export class Room {
       }
     });
     // A restart mid-prompt resumes the countdown from the persisted deadline.
+    const recoveredPrompt = roomGameState(this.state)?.pendingReaction;
+    if (recoveredPrompt?.opened) {
+      this.recoveredPromptId = recoveredPrompt.reactionId;
+      this.promptReactors.set(
+        recoveredPrompt.reactionId,
+        recoveredPrompt.entityId,
+      );
+    }
     this.scheduleReaction();
     this.scheduleTurnTimer();
     this.scheduleAwayBound();
@@ -1305,7 +1322,7 @@ export class Room {
     state: NonNullable<ReturnType<typeof roomGameState>>,
   ): void {
     const prompt = state.pendingReaction;
-    if (!prompt) return;
+    if (!prompt || (state.promptEvents && !prompt.opened)) return;
     const controlled = this.controlledBy(accountId);
     if (!reactionPromptVisibleTo(prompt, hiddenIdsOf(state), controlled))
       return;
@@ -1344,6 +1361,20 @@ export class Room {
     );
     if (combat.pendingReaction)
       this.sendReactionPrompt(connection, accountId, combat);
+  }
+
+  /** ReactionAnswered/Declined carry only a promptId: hide them when that prompt's reactor is hidden from the viewer. */
+  private promptHiddenFrom(
+    event: Record<string, unknown>,
+    hidden: ReadonlySet<string>,
+    controlled: ReadonlySet<string>,
+  ): boolean {
+    if (event.type !== 'ReactionAnswered' && event.type !== 'ReactionDeclined')
+      return false;
+    const reactor = this.promptReactors.get(String(event.promptId));
+    return (
+      reactor !== undefined && hidden.has(reactor) && !controlled.has(reactor)
+    );
   }
 
   /** The account whose seat controls this entity, if any; NPCs and released PCs have none. */
@@ -2376,10 +2407,12 @@ export class Room {
       if (paused) {
         await this.freezeRoundTimer();
         await this.freezeTurnTimer();
+        await this.freezeReactionWindow();
         this.scheduleAwayBound();
       } else {
         await this.resumeRoundTimer();
         await this.thawTurnTimer();
+        await this.thawReactionWindow();
         this.scheduleAwayBound();
       }
       this.broadcast({
@@ -3517,6 +3550,7 @@ export class Room {
       });
       await this.freezeRoundTimer();
       await this.freezeTurnTimer();
+      await this.freezeReactionWindow();
       this.scheduleAwayBound();
       this.broadcast({
         seq: this.seq,
@@ -3531,6 +3565,7 @@ export class Room {
       await this.persist('TablePaused', { paused: false });
       await this.resumeRoundTimer();
       await this.thawTurnTimer();
+      await this.thawReactionWindow();
       this.scheduleAwayBound();
       this.broadcast({
         seq: this.seq,
@@ -5167,6 +5202,18 @@ export class Room {
         );
         return true;
       }
+      if (
+        command.command === 'reaction' &&
+        current.pendingReaction?.frozenMs !== undefined
+      ) {
+        this.sendError(
+          accountId,
+          'COMMAND_REJECTED',
+          'The table is paused.',
+          actionId,
+        );
+        return true;
+      }
       const result = this.combatRuntime.execute(current, actorId, command, {
         character: bound
           ? ({ ...bound.characterSnapshot, id: actorId } as never)
@@ -5309,6 +5356,12 @@ export class Room {
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
   ): void {
+    for (const event of events)
+      if (event.type === 'ReactionPromptOpened')
+        this.promptReactors.set(
+          String(event.promptId),
+          String(event.reactorEntityId),
+        );
     // TurnResolved is log/DM-input only (ADR-034 §5): its filtered eventIds
     // still disclose hidden-event count through sequence gaps.
     const clientEvents = events.filter(
@@ -5322,6 +5375,7 @@ export class Room {
     for (const [viewer, connection] of this.connections) {
       const controlled = this.controlledBy(viewer);
       const visible = clientEvents.flatMap((event) => {
+        if (this.promptHiddenFrom(event, hidden, controlled)) return [];
         const shown = projectEventForViewer(event, hidden, controlled);
         return shown ? [shown] : [];
       });
@@ -5771,8 +5825,18 @@ export class Room {
   private scheduleReaction(): void {
     clearTimeout(this.reactionTimer);
     this.reactionTimer = undefined;
-    const prompt = roomGameState(this.state)?.pendingReaction;
+    const combat = roomGameState(this.state);
+    const prompt = combat?.pendingReaction;
     if (!prompt || !this.accepting) return;
+    if (combat.promptEvents && !prompt.opened) {
+      void this.enqueue(() => this.openReactionPrompt()).catch(() => undefined);
+      return;
+    }
+    if (
+      combat.promptEvents &&
+      (prompt.frozenMs !== undefined || this.state.paused)
+    )
+      return;
     if (
       this.reactionSeatPresence(prompt.entityId) &&
       ['away', 'revoked', 'unknown'].includes(
@@ -5802,6 +5866,22 @@ export class Room {
     const presence = this.reactionSeatPresence(
       current.pendingReaction.entityId,
     );
+    if (current.promptEvents) {
+      if (!current.pendingReaction.opened) return this.openReactionPrompt();
+      if (current.pendingReaction.frozenMs !== undefined) return;
+      const cause = this.immediateDeclineCause(current);
+      const result =
+        cause && cause !== 'cap'
+          ? this.combatRuntime.decline(current, cause, Date.now())
+          : this.combatRuntime.expire(current, Date.now());
+      if (result) return this.commitCombat(randomUUID(), result, undefined);
+      if (current.pendingReaction.deadlineAt > Date.now())
+        return this.scheduleReaction();
+      console.error(
+        `Reaction ${current.pendingReaction.reactionId} expired unresolved for ${this.sessionId}; closing it`,
+      );
+      return this.commitCombat(randomUUID(), closeReaction(current), undefined);
+    }
     if (presence && ['away', 'revoked', 'unknown'].includes(presence)) {
       const declined = this.combatRuntime.execute(
         current,
@@ -5827,6 +5907,119 @@ export class Room {
       return this.commitCombat(randomUUID(), closeReaction(current), undefined);
     }
     await this.commitCombat(randomUUID(), result, undefined);
+  }
+
+  /** Why a party prompt must close without a window (ADR-033 §3.6, §3.8), or undefined when it may open. */
+  private immediateDeclineCause(
+    combat: RoomCombatState,
+  ): ReactionDeclineCause | undefined {
+    const prompt = combat.pendingReaction;
+    if (!prompt) return undefined;
+    if (!this.entityControllerAccountId(prompt.entityId))
+      return 'no-controller';
+    const presence = this.reactionSeatPresence(prompt.entityId);
+    if (presence && ['away', 'revoked', 'unknown'].includes(presence))
+      return prompt.reactionId === this.recoveredPromptId
+        ? 'restart'
+        : 'presence';
+    if ((combat.reactionBudgetMs ?? REACTION_BUDGET_MS) <= 0) return 'cap';
+    return undefined;
+  }
+
+  /**
+   * Party combat: a trigger becomes a prompt only here, where seat control, presence and the turn's
+   * reaction budget are known. An immediate decline opens no window (ADR-033 §3.6).
+   */
+  private async openReactionPrompt(): Promise<void> {
+    const current = roomGameState(this.state);
+    const prompt = current?.pendingReaction;
+    if (!current?.promptEvents || !prompt || prompt.opened) return;
+    const now = Date.now();
+    const cause = this.immediateDeclineCause(current);
+    if (cause) {
+      const declined = this.combatRuntime.decline(current, cause, now);
+      if (declined) return this.commitCombat(randomUUID(), declined, undefined);
+      return this.commitCombat(
+        randomUUID(),
+        closeReaction(current, cause),
+        undefined,
+      );
+    }
+    const windowMs = Math.min(
+      REACTION_TIMEOUT_MS,
+      current.reactionBudgetMs ?? REACTION_BUDGET_MS,
+    );
+    const deadline = now + windowMs;
+    const paused = this.state.paused === true;
+    await this.commitCombat(
+      randomUUID(),
+      {
+        state: {
+          ...current,
+          pendingReaction: {
+            ...prompt,
+            opened: true,
+            windowMs,
+            deadlineAt: deadline,
+            ...(paused ? { frozenMs: windowMs } : {}),
+          },
+        },
+        events: [
+          {
+            type: 'ReactionPromptOpened',
+            promptId: prompt.reactionId,
+            reactorEntityId: prompt.entityId,
+            deadline,
+          },
+        ],
+      },
+      undefined,
+    );
+  }
+
+  /** Table pause: an open window keeps its remaining time instead of a deadline (ADR-033 §3.7, D4). */
+  private async freezeReactionWindow(): Promise<void> {
+    const combat = roomGameState(this.state);
+    const prompt = combat?.pendingReaction;
+    if (
+      !combat?.promptEvents ||
+      !prompt?.opened ||
+      prompt.frozenMs !== undefined
+    )
+      return;
+    clearTimeout(this.reactionTimer);
+    this.reactionTimer = undefined;
+    await this.commitGameState(
+      {
+        ...(this.state.gameState as Record<string, unknown>),
+        combatRoom: {
+          ...combat,
+          pendingReaction: {
+            ...prompt,
+            frozenMs: Math.max(0, prompt.deadlineAt - Date.now()),
+          },
+        },
+      },
+      [],
+    );
+  }
+
+  private async thawReactionWindow(): Promise<void> {
+    const combat = roomGameState(this.state);
+    const prompt = combat?.pendingReaction;
+    if (!combat?.promptEvents || prompt?.frozenMs === undefined) return;
+    const { frozenMs, ...rest } = prompt;
+    await this.commitGameState(
+      {
+        ...(this.state.gameState as Record<string, unknown>),
+        combatRoom: {
+          ...combat,
+          pendingReaction: { ...rest, deadlineAt: Date.now() + frozenMs },
+        },
+      },
+      [],
+    );
+    this.scheduleReaction();
   }
 
   private reactionSeatPresence(

@@ -40,6 +40,10 @@ export const EVENT_ID_RULES: Readonly<Record<string, Rule>> = {
   OpportunityTriggered: { scalars: ['moverId', 'attackerId'] },
   ReactionAvailable: subject,
   ReactionResolved: subject,
+  // Party prompt lifecycle (ADR-033 §3). Answered/Declined carry only a promptId; Room hides them for a hidden reactor.
+  ReactionPromptOpened: { scalars: ['reactorEntityId'] },
+  ReactionAnswered: none,
+  ReactionDeclined: none,
   DodgeDeclared: subject,
   MonsterPolicy: { scalars: ['monsterId'] },
   AttackRefused: { scalars: ['entityId', 'attackerId', 'targetId'] },
