@@ -713,7 +713,12 @@ export function registerSessionRoutes(
         // Same neutral 404 for unknown, other owner's, and already-committed requests.
         if (!room || !pending || pending.accountId !== accountId)
           return notFound();
-        const key = `${request.params.requestId}:${accountId}`;
+        const concealed = concealedEntities(room.state?.gameState);
+        // A newer concealment must invalidate a cached recap.
+        const key = `${request.params.requestId}:${accountId}:${concealed
+          .map((entity) => entity.id)
+          .sort()
+          .join(',')}`;
         const hit = recapCache.get(key);
         if (hit && hit.expires > Date.now()) return hit.body;
         const sessionId = room.state.sessionId as string;
@@ -734,7 +739,7 @@ export function registerSessionRoutes(
             ...boundaries.veils.map((veil) => `veil: ${veil}`),
           ],
           adapter: await recapAdapter(accountId, sessionId),
-          hidden: concealedEntities(room.state?.gameState),
+          hidden: concealed,
         });
         const body = { recap: result.recap, settings };
         recapCache.set(key, { body, expires: Date.now() + 5 * 60_000 });

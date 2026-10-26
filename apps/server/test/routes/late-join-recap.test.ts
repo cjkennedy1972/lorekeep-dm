@@ -24,6 +24,7 @@ const moderate = vi.fn();
 let summaries: string[];
 let bindings: { name: string | null; redacted: boolean }[];
 let pendingOwner: string;
+let gameState: unknown;
 let adapter: LlmAdapter | undefined;
 let queries: string[];
 
@@ -58,6 +59,7 @@ function build() {
         ? {
             state: {
               sessionId,
+              gameState,
               lateJoinRequests: [
                 {
                   requestId,
@@ -94,6 +96,7 @@ const llm = (text: string | Error): LlmAdapter =>
 beforeEach(() => {
   caller = 'joiner';
   pendingOwner = 'joiner';
+  gameState = undefined;
   summaries = ['Scene 1: The party crossed the hollow and met the warden.'];
   bindings = [{ name: 'Brann', redacted: false }];
   adapter = undefined;
@@ -159,6 +162,18 @@ describe('GET /api/late-join/:requestId/recap', () => {
     const res = await get(app);
     expect(res.statusCode).toBe(404);
     expect(res.json()).not.toHaveProperty('recap');
+  });
+
+  it('a newer concealment invalidates the cached recap', async () => {
+    const app = build();
+    adapter = llm('Gribble waits.');
+    await get(app);
+    await get(app);
+    expect(moderate).toHaveBeenCalledTimes(1);
+    gameState = { concealed: [{ id: 'ent_gob', name: 'Gribble' }] };
+    const body = (await get(app)).json();
+    expect(moderate).toHaveBeenCalledTimes(2);
+    expect(body.recap).not.toMatch(/Gribble/);
   });
 
   it('falls back to deterministic text when the LLM fails', async () => {

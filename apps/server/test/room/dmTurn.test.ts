@@ -662,29 +662,46 @@ describe('Room commit safety', () => {
     });
   });
 
-  it('records a once-hidden identity, keeps it after combat teardown and restart, and never sends it to clients', async () => {
+  it('Room teardown probe: a once-hidden identity never reaches any viewer, survives restore and rewind', async () => {
     const { room, store, latestSnapshot } = setup({
       async run() {
         throw new Error('unused');
       },
     });
+    const actor = randomUUID();
+    const other = randomUUID();
+    await room.seat(actor, 'Actor', false);
+    await room.seat(other, 'Other', false);
     const goblin = { id: 'ent_gob', name: 'Gribble', hidden: true };
     await room.persistGameState({
       combatRoom: { entities: [goblin], map: { w: 1, h: 1, cells: [] } },
     });
     await room.persistGameState({ sceneId: 'later', world: {} }); // teardown: no combatRoom
-    const concealed = (room.state.gameState as { concealed?: unknown })
-      .concealed;
-    expect(concealed).toEqual([{ id: 'ent_gob', name: 'Gribble' }]);
-    expect(JSON.stringify(room.clientState())).not.toMatch(/Gribble|concealed/);
+    const record = [{ id: 'ent_gob', name: 'Gribble' }];
+    expect((room.state.gameState as { concealed?: unknown }).concealed).toEqual(
+      record,
+    );
+    for (const viewer of [undefined, actor, other])
+      expect(JSON.stringify(room.clientState(viewer))).not.toMatch(
+        /Gribble|ent_gob|concealed/,
+      );
+
     const recovered = new Room(store, lease, {
       snapshot: latestSnapshot(),
       events: [],
     });
     expect(
       (recovered.state.gameState as { concealed?: unknown }).concealed,
-    ).toEqual(concealed);
-    expect(JSON.stringify(recovered.clientState())).not.toMatch(/Gribble/);
+    ).toEqual(record);
+    expect(JSON.stringify(recovered.clientState(other))).not.toMatch(
+      /Gribble|ent_gob/,
+    );
+
+    // Rewind assigns an older state that predates the concealment: the record never shrinks.
+    room.state = { ...room.state, gameState: { sceneId: 'older' } };
+    expect((room.state.gameState as { concealed?: unknown }).concealed).toEqual(
+      record,
+    );
   });
 
   it('redacts private opt-outs from StateSync in a lobby without game state', async () => {

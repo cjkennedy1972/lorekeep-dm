@@ -107,7 +107,8 @@ export async function buildLateJoinRecap(input: {
     adapter: input.adapter,
     signal: AbortSignal.timeout(input.timeoutMs ?? 8_000),
   });
-  const recap = scrubLateJoinText(built.recap, names)
+  const recap = hiddenMatcher(input.hidden ?? [])
+    .scrub(scrubLateJoinText(built.recap, names))
     .split(' ')
     .slice(0, MAX_RECAP_WORDS)
     .join(' ')

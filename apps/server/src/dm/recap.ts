@@ -153,7 +153,7 @@ export async function buildResumeRecap(input: {
   const memories = (
     await new RegistryMemory(input.db).loadRecapMemory(input.sessionId)
   ).map(scrub);
-  return buildRecap({
+  const built = await buildRecap({
     memories,
     lastEvents: input.lastEvents,
     previousSnapshotRecap: input.previousSnapshotRecap,
@@ -161,4 +161,5 @@ export async function buildResumeRecap(input: {
     adapter: input.adapter,
     signal: input.signal,
   });
+  return { ...built, recap: scrub(built.recap) };
 }
