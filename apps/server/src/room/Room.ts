@@ -43,7 +43,7 @@ import {
   type RoomCombatState,
 } from './combat.js';
 import { attacksFor, settleEngine } from './combatBootstrap.js';
-import { withHp } from './combatEngine.js';
+import { closeReaction, withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/room-tools';
 import {
@@ -5656,7 +5656,15 @@ export class Room {
         return this.commitCombat(randomUUID(), declined, undefined);
     }
     const result = this.combatRuntime.expire(current, Date.now());
-    if (!result) return this.scheduleReaction();
+    if (!result) {
+      // Only a window that is genuinely still open may be re-armed (with its positive remaining time); never at zero.
+      if (current.pendingReaction.deadlineAt > Date.now())
+        return this.scheduleReaction();
+      console.error(
+        `Reaction ${current.pendingReaction.reactionId} expired unresolved for ${this.sessionId}; closing it`,
+      );
+      return this.commitCombat(randomUUID(), closeReaction(current), undefined);
+    }
     await this.commitCombat(randomUUID(), result, undefined);
   }
 

@@ -13,7 +13,7 @@ import {
   placed,
 } from './combatFixtures.js';
 import { joinSeated } from '../helpers/room.js';
-import { settle } from '../../src/room/combatEngine.js';
+import { answerReaction, settle } from '../../src/room/combatEngine.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -1657,6 +1657,73 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     ).toHaveLength(1);
     expect(
       table.events.filter((event) => event.type === 'TurnOpened'),
+    ).toHaveLength(1);
+  });
+});
+
+describe('reaction hardening (M4-6d carry-overs)', () => {
+  const leave = { command: 'move', destination: { x: 7, y: 6 } } as const;
+  const provoked = () => {
+    const e = engaged();
+    const moved = ok(
+      e.runtime.execute(e.state, 'ent_aria', leave, { now: NOW }),
+    );
+    return { ...e, moved };
+  };
+  it('engine answerReaction accepts the reactor only, never the mover', () => {
+    const { moved } = provoked();
+    const prompt = moved.state.pendingReaction!;
+    expect(
+      answerReaction(
+        moved.state,
+        prompt.moverId,
+        prompt.reactionId,
+        'decline',
+        NOW,
+      ),
+    ).toMatchObject({ code: 'COMMAND_REJECTED' });
+    expect(
+      answerReaction(
+        moved.state,
+        prompt.entityId,
+        prompt.reactionId,
+        'decline',
+        NOW,
+      ),
+    ).not.toHaveProperty('code');
+  });
+
+  it('Room closes an expiry the engine will not resolve once, and never re-arms the timer at zero', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const e = engaged();
+    const moved = ok(
+      e.runtime.execute(e.state, 'ent_aria', leave, { now: Date.now() }),
+    );
+    const table = memoryTable({
+      characters: { [account]: hero },
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: moved.state,
+    });
+    const stuck = { ...e.runtime, expire: () => null };
+    const room = table.boot([], stuck);
+    await joinSeated(room, account, table.connection);
+    await vi.advanceTimersByTimeAsync(REACTION_TIMEOUT_MS + 1);
+    await room.drain();
+    expect(
+      (table.game().combatRoom as RoomCombatState).pendingReaction,
+    ).toBeUndefined();
+    const closed = table.events.filter(
+      (event) => event.type === 'ReactionResolved',
+    );
+    expect(closed).toHaveLength(1);
+    expect(closed[0]?.payload).toMatchObject({ used: false });
+    expect(
+      table.events.filter((event) => event.type === 'MoveEnded'),
+    ).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(
+      table.events.filter((event) => event.type === 'ReactionResolved'),
     ).toHaveLength(1);
   });
 });
