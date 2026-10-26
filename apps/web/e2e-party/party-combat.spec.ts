@@ -1,37 +1,15 @@
-import { readFileSync } from 'node:fs';
+import { expect, test, type Page } from '@playwright/test';
 import {
-  expect,
-  test,
-  type Browser,
-  type BrowserContext,
-  type Page,
-} from '@playwright/test';
+  closeMember,
+  openMember,
+  readState,
+  SYNC_BUDGET_MS,
+  type View,
+} from './combat-helpers.js';
 
 // Real server + Postgres + scripted DM (see apps/server/test/live/serve.party.live.ts).
 // The combat table's three members each sit in their own browser. Every move goes through the real
-// websocket and is applied by the server. Keyboard only: no mouse, no locator clicks.
-type Member = { accountId: string; token: string; entityId: string };
-type CombatState = {
-  combat: { table: string; invite: string } & Record<
-    'host' | 'guest' | 'scout',
-    Member
-  >;
-};
-type View = { member: Member; context: BrowserContext; page: Page };
-
-const state = () =>
-  JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as CombatState;
-const origin = `http://localhost:${process.env.LIVE_WEB_PORT ?? 5176}`;
-// The sync budget from the party acceptance criteria: a move must reach every other browser within 1 s.
-const SYNC_BUDGET_MS = 1000;
-
-async function openMember(browser: Browser, member: Member, table: string) {
-  const context = await browser.newContext();
-  await context.addCookies([{ name: 'sid', value: member.token, url: origin }]);
-  const page = await context.newPage();
-  await page.goto(`${origin}/rooms/${table}/game`);
-  return { member, context, page } satisfies View;
-}
+// websocket and is applied by the server. Keyboard only: no mouse and no locator clicks.
 
 // The token li the server marks as the active combatant (data-active follows the initiative head).
 const activeToken = (page: Page) =>
@@ -41,7 +19,7 @@ test('three browsers: keyboard-only party move and cancel, synced to every seat 
   browser,
 }) => {
   test.setTimeout(180_000);
-  const { combat } = state();
+  const { combat } = readState();
   const views: View[] = [];
   try {
     for (const member of [combat.host, combat.guest, combat.scout])
@@ -137,6 +115,6 @@ test('three browsers: keyboard-only party move and cancel, synced to every seat 
         page.getByText(`Active combatant: ${activeId}`),
       ).toBeVisible();
   } finally {
-    for (const view of views) await view.context.close();
+    for (const view of views) await closeMember(view);
   }
 });
