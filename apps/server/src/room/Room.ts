@@ -4102,9 +4102,12 @@ export class Room {
       const round = this.state.round;
       if (!round) return false;
       const currentSubmissions = round.submissions;
+      // 'resolved' is the window between the committed turn (narration already
+      // sent) and the next openRound(); queue so a fast follow-up is promoted, not dropped.
       const queued =
         !!this.state.restVote ||
         round.status === 'resolving' ||
+        round.status === 'resolved' ||
         (round.status === 'open' &&
           round.eligibleSeatIds.length === 1 &&
           currentSubmissions.some((item) => item.accountId === accountId));

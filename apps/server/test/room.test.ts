@@ -1591,6 +1591,39 @@ describe('room actor', () => {
     );
     await room.drain(100);
   });
+  it('accepts an action sent right after narration completes, before the next round opens', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    const followUp = randomUUID();
+    let followUpResult: Promise<unknown> | undefined;
+    await room.join(host, {
+      send: (message) => {
+        if (
+          (message as { type: string }).type === 'NarrationCompleted' &&
+          !followUpResult
+        )
+          followUpResult = room.submitAction(host, followUp, 'Next', 'Host');
+      },
+    });
+    await room.submitAction(host, randomUUID(), 'First', 'Host');
+    for (let attempt = 0; attempt < 100 && !followUpResult; attempt += 1)
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    expect(await followUpResult).toBe(true);
+    await room.drain(100);
+  });
   it('serializes interleaved joins and broadcasts increasing presence seq', async () => {
     const { store, events } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id));
