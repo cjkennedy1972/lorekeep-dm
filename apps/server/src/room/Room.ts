@@ -5213,7 +5213,19 @@ export class Room {
       if (!seat) throw new Error('Account is not seated');
       this.assertSeatBound(seat);
       if (this.actionIds.has(actionId)) return false;
+      // Never wait for the narration worker while holding the player mailbox:
+      // its commit is itself queued behind that mailbox. Retryable rejection
+      // lets the caller resubmit after the worker commits and releases it.
       const current = roomGameState(this.state);
+      if (this.turnInFlight && current?.phase !== 'narrating') {
+        this.sendError(
+          accountId,
+          'narration-in-progress',
+          'The DM is finishing this turn; try again in a moment.',
+          actionId,
+        );
+        return true;
+      }
       const gameState = this.state.gameState as
         | {
             combatActors?: Record<string, string>;
@@ -5277,7 +5289,7 @@ export class Room {
       if (this.turnInFlight) {
         this.sendError(
           accountId,
-          'COMMAND_REJECTED',
+          'narration-in-progress',
           'The DM is still narrating; try again in a moment.',
           actionId,
         );

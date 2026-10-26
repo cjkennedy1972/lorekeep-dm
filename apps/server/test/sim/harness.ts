@@ -232,6 +232,7 @@ export class SimClient {
   closeCode?: number;
   lastSeq = 0;
   private resumeToken?: string;
+  private closed?: Promise<number>;
 
   constructor(
     private readonly table: SimTable,
@@ -259,6 +260,10 @@ export class SimClient {
     );
     this.socket = socket;
     this.closeCode = undefined;
+    // Created with the socket so no close event can fire before a waiter exists.
+    this.closed = new Promise<number>((resolve) =>
+      socket.once('close', (code) => resolve(code)),
+    );
     const syncsBefore = this.messages('StateSync').length;
     socket.on('message', (data) => {
       const frame = JSON.parse(data.toString()) as ServerFrame;
@@ -309,6 +314,29 @@ export class SimClient {
     });
   }
 
+  /**
+   * Resolves with the close code of the current socket, however late it arrives. Rejects only if
+   * the socket is still open after `timeoutMs`.
+   */
+  async waitForClose(timeoutMs = 20_000): Promise<number> {
+    if (!this.closed) throw new Error(`${this.name}: no socket to close`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(`${this.name}: socket still open after ${timeoutMs} ms`),
+          ),
+        timeoutMs,
+      );
+    });
+    try {
+      return await Promise.race([this.closed, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Drops the socket and reconnects with a fresh ticket. */
   async reconnect(): Promise<number | undefined> {
     await this.disconnect();
@@ -316,8 +344,11 @@ export class SimClient {
   }
 
   /** Sends a client envelope. Returns the actionId used. */
-  send(type: string, payload: Record<string, unknown>): string {
-    const actionId = randomUUID();
+  send(
+    type: string,
+    payload: Record<string, unknown>,
+    actionId = randomUUID(),
+  ): string {
     this.socket!.send(
       JSON.stringify({ actionId, type, payload, lastSeq: this.lastSeq }),
     );

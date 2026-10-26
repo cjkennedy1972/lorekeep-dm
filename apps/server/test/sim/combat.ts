@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { RoomCombatState } from '../../src/room/combat.js';
 import { seatEntityId } from '../../src/room/seatEntity.js';
 import { partyCombat, placed } from '../room/combatFixtures.js';
@@ -101,12 +102,13 @@ export async function combatCommand(
   payload: Record<string, unknown>,
 ): Promise<ServerFrame> {
   let rateLimited = 0;
+  const actionId = randomUUID();
   for (let attempt = 0; attempt < 60; attempt++) {
     const wait = (lastSent.get(client) ?? 0) + MIN_GAP_MS - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     lastSent.set(client, Date.now());
     const mark = client.inbox.length;
-    const actionId = client.send('CombatCommand', payload);
+    client.send('CombatCommand', payload, actionId);
     const reply = await pollFrom(
       client,
       mark,
@@ -118,17 +120,11 @@ export async function combatCommand(
             (frame.payload?.code === 'RATE_LIMITED' &&
               frame.payload?.actionId === undefined))),
     );
-    if (String(reply.payload?.message ?? '').includes('still narrating')) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      continue;
-    }
     if (reply.payload?.code === 'narration-in-progress') {
-      await pollFrom(
-        client,
-        client.inbox.indexOf(reply) + 1,
-        (frame) => frame.type === 'NarrationCompleted',
-        20_000,
-      );
+      // The rejected command never starts a narration, so NarrationCompleted for the
+      // prior turn may already be in the inbox or never come again. The DM's in-flight
+      // flag clears within a few hundred ms, so back off and re-send the same actionId.
+      await new Promise((resolve) => setTimeout(resolve, 250));
       continue;
     }
     if (reply.payload?.code === 'RATE_LIMITED') {
@@ -149,7 +145,7 @@ export async function pollFrom(
   client: SimClient,
   from: number,
   match: (frame: ServerFrame) => boolean,
-  timeoutMs = 8000,
+  timeoutMs = 20_000,
 ): Promise<ServerFrame> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
