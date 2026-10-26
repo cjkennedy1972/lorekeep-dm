@@ -53,7 +53,7 @@ import {
 import { ConnectionRegistry } from './connections.js';
 import { SOLO_OWNER_RESUME_RECOVERY_ENABLED } from './recoveryPolicy.js';
 import { ChatPolicy } from '../chat/policy.js';
-import { applyAutomaticChatMute } from '../chat/mutes.js';
+import { applyAutomaticChatMute, applyHostChatMute } from '../chat/mutes.js';
 import { SeatCharacterError } from '../persistence/seatCharacters.js';
 import {
   currentMemberEventsSql,
@@ -1169,26 +1169,25 @@ export function installGateway(
                       (seat) => seat.seatId === mute.data.payload.seatId,
                     );
                     if (!target) throw new RoomSeatRequiredError();
-                    if (mute.data.payload.muted)
-                      await db.query(
-                        `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
-                     VALUES($1,$2,NULL,'host',$3)
-                     ON CONFLICT(session_id,seat_id) DO UPDATE SET muted_until=NULL,source='host',updated_at=now(),updated_by=EXCLUDED.updated_by`,
-                        [identity.sessionId, target.seatId, identity.accountId],
-                      );
-                    else {
-                      chatPolicy.liftMute(identity.sessionId, target.seatId);
-                      await db.query(
-                        `DELETE FROM chat_mutes WHERE session_id=$1 AND seat_id=$2`,
-                        [identity.sessionId, target.seatId],
-                      );
-                    }
-                    await room.setChatMute(
-                      identity.accountId,
-                      mute.data.actionId,
+                    await applyHostChatMute(
+                      db,
+                      identity.sessionId,
                       target.seatId,
                       mute.data.payload.muted,
+                      identity.accountId,
+                      () =>
+                        room.setChatMute(
+                          identity.accountId,
+                          mute.data.actionId,
+                          target.seatId,
+                          mute.data.payload.muted,
+                        ),
+                      (error, message) =>
+                        app.log.error({ err: error }, message),
                     );
+                    // Lift the in-memory auto-mute only once the unmute is committed.
+                    if (!mute.data.payload.muted)
+                      chatPolicy.liftMute(identity.sessionId, target.seatId);
                   });
               })
               .catch((error: unknown) =>
