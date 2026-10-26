@@ -84,6 +84,11 @@ export type RoomCombatState = {
   /** Engine continuations (remaining path) for every unresolved reaction of the current mover. */
   engineReactions?: Record<string, PendingReaction>;
   pendingActionIds?: string[];
+  /** Engine-issued area-aim handles (DM `suggest_area_target`); each is valid only on its `expiresTurn`. */
+  optionHandles?: Record<
+    string,
+    { pos: GridPos; expiresTurn: string; affected: string[] }
+  >;
   concentration?: Record<string, string | null>;
   /** Deterministic RNG cursor; every roll advances it. */
   seed?: number;

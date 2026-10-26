@@ -377,6 +377,47 @@ describe('M2-11 combat/movement tools', () => {
     ).toBe('unknown-spell');
   });
 
+  test('area option handles are unique per placement even when the same units are affected', () => {
+    const entity = (id: string, x: number, y: number, team: string) => ({
+      id,
+      name: id,
+      team,
+      pos: { x, y },
+      size: 1,
+      hp: 8,
+      maxHp: 8,
+      abilities: hero.abilities,
+    });
+    const area = good(
+      executeSuggestAreaTarget(
+        {
+          map: blankMap(),
+          entities: [
+            entity('ent_hero', 4, 4, 'party'),
+            entity('ent_aaaaaaaaaa', 5, 4, 'enemy'),
+            entity('ent_bbbbbbbbbb', 6, 4, 'enemy'),
+          ],
+          catalog,
+          spells: [
+            {
+              id: 'spell:burning-hands',
+              template: { shape: 'cone', size: 15 },
+            },
+          ],
+          casters: { ent_hero: hero },
+        },
+        {
+          spellId: 'srd:spell/burning-hands',
+          casterId: 'ent_hero',
+          intent: 'max-enemies',
+        },
+      ),
+    ) as { options: { optionId: string }[] };
+    const ids = area.options.map((option) => option.optionId);
+    expect(ids.length).toBeGreaterThan(1);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   test('call_for_rest is refused while combat is active', () => {
     const base = state();
     const started = good(

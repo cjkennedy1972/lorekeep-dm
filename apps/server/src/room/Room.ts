@@ -85,6 +85,8 @@ function clientGameState(
       delete combatRoom.turnNarrationEvents;
       delete combatRoom.narrationAttempts;
       delete combatRoom.turnNarrationEventIds;
+      delete combatRoom.optionHandles;
+      // DM planning data (anchors, affected ids, turn key); never sent to seats.
       result[key] = combatRoom;
       continue;
     }

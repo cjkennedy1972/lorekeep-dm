@@ -190,3 +190,12 @@ test('client endpoint config excludes key material', () => {
     }).success,
   ).toBe(false);
 });
+
+test('move_to takes marker/feature/entity refs only, not area option handles or coordinates', () => {
+  const base = { entityId: 'ent_ayla', mode: 'within' };
+  const parse = (targetRef: string) =>
+    DMToolArgsSchema.move_to.safeParse({ ...base, targetRef }).success;
+  expect(parse('opt_a1b2c3d4')).toBe(false);
+  expect(parse('3,4')).toBe(false);
+  expect(parse('mk_altar')).toBe(true);
+});
