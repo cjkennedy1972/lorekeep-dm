@@ -10,8 +10,8 @@ the exact head that ships. This run covers the two open gaps:
 
 | Item | Value |
 | --- | --- |
-| Source base | `origin/main` @ `69374282877879e9782bbcb070951ef9dc2ee5b7` (fetched fresh) |
-| Test head (exact SHA run below) | `4845b5f955bdff1613552e0865bf06404cc3329e` |
+| Source base | `origin/main` @ `2dd2f84764f24e39f9c51e51ac9e9f5ab6e459bb` (local ref at run time) |
+| Test head (exact SHA run below) | `ec6341d2dcfb79f8927e9ea6cdae4b9f3d7279d6` (branch `test/m4-9a-gate1-gaps`; includes merge of `origin/main` at `243926b`, `03fabfd` await socket close and 20 s waits, `ec6341d` barrier before revoke) |
 | Branch | `test/m4-9a-gate1-gaps` |
 | New test file | `apps/server/test/db/sim-combat-gate1.test.ts` |
 | Existing test files | unchanged (`sim-clients.test.ts`, `sim-combat.test.ts`) |
@@ -19,7 +19,7 @@ the exact head that ships. This run covers the two open gaps:
 
 ## Environment
 
-- Dedicated Postgres: Docker `postgres:16`, container `m4gate1-pg-30055`, host port `55461`. Removed after the run.
+- Dedicated Postgres: Docker `postgres:16.10-alpine` (matches `infra/docker-compose.yml`; CI uses `postgres:16`), container `m4gate1-proof-pg`, host port `55450`. Connection string is read from `$DATABASE_URL`. Removed after the run.
 - Migrations: `pnpm migrate:up` in `apps/server` against the dedicated DB before the run.
 - Node v26.12.1, pnpm workspace, Vitest 3.2.4.
 - Built prerequisites: `pnpm --filter @game/schema build`, `pnpm --filter @game/rules-engine build`.
@@ -34,13 +34,13 @@ cd ~/.openclaw/workspace/wt-proof-gate1
 pnpm install --frozen-lockfile
 
 # dedicated DB
-docker run -d --name m4gate1-pg-30055 -e POSTGRES_USER=lorekeep -e POSTGRES_PASSWORD=lorekeep \
-  -e POSTGRES_DB=lorekeep -p 127.0.0.1:55461:5432 postgres:16
-cd apps/server && DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:55461/lorekeep pnpm migrate:up
+# POSTGRES_PASSWORD comes from the local secret store; DATABASE_URL uses the same password
+docker run -d --name m4gate1-proof-pg -e POSTGRES_USER=lorekeep -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+  -e POSTGRES_DB=lorekeep -p 127.0.0.1:55450:5432 postgres:16.10-alpine
+cd apps/server && pnpm migrate:up   # with DATABASE_URL exported
 
 # six-client suites on exact head
-DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:55461/lorekeep \
-  pnpm exec vitest run test/db/sim-clients.test.ts test/db/sim-combat.test.ts \
+pnpm exec vitest run test/db/sim-clients.test.ts test/db/sim-combat.test.ts \
   test/db/sim-combat-gate1.test.ts --reporter=verbose
 
 # static checks and unit suites (repo root)
@@ -48,13 +48,15 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test                                   # apps/server unit excludes test/db
-cd tests/e2e && DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:55461/lorekeep pnpm test
+cd tests/e2e && pnpm test   # with DATABASE_URL exported
 
 # teardown
-docker rm -f m4gate1-pg-30055
+docker rm -f m4gate1-proof-pg
 ```
 
-## Per-scenario results (six-client suites, head `4845b5f`)
+## Per-scenario results (historical: earlier verbose run, head `4845b5f`)
+
+Recorded before the commits now under test. `03fabfd` widened the waits to 20 s and `ec6341d` added the barrier before revoke, so these durations are not re-measured on `ec6341d`. Current results are under Run results below.
 
 | File | Scenario | Result | Duration |
 | --- | --- | --- | --- |
@@ -96,7 +98,19 @@ What each gate-1 scenario asserts (all waits are predicate or event waits, no fi
   owner's `end-turn`. Asserts exactly one `TurnResolved` for the turn. If the timer won, the player's command
   must reply `Error`; if the player won, it must reply `CombatTracker` and there is no `TurnTimedOut`.
 
-## Totals
+## Run results on head `ec6341d2dcfb79f8927e9ea6cdae4b9f3d7279d6`
+
+| Check | Command | Runs | Result |
+| --- | --- | --- | --- |
+| Gate 1 stability | `vitest run test/db/sim-combat-gate1.test.ts`, sequential, no other load | 10 | 10/10 exit 0, 5/5 tests each (50 passed, 0 failed) |
+| Six-client final | `vitest run test/db/sim-clients.test.ts test/db/sim-combat.test.ts test/db/sim-combat-gate1.test.ts` | 1 | exit 0, 3 files, 21/21 passed |
+| Typecheck | `pnpm typecheck` | 1 | exit 0 |
+| Lint | `pnpm lint` | 1 | exit 0 |
+| Format | `pnpm format:check` | 1 | exit 0, all files formatted |
+
+Not re-run on this head: unit suites and `tests/e2e`. The totals below are from the earlier run at `4845b5f` and are not evidence for `ec6341d`.
+
+## Earlier totals (head `4845b5f`, superseded)
 
 | Suite | Files | Tests | Result |
 | --- | --- | --- | --- |
@@ -113,7 +127,7 @@ Note on `tests/e2e`: the first `pnpm test` at the repo root ran without `DATABAS
 `tests/e2e/support.ts` throws in that case (7 spec files failed at load). The package was rerun
 with `DATABASE_URL` set and passed 187/187. The failure was the environment, not the code.
 
-## Run output excerpt (head `4845b5f955bdff1613552e0865bf06404cc3329e`)
+## Run output excerpt (historical, head `4845b5f955bdff1613552e0865bf06404cc3329e`)
 
 ```
  ✓ test/db/sim-combat-gate1.test.ts > host removes a seat on that seat’s turn (host revoke mid-combat) > the live turn resolves with the configured dodge, the seat loses access, and the other clients agree 579ms
