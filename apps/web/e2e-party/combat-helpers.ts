@@ -13,6 +13,11 @@ export type CombatState = {
     'host' | 'guest' | 'scout',
     Member
   >;
+  // The reaction table: its own encounter, used only by party-kbd-reaction.spec.ts.
+  reaction: { table: string; invite: string } & Record<
+    'host' | 'guest' | 'scout',
+    Member
+  >;
 };
 /** `frames` holds every JSON frame the server pushed to this page, in arrival order. */
 export type View = {

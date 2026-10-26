@@ -12,7 +12,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Pool } from 'pg';
 import { it } from 'vitest';
-import { quickBuild } from '@game/rules-engine';
+import { moveAlong, quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import type { CharacterInput } from '@game/rules-engine';
 import { createApp } from '../../src/app.js';
@@ -24,11 +24,42 @@ import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js
 import type { Room } from '../../src/room/Room.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
+import { applyMovement, movementState } from '../../src/room/combatEngine.js';
+import type { RoomCombatState } from '../../src/room/combatTypes.js';
 import { seatEntityId } from '../../src/room/seatEntity.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import { hero, partyCombat, preCombatGame } from '../room/combatFixtures.js';
 import { scriptedDm } from '../room/scriptedDm.js';
 import { isLocalDatabaseUrl } from './localDatabaseUrl.js';
+
+type PartyGame = ReturnType<typeof partyCombat>;
+type Pt = { x: number; y: number };
+const cheb = (a: Pt, b: Pt) =>
+  Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+const ringAround = (p: Pt): Pt[] =>
+  [-1, 0, 1]
+    .flatMap((dy) => [-1, 0, 1].map((dx) => ({ x: p.x + dx, y: p.y + dy })))
+    .filter((q) => (q.x !== p.x || q.y !== p.y) && q.x >= 0 && q.y >= 0);
+const occupied = (state: RoomCombatState, p: Pt) =>
+  state.entities.some((e) => e.pos.x === p.x && e.pos.y === p.y);
+const requireEntity = (state: RoomCombatState, id: string) => {
+  const entity = state.entities.find((item) => item.id === id);
+  if (!entity) throw new Error(`no token ${id}`);
+  return entity;
+};
+// Fixture placement only: moves one token to the first free cell beside another.
+const placeAdjacent = (
+  state: RoomCombatState,
+  id: string,
+  anchorId: string,
+) => {
+  const token = requireEntity(state, id);
+  const spot = ringAround(requireEntity(state, anchorId).pos).find(
+    (p) => !occupied(state, p),
+  );
+  if (!spot) throw new Error(`no free cell beside ${anchorId}`);
+  token.pos = spot;
+};
 
 it('serves party tables (a round table and a combat table, both bound to seats) for browser e2e', async () => {
   const url = process.env.DATABASE_URL;
@@ -81,6 +112,71 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
     return { ok: true };
   });
   installGateway(app, db, rooms, connections, 300);
+
+  // Test-only: the goblin's real engine move out of the reactor's reach, staged after every seat has
+  // joined (Room.join would decline a window whose reactor is not connected yet). It runs the same
+  // moveAlong, applyMovement and scheduleReaction calls a monster turn makes, so no product code is bypassed.
+  // Registered before any inject: Fastify locks its routes once the app boots. The reaction table is
+  // filled in below, so the handler reads it at request time.
+  const reactionFixture: { room?: Room; base?: string } = {};
+  // The combat table's pristine board. Specs that change it (moves, attacks, turns) restore it through
+  // /api/test/reset-combat, so each spec starts from the same board whatever ran before it in this boot.
+  const combatFixture: { room?: Room; base?: string } = {};
+  app.post('/api/test/reset-combat', async (_request, reply) => {
+    const room = combatFixture.room;
+    const base = combatFixture.base;
+    if (!room || !base)
+      return reply.code(503).send({ error: 'combat table not seeded' });
+    await room.persistGameState(JSON.parse(base));
+    return { ok: true };
+  });
+  app.post('/api/test/stage-reaction', async (request, reply) => {
+    const reactionRoom = reactionFixture.room;
+    const reactionBase = reactionFixture.base;
+    if (!reactionRoom || !reactionBase)
+      return reply.code(503).send({ error: 'reaction table not seeded' });
+    const { accountId } = request.body as { accountId: string };
+    const reactorId = seatEntityId(seatIdOf(reactionRoom, accountId));
+    const game = JSON.parse(reactionBase) as PartyGame;
+    const state = game.combatRoom as RoomCombatState;
+    const goblinId = 'ent_goblin-minion_1';
+    placeAdjacent(state, goblinId, reactorId);
+    state.combat.activeEntityId = goblinId;
+    const reactor = requireEntity(state, reactorId);
+    const goblin = requireEntity(state, goblinId);
+    // Turn-start resources, as combatEngine gives an entity when its turn begins.
+    state.combat.resources[goblinId] = {
+      ...state.combat.resources[goblinId]!,
+      action: true,
+      bonusAction: true,
+      reaction: true,
+      movementRemaining: goblin.speed ?? 30,
+    };
+    for (const dest of ringAround(goblin.pos)) {
+      if (cheb(dest, reactor.pos) !== 2 || occupied(state, dest)) continue;
+      // The path starts at the mover's own cell, then takes the one step.
+      const moved = moveAlong(
+        movementState(state, goblinId),
+        goblinId,
+        [goblin.pos, dest],
+        'normal',
+      );
+      if ('error' in moved || moved.pending.length === 0) continue;
+      const next = applyMovement(
+        { ...state, phase: 'moving' },
+        goblinId,
+        moved.state,
+        moved.pending,
+        Date.now(),
+      );
+      await reactionRoom.persistGameState({ ...game, combatRoom: next });
+      (
+        reactionRoom as unknown as { scheduleReaction(): void }
+      ).scheduleReaction();
+      return { ok: true, reactorEntityId: reactorId };
+    }
+    return reply.code(409).send({ error: 'no reaction staging cell' });
+  });
 
   const catalog = loadCatalog();
   const seats = new SeatCharacterRepository(db);
@@ -191,27 +287,49 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
   const combatCharacters: Record<string, CharacterInput> = {};
   for (const member of combatMembers)
     combatCharacters[member.id] = await bindSheet(combatRoom, member);
-  // Fixture placement only: the start_combat encounter puts goblins far from the party, so the spec needs one in reach.
-  const placeToken = (
-    combatState: { entities: { id: string; pos: { x: number; y: number } }[] },
-    id: string,
-    pos: { x: number; y: number },
-  ) => {
-    const token = combatState.entities.find((item) => item.id === id);
-    if (!token) throw new Error(`no token ${id} to place`);
-    token.pos = pos;
-  };
   // Party sheets are keyed by account; reconcile rekeys them to ent_seat_<seatId> through the bindings.
   const combatGame = partyCombat(
     7,
     combatCharacters,
     combatRoom.seatCharacters,
   );
-  // The keyboard spec attacks from (10,2), the first seat's start, against the goblin placed at (11,2).
-  placeToken(combatGame.combatRoom, 'ent_goblin-minion_1', { x: 11, y: 2 });
+  // Fixture placement only: start_combat puts goblins far from the party. The goblin goes next to the
+  // entity that acts first, so the spec's attack is in reach whichever seat wins initiative.
+  const combatState = combatGame.combatRoom as RoomCombatState;
+  placeAdjacent(
+    combatState,
+    'ent_goblin-minion_1',
+    combatState.combat.activeEntityId ??
+      combatState.combat.initiative[0]!.entityId,
+  );
   await combatRoom.persistGameState(combatGame);
+  combatFixture.room = combatRoom;
+  combatFixture.base = JSON.stringify(combatGame);
   const combatEntity = (member: Seated) =>
     seatEntityId(seatIdOf(combatRoom, member.id));
+
+  // The reaction table is its own encounter so the reaction spec never shares a board with the combat specs.
+  const reactionHost = await seedAccount('Reaction Host');
+  const reactionGuest = await seedAccount('Reaction Guest');
+  const reactionScout = await seedAccount('Reaction Scout');
+  const reactionMembers = [reactionHost, reactionGuest, reactionScout];
+  const reaction = await openTable('Party reaction table', reactionHost, [
+    reactionGuest,
+    reactionScout,
+  ]);
+  const reactionRoom = await rooms.get(reaction.table);
+  const reactionCharacters: Record<string, CharacterInput> = {};
+  for (const member of reactionMembers)
+    reactionCharacters[member.id] = await bindSheet(reactionRoom, member);
+  const reactionGame = partyCombat(
+    8,
+    reactionCharacters,
+    reactionRoom.seatCharacters,
+  );
+  await reactionRoom.persistGameState(reactionGame);
+  // Each stage starts from this pristine board, so the goblin and the reactor always line up.
+  reactionFixture.room = reactionRoom;
+  reactionFixture.base = JSON.stringify(reactionGame);
 
   mkdirSync(dirname(stateFile), { recursive: true });
   writeFileSync(
@@ -240,6 +358,25 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
           accountId: combatScout.id,
           token: combatScout.token,
           entityId: combatEntity(combatScout),
+        },
+      },
+      reaction: {
+        table: reaction.table,
+        invite: reaction.invite,
+        host: {
+          accountId: reactionHost.id,
+          token: reactionHost.token,
+          entityId: seatEntityId(seatIdOf(reactionRoom, reactionHost.id)),
+        },
+        guest: {
+          accountId: reactionGuest.id,
+          token: reactionGuest.token,
+          entityId: seatEntityId(seatIdOf(reactionRoom, reactionGuest.id)),
+        },
+        scout: {
+          accountId: reactionScout.id,
+          token: reactionScout.token,
+          entityId: seatEntityId(seatIdOf(reactionRoom, reactionScout.id)),
         },
       },
     }),
