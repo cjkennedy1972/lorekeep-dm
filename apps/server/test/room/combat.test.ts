@@ -166,6 +166,43 @@ function setup() {
 }
 
 describe('Room combat command seam', () => {
+  it('admits a command after narration completes while the narration loop is still unwinding', async () => {
+    const { room } = setup();
+    const accountId = randomUUID();
+    const sent: { type?: string; payload?: Record<string, unknown> }[] = [];
+    await joinSeated(room, accountId, {
+      send(message) {
+        sent.push(message as (typeof sent)[number]);
+      },
+    });
+    room.state = {
+      ...room.state,
+      gameState: {
+        combatRoom: { ...combat, phase: 'awaiting-command' },
+        combatActors: { [accountId]: 'ent_hero' },
+      },
+    };
+    (room as unknown as { turnInFlight: boolean }).turnInFlight = true;
+
+    await room.submitCombatCommand(accountId, randomUUID(), {
+      command: 'options',
+    });
+
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: 'CombatOptions' }),
+    );
+    expect(sent).not.toContainEqual(
+      expect.objectContaining({
+        type: 'Error',
+        payload: expect.objectContaining({
+          message: 'The DM is still narrating; try again in a moment.',
+        }),
+      }),
+    );
+    (room as unknown as { turnInFlight: boolean }).turnInFlight = false;
+    await room.drain();
+  });
+
   it('limits an away active actor to defensive Dodge and ends that turn', async () => {
     const { room, events } = setup();
     const awayAccount = randomUUID();

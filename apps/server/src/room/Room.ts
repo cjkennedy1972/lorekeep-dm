@@ -5258,17 +5258,6 @@ export class Room {
         this.sendError(accountId, result.code, result.message, actionId);
         return true;
       }
-      // Ask the combat admission table first. Its authorization-first result is
-      // stable even while an asynchronous narration is in flight.
-      if (this.turnInFlight) {
-        this.sendError(
-          accountId,
-          'COMMAND_REJECTED',
-          'The DM is still narrating; try again in a moment.',
-          actionId,
-        );
-        return true;
-      }
       if (!result.events.length && !result.state.pendingReaction) {
         for (const message of result.messages ?? [])
           this.connections.get(accountId)?.send({

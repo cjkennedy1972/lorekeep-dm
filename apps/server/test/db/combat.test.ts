@@ -437,6 +437,19 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     );
 
     const mark = client.log.length;
+    const immediateActionId = randomUUID();
+    client.ws.on('message', (data) => {
+      const message = JSON.parse(data.toString()) as Wire;
+      if (message.type !== 'NarrationCompleted') return;
+      client.ws.send(
+        JSON.stringify({
+          type: 'CombatCommand',
+          actionId: immediateActionId,
+          lastSeq: 0,
+          payload: { command: 'options' },
+        }),
+      );
+    });
     client.say('START-COMBAT');
     const started = await client.until((m) => m.type === 'CombatTracker', mark);
     expect(started.payload).toMatchObject({
@@ -451,6 +464,14 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     expect(goblin).toMatchObject({ hpState: 'healthy' });
     expect(goblin).not.toHaveProperty('hp');
     await client.until((m) => m.type === 'NarrationCompleted', mark);
+    const immediateReply = await client.until(
+      (m) =>
+        (m.type === 'CombatOptions' &&
+          m.payload?.commandActionId === immediateActionId) ||
+        (m.type === 'Error' && m.payload?.actionId === immediateActionId),
+      mark,
+    );
+    expect(immediateReply.type).toBe('CombatOptions');
     expect(stack.requests.length).toBeGreaterThanOrEqual(2);
     const boot = await savedGame(table);
     expect(boot.gameState.combatActors).toEqual({ [user.id]: 'ent_aria' });
