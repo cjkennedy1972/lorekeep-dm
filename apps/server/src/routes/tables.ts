@@ -16,6 +16,7 @@ import adventure01 from '../../../../packages/engine/adventures/01/adventure.jso
 import { RegistryMemory } from '../dm/memory.js';
 import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
 import { authenticateRequest } from '../middleware/auth.js';
+import { concealedEntities } from '../room/eventVisibility.js';
 import { buildResumeRecap, gateRecap } from '../dm/recap.js';
 import {
   createConfiguredAdapter,
@@ -414,21 +415,7 @@ export function registerTableRoutes(
       }
       const room = await rooms.get(request.params.id);
       const generatedRecap = await buildResumeRecap({
-        hidden: (
-          (
-            room?.state?.gameState as
-              | {
-                  combatRoom?: {
-                    entities?: {
-                      id: string;
-                      name?: string;
-                      hidden?: boolean;
-                    }[];
-                  };
-                }
-              | undefined
-          )?.combatRoom?.entities ?? []
-        ).filter((entity) => entity.hidden),
+        hidden: concealedEntities(room?.state?.gameState),
         db,
         sessionId: request.params.id,
         lastEvents: recent,

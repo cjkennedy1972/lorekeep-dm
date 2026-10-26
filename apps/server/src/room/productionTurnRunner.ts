@@ -1,6 +1,7 @@
 import { AdventureSchema, type DMTurnEvent } from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
+import { concealedEntities } from './eventVisibility.js';
 import { closeScene, hiddenMatcher } from '../dm/summarize.js';
 import {
   createSceneCloseExecutor,
@@ -981,10 +982,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       settled = await attempt(attemptTier);
     }
     const { result, narration } = settled;
-    const hiddenNow = [
-      ...((state as GameState).combatRoom?.entities ?? []),
-      ...((result.state as GameState).combatRoom?.entities ?? []),
-    ].filter((entity) => entity.hidden);
+    const hiddenNow = concealedEntities({
+      concealed: [
+        ...concealedEntities(state),
+        ...concealedEntities(result.state),
+      ],
+    });
     const publicRegistry = hiddenMatcher(hiddenNow);
     for (const event of narration) onEvent(event);
     // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.

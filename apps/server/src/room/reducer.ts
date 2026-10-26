@@ -1,5 +1,6 @@
 import { RoomStateSchema, type RoomState, type Seat } from '@game/schema';
 import type { StoredEvent } from '../persistence/index.js';
+import { withConcealed } from './eventVisibility.js';
 
 export function emptyRoom(sessionId: string): RoomState {
   return RoomStateSchema.parse({ sessionId, phase: 'lobby', seats: [] });
@@ -431,7 +432,10 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
   }
   if (event.type === 'GameStateCommitted') {
     const payload = event.payload as { gameState: unknown };
-    return RoomStateSchema.parse({ ...state, gameState: payload.gameState });
+    // Replay-stable: the record is rebuilt from the committed states, never read back from a client.
+    return RoomStateSchema.parse(
+      withConcealed(state, { ...state, gameState: payload.gameState }),
+    );
   }
   if (event.type === 'SafetyFlag') {
     const xCard = state.xCard ?? { requested: 0, steered: 0 };

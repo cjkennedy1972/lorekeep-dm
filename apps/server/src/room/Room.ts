@@ -48,6 +48,7 @@ import {
   namesHiddenEntity,
   projectEventForViewer,
   reactionPromptVisibleTo,
+  withConcealed,
 } from './eventVisibility.js';
 import { attacksFor, settleEngine } from './combatBootstrap.js';
 import { closeReaction, withHp } from './combatEngine.js';
@@ -512,7 +513,14 @@ export class Room {
   private readonly actionMutationTimes = new Map<string, number[]>();
   private readonly editsPerRound = new Map<string, number>();
   readonly sessionId: string;
-  state: RoomState;
+  private currentState!: RoomState;
+  get state(): RoomState {
+    return this.currentState;
+  }
+  /** Every assignment keeps the concealed-identity record (ADR-034 §3); it is never in a client projection. */
+  set state(next: RoomState) {
+    this.currentState = withConcealed(this.currentState, next);
+  }
   /** Server-only rules input, never included in RoomState or any client projection. */
   private readonly seatBindings: Map<string, PrivateSeatCharacterBinding>;
   /**
@@ -945,7 +953,14 @@ export class Room {
   private async writeTurn(
     ...args: Parameters<RoomStore['writeTurn']>
   ): ReturnType<RoomStore['writeTurn']> {
-    return this.withCommittedHeadRecovery(() => this.store.writeTurn(...args));
+    const [sessionId, events, state, ...rest] = args;
+    const persisted =
+      state && typeof state === 'object'
+        ? withConcealed(this.currentState, state as RoomState)
+        : state;
+    return this.withCommittedHeadRecovery(() =>
+      this.store.writeTurn(sessionId, events, persisted, ...rest),
+    );
   }
 
   private async withCommittedHeadRecovery<T>(

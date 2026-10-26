@@ -662,6 +662,31 @@ describe('Room commit safety', () => {
     });
   });
 
+  it('records a once-hidden identity, keeps it after combat teardown and restart, and never sends it to clients', async () => {
+    const { room, store, latestSnapshot } = setup({
+      async run() {
+        throw new Error('unused');
+      },
+    });
+    const goblin = { id: 'ent_gob', name: 'Gribble', hidden: true };
+    await room.persistGameState({
+      combatRoom: { entities: [goblin], map: { w: 1, h: 1, cells: [] } },
+    });
+    await room.persistGameState({ sceneId: 'later', world: {} }); // teardown: no combatRoom
+    const concealed = (room.state.gameState as { concealed?: unknown })
+      .concealed;
+    expect(concealed).toEqual([{ id: 'ent_gob', name: 'Gribble' }]);
+    expect(JSON.stringify(room.clientState())).not.toMatch(/Gribble|concealed/);
+    const recovered = new Room(store, lease, {
+      snapshot: latestSnapshot(),
+      events: [],
+    });
+    expect(
+      (recovered.state.gameState as { concealed?: unknown }).concealed,
+    ).toEqual(concealed);
+    expect(JSON.stringify(recovered.clientState())).not.toMatch(/Gribble/);
+  });
+
   it('redacts private opt-outs from StateSync in a lobby without game state', async () => {
     const { room } = setup({
       async run() {

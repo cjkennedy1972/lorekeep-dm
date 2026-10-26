@@ -114,3 +114,51 @@ export function reactionPromptVisibleTo(
     (!masked(prompt.moverId) || controlled.has(prompt.entityId))
   );
 }
+
+export type ConcealedEntity = { id: string; name?: string };
+
+/**
+ * Identities that were ever hidden in this session (ADR-034 §3). Combat teardown deletes `combatRoom`, so the
+ * record lives on `gameState.concealed` (never in the client allowlist) and only grows. An entity the table
+ * could see later still stays here: over-scrubbing a name is cheaper than leaking one to a non-seated applicant.
+ */
+export function concealedEntities(gameState: unknown): ConcealedEntity[] {
+  const game = (gameState ?? {}) as {
+    concealed?: unknown;
+    combatRoom?: { entities?: unknown };
+  };
+  const byId = new Map<string, ConcealedEntity>();
+  const add = (item: unknown) => {
+    const e = item as { id?: unknown; name?: unknown } | null;
+    if (!e || typeof e.id !== 'string') return;
+    const prior = byId.get(e.id);
+    const name = typeof e.name === 'string' ? e.name : prior?.name;
+    byId.set(e.id, { id: e.id, ...(name ? { name } : {}) });
+  };
+  if (Array.isArray(game.concealed)) game.concealed.forEach(add);
+  const live = game.combatRoom?.entities;
+  if (Array.isArray(live))
+    for (const item of live)
+      if ((item as { hidden?: unknown })?.hidden) add(item);
+  return [...byId.values()];
+}
+
+/** `next` with `gameState.concealed` extended by everything concealed in `prev` or `next` (monotonic). */
+export function withConcealed<T extends { gameState?: unknown }>(
+  prev: { gameState?: unknown } | undefined,
+  next: T,
+): T {
+  const concealed = concealedEntities({
+    concealed: [
+      ...concealedEntities(prev?.gameState),
+      ...concealedEntities(next.gameState),
+    ],
+  });
+  if (
+    !concealed.length ||
+    !next.gameState ||
+    typeof next.gameState !== 'object'
+  )
+    return next;
+  return { ...next, gameState: { ...next.gameState, concealed } };
+}

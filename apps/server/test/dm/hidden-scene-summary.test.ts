@@ -5,6 +5,8 @@ import {
   hiddenMatcher,
   publicSceneEvents,
 } from '../../src/dm/summarize.js';
+import { emptyRoom, reduceRoom } from '../../src/room/reducer.js';
+import { concealedEntities } from '../../src/room/eventVisibility.js';
 import { buildResumeRecap } from '../../src/dm/recap.js';
 import { buildLateJoinRecap } from '../../src/dm/lateJoinRecap.js';
 
@@ -202,5 +204,66 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
     expect(
       m.mentions({ type: 'NpcUpserted', npc: { id: 'n2', name: 'Warden' } }),
     ).toBe(false);
+  });
+
+  it('a goblin hidden in an earlier turn stays out of summary and both recaps after combat teardown', async () => {
+    const sid = '11111111-1111-4111-8111-111111111111';
+    const commit = (gameState: unknown) =>
+      ({ type: 'GameStateCommitted', payload: { gameState } }) as never;
+    const room = [
+      commit({
+        combatRoom: {
+          entities: [{ id: 'ent_gob', name: 'Gribble', hidden: true }],
+        },
+      }),
+      commit({ sceneId: 'later' }), // killed, combat torn down, no combatRoom
+    ].reduce(reduceRoom, emptyRoom(sid));
+    const hidden = concealedEntities(room.gameState);
+    expect(hidden).toEqual([{ id: 'ent_gob', name: 'Gribble' }]);
+    const gob = (text: string) => /ent_gob|Gribble/i.test(text);
+
+    const { rows, db } = capture();
+    prompts.length = 0;
+    await closeScene({
+      sessionId: 's',
+      sceneId: 'sc',
+      db,
+      adapter: echo(' Gribble the goblin ambushed the party.'),
+      moderator: allow,
+      tier: 'standard',
+      tableLines: [],
+      hidden,
+      events: [
+        {
+          type: 'SceneNote',
+          payload: { summary: 'Gribble the goblin ambushed the party.' },
+        },
+      ],
+    });
+    expect(rows.some(gob)).toBe(false);
+    expect(prompts.some(gob)).toBe(false);
+
+    const stored = {
+      query: async (sql: string) => ({
+        rows: sql.includes('FROM scene_summaries')
+          ? [{ text: 'Scene a: Gribble the goblin ambushed the party.' }]
+          : [],
+      }),
+    } as never;
+    const late = await buildLateJoinRecap({
+      db: stored,
+      sessionId: 's',
+      moderator: allow,
+      tier: 'standard',
+      tableLines: [],
+      hidden,
+    });
+    const resume = await buildResumeRecap({
+      db: stored,
+      sessionId: 's',
+      hidden,
+    });
+    expect(gob(late.recap)).toBe(false);
+    expect(gob(resume.recap)).toBe(false);
   });
 });

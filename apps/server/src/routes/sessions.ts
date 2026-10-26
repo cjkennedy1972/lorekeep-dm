@@ -23,6 +23,7 @@ import { BoundedCounter } from '../accounts/throttle.js';
 import { loadContentTierState } from '../safety/tierLoader.js';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterError } from '../persistence/seatCharacters.js';
+import { concealedEntities } from '../room/eventVisibility.js';
 import { buildLateJoinRecap } from '../dm/lateJoinRecap.js';
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { Moderator } from '../safety/moderator.js';
@@ -733,21 +734,7 @@ export function registerSessionRoutes(
             ...boundaries.veils.map((veil) => `veil: ${veil}`),
           ],
           adapter: await recapAdapter(accountId, sessionId),
-          hidden: (
-            (
-              room.state?.gameState as
-                | {
-                    combatRoom?: {
-                      entities?: {
-                        id: string;
-                        name?: string;
-                        hidden?: boolean;
-                      }[];
-                    };
-                  }
-                | undefined
-            )?.combatRoom?.entities ?? []
-          ).filter((entity) => entity.hidden),
+          hidden: concealedEntities(room.state?.gameState),
         });
         const body = { recap: result.recap, settings };
         recapCache.set(key, { body, expires: Date.now() + 5 * 60_000 });
