@@ -74,6 +74,8 @@ export type RoomCombatState = {
   promptEvents?: true;
   /** Reaction-window time left this turn; absent means the full budget (reset when the next turn starts). */
   reactionBudgetMs?: number;
+  /** Counter for opaque prompt ids. */
+  promptSeq?: number;
   /** Event-log sequence IDs for this turn, excluding hidden-combatant events. */
   turnNarrationEventIds?: string[];
   map: Battlemap;
@@ -89,6 +91,8 @@ export type RoomCombatState = {
   /** The prompt shown to the table. `deadlineAt` is an absolute epoch-ms so a restart can resume the countdown. */
   pendingReaction?: {
     reactionId: string;
+    /** Party combat: opaque id used on the wire and in events; reactionId embeds entity ids and stays server-side. */
+    promptId?: string;
     entityId: string;
     trigger: string;
     moverId: string;
@@ -134,3 +138,9 @@ export type CombatContext = {
   character?: CharacterInput;
   now?: number;
 };
+
+/** The id a reaction prompt carries on the wire and in events. */
+export const promptIdOf = (prompt: {
+  reactionId: string;
+  promptId?: string;
+}): string => prompt.promptId ?? prompt.reactionId;

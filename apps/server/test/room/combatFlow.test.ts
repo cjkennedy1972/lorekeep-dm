@@ -14,6 +14,7 @@ import {
   placed,
 } from './combatFixtures.js';
 import { joinSeated } from '../helpers/room.js';
+import { promptIdOf } from '../../src/room/combatTypes.js';
 import { answerReaction, settle } from '../../src/room/combatEngine.js';
 
 afterEach(() => vi.useRealTimers());
@@ -2048,7 +2049,7 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     const prompt = combatOf(table).pendingReaction!;
     await room.submitCombatCommand(reactor, crypto.randomUUID(), {
       command: 'reaction',
-      reactionId: prompt.reactionId,
+      reactionId: promptIdOf(prompt),
       choice: 'decline',
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -2065,6 +2066,51 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     ).toEqual([]);
   });
 
+  it.each([
+    ['no-controller', { controlled: false, hidden: true }],
+    [
+      'cap',
+      {
+        hidden: true,
+        patch: { reactionBudgetMs: 0 } as Partial<RoomCombatState>,
+      },
+    ],
+  ])(
+    'a hidden reactor declined immediately (%s) never reaches the mover: no event, no id substring',
+    async (cause, opts) => {
+      const { table, reactorInbox } = await stage(opts);
+      expect(payloads(table, 'ReactionDeclined')).toMatchObject([{ cause }]);
+      const wire = JSON.stringify(table.messages);
+      expect(wire).not.toContain('ReactionDeclined');
+      expect(wire).not.toContain('ReactionPromptOpen');
+      expect(wire).not.toContain('ent_goblin-minion_1');
+      // Wire prompt ids are opaque, never the engine's `<hostile>-><mover>@<cell>`.
+      expect(JSON.stringify(payloads(table, 'ReactionDeclined'))).not.toContain(
+        'ent_',
+      );
+      // Its controller (when it has one) still sees the decline.
+      if (opts.controlled !== false)
+        expect(JSON.stringify(reactorInbox)).toContain('ReactionDeclined');
+    },
+  );
+
+  it('a visible uncontrolled reactor still announces its immediate decline to everyone', async () => {
+    const { table } = await stage({ controlled: false });
+    expect(JSON.stringify(table.messages)).toContain('ReactionDeclined');
+  });
+
+  it('prompt ids are opaque on every wire surface', async () => {
+    const { table, reactorInbox } = await stage();
+    const id = promptIdOf(combatOf(table).pendingReaction!);
+    expect(id).toMatch(/^rp_\d+$/);
+    for (const frames of [table.messages, reactorInbox]) {
+      const wire = JSON.stringify(frames);
+      expect(wire).not.toMatch(/ent_[a-z0-9_-]+->/);
+      expect(wire).not.toMatch(/@\d+,\d+/);
+    }
+    expect(JSON.stringify(reactorInbox)).toContain(id);
+  });
+
   it('opens no TurnOpened while a reaction is pending (ADR-033 §6.6)', async () => {
     const { table, room } = await stage();
     expect(combatOf(table).pendingReaction).toBeDefined();
@@ -2079,12 +2125,16 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     const prompt = combatOf(table).pendingReaction!;
     await room.submitCombatCommand(reactor, crypto.randomUUID(), {
       command: 'reaction',
-      reactionId: prompt.reactionId,
+      reactionId: promptIdOf(prompt),
       choice: 'take',
     });
     await room.drain();
     expect(payloads(table, 'ReactionAnswered')).toEqual([
-      { type: 'ReactionAnswered', promptId: prompt.reactionId, choice: 'take' },
+      {
+        type: 'ReactionAnswered',
+        promptId: promptIdOf(prompt),
+        choice: 'take',
+      },
     ]);
     expect(names(table)).not.toContain('ReactionResolved');
     expect(combatOf(table).pendingReaction).toBeUndefined();

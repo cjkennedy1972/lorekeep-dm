@@ -33,6 +33,7 @@ import {
   type CombatTransition,
   type ReactionDeclineCause,
   type RoomCombatState,
+  promptIdOf,
 } from './combatTypes.js';
 
 export type {
@@ -612,6 +613,7 @@ export function reactionMessage(
     type: 'ReactionPrompt',
     payload: {
       ...reaction,
+      reactionId: promptIdOf(reaction),
       timeoutMs: Math.max(0, reaction.deadlineAt - now),
       options: ['take', 'decline'],
       defaultChoice: 'decline',
@@ -628,7 +630,7 @@ export function reactionOpenMessage(
     seq,
     type: 'ReactionPromptOpen',
     payload: {
-      reactionId: reaction.reactionId,
+      reactionId: promptIdOf(reaction),
       reactorEntityId: reaction.entityId,
       deadlineAt: reaction.deadlineAt,
       timeoutMs: Math.max(0, reaction.deadlineAt - now),

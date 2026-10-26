@@ -12,6 +12,7 @@ import type { GridPos } from '@game/schema';
 import {
   REACTION_BUDGET_MS,
   REACTION_TIMEOUT_MS,
+  promptIdOf,
   type ReactionDeclineCause,
   type CombatCommandError,
   type CombatEntity,
@@ -97,8 +98,10 @@ export function applyMovement(
   const rest = { ...state };
   delete rest.pendingReaction;
   delete rest.engineReactions;
+  const promptSeq = (state.promptSeq ?? 0) + 1;
   return {
     ...rest,
+    ...(first && state.promptEvents ? { promptSeq } : {}),
     phase: first ? 'reaction-pending' : 'awaiting-command',
     entities: state.entities.map((e) => {
       const live = moved.entities.find((item) => item.id === e.id);
@@ -112,6 +115,7 @@ export function applyMovement(
           engineReactions: moved.pendingReactions ?? {},
           pendingReaction: {
             reactionId: first.reactionId,
+            ...(state.promptEvents ? { promptId: `rp_${promptSeq}` } : {}),
             entityId: first.hostileId,
             trigger: 'opportunityAttack',
             moverId: first.moverId,
@@ -146,7 +150,7 @@ export function settle(state: RoomCombatState): CombatTransition {
   if (state.promptEvents && state.pendingReaction?.opened)
     events.push({
       type: 'ReactionDeclined',
-      promptId: state.pendingReaction.reactionId,
+      promptId: promptIdOf(state.pendingReaction),
       cause: 'combat-ended',
     });
   if (openMove)
@@ -446,7 +450,7 @@ export function declineReaction(
   const result = resolvePrompt(
     state,
     prompt.entityId,
-    prompt.reactionId,
+    promptIdOf(prompt),
     'decline',
     now,
     cause,
@@ -463,7 +467,7 @@ function resolvePrompt(
   cause?: ReactionDeclineCause,
 ): CombatTransition | CombatCommandError {
   const prompt = state.pendingReaction;
-  if (!prompt || prompt.reactionId !== reactionId)
+  if (!prompt || promptIdOf(prompt) !== reactionId)
     return {
       code: 'COMMAND_REJECTED',
       message: 'There is no such reaction waiting for an answer.',
@@ -479,7 +483,7 @@ function resolvePrompt(
       ...movementState(state, prompt.moverId),
       pendingReactions: state.engineReactions,
     },
-    reactionId,
+    prompt.reactionId,
     choice,
   );
   if ('error' in result)
@@ -488,8 +492,8 @@ function resolvePrompt(
   if (state.promptEvents)
     events = [
       cause
-        ? { type: 'ReactionDeclined', promptId: reactionId, cause }
-        : { type: 'ReactionAnswered', promptId: reactionId, choice },
+        ? { type: 'ReactionDeclined', promptId: promptIdOf(prompt), cause }
+        : { type: 'ReactionAnswered', promptId: promptIdOf(prompt), choice },
       ...events.filter(
         (e) => e.type !== 'ReactionResolved' && e.type !== 'ReactionAvailable',
       ),
@@ -550,7 +554,7 @@ export function expireReaction(
     const result = answerReaction(
       state,
       prompt.entityId,
-      prompt.reactionId,
+      promptIdOf(prompt),
       'decline',
       now,
     );
@@ -575,7 +579,7 @@ export function closeReaction(
   delete next.engineReactions;
   const events: Ev[] = [
     state.promptEvents
-      ? { type: 'ReactionDeclined', promptId: prompt.reactionId, cause }
+      ? { type: 'ReactionDeclined', promptId: promptIdOf(prompt), cause }
       : {
           type: 'ReactionResolved',
           entityId: prompt.entityId,

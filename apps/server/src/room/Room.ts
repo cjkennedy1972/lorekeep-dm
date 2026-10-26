@@ -55,6 +55,7 @@ import { closeReaction, withHp } from './combatEngine.js';
 import {
   REACTION_BUDGET_MS,
   REACTION_TIMEOUT_MS,
+  promptIdOf,
   type ReactionDeclineCause,
 } from './combatTypes.js';
 import type { ActionId } from '@game/schema';
@@ -603,9 +604,9 @@ export class Room {
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     const recoveredPrompt = roomGameState(this.state)?.pendingReaction;
     if (recoveredPrompt?.opened) {
-      this.recoveredPromptId = recoveredPrompt.reactionId;
+      this.recoveredPromptId = promptIdOf(recoveredPrompt);
       this.promptReactors.set(
-        recoveredPrompt.reactionId,
+        promptIdOf(recoveredPrompt),
         recoveredPrompt.entityId,
       );
     }
@@ -1274,14 +1275,16 @@ export class Room {
     viewerAccountId: string | undefined,
     combat: RoomCombatState,
   ): RoomCombatState {
-    if (
-      !combat.pendingReaction ||
-      this.entityControllerAccountId(combat.pendingReaction.entityId) ===
-        viewerAccountId
-    )
-      return combat;
+    const prompt = combat.pendingReaction;
+    if (!prompt) return combat;
     const view = { ...combat };
-    delete view.pendingReaction;
+    // The engine's reactionId embeds entity ids; clients only ever see the opaque prompt id.
+    if (this.entityControllerAccountId(prompt.entityId) === viewerAccountId)
+      view.pendingReaction = {
+        ...prompt,
+        reactionId: promptIdOf(prompt),
+      };
+    else delete view.pendingReaction;
     return view;
   }
 
@@ -1372,8 +1375,9 @@ export class Room {
     if (event.type !== 'ReactionAnswered' && event.type !== 'ReactionDeclined')
       return false;
     const reactor = this.promptReactors.get(String(event.promptId));
+    // Fail closed: a prompt whose reactor was never recorded is hidden from everyone.
     return (
-      reactor !== undefined && hidden.has(reactor) && !controlled.has(reactor)
+      reactor === undefined || (hidden.has(reactor) && !controlled.has(reactor))
     );
   }
 
@@ -5919,7 +5923,7 @@ export class Room {
       return 'no-controller';
     const presence = this.reactionSeatPresence(prompt.entityId);
     if (presence && ['away', 'revoked', 'unknown'].includes(presence))
-      return prompt.reactionId === this.recoveredPromptId
+      return promptIdOf(prompt) === this.recoveredPromptId
         ? 'restart'
         : 'presence';
     if ((combat.reactionBudgetMs ?? REACTION_BUDGET_MS) <= 0) return 'cap';
@@ -5935,6 +5939,7 @@ export class Room {
     const prompt = current?.pendingReaction;
     if (!current?.promptEvents || !prompt || prompt.opened) return;
     const now = Date.now();
+    this.promptReactors.set(promptIdOf(prompt), prompt.entityId);
     const cause = this.immediateDeclineCause(current);
     if (cause) {
       const declined = this.combatRuntime.decline(current, cause, now);
@@ -5967,7 +5972,7 @@ export class Room {
         events: [
           {
             type: 'ReactionPromptOpened',
-            promptId: prompt.reactionId,
+            promptId: promptIdOf(prompt),
             reactorEntityId: prompt.entityId,
             deadline,
           },
