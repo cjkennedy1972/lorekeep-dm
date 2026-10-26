@@ -491,6 +491,10 @@ export class Room {
   };
   private restVoteTimer?: NodeJS.Timeout;
   private turnInFlight = false;
+  /** Ephemeral mutual exclusion for timeout and away-autopilot terminal actions. */
+  private readonly claimedAutomatedTurnIds = new Set<string>();
+  /** TurnOpened events waiting for the DM runner to release its in-flight turn. */
+  private readonly pendingAwayAutopilotStarts = new Map<string, string>();
   private turnAbort?: AbortController;
   private turnAccountId?: string;
   private matureDelivery: Promise<void> = Promise.resolve();
@@ -4595,7 +4599,7 @@ export class Room {
       }
     this.turnAccountId = undefined;
     this.turnInFlight = false;
-    this.queueAwayAutopilot();
+    this.dispatchPendingAwayAutopilotStarts();
   }
 
   private async withdrawSeatActions(seat: Seat): Promise<void> {
@@ -5440,6 +5444,20 @@ export class Room {
         } as ServerMessage);
     }
     const ended = events.find((event) => event.type === 'CombatEnded');
+    if (ended) {
+      this.claimedAutomatedTurnIds.clear();
+      this.pendingAwayAutopilotStarts.clear();
+    }
+    const openedTurn = events.find((event) => event.type === 'TurnOpened');
+    if (openedTurn) {
+      this.claimedAutomatedTurnIds.clear();
+      const turnId = String(openedTurn.turnId ?? '');
+      const entityId = String(openedTurn.entityId ?? '');
+      if (turnId && entityId) {
+        this.pendingAwayAutopilotStarts.set(turnId, entityId);
+        if (!this.turnInFlight) this.dispatchPendingAwayAutopilotStarts();
+      }
+    }
     const roundBoundary = events.some(
       (event) =>
         event.type === 'TurnStarted' &&
@@ -5471,13 +5489,6 @@ export class Room {
     this.scheduleReaction();
     this.scheduleTurnTimer();
     this.scheduleAwayBound();
-    if (
-      events.some(
-        (event) =>
-          event.type === 'TurnStarted' || event.type === 'CombatStarted',
-      )
-    )
-      this.queueAwayAutopilot();
     const resolvedEvent = events.find((event) => event.type === 'TurnResolved');
     const narrate = resolvedEvent !== undefined;
     const combatTurnId = resolvedEvent?.turnId as string | undefined;
@@ -5712,55 +5723,79 @@ export class Room {
 
   /** Dodge (or hold, when configured or when Dodge is rejected), then end the turn; movement already taken stays. */
   private async applyTimeoutAction(current: RoomCombatState): Promise<void> {
-    const activeId = current.combat.activeEntityId;
-    if (!activeId || !current.turnId) return;
-    const now = Date.now();
-    const base: RoomCombatState = { ...current, phase: 'awaiting-command' };
-    let action: 'dodge' | 'hold' = 'hold';
-    let prepared = base;
-    let actionEvents: Record<string, unknown>[] = [];
-    if ((this.state.turnTimeoutAction ?? 'dodge') === 'dodge') {
-      const dodge = this.combatRuntime.execute(
-        base,
+    const latest = roomGameState(this.state);
+    if (
+      !latest ||
+      !current.turnId ||
+      latest.turnId !== current.turnId ||
+      (latest.phase !== 'awaiting-command' && latest.phase !== 'moving')
+    )
+      return;
+    const activeId = latest.combat.activeEntityId;
+    const turnId = latest.turnId;
+    if (!activeId || this.claimedAutomatedTurnIds.has(turnId)) return;
+    this.claimedAutomatedTurnIds.add(turnId);
+    try {
+      const now = Date.now();
+      const base: RoomCombatState = { ...latest, phase: 'awaiting-command' };
+      let action: 'dodge' | 'hold' = 'hold';
+      let prepared = base;
+      let actionEvents: Record<string, unknown>[] = [];
+      if ((this.state.turnTimeoutAction ?? 'dodge') === 'dodge') {
+        const dodge = this.combatRuntime.execute(
+          base,
+          activeId,
+          { command: 'dodge' },
+          { now },
+        );
+        if (!('code' in dodge)) {
+          action = 'dodge';
+          prepared = dodge.state;
+          actionEvents = dodge.events;
+        }
+      }
+      const finish = this.combatRuntime.execute(
+        prepared,
         activeId,
-        { command: 'dodge' },
+        { command: 'end-turn' },
         { now },
       );
-      if (!('code' in dodge)) {
-        action = 'dodge';
-        prepared = dodge.state;
-        actionEvents = dodge.events;
+      if ('code' in finish) {
+        this.claimedAutomatedTurnIds.delete(turnId);
+        return;
       }
+      await this.commitCombat(
+        randomUUID(),
+        {
+          state: finish.state,
+          events: [
+            { type: 'TurnTimedOut', turnId, entityId: activeId, action },
+            ...[...actionEvents, ...finish.events].map((event) => ({
+              ...event,
+              source: 'timeout',
+            })),
+          ],
+        },
+        undefined,
+      );
+    } catch (error) {
+      this.claimedAutomatedTurnIds.delete(turnId);
+      throw error;
     }
-    const finish = this.combatRuntime.execute(
-      prepared,
-      activeId,
-      { command: 'end-turn' },
-      { now },
-    );
-    if ('code' in finish) return;
-    await this.commitCombat(
-      randomUUID(),
-      {
-        state: finish.state,
-        events: [
-          {
-            type: 'TurnTimedOut',
-            turnId: current.turnId,
-            entityId: activeId,
-            action,
-          },
-          ...[...actionEvents, ...finish.events].map((event) => ({
-            ...event,
-            source: 'timeout',
-          })),
-        ],
-      },
-      undefined,
-    );
   }
 
-  private queueAwayAutopilot(): void {
+  private dispatchPendingAwayAutopilotStarts(): void {
+    if (this.turnInFlight) return;
+    for (const [turnId, entityId] of this.pendingAwayAutopilotStarts) {
+      this.pendingAwayAutopilotStarts.delete(turnId);
+      this.queueAwayAutopilot(turnId, entityId);
+    }
+  }
+
+  private queueAwayAutopilot(
+    expectedTurnId: string,
+    expectedEntityId: string,
+  ): void {
     void this.enqueue(async () => {
       if (this.state.paused || this.turnInFlight) return;
       const current = roomGameState(this.state);
@@ -5768,7 +5803,17 @@ export class Room {
         | { combatActors?: Record<string, string> }
         | undefined;
       const activeId = current?.combat.activeEntityId;
-      if (!current || !activeId) return;
+      if (
+        !current ||
+        !activeId ||
+        current.turnId !== expectedTurnId ||
+        current.phase !== 'awaiting-command' ||
+        current.ended ||
+        current.pendingReaction ||
+        activeId !== expectedEntityId ||
+        this.claimedAutomatedTurnIds.has(expectedTurnId)
+      )
+        return;
       const partySeatId = seatIdFromEntityId(activeId);
       let seatId = partySeatId;
       if (partySeatId !== undefined) {
@@ -5785,39 +5830,48 @@ export class Room {
         if (!seat || seat.presence !== 'away') return;
         seatId = seat.seatId;
       }
-      const dodge = this.combatRuntime.execute(
-        current,
-        activeId,
-        { command: 'dodge' },
-        { now: Date.now() },
-      );
-      const action = 'code' in dodge ? 'hold' : 'dodge';
-      const prepared = 'code' in dodge ? current : dodge.state;
-      const finish = this.combatRuntime.execute(
-        prepared,
-        activeId,
-        { command: 'end-turn' },
-        { now: Date.now() },
-      );
-      if ('code' in finish) return;
-      await this.commitCombat(
-        randomUUID(),
-        {
-          state: finish.state,
-          events: [
-            ...('code' in dodge ? [] : dodge.events),
-            ...finish.events,
-            {
-              type: 'AutopilotActed',
-              seatId,
-              action,
-              reason: 'away-at-turn-start',
-              consumable: 'none',
-            },
-          ],
-        },
-        undefined,
-      );
+      this.claimedAutomatedTurnIds.add(expectedTurnId);
+      try {
+        const dodge = this.combatRuntime.execute(
+          current,
+          activeId,
+          { command: 'dodge' },
+          { now: Date.now() },
+        );
+        const action = 'code' in dodge ? 'hold' : 'dodge';
+        const prepared = 'code' in dodge ? current : dodge.state;
+        const finish = this.combatRuntime.execute(
+          prepared,
+          activeId,
+          { command: 'end-turn' },
+          { now: Date.now() },
+        );
+        if ('code' in finish) {
+          this.claimedAutomatedTurnIds.delete(expectedTurnId);
+          return;
+        }
+        await this.commitCombat(
+          randomUUID(),
+          {
+            state: finish.state,
+            events: [
+              ...('code' in dodge ? [] : dodge.events),
+              ...finish.events,
+              {
+                type: 'AutopilotActed',
+                seatId,
+                action,
+                reason: 'away-at-turn-start',
+                consumable: 'none',
+              },
+            ],
+          },
+          undefined,
+        );
+      } catch (error) {
+        this.claimedAutomatedTurnIds.delete(expectedTurnId);
+        throw error;
+      }
     }).catch(() => undefined);
   }
 
@@ -6098,7 +6152,6 @@ export class Room {
   private afterSeatReleased(): void {
     this.scheduleReaction();
     this.scheduleAwayBound();
-    this.queueAwayAutopilot();
   }
 
   /** ADR-035: once bindings are enforced an unbound seat has no gameplay control. */

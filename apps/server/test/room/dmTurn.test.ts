@@ -71,6 +71,35 @@ const result = {
 };
 
 describe('Room solo DM turn lifecycle', () => {
+  it('does not queue away autopilot when a DM turn ends before the away PC turn starts', async () => {
+    const { state: combat, game } = bootstrapped();
+    const runner: SoloTurnRunner = {
+      async run() {
+        return result as never;
+      },
+    };
+    const { room, events } = setup(runner);
+    const awayAccount = randomUUID();
+    const actorAccount = randomUUID();
+    await joinSeated(room, awayAccount, { send() {} });
+    await joinSeated(room, actorAccount, { send() {} });
+    room.state = {
+      ...room.state,
+      seats: room.state.seats.map((seat) =>
+        seat.accountId === awayAccount ? { ...seat, presence: 'away' } : seat,
+      ),
+      gameState: {
+        ...(game as object),
+        combatRoom: { ...combat, activeEntityId: 'ent_aria' },
+        combatActors: { [awayAccount]: 'ent_aria' },
+      } as never,
+    };
+
+    await room.submitAction(actorAccount, randomUUID(), 'I check the room.');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events.some((event) => event.type === 'AutopilotActed')).toBe(false);
+    await room.drain();
+  });
   it('broadcasts only turnId for a rejected tool call', async () => {
     const runner: SoloTurnRunner = {
       async run(_request, emit) {
