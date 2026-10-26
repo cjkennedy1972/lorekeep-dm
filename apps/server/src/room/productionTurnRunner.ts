@@ -426,11 +426,15 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     );
     const memory = new RegistryMemory(this.db as Pool);
     const registryEvents: RegistryEvent[] = [];
-    const memoryContext = await memory.contextFor(
-      request.sessionId,
-      request.text,
-      state.lastNarration ?? '',
-    );
+    // ADR-033 §6.8: a combat narration prompt carries engine handles only, so no memory is retrieved from free text.
+    const narrating = request.combatNarration === true;
+    const memoryContext = narrating
+      ? { registryFacts: [], retrievedMemory: [] }
+      : await memory.contextFor(
+          request.sessionId,
+          request.text,
+          state.lastNarration ?? '',
+        );
     const engineState = (state.gameEngine
       ? { ...state.gameEngine, catalog }
       : {
@@ -813,8 +817,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           session: {
             contentTier: attemptTier,
             safetySettings: {
-              lines: boundaries.lines,
-              veils: boundaries.veils,
+              // Player-typed boundaries stay out of combat narration; they still reach output moderation via tableLines.
+              lines: narrating ? [] : boundaries.lines,
+              veils: narrating ? [] : boundaries.veils,
               ...(attemptTier === 'mature'
                 ? { matureClause: MODERATION_SECTIONS['clause:mature'] }
                 : {}),
@@ -822,13 +827,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             ...(request.steerAway ? { steerAway: true } : {}),
             partyRoster: Object.values(actors).map((actor) => ({
               id: actor.id,
-              name: actor.name,
+              name: narrating ? actor.id : actor.name,
             })),
-            premise: state.premise ?? `A solo adventure at ${tableName}.`,
-            sceneSummary:
-              state.sceneSummary ??
-              'The party is at the beginning of its adventure.',
-            ...(currentScene
+            premise: narrating
+              ? 'A tabletop adventure.'
+              : (state.premise ?? `A solo adventure at ${tableName}.`),
+            sceneSummary: narrating
+              ? ''
+              : (state.sceneSummary ??
+                'The party is at the beginning of its adventure.'),
+            ...(currentScene && !narrating
               ? {
                   currentScene: {
                     id: currentScene.id,
@@ -847,22 +855,29 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               ? 'combat'
               : 'exploration',
           turn: {
-            state: { characters: Object.values(actors) },
+            state: {
+              characters: Object.values(actors).map((actor) =>
+                narrating ? { ...actor, name: actor.id } : actor,
+              ),
+            },
             lastRestVoteResult: request.lastRestVoteResult,
             activeActorId: narrationActorId(state),
             registryFacts: memoryContext.registryFacts,
             retrievedMemory: memoryContext.retrievedMemory,
-            playerText: `${request.playerName ?? 'Player'}: ${request.text}`,
-            turns: combatLive(state)
-              ? []
-              : state.lastNarration
-                ? [
-                    {
-                      playerText: state.lastPlayerText ?? '',
-                      narration: state.lastNarration,
-                    },
-                  ]
-                : [],
+            playerText: narrating
+              ? request.text
+              : `${request.playerName ?? 'Player'}: ${request.text}`,
+            turns:
+              narrating || combatLive(state)
+                ? []
+                : state.lastNarration
+                  ? [
+                      {
+                        playerText: state.lastPlayerText ?? '',
+                        narration: state.lastNarration,
+                      },
+                    ]
+                  : [],
           },
         },
         context,
@@ -993,8 +1008,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         ...(result.state as GameState),
         ...(transitionedSceneId ? { sceneId: transitionedSceneId } : {}),
         ...(adventureCompleted !== undefined ? { adventureCompleted } : {}),
-        lastNarration: result.narration,
-        lastPlayerText: request.text,
+        // Combat narration is engine-driven; it must not become post-combat DM continuity.
+        ...(narrating
+          ? {}
+          : {
+              lastNarration: result.narration,
+              lastPlayerText: request.text,
+            }),
       },
     };
   }
