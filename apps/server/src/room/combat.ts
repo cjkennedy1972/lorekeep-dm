@@ -74,10 +74,19 @@ export function hiddenEntityIds(
   );
 }
 
+const NON_PUBLIC_PC_FIELDS = [
+  'ac',
+  'speed',
+  'abilities',
+  'saves',
+  'attacks',
+] as const;
+
 /**
  * Per-viewer projection (ADR-034 §3, ADR-035). A hidden entity is removed outright from
  * everything a viewer receives (entities, initiative, resources, reaction prompt, dodge,
- * concentration) unless the viewer controls it: no pos, no hp, no existence. Authoritative
+ * concentration) unless the viewer controls it: no pos, no hp, no existence. Another seat's
+ * character keeps only the ADR-035 public set (no ac, speed, abilities, saves, attacks). Authoritative
  * server state is untouched; this only shapes what is serialized to a client.
  */
 export function projectCombatForViewer<T extends RoomCombatState>(
@@ -100,21 +109,28 @@ export function projectCombatForViewer<T extends RoomCombatState>(
     state.combat.activeEntityId ??
     state.combat.initiative?.[0]?.entityId ??
     null;
-  if (hidden.size === 0)
-    return { ...state, combat: { ...state.combat, activeEntityId: head } };
   const { pendingReaction, dodging, concentration, ...rest } = state;
   const active = head;
   return {
     ...rest,
-    entities: state.entities.filter((entity) => !hidden.has(entity.id)),
+    entities: state.entities
+      .filter((entity) => !hidden.has(entity.id))
+      .map((entity) => {
+        if (entity.kind !== 'character' || controlled.has(entity.id))
+          return entity;
+        // ADR-035 public set: sheet stats belong to the controlling seat only.
+        const pub = { ...entity };
+        for (const key of NON_PUBLIC_PC_FIELDS) delete pub[key];
+        return pub;
+      }),
     combat: {
       ...state.combat,
       activeEntityId: active && hidden.has(active) ? null : active,
-      initiative: state.combat.initiative.filter(
+      initiative: (state.combat.initiative ?? []).filter(
         (item) => !hidden.has(item.entityId),
       ),
       resources: Object.fromEntries(
-        Object.entries(state.combat.resources).filter(
+        Object.entries(state.combat.resources ?? {}).filter(
           ([id]) => !hidden.has(id),
         ),
       ),

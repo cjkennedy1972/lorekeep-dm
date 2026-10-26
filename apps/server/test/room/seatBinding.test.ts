@@ -664,6 +664,10 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
             id: entA,
             kind: 'character',
             team: 'party',
+            ac: 15,
+            abilities: { str: 17 },
+            saves: { dex: 6 },
+            attacks: [{ id: 'atk-secret' }],
             hp: 5,
             maxHp: 9,
             pos: { x: 1, y: 1 },
@@ -732,6 +736,17 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     }
     // server-side authoritative state is unchanged
     expect(JSON.stringify(f.room.state.gameState)).toContain('rogue');
+  });
+
+  it('gives other seats only the public PC set, the controller its full sheet', async () => {
+    const { f, seen } = await twoSeatCombat();
+    const own = JSON.stringify(await seen(f.accountA));
+    expect(own).toContain('atk-secret');
+    expect(own).toContain('"ac":15');
+    const other = JSON.stringify(await seen(f.accountB));
+    for (const secret of ['atk-secret', '"ac":15', '"str":17', '"dex":6'])
+      expect(other).not.toContain(secret);
+    expect(other).toContain('"hp":5');
   });
 
   it('shows a hidden entity only to its controller', async () => {
