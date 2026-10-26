@@ -77,7 +77,7 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
       'options',
     );
     await page.waitForTimeout(400);
-    const cast = page.getByRole('button', { name: /^Cast / }).first();
+    const cast = page.getByRole('button', { name: /^Cast (?!area$)/ }).first();
     const attack = page.getByRole('button', { name: /^Attack / }).first();
     if (await cast.isVisible()) {
       await activate(cast, `cast:${await cast.textContent()}`);

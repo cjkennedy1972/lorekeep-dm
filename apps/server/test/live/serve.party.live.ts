@@ -191,10 +191,25 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
   const combatCharacters: Record<string, CharacterInput> = {};
   for (const member of combatMembers)
     combatCharacters[member.id] = await bindSheet(combatRoom, member);
+  // Fixture placement only: the start_combat encounter puts goblins far from the party, so the spec needs one in reach.
+  const placeToken = (
+    combatState: { entities: { id: string; pos: { x: number; y: number } }[] },
+    id: string,
+    pos: { x: number; y: number },
+  ) => {
+    const token = combatState.entities.find((item) => item.id === id);
+    if (!token) throw new Error(`no token ${id} to place`);
+    token.pos = pos;
+  };
   // Party sheets are keyed by account; reconcile rekeys them to ent_seat_<seatId> through the bindings.
-  await combatRoom.persistGameState(
-    partyCombat(7, combatCharacters, combatRoom.seatCharacters),
+  const combatGame = partyCombat(
+    7,
+    combatCharacters,
+    combatRoom.seatCharacters,
   );
+  // The keyboard spec attacks from (10,2), the first seat's start, against the goblin placed at (11,2).
+  placeToken(combatGame.combatRoom, 'ent_goblin-minion_1', { x: 11, y: 2 });
+  await combatRoom.persistGameState(combatGame);
   const combatEntity = (member: Seated) =>
     seatEntityId(seatIdOf(combatRoom, member.id));
 
