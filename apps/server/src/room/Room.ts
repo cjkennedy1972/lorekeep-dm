@@ -2753,20 +2753,26 @@ export class Room {
     )
       return;
     if (this.state.round?.status === 'open') return;
-    const previousQueue = [...(this.state.round?.queuedSubmissions ?? [])].sort(
-      (a, b) => a.receiptSeq - b.receiptSeq,
+    const eligibleSeatIds = this.state.seats
+      .filter(
+        (seat) =>
+          seat.presence !== 'away' &&
+          seat.presence !== 'revoked' &&
+          (!this.bindingEnforced || this.isPlayableSeat(seat)),
+      )
+      .map((seat) => seat.seatId);
+    const eligibleSeatIdSet = new Set(eligibleSeatIds);
+    const queuedSubmissions = this.state.round?.queuedSubmissions ?? [];
+    const previousQueue = queuedSubmissions
+      .filter((submission) => eligibleSeatIdSet.has(submission.seatId))
+      .sort((a, b) => a.receiptSeq - b.receiptSeq);
+    const promotedActionIds = new Set(
+      previousQueue.flatMap((submission) => submission.actionIds),
     );
     const round = {
       roundId: randomUUID(),
       status: 'open' as const,
-      eligibleSeatIds: this.state.seats
-        .filter(
-          (seat) =>
-            seat.presence !== 'away' &&
-            seat.presence !== 'revoked' &&
-            (!this.bindingEnforced || this.isPlayableSeat(seat)),
-        )
-        .map((seat) => seat.seatId),
+      eligibleSeatIds,
       deadlineAt:
         this.state.roundDurationMs === null
           ? null
@@ -2775,6 +2781,10 @@ export class Room {
       queuedSubmissions: [],
     } satisfies NonNullable<RoomState['round']>;
     await this.persist('RoundOpened', round);
+    for (const submission of queuedSubmissions)
+      if (!promotedActionIds.has(submission.actionId))
+        for (const actionId of submission.actionIds)
+          this.pendingActions.delete(actionId);
     this.broadcast({
       seq: this.seq,
       type: 'RoundOpened',
@@ -4102,9 +4112,12 @@ export class Room {
       const round = this.state.round;
       if (!round) return false;
       const currentSubmissions = round.submissions;
+      // 'resolved' is the window between the committed turn (narration already
+      // sent) and the next openRound(); queue so a fast follow-up is promoted, not dropped.
       const queued =
         !!this.state.restVote ||
         round.status === 'resolving' ||
+        round.status === 'resolved' ||
         (round.status === 'open' &&
           round.eligibleSeatIds.length === 1 &&
           currentSubmissions.some((item) => item.accountId === accountId));
@@ -4244,10 +4257,14 @@ export class Room {
       if (
         round.status !== 'open' &&
         round.status !== 'resolving' &&
+        round.status !== 'resolved' &&
         !this.state.restVote
       )
         return 'round_closed';
-      const queued = !!this.state.restVote || round.status === 'resolving';
+      const queued =
+        !!this.state.restVote ||
+        round.status === 'resolving' ||
+        round.status === 'resolved';
       const list = queued ? round.queuedSubmissions : round.submissions;
       const action = list.find(
         (item) =>
@@ -4411,7 +4428,10 @@ export class Room {
       const round = this.state.round;
       if (round) {
         if (round.status === 'closing') return 'round_closed';
-        const queued = !!this.state.restVote || round.status === 'resolving';
+        const queued =
+          !!this.state.restVote ||
+          round.status === 'resolving' ||
+          round.status === 'resolved';
         const list = queued ? round.queuedSubmissions : round.submissions;
         const index = list.findIndex(
           (item) =>
