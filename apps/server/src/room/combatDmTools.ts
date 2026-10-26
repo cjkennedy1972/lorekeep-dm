@@ -92,22 +92,30 @@ export function runCombatMapTool(
   if (call.name === 'move_to') {
     // A hidden entity is not a nameable destination (ADR-034 §3).
     const ref = args?.targetRef;
-    if (typeof ref === 'string' && byId.get(ref)?.hidden)
-      return reject(
+    const unknownDestination = () =>
+      reject(
         'unreachable',
-        `No entity, marker, feature, or current option matches ${ref}.`,
+        `No entity, marker, feature, or current option matches ${String(ref)}.`,
       );
+    if (typeof ref === 'string' && byId.get(ref)?.hidden)
+      return unknownDestination();
     const result = execute(base, call, room.seed ?? 1);
     if (!result.ok) return { result, room };
     const moved = (result.value as { state: Move['state']; pending: unknown[] })
       .state;
-    const pending = (result.value as Move).pending;
+    const pending = (result.value as Move).pending as {
+      hostileId: string;
+    }[];
     // Refused until M4-6d: the reaction lifecycle (ADR-018) is not wired to DM tools yet.
-    if (pending.length)
+    // Decide from visible blockers only: a hidden hostile must not change the reply (ADR-034 §3).
+    if (pending.length) {
+      if (!pending.some((p) => !byId.get(p.hostileId)?.hidden))
+        return unknownDestination();
       return reject(
         'unreachable',
         'That route would provoke an opportunity attack; choose a destination that avoids enemy reach.',
       );
+    }
     const next = applyMovement(room, active, moved, [], env.now ?? 0);
     return { result, room: { ...next, phase: room.phase } };
   }

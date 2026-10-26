@@ -107,6 +107,69 @@ describe('DM map tools against Room combatRoom', () => {
     );
   });
 
+  describe('opportunity-attack refusal does not reveal hidden hostiles', () => {
+    const hide = (r: ReturnType<typeof ariaTurn>, ...ids: string[]) => ({
+      ...r,
+      entities: r.entities.map((e) =>
+        ids.includes(e.id) ? { ...e, hidden: true } : e,
+      ),
+    });
+    const reply = (r: { result: unknown }) => {
+      const x = r.result as { ok: boolean; error?: string; hint?: string };
+      return { ok: x.ok, error: x.error, hint: x.hint };
+    };
+    const oa = 'That route would provoke an opportunity attack';
+
+    it('(a) hidden-only blocker gives the unknown-destination error and hint', () => {
+      const room = hide(
+        placed(ariaTurn(), { 'ent_goblin-minion_1': { x: 6, y: 2 } }),
+        'ent_goblin-minion_1',
+      );
+      const out = runCombatMapTool(room, move('mk_entrance'), env);
+      expect(out.room).toBe(room);
+      expect(reply(out)).toEqual({
+        ok: false,
+        error: 'unreachable',
+        hint: 'No entity, marker, feature, or current option matches mk_entrance.',
+      });
+      const unknown = reply(runCombatMapTool(room, move('mk_nowhere'), env));
+      expect(reply(out)).toEqual({
+        ...unknown,
+        hint: unknown.hint?.replace('mk_nowhere', 'mk_entrance'),
+      });
+    });
+
+    it('(b) visible-only blocker gives the opportunity-attack message', () => {
+      const room = placed(ariaTurn(), {
+        'ent_goblin-minion_1': { x: 6, y: 2 },
+      });
+      const out = runCombatMapTool(room, move('mk_entrance'), env);
+      expect(out.room).toBe(room);
+      expect(reply(out).hint).toContain(oa);
+    });
+
+    it('(c) mixed visible and hidden blockers behave as visible-only', () => {
+      const visibleOnly = placed(ariaTurn(), {
+        'ent_goblin-minion_1': { x: 6, y: 2 },
+      });
+      const mixed = hide(
+        placed(ariaTurn(), {
+          'ent_goblin-minion_1': { x: 6, y: 2 },
+          'ent_goblin-minion_2': { x: 6, y: 2 },
+        }),
+        'ent_goblin-minion_2',
+      );
+      expect(reply(runCombatMapTool(mixed, move('mk_entrance'), env))).toEqual(
+        reply(runCombatMapTool(visibleOnly, move('mk_entrance'), env)),
+      );
+    });
+
+    it('(d) a route with no goblin in reach is accepted', () => {
+      const out = runCombatMapTool(ariaTurn(), move('mk_entrance'), env);
+      expect(out.result.ok).toBe(true);
+    });
+  });
+
   it('refuses a route that would open a reaction window', () => {
     const room = placed(ariaTurn(), { 'ent_goblin-minion_1': { x: 6, y: 2 } });
     const out = runCombatMapTool(room, move('mk_entrance'), env);
