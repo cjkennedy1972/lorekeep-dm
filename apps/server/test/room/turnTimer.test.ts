@@ -508,7 +508,7 @@ describe('bounded resolution for an absent controller, timer off (ADR-033 §5.5)
     await joinSeated(room, other, { send() {} });
     await vi.advanceTimersByTimeAsync(10_000);
     await room.disconnect(account);
-    await vi.advanceTimersByTimeAsync(120_000 + 90_000);
+    await vi.advanceTimersByTimeAsync(90_001);
     await room.drain();
     expect(of('TurnTimedOut')).toHaveLength(1);
     expect(turnOne(table.events, 'TurnResolved')).toHaveLength(1);
