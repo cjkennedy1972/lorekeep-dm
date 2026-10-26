@@ -44,7 +44,11 @@ import {
   type CombatTransition,
   type RoomCombatState,
 } from './combat.js';
-import { namesHiddenEntity, projectEventForViewer } from './eventVisibility.js';
+import {
+  namesHiddenEntity,
+  projectEventForViewer,
+  reactionPromptVisibleTo,
+} from './eventVisibility.js';
 import { attacksFor, settleEngine } from './combatBootstrap.js';
 import { withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
@@ -1265,6 +1269,23 @@ export class Room {
     };
   }
 
+  private sendReactionPrompt(
+    connection: Connection,
+    accountId: string,
+    state: NonNullable<ReturnType<typeof roomGameState>>,
+  ): void {
+    const prompt = state.pendingReaction;
+    if (
+      prompt &&
+      reactionPromptVisibleTo(
+        prompt,
+        hiddenIdsOf(state),
+        this.controlledBy(accountId),
+      )
+    )
+      connection.send(reactionMessage(this.seq, prompt));
+  }
+
   private controlledBy(accountId: string): Set<string> {
     return controlledEntityIds(
       (this.state.gameState as { characters?: unknown } | undefined)
@@ -1283,7 +1304,7 @@ export class Room {
       trackerMessage(this.seq, combat, this.controlledBy(accountId)),
     );
     if (combat.pendingReaction)
-      connection.send(reactionMessage(this.seq, combat.pendingReaction));
+      this.sendReactionPrompt(connection, accountId, combat);
   }
 
   private sendSeatPrivateRoundSync(accountId: string): void {
@@ -5281,7 +5302,8 @@ export class Room {
         trackerMessage(this.seq, state, this.controlledBy(viewer)),
       );
     if (state.pendingReaction)
-      this.broadcast(reactionMessage(this.seq, state.pendingReaction));
+      for (const [viewer, connection] of this.connections)
+        this.sendReactionPrompt(connection, viewer, state);
     this.scheduleReaction();
     this.scheduleTurnTimer();
     this.scheduleAwayBound();

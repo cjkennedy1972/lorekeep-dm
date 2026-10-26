@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   EVENT_ID_RULES,
+  WIRE_MESSAGE_RULES,
+  reactionPromptVisibleTo,
   projectEventForViewer,
 } from '../../src/room/eventVisibility.js';
 
@@ -75,19 +77,30 @@ describe('schema-driven combat event visibility', () => {
       'apps/server/src/room/combatEngine.ts',
       'apps/server/src/room/death.ts',
     ];
-    // Wire messages, not committed combat events.
-    const notEvents = new Set([
-      'CombatTracker',
-      'CombatOptions',
-      'ReactionPrompt',
-      'Error',
-    ]);
+    // Wire messages carry combat state too; each must be declared in WIRE_MESSAGE_RULES.
+    const notEvents = new Set(['Error']);
     const found = new Set<string>();
     for (const file of files)
       for (const m of readFileSync(resolve(root, file), 'utf8').matchAll(
         /type: '([A-Z][A-Za-z]+)'/g,
       ))
         if (!notEvents.has(m[1]!)) found.add(m[1]!);
-    expect([...found].filter((t) => !(t in EVENT_ID_RULES))).toEqual([]);
+    expect(
+      [...found].filter(
+        (t) => !(t in EVENT_ID_RULES) && !(t in WIRE_MESSAGE_RULES),
+      ),
+    ).toEqual([]);
+  });
+
+  it('reaction prompts: hidden reactor or hidden mover only reaches who may know', () => {
+    const p = { entityId: 'rogue', moverId: 'pc' };
+    expect(reactionPromptVisibleTo(p, hidden, none)).toBe(false);
+    expect(reactionPromptVisibleTo(p, hidden, owner)).toBe(true);
+    const q = { entityId: 'pc', moverId: 'rogue' };
+    expect(reactionPromptVisibleTo(q, hidden, none)).toBe(false);
+    expect(reactionPromptVisibleTo(q, hidden, new Set(['pc']))).toBe(true);
+    expect(
+      reactionPromptVisibleTo({ entityId: 'pc', moverId: 'x' }, hidden, none),
+    ).toBe(true);
   });
 });

@@ -84,3 +84,33 @@ export function namesHiddenEntity(
   const out = projectEventForViewer(event, hidden, new Set());
   return out === null || out !== event;
 }
+
+/**
+ * Wire messages (not committed events) that carry combat state. Every one must be declared:
+ * 'projected' = built per viewer from the projections here and in combat.ts, 'actor' = sent only to the acting seat.
+ */
+export const WIRE_MESSAGE_RULES: Readonly<
+  Record<string, 'projected' | 'actor'>
+> = {
+  CombatTracker: 'projected',
+  ReactionPrompt: 'projected',
+  CombatOptions: 'actor',
+};
+
+/**
+ * ADR-034 §3: a prompt for a hidden reactor goes only to its controller; others learn nothing (no "open", no deadline).
+ * A prompt whose mover is hidden from the viewer is likewise withheld unless the viewer controls the reactor.
+ * Visible reactors keep the ADR-033 broadcast unchanged.
+ */
+export function reactionPromptVisibleTo(
+  prompt: { entityId: string; moverId?: string },
+  hidden: ReadonlySet<string>,
+  controlled: ReadonlySet<string>,
+): boolean {
+  const masked = (id: string | undefined) =>
+    id !== undefined && hidden.has(id) && !controlled.has(id);
+  return (
+    !masked(prompt.entityId) &&
+    (!masked(prompt.moverId) || controlled.has(prompt.entityId))
+  );
+}

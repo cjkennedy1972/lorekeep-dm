@@ -725,10 +725,7 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
   it('never sends a hidden entity (pos, hp, id, reaction) in StateSync or CombatTracker', async () => {
     const { f, seen } = await twoSeatCombat();
     for (const account of [f.accountA, f.accountB]) {
-      // ReactionPrompt redaction for hidden reactors is PR #323 (M4-6d), not this path.
-      const wire = JSON.stringify(
-        (await seen(account)).filter((m) => m.type !== 'ReactionPrompt'),
-      );
+      const wire = JSON.stringify(await seen(account));
       expect(wire).not.toContain('rogue');
       expect(wire).not.toContain('"x":7');
       expect(wire).toContain('goblin');
@@ -749,6 +746,10 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     const tracker = (messages: Record<string, unknown>[]) =>
       JSON.stringify(messages.find((m) => m.type === 'CombatTracker'));
     // reconnect snapshot: controller's tracker carries its own hidden entity, the other seat's does not
+    const prompts = (messages: Record<string, unknown>[]) =>
+      messages.filter((m) => m.type === 'ReactionPrompt');
+    expect(prompts(await seen(f.accountA))).toHaveLength(1);
+    expect(prompts(await seen(f.accountB))).toHaveLength(0);
     expect(tracker(await seen(f.accountA))).toContain('"x":7');
     expect(tracker(await seen(f.accountB))).not.toContain('"x":7');
     expect(JSON.stringify(await seen(f.accountA))).toContain('"x":7');
@@ -858,6 +859,10 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
       JSON.stringify(inbox[account]!.filter((m) => m.type === 'CombatTracker'));
     expect(trackerSeenBy(f.accountA)).toContain('"x":7');
     expect(trackerSeenBy(f.accountB)).not.toContain('"x":7');
+    const promptsSeenBy = (account: string) =>
+      inbox[account]!.filter((m) => m.type === 'ReactionPrompt');
+    expect(promptsSeenBy(f.accountA)).toHaveLength(1);
+    expect(promptsSeenBy(f.accountB)).toHaveLength(0);
     expect(eventsSeenBy(f.accountA)).toHaveLength(5);
     const other = eventsSeenBy(f.accountB);
     expect(other).toEqual([events[4]]);
