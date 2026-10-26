@@ -1693,6 +1693,94 @@ describe('room actor', () => {
       await room.drain(100);
     }
   });
+  it('enforces queued-action caps in the resolved window', async () => {
+    for (const cap of ['seat', 'room'] as const) {
+      const { store } = fixture();
+      const room = new Room(store, lease, await store.loadLatest(id), {
+        async run() {
+          return {
+            narration: 'Resolved.',
+            events: [],
+            state: {},
+            turnSeed: 'seed',
+            usage: { in: 0, out: 0 },
+          };
+        },
+      });
+      const host = randomUUID();
+      await room.seat(host, 'Host');
+      await room.persistGameState({});
+      const round = room.state.round!;
+      round.status = 'resolved';
+      const count = cap === 'seat' ? 3 : 12;
+      round.queuedSubmissions = Array.from({ length: count }, (_, index) => ({
+        seatId: randomUUID(),
+        accountId: cap === 'seat' ? host : randomUUID(),
+        actionId: randomUUID(),
+        originalActionId: randomUUID(),
+        actionIds: [randomUUID()],
+        text: 'already queued',
+        playerName: 'Queued',
+        receiptSeq: index + 1,
+      }));
+      await expect(
+        room.submitAction(host, randomUUID(), 'Over cap', 'Host'),
+      ).rejects.toThrow('ACTION_REJECTED');
+      await room.drain(100);
+    }
+  });
+  it('edits a queued action during the resolved window', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    room.state.round!.status = 'resolved';
+    const actionId = randomUUID();
+    await room.submitAction(host, actionId, 'Queued', 'Host');
+    expect(await room.editAction(host, randomUUID(), actionId, 'Edited')).toBe(
+      'edited',
+    );
+    expect(room.state.round?.queuedSubmissions).toMatchObject([
+      { originalActionId: actionId, text: 'Edited' },
+    ]);
+    await room.drain(100);
+  });
+  it('withdraws a queued action during the resolved window', async () => {
+    const { store } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id), {
+      async run() {
+        return {
+          narration: 'Resolved.',
+          events: [],
+          state: {},
+          turnSeed: 'seed',
+          usage: { in: 0, out: 0 },
+        };
+      },
+    });
+    const host = randomUUID();
+    await room.seat(host, 'Host');
+    await room.persistGameState({});
+    room.state.round!.status = 'resolved';
+    const actionId = randomUUID();
+    await room.submitAction(host, actionId, 'Queued', 'Host');
+    expect(await room.withdrawRoundAction(host, randomUUID(), actionId)).toBe(
+      'withdrawn',
+    );
+    expect(room.state.round?.queuedSubmissions).toEqual([]);
+    await room.drain(100);
+  });
   it('accepts an action sent right after narration completes, before the next round opens', async () => {
     const { store } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id), {

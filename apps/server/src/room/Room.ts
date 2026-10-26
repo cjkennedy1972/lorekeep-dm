@@ -2769,10 +2769,6 @@ export class Room {
     const promotedActionIds = new Set(
       previousQueue.flatMap((submission) => submission.actionIds),
     );
-    for (const submission of queuedSubmissions)
-      if (!promotedActionIds.has(submission.actionId))
-        for (const actionId of submission.actionIds)
-          this.pendingActions.delete(actionId);
     const round = {
       roundId: randomUUID(),
       status: 'open' as const,
@@ -2785,6 +2781,10 @@ export class Room {
       queuedSubmissions: [],
     } satisfies NonNullable<RoomState['round']>;
     await this.persist('RoundOpened', round);
+    for (const submission of queuedSubmissions)
+      if (!promotedActionIds.has(submission.actionId))
+        for (const actionId of submission.actionIds)
+          this.pendingActions.delete(actionId);
     this.broadcast({
       seq: this.seq,
       type: 'RoundOpened',
@@ -4257,10 +4257,14 @@ export class Room {
       if (
         round.status !== 'open' &&
         round.status !== 'resolving' &&
+        round.status !== 'resolved' &&
         !this.state.restVote
       )
         return 'round_closed';
-      const queued = !!this.state.restVote || round.status === 'resolving';
+      const queued =
+        !!this.state.restVote ||
+        round.status === 'resolving' ||
+        round.status === 'resolved';
       const list = queued ? round.queuedSubmissions : round.submissions;
       const action = list.find(
         (item) =>
@@ -4424,7 +4428,10 @@ export class Room {
       const round = this.state.round;
       if (round) {
         if (round.status === 'closing') return 'round_closed';
-        const queued = !!this.state.restVote || round.status === 'resolving';
+        const queued =
+          !!this.state.restVote ||
+          round.status === 'resolving' ||
+          round.status === 'resolved';
         const list = queued ? round.queuedSubmissions : round.submissions;
         const index = list.findIndex(
           (item) =>
