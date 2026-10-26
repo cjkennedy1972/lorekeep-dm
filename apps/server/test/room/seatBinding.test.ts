@@ -755,6 +755,31 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(JSON.stringify(await seen(f.accountB))).not.toContain('"x":7');
   });
 
+  it('shows no active token to a seat that cannot see the hidden entity acting', async () => {
+    const { f, entA, entB, seen } = await twoSeatCombat();
+    const state = f.room.state.gameState as {
+      characters: Record<string, { id: string }>;
+      combatRoom: { combat: { activeEntityId: string } };
+    };
+    state.characters[f.seatA]!.id = 'rogue';
+    state.combatRoom.combat.activeEntityId = 'rogue';
+    const tracker = async (account: string) =>
+      (await seen(account)).find((m) => m.type === 'CombatTracker')!
+        .payload as {
+        activeEntityId: string | null;
+        initiative: { entityId: string }[];
+      };
+    const other = await tracker(f.accountB);
+    expect(other.activeEntityId).toBeNull();
+    // order continues after the hidden actor, hidden entity omitted
+    expect(other.initiative.map((i) => i.entityId)).toEqual([
+      entB,
+      'goblin',
+      entA,
+    ]);
+    expect((await tracker(f.accountA)).activeEntityId).toBe('rogue');
+  });
+
   it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {
     const { f, seen } = await twoSeatCombat();
     for (const account of [f.accountA, f.accountB]) {

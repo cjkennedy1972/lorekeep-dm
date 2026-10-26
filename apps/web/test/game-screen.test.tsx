@@ -99,7 +99,8 @@ const resources = {
 };
 const tracker = (order: string[]) => ({
   round: 1,
-  activeEntityId: HERO_ID,
+  // the server rotates the list so the active entity is first
+  activeEntityId: order[0] ?? null,
   initiative: order.map((entityId, i) => ({ entityId, total: 20 - i })),
   resources,
   entities,
@@ -253,6 +254,31 @@ describe('Game screen (live Room)', () => {
     expect(
       after.find((t) => t.getAttribute('data-active') === 'true')!.textContent,
     ).toContain(HERO_ID);
+  });
+
+  it('shows no active token and says so while a creature hidden from this viewer acts', () => {
+    mount();
+    push('CombatTracker', {
+      ...tracker([HERO_ID, 'ent_goblin']),
+      activeEntityId: null,
+    });
+    const items = within(
+      screen.getByRole('list', { name: 'Initiative tracker' }),
+    ).getAllByRole('listitem');
+    for (const item of items) {
+      expect(item).not.toHaveAttribute('aria-current');
+      expect(item.textContent).not.toContain('(active)');
+    }
+    const tokens = within(
+      screen.getByRole('list', { name: 'Combat tokens' }),
+    ).getAllByRole('listitem');
+    expect(
+      tokens.filter((t) => t.getAttribute('data-active') === 'true'),
+    ).toHaveLength(0);
+    expect(
+      screen.getByText('An unseen creature is acting.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Active combatant:/)).toBeNull();
   });
 
   it('announces the battlefield once per turn in a polite live region, not per event', () => {

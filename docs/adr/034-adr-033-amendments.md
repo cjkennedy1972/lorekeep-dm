@@ -43,7 +43,6 @@ This amends ADR-033 §3.1 and §3.2 for hidden entities.
 1. If the reacting entity is hidden from a seat (ADR-033 §3.2, visibility split), the reaction prompt and `reactorEntityId` go only to the controlling seat. Other seats see nothing about the prompt: no "prompt open", no deadline.
 2. The log keeps the full record. The engine appends `ReactionPromptOpened`, `ReactionAnswered`, or `ReactionDeclined` with the full payload, and the server applies this visibility rule to every seat's broadcast, snapshot, and replay.
 3. A hidden reactor's prompt does not change phase timing. Its window runs under ADR-033 §3.5 (expiry) and §3.7 (pause).
-4. **Hidden entities in game state.** The same rule covers `combatRoom` in `StateSync`, checkpoints, reconnect resync and `CombatTracker`. For every viewer except the controlling seat, a hidden entity is removed outright (entity, initiative, resources, dodge, concentration, reaction); the active token is `null` while a hidden entity acts. The controlling seat sees it in full. Committed `CombatEvents` follow the same rule: an event naming a hidden entity (any `entity/mover/attacker/reactor/target/caster` id field, nested included) is sent only to its controller; the narration filter uses the same predicate. `seed` and `engineReactions` are never sent to any client. Authoritative state, log and replay are unchanged. No client endpoint serves the event log.
 
 ### 4. Host revoke can cost a turn (intended)
 
@@ -132,3 +131,14 @@ Accepted. Merged in `b64b02d` (#270). The decision text above is unchanged. Chec
 - **§2 combat narration tool scope and §4 host-revoke behavior:** not verified in code. Narration turns are not implemented yet, and no bounded revoke path was found.
 
 No code was changed by this status update.
+
+## Addendum (2026-10-25): hidden entities in client game state and events
+
+Recorded with PR #325 (card 2636a005). This extends §3 from reaction prompts to everything the server serializes to a client. Nothing above is changed.
+
+1. **Removal for non-controllers.** For every viewer except the controlling seat, a hidden entity is removed outright from `combatRoom` in `StateSync` (including checkpoints and reconnect or `Resync`) and from `CombatTracker`: entity record (no position, no HP, no existence), initiative, resources, dodge, concentration, and an open reaction whose reactor it is. The controlling seat receives it in full.
+2. **Active token.** While an entity hidden from a viewer acts, that viewer's `activeEntityId` is `null`. There is no fallback to the next visible combatant, and clients show no active token (an "unseen creature is acting" notice instead).
+3. **Committed events.** A `CombatEvents` event that names a hidden entity (any `entity`, `mover`, `attacker`, `reactor`, `target` or `caster` id field, nested included) goes only to that entity's controller. The narration filter uses the same predicate.
+4. **Engine-only fields.** `combatRoom.seed` and `combatRoom.engineReactions` are never sent to any client.
+5. **Public PC set (ADR-035).** For a character another seat controls, clients receive only name, kind, team, HP, max HP and position; AC, speed, abilities, saves and attacks go to the controller only. Visible monsters keep their full stats for now (revisit in M5 hardening, card ec1aa627).
+6. **Unchanged.** Authoritative state, the event log, replay and persistence are not altered; this is a per-viewer projection.

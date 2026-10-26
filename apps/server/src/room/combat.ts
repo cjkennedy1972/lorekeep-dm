@@ -156,16 +156,20 @@ export function combatTracker(
   controlled?: ReadonlySet<string>,
 ) {
   const state = projectCombatForViewer(full, controlled);
+  const fullActive =
+    full.combat.activeEntityId ?? full.combat.initiative[0]?.entityId ?? null;
+  const visible = new Set(state.combat.initiative.map((i) => i.entityId));
+  // No fallback: while an entity hidden from this viewer acts, no visible token is active.
   const active =
-    state.combat.activeEntityId ?? state.combat.initiative[0]?.entityId ?? null;
+    fullActive !== null && visible.has(fullActive) ? fullActive : null;
   const activeIndex = Math.max(
     0,
-    state.combat.initiative.findIndex((item) => item.entityId === active),
+    full.combat.initiative.findIndex((item) => item.entityId === fullActive),
   );
   const ordered = [
-    ...state.combat.initiative.slice(activeIndex),
-    ...state.combat.initiative.slice(0, activeIndex),
-  ];
+    ...full.combat.initiative.slice(activeIndex),
+    ...full.combat.initiative.slice(0, activeIndex),
+  ].filter((item) => visible.has(item.entityId));
   return {
     round: state.combat.round,
     initiative: ordered.map(({ entityId, total }) => ({ entityId, total })),

@@ -83,6 +83,14 @@ const startAtActive = <T extends { entityId: string }>(
     ? [...initiative.slice(at), ...initiative.slice(0, at)]
     : initiative;
 };
+/** Server tracker `activeEntityId: null` means a creature hidden from this viewer is acting; only a missing key falls back to the list head. */
+const activeOf = (t: {
+  activeEntityId?: string | null;
+  initiative: { entityId: string }[];
+}): string | null =>
+  t.activeEntityId === undefined
+    ? (t.initiative[0]?.entityId ?? null)
+    : t.activeEntityId;
 /** Tracker entities are sparse (no size; enemy HP is qualitative): keep what the persisted state already told us. */
 const mergeEntities = (previous: Entity[], next: Entity[]): Entity[] =>
   next.map((entity) => {
@@ -385,7 +393,12 @@ export function Game() {
       const t = {
         round: Number(c.round ?? 1),
         activeEntityId:
-          typeof c.activeEntityId === 'string' ? c.activeEntityId : null,
+          typeof c.activeEntityId === 'string'
+            ? c.activeEntityId
+            : c.activeEntityId === null
+              ? null
+              : ((c.initiative as { entityId?: string }[] | undefined)?.[0]
+                  ?.entityId ?? null),
         initiative: Array.isArray(c.initiative)
           ? startAtActive(
               c.initiative as Tracker['initiative'],
@@ -405,7 +418,7 @@ export function Game() {
           dexterity: 0,
           tieOrder: index,
         })),
-        activeEntityId: t.initiative[0]?.entityId ?? null,
+        activeEntityId: activeOf(t),
         resources: Object.fromEntries(
           Object.entries(t.resources).map(([entityId, value]) => [
             entityId,
@@ -494,7 +507,7 @@ export function Game() {
         : [],
     [tracker, entities],
   );
-  const trackerFirst = tracker?.initiative[0]?.entityId ?? null;
+  const trackerFirst = tracker ? activeOf(tracker) : null;
   const active = trackerFirst;
   const describedTracker = tracker
     ? { ...tracker, activeEntityId: trackerFirst }
@@ -508,7 +521,7 @@ export function Game() {
           dexterity: 0,
           tieOrder: index,
         })),
-        activeEntityId: tracker.initiative[0]?.entityId ?? null,
+        activeEntityId: activeOf(tracker),
         round: tracker.round,
         resources: Object.fromEntries(
           Object.entries(tracker.resources).map(([entityId, value]) => [
@@ -955,6 +968,9 @@ export function Game() {
         <p role="status">CombatEnded: {tracker.ended.outcome}</p>
       )}
       {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
+      {tracker && trackerFirst === null && tracker.activeEntityId === null && (
+        <p role="status">An unseen creature is acting.</p>
+      )}
       <NarrationLog
         messages={messages}
         onReport={async (messageRef, category, reason) => {
