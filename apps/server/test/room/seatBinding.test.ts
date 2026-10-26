@@ -780,6 +780,31 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect((await tracker(f.accountA)).activeEntityId).toBe('rogue');
   });
 
+  it('keeps the list head as active when no entity is hidden and none is recorded (solo/null state)', async () => {
+    const { f, seen } = await twoSeatCombat();
+    const state = f.room.state.gameState as {
+      combatRoom: {
+        entities: { hidden?: boolean }[];
+        combat: { activeEntityId: string | null };
+      };
+    };
+    for (const e of state.combatRoom.entities) delete e.hidden;
+    state.combatRoom.combat.activeEntityId = null;
+    const messages = await seen(f.accountB);
+    const sync = messages.find((m) => m.type === 'StateSync')!;
+    const gs = (
+      sync.payload as {
+        state: {
+          gameState: Record<string, { combat: { activeEntityId: string } }>;
+        };
+      }
+    ).state.gameState;
+    expect(gs.combatRoom.combat.activeEntityId).toBe(seatEntityId(f.seatA));
+    const tracker = messages.find((m) => m.type === 'CombatTracker')!
+      .payload as { activeEntityId: string };
+    expect(tracker.activeEntityId).toBe(seatEntityId(f.seatA));
+  });
+
   it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {
     const { f, seen } = await twoSeatCombat();
     for (const account of [f.accountA, f.accountB]) {

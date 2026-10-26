@@ -88,14 +88,22 @@ export function projectCombatForViewer<T extends RoomCombatState>(
   const state = { ...full };
   delete state.seed;
   delete state.engineReactions;
+  // Legacy/partial persisted rooms carry no entities or tracker; nothing to project.
+  if (!Array.isArray(state.entities) || !state.combat) return state;
   const hidden = new Set(
     state.entities
       .filter((entity) => entity.hidden && !controlled.has(entity.id))
       .map((entity) => entity.id),
   );
-  if (hidden.size === 0) return state;
+  // Absent active entity means "list head" everywhere; only a hidden actor yields null (clients rely on this).
+  const head =
+    state.combat.activeEntityId ??
+    state.combat.initiative?.[0]?.entityId ??
+    null;
+  if (hidden.size === 0)
+    return { ...state, combat: { ...state.combat, activeEntityId: head } };
   const { pendingReaction, dodging, concentration, ...rest } = state;
-  const active = state.combat.activeEntityId;
+  const active = head;
   return {
     ...rest,
     entities: state.entities.filter((entity) => !hidden.has(entity.id)),
