@@ -3,6 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
+import { RoomStateSchema } from '@game/schema';
+import { Persistence } from '../../src/persistence/index.js';
+import { recoverRoom } from '../../src/room/recovery.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { LlmAdapter } from '../../src/llm/adapter.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
@@ -69,6 +72,15 @@ const castVia = (ref: string): Call => ({
     target: { kind: 'option', ref },
   },
 });
+const healingWord: Call = {
+  name: 'cast_spell',
+  args: {
+    casterId: 'ent_aria',
+    spellId: 'srd:spell/healing-word',
+    slotLevel: 1,
+    target: { kind: 'entity', ref: 'ent_aria' },
+  },
+};
 const handleIn = (tools: string[]) =>
   /opt_[a-z0-9]{4,8}/.exec(tools.join(' '))?.[0] ?? 'opt_missing';
 
@@ -95,7 +107,15 @@ async function setup(combat: RoomCombatState) {
   );
   await db.query(
     `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
-    [sessionId, JSON.stringify({ accountId, displayName: 'Aria' })],
+    [
+      sessionId,
+      JSON.stringify({
+        seatId: randomUUID(),
+        accountId,
+        displayName: 'Aria',
+        presence: 'connected',
+      }),
+    ],
   );
   sessionIds.push(sessionId);
   const boot = bootstrapped();
@@ -140,6 +160,36 @@ async function run(
     seen,
     room: (result.state as { combatRoom: RoomCombatState }).combatRoom,
   };
+}
+
+/** Commit exactly as Room does, then load the latest state from PostgreSQL's event log. */
+async function commitAndReload(
+  table: Awaited<ReturnType<typeof setup>>,
+  gameState: Record<string, unknown>,
+) {
+  const persistence = new Persistence(db);
+  const latest = await persistence.loadLatest(table.sessionId);
+  const room = recoverRoom(table.sessionId, latest);
+  const nextRoom = RoomStateSchema.parse({
+    ...room.state,
+    gameState,
+  });
+  await persistence.writeTurn(
+    table.sessionId,
+    [
+      {
+        turnId: randomUUID(),
+        type: 'GameStateCommitted',
+        payload: { gameState },
+      },
+    ],
+    nextRoom,
+  );
+  const reloaded = recoverRoom(
+    table.sessionId,
+    await persistence.loadLatest(table.sessionId),
+  );
+  return reloaded.state.gameState as Record<string, unknown>;
 }
 
 beforeAll(async () => {
@@ -192,16 +242,22 @@ describe('DM map tools through the production runner', () => {
     );
     expect(first.room.combat.resources.ent_aria!.action).toBe(false);
     expect(first.room.combat.resources.ent_aria!.actionSpellCast).toBe(true);
-    // The returned Room state is the persisted/replay snapshot for the next turn.
-    // Re-loading it below must retain both the cast spend and consumed handle.
     // the used handle was spent at commit
     const used = /opt_[a-z0-9]{4,8}/.exec(first.seen[1]!.join(' '))![0];
     expect(first.room.optionHandles ?? {}).not.toHaveProperty(used);
 
-    // reuse in a later model turn with the action restored is refused
-    const replayedRoom = structuredClone(first.room);
+    const replayedState = await commitAndReload(table, {
+      ...table.state,
+      combatRoom: first.room,
+    });
+    const replayedRoom = (replayedState as { combatRoom: RoomCombatState })
+      .combatRoom;
     expect(replayedRoom.combat.resources.ent_aria!.actionSpellCast).toBe(true);
     expect(replayedRoom.optionHandles ?? {}).not.toHaveProperty(used);
+    expect(replayedRoom.combat.resources.ent_aria!.action).toBe(false);
+
+    // The consumed handle remains rejected after an actual database reload,
+    // even if the action resource is restored for the later model turn.
     const reused = {
       ...replayedRoom,
       optionHandles: { ...(first.room.optionHandles ?? {}) },
@@ -213,7 +269,7 @@ describe('DM map tools through the production runner', () => {
         },
       },
     };
-    const again = await run(table, { ...table.state, combatRoom: reused }, [
+    const again = await run(table, { ...replayedState, combatRoom: reused }, [
       castVia(used),
     ]);
     expect(again.observed).toContainEqual(
@@ -223,6 +279,49 @@ describe('DM map tools through the production runner', () => {
         error: 'option-expired',
       }),
     );
+  });
+
+  it('enforces actionSpellCast for a bonus-action spell independently of option handles', async () => {
+    const table = await setup(ariaTurn());
+    const character = {
+      ...hero,
+      spellsKnown: [...hero.spellsKnown, 'spell:healing-word'],
+      spellsPrepared: [...hero.spellsPrepared, 'spell:healing-word'],
+    };
+    const combatRoom = {
+      ...ariaTurn(),
+      combat: {
+        ...ariaTurn().combat,
+        resources: {
+          ...ariaTurn().combat.resources,
+          ent_aria: {
+            ...ariaTurn().combat.resources.ent_aria!,
+            action: true,
+            bonusAction: true,
+            actionSpellCast: true,
+          },
+        },
+      },
+    };
+    const state = {
+      ...table.state,
+      characters: { [table.accountId]: character },
+      gameEngine: {
+        ...(table.state.gameEngine as Record<string, unknown>),
+        actors: { ent_aria: character },
+      },
+      combatRoom,
+    };
+    const out = await run(table, state, [healingWord]);
+    expect(out.observed).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        toolName: 'cast_spell',
+        error: 'forbidden',
+      }),
+    );
+    expect(out.room.combat.resources.ent_aria!.bonusAction).toBe(true);
+    expect(out.room.optionHandles).toBeUndefined();
   });
 
   it('rejects a handle issued on an earlier turn', async () => {
