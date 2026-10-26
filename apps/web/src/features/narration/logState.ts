@@ -208,6 +208,7 @@ export function narrationLogReducer(
     case 'SpotlightPrompt':
     case 'CombatTracker':
     case 'ReactionPrompt':
+    case 'ReactionPromptOpen':
     case 'CombatOptions':
     case 'CombatEvents':
     case 'CombatEnded':

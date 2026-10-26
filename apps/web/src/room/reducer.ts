@@ -205,6 +205,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
       return view; // surfaced by the client, not part of room state
     case 'CombatTracker':
     case 'ReactionPrompt':
+    case 'ReactionPromptOpen':
     case 'CombatOptions':
     case 'CombatEvents':
     case 'CombatEnded':

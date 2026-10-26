@@ -1793,3 +1793,180 @@ describe('reaction hardening (M4-6d carry-overs)', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
+  type Msg = import('@game/schema').ServerMessage;
+  const inbox = () => {
+    const messages: Msg[] = [];
+    return {
+      messages,
+      connection: { send: (m: Msg) => void messages.push(m) },
+    };
+  };
+  const eventTypes = (messages: Msg[]) =>
+    messages
+      .filter((m) => m.type === 'CombatEvents')
+      .flatMap((m) =>
+        (m.payload as { events: { type: string }[] }).events.map((e) => e.type),
+      );
+  const mentions = (messages: Msg[], id: string) =>
+    messages.some((m) => JSON.stringify(m.payload).includes(id));
+
+  /** ent_aria (account) is the reactor against a goblin mover; a second seat watches. */
+  const stageReactor = (hidden: boolean) => {
+    const e = engaged();
+    const other = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'reaction-pending',
+      entities: e.state.entities.map((entity) =>
+        entity.id === 'ent_aria' && hidden ? { ...entity, hidden } : entity,
+      ),
+      pendingReaction: {
+        reactionId: 'r1',
+        entityId: 'ent_aria',
+        trigger: 'opportunityAttack',
+        moverId: 'ent_goblin-minion_1',
+        deadlineAt: Date.now() + REACTION_TIMEOUT_MS,
+      },
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: combat,
+    });
+    return { table, other };
+  };
+
+  it('connect/snapshot: controller gets options, others get only open + deadline', async () => {
+    vi.useFakeTimers();
+    const { table, other } = stageReactor(false);
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const watcher = inbox();
+    await joinSeated(room, other, watcher.connection);
+    const mine = table.messages.find((m) => m.type === 'ReactionPrompt');
+    expect(mine?.payload).toMatchObject({
+      reactionId: 'r1',
+      trigger: 'opportunityAttack',
+      options: ['take', 'decline'],
+    });
+    expect(watcher.messages.some((m) => m.type === 'ReactionPrompt')).toBe(
+      false,
+    );
+    const open = watcher.messages.find((m) => m.type === 'ReactionPromptOpen');
+    expect(Object.keys(open!.payload).sort()).toEqual([
+      'deadlineAt',
+      'reactionId',
+      'reactorEntityId',
+      'timeoutMs',
+    ]);
+    expect(JSON.stringify(watcher.messages)).not.toContain('opportunityAttack');
+    expect(mentions(watcher.messages, 'pendingReaction')).toBe(false);
+    expect(mentions(table.messages, 'pendingReaction')).toBe(true);
+    expect(JSON.stringify(open)).not.toContain('ent_goblin-minion_1');
+    await room.drain();
+  });
+
+  it('connect/snapshot: a hidden reactor is invisible to other seats, not to its controller', async () => {
+    vi.useFakeTimers();
+    const { table, other } = stageReactor(true);
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const watcher = inbox();
+    await joinSeated(room, other, watcher.connection);
+    expect(table.messages.some((m) => m.type === 'ReactionPrompt')).toBe(true);
+    expect(
+      watcher.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
+    ).toEqual([]);
+    // Neither the tracker nor the state snapshot names the hidden reactor.
+    const ids = (messages: Msg[]) =>
+      messages
+        .filter((m) => m.type === 'CombatTracker')
+        .flatMap((m) =>
+          (m.payload as { entities: { id: string }[] }).entities.map(
+            (e) => e.id,
+          ),
+        );
+    expect(ids(watcher.messages)).not.toContain('ent_aria');
+    expect(ids(table.messages)).toContain('ent_aria');
+    const synced = (messages: Msg[]) =>
+      messages
+        .filter((m) => m.type === 'StateSync')
+        .flatMap((m) => {
+          const state = (
+            m.payload as {
+              state: { gameState?: { combatRoom?: RoomCombatState } };
+            }
+          ).state;
+          return state.gameState?.combatRoom?.entities.map((e) => e.id) ?? [];
+        });
+    expect(synced(watcher.messages)).not.toContain('ent_aria');
+    expect(synced(table.messages)).toContain('ent_aria');
+    await room.drain();
+  });
+
+  it('broadcast: events naming a hidden reactor reach only its controller', async () => {
+    vi.useFakeTimers();
+    const e = engaged();
+    const reactorAccount = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      entities: e.state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, hidden: true }
+          : entity,
+      ),
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: {
+        [account]: 'ent_aria',
+        [reactorAccount]: 'ent_goblin-minion_1',
+      },
+      combatRoom: combat,
+    });
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    const reactor = inbox();
+    await joinSeated(room, reactorAccount, reactor.connection);
+    table.messages.length = 0;
+    reactor.messages.length = 0;
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'move',
+      destination: { x: 7, y: 6 },
+    });
+    const prompt = (
+      reactor.messages.find((m) => m.type === 'ReactionPrompt') as {
+        payload: { reactionId: string };
+      }
+    ).payload;
+    // The hidden goblin takes its opportunity attack: ReactionSpent{entityId} and the
+    // attack's RollEvent{actorId} name it too.
+    await room.submitCombatCommand(reactorAccount, crypto.randomUUID(), {
+      command: 'reaction',
+      reactionId: prompt.reactionId,
+      choice: 'take',
+    });
+    await room.drain();
+    expect(table.events.some((event) => event.type === 'ReactionSpent')).toBe(
+      true,
+    );
+    expect(
+      JSON.stringify(
+        table.events.filter((event) => event.type === 'RollEvent'),
+      ),
+    ).toContain('ent_goblin-minion_1');
+    // ...the mover sees the move but nothing that names the hidden reactor.
+    expect(eventTypes(table.messages)).toContain('EntityMoved');
+    expect(eventTypes(table.messages)).not.toEqual(
+      expect.arrayContaining(['OpportunityTriggered']),
+    );
+    expect(eventTypes(table.messages)).not.toContain('ReactionAvailable');
+    expect(eventTypes(table.messages)).not.toContain('ReactionResolved');
+    expect(
+      table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
+    ).toEqual([]);
+    expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(false);
+  });
+});

@@ -265,6 +265,17 @@ export function Game() {
       }
       if (message.type === 'ReactionPrompt')
         setReaction(message.payload as Reaction);
+      if (message.type === 'ReactionPromptOpen') {
+        // Non-controlling seat: only that a window is open and when it ends (ADR-033 §3.1).
+        const open = asRecord(message.payload);
+        setReaction({
+          reactionId: String(open.reactionId),
+          entityId: String(open.reactorEntityId),
+          moverId: '',
+          trigger: 'opportunityAttack',
+          timeoutMs: Number(open.timeoutMs),
+        });
+      }
       if (message.type === 'CombatOptions')
         setOptions(asRecord(message.payload));
       if (message.type === 'CombatEnded') {
