@@ -27,7 +27,10 @@ let table: SimTable | undefined;
 const savedNodeEnv = process.env.NODE_ENV;
 
 const TIMER_MS = 30_000;
-const TIMER_TEST_MS = 90_000;
+// Budget for every event or predicate wait. Generous on purpose: a loaded CI runner can delay a
+// server event by seconds, and a wait that is only slow never hides a wrong outcome.
+const WAIT_MS = 20_000;
+const TIMER_TEST_MS = 120_000;
 
 beforeAll(() => {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
@@ -101,7 +104,7 @@ async function endTurnsUntil(
         live.phase !== 'narrating' &&
         owners.has(live.combat.activeEntityId ?? '')
       );
-    }, 10_000);
+    }, WAIT_MS);
     const active = (await liveCombat(t)).combat.activeEntityId!;
     if (wanted(active)) return active;
     const reply = await combatCommand(owners.get(active)!, {
@@ -136,7 +139,7 @@ async function timedTurn(
       return false;
     opened = last;
     return true;
-  }, 15_000);
+  }, WAIT_MS);
   return opened!;
 }
 
@@ -148,7 +151,7 @@ async function expectTrackersAgree(t: SimTable, clients: SimClient[]) {
       async () =>
         client.messages('CombatTracker').at(-1)?.payload?.activeEntityId ===
         live,
-      5_000,
+      WAIT_MS,
     );
 }
 
@@ -190,19 +193,20 @@ describe('host removes a seat on that seat’s turn (host revoke mid-combat)', (
 
       await eventually(
         async () => (await t.events('SeatRevoked')).length === 1,
-        5_000,
+        WAIT_MS,
       );
       const revoked = (await t.events('SeatRevoked')).at(-1)!;
       expect(revoked.payload).toMatchObject({
         seatId: victimSeat.seatId,
         cause: 'host-kick',
       });
-      await eventually(async () => victim.closeCode === 1008, 3_000);
+      // The gateway closes the kicked socket; await that close event directly, no polling.
+      expect(await victim.waitForClose()).toBe(1008);
 
       // The removal resolves the live turn through the mailbox, so wait for its commit.
       await eventually(
         async () => (await t.events('TurnTimedOut')).length === 1,
-        5_000,
+        WAIT_MS,
       );
       const [timedOut] = await t.events('TurnTimedOut');
       expect(timedOut!.payload).toMatchObject({
@@ -256,7 +260,7 @@ describe('combat turn timer expiry and resolve races', () => {
 
       await eventually(
         async () => (await timedOutFor(t, turnId)).length === 1,
-        TIMER_MS + 15_000,
+        TIMER_MS + WAIT_MS,
       );
       const [timedOut] = await timedOutFor(t, turnId);
       expect(timedOut!.payload).toMatchObject({
@@ -278,7 +282,7 @@ describe('combat turn timer expiry and resolve races', () => {
 
       await eventually(
         async () => (await resolutionsFor(t, turnId)).length >= 1,
-        5_000,
+        WAIT_MS,
       );
       expect(await resolutionsFor(t, turnId)).toHaveLength(1);
       expect(await timedOutFor(t, turnId)).toHaveLength(1);
@@ -311,7 +315,7 @@ describe('combat turn timer expiry and resolve races', () => {
 
       await eventually(
         async () => (await timedOutFor(t, turnId)).length === 1,
-        TIMER_MS + 15_000,
+        TIMER_MS + WAIT_MS,
       );
       const [timedOut] = await timedOutFor(t, turnId);
       expect(timedOut!.payload).toMatchObject({
@@ -356,13 +360,13 @@ describe('combat turn timer expiry and resolve races', () => {
       // Wait until the deadline is about to pass, then send the player's command.
       await eventually(
         async () => Date.now() >= deadline - 20,
-        TIMER_MS + 5_000,
+        TIMER_MS + WAIT_MS,
       );
       const reply = await combatCommand(owner, { command: 'end-turn' });
 
       await eventually(
         async () => (await resolutionsFor(t, turnId)).length >= 1,
-        10_000,
+        WAIT_MS,
       );
       // Whichever side won, the turn resolved exactly once and the loser was not applied.
       expect(await resolutionsFor(t, turnId)).toHaveLength(1);
