@@ -232,7 +232,7 @@ export function installGateway(
             connections.consumeSeatAuthAttempt(recoverySeatKey);
             connections.consumeTransportAuthAttempt(
               recoveryTicket.accountId,
-              request.socket.remoteAddress ?? 'unknown',
+              app.clientIpForUpgrade(request),
             );
             reject();
             return;
@@ -263,7 +263,7 @@ export function installGateway(
         }
         const seatId = identity.seatId;
         const seatKey = `${identity.sessionId}:${seatId}`;
-        const ipAddress = request.socket.remoteAddress ?? 'unknown';
+        const ipAddress = app.clientIpForUpgrade(request);
         if (
           !connections.consumeSeatAuthAttempt(seatKey) ||
           !connections.consumeTransportAuthAttempt(
