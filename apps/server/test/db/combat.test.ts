@@ -446,7 +446,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
           type: 'CombatCommand',
           actionId: immediateActionId,
           lastSeq: 0,
-          payload: { command: 'options' },
+          payload: { command: 'dodge' },
         }),
       );
     });
@@ -466,16 +466,17 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     await client.until((m) => m.type === 'NarrationCompleted', mark);
     const immediateReply = await client.until(
       (m) =>
-        (m.type === 'CombatOptions' &&
+        (m.type === 'CombatTracker' &&
           m.payload?.commandActionId === immediateActionId) ||
         (m.type === 'Error' && m.payload?.actionId === immediateActionId),
       mark,
     );
-    expect(immediateReply.type).toBe('CombatOptions');
+    expect(immediateReply.type).toBe('CombatTracker');
     expect(stack.requests.length).toBeGreaterThanOrEqual(2);
     const boot = await savedGame(table);
     expect(boot.gameState.combatActors).toEqual({ [user.id]: 'ent_aria' });
     expect(boot.gameState.combatRoom?.entities).toHaveLength(3);
+    expect(boot.gameState.combatRoom?.dodging).toContain('ent_aria');
 
     // Play the hero with the same options a client sees; kite once to provoke (and accept) an opportunity attack.
     let kited = false;

@@ -166,8 +166,8 @@ function setup() {
 }
 
 describe('Room combat command seam', () => {
-  it('admits a command after narration completes while the narration loop is still unwinding', async () => {
-    const { room } = setup();
+  it('rejects mutating commands during an in-flight narration', async () => {
+    const { room, events } = setup();
     const accountId = randomUUID();
     const sent: { type?: string; payload?: Record<string, unknown> }[] = [];
     await joinSeated(room, accountId, {
@@ -185,13 +185,10 @@ describe('Room combat command seam', () => {
     (room as unknown as { turnInFlight: boolean }).turnInFlight = true;
 
     await room.submitCombatCommand(accountId, randomUUID(), {
-      command: 'options',
+      command: 'dodge',
     });
 
     expect(sent).toContainEqual(
-      expect.objectContaining({ type: 'CombatOptions' }),
-    );
-    expect(sent).not.toContainEqual(
       expect.objectContaining({
         type: 'Error',
         payload: expect.objectContaining({
@@ -199,7 +196,12 @@ describe('Room combat command seam', () => {
         }),
       }),
     );
+    expect(events.some((event) => event.type === 'DodgeDeclared')).toBe(false);
     (room as unknown as { turnInFlight: boolean }).turnInFlight = false;
+    await room.submitCombatCommand(accountId, randomUUID(), {
+      command: 'dodge',
+    });
+    expect(events.some((event) => event.type === 'DodgeDeclared')).toBe(true);
     await room.drain();
   });
 

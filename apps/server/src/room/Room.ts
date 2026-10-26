@@ -491,6 +491,7 @@ export class Room {
   };
   private restVoteTimer?: NodeJS.Timeout;
   private turnInFlight = false;
+  private resolvingQueuedTurns = false;
   private turnAbort?: AbortController;
   private turnAccountId?: string;
   private matureDelivery: Promise<void> = Promise.resolve();
@@ -4376,7 +4377,7 @@ export class Room {
   }
 
   private kickQueue(): void {
-    if (this.turnInFlight) return;
+    if (this.turnInFlight || this.resolvingQueuedTurns) return;
     this.turnInFlight = true;
     this.activeTurn = this.resolveQueuedTurns();
     void this.activeTurn.catch(() => undefined);
@@ -4476,6 +4477,7 @@ export class Room {
   }
 
   private async resolveQueuedTurns(): Promise<void> {
+    this.resolvingQueuedTurns = true;
     while (
       !this.draining &&
       !this.state.paused &&
@@ -4594,6 +4596,7 @@ export class Room {
         } as ServerMessage);
       }
     this.turnAccountId = undefined;
+    this.resolvingQueuedTurns = false;
     this.turnInFlight = false;
     this.queueAwayAutopilot();
   }
@@ -5115,6 +5118,12 @@ export class Room {
         );
         this.seq = stored.events.at(-1)?.seq ?? nextSeq;
         this.state = nextState;
+        if (
+          !clarification &&
+          stored.events.some((event) => event.type === 'NarrationCompleted')
+        ) {
+          this.turnInFlight = false;
+        }
         if (stored.events.some((event) => event.type === 'SceneClosed'))
           this.sceneBoundaryPending = true;
         if (openedTurn) combatEvents.push(openedTurn as never);
@@ -5256,6 +5265,17 @@ export class Room {
       });
       if ('code' in result) {
         this.sendError(accountId, result.code, result.message, actionId);
+        return true;
+      }
+      // The narration loop owns the state snapshot until it commits. Read-only
+      // commands remain available, but mutations must wait for that commit.
+      if (this.turnInFlight) {
+        this.sendError(
+          accountId,
+          'COMMAND_REJECTED',
+          'The DM is still narrating; try again in a moment.',
+          actionId,
+        );
         return true;
       }
       if (!result.events.length && !result.state.pendingReaction) {
@@ -5839,7 +5859,7 @@ export class Room {
       receiptSeq: ++this.nextActionReceiptSeq,
       ...(combatTurnId ? { combatTurnId } : {}),
     });
-    if (!this.turnInFlight) {
+    if (!this.turnInFlight && !this.resolvingQueuedTurns) {
       this.turnInFlight = true;
       this.activeTurn = this.resolveQueuedTurns();
       void this.activeTurn.catch(() => undefined);
