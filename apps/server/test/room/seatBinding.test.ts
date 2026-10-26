@@ -664,6 +664,10 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
             id: entA,
             kind: 'character',
             team: 'party',
+            ac: 15,
+            abilities: { str: 17 },
+            saves: { dex: 6 },
+            attacks: [{ id: 'atk-secret' }],
             hp: 5,
             maxHp: 9,
             pos: { x: 1, y: 1 },
@@ -732,6 +736,17 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     }
     // server-side authoritative state is unchanged
     expect(JSON.stringify(f.room.state.gameState)).toContain('rogue');
+  });
+
+  it('gives other seats only the public PC set, the controller its full sheet', async () => {
+    const { f, seen } = await twoSeatCombat();
+    const own = JSON.stringify(await seen(f.accountA));
+    expect(own).toContain('atk-secret');
+    expect(own).toContain('"ac":15');
+    const other = JSON.stringify(await seen(f.accountB));
+    for (const secret of ['atk-secret', '"ac":15', '"str":17', '"dex":6'])
+      expect(other).not.toContain(secret);
+    expect(other).toContain('"hp":5');
   });
 
   it('shows a hidden entity only to its controller', async () => {
@@ -804,6 +819,61 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     const tracker = messages.find((m) => m.type === 'CombatTracker')!
       .payload as { activeEntityId: string };
     expect(tracker.activeEntityId).toBe(seatEntityId(f.seatA));
+  });
+
+  it("hides a PC's roll modifier, weapon and spell name from other seats, not from its controller", async () => {
+    const { f, entA } = await twoSeatCombat();
+    const state = f.room.state.gameState as { combatRoom: unknown };
+    const roll = (
+      extra: Record<string, unknown>,
+      expression: string,
+      bonus: number,
+    ) => ({
+      type: 'RollEvent',
+      entityId: entA,
+      breakdown: {
+        expression,
+        dice: [{ value: 14, kept: true }],
+        modifiers: [{ label: 'bonus', value: bonus }],
+        total: 14 + bonus,
+      },
+      ...extra,
+    });
+    const inbox = {
+      [f.accountA]: [] as Record<string, unknown>[],
+      [f.accountB]: [] as Record<string, unknown>[],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (m: Record<string, unknown>) => void inbox[account]!.push(m),
+      });
+    for (const list of Object.values(inbox)) list.length = 0;
+    (
+      f.room as unknown as { announceCombat(...a: unknown[]): void }
+    ).announceCombat(
+      state.combatRoom,
+      [
+        roll({ kind: 'attack', attackId: 'rapier' }, '1d20+5', 5),
+        roll(
+          { kind: 'save', spellId: 'fireball', dc: 13, success: true },
+          '1d20+3',
+          3,
+        ),
+        roll({ kind: 'damage', attackId: 'rapier' }, '1d8+3', 3),
+      ],
+      undefined,
+    );
+    const wire = (account: string) =>
+      JSON.stringify(inbox[account]!.filter((m) => m.type === 'CombatEvents'));
+    const mine = wire(f.accountA);
+    for (const secret of ['+5', '+3', 'rapier', 'fireball', '"modifier":5'])
+      expect(mine).toContain(secret);
+    const other = wire(f.accountB);
+    for (const secret of ['+5', '+3', 'rapier', 'fireball', 'modifier'])
+      expect(other).not.toContain(secret);
+    expect(other).toContain('"dice":"1d20"');
+    expect(other).toContain('"total":19');
+    expect(other).toContain('"rolls":[14]');
   });
 
   it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {

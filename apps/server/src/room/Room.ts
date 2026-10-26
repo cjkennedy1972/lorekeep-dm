@@ -5316,6 +5316,9 @@ export class Room {
     );
     // ADR-034 §3: a committed event naming a hidden entity reaches only its controller.
     const hidden = hiddenIdsOf(state);
+    const pcIds = new Set(
+      state.entities.filter((e) => e.kind === 'character').map((e) => e.id),
+    );
     for (const [viewer, connection] of this.connections) {
       const controlled = this.controlledBy(viewer);
       const visible = clientEvents.flatMap((event) => {
@@ -5326,7 +5329,15 @@ export class Room {
         connection.send({
           seq: this.seq,
           type: 'CombatEvents',
-          payload: { events: visible.map(toWireEvent) },
+          payload: {
+            events: visible.map((event) =>
+              toWireEvent(
+                event,
+                pcIds.has(String(event.entityId)) &&
+                  !controlled.has(String(event.entityId)),
+              ),
+            ),
+          },
         } as ServerMessage);
     }
     const ended = events.find((event) => event.type === 'CombatEnded');

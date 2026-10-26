@@ -74,10 +74,19 @@ export function hiddenEntityIds(
   );
 }
 
+const NON_PUBLIC_PC_FIELDS = [
+  'ac',
+  'speed',
+  'abilities',
+  'saves',
+  'attacks',
+] as const;
+
 /**
  * Per-viewer projection (ADR-034 §3, ADR-035). A hidden entity is removed outright from
  * everything a viewer receives (entities, initiative, resources, reaction prompt, dodge,
- * concentration) unless the viewer controls it: no pos, no hp, no existence. Authoritative
+ * concentration) unless the viewer controls it: no pos, no hp, no existence. Another seat's
+ * character keeps only the ADR-035 public set (no ac, speed, abilities, saves, attacks). Authoritative
  * server state is untouched; this only shapes what is serialized to a client.
  */
 export function projectCombatForViewer<T extends RoomCombatState>(
@@ -100,21 +109,28 @@ export function projectCombatForViewer<T extends RoomCombatState>(
     state.combat.activeEntityId ??
     state.combat.initiative?.[0]?.entityId ??
     null;
-  if (hidden.size === 0)
-    return { ...state, combat: { ...state.combat, activeEntityId: head } };
   const { pendingReaction, dodging, concentration, ...rest } = state;
   const active = head;
   return {
     ...rest,
-    entities: state.entities.filter((entity) => !hidden.has(entity.id)),
+    entities: state.entities
+      .filter((entity) => !hidden.has(entity.id))
+      .map((entity) => {
+        if (entity.kind !== 'character' || controlled.has(entity.id))
+          return entity;
+        // ADR-035 public set: sheet stats belong to the controlling seat only.
+        const pub = { ...entity };
+        for (const key of NON_PUBLIC_PC_FIELDS) delete pub[key];
+        return pub;
+      }),
     combat: {
       ...state.combat,
       activeEntityId: active && hidden.has(active) ? null : active,
-      initiative: state.combat.initiative.filter(
+      initiative: (state.combat.initiative ?? []).filter(
         (item) => !hidden.has(item.entityId),
       ),
       resources: Object.fromEntries(
-        Object.entries(state.combat.resources).filter(
+        Object.entries(state.combat.resources ?? {}).filter(
           ([id]) => !hidden.has(id),
         ),
       ),
@@ -493,8 +509,14 @@ function defaultCatalog(): Catalog {
 }
 
 /** Engine events as the wire schema (EngineEventSchema) spells them. */
+/**
+ * `concealStats`: the roller is a PC the viewer does not control (ADR-035). The natural dice and the total are
+ * table-visible; the modifier (attack/save/damage bonus), the weapon or spell name and any constant in the
+ * expression are the PC's non-public sheet and are dropped.
+ */
 export function toWireEvent(
   event: Readonly<Record<string, unknown>>,
+  concealStats = false,
 ): Record<string, unknown> {
   if (event.type === 'SlotSpent' && event.level === undefined)
     return { ...event, level: event.slotLevel };
@@ -503,10 +525,16 @@ export function toWireEvent(
     return {
       type: 'RollEvent',
       actorId: event.entityId,
-      label: `${String(event.kind)} ${String(event.attackId ?? event.spellId)}`,
-      dice: roll.expression,
+      label: concealStats
+        ? String(event.kind)
+        : `${String(event.kind)} ${String(event.attackId ?? event.spellId)}`,
+      dice: concealStats
+        ? (/^\d*d\d+/i.exec(roll.expression)?.[0] ?? roll.expression)
+        : roll.expression,
       rolls: roll.dice.filter((die) => die.kept).map((die) => die.value),
-      modifier: roll.modifiers.reduce((sum, m) => sum + m.value, 0),
+      ...(concealStats
+        ? {}
+        : { modifier: roll.modifiers.reduce((sum, m) => sum + m.value, 0) }),
       total: roll.total,
       ...(event.dc === undefined
         ? {}
