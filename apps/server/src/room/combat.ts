@@ -64,8 +64,59 @@ export type CombatRuntime = {
   expire(state: RoomCombatState, now: number): CombatTransition | null;
 };
 
+/**
+ * Per-viewer projection (ADR-034 §3, ADR-035). A hidden entity is removed outright from
+ * everything a viewer receives (entities, initiative, resources, reaction prompt, dodge,
+ * concentration) unless the viewer controls it: no pos, no hp, no existence. Authoritative
+ * server state is untouched; this only shapes what is serialized to a client.
+ */
+export function projectCombatForViewer<T extends RoomCombatState>(
+  state: T,
+  controlled: ReadonlySet<string> = new Set(),
+): T {
+  const hidden = new Set(
+    state.entities
+      .filter((entity) => entity.hidden && !controlled.has(entity.id))
+      .map((entity) => entity.id),
+  );
+  if (hidden.size === 0) return state;
+  const { pendingReaction, dodging, concentration, ...rest } = state;
+  const active = state.combat.activeEntityId;
+  return {
+    ...rest,
+    entities: state.entities.filter((entity) => !hidden.has(entity.id)),
+    combat: {
+      ...state.combat,
+      activeEntityId: active && hidden.has(active) ? null : active,
+      initiative: state.combat.initiative.filter(
+        (item) => !hidden.has(item.entityId),
+      ),
+      resources: Object.fromEntries(
+        Object.entries(state.combat.resources).filter(
+          ([id]) => !hidden.has(id),
+        ),
+      ),
+    },
+    ...(pendingReaction && !hidden.has(pendingReaction.entityId)
+      ? { pendingReaction }
+      : {}),
+    ...(dodging ? { dodging: dodging.filter((id) => !hidden.has(id)) } : {}),
+    ...(concentration
+      ? {
+          concentration: Object.fromEntries(
+            Object.entries(concentration).filter(([id]) => !hidden.has(id)),
+          ),
+        }
+      : {}),
+  } as T;
+}
+
 /** Stable client projection; exact enemy HP is private while the active token always matches initiative. */
-export function combatTracker(state: RoomCombatState) {
+export function combatTracker(
+  full: RoomCombatState,
+  controlled?: ReadonlySet<string>,
+) {
+  const state = projectCombatForViewer(full, controlled);
   const active =
     state.combat.activeEntityId ?? state.combat.initiative[0]?.entityId ?? null;
   const activeIndex = Math.max(
@@ -442,11 +493,12 @@ export function toWireEvent(
 export function trackerMessage(
   seq: number,
   state: RoomCombatState,
+  controlled?: ReadonlySet<string>,
 ): ServerMessage {
   return {
     seq,
     type: 'CombatTracker',
-    payload: combatTracker(state),
+    payload: combatTracker(state, controlled),
   } as ServerMessage;
 }
 export function reactionMessage(

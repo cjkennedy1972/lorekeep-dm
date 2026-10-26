@@ -43,6 +43,7 @@ This amends ADR-033 §3.1 and §3.2 for hidden entities.
 1. If the reacting entity is hidden from a seat (ADR-033 §3.2, visibility split), the reaction prompt and `reactorEntityId` go only to the controlling seat. Other seats see nothing about the prompt: no "prompt open", no deadline.
 2. The log keeps the full record. The engine appends `ReactionPromptOpened`, `ReactionAnswered`, or `ReactionDeclined` with the full payload, and the server applies this visibility rule to every seat's broadcast, snapshot, and replay.
 3. A hidden reactor's prompt does not change phase timing. Its window runs under ADR-033 §3.5 (expiry) and §3.7 (pause).
+4. **Hidden entities in game state.** The same rule covers `combatRoom` in `StateSync`, checkpoints, reconnect resync and `CombatTracker`. For every viewer except the controlling seat, a hidden entity is removed outright (entity, initiative, resources, dodge, concentration, reaction); the active token is `null` while a hidden entity acts. The controlling seat sees it in full. Authoritative state, log and replay are unchanged.
 
 ### 4. Host revoke can cost a turn (intended)
 

@@ -37,6 +37,7 @@ import {
   roomGameState,
   toWireEvent,
   trackerMessage,
+  projectCombatForViewer,
   reactionMessage,
   type CombatRuntime,
   type CombatTransition,
@@ -64,6 +65,39 @@ import { failForward, resolveDeathSave, retryFromCheckpoint } from './death.js';
 
 const CLIENT_GAME_STATE_FIELDS = ['characters', 'combatRoom'] as const;
 
+function isSeatOwner(
+  seatId: string,
+  viewerAccountId: string | undefined,
+  bindings: ReadonlyMap<string, PrivateSeatCharacterBinding> | undefined,
+  allowLegacyAccountKey: boolean,
+): boolean {
+  return (
+    viewerAccountId !== undefined &&
+    (bindings?.get(seatId)?.accountId === viewerAccountId ||
+      (allowLegacyAccountKey && seatId === viewerAccountId))
+  );
+}
+
+/** Combat entity ids the viewer controls: the characters of the seats it owns. */
+function controlledEntityIds(
+  characters: unknown,
+  viewerAccountId: string | undefined,
+  bindings: ReadonlyMap<string, PrivateSeatCharacterBinding> | undefined,
+  allowLegacyAccountKey: boolean,
+): Set<string> {
+  const ids = new Set<string>();
+  if (!characters || typeof characters !== 'object') return ids;
+  for (const [seatId, character] of Object.entries(characters)) {
+    const id = (character as { id?: unknown } | null)?.id;
+    if (
+      typeof id === 'string' &&
+      isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
+    )
+      ids.add(id);
+  }
+  return ids;
+}
+
 function clientGameState(
   value: unknown,
   viewerAccountId?: string,
@@ -81,7 +115,17 @@ function clientGameState(
       typeof source.combatRoom === 'object' &&
       !Array.isArray(source.combatRoom)
     ) {
-      const combatRoom = { ...(source.combatRoom as Record<string, unknown>) };
+      const combatRoom = {
+        ...projectCombatForViewer(
+          source.combatRoom as unknown as RoomCombatState,
+          controlledEntityIds(
+            source.characters,
+            viewerAccountId,
+            bindings,
+            allowLegacyAccountKey,
+          ),
+        ),
+      } as Record<string, unknown>;
       delete combatRoom.turnNarrationEvents;
       delete combatRoom.narrationAttempts;
       delete combatRoom.turnNarrationEventIds;
@@ -100,11 +144,9 @@ function clientGameState(
     for (const [seatId, character] of Object.entries(
       source.characters as Record<string, unknown>,
     )) {
-      const isOwner =
-        viewerAccountId !== undefined &&
-        (bindings?.get(seatId)?.accountId === viewerAccountId ||
-          (allowLegacyAccountKey && seatId === viewerAccountId));
-      if (isOwner) {
+      if (
+        isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
+      ) {
         characters[seatId] = character;
         continue;
       }
@@ -960,7 +1002,7 @@ export class Room {
             state: this.clientState(accountId),
           },
         });
-      this.sendCombatSnapshot(connection);
+      this.sendCombatSnapshot(connection, accountId);
       this.sendSeatPrivateRoundSync(accountId);
       for (const [actionId, open] of Object.entries(
         this.state.openClarifications ?? {},
@@ -1221,11 +1263,23 @@ export class Room {
     };
   }
 
+  private controlledBy(accountId: string): Set<string> {
+    return controlledEntityIds(
+      (this.state.gameState as { characters?: unknown } | undefined)
+        ?.characters,
+      accountId,
+      this.seatBindings,
+      !this.bindingEnforced,
+    );
+  }
+
   /** A (re)connecting client gets the tracker and any open reaction prompt with its remaining time. */
-  private sendCombatSnapshot(connection: Connection): void {
+  private sendCombatSnapshot(connection: Connection, accountId: string): void {
     const combat = roomGameState(this.state);
     if (!combat) return;
-    connection.send(trackerMessage(this.seq, combat));
+    connection.send(
+      trackerMessage(this.seq, combat, this.controlledBy(accountId)),
+    );
     if (combat.pendingReaction)
       connection.send(reactionMessage(this.seq, combat.pendingReaction));
   }
@@ -1342,7 +1396,7 @@ export class Room {
         }
       }
       this.connections.set(accountId, connection);
-      this.sendCombatSnapshot(connection);
+      this.sendCombatSnapshot(connection, accountId);
       this.sendRoundSnapshot(connection);
       this.sendSeatPrivateRoundSync(accountId);
       const initialConnection = seat.presence === 'offline';
@@ -1376,7 +1430,7 @@ export class Room {
             state: this.clientState(accountId),
           },
         });
-      this.sendCombatSnapshot(connection);
+      this.sendCombatSnapshot(connection, accountId);
       this.sendRoundSnapshot(connection);
       this.sendSeatPrivateRoundSync(accountId);
     });
@@ -5223,7 +5277,10 @@ export class Room {
         type: 'CombatEnded',
         payload: { outcome: ended.outcome },
       } as ServerMessage);
-    this.broadcast(trackerMessage(this.seq, state));
+    for (const [viewer, connection] of this.connections)
+      connection.send(
+        trackerMessage(this.seq, state, this.controlledBy(viewer)),
+      );
     if (state.pendingReaction)
       this.broadcast(reactionMessage(this.seq, state.pendingReaction));
     this.scheduleReaction();

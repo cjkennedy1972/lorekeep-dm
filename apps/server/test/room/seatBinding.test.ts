@@ -645,3 +645,106 @@ describe('ADR-035 party seat gating', () => {
     });
   });
 });
+
+describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
+  const HIDDEN_POS = { x: 7, y: 9 };
+  async function twoSeatCombat() {
+    const f = party({ bindB: true });
+    const [entA, entB] = [seatEntityId(f.seatA), seatEntityId(f.seatB)];
+    f.room.state.gameState = {
+      characters: {
+        [f.seatA]: { id: entA, name: 'A' },
+        [f.seatB]: { id: entB, name: 'B' },
+      },
+      combatRoom: {
+        entities: [
+          {
+            id: entA,
+            kind: 'character',
+            team: 'party',
+            hp: 5,
+            maxHp: 9,
+            pos: { x: 1, y: 1 },
+          },
+          {
+            id: entB,
+            kind: 'character',
+            team: 'party',
+            hp: 5,
+            maxHp: 9,
+            pos: { x: 2, y: 1 },
+          },
+          {
+            id: 'goblin',
+            kind: 'monster',
+            team: 'foe',
+            hp: 7,
+            maxHp: 7,
+            pos: { x: 4, y: 4 },
+          },
+          {
+            id: 'rogue',
+            hidden: true,
+            kind: 'monster',
+            team: 'foe',
+            hp: 11,
+            maxHp: 11,
+            pos: HIDDEN_POS,
+          },
+        ],
+        combat: {
+          round: 1,
+          activeEntityId: entA,
+          initiative: [entA, 'rogue', entB, 'goblin'].map((entityId, i) => ({
+            entityId,
+            total: 20 - i,
+          })),
+          resources: { [entA]: {}, rogue: {}, [entB]: {}, goblin: {} },
+        },
+        pendingReaction: {
+          reactionId: 'r',
+          entityId: 'rogue',
+          trigger: 't',
+          moverId: entA,
+          deadlineAt: 1,
+        },
+      },
+    };
+    const seen = async (accountId: string) => {
+      const messages: Record<string, unknown>[] = [];
+      await f.room.subscribe(accountId, {
+        send: (m: Record<string, unknown>) => void messages.push(m),
+      });
+      return messages;
+    };
+    return { f, entA, entB, seen };
+  }
+
+  it('never sends a hidden entity (pos, hp, id, reaction) in StateSync or CombatTracker', async () => {
+    const { f, seen } = await twoSeatCombat();
+    for (const account of [f.accountA, f.accountB]) {
+      // ReactionPrompt redaction for hidden reactors is PR #323 (M4-6d), not this path.
+      const wire = JSON.stringify(
+        (await seen(account)).filter((m) => m.type !== 'ReactionPrompt'),
+      );
+      expect(wire).not.toContain('rogue');
+      expect(wire).not.toContain('"x":7');
+      expect(wire).toContain('goblin');
+    }
+    // server-side authoritative state is unchanged
+    expect(JSON.stringify(f.room.state.gameState)).toContain('rogue');
+  });
+
+  it('shows a hidden entity only to its controller', async () => {
+    const { f, entA, seen } = await twoSeatCombat();
+    const state = f.room.state.gameState as {
+      characters: Record<string, { id: string }>;
+      combatRoom: { entities: { id: string; hidden?: boolean }[] };
+    };
+    state.characters[f.seatA]!.id = 'rogue';
+    state.combatRoom.entities.find((e) => e.id === entA)!.id = 'rogue-pc';
+    state.combatRoom.entities.find((e) => e.id === 'rogue')!.hidden = true;
+    expect(JSON.stringify(await seen(f.accountA))).toContain('"x":7');
+    expect(JSON.stringify(await seen(f.accountB))).not.toContain('"x":7');
+  });
+});
