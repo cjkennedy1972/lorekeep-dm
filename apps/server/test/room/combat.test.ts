@@ -325,6 +325,7 @@ describe('Room combat command seam', () => {
     const { room, events, latestSnapshot } = setup(runner);
     const owner = randomUUID();
     let commandResult: Promise<boolean> | undefined;
+    const commandActionId = randomUUID();
     let submitted!: (command: Promise<boolean>) => void;
     const commandSubmitted = new Promise<Promise<boolean>>((resolve) => {
       submitted = resolve;
@@ -332,7 +333,7 @@ describe('Room combat command seam', () => {
     await joinSeated(room, owner, {
       send(message) {
         if (message.type !== 'NarrationCompleted' || commandResult) return;
-        commandResult = room.submitCombatCommand(owner, randomUUID(), {
+        commandResult = room.submitCombatCommand(owner, commandActionId, {
           command: 'move',
           destination: { x: 3, y: 1 },
         });
@@ -357,7 +358,13 @@ describe('Room combat command seam', () => {
     });
     const submittedCommand = await commandSubmitted;
     expect(await submittedCommand).toBe(true);
-    await room.drain();
+    const internals = room as unknown as { activeTurn: Promise<void> };
+    await internals.activeTurn;
+    // If delivery preceded the worker's commit, the retry uses its original ID.
+    await room.submitCombatCommand(owner, commandActionId, {
+      command: 'move',
+      destination: { x: 3, y: 1 },
+    });
 
     expect(commandResult).toBeDefined();
     const saved = latestSnapshot()?.state as {
@@ -373,10 +380,13 @@ describe('Room combat command seam', () => {
     ).toHaveLength(1);
   });
 
-  it('waits for an actionable narration worker to settle before persisting a combat command', async () => {
+  it('rejects actionable combat commands without deadlocking the mailbox while narration commits', async () => {
     const { room, events, latestSnapshot } = setup();
     const owner = randomUUID();
-    await joinSeated(room, owner, { send() {} });
+    const sent: { type: string; payload?: Record<string, unknown> }[] = [];
+    await joinSeated(room, owner, {
+      send: (message) => sent.push(message as never),
+    });
     const eventsBeforeCommand = events.length;
     room.state = {
       ...room.state,
@@ -396,33 +406,27 @@ describe('Room combat command seam', () => {
     internals.turnInFlight = true;
     internals.activeTurn = settling;
 
-    let accepted = false;
-    const command = room
-      .submitCombatCommand(owner, randomUUID(), {
-        command: 'move',
-        destination: { x: 3, y: 1 },
-      })
-      .then((value) => {
-        accepted = value;
-      });
-    await Promise.resolve();
+    const actionId = randomUUID();
+    await room.submitCombatCommand(owner, actionId, {
+      command: 'move',
+      destination: { x: 3, y: 1 },
+    });
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'Error',
+        payload: expect.objectContaining({
+          code: 'narration-in-progress',
+          actionId,
+        }),
+      }),
+    );
     expect(events).toHaveLength(eventsBeforeCommand);
+
+    // The turn's continuation can now enqueue/commit through the mailbox.
     settle();
     internals.turnInFlight = false;
-    await command;
-
-    const saved = latestSnapshot()?.state as {
-      gameState?: { combatRoom?: RoomCombatState };
-    };
-    expect(accepted).toBe(true);
-    expect(saved.gameState?.combatRoom?.entities[0]?.pos).toEqual({
-      x: 3,
-      y: 1,
-    });
-    expect(
-      events.filter((event) => event.type === 'NarrationCompleted'),
-    ).toHaveLength(0);
     await room.drain();
+    expect(latestSnapshot()).toBeDefined();
   });
 
   it('continues rejecting commands while combat narration is genuinely in flight', async () => {

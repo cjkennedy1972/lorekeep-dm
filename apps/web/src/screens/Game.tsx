@@ -116,6 +116,9 @@ const mergeChatHistory = (
 };
 
 export function Game() {
+  const combatRetries = useRef(
+    new Map<string, { command: Record<string, unknown>; attempts: number }>(),
+  );
   const { id = '' } = useParams();
   const { account } = useAuth();
   const [resume, setResume] = useState<{ recap: string; name: string } | null>(
@@ -333,6 +336,19 @@ export function Game() {
       }
       if (message.type === 'Error') {
         const payload = asRecord(message.payload);
+        const actionId = String(payload.actionId ?? '');
+        if (payload.code === 'narration-in-progress' && actionId) {
+          const pending = combatRetries.current.get(actionId);
+          if (pending && pending.attempts < 2) {
+            pending.attempts++;
+            window.setTimeout(() => {
+              if (combatRetries.current.get(actionId) === pending)
+                live.send('CombatCommand', pending.command, actionId);
+            }, pending.attempts * 150);
+            return;
+          }
+          combatRetries.current.delete(actionId);
+        }
         if (payload.code === 'CHAT_REJECTED') {
           setChatError(
             String(payload.message ?? 'That message could not be sent.'),
@@ -340,7 +356,6 @@ export function Game() {
           return;
         }
         setError(String(payload.message ?? 'The command failed.'));
-        const actionId = String(payload.actionId ?? '');
         updatePendingAction((current) =>
           current && (!actionId || current.id === actionId) ? null : current,
         );
@@ -480,8 +495,18 @@ export function Game() {
     }
   }, [room, account]);
 
-  const send = (command: Record<string, unknown>) =>
-    live.send('CombatCommand', command);
+  const send = (command: Record<string, unknown>) => {
+    const actionId = live.send('CombatCommand', command);
+    if (typeof actionId === 'string') {
+      const pending = { command, attempts: 0 };
+      combatRetries.current.set(actionId, pending);
+      window.setTimeout(() => {
+        if (combatRetries.current.get(actionId) === pending)
+          combatRetries.current.delete(actionId);
+      }, 5_000);
+    }
+    return actionId;
+  };
   const lastActionText = useRef('');
   const submitAction = (text: string) => {
     lastActionText.current = text;
