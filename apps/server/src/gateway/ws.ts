@@ -136,6 +136,7 @@ export function installGateway(
   connections: ConnectionRegistry = new ConnectionRegistry(db),
   revalidateMs = 15_000,
   soloOwnerRecoveryEnabled = SOLO_OWNER_RESUME_RECOVERY_ENABLED,
+  allowConfiguredOriginForTicket = false,
 ): () => Promise<void> {
   const chatPolicy = new ChatPolicy();
   app.post<{ Body?: { sessionId?: string } }>(
@@ -147,7 +148,9 @@ export function installGateway(
         // WS_ALLOWED_ORIGINS is the deliberate exact-origin cross-origin bypass (ADR-029).
         if (
           origin &&
-          (validRequestOrigin(request) || isConfiguredOriginAllowed(origin))
+          (validRequestOrigin(request) ||
+            (allowConfiguredOriginForTicket &&
+              isConfiguredOriginAllowed(origin)))
         )
           return;
         return reply.code(403).send({ error: 'origin' });
