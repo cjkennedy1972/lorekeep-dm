@@ -44,17 +44,21 @@ Regression run over the four DB/room files that cover this area:
 `test/db/sim-combat.test.ts test/db/sim-clients.test.ts test/db/combat.test.ts test/room/combatFlow.test.ts`
 Result: 4 files passed, 108 tests passed.
 
-## Spotlight flake (Bastion NO-GO on a1c4cdf): investigation and fix
+## Spotlight flake (#337): investigation and fix
 
-Bastion reported one `not-your-turn` failure in the spotlight test at a1c4cdf and a pass on rerun.
+**Reproduction before the fix.** On PR base `0517042b00b7e4f796d9fe01bdaabf15338355ff`, the six-client spotlight case passed 20/20 runs (0 failures). The race is still reproducible by inspection: `combatCommand` previously accepted the first tracker/options frame after an inbox mark, which could be a delayed broadcast for an earlier action. The test loop's all-seat barrier also matched only by type, so it could count that stale frame. This environment does not have a repository scheduler-jitter knob; both A/B samples used the normal runner without injected jitter.
 
-**Root cause (test harness, not server).** `combatCommand` in `test/sim/combat.ts` accepts the first `CombatTracker` frame that arrives after its mark. The server sends one `CombatTracker` per committed command to every connected seat (`Room.ts`, `commitCombat`), and success replies carry no `actionId` (only rejections do). When the previous PC's end-turn broadcast reached seat B after B's mark, B's next `combatCommand` returned that stale broadcast as its own reply. The loop then took the stale `activeEntityId`, sent end-turn as the wrong owner, and received `not-your-turn`. The server's admission gate was behaving correctly; it was given a command from a seat that had the wrong turn.
+**Sequence assessment.** The server frame `seq` is the persisted room-event cursor, not a command identity. It orders observed events but cannot prove which overlapping/queued command produced a tracker. Therefore the server now echoes the originating `CombatCommand` action ID as `payload.commandActionId` on the tracker/options response. Snapshot trackers and non-command combat broadcasts omit it. This is a small server payload addition; it does not change combat state or event persistence.
 
-**Fix.** Before each end-turn, the loop records every client's inbox length. After a tracker reply, it waits until all six seats have received a `CombatTracker` after their mark, so the broadcast for that command is fully delivered before the next command's mark can be taken.
+**Fix.** The shared `combatCommand` helper now accepts only a tracker/options response whose `commandActionId` equals the action ID it just sent (or the matching error). The spotlight loop's six-seat delivery barrier matches that same ID, rather than any tracker after the inbox mark.
 
-**Not reproduced before the fix.** The unfixed head (a1c4cdf) passed 20 of 20 spotlight runs in this environment, so the race was established by reading the code path, not by reproducing Bastion's failure. The stale-broadcast window is narrow and timing-dependent.
+**A/B runs.** Commands, run from `apps/server` against Docker Postgres 16 (`m4sim-pg`):
 
-**Loop after the fix.** Command: `cd apps/server && DATABASE_URL=postgres://lorekeep:lorekeep@127.0.0.1:55432/lorekeep pnpm exec vitest run test/db/sim-combat.test.ts -t spotlight`, repeated 20 times. Result: 20 of 20 exit 0, each `Tests 1 passed | 5 skipped (6)`. Per-run logs were captured in a scratch directory, not committed.
+```sh
+DATABASE_URL=postgres://lorekeep:<local-password>@127.0.0.1:55432/lorekeep pnpm exec vitest run test/db/sim-combat.test.ts -t spotlight --reporter=dot
+```
+
+Repeated serially 20 times on the before head and 20 times after the fix: **before 0/20 failures; after 0/20 failures**. The race is timing-dependent, so the clean before sample does not contradict the reported intermittent `not-your-turn`; the after helper now enforces exact command identity rather than relying on the observed rate.
 
 ## Test-by-test detail
 

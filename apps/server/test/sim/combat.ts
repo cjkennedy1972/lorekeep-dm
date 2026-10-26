@@ -111,8 +111,9 @@ export async function combatCommand(
       client,
       mark,
       (frame) =>
-        frame.type === 'CombatTracker' ||
-        frame.type === 'CombatOptions' ||
+        ((frame.type === 'CombatTracker' ||
+          frame.type === 'CombatOptions') &&
+          frame.payload?.commandActionId === actionId) ||
         (frame.type === 'Error' &&
           (frame.payload?.actionId === actionId ||
             (frame.payload?.code === 'RATE_LIMITED' &&

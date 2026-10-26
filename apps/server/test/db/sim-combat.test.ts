@@ -226,7 +226,14 @@ describe('spotlight over combat turns', () => {
       }
       await Promise.all(
         t.clients.map((c) =>
-          pollFrom(c, marks.get(c)!, (f) => f.type === 'CombatTracker', 5_000),
+          pollFrom(
+            c,
+            marks.get(c)!,
+            (f) =>
+              f.type === 'CombatTracker' &&
+              f.payload?.commandActionId === reply.payload?.commandActionId,
+            5_000,
+          ),
         ),
       );
       active = (reply.payload?.activeEntityId ?? null) as string | null;
