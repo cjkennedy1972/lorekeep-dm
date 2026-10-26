@@ -82,11 +82,25 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      # Keep apt dependency installation outside the retry loop: a timed-out apt
-      # child can retain dpkg's lock and make an immediate retry fail.
+      # The ~200 gstreamer/media packages WebKit needs are fetched from the Azure
+      # mirror, which intermittently stalls to a crawl (observed: 8 min timeouts on
+      # ~7% of runs; healthy runs take ~30s). Fail fast per attempt, and let apt
+      # itself retry/time out and wait on the dpkg lock; apt resumes with the
+      # already-downloaded debs, so a retry is cheap.
       - name: Install Firefox and WebKit system dependencies
-        timeout-minutes: 8
-        run: pnpm --filter @game/web exec playwright install-deps firefox webkit
+        timeout-minutes: 12
+        run: |
+          printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "20";' \
+            'Acquire::https::Timeout "20";' 'DPkg::Lock::Timeout "120";' \
+            | sudo tee /etc/apt/apt.conf.d/99ci-retries >/dev/null
+          export DEBIAN_FRONTEND=noninteractive
+          for attempt in 1 2 3; do
+            if timeout -k 15 150 pnpm --filter @game/web exec playwright install-deps firefox webkit; then
+              exit 0
+            fi
+            echo "install-deps attempt $attempt failed or stalled; retrying"
+          done
+          exit 1
       - name: Install Firefox and WebKit browsers
         timeout-minutes: 12
         run: |
