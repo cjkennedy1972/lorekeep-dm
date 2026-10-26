@@ -144,6 +144,23 @@ describe('GET /api/late-join/:requestId/recap', () => {
     expect(queries.join('\n')).not.toContain('FROM scene_summaries');
   });
 
+  it('scrubs a character name the LLM itself emits (post-LLM scrub)', async () => {
+    adapter = llm('Brann opened the gate while Brann smiled.');
+    const body = (await get(build())).json();
+    expect(body.recap).not.toMatch(/Brann/);
+    expect(body.recap).toContain('a party member');
+  });
+
+  it('keys the cache by account as well as request', async () => {
+    const app = build();
+    adapter = llm('Owner recap.');
+    expect((await get(app)).statusCode).toBe(200);
+    caller = 'someone-else';
+    const res = await get(app);
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).not.toHaveProperty('recap');
+  });
+
   it('falls back to deterministic text when the LLM fails', async () => {
     adapter = llm(new Error('down'));
     const res = await get(build());

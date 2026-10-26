@@ -1070,6 +1070,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           tier,
           tableLines,
           turnId: request.actionId,
+          hidden: [
+            ...((state as GameState).combatRoom?.entities ?? []),
+            ...((result.state as GameState).combatRoom?.entities ?? []),
+          ].filter((entity) => entity.hidden),
         });
       }
     }
