@@ -105,31 +105,30 @@ describe('reconnect mid-prompt', () => {
   // Known product gap (see Workboard card for M4-9a). Room derives a seated account's actor from
   // its own party seat (Room.ts actorId derivation), so the controller a monster is bound to via
   // combatActors is always rejected as not-your-turn. The prompt reaches them; the answer cannot.
-  // Passes today because the answer fails; flips to a failing test once the gap is fixed.
-  it.fails(
-    'lets the controller answer the replayed prompt after reconnect',
-    async () => {
-      const { table: t } = await startCombatTable();
-      const [mover, controller] = t.clients as [SimClient, SimClient];
-      const { leaveTo } = await startPartyCombat(t, controller);
+  // Pinned to the exact current rejection, not to any failure. A plain `it` (not it.fails) is used
+  // so a timeout or broken helper fails this test instead of passing it. When the gap is fixed the
+  // answer becomes a CombatTracker, this assertion fails, and the test should be rewritten to expect success.
+  it('pins the monster-bound controller reaction answer as rejected with not-your-turn after reconnect', async () => {
+    const { table: t } = await startCombatTable();
+    const [mover, controller] = t.clients as [SimClient, SimClient];
+    const { leaveTo } = await startPartyCombat(t, controller);
 
-      await provokeReaction(mover, controller, leaveTo);
-      expect(await controller.reconnect()).toBeUndefined();
-      const replayed = await pollFrom(
-        controller,
-        0,
-        (frame) => frame.type === 'ReactionPrompt',
-        5_000,
-      );
-      const answer = await combatCommand(controller, {
-        command: 'reaction',
-        reactionId: replayed.payload.reactionId as string,
-        choice: 'decline',
-      });
-      expect(answer.type).toBe('CombatTracker');
-    },
-    40_000,
-  );
+    await provokeReaction(mover, controller, leaveTo);
+    expect(await controller.reconnect()).toBeUndefined();
+    const replayed = await pollFrom(
+      controller,
+      0,
+      (frame) => frame.type === 'ReactionPrompt',
+      5_000,
+    );
+    const answer = await combatCommand(controller, {
+      command: 'reaction',
+      reactionId: replayed.payload.reactionId as string,
+      choice: 'decline',
+    });
+    expect(answer.type).toBe('Error');
+    expect(answer.payload?.code).toBe('not-your-turn');
+  }, 40_000);
 });
 
 describe('chat isolation from combat narration', () => {
@@ -214,6 +213,10 @@ describe('spotlight over combat turns', () => {
     let active: string | null = mover;
     for (let turn = 0; turn < 200 && active; turn++) {
       const owner = clientByEntity.get(active) ?? controller;
+      // The tracker is broadcast to every seat, so a seat's next command could otherwise be matched
+      // to the previous command's broadcast that arrives late. Record each inbox first, then wait for
+      // all six to receive this command's tracker before the next command is sent.
+      const marks = new Map(t.clients.map((c) => [c, c.inbox.length]));
       const reply = await combatCommand(owner, { command: 'end-turn' });
       if (reply.type !== 'CombatTracker') {
         if (String(reply.payload?.message).includes('Combat is over')) break;
@@ -221,6 +224,11 @@ describe('spotlight over combat turns', () => {
           `end-turn by ${active} rejected: ${JSON.stringify(reply.payload)}`,
         );
       }
+      await Promise.all(
+        t.clients.map((c) =>
+          pollFrom(c, marks.get(c)!, (f) => f.type === 'CombatTracker', 5_000),
+        ),
+      );
       active = (reply.payload?.activeEntityId ?? null) as string | null;
     }
 
