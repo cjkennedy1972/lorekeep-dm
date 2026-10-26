@@ -1,5 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Browser } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Browser,
+} from '@playwright/test';
 import {
   activeCombatantId,
   closeMember,
@@ -35,7 +40,10 @@ function attackerRolls(frames: unknown[], attackerId: string) {
     });
 }
 
-async function openCombatTable(browser: Browser) {
+// Restores the pristine combat board first: party-combat.spec.ts runs earlier in the same boot and changes it.
+async function openCombatTable(browser: Browser, request: APIRequestContext) {
+  const res = await request.post('/api/test/reset-combat');
+  expect(res.ok(), `reset-combat: ${res.status()}`).toBe(true);
   const { combat } = readState();
   const views: View[] = [];
   for (const member of [combat.host, combat.guest, combat.scout])
@@ -55,9 +63,10 @@ function findActive(views: View[], activeId: string): View {
 
 test('party keyboard-only combat: focus, move (cancel and confirm), list and description, axe, mobile', async ({
   browser,
+  request,
 }) => {
   test.setTimeout(240_000);
-  const views = await openCombatTable(browser);
+  const views = await openCombatTable(browser, request);
   try {
     const activeId = await activeCombatantId(views[0]!.page);
     const active = findActive(views, activeId);
@@ -95,8 +104,8 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
     });
 
     await test.step('attack: the goblin in reach is attacked from the action list alone', async () => {
-      // Fixture: ent_goblin-minion_1 stands at (11,2), next to the first seat's start at (10,2). Adjacency
-      // is asserted, not assumed, so a fixture change fails here with the positions, not as a timeout.
+      // Fixture: the board is reset above, and the goblin is placed beside whichever entity acts first, so
+      // it is in reach. Adjacency is asserted, not assumed, so a fixture change fails here with the positions.
       const goblin = 'ent_goblin-minion_1';
       const goblinToken = (await tokenTable(page)).find((t) => t.id === goblin);
       expect(goblinToken, 'goblin is on the battlefield').toBeDefined();
