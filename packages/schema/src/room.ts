@@ -95,6 +95,10 @@ export const RoomStateSchema = z.object({
   roundsEnabled: z.boolean().optional(),
   /** Host setting for rounds opened after the current one; null disables the deadline. */
   roundDurationMs: z.number().int().nonnegative().nullable().optional(),
+  /** Host combat turn timer (ADR-033 §5.1); null is off, unset means the default (90 s party, off solo). */
+  turnTimerMs: z.number().int().min(30_000).max(600_000).nullable().optional(),
+  /** Host-chosen action applied when a turn times out (ADR-033 §5.3); unset means dodge. */
+  turnTimeoutAction: z.enum(['dodge', 'hold']).optional(),
   closedRoundSubmissions: z.array(ClosedRoundSubmissionSchema).optional(),
   gameState: z.unknown().optional(),
   /** X-card presses so far, and the count the DM has already steered away from. */

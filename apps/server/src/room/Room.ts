@@ -261,12 +261,10 @@ interface PendingSeatClaim {
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 
-/**
- * Advertised turn deadline carried by TurnOpened (ADR-033 §7.1 requires the
- * field). Informational only: nothing enforces expiry yet. The timer and the
- * TurnTimedOut producer are M4-6b, a separate PR.
- */
+/** Default party turn timer (ADR-033 §5.1); solo tables default to off. */
 const TURN_DEADLINE_MS = 90_000;
+/** ADR-033 §5.5: fixed bound on a turn whose controller is away or unknown, whatever the timer setting. Not configurable. */
+const AWAY_BOUND_MS = 90_000;
 const DRAIN_DEADLINE_MS = 30_000;
 const DEFAULT_ROUND_MS = 120_000;
 const ROUND_GATE_GRACE_MS = 5_000;
@@ -375,6 +373,14 @@ export class Room {
   private readonly combatRuntime: CombatRuntime;
   private combatRoundForLateJoin = 0;
   private reactionTimer?: NodeJS.Timeout;
+  private turnTimer?: NodeJS.Timeout;
+  private awayBoundTimer?: NodeJS.Timeout;
+  /** In-memory by design: a restart restarts it at most AWAY_BOUND_MS after boot (every seat recovers as unknown). */
+  private awayBound?: {
+    turnId: string;
+    deadlineAt?: number;
+    remainingMs?: number;
+  };
   private restVoteTimer?: NodeJS.Timeout;
   private turnInFlight = false;
   private turnAbort?: AbortController;
@@ -498,6 +504,8 @@ export class Room {
     });
     // A restart mid-prompt resumes the countdown from the persisted deadline.
     this.scheduleReaction();
+    this.scheduleTurnTimer();
+    this.scheduleAwayBound();
     this.scheduleRestVoteTimer();
     for (const [actionId, open] of Object.entries(
       this.state.openClarifications ?? {},
@@ -647,6 +655,7 @@ export class Room {
       'TableEnded',
       'ChatMuteChanged',
       'RoundTimerConfigured',
+      'TurnTimerConfigured',
     ].includes(type)
       ? [
           ...(actionPayload.actionIds ?? []),
@@ -709,6 +718,7 @@ export class Room {
         candidate.seatId === seatId ? { ...candidate, presence } : candidate,
       ),
     });
+    this.scheduleAwayBound();
     const now = Date.now();
     const priorPending = this.pendingPresenceEvents.get(seatId);
     if (presence === 'returning' && priorPending?.type === 'SeatDisconnected') {
@@ -2084,12 +2094,12 @@ export class Room {
     };
     if (!combat.ended && combat.combat.activeEntityId) {
       const nextTurnId = randomUUID();
-      const deadline = Date.now() + TURN_DEADLINE_MS;
+      const deadline = this.newTurnDeadline();
       nextCombat = {
         ...nextCombat,
         phase: 'awaiting-command',
         turnId: nextTurnId,
-        turnDeadline: deadline,
+        ...this.turnClockFields(deadline),
       };
       events.push({
         type: 'TurnOpened',
@@ -2194,8 +2204,15 @@ export class Room {
           : {}),
       });
       this.scheduleRestVoteTimer();
-      if (paused) await this.freezeRoundTimer();
-      else await this.resumeRoundTimer();
+      if (paused) {
+        await this.freezeRoundTimer();
+        await this.freezeTurnTimer();
+        this.scheduleAwayBound();
+      } else {
+        await this.resumeRoundTimer();
+        await this.thawTurnTimer();
+        this.scheduleAwayBound();
+      }
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3330,6 +3347,8 @@ export class Room {
         cause: 'no-connected-seats',
       });
       await this.freezeRoundTimer();
+      await this.freezeTurnTimer();
+      this.scheduleAwayBound();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3342,6 +3361,8 @@ export class Room {
     ) {
       await this.persist('TablePaused', { paused: false });
       await this.resumeRoundTimer();
+      await this.thawTurnTimer();
+      this.scheduleAwayBound();
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3495,6 +3516,63 @@ export class Room {
         connection.close?.(1000, 'Table ended by host');
       this.connections.clear();
     });
+  }
+
+  /** Host-only (ADR-033 §5.1): turn timer 30-600 s or null (off), and the Dodge/hold timeout action. Applies from the next opened turn. */
+  configureTurnTimer(
+    accountId: string,
+    durationMs: number | null,
+    timeoutAction?: 'dodge' | 'hold',
+    actionId: string = randomUUID(),
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.actionIds.has(actionId)) return;
+      if (
+        durationMs !== null &&
+        (!Number.isInteger(durationMs) ||
+          durationMs < 30_000 ||
+          durationMs > 600_000)
+      )
+        throw new Error('Turn timer must be between 30 and 600 seconds');
+      if (
+        !this.store.isTableHost ||
+        !(await this.store.isTableHost(this.sessionId, accountId))
+      )
+        throw new NotTableHostError('Only the table host can configure turns');
+      await this.persist('TurnTimerConfigured', {
+        durationMs,
+        ...(timeoutAction ? { timeoutAction } : {}),
+        actionId,
+      });
+      this.broadcast({
+        seq: this.seq,
+        type: 'TurnTimerConfigured',
+        payload: { durationMs, ...(timeoutAction ? { timeoutAction } : {}) },
+      } as ServerMessage);
+    });
+  }
+
+  /** Configured turn timer in ms, or null when off (ADR-033 §5.1: 90 s party, off solo). */
+  private turnTimerMs(): number | null {
+    // undefined = never configured (default); explicit null = host turned it off.
+    if (this.state.turnTimerMs === undefined)
+      return this.bindingEnforced ? TURN_DEADLINE_MS : null;
+    return this.state.turnTimerMs;
+  }
+
+  /** A turn that opens while the table is paused starts frozen with its full length. */
+  private turnClockFields(
+    deadline: number | null,
+  ): Pick<RoomCombatState, 'turnDeadline' | 'turnTimerRemainingMs'> {
+    if (deadline === null) return {};
+    return this.state.paused
+      ? { turnTimerRemainingMs: this.turnTimerMs() ?? 0 }
+      : { turnDeadline: deadline };
+  }
+
+  private newTurnDeadline(): number | null {
+    const ms = this.turnTimerMs();
+    return ms === null ? null : Date.now() + ms;
   }
 
   configureRoundTimer(
@@ -4606,7 +4684,7 @@ export class Room {
           initialCombat.combat.activeEntityId
         ) {
           const openedId = randomUUID();
-          const deadline = Date.now() + TURN_DEADLINE_MS;
+          const deadline = this.newTurnDeadline();
           turnGameState = {
             ...turnGameState,
             combatRoom: {
@@ -4614,7 +4692,7 @@ export class Room {
               phase: 'awaiting-command',
               turnId: openedId,
               narrationAttempts: 0,
-              turnDeadline: deadline,
+              ...this.turnClockFields(deadline),
             },
           };
           combatEvents.push({
@@ -4648,13 +4726,13 @@ export class Room {
               };
             } else {
               const nextTurnId = randomUUID();
-              const deadline = Date.now() + TURN_DEADLINE_MS;
+              const deadline = this.newTurnDeadline();
               const nextCombat = {
                 ...combatRoom,
                 phase: 'awaiting-command' as const,
                 turnId: nextTurnId,
                 narrationAttempts: 0,
-                turnDeadline: deadline,
+                ...this.turnClockFields(deadline),
                 turnNarrationEvents: undefined,
                 turnNarrationEventIds: undefined,
               };
@@ -5017,6 +5095,10 @@ export class Room {
         eventIds: turnNarrationEventIds,
       });
     }
+    combatState = this.turnClockAfterCommit(
+      beforeCombat ?? undefined,
+      combatState,
+    );
     const committedEvents = [...result.events, ...lifecycleEvents];
     const gameState = settleEngine(
       {
@@ -5107,6 +5189,8 @@ export class Room {
     if (state.pendingReaction)
       this.broadcast(reactionMessage(this.seq, state.pendingReaction));
     this.scheduleReaction();
+    this.scheduleTurnTimer();
+    this.scheduleAwayBound();
     if (
       events.some(
         (event) =>
@@ -5123,6 +5207,277 @@ export class Room {
         accountId,
         combatTurnId,
       );
+  }
+
+  /** Freeze the turn clock into remaining ms while a reaction window is open, thaw it after, and drop it once the turn resolves (ADR-033 §5.2). */
+  private turnClockAfterCommit(
+    before: RoomCombatState | undefined,
+    after: RoomCombatState,
+  ): RoomCombatState {
+    if (!before) return after;
+    const next = { ...after };
+    const now = Date.now();
+    if (next.phase === 'narrating' || next.ended) {
+      delete next.turnDeadline;
+      delete next.turnTimerRemainingMs;
+    } else if (next.pendingReaction || this.state.paused) {
+      if (next.turnDeadline !== undefined) {
+        next.turnTimerRemainingMs = Math.max(0, next.turnDeadline - now);
+        delete next.turnDeadline;
+      }
+    } else if (next.turnTimerRemainingMs !== undefined) {
+      next.turnDeadline = now + next.turnTimerRemainingMs;
+      delete next.turnTimerRemainingMs;
+    }
+    return next;
+  }
+
+  /** Table pause: keep the remaining time instead of a deadline (ADR-033 §5.2, §7.2). */
+  private async freezeTurnTimer(): Promise<void> {
+    clearTimeout(this.turnTimer);
+    this.turnTimer = undefined;
+    const combat = roomGameState(this.state);
+    if (!combat?.turnId || combat.turnDeadline === undefined) return;
+    const remainingMs = Math.max(0, combat.turnDeadline - Date.now());
+    const rest = { ...combat };
+    delete rest.turnDeadline;
+    await this.commitGameState(
+      {
+        ...(this.state.gameState as Record<string, unknown>),
+        combatRoom: { ...rest, turnTimerRemainingMs: remainingMs },
+      },
+      [{ type: 'TurnTimerPaused', turnId: combat.turnId, remainingMs }],
+    );
+  }
+
+  private async thawTurnTimer(): Promise<void> {
+    const combat = roomGameState(this.state);
+    if (
+      !combat?.turnId ||
+      combat.turnTimerRemainingMs === undefined ||
+      combat.pendingReaction // the reaction answer thaws it
+    )
+      return;
+    const rest = { ...combat };
+    delete rest.turnTimerRemainingMs;
+    const deadline = Date.now() + combat.turnTimerRemainingMs;
+    await this.commitGameState(
+      {
+        ...(this.state.gameState as Record<string, unknown>),
+        combatRoom: { ...rest, turnDeadline: deadline },
+      },
+      [{ type: 'TurnTimerResumed', turnId: combat.turnId, deadline }],
+    );
+    this.scheduleTurnTimer();
+  }
+
+  private scheduleTurnTimer(): void {
+    clearTimeout(this.turnTimer);
+    this.turnTimer = undefined;
+    const combat = roomGameState(this.state);
+    if (
+      !this.accepting ||
+      !combat?.turnId ||
+      combat.turnDeadline === undefined ||
+      combat.ended ||
+      combat.pendingReaction ||
+      combat.phase === 'narrating' ||
+      this.state.paused
+    )
+      return;
+    const turnId = combat.turnId;
+    this.turnTimer = setTimeout(
+      () => {
+        this.turnTimer = undefined;
+        void this.enqueue(() => this.timeOutTurn(turnId)).catch(
+          () => undefined,
+        );
+      },
+      Math.max(0, combat.turnDeadline - Date.now()),
+    );
+    this.turnTimer.unref?.();
+  }
+
+  /**
+   * Resolve the open turn with the table's timeout action (ADR-033 §5.3-5.4).
+   * Runs in the mailbox and re-reads state, so a player command or another
+   * bound that already resolved the turn makes this a no-op: one resolution per turn.
+   */
+  private async timeOutTurn(turnId: string): Promise<void> {
+    const current = roomGameState(this.state);
+    if (!current || current.turnId !== turnId) return;
+    if (
+      current.ended ||
+      current.pendingReaction ||
+      current.phase === 'narrating' ||
+      this.state.paused
+    )
+      return;
+    if (current.turnDeadline === undefined || Date.now() < current.turnDeadline)
+      return this.scheduleTurnTimer();
+    if (this.turnInFlight) {
+      // ponytail: poll once a second while a DM turn is in flight; replace with a completion hook if it matters.
+      this.turnTimer = setTimeout(() => {
+        this.turnTimer = undefined;
+        void this.enqueue(() => this.timeOutTurn(turnId)).catch(
+          () => undefined,
+        );
+      }, 1_000);
+      this.turnTimer.unref?.();
+      return;
+    }
+    await this.applyTimeoutAction(current);
+  }
+
+  /**
+   * ADR-033 §5.5 bounded resolution in awaiting-command and moving, with the
+   * timer on or off: a revoked controller resolves at once; an away or unknown
+   * one after AWAY_BOUND_MS from the change. The bound freezes with the table
+   * and with a reaction window, and a returning seat clears it.
+   */
+  private scheduleAwayBound(): void {
+    clearTimeout(this.awayBoundTimer);
+    this.awayBoundTimer = undefined;
+    const combat = roomGameState(this.state);
+    const turnId = combat?.turnId;
+    const activeId = combat?.combat?.activeEntityId;
+    if (
+      !this.accepting ||
+      !combat ||
+      !turnId ||
+      !activeId ||
+      combat.ended ||
+      combat.phase === 'narrating'
+    ) {
+      this.awayBound = undefined;
+      return;
+    }
+    const presence = this.reactionSeatPresence(activeId);
+    if (presence === 'revoked') {
+      void this.enqueue(() => this.resolveByPresence(turnId, 'revoked')).catch(
+        () => undefined,
+      );
+      return;
+    }
+    if (presence !== 'away' && presence !== 'unknown') {
+      this.awayBound = undefined;
+      return;
+    }
+    let bound =
+      this.awayBound?.turnId === turnId
+        ? this.awayBound
+        : { turnId, deadlineAt: Date.now() + AWAY_BOUND_MS };
+    if (this.state.paused || combat.pendingReaction) {
+      if (bound.deadlineAt !== undefined)
+        bound = {
+          turnId,
+          remainingMs: Math.max(0, bound.deadlineAt - Date.now()),
+        };
+      this.awayBound = bound;
+      return;
+    }
+    if (bound.deadlineAt === undefined)
+      bound = { turnId, deadlineAt: Date.now() + (bound.remainingMs ?? 0) };
+    this.awayBound = bound;
+    this.awayBoundTimer = setTimeout(
+      () => {
+        this.awayBoundTimer = undefined;
+        void this.enqueue(() => this.resolveByPresence(turnId, 'bound')).catch(
+          () => undefined,
+        );
+      },
+      Math.max(0, bound.deadlineAt! - Date.now()),
+    );
+    this.awayBoundTimer.unref?.();
+  }
+
+  private async resolveByPresence(
+    turnId: string,
+    kind: 'revoked' | 'bound',
+  ): Promise<void> {
+    const current = roomGameState(this.state);
+    const activeId = current?.combat.activeEntityId;
+    if (
+      !current ||
+      !activeId ||
+      current.turnId !== turnId ||
+      current.ended ||
+      current.pendingReaction ||
+      current.phase === 'narrating' ||
+      this.state.paused
+    )
+      return;
+    const presence = this.reactionSeatPresence(activeId);
+    const bound = this.awayBound;
+    const due =
+      kind === 'revoked'
+        ? presence === 'revoked'
+        : (presence === 'away' || presence === 'unknown') &&
+          bound?.turnId === turnId &&
+          bound.deadlineAt !== undefined &&
+          Date.now() >= bound.deadlineAt;
+    if (!due) return;
+    if (this.turnInFlight) {
+      // ponytail: poll once a second while a DM turn is in flight.
+      const retry = setTimeout(() => {
+        void this.enqueue(() => this.resolveByPresence(turnId, kind)).catch(
+          () => undefined,
+        );
+      }, 1_000);
+      retry.unref?.();
+      return;
+    }
+    await this.applyTimeoutAction(current);
+  }
+
+  /** Dodge (or hold, when configured or when Dodge is rejected), then end the turn; movement already taken stays. */
+  private async applyTimeoutAction(current: RoomCombatState): Promise<void> {
+    const activeId = current.combat.activeEntityId;
+    if (!activeId || !current.turnId) return;
+    const now = Date.now();
+    const base: RoomCombatState = { ...current, phase: 'awaiting-command' };
+    let action: 'dodge' | 'hold' = 'hold';
+    let prepared = base;
+    let actionEvents: Record<string, unknown>[] = [];
+    if ((this.state.turnTimeoutAction ?? 'dodge') === 'dodge') {
+      const dodge = this.combatRuntime.execute(
+        base,
+        activeId,
+        { command: 'dodge' },
+        { now },
+      );
+      if (!('code' in dodge)) {
+        action = 'dodge';
+        prepared = dodge.state;
+        actionEvents = dodge.events;
+      }
+    }
+    const finish = this.combatRuntime.execute(
+      prepared,
+      activeId,
+      { command: 'end-turn' },
+      { now },
+    );
+    if ('code' in finish) return;
+    await this.commitCombat(
+      randomUUID(),
+      {
+        state: finish.state,
+        events: [
+          {
+            type: 'TurnTimedOut',
+            turnId: current.turnId,
+            entityId: activeId,
+            action,
+          },
+          ...[...actionEvents, ...finish.events].map((event) => ({
+            ...event,
+            source: 'timeout',
+          })),
+        ],
+      },
+      undefined,
+    );
   }
 
   private queueAwayAutopilot(): void {
@@ -5322,13 +5677,19 @@ export class Room {
     const accountId = Object.entries(game?.combatActors ?? {}).find(
       ([, actor]) => actor === entityId,
     )?.[0];
-    return this.state.seats.find((seat) => seat.accountId === accountId)
-      ?.presence;
+    return (
+      this.state.seats.find((seat) => seat.accountId === accountId)?.presence ??
+      // A seat that left or was kicked moves to revokedSeats and can no longer act.
+      (this.state.revokedSeats?.some((seat) => seat.accountId === accountId)
+        ? 'revoked'
+        : undefined)
+    );
   }
 
   /** The retained PC entity is now uncontrolled: decline its reaction and defend on its turn (ADR-035 §2). */
   private afterSeatReleased(): void {
     this.scheduleReaction();
+    this.scheduleAwayBound();
     this.queueAwayAutopilot();
   }
 
@@ -5453,6 +5814,8 @@ export class Room {
   async drain(deadlineMs = DRAIN_DEADLINE_MS): Promise<void> {
     this.draining = true;
     clearTimeout(this.reactionTimer);
+    clearTimeout(this.turnTimer);
+    clearTimeout(this.awayBoundTimer);
     clearTimeout(this.restVoteTimer);
     for (const timer of this.lateJoinExpiryTimers.values()) clearTimeout(timer);
     this.lateJoinExpiryTimers.clear();

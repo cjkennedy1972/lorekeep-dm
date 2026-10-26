@@ -169,12 +169,27 @@ export function placed(
 
 import { randomUUID } from 'node:crypto';
 import type { ServerMessage } from '@game/schema';
-import { Room, type RoomStore } from '../../src/room/Room.js';
+import {
+  Room,
+  type PrivateSeatCharacterBinding,
+  type RoomStore,
+} from '../../src/room/Room.js';
 import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 
 /** An in-memory RoomStore whose latest snapshot can be handed to a fresh Room, i.e. a process restart. */
-export function memoryTable(gameState: unknown, runner?: SoloTurnRunner) {
+export function memoryTable(
+  gameState: unknown,
+  runner?: SoloTurnRunner,
+  opts: {
+    /** Extra RoomState fields on the initial snapshot (host settings). */
+    state?: Record<string, unknown>;
+    /** Account that isTableHost reports as the host. */
+    host?: string;
+    /** Seat presence each Room boots with is recovered as unknown; party mode defaults the turn timer on. */
+    party?: boolean;
+  } = {},
+) {
   const sessionId = randomUUID();
   const events: StoredEvent[] = [];
   const lease = {
@@ -200,10 +215,14 @@ export function memoryTable(gameState: unknown, runner?: SoloTurnRunner) {
         },
       ],
       gameState,
+      ...opts.state,
     },
     createdAt: new Date(),
   };
   const store: RoomStore = {
+    ...(opts.host
+      ? { isTableHost: async (_id: string, who: string) => who === opts.host }
+      : {}),
     async isAccountActive() {
       return true;
     },
@@ -231,7 +250,16 @@ export function memoryTable(gameState: unknown, runner?: SoloTurnRunner) {
       return { events: stored };
     },
   };
-  const boot = () => new Room(store, lease, { snapshot, events: [] }, runner);
+  const boot = (bindings: PrivateSeatCharacterBinding[] = []) =>
+    new Room(
+      store,
+      lease,
+      { snapshot, events: [] },
+      runner,
+      undefined,
+      bindings,
+      opts.party ?? false,
+    );
   const messages: ServerMessage[] = [];
   const connection = { send: (m: ServerMessage) => void messages.push(m) };
   return {

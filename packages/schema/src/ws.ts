@@ -200,6 +200,19 @@ export const ConfigureRoundTimerSchema = z
     lastSeq: z.int().nonnegative(),
   })
   .strict();
+export const ConfigureTurnTimerSchema = z
+  .object({
+    actionId: ActionIdSchema,
+    type: z.literal('ConfigureTurnTimer'),
+    payload: z
+      .object({
+        durationMs: z.number().int().min(30_000).max(600_000).nullable(),
+        timeoutAction: z.enum(['dodge', 'hold']).optional(),
+      })
+      .strict(),
+    lastSeq: z.int().nonnegative(),
+  })
+  .strict();
 const hostCommand = <T extends string, P extends z.ZodTypeAny>(
   type: T,
   payload: P,
@@ -365,6 +378,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
       'RoundCompleted',
       'RoundClosedEmpty',
       'RoundTimerConfigured',
+      'TurnTimerConfigured',
       'SeatRevoked',
       'SeatCharacterBound',
       'SeatCharacterReleased',

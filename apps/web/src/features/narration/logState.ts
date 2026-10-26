@@ -192,6 +192,7 @@ export function narrationLogReducer(
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':
+    case 'TurnTimerConfigured':
     case 'SeatRevoked':
     case 'HostTransferred':
     case 'HostSeatChanged':

@@ -175,6 +175,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'RoundCompleted':
     case 'RoundClosedEmpty':
     case 'RoundTimerConfigured':
+    case 'TurnTimerConfigured':
     case 'SeatRevoked':
     case 'HostTransferred':
     case 'HostSeatChanged':

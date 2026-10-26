@@ -30,6 +30,7 @@ export function recoverRoom(
         'TableEnded',
         'ChatMuteChanged',
         'RoundTimerConfigured',
+        'TurnTimerConfigured',
       ].includes(event.type)
     ) {
       const payload = event.payload as {
