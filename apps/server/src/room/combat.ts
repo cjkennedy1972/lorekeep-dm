@@ -527,6 +527,7 @@ export function trackerMessage(
     payload: combatTracker(state, controlled),
   } as ServerMessage;
 }
+/** The controlling seat's private prompt: trigger, mover and the answers it may give (ADR-033 §3.2). */
 export function reactionMessage(
   seq: number,
   reaction: NonNullable<RoomCombatState['pendingReaction']>,
@@ -538,7 +539,25 @@ export function reactionMessage(
     payload: {
       ...reaction,
       timeoutMs: Math.max(0, reaction.deadlineAt - now),
+      options: ['take', 'decline'],
       defaultChoice: 'decline',
+    },
+  } as ServerMessage;
+}
+/** What every other seat may know about a visible reactor's open window: that it is open and when it ends (ADR-033 §3.1). */
+export function reactionOpenMessage(
+  seq: number,
+  reaction: NonNullable<RoomCombatState['pendingReaction']>,
+  now = Date.now(),
+): ServerMessage {
+  return {
+    seq,
+    type: 'ReactionPromptOpen',
+    payload: {
+      reactionId: reaction.reactionId,
+      reactorEntityId: reaction.entityId,
+      deadlineAt: reaction.deadlineAt,
+      timeoutMs: Math.max(0, reaction.deadlineAt - now),
     },
   } as ServerMessage;
 }

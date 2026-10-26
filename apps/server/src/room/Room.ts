@@ -40,6 +40,7 @@ import {
   projectCombatForViewer,
   hiddenEntityIds as hiddenIdsOf,
   reactionMessage,
+  reactionOpenMessage,
   type CombatRuntime,
   type CombatTransition,
   type RoomCombatState,
@@ -1237,7 +1238,34 @@ export class Room {
       this.seatBindings,
       !this.bindingEnforced,
     );
+    const combatRoom = gameState.combatRoom as RoomCombatState | undefined;
+    if (combatRoom)
+      gameState.combatRoom = this.combatViewFor(viewerAccountId, combatRoom);
+    const checkpoint = gameState.checkpoint as
+      | { combatRoom?: RoomCombatState }
+      | undefined;
+    if (checkpoint?.combatRoom)
+      checkpoint.combatRoom = this.combatViewFor(
+        viewerAccountId,
+        checkpoint.combatRoom,
+      );
     return { ...clientVisibleState, seats, gameState };
+  }
+
+  /** The open prompt stays with its reactor's controller; everyone else gets only the open message (ADR-033 §3.2). */
+  private combatViewFor(
+    viewerAccountId: string | undefined,
+    combat: RoomCombatState,
+  ): RoomCombatState {
+    if (
+      !combat.pendingReaction ||
+      this.entityControllerAccountId(combat.pendingReaction.entityId) ===
+        viewerAccountId
+    )
+      return combat;
+    const view = { ...combat };
+    delete view.pendingReaction;
+    return view;
   }
 
   private clientSyncPayload(): StateSync['payload'] {
@@ -1285,7 +1313,11 @@ export class Room {
         this.controlledBy(accountId),
       )
     )
-      connection.send(reactionMessage(this.seq, prompt));
+      connection.send(
+        this.entityControllerAccountId(prompt.entityId) === accountId
+          ? reactionMessage(this.seq, prompt)
+          : reactionOpenMessage(this.seq, prompt),
+      );
   }
 
   private controlledBy(accountId: string): Set<string> {
@@ -1307,6 +1339,22 @@ export class Room {
     );
     if (combat.pendingReaction)
       this.sendReactionPrompt(connection, accountId, combat);
+  }
+
+  /** The account whose seat controls this entity, if any; NPCs and released PCs have none. */
+  private entityControllerAccountId(entityId: string): string | undefined {
+    const partySeatId = seatIdFromEntityId(entityId);
+    if (partySeatId !== undefined)
+      return this.state.seats.find(
+        (seat) => seat.seatId === partySeatId && this.isPlayableSeat(seat),
+      )?.accountId;
+    const game = this.state.gameState as
+      | { combatActors?: Record<string, string> }
+      | undefined;
+    return Object.entries(game?.combatActors ?? {}).find(
+      ([, actor]) => actor === entityId,
+    )?.[0];
+  }
   }
 
   private sendSeatPrivateRoundSync(accountId: string): void {

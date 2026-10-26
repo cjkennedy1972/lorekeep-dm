@@ -436,6 +436,11 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     seq: z.int().nonnegative(),
+    type: z.literal('ReactionPromptOpen'),
+    payload: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    seq: z.int().nonnegative(),
     type: z.literal('CombatOptions'),
     payload: z.record(z.string(), z.unknown()),
   }),

@@ -473,7 +473,8 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         optionsReply.type === 'Error' &&
         optionsReply.payload?.code === 'reaction-window-open'
       ) {
-        const prompt = client.last<Record<string, unknown>>('ReactionPrompt');
+        const prompt =
+          client.last<Record<string, unknown>>('ReactionPromptOpen');
         if (!prompt?.reactionId)
           throw new Error('Pending reaction has no websocket prompt.');
         const reactionMark = client.log.length;
@@ -555,13 +556,14 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
             destination: flee.destination,
           });
           const prompt = await client.until(
-            (m) => m.type === 'ReactionPrompt',
+            (m) => m.type === 'ReactionPromptOpen',
             before,
           );
           expect(prompt.payload).toMatchObject({
-            moverId: 'ent_aria',
-            defaultChoice: 'decline',
+            reactorEntityId: expect.stringContaining('goblin'),
           });
+          expect(prompt.payload).not.toHaveProperty('moverId');
+          expect(prompt.payload).not.toHaveProperty('trigger');
           expect(prompt.payload!.timeoutMs).toBeLessThanOrEqual(15_000);
           const reactionMark = client.log.length;
           const answer = await client.command({
@@ -609,7 +611,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
           });
       }
       if (client.last('CombatEnded')) break;
-      const open = client.last<unknown>('ReactionPrompt');
+      const open = client.last<unknown>('ReactionPromptOpen');
       tracker = client.last<unknown>('CombatTracker');
       if (tracker.activeEntityId === 'ent_aria' && !tracker.ended)
         await client.command({ command: 'end-turn' });
@@ -677,7 +679,10 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         payload: { command: 'move', destination: { x: 7, y: 6 } },
       }),
     );
-    const prompt = await client.until((m) => m.type === 'ReactionPrompt', mark);
+    const prompt = await client.until(
+      (m) => m.type === 'ReactionPromptOpen',
+      mark,
+    );
     const before = (await savedGame(table)).gameState.combatRoom!;
     expect(before.pendingReaction).toBeDefined();
     const remaining = before.combat.resources.ent_aria!.movementRemaining;
@@ -689,7 +694,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     client = await Client.open(stack, user, table);
     const resumed = await client.until(
       (m) =>
-        m.type === 'ReactionPrompt' ||
+        m.type === 'ReactionPromptOpen' ||
         (m.type === 'CombatEvents' &&
           m.payload!.events.some(
             (event: unknown) =>
@@ -697,7 +702,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
           )),
       0,
     );
-    const stillPending = resumed.type === 'ReactionPrompt';
+    const stillPending = resumed.type === 'ReactionPromptOpen';
     if (stillPending)
       expect(resumed.payload!.reactionId).toBe(prompt.payload!.reactionId);
     else
