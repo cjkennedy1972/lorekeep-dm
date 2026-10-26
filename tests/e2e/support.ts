@@ -311,9 +311,11 @@ export async function connectRoom(
     headers: { origin: url },
   } as never);
   const messages: Record<string, unknown>[] = [];
+  const messageWaiters = new Set<(message: Record<string, unknown>) => void>();
   socket.addEventListener('message', (event) => {
     const message = JSON.parse(String(event.data)) as Record<string, unknown>;
     messages.push(message);
+    for (const waiter of messageWaiters) waiter(message);
     if (message.type === 'SeatResumeChallenge')
       socket.send(
         JSON.stringify({
@@ -369,15 +371,28 @@ export async function connectRoom(
       predicate: (message: Record<string, unknown>) => boolean,
       timeoutMs = 3_000,
     ) {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        const found = messages.find(predicate);
-        if (found) return found;
-        await delay(20);
-      }
-      throw new Error(
-        `Expected websocket message not observed; messages=${JSON.stringify(messages)}`,
-      );
+      const found = messages.find(predicate);
+      if (found) return found;
+      return new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          messageWaiters.delete(onMessage);
+          reject(
+            new Error(
+              `Expected websocket message not observed; messages=${JSON.stringify(messages)}`,
+            ),
+          );
+        }, timeoutMs);
+        const onMessage = (message: Record<string, unknown>) => {
+          if (!predicate(message)) return;
+          clearTimeout(timeout);
+          messageWaiters.delete(onMessage);
+          resolve(message);
+        };
+        messageWaiters.add(onMessage);
+        // Close the gap between the initial history check and waiter registration.
+        const arrived = messages.find(predicate);
+        if (arrived) onMessage(arrived);
+      });
     },
     async close() {
       if (socket.readyState === WebSocket.CLOSED) return;
