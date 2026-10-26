@@ -22,13 +22,48 @@ type MuteRow = {
   updated_by: string | null;
 };
 
+// Per-(table, seat) tail of pending host mute operations.
+// ponytail: in-process only; sessions are single-writer via the room lease.
+const locks = new Map<string, Promise<unknown>>();
+
+async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = locks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => undefined);
+  locks.set(key, tail);
+  try {
+    return await run;
+  } finally {
+    if (locks.get(key) === tail) locks.delete(key);
+  }
+}
+
+async function retry(
+  fn: () => Promise<unknown>,
+  attempts = 3,
+): Promise<unknown | undefined> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await fn();
+      return undefined;
+    } catch (error) {
+      last = error;
+    }
+  }
+  return last ?? new Error('retry failed');
+}
+
 /**
- * Host mute/unmute: DB row and room event must agree after every outcome.
- * The row is written first (so enforcement is never behind the event), then
- * `append` commits the ChatMuteChanged event. If `append` fails the prior row
- * is restored (retried; logged if it still fails) and the error is rethrown.
+ * Host mute/unmute, serialized per (session, seat). Invariant: after any
+ * outcome, if in doubt the seat stays muted (enforcement reads the row first).
+ * - MUTE: row first, then event; on append failure restore the prior row. A
+ *   failed restore leaves the row muted (fail closed) and is logged.
+ * - UNMUTE: event first, then delete the row; a failed append deletes nothing.
+ *   A failed delete after the event leaves the row (fail closed), is logged and
+ *   rejected. `onUnmuted` (in-memory policy lift) runs only after both commit.
  */
-export async function applyHostChatMute(
+export function applyHostChatMute(
   db: Pick<Pool, 'query'>,
   sessionId: string,
   seatId: string,
@@ -36,59 +71,64 @@ export async function applyHostChatMute(
   actorAccountId: string,
   append: () => Promise<void>,
   logError: (error: unknown, message: string) => void = () => {},
+  onUnmuted: () => void = () => {},
 ): Promise<void> {
-  const prior = (
-    await db.query<MuteRow>(
-      'SELECT muted_until,source,updated_by FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
-      [sessionId, seatId],
-    )
-  ).rows[0];
-  if (muted)
+  return withLock(`${sessionId}:${seatId}`, async () => {
+    const del = () =>
+      db.query('DELETE FROM chat_mutes WHERE session_id=$1 AND seat_id=$2', [
+        sessionId,
+        seatId,
+      ]);
+    if (!muted) {
+      await append();
+      const failure = await retry(del);
+      if (failure) {
+        logError(
+          failure,
+          'chat unmute event committed but chat_mutes row delete failed; seat stays muted',
+        );
+        throw failure;
+      }
+      onUnmuted();
+      return;
+    }
+    const prior = (
+      await db.query<MuteRow>(
+        'SELECT muted_until,source,updated_by FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
+        [sessionId, seatId],
+      )
+    ).rows[0];
     await db.query(
       `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
        VALUES($1,$2,NULL,'host',$3)
        ON CONFLICT(session_id,seat_id) DO UPDATE SET muted_until=NULL,source='host',updated_at=now(),updated_by=EXCLUDED.updated_by`,
       [sessionId, seatId, actorAccountId],
     );
-  else
-    await db.query(
-      'DELETE FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
-      [sessionId, seatId],
-    );
-  try {
-    await append();
-  } catch (error) {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        if (prior)
-          await db.query(
-            `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
-             VALUES($1,$2,$3,$4,$5)
-             ON CONFLICT(session_id,seat_id) DO UPDATE SET muted_until=EXCLUDED.muted_until,source=EXCLUDED.source,updated_at=now(),updated_by=EXCLUDED.updated_by`,
-            [
-              sessionId,
-              seatId,
-              prior.muted_until,
-              prior.source,
-              prior.updated_by,
-            ],
-          );
-        else
-          await db.query(
-            'DELETE FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
-            [sessionId, seatId],
-          );
-        break;
-      } catch (restoreError) {
-        if (attempt >= 3) {
-          logError(
-            restoreError,
-            'chat mute compensation failed; chat_mutes may disagree with room state',
-          );
-          break;
-        }
-      }
+    try {
+      await append();
+    } catch (error) {
+      const failure = await retry(() =>
+        prior
+          ? db.query(
+              `INSERT INTO chat_mutes(session_id,seat_id,muted_until,source,updated_by)
+               VALUES($1,$2,$3,$4,$5)
+               ON CONFLICT(session_id,seat_id) DO UPDATE SET muted_until=EXCLUDED.muted_until,source=EXCLUDED.source,updated_at=now(),updated_by=EXCLUDED.updated_by`,
+              [
+                sessionId,
+                seatId,
+                prior.muted_until,
+                prior.source,
+                prior.updated_by,
+              ],
+            )
+          : del(),
+      );
+      if (failure)
+        logError(
+          failure,
+          'chat mute compensation failed; seat stays muted without its event',
+        );
+      throw error;
     }
-    throw error;
-  }
+  });
 }

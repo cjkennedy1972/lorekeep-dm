@@ -1184,10 +1184,9 @@ export function installGateway(
                         ),
                       (error, message) =>
                         app.log.error({ err: error }, message),
+                      () =>
+                        chatPolicy.liftMute(identity.sessionId, target.seatId),
                     );
-                    // Lift the in-memory auto-mute only once the unmute is committed.
-                    if (!mute.data.payload.muted)
-                      chatPolicy.liftMute(identity.sessionId, target.seatId);
                   });
               })
               .catch((error: unknown) =>

@@ -18,6 +18,7 @@ import {
 } from '../../src/gateway/resumeTokens.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { hashToken } from '../../src/accounts/signup.js';
+import { applyHostChatMute } from '../../src/chat/mutes.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
@@ -1367,6 +1368,83 @@ describe('one-time gateway', () => {
       await Promise.all([closeSocket(host), closeSocket(guest)]);
     }
   }, 20_000);
+  it('serializes host mutes per seat and converges across restart', async () => {
+    const room0 = await rooms.get(sessionId);
+    const host = connect(await ticket(tokens[0]));
+    await nextOfType(host, 'StateSync');
+    const guest = connect(await ticket(tokens[1]));
+    await nextOfType(guest, 'StateSync');
+    const seatId = room0.state.seats.find(
+      (s) => s.accountId === accounts[1],
+    )!.seatId;
+    const hostAccount = accounts[0]!;
+    await closeSocket(host);
+    await closeSocket(guest);
+    const rows = async () =>
+      (
+        await db.query(
+          'SELECT 1 FROM chat_mutes WHERE session_id=$1 AND seat_id=$2',
+          [sessionId, seatId],
+        )
+      ).rowCount === 1;
+    const run = async (muted: boolean, failAfterMs?: number) => {
+      const room = await rooms.get(sessionId);
+      return applyHostChatMute(
+        db,
+        sessionId,
+        seatId,
+        muted,
+        hostAccount,
+        async () => {
+          if (failAfterMs !== undefined) {
+            await new Promise((r) => setTimeout(r, failAfterMs));
+            throw new Error('append failed');
+          }
+          await room.setChatMute(hostAccount, randomUUID(), seatId, muted);
+        },
+      );
+    };
+    const roomMuted = async () =>
+      !!(await rooms.get(sessionId)).state.seats.find(
+        (s) => s.seatId === seatId,
+      )?.chatMuted;
+    const restart = async () => {
+      await rooms.evictSession(sessionId);
+      return roomMuted();
+    };
+    try {
+      // Race: slow failing mute vs real mute must not restore a stale snapshot.
+      const [a, b] = await Promise.allSettled([run(true, 60), run(true)]);
+      expect([a.status, b.status]).toEqual(['rejected', 'fulfilled']);
+      expect(await rows()).toBe(true);
+      expect(await roomMuted()).toBe(true);
+      expect(await restart()).toBe(true);
+      expect(await rows()).toBe(true);
+
+      // Failed unmute then restart: still muted everywhere.
+      await expect(run(false, 1)).rejects.toThrow('append failed');
+      expect(await rows()).toBe(true);
+      expect(await restart()).toBe(true);
+
+      // Double concurrent unmute converges to unmuted.
+      await Promise.all([run(false), run(false)]);
+      expect(await rows()).toBe(false);
+      expect(await roomMuted()).toBe(false);
+      expect(await restart()).toBe(false);
+
+      // Failed mute then restart: no row, not muted.
+      await expect(run(true, 1)).rejects.toThrow('append failed');
+      expect(await rows()).toBe(false);
+      expect(await restart()).toBe(false);
+
+      // Concurrent mute + unmute: whatever order, row and room agree.
+      await Promise.allSettled([run(true), run(false)]);
+      expect(await rows()).toBe(await roomMuted());
+      expect(await restart()).toBe(await rows());
+    } finally {
+      await db.query('DELETE FROM chat_mutes WHERE session_id=$1', [sessionId]);
+    }
+  }, 30_000);
 });
 
 describe('party character binding WebSocket authorization', () => {
