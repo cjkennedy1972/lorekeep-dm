@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import {
   expect,
+  type APIRequestContext,
   type Browser,
   type BrowserContext,
   type Page,
@@ -18,13 +19,22 @@ export type CombatState = {
     'host' | 'guest' | 'scout',
     Member
   >;
+  // The area table: a caster PC with Burning Hands prepared, acting first. Used by the area and pointer specs.
+  area: { table: string; invite: string } & Record<
+    'caster' | 'guest' | 'scout',
+    Member
+  >;
 };
-/** `frames` holds every JSON frame the server pushed to this page, in arrival order. */
+/**
+ * `frames` holds every JSON frame the server pushed to this page, in arrival order. `sent` holds every
+ * JSON frame this page sent, so a spec can assert what the browser actually submitted.
+ */
 export type View = {
   member: Member;
   context: BrowserContext;
   page: Page;
   frames: unknown[];
+  sent: unknown[];
 };
 type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
@@ -57,18 +67,22 @@ export async function openMember(
     ]);
   const page = await context.newPage();
   const frames: unknown[] = [];
-  page.on('websocket', (socket) =>
-    socket.on('framereceived', (event) => {
+  const sent: unknown[] = [];
+  const parseInto =
+    (list: unknown[]) => (event: { payload: string | Buffer }) => {
       if (typeof event.payload !== 'string') return;
       try {
-        frames.push(JSON.parse(event.payload));
+        list.push(JSON.parse(event.payload));
       } catch {
         // Non-JSON frames are not protocol messages; skip them.
       }
-    }),
-  );
+    };
+  page.on('websocket', (socket) => {
+    socket.on('framereceived', parseInto(frames));
+    socket.on('framesent', parseInto(sent));
+  });
   await page.goto(`${origin}/rooms/${table}/game`);
-  return { member, context, page, frames };
+  return { member, context, page, frames, sent };
 }
 
 /** Saves the seat's storage (resume token, sid cookie) before closing, so the next open resumes the seat. */
@@ -125,6 +139,27 @@ export async function tabTo(page: Page, name: string, maxTabs = 120) {
     await page.keyboard.press('Tab');
   }
   throw new Error(`keyboard focus never reached "${name}"`);
+}
+
+/**
+ * Restores the area table's pristine board (a caster PC acting first, a goblin two cells away), then opens its
+ * three seats. Every opened seat is pushed to `views` as it opens, so the caller's finally closes them all.
+ */
+export async function openAreaTable(
+  browser: Browser,
+  request: APIRequestContext,
+  views: View[],
+) {
+  const res = await request.post('/api/test/reset-area');
+  expect(res.ok(), `reset-area: ${res.status()}`).toBe(true);
+  const { area } = readState();
+  for (const member of [area.caster, area.guest, area.scout])
+    views.push(await openMember(browser, member, area.table));
+  for (const { page } of views)
+    await expect(
+      page.getByRole('list', { name: 'Initiative tracker' }),
+    ).toBeVisible({ timeout: 30_000 });
+  return views;
 }
 
 /** Map cells from the token table: "B3" is column B, row 3 (the coordinates the screen reader hears). */

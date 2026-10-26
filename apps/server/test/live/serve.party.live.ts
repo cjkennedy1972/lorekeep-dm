@@ -61,6 +61,29 @@ const placeAdjacent = (
   token.pos = spot;
 };
 
+// Fixture placement only: puts one token two cells east or west of another on a free in-map cell, so a
+// Burning Hands cone aimed along the anchor's row catches it.
+const placeTwoCellsAway = (
+  state: RoomCombatState,
+  id: string,
+  anchorId: string,
+) => {
+  const token = requireEntity(state, id);
+  const anchor = requireEntity(state, anchorId).pos;
+  const spot = [2, -2]
+    .map((dx) => ({ x: anchor.x + dx, y: anchor.y }))
+    .find(
+      (p) =>
+        p.x >= 0 &&
+        p.y >= 0 &&
+        p.x < state.map.w &&
+        p.y < state.map.h &&
+        !occupied(state, p),
+    );
+  if (!spot) throw new Error(`no free cell two cells from ${anchorId}`);
+  token.pos = spot;
+};
+
 it('serves party tables (a round table and a combat table, both bound to seats) for browser e2e', async () => {
   const url = process.env.DATABASE_URL;
   const stateFile = process.env.LIVE_STATE_FILE;
@@ -127,6 +150,16 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
     const base = combatFixture.base;
     if (!room || !base)
       return reply.code(503).send({ error: 'combat table not seeded' });
+    await room.persistGameState(JSON.parse(base));
+    return { ok: true };
+  });
+  // The area table's pristine board: a caster PC acts first, a goblin is two cells from it (see seeding below).
+  const areaFixture: { room?: Room; base?: string } = {};
+  app.post('/api/test/reset-area', async (_request, reply) => {
+    const room = areaFixture.room;
+    const base = areaFixture.base;
+    if (!room || !base)
+      return reply.code(503).send({ error: 'area table not seeded' });
     await room.persistGameState(JSON.parse(base));
     return { ok: true };
   });
@@ -233,11 +266,17 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
 
   // A quick-built sheet saved to the account, then bound to its seat through the live room, so the
   // room's in-memory bindings are current (the production bind path).
-  const bindSheet = async (room: Room, account: Seated) => {
-    const character = {
-      ...quickBuild(catalog, undefined, sheetSeed++, 1).character,
-      id: randomUUID(),
-    } as CharacterInput;
+  const bindSheet = async (
+    room: Room,
+    account: Seated,
+    sheet?: CharacterInput,
+  ) => {
+    const character =
+      sheet ??
+      ({
+        ...quickBuild(catalog, undefined, sheetSeed++, 1).character,
+        id: randomUUID(),
+      } as CharacterInput);
     const revision = await seats.saveOwnedCharacter(account.id, character);
     await room.bindSeatCharacter(
       account.id,
@@ -331,6 +370,44 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
   reactionFixture.room = reactionRoom;
   reactionFixture.base = JSON.stringify(reactionGame);
 
+  // The area table is its own encounter. The caster is a wizard with Burning Hands prepared (combatFixtures'
+  // hero), so the engine lists cone aims for it. It acts first; the goblin stands two cells from it.
+  const areaCaster = await seedAccount('Area Caster');
+  const areaGuest = await seedAccount('Area Guest');
+  const areaScout = await seedAccount('Area Scout');
+  const area = await openTable('Party area table', areaCaster, [
+    areaGuest,
+    areaScout,
+  ]);
+  const areaRoom = await rooms.get(area.table);
+  const areaCharacters: Record<string, CharacterInput> = {};
+  // A valid quick-built wizard, with only Burning Hands prepared so the caster's aims are all Burning Hands.
+  const wizard = quickBuild(catalog, 'class:wizard', sheetSeed++, 1).character;
+  areaCharacters[areaCaster.id] = await bindSheet(areaRoom, areaCaster, {
+    ...wizard,
+    id: randomUUID(),
+    spellsKnown: ['spell:burning-hands'],
+    spellsPrepared: ['spell:burning-hands'],
+  } as CharacterInput);
+  for (const member of [areaGuest, areaScout])
+    areaCharacters[member.id] = await bindSheet(areaRoom, member);
+  const areaGame = partyCombat(9, areaCharacters, areaRoom.seatCharacters);
+  const areaState = areaGame.combatRoom as RoomCombatState;
+  const areaCasterId = seatEntityId(seatIdOf(areaRoom, areaCaster.id));
+  placeTwoCellsAway(areaState, 'ent_goblin-minion_1', areaCasterId);
+  // Turn-start resources for the caster, as combatEngine gives them when its turn begins.
+  areaState.combat.activeEntityId = areaCasterId;
+  areaState.combat.resources[areaCasterId] = {
+    ...areaState.combat.resources[areaCasterId]!,
+    action: true,
+    bonusAction: true,
+    reaction: true,
+    movementRemaining: requireEntity(areaState, areaCasterId).speed ?? 30,
+  };
+  await areaRoom.persistGameState(areaGame);
+  areaFixture.room = areaRoom;
+  areaFixture.base = JSON.stringify(areaGame);
+
   mkdirSync(dirname(stateFile), { recursive: true });
   writeFileSync(
     stateFile,
@@ -358,6 +435,25 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
           accountId: combatScout.id,
           token: combatScout.token,
           entityId: combatEntity(combatScout),
+        },
+      },
+      area: {
+        table: area.table,
+        invite: area.invite,
+        caster: {
+          accountId: areaCaster.id,
+          token: areaCaster.token,
+          entityId: areaCasterId,
+        },
+        guest: {
+          accountId: areaGuest.id,
+          token: areaGuest.token,
+          entityId: seatEntityId(seatIdOf(areaRoom, areaGuest.id)),
+        },
+        scout: {
+          accountId: areaScout.id,
+          token: areaScout.token,
+          entityId: seatEntityId(seatIdOf(areaRoom, areaScout.id)),
         },
       },
       reaction: {
