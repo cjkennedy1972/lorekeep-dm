@@ -284,6 +284,15 @@ const combatant = (
     speed,
     attackBonus: weapon?.attackBonus ?? 0,
     damage: weapon?.damage ?? '1d4',
+    ...(e.attacks?.length
+      ? {
+          attacks: e.attacks.map((attack) => ({
+            id: attack.id,
+            name: attack.name,
+            damage: [{ dice: attack.damage, type: attack.damageType }],
+          })),
+        }
+      : {}),
   };
 };
 
