@@ -236,6 +236,11 @@ export function Game() {
             const parsed = EngineEventSchema.safeParse(raw);
             if (!parsed.success) continue;
             const event = parsed.data;
+            if (
+              event.type === 'ReactionAnswered' ||
+              event.type === 'ReactionDeclined'
+            )
+              setReaction(null);
             if (event.type === 'EntityMoved') {
               const last = event.path.at(-1)!;
               setEntities((current) =>

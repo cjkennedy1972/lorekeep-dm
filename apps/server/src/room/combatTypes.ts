@@ -3,6 +3,15 @@ import type { CharacterInput, PendingReaction } from '@game/rules-engine';
 
 /** A reaction prompt auto-declines this long after it was issued. */
 export const REACTION_TIMEOUT_MS = 15_000;
+/** Cumulative open-window time one turn may spend on reactions before further triggers decline with `cap` (ADR-033 §3.8). */
+export const REACTION_BUDGET_MS = 45_000;
+export type ReactionDeclineCause =
+  | 'timeout'
+  | 'presence'
+  | 'no-controller'
+  | 'cap'
+  | 'combat-ended'
+  | 'restart';
 
 export type CombatAttack = {
   id: string;
@@ -61,6 +70,12 @@ export type RoomCombatState = {
   turnTimerRemainingMs?: number;
   /** Engine-only inputs retained with an open narration for deterministic restart retry. */
   turnNarrationEvents?: Record<string, unknown>[];
+  /** Party combat uses the ADR-033 prompt lifecycle events; absent for sandbox/legacy combat, which keeps ReactionAvailable/Resolved. */
+  promptEvents?: true;
+  /** Reaction-window time left this turn; absent means the full budget (reset when the next turn starts). */
+  reactionBudgetMs?: number;
+  /** Counter for opaque prompt ids. */
+  promptSeq?: number;
   /** Event-log sequence IDs for this turn, excluding hidden-combatant events. */
   turnNarrationEventIds?: string[];
   map: Battlemap;
@@ -76,10 +91,18 @@ export type RoomCombatState = {
   /** The prompt shown to the table. `deadlineAt` is an absolute epoch-ms so a restart can resume the countdown. */
   pendingReaction?: {
     reactionId: string;
+    /** Party combat: opaque id used on the wire and in events; reactionId embeds entity ids and stays server-side. */
+    promptId?: string;
     entityId: string;
     trigger: string;
     moverId: string;
     deadlineAt: number;
+    /** Party combat: the window is open (ReactionPromptOpened emitted); until then it is only an engine trigger. */
+    opened?: true;
+    /** Length of the open window, for budget accounting. */
+    windowMs?: number;
+    /** Time left while the table is paused; deadlineAt is rebuilt on resume. */
+    frozenMs?: number;
   };
   /** Engine continuations (remaining path) for every unresolved reaction of the current mover. */
   engineReactions?: Record<string, PendingReaction>;
@@ -115,3 +138,24 @@ export type CombatContext = {
   character?: CharacterInput;
   now?: number;
 };
+
+/** The id a reaction prompt carries on the wire and in events. */
+export const promptIdOf = (prompt: {
+  reactionId: string;
+  promptId?: string;
+}): string => prompt.promptId ?? prompt.reactionId;
+
+/** A rewound game state must not reuse a prompt id a client already saw: keep the higher counter. */
+export function carryPromptSeq(restored: unknown, live: unknown): unknown {
+  const room = (g: unknown) =>
+    (g as { combatRoom?: { promptSeq?: number } } | undefined)?.combatRoom;
+  const seq = Math.max(
+    room(restored)?.promptSeq ?? 0,
+    room(live)?.promptSeq ?? 0,
+  );
+  if (!seq || !room(restored)) return restored;
+  return {
+    ...(restored as object),
+    combatRoom: { ...room(restored), promptSeq: seq },
+  };
+}

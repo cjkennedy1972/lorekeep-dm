@@ -10,7 +10,10 @@ import {
 } from '@game/rules-engine';
 import type { GridPos } from '@game/schema';
 import {
+  REACTION_BUDGET_MS,
   REACTION_TIMEOUT_MS,
+  promptIdOf,
+  type ReactionDeclineCause,
   type CombatCommandError,
   type CombatEntity,
   type CombatTransition,
@@ -95,8 +98,10 @@ export function applyMovement(
   const rest = { ...state };
   delete rest.pendingReaction;
   delete rest.engineReactions;
+  const promptSeq = (state.promptSeq ?? 0) + 1;
   return {
     ...rest,
+    ...(first && state.promptEvents ? { promptSeq } : {}),
     phase: first ? 'reaction-pending' : 'awaiting-command',
     entities: state.entities.map((e) => {
       const live = moved.entities.find((item) => item.id === e.id);
@@ -110,6 +115,7 @@ export function applyMovement(
           engineReactions: moved.pendingReactions ?? {},
           pendingReaction: {
             reactionId: first.reactionId,
+            ...(state.promptEvents ? { promptId: `rp_${promptSeq}` } : {}),
             entityId: first.hostileId,
             trigger: 'opportunityAttack',
             moverId: first.moverId,
@@ -141,6 +147,12 @@ export function settle(state: RoomCombatState): CombatTransition {
     moverId && state.entities.find((entity) => entity.id === moverId);
   const openMove = Boolean(moverId && state.pendingReaction);
   const events: Ev[] = [];
+  if (state.promptEvents && state.pendingReaction?.opened)
+    events.push({
+      type: 'ReactionDeclined',
+      promptId: promptIdOf(state.pendingReaction),
+      cause: 'combat-ended',
+    });
   if (openMove)
     events.push({
       type: 'MoveEnded',
@@ -177,9 +189,10 @@ export function advanceTurn(state: RoomCombatState): CombatTransition {
     const entity = state.entities.find((e) => e.id === nextId);
     if (!entity || !alive(entity)) continue;
     events.push({ type: 'TurnStarted', entityId: nextId, round });
-    // Area handles expire at turn end (ADR-022 §2.2).
+    // Area handles expire at turn end (ADR-022 §2.2); the reaction budget is per turn (ADR-033 §3.8).
     const carried = { ...state };
     delete carried.optionHandles;
+    delete carried.reactionBudgetMs;
     return {
       state: {
         ...carried,
@@ -413,7 +426,7 @@ export function runMonsters(
   return { state, events };
 }
 
-/** The answer to a prompt, from the party member whose reaction it is or whose movement provoked it. */
+/** The answer to a prompt, from the party member whose reaction it is (the mover provoked it and never answers it). */
 export function answerReaction(
   state: RoomCombatState,
   actorId: string,
@@ -421,8 +434,46 @@ export function answerReaction(
   choice: 'take' | 'decline',
   now: number,
 ): CombatTransition | CombatCommandError {
+  return resolvePrompt(state, actorId, reactionId, choice, now);
+}
+
+/** Close the open prompt as declined by the table, not by its reactor (party combat: ReactionDeclined{cause}). */
+export function declineReaction(
+  state: RoomCombatState,
+  cause: ReactionDeclineCause,
+  now: number,
+): CombatTransition | null {
   const prompt = state.pendingReaction;
-  if (!prompt || prompt.reactionId !== reactionId)
+  if (!prompt) return null;
+  if (!state.engineReactions?.[prompt.reactionId])
+    return closeReaction(state, cause);
+  const result = resolvePrompt(
+    state,
+    prompt.entityId,
+    promptIdOf(prompt),
+    'decline',
+    now,
+    cause,
+  );
+  return 'code' in result ? closeReaction(state, cause) : result;
+}
+
+function resolvePrompt(
+  state: RoomCombatState,
+  actorId: string,
+  reactionId: string,
+  choice: 'take' | 'decline',
+  now: number,
+  cause?: ReactionDeclineCause,
+): CombatTransition | CombatCommandError {
+  const prompt = state.pendingReaction;
+  if (!prompt || promptIdOf(prompt) !== reactionId)
+    return {
+      code: 'COMMAND_REJECTED',
+      message: 'There is no such reaction waiting for an answer.',
+    };
+  // Answers only from an open window (ADR-033 §3): a party prompt is unannounced until ReactionPromptOpened commits.
+  if (state.promptEvents && !prompt.opened && !cause)
     return {
       code: 'COMMAND_REJECTED',
       message: 'There is no such reaction waiting for an answer.',
@@ -438,12 +489,21 @@ export function answerReaction(
       ...movementState(state, prompt.moverId),
       pendingReactions: state.engineReactions,
     },
-    reactionId,
+    prompt.reactionId,
     choice,
   );
   if ('error' in result)
     return { code: 'COMMAND_REJECTED', message: result.hint };
-  const events = result.events as unknown as Ev[];
+  let events = result.events as unknown as Ev[];
+  if (state.promptEvents)
+    events = [
+      cause
+        ? { type: 'ReactionDeclined', promptId: promptIdOf(prompt), cause }
+        : { type: 'ReactionAnswered', promptId: promptIdOf(prompt), choice },
+      ...events.filter(
+        (e) => e.type !== 'ReactionResolved' && e.type !== 'ReactionAvailable',
+      ),
+    ];
   if (result.movementEnd)
     events.push({
       type: 'MoveEnded',
@@ -451,7 +511,12 @@ export function answerReaction(
       reason: result.movementEnd,
     } as Ev);
   const next = applyMovement(
-    { ...state, phase: 'moving', seed: nextSeed(state.seed ?? 1) },
+    {
+      ...state,
+      phase: 'moving',
+      seed: nextSeed(state.seed ?? 1),
+      ...spentBudget(state, now),
+    },
     prompt.moverId,
     result.state,
     result.pending,
@@ -465,18 +530,37 @@ export function answerReaction(
   return { state: rest.state, events: [...events, ...rest.events] };
 }
 
+/** Charge the closing window's open time to this turn's reaction budget (party combat only). */
+function spentBudget(
+  state: RoomCombatState,
+  now: number,
+): Pick<RoomCombatState, 'reactionBudgetMs'> {
+  const prompt = state.pendingReaction;
+  if (!state.promptEvents || !prompt?.opened) return {};
+  const left = prompt.frozenMs ?? Math.max(0, prompt.deadlineAt - now);
+  const used = Math.max(0, (prompt.windowMs ?? REACTION_TIMEOUT_MS) - left);
+  return {
+    reactionBudgetMs: Math.max(
+      0,
+      (state.reactionBudgetMs ?? REACTION_BUDGET_MS) - used,
+    ),
+  };
+}
+
 /** The 15 s deadline passed unanswered: decline on the table's behalf. Terminal: once past the deadline the prompt always closes. */
 export function expireReaction(
   state: RoomCombatState,
   now: number,
 ): CombatTransition | null {
   const prompt = state.pendingReaction;
-  if (!prompt || now < prompt.deadlineAt) return null;
+  if (!prompt || prompt.frozenMs !== undefined || now < prompt.deadlineAt)
+    return null;
+  if (state.promptEvents) return declineReaction(state, 'timeout', now);
   if (state.engineReactions?.[prompt.reactionId]) {
     const result = answerReaction(
       state,
       prompt.entityId,
-      prompt.reactionId,
+      promptIdOf(prompt),
       'decline',
       now,
     );
@@ -486,19 +570,28 @@ export function expireReaction(
 }
 
 /** Close the open prompt as declined without an engine continuation; ends the interrupted move if the engine held one. */
-export function closeReaction(state: RoomCombatState): CombatTransition {
+export function closeReaction(
+  state: RoomCombatState,
+  cause: ReactionDeclineCause = 'timeout',
+): CombatTransition {
   const prompt = state.pendingReaction;
   if (!prompt) return { state, events: [] };
-  const next = { ...state, phase: 'awaiting-command' as const };
+  const next = {
+    ...state,
+    phase: 'awaiting-command' as const,
+    ...(state.promptEvents ? { ...spentBudget(state, Date.now()) } : {}),
+  };
   delete next.pendingReaction;
   delete next.engineReactions;
   const events: Ev[] = [
-    {
-      type: 'ReactionResolved',
-      entityId: prompt.entityId,
-      used: false,
-      reactionId: prompt.reactionId,
-    },
+    state.promptEvents
+      ? { type: 'ReactionDeclined', promptId: promptIdOf(prompt), cause }
+      : {
+          type: 'ReactionResolved',
+          entityId: prompt.entityId,
+          used: false,
+          reactionId: prompt.reactionId,
+        },
   ];
   if (state.engineReactions?.[prompt.reactionId])
     events.push({

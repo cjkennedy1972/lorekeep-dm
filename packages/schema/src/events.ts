@@ -74,6 +74,28 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     entityId,
     eventIds: z.array(z.string().min(1)),
   }).strict(),
+  /** ADR-033 §3 / ADR-034 §5 prompt lifecycle for party combat; replaces ReactionAvailable/ReactionResolved there. */
+  ev('ReactionPromptOpened', {
+    promptId: z.string().min(1),
+    reactorEntityId: entityId,
+    /** Absolute wall-clock epoch ms at which the window closes. */
+    deadline: z.number().int().nonnegative(),
+  }).strict(),
+  ev('ReactionAnswered', {
+    promptId: z.string().min(1),
+    choice: z.enum(['take', 'decline']),
+  }).strict(),
+  ev('ReactionDeclined', {
+    promptId: z.string().min(1),
+    cause: z.enum([
+      'timeout',
+      'presence',
+      'no-controller',
+      'cap',
+      'combat-ended',
+      'restart',
+    ]),
+  }).strict(),
   ev('TurnTimedOut', {
     turnId: z.string().min(1),
     entityId,

@@ -308,7 +308,10 @@ export function reconcileCombat(
       round: 1,
     },
   ];
-  const run = runMonsters(built.state, now);
+  const run = runMonsters(
+    party ? { ...built.state, promptEvents: true } : built.state,
+    now,
+  );
   return {
     gameState: {
       ...game,

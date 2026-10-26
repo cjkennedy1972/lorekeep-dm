@@ -14,6 +14,7 @@ import {
   advanceTurn,
   answerReaction,
   applyMovement,
+  declineReaction,
   expireReaction,
   movementState,
   runMonsters,
@@ -30,7 +31,9 @@ import {
   type CombatCommandError,
   type CombatContext,
   type CombatTransition,
+  type ReactionDeclineCause,
   type RoomCombatState,
+  promptIdOf,
 } from './combatTypes.js';
 
 export type {
@@ -62,6 +65,12 @@ export type CombatRuntime = {
   ): Reconciled | null;
   /** Auto-decline a reaction prompt whose deadline passed. */
   expire(state: RoomCombatState, now: number): CombatTransition | null;
+  /** Close the open prompt as declined by the table (party combat: ReactionDeclined{cause}). */
+  decline(
+    state: RoomCombatState,
+    cause: ReactionDeclineCause,
+    now: number,
+  ): CombatTransition | null;
 };
 
 export function hiddenEntityIds(
@@ -148,6 +157,25 @@ export function projectCombatForViewer<T extends RoomCombatState>(
       : {}),
   } as T;
 }
+/** Party combat replaces the M2 ReactionAvailable/ReactionResolved events with the prompt lifecycle (no dual emission). */
+const LEGACY_REACTION_EVENTS = new Set([
+  'ReactionAvailable',
+  'ReactionResolved',
+]);
+const withoutLegacyReactionEvents = <
+  T extends { events: Record<string, unknown>[] },
+>(
+  result: T,
+  promptEvents: boolean | undefined,
+): T =>
+  promptEvents
+    ? {
+        ...result,
+        events: result.events.filter(
+          (event) => !LEGACY_REACTION_EVENTS.has(String(event.type)),
+        ),
+      }
+    : result;
 
 /** Stable client projection; exact enemy HP is private while the active token always matches initiative. */
 export function combatTracker(
@@ -300,7 +328,7 @@ export function createCombatRuntime(
         }
       : {}),
   });
-  const runtime: CombatRuntime = {
+  const base: CombatRuntime = {
     preview(state, actorId, ctx) {
       if (!state.entities.some((item) => item.id === actorId))
         return { actions: [] };
@@ -310,9 +338,19 @@ export function createCombatRuntime(
       );
     },
     reconcile(game, now = Date.now(), party) {
-      return reconcileCombat(game, catalog, now, party);
+      const rec = reconcileCombat(game, catalog, now, party);
+      return rec
+        ? withoutLegacyReactionEvents(
+            rec,
+            !!party && !!rec.gameState.combatRoom,
+          )
+        : rec;
     },
-    expire: expireReaction,
+    expire(state, now) {
+      const result = expireReaction(state, now);
+      return result && withoutLegacyReactionEvents(result, state.promptEvents);
+    },
+    decline: declineReaction,
     execute(state, actorId, command, ctx) {
       const now = ctx?.now ?? Date.now();
       if (state.ended) return reject('Combat is over.');
@@ -500,6 +538,15 @@ export function createCombatRuntime(
       );
     },
   };
+  const runtime: CombatRuntime = {
+    ...base,
+    execute(state, actorId, command, ctx) {
+      const result = base.execute(state, actorId, command, ctx);
+      return 'code' in result
+        ? result
+        : withoutLegacyReactionEvents(result, result.state.promptEvents);
+    },
+  };
   return runtime;
 }
 
@@ -566,6 +613,7 @@ export function reactionMessage(
     type: 'ReactionPrompt',
     payload: {
       ...reaction,
+      reactionId: promptIdOf(reaction),
       timeoutMs: Math.max(0, reaction.deadlineAt - now),
       options: ['take', 'decline'],
       defaultChoice: 'decline',
@@ -582,7 +630,7 @@ export function reactionOpenMessage(
     seq,
     type: 'ReactionPromptOpen',
     payload: {
-      reactionId: reaction.reactionId,
+      reactionId: promptIdOf(reaction),
       reactorEntityId: reaction.entityId,
       deadlineAt: reaction.deadlineAt,
       timeoutMs: Math.max(0, reaction.deadlineAt - now),
