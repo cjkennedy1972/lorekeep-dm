@@ -144,3 +144,18 @@ export const promptIdOf = (prompt: {
   reactionId: string;
   promptId?: string;
 }): string => prompt.promptId ?? prompt.reactionId;
+
+/** A rewound game state must not reuse a prompt id a client already saw: keep the higher counter. */
+export function carryPromptSeq(restored: unknown, live: unknown): unknown {
+  const room = (g: unknown) =>
+    (g as { combatRoom?: { promptSeq?: number } } | undefined)?.combatRoom;
+  const seq = Math.max(
+    room(restored)?.promptSeq ?? 0,
+    room(live)?.promptSeq ?? 0,
+  );
+  if (!seq || !room(restored)) return restored;
+  return {
+    ...(restored as object),
+    combatRoom: { ...room(restored), promptSeq: seq },
+  };
+}

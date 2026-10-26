@@ -472,6 +472,12 @@ function resolvePrompt(
       code: 'COMMAND_REJECTED',
       message: 'There is no such reaction waiting for an answer.',
     };
+  // Answers only from an open window (ADR-033 §3): a party prompt is unannounced until ReactionPromptOpened commits.
+  if (state.promptEvents && !prompt.opened && !cause)
+    return {
+      code: 'COMMAND_REJECTED',
+      message: 'There is no such reaction waiting for an answer.',
+    };
   // Reactor-only (ADR-033 §3.3): the mover provoked the reaction and never answers it.
   if (actorId !== prompt.entityId)
     return {

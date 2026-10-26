@@ -14,7 +14,7 @@ import {
   placed,
 } from './combatFixtures.js';
 import { joinSeated } from '../helpers/room.js';
-import { promptIdOf } from '../../src/room/combatTypes.js';
+import { carryPromptSeq, promptIdOf } from '../../src/room/combatTypes.js';
 import { answerReaction, settle } from '../../src/room/combatEngine.js';
 
 afterEach(() => vi.useRealTimers());
@@ -2349,5 +2349,72 @@ describe('combat started by a DM turn (reconcile) in party mode', () => {
     expect(room.promptEvents).toBe(true);
     // Sandbox/solo bootstrap keeps the M2 events: no flag.
     expect(bootstrapped().state.promptEvents).toBeUndefined();
+  });
+});
+
+describe('answers only from an open window; prompt id counter (ADR-033 §3)', () => {
+  const leave = { command: 'move', destination: { x: 7, y: 6 } } as const;
+  const provokedParty = (seed?: number) => {
+    const e = engaged();
+    const moved = ok(
+      e.runtime.execute(
+        {
+          ...e.state,
+          promptEvents: true,
+          ...(seed === undefined ? {} : { promptSeq: seed }),
+        },
+        'ent_aria',
+        leave,
+        { now: NOW },
+      ),
+    );
+    return { ...e, moved };
+  };
+
+  it('rejects an answer to a prompt that has not been announced, with no state change', () => {
+    const { runtime, moved } = provokedParty();
+    const prompt = moved.state.pendingReaction!;
+    expect(prompt.opened).toBeUndefined();
+    expect(prompt.promptId).toBe('rp_1'); // guessable counter, reactor identity correct
+    const before = JSON.stringify(moved.state);
+    const result = runtime.execute(
+      moved.state,
+      prompt.entityId,
+      { command: 'reaction', reactionId: 'rp_1', choice: 'take' },
+      { now: NOW + 1 },
+    );
+    expect(result).toMatchObject({ code: 'COMMAND_REJECTED' });
+    expect(JSON.stringify(moved.state)).toBe(before);
+    // Once announced the same answer is accepted.
+    const opened = {
+      ...moved.state,
+      pendingReaction: { ...prompt, opened: true as const },
+    };
+    const accepted = ok(
+      runtime.execute(
+        opened,
+        prompt.entityId,
+        { command: 'reaction', reactionId: 'rp_1', choice: 'decline' },
+        { now: NOW + 1 },
+      ),
+    );
+    expect(types(accepted.events)).toContain('ReactionAnswered');
+  });
+
+  it('an old state without promptSeq starts at rp_1; the counter then advances', () => {
+    expect(provokedParty().moved.state.promptSeq).toBe(1);
+    expect(provokedParty(6).moved.state.pendingReaction?.promptId).toBe('rp_7');
+  });
+
+  it('a rewound state keeps the higher prompt counter so ids are never reused', () => {
+    const at = (promptSeq?: number) => ({
+      combatRoom: promptSeq === undefined ? {} : { promptSeq },
+    });
+    const seqOf = (g: unknown) =>
+      (g as { combatRoom: { promptSeq?: number } }).combatRoom.promptSeq;
+    expect(seqOf(carryPromptSeq(at(2), at(5)))).toBe(5);
+    expect(seqOf(carryPromptSeq(at(7), at(5)))).toBe(7);
+    expect(seqOf(carryPromptSeq(at(), at(3)))).toBe(3);
+    expect(carryPromptSeq({}, at(3))).toEqual({});
   });
 });

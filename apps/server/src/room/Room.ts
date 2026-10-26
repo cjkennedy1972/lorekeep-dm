@@ -56,6 +56,7 @@ import {
   REACTION_BUDGET_MS,
   REACTION_TIMEOUT_MS,
   promptIdOf,
+  carryPromptSeq,
   type ReactionDeclineCause,
 } from './combatTypes.js';
 import type { ActionId } from '@game/schema';
@@ -470,6 +471,13 @@ export class Room {
   private reactionTimer?: NodeJS.Timeout;
   /** promptId to reacting entity, so wire filtering can hide a hidden reactor's Answered/Declined events. */
   private readonly promptReactors = new Map<string, string>();
+  /** Entries stay after a prompt closes (late events of a closed prompt must still resolve to hidden); bounded, oldest first. */
+  private rememberPrompt(promptId: string, reactor: string): void {
+    this.promptReactors.delete(promptId);
+    this.promptReactors.set(promptId, reactor);
+    if (this.promptReactors.size > 256)
+      this.promptReactors.delete(this.promptReactors.keys().next().value!);
+  }
   /** A prompt that was already open when this Room booted: closing it is a `restart` decline. */
   private recoveredPromptId?: string;
   private turnTimer?: NodeJS.Timeout;
@@ -605,7 +613,7 @@ export class Room {
     const recoveredPrompt = roomGameState(this.state)?.pendingReaction;
     if (recoveredPrompt?.opened) {
       this.recoveredPromptId = promptIdOf(recoveredPrompt);
-      this.promptReactors.set(
+      this.rememberPrompt(
         promptIdOf(recoveredPrompt),
         recoveredPrompt.entityId,
       );
@@ -2450,6 +2458,13 @@ export class Room {
       let restoredState = restored.state;
       for (const event of plan.retained)
         restoredState = reduceRoom(restoredState, event);
+      restoredState = {
+        ...restoredState,
+        gameState: carryPromptSeq(
+          restoredState.gameState,
+          this.state.gameState,
+        ),
+      } as typeof restoredState;
       const actionIds = new Set(restored.actionIds);
       for (const event of plan.retained)
         if (event.type === 'ActionAccepted')
@@ -5362,7 +5377,7 @@ export class Room {
   ): void {
     for (const event of events)
       if (event.type === 'ReactionPromptOpened')
-        this.promptReactors.set(
+        this.rememberPrompt(
           String(event.promptId),
           String(event.reactorEntityId),
         );
@@ -5939,7 +5954,7 @@ export class Room {
     const prompt = current?.pendingReaction;
     if (!current?.promptEvents || !prompt || prompt.opened) return;
     const now = Date.now();
-    this.promptReactors.set(promptIdOf(prompt), prompt.entityId);
+    this.rememberPrompt(promptIdOf(prompt), prompt.entityId);
     const cause = this.immediateDeclineCause(current);
     if (cause) {
       const declined = this.combatRuntime.decline(current, cause, now);
