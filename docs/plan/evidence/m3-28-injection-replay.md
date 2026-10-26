@@ -6,8 +6,10 @@
 - **Record SHA-256:** `34f3727eb675aa655c39081555d2f9ff4044e3580799c26b4d39a8b830909f24`.
 - **Execution:** `apps/server/test/db/injection-engine-replay.test.ts` through
   `ProductionSoloTurnRunner`, using the Docker PostgreSQL test database. The
-  record was read from `origin/proof/m3-28-live-runs-2026-10-17`; it is not
-  copied into or committed with this PR.
+  record was read from `origin/proof/m3-28-live-runs-2026-10-17` and is
+  committed with this PR at
+  `packages/evals/redteam/recorded/live-qwen3.8-35b-a3b-distill-q4-2026-10-17T18-03-41-566Z.json`
+  (SHA-256 `34f3727eb675aa655c39081555d2f9ff4044e3580799c26b4d39a8b830909f24`).
 
 The record's `close_scene` proposal names synthetic `loc_tavern`. To exercise
 the same close-scene intent against the real adventure edge, the test explicitly
