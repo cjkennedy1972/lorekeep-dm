@@ -657,6 +657,8 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
         [f.seatB]: { id: entB, name: 'B' },
       },
       combatRoom: {
+        seed: 424242,
+        engineReactions: { r: { secret: 'engine-continuation' } },
         entities: [
           {
             id: entA,
@@ -744,7 +746,73 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     state.characters[f.seatA]!.id = 'rogue';
     state.combatRoom.entities.find((e) => e.id === entA)!.id = 'rogue-pc';
     state.combatRoom.entities.find((e) => e.id === 'rogue')!.hidden = true;
+    const tracker = (messages: Record<string, unknown>[]) =>
+      JSON.stringify(messages.find((m) => m.type === 'CombatTracker'));
+    // reconnect snapshot: controller's tracker carries its own hidden entity, the other seat's does not
+    expect(tracker(await seen(f.accountA))).toContain('"x":7');
+    expect(tracker(await seen(f.accountB))).not.toContain('"x":7');
     expect(JSON.stringify(await seen(f.accountA))).toContain('"x":7');
     expect(JSON.stringify(await seen(f.accountB))).not.toContain('"x":7');
+  });
+
+  it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {
+    const { f, seen } = await twoSeatCombat();
+    for (const account of [f.accountA, f.accountB]) {
+      const wire = JSON.stringify(await seen(account));
+      expect(wire).not.toContain('424242');
+      expect(wire).not.toContain('engine-continuation');
+    }
+    expect(JSON.stringify(f.room.state.gameState)).toContain('424242');
+  });
+
+  it('delivers committed events naming a hidden entity only to its controller', async () => {
+    const { f, entB } = await twoSeatCombat();
+    const state = f.room.state.gameState as {
+      characters: Record<string, { id: string }>;
+      combatRoom: { entities: { id: string; hidden?: boolean }[] };
+    };
+    // seat A controls the hidden rogue; seat B does not
+    state.characters[f.seatA]!.id = 'rogue';
+    const inbox = {
+      [f.accountA]: [] as Record<string, unknown>[],
+      [f.accountB]: [] as Record<string, unknown>[],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (m: Record<string, unknown>) => void inbox[account]!.push(m),
+      });
+    for (const list of Object.values(inbox)) list.length = 0;
+    const events = [
+      {
+        type: 'EntityMoved',
+        entityId: 'rogue',
+        path: [{ x: 7, y: 8 }, HIDDEN_POS],
+      },
+      { type: 'HpChanged', entityId: 'rogue', hp: 3 },
+      { type: 'ConditionApplied', entityId: 'rogue', conditionId: 'prone' },
+      {
+        type: 'AttackResolved',
+        attackerId: entB,
+        targetId: 'rogue',
+        hit: true,
+      },
+      { type: 'EntityMoved', entityId: 'goblin', path: [{ x: 4, y: 5 }] },
+    ];
+    (
+      f.room as unknown as { announceCombat(...a: unknown[]): void }
+    ).announceCombat(state.combatRoom, events, undefined);
+    const eventsSeenBy = (account: string) =>
+      inbox[account]!.filter((m) => m.type === 'CombatEvents').flatMap(
+        (m) => (m.payload as { events: Record<string, unknown>[] }).events,
+      );
+    const trackerSeenBy = (account: string) =>
+      JSON.stringify(inbox[account]!.filter((m) => m.type === 'CombatTracker'));
+    expect(trackerSeenBy(f.accountA)).toContain('"x":7');
+    expect(trackerSeenBy(f.accountB)).not.toContain('"x":7');
+    expect(eventsSeenBy(f.accountA)).toHaveLength(5);
+    const other = eventsSeenBy(f.accountB);
+    expect(other).toEqual([events[4]]);
+    expect(JSON.stringify(other)).not.toContain('rogue');
+    expect(JSON.stringify(other)).not.toContain('"x":7');
   });
 });

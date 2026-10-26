@@ -64,6 +64,41 @@ export type CombatRuntime = {
   expire(state: RoomCombatState, now: number): CombatTransition | null;
 };
 
+const ENTITY_ID_KEY = /(?:entity|mover|attacker|reactor|target|caster).*ids?$/i;
+
+export function hiddenEntityIds(
+  state: Pick<RoomCombatState, 'entities'>,
+): Set<string> {
+  return new Set(
+    (state.entities ?? [])
+      .filter((entity) => entity.hidden)
+      .map((entity) => entity.id),
+  );
+}
+
+/** The single "does this event/payload name a hidden entity" predicate (narration filter and client events). */
+export function namedHiddenIds(
+  hidden: ReadonlySet<string>,
+  value: unknown,
+  key = '',
+): string[] {
+  if (typeof value === 'string')
+    return ENTITY_ID_KEY.test(key) && hidden.has(value) ? [value] : [];
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([k, v]) =>
+    namedHiddenIds(hidden, v, Array.isArray(value) ? key : k),
+  );
+}
+
+/** A committed event reaches a viewer only if every hidden entity it names is one the viewer controls. */
+export function eventVisibleTo(
+  event: Record<string, unknown>,
+  hidden: ReadonlySet<string>,
+  controlled: ReadonlySet<string>,
+): boolean {
+  return namedHiddenIds(hidden, event).every((id) => controlled.has(id));
+}
+
 /**
  * Per-viewer projection (ADR-034 §3, ADR-035). A hidden entity is removed outright from
  * everything a viewer receives (entities, initiative, resources, reaction prompt, dodge,
@@ -71,9 +106,13 @@ export type CombatRuntime = {
  * server state is untouched; this only shapes what is serialized to a client.
  */
 export function projectCombatForViewer<T extends RoomCombatState>(
-  state: T,
+  full: T,
   controlled: ReadonlySet<string> = new Set(),
 ): T {
+  // Engine-only: `seed` predicts every future roll (hidden monsters' too), engineReactions is a server continuation.
+  const state = { ...full };
+  delete state.seed;
+  delete state.engineReactions;
   const hidden = new Set(
     state.entities
       .filter((entity) => entity.hidden && !controlled.has(entity.id))

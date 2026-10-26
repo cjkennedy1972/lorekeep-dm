@@ -38,6 +38,9 @@ import {
   toWireEvent,
   trackerMessage,
   projectCombatForViewer,
+  hiddenEntityIds as hiddenIdsOf,
+  namedHiddenIds,
+  eventVisibleTo,
   reactionMessage,
   type CombatRuntime,
   type CombatTransition,
@@ -5139,24 +5142,12 @@ export class Room {
     let combatState = result.state;
     const priorTurnEvents = beforeCombat?.turnNarrationEvents ?? [];
     const priorTurnEventIds = beforeCombat?.turnNarrationEventIds ?? [];
-    const hiddenEntityIds = new Set(
-      combatState.entities
-        .filter((entity) => entity.hidden)
-        .map((entity) => entity.id),
+    const hiddenEntityIds = hiddenIdsOf(combatState);
+    const currentTurnEventIds = result.events.flatMap((event, index) =>
+      namedHiddenIds(hiddenEntityIds, event).length
+        ? []
+        : [String(this.seq + index + 1)],
     );
-    const currentTurnEventIds = result.events.flatMap((event, index) => {
-      const referencesHiddenEntity = Object.entries(
-        event as Record<string, unknown>,
-      ).some(([key, value]) => {
-        if (!/(?:entity|mover|attacker|reactor).*ids?$/i.test(key))
-          return false;
-        const ids = Array.isArray(value) ? value : [value];
-        return ids.some(
-          (id) => typeof id === 'string' && hiddenEntityIds.has(id),
-        );
-      });
-      return referencesHiddenEntity ? [] : [String(this.seq + index + 1)];
-    });
     const turnNarrationEvents = [
       ...priorTurnEvents,
       ...result.events.map((event) => ({ ...event })),
@@ -5249,12 +5240,20 @@ export class Room {
     const clientEvents = events.filter(
       (event) => event.type !== 'TurnResolved',
     );
-    if (clientEvents.length)
-      this.broadcast({
-        seq: this.seq,
-        type: 'CombatEvents',
-        payload: { events: clientEvents.map(toWireEvent) },
-      } as ServerMessage);
+    // ADR-034 §3: a committed event naming a hidden entity reaches only its controller.
+    const hidden = hiddenIdsOf(state);
+    for (const [viewer, connection] of this.connections) {
+      const controlled = this.controlledBy(viewer);
+      const visible = clientEvents.filter((event) =>
+        eventVisibleTo(event, hidden, controlled),
+      );
+      if (visible.length)
+        connection.send({
+          seq: this.seq,
+          type: 'CombatEvents',
+          payload: { events: visible.map(toWireEvent) },
+        } as ServerMessage);
+    }
     const ended = events.find((event) => event.type === 'CombatEnded');
     const roundBoundary = events.some(
       (event) =>
@@ -5654,27 +5653,13 @@ export class Room {
       return;
     }
     const combat = roomGameState(this.state);
-    const hiddenEntityIds = new Set(
-      (combat?.entities ?? [])
-        .filter((entity) => entity.hidden)
-        .map((entity) => entity.id),
-    );
+    const hiddenEntityIds = hiddenIdsOf(combat ?? { entities: [] });
     const facts = events
-      .filter((event) => {
-        const referencesHiddenEntity = Object.entries(event).some(
-          ([key, value]) => {
-            if (!/(?:entity|mover|attacker|reactor).*ids?$/i.test(key))
-              return false;
-            const ids = Array.isArray(value) ? value : [value];
-            return ids.some(
-              (id) => typeof id === 'string' && hiddenEntityIds.has(id),
-            );
-          },
-        );
-        return (
-          !referencesHiddenEntity && isNarrationFactType(String(event.type))
-        );
-      })
+      .filter(
+        (event) =>
+          !namedHiddenIds(hiddenEntityIds, event).length &&
+          isNarrationFactType(String(event.type)),
+      )
       .slice(0, 12)
       .map((event) => JSON.stringify(narrationFact(event)));
     const actionId = randomUUID();
