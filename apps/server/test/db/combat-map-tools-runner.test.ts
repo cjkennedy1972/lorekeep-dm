@@ -229,13 +229,20 @@ describe('DM map tools through the production runner', () => {
     );
   });
 
-  it('hands suggest_area_target options to the model, and a handle casts once', async () => {
+  it('defensively persists same-turn map options and a cast spend', async () => {
     const table = await setup(ariaTurn());
+    expect(ariaTurn().combat.resources.ent_aria).toMatchObject({
+      action: true,
+      actionSpellCast: false,
+    });
     const first = await run(table, table.state, [
       suggest,
       (tools) => castVia(handleIn(tools)),
     ]);
-    // the model saw an opt_ handle in the suggest result
+    // runTurn commits each successful tool output in-memory. This checks the
+    // persistence contract for the same-turn path as defensive hardening; the
+    // current orchestrator clears pendingRoom at the suggestion commit.
+    // The model saw an opt_ handle in the suggest result
     expect(first.seen[1]!.join(' ')).toMatch(/opt_[a-z0-9]{4,8}/);
     expect(first.observed).not.toContainEqual(
       expect.objectContaining({ type: 'ToolCallRejected' }),
@@ -260,12 +267,15 @@ describe('DM map tools through the production runner', () => {
     // even if the action resource is restored for the later model turn.
     const reused = {
       ...replayedRoom,
-      optionHandles: { ...(first.room.optionHandles ?? {}) },
       combat: {
-        ...first.room.combat,
+        ...replayedRoom.combat,
         resources: {
-          ...first.room.combat.resources,
-          ent_aria: { ...first.room.combat.resources.ent_aria!, action: true },
+          ...replayedRoom.combat.resources,
+          ent_aria: {
+            ...replayedRoom.combat.resources.ent_aria!,
+            action: true,
+            actionSpellCast: false,
+          },
         },
       },
     };

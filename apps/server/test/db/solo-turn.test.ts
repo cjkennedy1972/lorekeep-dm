@@ -789,7 +789,10 @@ describe('solo turn persisted lifecycle', () => {
       body: JSON.stringify({ sessionId: randomUUID() }),
     });
     expect(nonexistent.status).toBe(rejected.status);
-    expect([...nonexistent.headers]).toEqual([...rejected.headers]);
+    // The Date header is generated per response and can cross a second boundary.
+    const stableHeaders = (response: Response) =>
+      [...response.headers].filter(([name]) => name !== 'date');
+    expect(stableHeaders(nonexistent)).toEqual(stableHeaders(rejected));
     expect(await nonexistent.text()).toBe(rejectedBody);
     expect(firstTable).not.toBe(secondTable);
     // Positive control: the same request for the member's own table succeeds, so the 403
@@ -835,7 +838,10 @@ describe('solo turn persisted lifecycle', () => {
       body: JSON.stringify({ sessionId: randomUUID() }),
     });
     expect(nonexistent.status).toBe(rejected.status);
-    expect([...nonexistent.headers]).toEqual([...rejected.headers]);
+    // The Date header is generated per response and can cross a second boundary.
+    const stableHeaders = (response: Response) =>
+      [...response.headers].filter(([name]) => name !== 'date');
+    expect(stableHeaders(nonexistent)).toEqual(stableHeaders(rejected));
     expect(await nonexistent.text()).toBe(deniedBody);
     const anonymous = await fetch(`${base}/api/ws-ticket`, {
       method: 'POST',
