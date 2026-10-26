@@ -24,12 +24,13 @@ export function getClientIp(
 ): string {
   const socketAddress = request.socket.remoteAddress;
   if (!socketAddress) return 'unknown';
+  // `true` trusts arbitrary forwarding headers; WS throttling must not let a
+  // direct peer choose its own bucket. Configure hops/CIDRs behind a proxy.
+  if (trustProxy === true) return socketAddress;
   if (!trustProxy) return socketAddress;
 
   let trust: (address: string, hop: number) => boolean;
-  if (trustProxy === true) {
-    trust = () => true;
-  } else if (typeof trustProxy === 'number') {
+  if (typeof trustProxy === 'number') {
     trust = (_address, hop) => hop < trustProxy;
   } else {
     trust = proxyAddress.compile(trustProxy);

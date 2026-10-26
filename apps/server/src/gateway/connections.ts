@@ -23,6 +23,7 @@ export class ConnectionRegistry {
   private readonly seatAuthAttempts = new Map<string, number[]>();
   private readonly accountAuthAttempts = new Map<string, number[]>();
   private readonly ipAuthAttempts = new Map<string, number[]>();
+  private static readonly MAX_IP_AUTH_KEYS = 10_000;
   private lastSweep = 0;
   constructor(private readonly db: Pick<Pool, 'query'>) {}
   reserveSeat(
@@ -69,7 +70,16 @@ export class ConnectionRegistry {
       attempts: Map<string, number[]>,
       key: string,
       limit: number,
+      maxKeys?: number,
     ) => {
+      if (maxKeys !== undefined) {
+        for (const [existingKey, timestamps] of attempts) {
+          const active = timestamps.filter((at) => now - at < 60_000);
+          if (active.length === 0) attempts.delete(existingKey);
+          else if (active.length !== timestamps.length)
+            attempts.set(existingKey, active);
+        }
+      }
       const active = (attempts.get(key) ?? []).filter(
         (at) => now - at < 60_000,
       );
@@ -78,12 +88,23 @@ export class ConnectionRegistry {
         return false;
       }
       active.push(now);
+      if (
+        maxKeys !== undefined &&
+        !attempts.has(key) &&
+        attempts.size >= maxKeys
+      )
+        attempts.delete(attempts.keys().next().value!);
       attempts.set(key, active);
       return true;
     };
     return (
       consume(this.accountAuthAttempts, accountId, 30) &&
-      consume(this.ipAuthAttempts, ipAddress || 'unknown', 120)
+      consume(
+        this.ipAuthAttempts,
+        ipAddress || 'unknown',
+        120,
+        ConnectionRegistry.MAX_IP_AUTH_KEYS,
+      )
     );
   }
   /** Reset in-memory auth throttles between isolated integration-test fixtures. */

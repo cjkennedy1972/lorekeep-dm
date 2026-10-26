@@ -138,6 +138,25 @@ describe('gateway envelope', () => {
       ),
     ).toBe(false);
   });
+  it('bounds IP auth history and evicts expired IP keys', () => {
+    const registry = new ConnectionRegistry({
+      query: async () => ({ rows: [] }),
+    } as never);
+    for (let i = 0; i < 10_050; i++)
+      registry.consumeTransportAuthAttempt(`account-${i}`, `ip-${i}`, 10_000);
+
+    const ipAttempts = (
+      registry as unknown as {
+        ipAuthAttempts: Map<string, number[]>;
+      }
+    ).ipAuthAttempts;
+    expect(ipAttempts.size).toBeLessThanOrEqual(10_000);
+    expect(ipAttempts.has('ip-10049')).toBe(true);
+
+    registry.consumeTransportAuthAttempt('fresh-account', 'fresh-ip', 70_001);
+    expect(ipAttempts.size).toBe(1);
+    expect(ipAttempts.has('fresh-ip')).toBe(true);
+  });
   it('rejects malformed and accepts client wire format', () => {
     expect(ClientEnvelopeSchema.safeParse({ type: 'Resync' }).success).toBe(
       false,

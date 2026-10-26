@@ -20,9 +20,30 @@ describe('WebSocket upgrade client IP', () => {
     );
   });
 
-  it('separates forwarded clients into distinct IP keys when proxy trust is enabled', () => {
+  it('ignores forwarded addresses when all proxies are trusted', () => {
     const first = getClientIp(request('10.0.0.1', '203.0.113.10'), true);
     const second = getClientIp(request('10.0.0.1', '203.0.113.11'), true);
+
+    expect(first).toBe('10.0.0.1');
+    expect(second).toBe(first);
+  });
+
+  it('separates proxied clients with a configured hop count', () => {
+    const first = getClientIp(request('10.0.0.1', '203.0.113.10'), 1);
+    const second = getClientIp(request('10.0.0.1', '203.0.113.11'), 1);
+
+    expect(first).toBe('203.0.113.10');
+    expect(second).toBe('203.0.113.11');
+    expect(first).not.toBe(second);
+  });
+
+  it('separates proxied clients with a configured CIDR', () => {
+    const first = getClientIp(request('10.0.0.1', '203.0.113.10'), [
+      '10.0.0.0/8',
+    ]);
+    const second = getClientIp(request('10.0.0.1', '203.0.113.11'), [
+      '10.0.0.0/8',
+    ]);
 
     expect(first).toBe('203.0.113.10');
     expect(second).toBe('203.0.113.11');
