@@ -5209,6 +5209,13 @@ export class Room {
       if (!seat) throw new Error('Account is not seated');
       this.assertSeatBound(seat);
       if (this.actionIds.has(actionId)) return false;
+      // NarrationCompleted is delivered before the narration worker's promise
+      // unwinds. Once its committed state is actionable, wait for that worker
+      // to settle before evaluating this command; a still-narrating turn is
+      // genuinely in flight and remains rejected below.
+      const committedCombat = roomGameState(this.state);
+      if (this.turnInFlight && committedCombat?.phase !== 'narrating')
+        await this.activeTurn;
       const current = roomGameState(this.state);
       const gameState = this.state.gameState as
         | {

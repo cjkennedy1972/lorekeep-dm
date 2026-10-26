@@ -308,6 +308,93 @@ describe('Room combat command seam', () => {
     expect(events).toHaveLength(count);
   });
 
+  it('waits for an actionable narration worker to settle before persisting a combat command', async () => {
+    const { room, events, latestSnapshot } = setup();
+    const owner = randomUUID();
+    await joinSeated(room, owner, { send() {} });
+    const eventsBeforeCommand = events.length;
+    room.state = {
+      ...room.state,
+      gameState: {
+        combatRoom: { ...combat, phase: 'awaiting-command' },
+        combatActors: { [owner]: 'ent_hero' },
+      },
+    };
+    let settle!: () => void;
+    const settling = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const internals = room as unknown as {
+      turnInFlight: boolean;
+      activeTurn: Promise<void>;
+    };
+    internals.turnInFlight = true;
+    internals.activeTurn = settling;
+
+    let accepted = false;
+    const command = room
+      .submitCombatCommand(owner, randomUUID(), {
+        command: 'move',
+        destination: { x: 3, y: 1 },
+      })
+      .then((value) => {
+        accepted = value;
+      });
+    await Promise.resolve();
+    expect(events).toHaveLength(eventsBeforeCommand);
+    settle();
+    internals.turnInFlight = false;
+    await command;
+
+    const saved = latestSnapshot()?.state as {
+      gameState?: { combatRoom?: RoomCombatState };
+    };
+    expect(accepted).toBe(true);
+    expect(saved.gameState?.combatRoom?.entities[0]?.pos).toEqual({
+      x: 3,
+      y: 1,
+    });
+    expect(
+      events.filter((event) => event.type === 'NarrationCompleted'),
+    ).toHaveLength(0);
+    await room.drain();
+  });
+
+  it('continues rejecting commands while combat narration is genuinely in flight', async () => {
+    const { room, events } = setup();
+    const owner = randomUUID();
+    const sent: { type: string; payload?: Record<string, unknown> }[] = [];
+    await joinSeated(room, owner, {
+      send: (message) => sent.push(message as never),
+    });
+    const eventsBeforeCommand = events.length;
+    room.state = {
+      ...room.state,
+      gameState: {
+        combatRoom: { ...combat, phase: 'narrating' },
+        combatActors: { [owner]: 'ent_hero' },
+      },
+    };
+    const internals = room as unknown as { turnInFlight: boolean };
+    internals.turnInFlight = true;
+
+    await room.submitCombatCommand(owner, randomUUID(), {
+      command: 'move',
+      destination: { x: 3, y: 1 },
+    });
+
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'Error',
+        payload: expect.objectContaining({
+          code: 'narration-in-progress',
+          message: 'The DM is narrating this turn.',
+        }),
+      }),
+    );
+    expect(events).toHaveLength(eventsBeforeCommand);
+  });
+
   it('uses the engine path for valid movement and rejects an unreachable move unchanged', () => {
     const runtime = createCombatRuntime();
     const valid = runtime.execute(combat, 'ent_hero', {
