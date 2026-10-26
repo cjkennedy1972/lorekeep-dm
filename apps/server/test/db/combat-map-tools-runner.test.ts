@@ -191,13 +191,19 @@ describe('DM map tools through the production runner', () => {
       expect.objectContaining({ type: 'ToolCallRejected' }),
     );
     expect(first.room.combat.resources.ent_aria!.action).toBe(false);
+    expect(first.room.combat.resources.ent_aria!.actionSpellCast).toBe(true);
+    // The returned Room state is the persisted/replay snapshot for the next turn.
+    // Re-loading it below must retain both the cast spend and consumed handle.
     // the used handle was spent at commit
     const used = /opt_[a-z0-9]{4,8}/.exec(first.seen[1]!.join(' '))![0];
     expect(first.room.optionHandles ?? {}).not.toHaveProperty(used);
 
     // reuse in a later model turn with the action restored is refused
+    const replayedRoom = structuredClone(first.room);
+    expect(replayedRoom.combat.resources.ent_aria!.actionSpellCast).toBe(true);
+    expect(replayedRoom.optionHandles ?? {}).not.toHaveProperty(used);
     const reused = {
-      ...first.room,
+      ...replayedRoom,
       optionHandles: { ...(first.room.optionHandles ?? {}) },
       combat: {
         ...first.room.combat,

@@ -541,7 +541,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           bonusActionSpellCast?: Readonly<Record<string, boolean>>;
           actionSpellCast?: Readonly<Record<string, boolean>>;
         };
-        const combatRoom = (previous as GameState).combatRoom;
+        // A map suggestion may already have staged position/option handles for
+        // this call. Apply cast resource changes to that latest room rather than
+        // letting the staged snapshot mask them at the commit point.
+        const combatRoom = pendingRoom ?? (previous as GameState).combatRoom;
         const updatedCombatRoom =
           combatRoom &&
           (nextEngine.resources ||
@@ -603,10 +606,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         spentHandle = undefined;
         const afterCast = updatedCombatRoom ?? combatRoom;
         const committedRoom =
-          pendingRoom ??
-          (spent && afterCast
+          spent && afterCast
             ? consumeOptionHandle(afterCast, spent)
-            : updatedCombatRoom);
+            : (updatedCombatRoom ?? pendingRoom);
         pendingRoom = undefined;
         liveRoom = committedRoom;
         return {
