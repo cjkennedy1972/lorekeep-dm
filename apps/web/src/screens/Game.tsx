@@ -475,6 +475,7 @@ export function Game() {
             {
               round: tracker.round,
               turnIndex: 0,
+              activeEntityId: activeOf(tracker),
               initiative: tracker.initiative,
               resources: Object.fromEntries(
                 Object.entries(tracker.resources).map(([key, value]) => [

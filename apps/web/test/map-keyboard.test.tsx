@@ -91,11 +91,11 @@ describe('map keyboard movement', () => {
     expect(store.getState().combat.resources.hero?.movementRemaining).toBe(15);
   });
 
-  it('uses the first tracker initiative entry and delegates confirmed movement without local prediction', async () => {
+  it('uses the active entity and delegates confirmed movement without local prediction', async () => {
     const store = setup();
     store.setTracker({
       round: 1,
-      activeEntityId: 'goblin',
+      activeEntityId: 'hero',
       initiative: [
         { entityId: 'hero', total: 10 },
         { entityId: 'goblin', total: 15 },
@@ -126,6 +126,26 @@ describe('map keyboard movement', () => {
       store.getState().mapEntities.find((item) => item.id === 'hero')?.pos,
     ).toEqual({ x: 0, y: 2 });
     expect(screen.getByText(/Selected: hero/)).toBeInTheDocument();
+  });
+
+  it('selects nothing and does not jump to initiative[0] when the active entity is hidden (null)', async () => {
+    const store = setup();
+    store.setTracker({
+      round: 1,
+      activeEntityId: null,
+      initiative: [
+        { entityId: 'hero', total: 10 },
+        { entityId: 'goblin', total: 15 },
+      ],
+      resources: {},
+    });
+    const onMove = vi.fn();
+    const user = userEvent.setup();
+    render(<MapKeyboard store={store} onMove={onMove} />);
+    screen.getByRole('application', { name: 'Battle map' }).focus();
+    await user.keyboard('{Enter}{ArrowRight}{Enter}');
+    expect(onMove).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Selected: hero/)).toBeNull();
   });
 
   it('announces running cost on each keypress and rejects an illegal destination without moving', async () => {

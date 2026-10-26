@@ -9,6 +9,6 @@ export const selectTracker = (s: GameState) => ({
   order: s.combat.initiative,
 });
 
-/** US-B4 AC3: the active combatant is the first entry of the initiative order. */
+/** The server names the active combatant; null (a creature hidden from this viewer is acting) means none, never initiative[0]. */
 export const selectActiveCombatant = (s: GameState): string | null =>
-  s.combat.initiative[0]?.entityId ?? null;
+  s.combat.activeEntityId;

@@ -70,11 +70,10 @@ export function MapKeyboard({
       state.combat.combatants.find((item) => item.id === entry.entityId),
     )
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
-  const selectedId =
-    state.tracker?.initiative[0]?.entityId ??
-    state.combat.activeEntityId ??
-    entities[0]?.id ??
-    null;
+  // Active only: null (a hidden creature is acting) selects nothing and never jumps to initiative[0].
+  const selectedId = state.tracker
+    ? state.tracker.activeEntityId
+    : (state.combat.activeEntityId ?? entities[0]?.id ?? null);
   const selected = state.combat.combatants.find(
     (item) => item.id === selectedId,
   );

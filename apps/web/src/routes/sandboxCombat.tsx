@@ -232,7 +232,10 @@ export function SandboxCombat() {
         },
       ]),
     );
-    for (const token of createTokenDrawCommands(snapshot, presentation)) {
+    for (const token of createTokenDrawCommands(
+      { ...snapshot, activeEntityId: snapshot.initiative[0]?.entityId ?? null },
+      presentation,
+    )) {
       ctx.fillStyle = token.team === 'pc' ? '#155eef' : '#a52a2a';
       ctx.beginPath();
       ctx.arc((token.x + 0.5) * 28, (token.y + 0.5) * 28, 9, 0, Math.PI * 2);

@@ -816,10 +816,9 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
       { type: 'HpChanged', entityId: 'rogue', hp: 3 },
       { type: 'ConditionApplied', entityId: 'rogue', conditionId: 'prone' },
       {
-        type: 'AttackResolved',
-        attackerId: entB,
-        targetId: 'rogue',
-        hit: true,
+        type: 'OpportunityTriggered',
+        moverId: entB,
+        attackerId: 'rogue',
       },
       { type: 'EntityMoved', entityId: 'goblin', path: [{ x: 4, y: 5 }] },
     ];

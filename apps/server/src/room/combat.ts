@@ -64,8 +64,6 @@ export type CombatRuntime = {
   expire(state: RoomCombatState, now: number): CombatTransition | null;
 };
 
-const ENTITY_ID_KEY = /(?:entity|mover|attacker|reactor|target|caster).*ids?$/i;
-
 export function hiddenEntityIds(
   state: Pick<RoomCombatState, 'entities'>,
 ): Set<string> {
@@ -74,29 +72,6 @@ export function hiddenEntityIds(
       .filter((entity) => entity.hidden)
       .map((entity) => entity.id),
   );
-}
-
-/** The single "does this event/payload name a hidden entity" predicate (narration filter and client events). */
-export function namedHiddenIds(
-  hidden: ReadonlySet<string>,
-  value: unknown,
-  key = '',
-): string[] {
-  if (typeof value === 'string')
-    return ENTITY_ID_KEY.test(key) && hidden.has(value) ? [value] : [];
-  if (!value || typeof value !== 'object') return [];
-  return Object.entries(value).flatMap(([k, v]) =>
-    namedHiddenIds(hidden, v, Array.isArray(value) ? key : k),
-  );
-}
-
-/** A committed event reaches a viewer only if every hidden entity it names is one the viewer controls. */
-export function eventVisibleTo(
-  event: Record<string, unknown>,
-  hidden: ReadonlySet<string>,
-  controlled: ReadonlySet<string>,
-): boolean {
-  return namedHiddenIds(hidden, event).every((id) => controlled.has(id));
 }
 
 /**

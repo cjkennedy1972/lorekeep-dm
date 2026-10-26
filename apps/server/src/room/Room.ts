@@ -39,13 +39,12 @@ import {
   trackerMessage,
   projectCombatForViewer,
   hiddenEntityIds as hiddenIdsOf,
-  namedHiddenIds,
-  eventVisibleTo,
   reactionMessage,
   type CombatRuntime,
   type CombatTransition,
   type RoomCombatState,
 } from './combat.js';
+import { namesHiddenEntity, projectEventForViewer } from './eventVisibility.js';
 import { attacksFor, settleEngine } from './combatBootstrap.js';
 import { withHp } from './combatEngine.js';
 import type { ActionId } from '@game/schema';
@@ -5144,7 +5143,7 @@ export class Room {
     const priorTurnEventIds = beforeCombat?.turnNarrationEventIds ?? [];
     const hiddenEntityIds = hiddenIdsOf(combatState);
     const currentTurnEventIds = result.events.flatMap((event, index) =>
-      namedHiddenIds(hiddenEntityIds, event).length
+      namesHiddenEntity(event, hiddenEntityIds)
         ? []
         : [String(this.seq + index + 1)],
     );
@@ -5244,9 +5243,10 @@ export class Room {
     const hidden = hiddenIdsOf(state);
     for (const [viewer, connection] of this.connections) {
       const controlled = this.controlledBy(viewer);
-      const visible = clientEvents.filter((event) =>
-        eventVisibleTo(event, hidden, controlled),
-      );
+      const visible = clientEvents.flatMap((event) => {
+        const shown = projectEventForViewer(event, hidden, controlled);
+        return shown ? [shown] : [];
+      });
       if (visible.length)
         connection.send({
           seq: this.seq,
@@ -5657,7 +5657,7 @@ export class Room {
     const facts = events
       .filter(
         (event) =>
-          !namedHiddenIds(hiddenEntityIds, event).length &&
+          !namesHiddenEntity(event, hiddenEntityIds) &&
           isNarrationFactType(String(event.type)),
       )
       .slice(0, 12)
