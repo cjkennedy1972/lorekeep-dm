@@ -89,7 +89,7 @@ The host sends `KickSeat` for the controller while the prompt is open. The promp
 ## Blocked
 
 - **Workboard cards for product bugs.** No card-creation tool is available in this session. The `workboard_sessions_board_*` tools only manage Sessions boards. Product bugs to file as backlog, unassigned cards:
-  1. Seated controller of a monster-bound entity: reaction answers always `not-your-turn` (`it.fails` in `sim-combat.test.ts`).
+  1. Seated controller of a monster-bound entity: reaction answers always `not-your-turn` (pinned as a plain test in `sim-combat.test.ts`).
   2. Party defeated by about round 4 to 8 in the six-PC encounter. Needs triage: balance vs. monster policy.
   3. Move alone does not trigger DM narration in combat; only `end-turn` does. Confirm whether that is intended.
 
