@@ -1,102 +1,93 @@
-# M4-8 evidence: keyboard-only party combat (real server), PARTIAL for gate 4
+# M4-8 evidence: keyboard-only party combat (real server), gate 4
 
-Branch `test/m4-8-kbd-reaction`, based on a fresh `origin/main`. Draft PR opened from this branch. It does not replace any merged work; it adds the keyboard opportunity-attack reaction e2e and a fixture fix that makes the attack e2e deterministic.
+Branch `test/m4-8-area-aim-pointer-e2e`, based on `origin/main` at `835d9d3` (#348). Code commit: `7bf71d9ec94251b93b41a68f8d9b8423dd109cd4`.
 
-Scope: gate 4 is partly covered. Keyboard move, attack, and the opportunity-attack reaction (Accept, Decline, Escape) are covered end to end on the real party server. The reaction window is staged by a test-only fixture hook, not by real play (see below). Area aim has unit tests only. Pointer equivalents are not done.
+Gate 4 ("Keyboard-only combat passes") is covered for movement, attack, reaction, and area aim, plus pointer equivalents for movement. The reaction window is fixture-staged, not produced by real play.
+
+## Coverage of the four gate-4 actions
+
+| Action | Spec | Path | Fixture-staged? |
+|---|---|---|---|
+| Movement (keyboard) | `party-kbd-combat.spec.ts`, `party-combat.spec.ts` | Keyboard focus, move preview, cancel and confirm; three-browser sync | No. Seats start where the seed places them. |
+| Movement (pointer) | `party-pointer-move.spec.ts` | Click a reachable cell, then Confirm move; click a cell, then Cancel move. No drag. | No. |
+| Attack | `party-kbd-combat.spec.ts` | Keyboard attack on an adjacent goblin, asserted on a `CombatEvents` `RollEvent` with `actorId` of the active seat | The goblin is placed beside the active seat by the fixture (`placeAdjacent`). The attack itself is real play. |
+| Reaction (opportunity attack) | `party-kbd-reaction.spec.ts` | Accept (Enter), Decline (Tab, Enter), Escape declines; asserted on `ReactionAnswered` frames | **Yes.** Staged by `POST /api/test/stage-reaction`. |
+| Area aim | `party-kbd-area.spec.ts` | Open the AreaAim list, arrow to an aim, read the affected-units preview, Enter casts; Escape clears; Cancel clears | Caster and goblin placement are fixture-seeded (`POST /api/test/reset-area`). The cast resolves through the real engine and server. |
+
+### Why reaction is fixture-staged
+
+Real play cannot reach a PC reactor deterministically:
+
+- A PC moving away from a monster provokes the monster's reaction. The monster has no controller, so the engine auto-declines it. A PC-reactor prompt never appears on that path.
+- A PC reactor needs the monster to move, and monster AI timing is not under test control.
+
+`stage-reaction` runs the engine's real `moveAlong` and `applyMovement`, then calls `scheduleReaction`. The window comes from the rules engine. It is staged after all seats have joined, which avoids the `Room.join` rule that declines a window whose reactor is disconnected.
+
+## Area aim (new this PR)
+
+`party-kbd-area.spec.ts`, three tests:
+
+1. **Keyboard cast.** The caster opens the area list, arrows to an aim, and the affected-units preview updates. The first test runs axe on this state with no serious or critical violations. Enter sends a `cast` command whose target is the option `ref` from the latest `CombatOptions.areas` frame. The test asserts the sent frame carries that engine-issued ref, then asserts the server's `CombatEvents` frame contains `SpellCast` and `AreaResolved`.
+2. **Escape clears the aim.** Escape on the list clears the selection. No `cast` frame is sent.
+3. **Cancel clears the aim.** The "Cancel area aim" button clears the selection. No `cast` frame is sent.
+
+The caster is a valid quick-built wizard (`quickBuild(catalog, 'class:wizard', …)`) with only `spell:burning-hands` prepared, so every area option is Burning Hands. The goblin is placed two cells east of the caster, inside the cone.
+
+## Pointer move (new this PR)
+
+`party-pointer-move.spec.ts`, two tests:
+
+1. Click a free neighbour cell that the map's own preview reports as reachable (`Move preview: … feet`). Then click "Confirm move". The test checks the sent destination and that every seat receives the move within `SYNC_BUDGET_MS`.
+2. Click a cell, then "Cancel move". The caster does not move, and no move is sent.
+
+The click uses `canvas#game-map-canvas`'s own `locator.click({ position })`. An earlier version computed page coordinates by hand and clicked the wrong cell, which was a test-helper bug. No product code was changed for it.
+
+## Product changes
+
+None in this PR. The area-aim UI (`AreaAim.tsx`), the pointer path (canvas click → `pickCell` → Confirm/Cancel), and axe on the area state all passed without modification. No UI defect was exposed. The only test-side fixes were the caster sheet (the earlier `hero` fixture fails `validateCharacter`) and the canvas click helper.
+
+## Test-only fixture hooks (`apps/server/test/live/serve.party.live.ts`)
+
+- `POST /api/test/reset-combat` (from #348): restores the seeded combat state.
+- `POST /api/test/stage-reaction` (from #348): stages the reaction window.
+- `POST /api/test/reset-area` (new): restores the area fixture. Seeds the area table with the caster, guest, and scout seats.
+- `placeTwoCellsAway` (new): places the goblin two cells from the caster on a free in-map cell.
 
 ## Environment
 
-- Postgres: a dedicated, throwaway Docker container `m4-8-kbd-reaction-pg` (postgres 16) on 127.0.0.1:55481, database `lorekeep_m48r`, migrated before the run. Removed with `docker rm -f m4-8-kbd-reaction-pg` after the runs.
-- `DATABASE_URL` was set to that container's URL for the run only. The URL is not committed.
-- Real server: `apps/server/test/live/serve.party.live.ts` (vitest, LIVE_PORT 8800) plus vite on 5176, started by `apps/web/playwright.party.config.ts` (1 worker, chromium, 0 retries).
-- All commands ran in one server boot, in this order, on the same commit.
+- Postgres: dedicated, throwaway Docker container `m4-8-area-pg` (postgres 16-alpine) on `127.0.0.1:55483`, database `lorekeep_m48a`, migrated before the run. Removed after the runs with `docker rm -f m4-8-area-pg`. The password was read from a local file and is not committed.
+- `DATABASE_URL` was set for the run only.
+- Real server: `apps/server/test/live/serve.party.live.ts` (vitest, `LIVE_API_PORT` 8800) and vite on 5176, started by `apps/web/playwright.party.config.ts` (1 worker, chromium).
 
 ## Commands and results
+
+All commands ran on commit `7bf71d9`.
 
 | Command | Result |
 |---|---|
 | `pnpm --filter @game/web typecheck` | exit 0 |
 | `pnpm --filter @game/server typecheck` | exit 0 |
 | `pnpm lint` | exit 0 |
-| `pnpm format:check` | exit 0 (after `prettier --write` on the changed files) |
-| `pnpm --filter @game/web test` | 40 files, 316 tests passed |
-| `DATABASE_URL=postgres://postgres:…@127.0.0.1:55481/lorekeep_m48r pnpm exec playwright test -c playwright.party.config.ts e2e-party/` (whole directory, from `apps/web`) | **15 passed, 1 skipped**, 19.9 s, exit 0 |
+| `pnpm format:check` | exit 0 |
+| `pnpm --filter @game/web test` | 40 files, 316 tests passed, exit 0 |
+| `DATABASE_URL=… pnpm exec playwright test -c playwright.party.config.ts e2e-party` (from `apps/web`, one boot, full directory) | **20 passed, 1 skipped** (21 tests), 26.7 s, exit 0 |
 
-The one skipped test is the pre-existing `test.fixme` "an unseated player sees Not seated and can rejoin". It is not a new skip.
+The skipped test is `party-round.spec.ts:501`, "an unseated player sees Not seated and can rejoin". It is a pre-existing `test.fixme` on `origin/main`, not a new skip.
 
-The 15 passed include the three new reaction tests (`party-kbd-reaction.spec.ts`), the keyboard combat test, and the existing party round and host specs.
+Per-spec results in the full run:
 
-## Keyboard opportunity-attack reaction (new)
-
-`apps/web/e2e-party/party-kbd-reaction.spec.ts`, three tests. Each test opens three seats (host, guest, scout) and stages the window after all three are connected.
-
-1. **Accept by keyboard.** The reactor gets a `ReactionPrompt` frame with options `['take', 'decline']` and the reactor's dialog is focused on Accept. Enter sends `take`. The server frame `ReactionAnswered{choice:'take'}` confirms it. Non-reactor seats get a `ReactionPromptOpen` frame, show the status "Reaction window open for <entity>", and have no dialog.
-2. **Decline by keyboard.** Tab moves focus to Decline and Enter sends it. Frame: `ReactionAnswered{choice:'decline'}`. No `take` frame.
-3. **Escape declines.** Escape on the dialog sends `decline`. Frame: `ReactionAnswered{choice:'decline'}`.
-
-In each test all seats' dialogs close after the answer. The assertions are on server frames, not on rendered text alone.
-
-### Why the window is staged, not played
-
-The brief asked for real play first. It is not reachable deterministically, for two reasons:
-
-- A PC moving away from a monster provokes the monster's reaction. That monster reactor has no controller, so the engine auto-declines it. The real provoking path therefore never produces a PC-reactor prompt.
-- A PC reactor needs the monster to move. That monster move depends on monster AI, so its timing is not under test control.
-
-The fixture therefore stages the window after all seats have joined. `POST /api/test/stage-reaction` (test-only, `serve.party.live.ts`):
-
-- puts the goblin adjacent to the reactor, sets the goblin's turn resources, and finds a cell two squares away from the reactor;
-- runs the engine's real `moveAlong` and `applyMovement`, so the window is produced by the rules engine, not by writing a prompt directly;
-- persists the state and calls the Room's `scheduleReaction`.
-
-Staging after join avoids `Room.join`'s rule that declines a window whose reactor seat is not connected (`apps/server/src/room/Room.ts`, around lines 1470-1490). No product code was changed.
-
-## Keyboard-only attack (fixed in this branch)
-
-`party-kbd-combat.spec.ts` has one test with seven steps (focus, move cancel, move confirm with three-browser sync, token-list coordinates, Alt+D, axe on the combat screen, and the 390x844 "Show map" fallback), plus a keyboard attack on an adjacent goblin. The attack is asserted on a `CombatEvents` frame with a `RollEvent` whose `actorId` is the active seat.
-
-**Pre-existing flake, fixed.** The attack step failed with "goblin is adjacent to the active seat" (expected 1, received 2) when run after `party-combat.spec.ts`. Two causes:
-
-- The fixture placed the goblin at a fixed cell (11,2). Seat start positions are random, so the goblin was sometimes not beside the acting seat.
-- Earlier specs in the same server boot left the shared combat table in a moved state.
-
-Fix:
-- The goblin is placed beside the active entity (`placeAdjacent`) when the table is seeded.
-- A new test-only `POST /api/test/reset-combat` restores the seeded combat state. `openCombatTable` in `party-kbd-combat.spec.ts` calls it before the test.
-- The adjacency assertion is kept, so a future fixture regression fails loudly.
-
-## Cross-spec reconnect (harness, from earlier work)
-
-Seats in later specs of the same boot reconnect with a saved `storageState` (`openMember` / `closeMember` in `combat-helpers.ts`). The resume token lives in localStorage, so a fresh context without it looks like a new device and needs host approval. This is the intended path; the harness keeps the token.
-
-## Move labels
-
-`Game.tsx` labels move buttons `Move to {x+1},{y+1} ({cost} feet)`, matching the 1-based coordinates in keyboard announcements and the token table. Covered by `game-screen.test.tsx`.
-
-## Area aim: implemented, unit tests only
-
-`apps/web/src/features/map/AreaAim.tsx` is a keyboard list over `CombatOptions.areas`. `apps/web/test/area-aim.test.tsx` has 9 unit tests. There is no e2e: the party fixture has no caster with an area spell.
-
-## Pointer equivalents: not done
-
-No pointer-equivalent e2e or unit test was added.
-
-## Findings outside this PR's scope
-
-- The engine's options generator (`packages/engine/src/map/options.ts`, around lines 149-165) lists attacks against any target, including allied seats, and does not gate attack options on the action resource. The server still rejects an attack with no action (`combat.ts` checks `resource.action`), so the UI can offer an attack the server will refuse. Not changed here.
-- The reaction prompt has no `y`/`n` keys. It has Accept and Decline buttons, and Escape declines. This is the intended design.
+- `party-combat.spec.ts`: 1 passed (three-browser keyboard move sync, 52 ms).
+- `party-kbd-area.spec.ts`: 3 passed.
+- `party-kbd-combat.spec.ts`: 1 passed.
+- `party-kbd-reaction.spec.ts`: 3 passed (fixture-staged).
+- `party-pointer-move.spec.ts`: 2 passed (pointer sync, 60 ms).
+- `party-round.spec.ts`: 10 passed, 1 skipped (pre-existing fixme).
 
 ## Uncertainties
 
-- The reaction is fixture-staged, not real play. Real play is not deterministic for the reasons above.
-- `e2e-party/*.ts` is not in the web tsconfig include, so typecheck does not check the specs; eslint and the Playwright run do.
-- The WebServer log shows `[vite] ws proxy error: read ECONNRESET` during some round specs. They did not fail any test; I did not confirm they are harmless.
+- Reaction is fixture-staged, not real play, for the reasons above.
+- `e2e-party/*.ts` is not in the web tsconfig include, so typecheck does not check the specs. Eslint and the Playwright run do.
+- The WebServer log shows `[vite] ws proxy error: read ECONNRESET` during some round specs. No test failed because of it, and I did not confirm that it is harmless.
 - Attack resolution is asserted from the server frame. The UI does not show attack results or action spend.
-- Sync latency numbers from earlier runs (31-40 ms, localhost only) are not re-measured in this run and are not repeated here.
+- Area aim uses Burning Hands only. Other area spells are not exercised on the server.
 - Not merged, not marked ready, no review requested.
-
-## Gate status
-
-- Covered: keyboard move preview, cancel, and confirm; focus visibility; list-driven coordinates; Alt+D; axe serious/critical on the combat screen; the 390x844 "Show map" fallback; keyboard attack against an adjacent goblin; keyboard reaction Accept, Decline, and Escape with server-frame assertions; 1-based move labels.
-- Not covered: reaction via real play (fixture-staged instead); area aim e2e (unit-tested only); pointer equivalents.
-- Card `d7e5752e` remains open for area aim e2e and pointer equivalents.
