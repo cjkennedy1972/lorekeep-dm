@@ -201,8 +201,19 @@ class Client {
                 m.payload?.actionId === undefined))),
         mark,
       );
-      if (reply.payload?.message?.includes('still narrating')) {
-        await new Promise((r) => setTimeout(r, 50));
+      // Admission rejects while the DM narrates the previous resolved turn
+      // (phase `narrating`). Wait for that narration to finish (the Room commits
+      // the next phase before it broadcasts NarrationCompleted), then resend.
+      if (reply.payload?.code === 'narration-in-progress') {
+        await this.until(
+          (m) => m.type === 'NarrationCompleted',
+          this.log.indexOf(reply) + 1,
+          20_000,
+        ).catch((e: Error) => {
+          throw new Error(
+            `${e.message}; command ${JSON.stringify(payload)} stuck behind narration; frames: ${this.log.map((m) => m.type + (m.payload?.code ? `:${m.payload.code}` : '')).join(',')}`,
+          );
+        });
         continue;
       }
       // RATE_LIMITED is rejected before the Room sees the command, so resending is safe.
