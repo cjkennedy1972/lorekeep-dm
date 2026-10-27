@@ -89,6 +89,7 @@ describe('turn-scoped evaluation', () => {
       context: 'x'.repeat(400),
       tier: 'family',
       direction: 'output',
+      sessionId: 'test-table',
     });
     expect(verdict.verdict).toBe('allow');
   });
@@ -106,6 +107,7 @@ describe('turn-scoped evaluation', () => {
       turn,
       tier: 'family',
       direction: 'output',
+      sessionId: 'test-table',
     });
     expect(verdict).toMatchObject({ verdict: 'block', source: 'hardfloor' });
   });

@@ -6,6 +6,7 @@ import {
 import {
   endpointJudgeBudget,
   JudgeBudget,
+  OUTPUT_NO_SESSION_BUCKET,
 } from '../../src/safety/judgeBudget.js';
 import { createConfiguredAdapter } from '../../src/llm/config.js';
 import { parseVerdictReply } from '../../src/safety/moderator.js';
@@ -68,14 +69,24 @@ describe('production endpoint judge wrapper', () => {
     await vi.waitFor(() => expect(adapter.complete).toHaveBeenCalledTimes(1));
     adapter.pending[0]!.resolve();
     await expect(verdict).resolves.toMatchObject({ verdict: 'allow' });
-    expect(acquire).toHaveBeenCalledWith('output');
+    expect(acquire).toHaveBeenCalledWith(
+      'output',
+      expect.any(Number),
+      OUTPUT_NO_SESSION_BUCKET,
+    );
   });
 
   it('does not parse a typed capacity result from the production wrapper', async () => {
     const parser = vi.fn(parseVerdictReply);
-    const outputSlot = endpointJudgeBudget.acquire('output');
-    expect(outputSlot.kind).toBe('acquired');
-    if (outputSlot.kind !== 'acquired') return;
+    const outputSlots = Array.from({ length: 4 }, () =>
+      endpointJudgeBudget.acquire('output'),
+    );
+    expect(outputSlots.map((slot) => slot.kind)).toEqual([
+      'acquired',
+      'acquired',
+      'acquired',
+      'acquired',
+    ]);
     const judge = createEndpointJudge(dbStub(), parser);
 
     await expect(
@@ -90,7 +101,8 @@ describe('production endpoint judge wrapper', () => {
       failClosedRow: 'tier',
     });
     expect(parser).not.toHaveBeenCalled();
-    outputSlot.release();
+    for (const slot of outputSlots)
+      if (slot.kind === 'acquired') slot.release();
   });
 
   it('reserves an action-input slot through the real gate while chat slots are saturated', async () => {
@@ -343,6 +355,7 @@ describe('production endpoint judge wrapper', () => {
       text: 'The door opens.',
       tier: 'standard',
       direction: 'output',
+      sessionId: 'table-under-test',
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(adapter.complete).toHaveBeenCalledTimes(4);
@@ -362,11 +375,19 @@ describe('production endpoint judge wrapper', () => {
     const parser = vi.fn(parseVerdictReply);
     const judge = createEndpointJudge(dbStub(), parser);
     const output = (text: string) =>
-      judge.moderate({ text, tier: 'standard', direction: 'output' });
-    const lost = output('A narration request that never settles.');
+      judge.moderate({
+        text,
+        tier: 'standard',
+        direction: 'output',
+        sessionId: 'table-under-test',
+      });
+    const lost = Array.from({ length: 4 }, (_, i) =>
+      output(`A narration request ${i} that never settles.`),
+    );
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(4_500);
-    await expect(lost).resolves.toMatchObject({ unavailable: true });
+    for (const request of lost)
+      await expect(request).resolves.toMatchObject({ unavailable: true });
 
     await expect(
       output('The next narration must be held.'),
@@ -376,7 +397,7 @@ describe('production endpoint judge wrapper', () => {
       failClosedRow: 'tier',
     });
     expect(parser).not.toHaveBeenCalled();
-    adapter.pending[0]!.resolve();
+    for (const pending of adapter.pending) pending.resolve();
     await vi.advanceTimersByTimeAsync(0);
   });
 

@@ -46,7 +46,7 @@ export function failClosedVerdict(
   };
 }
 
-export interface ModerationRequest {
+interface ModerationRequestBase {
   text: string;
   tier: ContentTier;
   tableLines?: readonly string[];
@@ -60,6 +60,12 @@ export interface ModerationRequest {
   /** Optional caller deadline (chat receipt bound); aborts the in-flight judge request. */
   signal?: AbortSignal;
 }
+
+export type ModerationRequest = ModerationRequestBase &
+  (
+    | { direction: 'input'; sessionId?: string }
+    | { direction: 'output'; sessionId: string }
+  );
 
 export interface Moderator {
   moderate(req: ModerationRequest): Promise<Verdict>;
@@ -100,6 +106,7 @@ export interface ChatMessage {
 }
 
 export interface JudgeChatRequest {
+  sessionId?: string;
   messages: ChatMessage[];
   temperature: 0;
   max_tokens: number;
@@ -307,6 +314,7 @@ export class JudgeModerator implements Moderator {
           max_tokens: JUDGE_MAX_TOKENS,
           signal: controller.signal,
           direction: req.direction,
+          sessionId: req.sessionId,
           budgetClass: req.budgetClass,
         }),
       )

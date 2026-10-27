@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JudgeBudget } from '../../src/safety/judgeBudget.js';
+import {
+  JudgeBudget,
+  OUTPUT_NO_SESSION_BUCKET,
+} from '../../src/safety/judgeBudget.js';
 
 describe('shared judge budget', () => {
   it('caps chat at two slots and preserves one action-input slot', () => {
@@ -32,11 +35,17 @@ describe('shared judge budget', () => {
     }
     expect(budget.acquire('chat')).toEqual({ kind: 'limited', class: 'chat' });
     const action = budget.acquire('action-input');
-    const output = budget.acquire('output');
+    const outputs = Array.from({ length: 4 }, () => budget.acquire('output'));
     expect(action.kind).toBe('acquired');
-    expect(output.kind).toBe('acquired');
+    expect(outputs.map((slot) => slot.kind)).toEqual([
+      'acquired',
+      'acquired',
+      'acquired',
+      'acquired',
+    ]);
     if (action.kind === 'acquired') action.markLost();
-    if (output.kind === 'acquired') output.markLost();
+    for (const output of outputs)
+      if (output.kind === 'acquired') output.markLost();
     expect(budget.acquire('action-input')).toEqual({
       kind: 'limited',
       class: 'action-input',
@@ -119,7 +128,34 @@ describe('shared judge budget', () => {
     vi.useRealTimers();
   });
 
-  it('caps chat at 120/min, actions at 80/min and reserves output at 40/min', () => {
+  it('isolates callers without a session in a small dedicated output bucket', () => {
+    const budget = new JudgeBudget();
+    for (let i = 0; i < 5; i++) {
+      const slot = budget.acquire('output', i);
+      expect(slot.kind).toBe('acquired');
+      if (slot.kind === 'acquired') slot.release();
+    }
+    expect(budget.acquire('output', 5, OUTPUT_NO_SESSION_BUCKET)).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
+    // No-session traffic cannot spend or inherit a real table's 60/minute allowance.
+    for (let i = 0; i < 60; i++) {
+      const table = budget.acquire('output', i, 'table-a');
+      expect(table.kind).toBe('acquired');
+      if (table.kind === 'acquired') table.release();
+    }
+    expect(budget.acquire('output', 60, 'table-a')).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
+    expect(budget.acquire('output', 60, OUTPUT_NO_SESSION_BUCKET)).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
+  });
+
+  it('caps chat at 120/min, actions at 80/min and output at 160/min', () => {
     const budget = new JudgeBudget();
     for (let i = 0; i < 120; i++) {
       const result = budget.acquire('chat', i);
@@ -139,12 +175,12 @@ describe('shared judge budget', () => {
       kind: 'limited',
       class: 'action-input',
     });
-    for (let i = 0; i < 40; i++) {
-      const result = budget.acquire('output', 200);
+    for (let i = 0; i < 160; i++) {
+      const result = budget.acquire('output', 200, `table-${i}`);
       expect(result.kind).toBe('acquired');
       if (result.kind === 'acquired') result.release();
     }
-    expect(budget.acquire('output', 200)).toEqual({
+    expect(budget.acquire('output', 200, 'table-last')).toEqual({
       kind: 'limited',
       class: 'output',
     });

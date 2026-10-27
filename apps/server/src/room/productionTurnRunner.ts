@@ -384,6 +384,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           tier,
           tableLines,
           direction: 'output',
+          sessionId: request.sessionId,
         });
         return verdict.verdict === 'allow';
       } catch {
@@ -876,6 +877,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       refused = false;
       const narration: DMTurnEvent[] = [];
       const result = await runTurn({
+        sessionId: request.sessionId,
         signal: request.signal,
         turnId: request.actionId,
         allowClarification: request.allowClarification,

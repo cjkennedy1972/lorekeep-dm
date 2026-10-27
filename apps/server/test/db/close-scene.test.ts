@@ -9,7 +9,10 @@ import type {
   LlmChunk,
   LlmRequest,
 } from '../../src/llm/adapter.js';
-import type { Moderator } from '../../src/safety/moderator.js';
+import type {
+  Moderator,
+  ModerationRequest,
+} from '../../src/safety/moderator.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import { deleteTestSessions } from './testCleanup.js';
 
@@ -138,6 +141,7 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
   it('rejects unsafe registry prose before it enters world state or the event result', async () => {
     const { accountId, sessionId } = await table();
     const calls: LlmRequest[] = [];
+    const moderationRequests: ModerationRequest[] = [];
     const adapter: LlmAdapter = {
       capabilities: () => ({
         streaming: true,
@@ -174,7 +178,8 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
       true,
       false,
       {
-        async moderate() {
+        async moderate(request: ModerationRequest) {
+          moderationRequests.push(request);
           return {
             verdict: 'block',
             category: 'violence',
@@ -203,6 +208,12 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     );
 
     expect(calls).toHaveLength(2);
+    expect(moderationRequests.length).toBeGreaterThan(0);
+    expect(moderationRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ direction: 'output', sessionId }),
+      ]),
+    );
     expect(result.events).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'NpcUpserted' }),
@@ -213,13 +224,15 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
   });
 
   it('does not emit a blocked model-authored SceneClosed summary', async () => {
-    const { result, closed } = await turn(
+    const requests: ModerationRequest[] = [];
+    const { result, closed, sessionId } = await turn(
       'scene-marowfell-well',
       {
         summary: 'Unsafe gore summary.',
       },
       {
-        async moderate() {
+        async moderate(request: ModerationRequest) {
+          requests.push(request);
           return {
             verdict: 'block',
             category: 'violence',
@@ -232,6 +245,11 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     );
 
     expect(closed).toHaveLength(0);
+    expect(requests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ direction: 'output', sessionId }),
+      ]),
+    );
     expect(result.events).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'SceneClosed' }),

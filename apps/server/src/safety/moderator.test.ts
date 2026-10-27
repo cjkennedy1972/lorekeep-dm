@@ -38,6 +38,7 @@ const request = (text: string, extra: { tableLines?: string[] } = {}) => ({
   text,
   tier: 'standard' as const,
   direction: 'output' as const,
+  sessionId: 'test-table',
   ...extra,
 });
 
@@ -224,6 +225,7 @@ describe('injection resistance', () => {
         ...request("A giant snake coils around Mara's leg and bites."),
         tier,
         direction: 'output',
+        sessionId: 'test-table',
         tableLines: ['snakes'],
       });
       const rule = MODERATION_SECTIONS[`rubric:${tier}`]
@@ -518,6 +520,7 @@ describe('fail-closed row', () => {
       text: 'Hi.',
       tier: 'family',
       direction: 'output',
+      sessionId: 'test-table',
     });
     expect(verdict).toMatchObject({
       verdict: 'block',
@@ -536,6 +539,7 @@ describe('fail-closed row', () => {
       text: 'A scene.',
       tier: 'standard',
       direction: 'output',
+      sessionId: 'test-table',
       turn: {
         push: () => {
           throw new Error('scanner failed');
@@ -563,6 +567,7 @@ describe('table-line scene blocked at each tier (fixed judge verdict)', () => {
         text: SCENE,
         tier,
         direction: 'output',
+        sessionId: 'test-table',
         tableLines: ['snakes'],
       });
       expect(verdict).toMatchObject({
@@ -587,6 +592,7 @@ describe('table-line scene blocked at each tier (fixed judge verdict)', () => {
       text: scene,
       tier: 'family',
       direction: 'output',
+      sessionId: 'test-table',
       tableLines: ['snakes'],
     });
 
@@ -634,6 +640,7 @@ describe('table-line scene blocked at each tier (fixed judge verdict)', () => {
       text: SCENE,
       tier: 'standard',
       direction: 'output',
+      sessionId: 'test-table',
     });
     expect(verdict).toMatchObject({ verdict: 'allow', source: 'judge' });
   });

@@ -18,6 +18,7 @@ import type {
   ModerationRequest,
 } from '../../src/safety/moderator.js';
 import type { Verdict } from '../../src/safety/moderator.js';
+import { JudgeBudget } from '../../src/safety/judgeBudget.js';
 
 class FixtureAdapter implements LlmAdapter {
   calls = 0;
@@ -61,6 +62,7 @@ describe('scene summaries and recap', () => {
       moderator,
       'standard',
       ['line: no spiders'],
+      'table-for-recap',
     );
 
     expect(result.recap).toBe(SAFE_RECAP_FALLBACK);
@@ -71,6 +73,7 @@ describe('scene summaries and recap', () => {
       tier: 'standard',
       tableLines: ['line: no spiders'],
       direction: 'output',
+      sessionId: 'table-for-recap',
     });
 
     const safeRecap = {
@@ -95,13 +98,94 @@ describe('scene summaries and recap', () => {
         },
         'standard',
         [],
+        'table-for-recap',
       ),
     ).toEqual(safeRecap);
+  });
+
+  it('keeps recap and scene-close output capacity isolated by table', async () => {
+    const budget = new JudgeBudget();
+    const requests: ModerationRequest[] = [];
+    const moderator: Moderator = {
+      async moderate(request) {
+        requests.push(request);
+        const slot = budget.acquire('output', 1_000, request.sessionId);
+        if (slot.kind === 'limited')
+          return {
+            verdict: 'block',
+            category: 'other',
+            source: 'failclosed',
+            latencyMs: 0,
+            unavailable: true,
+            failClosedRow: 'tier',
+          };
+        slot.release();
+        return {
+          verdict: 'allow',
+          category: 'none',
+          source: 'judge',
+          latencyMs: 0,
+          unavailable: false,
+        };
+      },
+    };
+    const recap = {
+      recap: 'The party reaches the observatory.',
+      memoryHash: 'hash',
+      cached: false,
+      fallback: false,
+    };
+    for (let call = 0; call < 60; call++)
+      await gateRecap(recap, moderator, 'standard', [], 'table-a');
+
+    const otherTableRecap = await gateRecap(
+      recap,
+      moderator,
+      'standard',
+      [],
+      'table-b',
+    );
+    expect(otherTableRecap.fallback).toBe(false);
+
+    const db = {
+      async query() {
+        return { rows: [], rowCount: 0 };
+      },
+      async connect() {
+        return {
+          async query() {
+            return { rows: [], rowCount: 1 };
+          },
+          release() {},
+        };
+      },
+    } as never;
+    const closed = await closeScene({
+      sessionId: 'table-b',
+      sceneId: 'scene-b',
+      events: [],
+      db,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+      adapter: new FixtureAdapter(
+        JSON.stringify({
+          summary: 'The party reaches the observatory.',
+          registryDiffs: [],
+        }),
+      ),
+    });
+    expect(closed.summary).toBe('The party reaches the observatory.');
+    expect(requests.slice(-2).map((request) => request.sessionId)).toEqual([
+      'table-b',
+      'table-b',
+    ]);
   });
 
   it('does not persist a blocked model-authored scene summary or registry diff', async () => {
     let persistedSummary = '';
     let calls = 0;
+    const moderationRequests: ModerationRequest[] = [];
     const db = {
       async query() {
         return { rows: [], rowCount: 0 };
@@ -121,7 +205,8 @@ describe('scene summaries and recap', () => {
       },
     } as never;
     const moderator: Moderator = {
-      async moderate(): Promise<Verdict> {
+      async moderate(request: ModerationRequest): Promise<Verdict> {
+        moderationRequests.push(request);
         return {
           verdict: 'block',
           category: 'violence',
@@ -157,6 +242,11 @@ describe('scene summaries and recap', () => {
     expect(result.registryDiffs).toEqual([]);
     expect(result.fallback).toBe(true);
     expect(persistedSummary).toBe('The scene has ended.');
+    expect(moderationRequests).toHaveLength(1);
+    expect(moderationRequests[0]).toMatchObject({
+      direction: 'output',
+      sessionId: 'session-1',
+    });
     expect(calls).toBe(3); // BEGIN, INSERT safe summary, COMMIT
   });
 

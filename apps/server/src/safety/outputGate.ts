@@ -1,3 +1,4 @@
+import pino from 'pino';
 import type { ContentTier } from './tier.js';
 import {
   failClosedVerdict,
@@ -8,6 +9,11 @@ import {
   type Verdict,
 } from './moderator.js';
 
+const outputGateLogger = pino({
+  name: 'output-gate',
+  level: process.env.LOG_LEVEL === 'debug' ? 'debug' : 'info',
+});
+
 export const SAFE_REDIRECT_TEMPLATE =
   'The narrator pauses, and the scene turns to the next thing the party notices.';
 
@@ -16,12 +22,13 @@ export const X_CARD_REDIRECT_TEMPLATE =
   'The story shifts to a calm, safe scene. What would you like to focus on now?';
 
 export const MAX_REGENERATIONS = 2;
-export const DEFAULT_MAX_IN_FLIGHT = 2;
+export const DEFAULT_MAX_IN_FLIGHT = 1;
 export const DEFAULT_MAX_CHUNK_CHARS = 400;
 export const DEFAULT_MAX_STREAM_CHARS = 20_000;
 export const DEFAULT_MAX_TURN_CHARS = 30_000;
 export const DEFAULT_SOURCE_IDLE_MS = 15_000;
 export const DEFAULT_VERDICT_TIMEOUT_MS = 10_000;
+export const OUTPUT_GATE_FALLBACK_SESSION_ID = 'output-gate-no-session';
 // ponytail: judge-only carry; deterministic rules use the per-attempt turn scanner.
 const CONTEXT_CHARS = 400;
 const HOLD_BACK_CHARS = MAX_RULE_SPAN_CHARS;
@@ -34,6 +41,10 @@ const IDLE = Symbol('idle');
 
 export interface ChunkMetric {
   attempt: number;
+  chunkIndex: number;
+  chars: number;
+  judgeMs: number;
+  firstApprovedMs: number | null;
   verdict: Verdict['verdict'];
   category: Category;
   source: Verdict['source'];
@@ -66,6 +77,8 @@ export interface OutputGateOptions {
   moderator: Moderator;
   tier: ContentTier;
   tableLines?: readonly string[];
+  /** Table/session key for output judge fairness. Only standalone callers use the dedicated fallback bucket. */
+  sessionId?: string;
   now?: () => number;
   /** Max judge calls in flight; also caps chunks held unconsumed, so the upstream is read no faster than verdicts are taken. */
   maxInFlight?: number;
@@ -83,7 +96,12 @@ export interface OutputGateOptions {
   maxRegenerations?: number;
 }
 
-type Chunk = { text: string; verdict: Promise<Verdict>; cutAtMs: number };
+type Chunk = {
+  text: string;
+  verdict: Promise<Verdict>;
+  cutAtMs: number;
+  chunkIndex: number;
+};
 type Item =
   | Chunk
   | 'end'
@@ -133,6 +151,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
   };
   const approved: string[] = [];
   let turnRead = 0;
+  let nextChunkIndex = 0;
   let turnSpent = false;
 
   for (let attempt = 0; ; attempt++) {
@@ -147,12 +166,28 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
     }
     const outcome = yield* runAttempt(source, attempt, abort);
     if (outcome === 'done') {
+      logChunkMetrics();
       return yield { kind: 'end', outcome: 'approved', metrics };
     }
     if (attempt === maxRegenerations || turnSpent) {
+      logChunkMetrics();
       yield { kind: 'redirect', text: SAFE_REDIRECT_TEMPLATE };
       return yield { kind: 'end', outcome: 'redirected', metrics };
     }
+  }
+
+  function logChunkMetrics() {
+    for (const chunk of metrics.chunks)
+      outputGateLogger.debug(
+        {
+          event: 'output_gate.chunk',
+          chunkIndex: chunk.chunkIndex,
+          chars: chunk.chars,
+          judgeMs: chunk.judgeMs,
+          firstApprovedMs: metrics.firstApprovedMs,
+        },
+        'output gate chunk judged',
+      );
   }
 
   async function* runAttempt(
@@ -236,11 +271,13 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         text: '',
         verdict: Promise.resolve(failClosedVerdict(at)),
         cutAtMs: at,
+        chunkIndex: nextChunkIndex++,
       });
     };
 
     const classify = (text: string): Chunk => {
       const cutAtMs = now() - start;
+      const chunkIndex = nextChunkIndex++;
       const context = contextTail;
       contextTail = (contextTail + text).slice(-CONTEXT_CHARS);
       const timedOut = () => failClosedVerdict(now() - start - cutAtMs);
@@ -257,6 +294,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
             tier: opts.tier,
             tableLines: opts.tableLines,
             direction: 'output',
+            sessionId: opts.sessionId ?? OUTPUT_GATE_FALLBACK_SESSION_ID,
           });
           // A missing or malformed runtime response is an outage, even if a
           // caller's static type claims every request returns a Verdict.
@@ -276,7 +314,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
       ])
         .catch(timedOut)
         .finally(() => clearTimeout(timer));
-      return { text, verdict, cutAtMs };
+      return { text, verdict, cutAtMs, chunkIndex };
     };
 
     const readSource = async () => {
@@ -393,6 +431,11 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           }
           if (held) {
             approved.push(held);
+            if (metrics.firstApprovedMs === null) {
+              metrics.firstApprovedMs = now() - start;
+              for (const chunk of metrics.chunks)
+                chunk.firstApprovedMs = metrics.firstApprovedMs;
+            }
             yield {
               kind: 'chunk',
               text: held,
@@ -408,6 +451,10 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           const failedClosed = item.terminalBlock === 'failclosed';
           metrics.chunks.push({
             attempt,
+            chunkIndex: nextChunkIndex++,
+            chars: 0,
+            judgeMs: 0,
+            firstApprovedMs: metrics.firstApprovedMs,
             verdict: 'block',
             category: failedClosed ? 'other' : 'minor_sexual',
             source: failedClosed ? 'failclosed' : 'hardfloor',
@@ -421,6 +468,10 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         const decidedAtMs = now() - start;
         metrics.chunks.push({
           attempt,
+          chunkIndex: item.chunkIndex,
+          chars: item.text.length,
+          judgeMs: verdict.latencyMs,
+          firstApprovedMs: metrics.firstApprovedMs,
           verdict: verdict.verdict,
           category: verdict.category,
           source: verdict.source,
@@ -429,8 +480,6 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
           decidedAtMs,
         });
         if (verdict.verdict !== 'allow') return 'blocked';
-        if (metrics.firstApprovedMs === null)
-          metrics.firstApprovedMs = decidedAtMs;
         const pending = held + item.text;
         // A sexual term already shown can't be revoked by a later minor term, so hold the whole turn.
         let cut = sensitive ? 0 : Math.max(0, pending.length - HOLD_BACK_CHARS);
@@ -447,6 +496,11 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
         held = pending.slice(cut);
         if (emit) {
           approved.push(emit);
+          if (metrics.firstApprovedMs === null) {
+            metrics.firstApprovedMs = now() - start;
+            for (const chunk of metrics.chunks)
+              chunk.firstApprovedMs = metrics.firstApprovedMs;
+          }
           yield {
             kind: 'chunk',
             text: emit,

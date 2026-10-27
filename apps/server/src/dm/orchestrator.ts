@@ -103,6 +103,8 @@ export interface DmToolContext {
 }
 export interface TurnInput {
   turnId: string;
+  /** Table key used to enforce per-session output judge fairness. */
+  sessionId?: string;
   turnSeed?: bigint | number | string;
   testMode?: boolean;
   prompt: Omit<BuildPromptInput, 'turn'> & { turn: BuildPromptInput['turn'] };
@@ -161,6 +163,7 @@ async function gateOneShotOutput(
   moderator: Moderator,
   tier: ContentTier,
   tableLines?: readonly string[],
+  sessionId?: string,
 ): Promise<{ text: string; unavailable: boolean; approved: boolean }> {
   const gate = runOutputGate({
     stream: async function* () {
@@ -170,6 +173,7 @@ async function gateOneShotOutput(
     moderator,
     tier,
     tableLines,
+    sessionId,
     maxRegenerations: 0,
   });
   let approvedText = '';
@@ -362,7 +366,7 @@ export function runTurnQueued(
     queue = new TurnQueue();
     tableQueues.set(tableId, queue);
   }
-  return queue.run(() => runTurn(input));
+  return queue.run(() => runTurn({ ...input, sessionId: tableId }));
 }
 
 /** Executes one serialized DM turn. State changes enter only through validated tool outputs. */
@@ -733,6 +737,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       input.outputModerator,
       input.outputTier,
       input.outputTableLines,
+      input.sessionId,
     );
     if (gatedQuestion.approved) {
       emit({
@@ -802,6 +807,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     moderator: input.outputModerator,
     tier: input.outputTier,
     tableLines: input.outputTableLines,
+    sessionId: input.sessionId,
     maxRegenerations: 0,
   });
   // Never persist the original model text.
