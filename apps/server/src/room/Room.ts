@@ -1228,11 +1228,13 @@ export class Room {
       lateJoinRequestResults,
       lateJoinRequestCharacterIds,
       lateJoinActionOwners,
+      openClarifications,
       ...visibleRoomState
     } = this.state;
     void lateJoinRequestResults;
     void lateJoinRequestCharacterIds;
     void lateJoinActionOwners;
+    void openClarifications;
     const clientVisibleState: import('@game/schema').ClientRoomState = {
       ...visibleRoomState,
       revokedSeats,

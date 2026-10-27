@@ -183,7 +183,9 @@ export const LateJoinHostRequestSchema = z
   })
   .strict();
 export type LateJoinHostRequest = z.infer<typeof LateJoinHostRequestSchema>;
-export const ClientRoomStateSchema = RoomStateSchema.extend({
+export const ClientRoomStateSchema = RoomStateSchema.omit({
+  openClarifications: true,
+}).extend({
   lateJoinRequests: z.array(LateJoinHostRequestSchema).optional(),
 });
 export type ClientRoomState = z.infer<typeof ClientRoomStateSchema>;
