@@ -225,6 +225,12 @@ function toolSchemas(input: TurnInput): LlmTool[] {
     if (name === 'ask_clarification' && !canAskClarification(input)) return [];
     if (input.prompt.readOnlyTools && !READ_ONLY_TOOLS.includes(name))
       return [];
+    if (
+      name === 'start_combat' &&
+      (input.prompt.activeMode === 'combat' ||
+        !input.prompt.offeredEncounterKeys?.length)
+    )
+      return [];
     return [
       {
         name,
@@ -685,10 +691,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           break;
         }
         if (
-          input.prompt.activeMode !== 'combat' &&
-          COMBAT_ONLY_TOOLS.includes(call.name)
+          (input.prompt.activeMode !== 'combat' &&
+            COMBAT_ONLY_TOOLS.includes(call.name)) ||
+          (input.prompt.activeMode === 'combat' && call.name === 'start_combat')
         ) {
-          reject('unknown-tool', 'This tool is unavailable outside combat.');
+          reject(
+            'unknown-tool',
+            'This tool is unavailable in the current mode.',
+          );
           retries++;
           if (retries >= MAX_RETRIES_PER_TURN) {
             makeFallback('budget-exhausted');

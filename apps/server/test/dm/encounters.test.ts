@@ -140,32 +140,56 @@ describe('ADR-038 rollout flag', () => {
 });
 
 describe('combat-start rejection accounting', () => {
-  it('keeps six rejected starts in the rolling window and withdraws on the seventh for only that seat and scene', () => {
+  it('keeps six rejected starts in the rolling window and withdraws on the seventh only for that session and scene', () => {
     const budget = new EncounterStartRejectionBudget();
     for (let index = 1; index <= 6; index++)
       expect(
-        budget.record('session-a', 'seat-a', sceneId, index * 100).withdrawn,
+        budget.record(
+          'session-a',
+          sceneId,
+          `turn-${index}`,
+          `reason-${index}`,
+          index * 100,
+        ).withdrawn,
       ).toBe(false);
-    expect(budget.record('session-a', 'seat-a', sceneId, 700).withdrawn).toBe(
-      true,
-    );
-    expect(budget.isWithdrawn('session-a', 'seat-a', sceneId)).toBe(true);
-    expect(budget.isWithdrawn('session-a', 'seat-b', sceneId)).toBe(false);
-    expect(budget.isWithdrawn('session-a', 'seat-a', 'scene-other')).toBe(
-      false,
-    );
+    expect(
+      budget.record('session-a', sceneId, 'turn-overflow', 'overflow', 700)
+        .withdrawn,
+    ).toBe(true);
+    expect(budget.isWithdrawn('session-a', sceneId, 700)).toBe(true);
+    expect(budget.isWithdrawn('session-b', sceneId, 700)).toBe(false);
+    expect(budget.isWithdrawn('session-a', 'scene-other', 700)).toBe(false);
   });
 
-  it('expires old rejections after 60 seconds and redacts malformed encounter keys', () => {
+  it('counts one rejection per turn and distinct reason, and expires old rejections', () => {
     const budget = new EncounterStartRejectionBudget();
     for (let index = 0; index < 6; index++)
-      budget.record('session-a', 'seat-a', sceneId, index * 10);
-    expect(budget.record('session-a', 'seat-a', sceneId, 60_100)).toMatchObject(
-      {
-        count: 1,
-        withdrawn: false,
-      },
-    );
+      budget.record(
+        'session-a',
+        sceneId,
+        `turn-${index}`,
+        `reason-${index}`,
+        index * 10,
+      );
+    expect(
+      budget.record('session-a', sceneId, 'turn-new', 'reason-new', 60_100),
+    ).toMatchObject({
+      count: 1,
+      withdrawn: false,
+    });
+    const deduped = new EncounterStartRejectionBudget();
+    expect(
+      deduped.record('session-a', sceneId, 'same-turn', 'same-reason', 60_110)
+        .count,
+    ).toBe(1);
+    expect(
+      deduped.record('session-a', sceneId, 'same-turn', 'same-reason', 60_120)
+        .count,
+    ).toBe(1);
+    expect(
+      deduped.record('session-a', sceneId, 'same-turn', 'other-reason', 60_130)
+        .count,
+    ).toBe(2);
     expect(redactedEncounterId('encounter-e2-lookouts')).toEqual({
       encounterId: 'encounter-e2-lookouts',
     });
@@ -176,13 +200,44 @@ describe('combat-start rejection accounting', () => {
 });
 
 describe('encounter tool withdrawal', () => {
+  it('clears a session budget on scene change and session end, and bounds old entries', () => {
+    const budget = new EncounterStartRejectionBudget(0, 60_000, 2, 100);
+    budget.enterScene('session-a', sceneId, 1);
+    budget.record('session-a', sceneId, 'turn-1', 'reason', 2);
+    expect(budget.isWithdrawn('session-a', sceneId, 3)).toBe(true);
+    budget.enterScene('session-a', 'scene-next', 4);
+    expect(budget.isWithdrawn('session-a', sceneId, 5)).toBe(false);
+    budget.record('session-a', 'scene-next', 'turn-2', 'reason', 6);
+    budget.clearSession('session-a');
+    expect(budget.isWithdrawn('session-a', 'scene-next', 7)).toBe(false);
+    budget.record('s1', 'a', 't', 'r', 10);
+    budget.record('s2', 'b', 't', 'r', 11);
+    budget.record('s3', 'c', 't', 'r', 12);
+    expect(budget.isWithdrawn('s1', 'a', 13)).toBe(false);
+    expect(budget.isWithdrawn('s3', 'c', 13)).toBe(true);
+    budget.record('s3', 'c', 't2', 'r', 200);
+    expect(budget.isWithdrawn('s3', 'c', 301)).toBe(false);
+  });
+
   it('removes start_combat affordances once the rejection budget is withdrawn for a scene', () => {
     const budget = new EncounterStartRejectionBudget();
     const eligible = offeredEncounters(adventure, sceneId, new Set());
     expect(encounterKeysForTurn(true, eligible, false)).toEqual([lookouts]);
     for (let index = 0; index < 6; index++)
-      budget.record('session-a', 'seat-a', sceneId, index * 100);
-    const overflow = budget.record('session-a', 'seat-a', sceneId, 700);
+      budget.record(
+        'session-a',
+        sceneId,
+        `turn-${index}`,
+        `reason-${index}`,
+        index * 100,
+      );
+    const overflow = budget.record(
+      'session-a',
+      sceneId,
+      'turn-overflow',
+      'overflow',
+      700,
+    );
     expect(encounterKeysForTurn(true, eligible, overflow.withdrawn)).toEqual(
       [],
     );

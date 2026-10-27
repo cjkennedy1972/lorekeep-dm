@@ -13,6 +13,7 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { EncounterStartRejectionBudget } from '../../src/dm/encounters.js';
 import { LlmEndpointError } from '../../src/llm/adapter.js';
 import type {
   LlmAdapter,
@@ -55,6 +56,7 @@ class Stack {
       adapter?: LlmAdapter;
       endpointAllowsMature?: boolean;
       storyCombatEnabled?: boolean;
+      rejectionBudget?: EncounterStartRejectionBudget;
     } = {},
   ): Promise<Stack> {
     const requests: LlmRequest[] = [];
@@ -69,6 +71,7 @@ class Stack {
       undefined,
       undefined,
       options.storyCombatEnabled,
+      options.rejectionBudget,
     );
     const rooms = new RoomRegistry(
       new Persistence(db),
@@ -789,7 +792,10 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
             type: 'tool-call',
             id: `retry-start-${calls}`,
             name: 'start_combat',
-            arguments: { encounterId: 'encounter-e2-lookouts' },
+            arguments: {
+              encounterId:
+                calls === 1 ? 'encounter-e1-rats' : 'encounter-e2-lookouts',
+            },
           } as LlmChunk;
           return;
         }
@@ -799,10 +805,12 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         } as LlmChunk;
       },
     };
+    const retryBudget = new EncounterStartRejectionBudget(0);
     stack = await Stack.boot('adr038-refusal-retry-state', {
       adapter,
       storyCombatEnabled: true,
       endpointAllowsMature: true,
+      rejectionBudget: retryBudget,
     });
     const user = await newUser();
     const table = await seedTable(
@@ -840,8 +848,12 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         client.log.some((message) => message.type === 'ToolRejected'),
       ).toBe(false);
       expect((await savedGame(table)).gameState.combatRoom).toBeDefined();
+      expect(retryBudget.isWithdrawn(table, 'scene-warren-gallery')).toBe(
+        false,
+      );
     } finally {
       client.close();
+      retryBudget.clearSession(table);
     }
   }, 30_000);
 
@@ -882,6 +894,83 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       expect(saved.gameState.resolvedEncounters).toBeUndefined();
     } finally {
       client.close();
+    }
+  }, 30_000);
+
+  it('does not persist ADR state or charge the rejection budget on endpoint-error turns', async () => {
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls += 1;
+        if (calls % 2 === 0)
+          throw new LlmEndpointError('endpoint-error', 'offline');
+        const turnNumber = Math.floor((calls - 1) / 2);
+        yield {
+          type: 'tool-call',
+          id: `failed-start-${calls}`,
+          name: 'start_combat',
+          arguments: {
+            encounterId:
+              turnNumber % 2 === 0
+                ? 'encounter-e2-lookouts'
+                : 'encounter-e1-rats',
+          },
+        } as LlmChunk;
+      },
+    };
+    const testBudget = new EncounterStartRejectionBudget(0);
+    stack = await Stack.boot('adr038-endpoint-error-isolation', {
+      adapter,
+      storyCombatEnabled: true,
+      rejectionBudget: testBudget,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    const telemetry = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      for (let index = 0; index < 2; index++) {
+        const from = client.log.length;
+        client.say(`I investigate the hall, attempt ${index}.`);
+        await client.until(
+          (message) => message.type === 'NarrationCompleted',
+          from,
+          20_000,
+        );
+      }
+      const saved = await savedGame(table);
+      expect(saved.gameState.resolvedEncounters).toBeUndefined();
+      expect(saved.gameState.combatRoom).toBeUndefined();
+      expect(saved.gameState).not.toHaveProperty('startedEncounter');
+      expect(testBudget.isWithdrawn(table, 'scene-warren-gallery')).toBe(false);
+      const calls = telemetry.mock.calls
+        .map(([value]) => String(value))
+        .filter((value) => value.includes('CombatStartToolCalled'));
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.every((value) => !value.includes('encounter-e1-rats'))).toBe(
+        true,
+      );
+    } finally {
+      client.close();
+      telemetry.mockRestore();
+      testBudget.clearSession(table);
     }
   }, 30_000);
 

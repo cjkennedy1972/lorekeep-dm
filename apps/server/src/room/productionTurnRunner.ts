@@ -68,10 +68,9 @@ import {
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
 import {
-  EncounterStartRejectionBudget,
+  encounterStartRejectionBudget,
   encounterKeysForTurn,
   offeredEncounters,
-  redactedEncounterId,
   resolveEncounter,
 } from '../dm/encounters.js';
 import {
@@ -85,15 +84,16 @@ import {
   type SoloTurnRunner,
 } from './dmTurn.js';
 
-const encounterStartRejectionBudget = new EncounterStartRejectionBudget();
 function combatStartTelemetry(
   event: string,
   fields: Record<string, unknown>,
 ): void {
   console.info(JSON.stringify({ event, ...fields }));
 }
-function telemetryEncounterId(value: string) {
-  return redactedEncounterId(value);
+function telemetryEncounterId(value: string, offered: ReadonlySet<string>) {
+  return offered.has(value)
+    ? { encounterId: value }
+    : { encounterIdHash: createHash('sha256').update(value).digest('hex') };
 }
 function telemetrySessionId(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -296,6 +296,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly moderatorOverride?: Moderator,
     private readonly leaveJudgeOverride?: LeaveJudge,
     private readonly storyCombatEnabled = storyCombatFlagEnabled(),
+    private readonly rejectionBudget = encounterStartRejectionBudget,
   ) {}
 
   async run(
@@ -353,6 +354,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const state = asRecord(request.state) as GameState;
     const initialCombatRoom = state.combatRoom;
     const initialSceneId = state.sceneId;
+    this.rejectionBudget.enterScene(request.sessionId, initialSceneId);
     let transitionedSceneId: string | undefined;
     let adventureCompleted: boolean | undefined;
     const adventure =
@@ -369,6 +371,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           )
         : [],
     );
+    const pendingEncounterRejectionReasons = new Set<string>();
     // Tool and combat state is isolated per output-gate attempt.
     let attemptState: {
       startedEncounter?: string;
@@ -378,15 +381,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     } = { startCombatCalled: false, liveRoom: initialCombatRoom };
     const storyCombatEnabled = this.storyCombatEnabled;
     const sessionId = request.sessionId;
-    const accountId = request.accountId;
     const budgetWithdrawn =
       this.storyCombatEnabled &&
       !!initialSceneId &&
-      encounterStartRejectionBudget.isWithdrawn(
-        request.sessionId,
-        request.accountId,
-        initialSceneId,
-      );
+      this.rejectionBudget.isWithdrawn(request.sessionId, initialSceneId);
     const eligibleEncounterKeys =
       adventure?.ok && initialSceneId
         ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
@@ -401,7 +399,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         sessionIdHash: telemetrySessionId(sessionId),
         activeMode: 'exploration',
         sceneId: initialSceneId,
-        ...telemetryEncounterId(encounterId),
+        ...telemetryEncounterId(encounterId, new Set(eligibleEncounterKeys)),
       });
     const offeredEncounterPrompt =
       adventure?.ok && initialSceneId
@@ -784,24 +782,22 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             sessionIdHash: telemetrySessionId(sessionId),
             activeMode: 'exploration',
             sceneId: initialSceneId,
-            ...telemetryEncounterId(encounterTelemetryId),
+            ...telemetryEncounterId(
+              encounterTelemetryId,
+              new Set(offeredEncounterKeys),
+            ),
           });
           const rejectEncounterStart = (rejectionCode: string) => {
-            const budget = initialSceneId
-              ? encounterStartRejectionBudget.record(
-                  sessionId,
-                  accountId,
-                  initialSceneId,
-                )
-              : { count: 1, withdrawn: true };
+            pendingEncounterRejectionReasons.add(rejectionCode);
             combatStartTelemetry('CombatStartRejected', {
               sessionIdHash: telemetrySessionId(sessionId),
               activeMode: 'exploration',
               ...(initialSceneId ? { sceneId: initialSceneId } : {}),
-              ...telemetryEncounterId(encounterTelemetryId),
+              ...telemetryEncounterId(
+                encounterTelemetryId,
+                new Set(offeredEncounterKeys),
+              ),
               rejectionCode,
-              rejectionCount: budget.count,
-              withdrawn: budget.withdrawn,
             });
           };
           if (!storyCombatEnabled)
@@ -1155,6 +1151,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
       attemptState = { startCombatCalled: false, liveRoom: turnStartRoom };
+      pendingEncounterRejectionReasons.clear();
       refused = false;
       const narration: DMTurnEvent[] = [];
       const result = await runTurn({
@@ -1278,7 +1275,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         sessionIdHash: telemetrySessionId(request.sessionId),
         activeMode: 'exploration',
         ...(initialSceneId ? { sceneId: initialSceneId } : {}),
-        ...telemetryEncounterId(offeredEncounterKeys[0]!),
+        ...telemetryEncounterId(
+          offeredEncounterKeys[0]!,
+          new Set(eligibleEncounterKeys),
+        ),
       });
     const hiddenNow = concealedEntities({
       concealed: [
@@ -1290,6 +1290,22 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     for (const event of narration) onEvent(event);
     // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
     const failed = result.fallback === 'endpoint-error';
+    if (!failed && initialSceneId)
+      for (const reason of pendingEncounterRejectionReasons) {
+        const budget = this.rejectionBudget.record(
+          sessionId,
+          initialSceneId,
+          request.actionId,
+          reason,
+        );
+        combatStartTelemetry('CombatStartRejectionBudgetUpdated', {
+          sessionIdHash: telemetrySessionId(sessionId),
+          sceneId: initialSceneId,
+          rejectionCode: reason,
+          rejectionCount: budget.count,
+          withdrawn: budget.withdrawn,
+        });
+      }
     for (const event of attemptEvents) {
       const type = String((event as { type?: string }).type);
       if (!failed || type === 'TurnFallback') onEvent(event);

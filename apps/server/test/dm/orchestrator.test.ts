@@ -1067,6 +1067,35 @@ describe('DM orchestrator: combat narration tool scope (ADR-034 §2)', () => {
     expect(result.narration).toBe(narration);
   });
 
+  it('does not offer or execute start_combat in combat mode, even if injected', async () => {
+    const execute = vi.fn(() => ({ ok: true, summary: 'started', events: [] }));
+    const { input, requests, events } = setup(
+      [
+        [
+          call('start', 'start_combat', {
+            encounterId: 'encounter-e2-lookouts',
+          }),
+        ],
+        [{ type: 'text', delta: narration }],
+      ],
+      execute,
+    );
+    input.prompt.activeMode = 'combat';
+    input.prompt.offeredEncounterKeys = ['encounter-e2-lookouts'];
+    const result = await runTurn(input);
+    expect(
+      requests[0]!.tools!.some((tool) => tool.name === 'start_combat'),
+    ).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        error: 'unknown-tool',
+      }),
+    );
+    expect(result.narration).toBe(narration);
+  });
+
   it('still runs read-only tools', async () => {
     const execute = vi.fn(() => ({ ok: true, summary: 'ok', events: [] }));
     const { input } = setup(

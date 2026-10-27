@@ -123,11 +123,13 @@ function makeStatic(input: BuildPromptInput): string {
     .map((tool) => tool.shape.name.value)
     .filter((name) => {
       if (input.readOnlyTools) return READ_ONLY_TOOLS.includes(name);
+      if (name === 'start_combat')
+        return (
+          input.activeMode !== 'combat' &&
+          Boolean(input.offeredEncounterKeys?.length)
+        );
       if (input.activeMode === 'combat') return true;
-      return (
-        !COMBAT_ONLY_TOOLS.includes(name) &&
-        (name !== 'start_combat' || Boolean(input.offeredEncounterKeys?.length))
-      );
+      return !COMBAT_ONLY_TOOLS.includes(name);
     });
   const schemas = modeTools.map((name) => ({
     name,
