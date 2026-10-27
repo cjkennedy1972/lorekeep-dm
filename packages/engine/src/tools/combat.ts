@@ -15,14 +15,23 @@ import type { GridPos } from '@game/schema';
 import type { RngState } from '../rng.js';
 import { fail, ok, type ToolResult } from './result.js';
 
-const StartCombatEngineArgsSchema = z.object({
-  enemies: z.array(z.object({
-    monsterId: z.string().regex(/^srd:monster\/[a-z0-9-]+$/),
-    count: z.int().min(1).max(8),
-    spawnRef: z.string().optional(),
-  }).strict()).min(1).max(12),
-  ambushSide: z.enum(['party', 'enemies', 'none']).optional(),
-}).strict();
+const StartCombatEngineArgsSchema = z
+  .object({
+    enemies: z
+      .array(
+        z
+          .object({
+            monsterId: z.string().regex(/^srd:monster\/[a-z0-9-]+$/),
+            count: z.int().min(1).max(8),
+            spawnRef: z.string().optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(12),
+    ambushSide: z.enum(['party', 'enemies', 'none']).optional(),
+  })
+  .strict();
 
 const XP_BY_CR: Readonly<Record<number, number>> = {
   0: 10,

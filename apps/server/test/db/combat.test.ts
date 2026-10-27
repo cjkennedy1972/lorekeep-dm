@@ -718,7 +718,11 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
   it('reports narration when an offered encounter was not started', async () => {
     const telemetry = vi.spyOn(console, 'info').mockImplementation(() => {});
     const adapter: LlmAdapter = {
-      capabilities: () => ({ streaming: true, nativeTools: true, jsonSchema: true }),
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
       probe: async () => true,
       async *complete() {
         yield { type: 'text', delta: 'The lookouts watch from above.' };
@@ -732,19 +736,31 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     const table = await seedTable(
       stack,
       user,
-      (account) => ({ ...preCombatGame(hero), characters: { [account]: hero } }),
-      { id: 'adventure:01-hollow-under-marrowfell', sceneId: 'scene-warren-gallery' },
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
     );
     const client = await Client.open(stack, user, table);
     try {
       const from = client.log.length;
       client.say('I wait and listen.');
-      await client.until((message) => message.type === 'NarrationCompleted', from, 20_000);
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
       const events = telemetry.mock.calls
         .map(([value]) => String(value))
         .filter((value) => value.includes('CombatNarratedWithoutStart'))
         .map((value) => JSON.parse(value) as { encounterId?: string });
-      expect(events).toContainEqual(expect.objectContaining({ encounterId: 'encounter-e2-lookouts' }));
+      expect(events).toContainEqual(
+        expect.objectContaining({ encounterId: 'encounter-e2-lookouts' }),
+      );
     } finally {
       client.close();
       telemetry.mockRestore();
@@ -762,15 +778,27 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     const table = await seedTable(
       stack,
       user,
-      (account) => ({ ...preCombatGame(hero), characters: { [account]: hero } }),
-      { id: 'adventure:01-hollow-under-marrowfell', sceneId: 'scene-warren-gallery' },
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
     );
     const client = await Client.open(stack, user, table);
     try {
       const from = client.log.length;
       client.say('I advance toward the lookouts.');
-      await client.until((message) => message.type === 'NarrationCompleted', from, 20_000);
-      expect(client.log.filter((message) => message.type === 'ToolRejected')).toHaveLength(1);
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        client.log.filter((message) => message.type === 'ToolRejected'),
+      ).toHaveLength(1);
       const saved = await savedGame(table);
       expect(saved.gameState.combatRoom).toBeUndefined();
       expect(saved.gameState.resolvedEncounters).toBeUndefined();

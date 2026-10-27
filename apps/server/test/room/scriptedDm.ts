@@ -37,7 +37,9 @@ export function scriptedDm(
                 type: 'tool-call',
                 id: 'call_start',
                 name: 'start_combat',
-                arguments: { encounterId: encounterId ?? 'encounter-e2-lookouts' },
+                arguments: {
+                  encounterId: encounterId ?? 'encounter-e2-lookouts',
+                },
               },
             ]
           : [{ type: 'text', delta: 'Steel rings out across the crypt.' }];

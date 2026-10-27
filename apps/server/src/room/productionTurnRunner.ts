@@ -657,7 +657,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         // A map suggestion may already have staged position/option handles for
         // this call. Apply cast resource changes to that latest room rather than
         // letting the staged snapshot mask them at the commit point.
-        const combatRoom = attemptState.pendingRoom ?? (previous as GameState).combatRoom;
+        const combatRoom =
+          attemptState.pendingRoom ?? (previous as GameState).combatRoom;
         const updatedCombatRoom =
           combatRoom &&
           (nextEngine.resources ||
@@ -728,7 +729,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ...(previous as GameState),
           gameEngine: withoutCatalog(nextEngine),
           ...(attemptState.startedEncounter
-            ? { resolvedEncounters: [...resolvedSet, attemptState.startedEncounter] }
+            ? {
+                resolvedEncounters: [
+                  ...resolvedSet,
+                  attemptState.startedEncounter,
+                ],
+              }
             : {}),
           ...(committedRoom ? { combatRoom: committedRoom } : {}),
           characters: Object.fromEntries(
@@ -963,9 +969,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 spellMap: combatSpellMap(state.combatRoom, spellCasterId),
                 turnId: roomTurnKey(attemptState.liveRoom ?? state.combatRoom),
                 options: Object.fromEntries(
-                  Object.entries(attemptState.liveRoom?.optionHandles ?? {}).map(
-                    ([optionId, handle]) => [optionId, { optionId, ...handle }],
-                  ),
+                  Object.entries(
+                    attemptState.liveRoom?.optionHandles ?? {},
+                  ).map(([optionId, handle]) => [
+                    optionId,
+                    { optionId, ...handle },
+                  ]),
                 ),
               }
             : current;
@@ -990,8 +999,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             : rawResult;
         if (!rawResult.ok) attemptState.startedEncounter = undefined;
         else if (request.name === 'start_combat' && encounterMap)
-          attemptState.startedEncounter = (request.args as { encounterId: string })
-            .encounterId;
+          attemptState.startedEncounter = (
+            request.args as { encounterId: string }
+          ).encounterId;
         if (!result.ok) return { ...result, events: [] };
         // An area handle is single-use (ADR-022 §2.2): spend it on the cast that used it.
         const castTarget = (
