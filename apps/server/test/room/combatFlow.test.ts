@@ -172,6 +172,45 @@ describe('combat bootstrap from the DM start_combat result', () => {
   });
 });
 
+describe('monster morale', () => {
+  it('ends combat cleanly when the last goblin flees at one-quarter HP', () => {
+    const { runtime, state } = engaged();
+    const initiative = [
+      { entityId: 'ent_aria', total: 20 },
+      { entityId: 'ent_goblin-minion_1', total: 10 },
+      { entityId: 'ent_goblin-minion_2', total: 5 },
+    ];
+    const lowMorale = {
+      ...state,
+      entities: state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, hp: 1 }
+          : entity.id === 'ent_goblin-minion_2'
+            ? { ...entity, hp: 0 }
+            : entity,
+      ),
+      combat: {
+        ...state.combat,
+        initiative,
+        activeEntityId: 'ent_aria',
+      },
+    };
+
+    const result = ok(
+      runtime.execute(
+        lowMorale,
+        'ent_aria',
+        { command: 'end-turn' },
+        { now: NOW },
+      ),
+    );
+
+    expect(result.state.ended?.outcome).toBe('enemies-fled');
+    expect(types(result.events)).toContain('MonsterPolicy');
+    expect(types(result.events)).toContain('CombatEnded');
+  });
+});
+
 describe('tracker', () => {
   it('clears a stale reaction phase when combat ends during a reaction', () => {
     const { state } = bootstrapped();
