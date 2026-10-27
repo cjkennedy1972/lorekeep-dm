@@ -468,6 +468,52 @@ describe('Room solo DM turn lifecycle', () => {
     );
   });
 
+  it('sends a round restriction only to the restricted first actor', async () => {
+    const runner: SoloTurnRunner = {
+      async run() {
+        throw new LiveDmRestrictedError();
+      },
+    };
+    const { room } = setup(runner);
+    const restrictedAccount = randomUUID();
+    const otherAccount = randomUUID();
+    const messagesByAccount = new Map<
+      string,
+      { type: string; payload?: Record<string, unknown> }[]
+    >();
+    for (const accountId of [restrictedAccount, otherAccount]) {
+      const messages: { type: string; payload?: Record<string, unknown> }[] =
+        [];
+      messagesByAccount.set(accountId, messages);
+      await joinSeated(room, accountId, {
+        send: (message) => messages.push(message as (typeof messages)[number]),
+      });
+    }
+    await room.persistGameState({});
+    const roundId = room.state.round!.roundId;
+    await room.submitAction(restrictedAccount, randomUUID(), 'First action');
+    await room.submitAction(otherAccount, randomUUID(), 'Second action');
+    await vi.waitFor(() => {
+      expect(
+        messagesByAccount
+          .get(restrictedAccount)
+          ?.some((message) => message.payload?.code === 'LIVE_DM_RESTRICTED'),
+      ).toBe(true);
+    });
+
+    expect(
+      messagesByAccount
+        .get(otherAccount)
+        ?.some((message) => message.payload?.code === 'LIVE_DM_RESTRICTED'),
+    ).toBe(false);
+    expect(
+      messagesByAccount
+        .get(otherAccount)
+        ?.find((message) => message.type === 'Error')?.payload,
+    ).toMatchObject({ code: 'TURN_FAILED', actionId: roundId });
+    await room.drain();
+  });
+
   it('keeps an open clarification across a restart so its owner can still answer', async () => {
     const requests: SoloTurnRequest[] = [];
     const runner: SoloTurnRunner = {

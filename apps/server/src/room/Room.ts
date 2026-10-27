@@ -4001,15 +4001,32 @@ export class Room {
       );
     } catch (error) {
       const restricted = error instanceof LiveDmRestrictedError;
-      this.broadcast({
+      const failure = {
         seq: this.seq,
         type: 'Error',
         payload: {
           code: restricted ? 'LIVE_DM_RESTRICTED' : 'TURN_FAILED',
-          message: 'The DM could not complete that round. Try again.',
+          message: restricted
+            ? 'Live DM turns are limited to approved accounts while moderation is pending.'
+            : 'The DM could not complete that round. Try again.',
           actionId: roundId,
         },
-      } as ServerMessage);
+      } as ServerMessage;
+      if (restricted) this.connections.get(first.accountId)?.send(failure);
+      else this.broadcast(failure);
+      if (restricted) {
+        const genericFailure = {
+          seq: this.seq,
+          type: 'Error',
+          payload: {
+            code: 'TURN_FAILED',
+            message: 'The DM could not complete that round. Try again.',
+            actionId: roundId,
+          },
+        } as ServerMessage;
+        for (const [accountId, connection] of this.connections)
+          if (accountId !== first.accountId) connection.send(genericFailure);
+      }
     } finally {
       await this.enqueue(async () => {
         for (const action of actions)
