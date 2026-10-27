@@ -255,6 +255,7 @@ class Client {
 function authoredEncounterDm(
   requests: LlmRequest[],
   encounterId: string,
+  calls = 1,
 ): LlmAdapter {
   return {
     capabilities: () => ({
@@ -274,14 +275,12 @@ function authoredEncounterDm(
       const chunks: LlmChunk[] =
         !startCombatOffered || hasToolResult
           ? [{ type: 'text', delta: 'The scene changes.' }]
-          : [
-              {
-                type: 'tool-call',
-                id: 'authored-start',
-                name: 'start_combat',
-                arguments: { encounterId },
-              },
-            ];
+          : Array.from({ length: calls }, (_, index) => ({
+              type: 'tool-call' as const,
+              id: `authored-start-${index}`,
+              name: 'start_combat',
+              arguments: { encounterId },
+            }));
       for (const chunk of chunks) yield chunk;
     },
   };
@@ -660,7 +659,60 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     } finally {
       emptyClient.close();
     }
-  }, 60_000);
+    await stack.stop();
+
+    const duplicateRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-duplicate-route', {
+      adapter: authoredEncounterDm(duplicateRequests, key, 2),
+      storyCombatEnabled: true,
+    });
+    const duplicateUser = await newUser();
+    const duplicateTable = await seedTable(
+      stack,
+      duplicateUser,
+      () => ({
+        ...preCombatGame(hero),
+        characters: { [duplicateUser.id]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const duplicateClient = await Client.open(
+      stack,
+      duplicateUser,
+      duplicateTable,
+    );
+    try {
+      const from = duplicateClient.log.length;
+      duplicateClient.say('I advance toward the lookouts.');
+      await duplicateClient.until(
+        (message) => message.type === 'CombatTracker',
+        from,
+        20_000,
+      );
+      await duplicateClient.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        duplicateClient.log.filter(
+          (message) => message.type === 'ToolRejected',
+        ),
+      ).toHaveLength(1);
+      expect(JSON.stringify(duplicateClient.log)).not.toMatch(
+        /duplicate-call|turn-budget-exhausted/u,
+      );
+      const committed = await savedGame(duplicateTable);
+      expect(committed.gameState.resolvedEncounters).toEqual([key]);
+      expect(committed.gameState.combatRoom?.entities).toHaveLength(2);
+      expect(duplicateRequests).toHaveLength(2);
+    } finally {
+      duplicateClient.close();
+    }
+  }, 90_000);
 
   it('start_combat populates the Room, monsters act, and a non-controller cannot accept an opportunity attack', async () => {
     const encounterKey = 'encounter-e2-lookouts';

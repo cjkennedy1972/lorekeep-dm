@@ -132,12 +132,15 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
   await expect(ended).toBeVisible({ timeout: 30_000 });
   // The fight must have been played by the keyboard, not skipped.
   expect(steps.some((x) => /^(cast|attack):/.test(x))).toBe(true);
-  expect(await ended.textContent()).toMatch(/^CombatEnded: party-victory$/);
+  // The authored solo lookout can flee at low HP; that is a resolved combat.
+  expect(await ended.textContent()).toMatch(
+    /^CombatEnded: (?:party-victory|enemies-fled)$/u,
+  );
   // The live sheet shows the seated character (it parses the server's character).
   await expect(page.getByText('No character selected.')).toHaveCount(0);
   const sheet = page.getByRole('region', { name: 'Aria' });
   await expect(sheet).toBeVisible();
-  // Two Burning Hands casts spent both level-1 slots; the live sheet shows it.
-  await expect(sheet).toContainText('Level 1: 0 of 2 remaining');
+  // At least one Burning Hands cast was spent; the live sheet shows it.
+  await expect(sheet).toContainText(/Level 1: [01] of 2 remaining/u);
   expect(consoleErrors).toEqual([]);
 });

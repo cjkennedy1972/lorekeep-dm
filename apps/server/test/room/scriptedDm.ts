@@ -5,7 +5,10 @@ import type {
 } from '../../src/llm/adapter.js';
 
 /** A recorded-style adapter: no network. START-COMBAT makes the "DM" call start_combat; unknownthing else narrates. */
-export function scriptedDm(requests: LlmRequest[] = []): LlmAdapter {
+export function scriptedDm(
+  requests: LlmRequest[] = [],
+  encounterId?: string,
+): LlmAdapter {
   return {
     capabilities: () => ({
       streaming: true,
@@ -34,12 +37,14 @@ export function scriptedDm(requests: LlmRequest[] = []): LlmAdapter {
                 type: 'tool-call',
                 id: 'call_start',
                 name: 'start_combat',
-                arguments: {
-                  enemies: [
-                    { monsterId: 'srd:monster/goblin-minion', count: 2 },
-                  ],
-                  ambushSide: 'party',
-                },
+                arguments: encounterId
+                  ? { encounterId }
+                  : {
+                      enemies: [
+                        { monsterId: 'srd:monster/goblin-minion', count: 2 },
+                      ],
+                      ambushSide: 'party',
+                    },
               },
             ]
           : [{ type: 'text', delta: 'Steel rings out across the crypt.' }];
