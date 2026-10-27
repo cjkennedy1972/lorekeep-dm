@@ -4,19 +4,19 @@ type CapacityClass = BudgetClass;
 const IN_FLIGHT_LIMITS: Record<CapacityClass, number> = {
   'action-input': 1,
   chat: 2,
-  output: 1,
+  output: 4,
 };
 const PER_MINUTE_LIMITS: Record<CapacityClass, number> = {
   'action-input': 80,
   chat: 120,
-  output: 40,
+  output: 160,
 };
 const WINDOW_MS = 60_000;
 export const JUDGE_UPSTREAM_HARD_CAP_MS = 60_000;
 const LOST_CALL_LIMITS: Record<CapacityClass, number> = {
   'action-input': 1,
   chat: 2,
-  output: 1,
+  output: 4,
 };
 
 export type JudgeBudgetResult =

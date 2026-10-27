@@ -16,7 +16,7 @@ export const X_CARD_REDIRECT_TEMPLATE =
   'The story shifts to a calm, safe scene. What would you like to focus on now?';
 
 export const MAX_REGENERATIONS = 2;
-export const DEFAULT_MAX_IN_FLIGHT = 2;
+export const DEFAULT_MAX_IN_FLIGHT = 1;
 export const DEFAULT_MAX_CHUNK_CHARS = 400;
 export const DEFAULT_MAX_STREAM_CHARS = 20_000;
 export const DEFAULT_MAX_TURN_CHARS = 30_000;

@@ -73,9 +73,15 @@ describe('production endpoint judge wrapper', () => {
 
   it('does not parse a typed capacity result from the production wrapper', async () => {
     const parser = vi.fn(parseVerdictReply);
-    const outputSlot = endpointJudgeBudget.acquire('output');
-    expect(outputSlot.kind).toBe('acquired');
-    if (outputSlot.kind !== 'acquired') return;
+    const outputSlots = Array.from({ length: 4 }, () =>
+      endpointJudgeBudget.acquire('output'),
+    );
+    expect(outputSlots.map((slot) => slot.kind)).toEqual([
+      'acquired',
+      'acquired',
+      'acquired',
+      'acquired',
+    ]);
     const judge = createEndpointJudge(dbStub(), parser);
 
     await expect(
@@ -90,7 +96,8 @@ describe('production endpoint judge wrapper', () => {
       failClosedRow: 'tier',
     });
     expect(parser).not.toHaveBeenCalled();
-    outputSlot.release();
+    for (const slot of outputSlots)
+      if (slot.kind === 'acquired') slot.release();
   });
 
   it('reserves an action-input slot through the real gate while chat slots are saturated', async () => {
@@ -363,10 +370,13 @@ describe('production endpoint judge wrapper', () => {
     const judge = createEndpointJudge(dbStub(), parser);
     const output = (text: string) =>
       judge.moderate({ text, tier: 'standard', direction: 'output' });
-    const lost = output('A narration request that never settles.');
+    const lost = Array.from({ length: 4 }, (_, i) =>
+      output(`A narration request ${i} that never settles.`),
+    );
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(4_500);
-    await expect(lost).resolves.toMatchObject({ unavailable: true });
+    for (const request of lost)
+      await expect(request).resolves.toMatchObject({ unavailable: true });
 
     await expect(
       output('The next narration must be held.'),
@@ -376,7 +386,7 @@ describe('production endpoint judge wrapper', () => {
       failClosedRow: 'tier',
     });
     expect(parser).not.toHaveBeenCalled();
-    adapter.pending[0]!.resolve();
+    for (const pending of adapter.pending) pending.resolve();
     await vi.advanceTimersByTimeAsync(0);
   });
 

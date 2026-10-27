@@ -32,11 +32,17 @@ describe('shared judge budget', () => {
     }
     expect(budget.acquire('chat')).toEqual({ kind: 'limited', class: 'chat' });
     const action = budget.acquire('action-input');
-    const output = budget.acquire('output');
+    const outputs = Array.from({ length: 4 }, () => budget.acquire('output'));
     expect(action.kind).toBe('acquired');
-    expect(output.kind).toBe('acquired');
+    expect(outputs.map((slot) => slot.kind)).toEqual([
+      'acquired',
+      'acquired',
+      'acquired',
+      'acquired',
+    ]);
     if (action.kind === 'acquired') action.markLost();
-    if (output.kind === 'acquired') output.markLost();
+    for (const output of outputs)
+      if (output.kind === 'acquired') output.markLost();
     expect(budget.acquire('action-input')).toEqual({
       kind: 'limited',
       class: 'action-input',
@@ -119,7 +125,7 @@ describe('shared judge budget', () => {
     vi.useRealTimers();
   });
 
-  it('caps chat at 120/min, actions at 80/min and reserves output at 40/min', () => {
+  it('caps chat at 120/min, actions at 80/min and output at 160/min', () => {
     const budget = new JudgeBudget();
     for (let i = 0; i < 120; i++) {
       const result = budget.acquire('chat', i);
@@ -139,7 +145,7 @@ describe('shared judge budget', () => {
       kind: 'limited',
       class: 'action-input',
     });
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 160; i++) {
       const result = budget.acquire('output', 200);
       expect(result.kind).toBe('acquired');
       if (result.kind === 'acquired') result.release();

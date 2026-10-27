@@ -11,6 +11,7 @@ import {
   type ModerationRequest,
   type Verdict,
 } from './moderator.js';
+import { JudgeBudget } from './judgeBudget.js';
 import { hardFloorLayer } from './deterministicLayer.js';
 
 const ALLOW: Verdict = {
@@ -1238,5 +1239,102 @@ describe('unavailable verdict contract', () => {
       unavailable: true,
     };
     expect(v.unavailable).toBe(true);
+  });
+});
+
+describe('realistic judge latency and shared output capacity', () => {
+  const chunks = Array.from({ length: 10 }, (_, i) => `Scene ${i} begins. `);
+  const delayedBudgetModerator = (
+    budget: JudgeBudget,
+    state: { active: number; peak: number; calls: number },
+  ): Moderator => ({
+    moderate: async () => {
+      const slot = budget.acquire('output');
+      if (slot.kind === 'limited')
+        return {
+          verdict: 'block',
+          category: 'other',
+          source: 'failclosed',
+          latencyMs: 0,
+          unavailable: true,
+          failClosedRow: 'tier',
+          capacityLimited: 'output',
+        };
+      state.calls++;
+      state.active++;
+      state.peak = Math.max(state.peak, state.active);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return {
+          verdict: 'allow',
+          category: 'none',
+          source: 'judge',
+          latencyMs: 200,
+          unavailable: false,
+        };
+      } finally {
+        state.active--;
+        slot.release();
+      }
+    },
+  });
+
+  const play = (moderator: Moderator) =>
+    runOutputGate({
+      stream: async function* () {
+        yield* chunks;
+      },
+      regenerate: async function* () {},
+      moderator,
+      tier: 'standard',
+      maxRegenerations: 0,
+    });
+
+  it('approves all ten chunks from one turn with a 200 ms judge', async () => {
+    const state = { active: 0, peak: 0, calls: 0 };
+    const events = await collect(
+      play(delayedBudgetModerator(new JudgeBudget(), state)),
+    );
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(events.at(-1)).toMatchObject({
+      metrics: {
+        chunks: Array.from({ length: 10 }, () =>
+          expect.objectContaining({ verdict: 'allow', source: 'judge' }),
+        ),
+      },
+    });
+    expect(state).toMatchObject({ calls: 10, peak: 1 });
+  });
+
+  it('allows two concurrent turns under the shared four-call cap', async () => {
+    const state = { active: 0, peak: 0, calls: 0 };
+    const moderator = delayedBudgetModerator(new JudgeBudget(), state);
+    const [first, second] = await Promise.all([
+      collect(play(moderator)),
+      collect(play(moderator)),
+    ]);
+    expect(first.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(second.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(state).toMatchObject({ calls: 20, peak: 2 });
+  });
+
+  it('fails closed on a genuine judge failure with no narration emitted', async () => {
+    const events = await collect(
+      runOutputGate({
+        stream: async function* () {
+          yield 'The scene begins. ';
+        },
+        regenerate: async function* () {},
+        moderator: {
+          moderate: async () => {
+            throw new Error('judge unavailable');
+          },
+        },
+        tier: 'standard',
+        maxRegenerations: 0,
+      }),
+    );
+    expect(events.some((event) => event.kind === 'chunk')).toBe(false);
+    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
   });
 });
