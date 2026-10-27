@@ -56,7 +56,7 @@ const META_LEAK_PATTERN = new RegExp(
     .filter((n) => /[_-]/.test(n))
     .join(
       '|',
-    )})\\b|\\btool\\b|function\\s+call|[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}|\\bent_[a-z0-9_-]+\\b)`,
+    )})\\b|\\btools?\\s+(?:calls?|errors?|results?|requires?|failed|failure|response)\\b|function\\s+call|[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}|\\bent_[a-z0-9_-]+\\b)`,
   'i',
 );
 // NFKC + zero-width stripping so fullwidth and invisible-character variants cannot slip past the pattern.

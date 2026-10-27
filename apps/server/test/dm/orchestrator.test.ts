@@ -1098,12 +1098,16 @@ describe('narration leak guard', () => {
     expect(h.requests).toHaveLength(2);
   });
 
-  it('lets ordinary combat prose containing "attack" through without a retry', async () => {
-    const text = 'The goblin lunges; its attack glances off your shield.';
-    const h = setup([[{ type: 'text', delta: text }]]);
-    const result = await runTurn(h.input);
-    expect(result.narration).toBe(text);
-    expect(h.requests).toHaveLength(1);
+  it('lets ordinary prose containing "attack" or "tool" through without a retry', async () => {
+    for (const text of [
+      'The goblin lunges; its attack glances off your shield.',
+      'The thief sets down a lockpicking tool and listens at the door.',
+    ]) {
+      const h = setup([[{ type: 'text', delta: text }]]);
+      const result = await runTurn(h.input);
+      expect(result.narration).toBe(text);
+      expect(h.requests).toHaveLength(1);
+    }
   });
 
   it('catches fullwidth, zero-width and unhyphenated-UUID leaks', async () => {
