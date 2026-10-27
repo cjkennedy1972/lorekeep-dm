@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Battlemap } from '@game/schema';
+import { DMToolArgsSchema, type Battlemap } from '@game/schema';
 import { abilityModifier } from '../dice.js';
 import type { CharacterInput } from '../character/types.js';
 import type { Catalog } from '../catalog/types.js';

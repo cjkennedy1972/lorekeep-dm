@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   AdventureSchema,
   StartCombatEncounterArgsSchema,
@@ -93,6 +94,9 @@ function combatStartTelemetry(
 }
 function telemetryEncounterId(value: string) {
   return redactedEncounterId(value);
+}
+function telemetrySessionId(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 type GameState = {
@@ -394,7 +398,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     );
     for (const encounterId of offeredEncounterKeys)
       combatStartTelemetry('CombatStartToolOffered', {
-        sessionId,
+        sessionIdHash: telemetrySessionId(sessionId),
         activeMode: 'exploration',
         sceneId: initialSceneId,
         ...telemetryEncounterId(encounterId),
@@ -788,7 +792,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 )
               : { count: 1, withdrawn: true };
             combatStartTelemetry('CombatStartRejected', {
-              sessionId,
+              sessionIdHash: telemetrySessionId(sessionId),
               activeMode: 'exploration',
               ...(initialSceneId ? { sceneId: initialSceneId } : {}),
               ...telemetryEncounterId(encounterTelemetryId),
@@ -850,6 +854,11 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                     initialSceneId,
                     asKey.data.encounterId,
                     resolvedSet,
+                    new Set(
+                      attemptState.startedEncounter
+                        ? [attemptState.startedEncounter]
+                        : [],
+                    ),
                   )
                 : ({ ok: false, code: 'unknown-encounter' } as const);
             if (!resolved.ok) {
@@ -1262,7 +1271,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       !attemptState.startedEncounter
     )
       combatStartTelemetry('CombatNarratedWithoutStart', {
-        sessionId: request.sessionId,
+        sessionIdHash: telemetrySessionId(request.sessionId),
         activeMode: 'exploration',
         ...(initialSceneId ? { sceneId: initialSceneId } : {}),
         ...telemetryEncounterId(offeredEncounterKeys[0]!),

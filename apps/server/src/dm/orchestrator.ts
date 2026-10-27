@@ -872,7 +872,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   console.info(
     JSON.stringify({
       event: 'dm_turn_observability',
-      sessionId: input.sessionId ?? null,
+      sessionIdHash: input.sessionId
+        ? createHash('sha256').update(input.sessionId).digest('hex')
+        : null,
       turnId: input.turnId,
       toolsOffered: toolSchemas(input).map((tool) => tool.name),
       toolCalls: toolObservations,
