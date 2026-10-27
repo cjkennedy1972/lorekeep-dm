@@ -4,6 +4,7 @@ import { loadCatalog } from '@game/rules-engine/catalog-node';
 import adventureData from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import {
   EncounterStartRejectionBudget,
+  encounterKeysForTurn,
   offeredEncounters,
   redactedEncounterId,
   resolveEncounter,
@@ -171,5 +172,20 @@ describe('combat-start rejection accounting', () => {
     expect(redactedEncounterId('unsafe key with text')).toMatchObject({
       encounterIdHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
     });
+  });
+});
+
+describe('encounter tool withdrawal', () => {
+  it('removes start_combat affordances once the rejection budget is withdrawn for a scene', () => {
+    const budget = new EncounterStartRejectionBudget();
+    const eligible = offeredEncounters(adventure, sceneId, new Set());
+    expect(encounterKeysForTurn(true, eligible, false)).toEqual([lookouts]);
+    for (let index = 0; index < 6; index++)
+      budget.record('session-a', 'seat-a', sceneId, index * 100);
+    const overflow = budget.record('session-a', 'seat-a', sceneId, 700);
+    expect(encounterKeysForTurn(true, eligible, overflow.withdrawn)).toEqual(
+      [],
+    );
+    expect(encounterKeysForTurn(false, eligible, false)).toEqual([]);
   });
 });

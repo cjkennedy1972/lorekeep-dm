@@ -49,6 +49,24 @@ describe('schema-driven combat event visibility', () => {
     });
   }
 
+  it('projects CombatStarted.order per viewer without mutating the source event', () => {
+    const full = {
+      type: 'CombatStarted',
+      order: ['pc', 'rogue'],
+      combatants: [
+        { id: 'pc', pos: { x: 1, y: 1 } },
+        { id: 'rogue', pos: { x: 7, y: 9 } },
+      ],
+    };
+    const ordinarySeat = projectEventForViewer(full, hidden, none)!;
+    const hostWithoutControl = projectEventForViewer(full, hidden, none)!;
+    const controller = projectEventForViewer(full, hidden, owner)!;
+    expect(ordinarySeat.order).toEqual(['pc']);
+    expect(hostWithoutControl.order).toEqual(['pc']);
+    expect(controller).toEqual(full);
+    expect(full.order).toEqual(['pc', 'rogue']);
+  });
+
   it('redacts list entries but keeps visible ones', () => {
     const out = projectEventForViewer(
       { type: 'AreaResolved', cells: [], affected: ['pc', 'rogue'] },

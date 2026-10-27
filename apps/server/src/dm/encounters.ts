@@ -127,3 +127,12 @@ export class EncounterStartRejectionBudget {
     return `${sessionId}:${accountId}:${sceneId}`;
   }
 }
+
+/** Prompt affordance after rollout and scene-scoped rejection-budget policy. */
+export function encounterKeysForTurn(
+  enabled: boolean,
+  eligible: readonly string[],
+  withdrawn: boolean,
+): string[] {
+  return enabled && !withdrawn ? [...eligible] : [];
+}

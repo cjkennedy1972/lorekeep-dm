@@ -68,6 +68,7 @@ import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
 import {
   EncounterStartRejectionBudget,
+  encounterKeysForTurn,
   offeredEncounters,
   redactedEncounterId,
   resolveEncounter,
@@ -378,13 +379,15 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         request.accountId,
         initialSceneId,
       );
-    const offeredEncounterKeys =
-      this.storyCombatEnabled &&
-      adventure?.ok &&
-      initialSceneId &&
-      !budgetWithdrawn
+    const eligibleEncounterKeys =
+      adventure?.ok && initialSceneId
         ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
         : [];
+    const offeredEncounterKeys = encounterKeysForTurn(
+      this.storyCombatEnabled,
+      eligibleEncounterKeys,
+      budgetWithdrawn,
+    );
     for (const encounterId of offeredEncounterKeys)
       combatStartTelemetry('CombatStartToolOffered', {
         sessionId,
@@ -817,6 +820,15 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             };
           }
           const asKey = StartCombatEncounterArgsSchema.safeParse(request.args);
+          if (!asKey.success) {
+            rejectEncounterStart('invalid-encounter-key');
+            return {
+              ok: false,
+              error: 'schema-violation',
+              hint: 'Use an offered authored encounter key.',
+              events: [],
+            };
+          }
           if (asKey.success) {
             if (startedEncounter) {
               rejectEncounterStart('duplicate-call');
