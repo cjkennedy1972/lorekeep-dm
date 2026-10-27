@@ -24,13 +24,30 @@ export type NarrationTurn = {
 
 export type LogEntry =
   | { kind: 'pending'; actionId: string }
-  | { kind: 'turn'; turn: NarrationTurn }
-  | { kind: 'error'; actionId?: string; code: string; message: string };
+  | { kind: 'turn'; turn: NarrationTurn };
 
 export type NarrationLogState = {
   entries: LogEntry[];
   announced: string[];
 };
+
+const LIVE_DM_RESTRICTED_MESSAGE = 'Live DM is not enabled for this account.';
+
+/** Codes the server sends when the DM turn for a submitted action did not complete. */
+export function isTurnFailure(code: string): boolean {
+  return code === 'TURN_FAILED' || code === 'LIVE_DM_RESTRICTED';
+}
+
+/** What the sender sees beside the action box after their turn failed. */
+export function turnFailureNotice(
+  code: string,
+  message: string,
+): { message: string; canRetry: boolean } {
+  // A restricted account cannot retry: the server will reject the same action again.
+  if (code === 'LIVE_DM_RESTRICTED')
+    return { message: LIVE_DM_RESTRICTED_MESSAGE, canRetry: false };
+  return { message, canRetry: true };
+}
 
 export const initialNarrationLog: NarrationLogState = {
   entries: [],
@@ -157,25 +174,23 @@ export function narrationLogReducer(
       };
     }
     case 'Error': {
+      // Errors are per-seat, so they never enter the shared story log. A failed turn only ends the
+      // thinking status; the sender sees the failure beside the action box (turnFailureNotice).
+      // The round path names the round here, not the turn's action id, so a failed turn clears
+      // whichever turn is pending: the server runs one turn at a time.
       const code = String(payload.code ?? 'ERROR');
       const actionId =
         typeof payload.actionId === 'string' ? payload.actionId : undefined;
-      const entries = state.entries.filter(
-        (entry) => !(entry.kind === 'pending' && entry.actionId === actionId),
-      );
+      const turnFailed = isTurnFailure(code);
       return {
         ...state,
-        entries: [
-          ...entries,
-          {
-            kind: 'error',
-            ...(actionId ? { actionId } : {}),
-            code,
-            message: String(
-              payload.message ?? 'The action could not be completed.',
+        entries: state.entries.filter(
+          (entry) =>
+            !(
+              entry.kind === 'pending' &&
+              (turnFailed || entry.actionId === actionId)
             ),
-          },
-        ],
+        ),
       };
     }
     case 'ToolRejected':

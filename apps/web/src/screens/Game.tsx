@@ -20,6 +20,10 @@ import { TurnBanner } from '../features/game/TurnBanner.js';
 import { Describe } from '../features/map/Describe.js';
 import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
+import {
+  isTurnFailure,
+  turnFailureNotice,
+} from '../features/narration/logState.js';
 import { ActionInput } from '../features/input/ActionInput.js';
 import { pendingInputFor } from '../features/input/pendingInput.js';
 import { RoundPanel } from '../features/round/RoundPanel.js';
@@ -364,6 +368,24 @@ export function Game() {
           );
           return;
         }
+        if (isTurnFailure(String(payload.code ?? ''))) {
+          // Errors are per-seat: only the sender sees the failure and gets their text back.
+          const mine = pendingActionRef.current;
+          updatePendingAction(() => null);
+          if (mine) {
+            failedActionText.current = mine.text;
+            setActionDraft(mine.text);
+            setTurnFailure(
+              turnFailureNotice(
+                String(payload.code),
+                String(
+                  payload.message ?? 'The DM could not complete that turn.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
         setError(String(payload.message ?? 'The command failed.'));
         updatePendingAction((current) =>
           current && (!actionId || current.id === actionId) ? null : current,
@@ -527,8 +549,15 @@ export function Game() {
     return actionId;
   };
   const lastActionText = useRef('');
+  // The text of this player's last turn that failed; Retry resubmits it.
+  const failedActionText = useRef('');
+  const [turnFailure, setTurnFailure] = useState<{
+    message: string;
+    canRetry: boolean;
+  } | null>(null);
   const submitAction = (text: string) => {
     lastActionText.current = text;
+    setTurnFailure(null);
     // The wire actionId lets the round panel recognise this player's submission.
     const id = live.send('PlayerAction', { text });
     if (!id) {
@@ -897,10 +926,6 @@ export function Game() {
                   ? `${resume.name} is ready. Choose a quick action below, or describe what your character does, and the DM will take it from there.`
                   : 'Choose a quick action below, or describe what your character does, and the DM will take it from there.'),
             }}
-            // The server has no retry message: retrying resubmits the last action as a new one.
-            onRetry={() => {
-              if (lastActionText.current) submitAction(lastActionText.current);
-            }}
           />
         </div>
         <div className="game-area game-area--dock">
@@ -915,6 +940,15 @@ export function Game() {
             }}
             initialText={actionDraft}
             onDraftChange={setActionDraft}
+            failure={turnFailure}
+            // The server has no retry message: retrying resubmits the failed action as a new one.
+            onRetry={() => {
+              const text = failedActionText.current;
+              if (!text) return;
+              failedActionText.current = '';
+              setActionDraft('');
+              submitAction(text);
+            }}
             clarification={clarification}
             onReply={(actionId, reply) => {
               setClarification(null);

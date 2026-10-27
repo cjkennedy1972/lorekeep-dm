@@ -17,8 +17,6 @@ type Props = {
     category: string,
     reason: string,
   ) => Promise<string | null>;
-  onRetry?: (actionId: string) => void;
-  onResubmit?: (actionId: string) => void;
   /** Shown in place of an empty log, before the first narration arrives. */
   opening?: { title: string; body: ReactNode };
 };
@@ -40,8 +38,6 @@ export function NarrationLog({
   messages,
   combatantNames = {},
   onReport,
-  onRetry,
-  onResubmit,
   opening,
 }: Props) {
   const [state, dispatch] = useReducer(
@@ -173,7 +169,8 @@ export function NarrationLog({
         message.type !== 'NarrationChunk' &&
         message.type !== 'NarrationCompleted' &&
         message.type !== 'TurnReverted' &&
-        message.type !== 'ToolRejected'
+        message.type !== 'ToolRejected' &&
+        message.type !== 'Error'
       )
         continue;
       const key = `${message.seq}:${message.type}:${JSON.stringify(message.payload)}`;
@@ -282,7 +279,7 @@ export function NarrationLog({
             </li>
           );
         })}
-        {state.entries.map((entry, index) => {
+        {state.entries.map((entry) => {
           if (entry.kind === 'pending') {
             return (
               <li
@@ -295,29 +292,6 @@ export function NarrationLog({
                   <i />
                   <i />
                 </span>
-              </li>
-            );
-          }
-          if (entry.kind === 'error') {
-            return (
-              <li
-                key={`error-${entry.actionId ?? index}-${index}`}
-                className="narration-log__error"
-              >
-                <strong>{entry.code}:</strong> {entry.message}
-                {entry.actionId &&
-                  onRetry &&
-                  entry.code !== 'LIVE_DM_RESTRICTED' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onRetry(entry.actionId!);
-                        onResubmit?.(entry.actionId!);
-                      }}
-                    >
-                      Retry this action
-                    </button>
-                  )}
               </li>
             );
           }

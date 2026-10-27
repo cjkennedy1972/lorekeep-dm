@@ -20,6 +20,9 @@ type Props = {
   onDraftChange?: (text: string) => void;
   clarification?: { actionId: string; question: string } | null;
   onReply?: (actionId: string, reply: string) => void;
+  /** This player's last action failed; the text is back in the box. */
+  failure?: { message: string; canRetry: boolean } | null;
+  onRetry?: () => void;
 };
 
 /** Keyboard-first free-text and quick-action input; pending work stays editable. */
@@ -33,10 +36,16 @@ export function ActionInput({
   onDraftChange,
   clarification = null,
   onReply,
+  failure = null,
+  onRetry,
 }: Props) {
   const [text, setText] = useState(initialText);
   const [reply, setReply] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // The parent sets the text when a failed action is restored or an edit starts.
+  useEffect(() => {
+    if (initialText) setText(initialText);
+  }, [initialText]);
   useEffect(() => {
     if (!pending || pendingSince === undefined) {
       setElapsedSeconds(0);
@@ -68,6 +77,16 @@ export function ActionInput({
           {onEditPending && (
             <button type="button" onClick={onEditPending}>
               Edit before resolution
+            </button>
+          )}
+        </div>
+      )}
+      {failure && (
+        <div className="action-input__failure" role="alert">
+          <p>{failure.message}</p>
+          {failure.canRetry && onRetry && (
+            <button type="button" onClick={onRetry}>
+              Retry this action
             </button>
           )}
         </div>

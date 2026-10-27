@@ -174,6 +174,12 @@ export function RoundPanel({
             : ''}
         </p>
       )}
+      {round && left !== null && (
+        <p className="round-timer-note">
+          When the timer reaches 0:00, the round closes and resolves with the
+          actions submitted so far.
+        </p>
+      )}
       {round && left === null && <p className="round-timer">No time limit.</p>}
       {round && (
         <>
