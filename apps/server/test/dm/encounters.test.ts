@@ -22,7 +22,7 @@ describe('authored encounter resolution (ADR-038)', () => {
       ok: true,
       enemies: [
         {
-          monsterId: 'srd:monster/goblin-warrior',
+          monsterId: 'srd:monster/goblin-lookout',
           count: 1,
           spawnRef: 'mk_e2_enemy',
         },
