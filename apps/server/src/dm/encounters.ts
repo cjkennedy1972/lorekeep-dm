@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Adventure } from '@game/schema';
 
 /** Closed rejection codes for the model-facing start_combat (ADR-038). */
@@ -81,4 +82,48 @@ export function offeredEncounters(
       (encounter.repeatable || !resolvedSet.has(id))
     );
   });
+}
+
+const SAFE_ENCOUNTER_ID = /^[a-z0-9:_-]{1,64}$/u;
+export function redactedEncounterId(
+  value: string,
+): { encounterId: string } | { encounterIdHash: string } {
+  return SAFE_ENCOUNTER_ID.test(value)
+    ? { encounterId: value }
+    : { encounterIdHash: createHash('sha256').update(value).digest('hex') };
+}
+
+/** In-process rolling mutation budget; rejection counters are not game-state mutations. */
+export class EncounterStartRejectionBudget {
+  private readonly rejectedAt = new Map<string, number[]>();
+  private readonly withdrawn = new Set<string>();
+
+  constructor(
+    private readonly limit = 6,
+    private readonly windowMs = 60_000,
+  ) {}
+
+  isWithdrawn(sessionId: string, accountId: string, sceneId: string): boolean {
+    return this.withdrawn.has(this.key(sessionId, accountId, sceneId));
+  }
+
+  record(
+    sessionId: string,
+    accountId: string,
+    sceneId: string,
+    now = Date.now(),
+  ): { count: number; withdrawn: boolean } {
+    const key = this.key(sessionId, accountId, sceneId);
+    const recent = (this.rejectedAt.get(key) ?? []).filter(
+      (at) => now - at < this.windowMs,
+    );
+    recent.push(now);
+    this.rejectedAt.set(key, recent);
+    if (recent.length > this.limit) this.withdrawn.add(key);
+    return { count: recent.length, withdrawn: this.withdrawn.has(key) };
+  }
+
+  private key(sessionId: string, accountId: string, sceneId: string): string {
+    return `${sessionId}:${accountId}:${sceneId}`;
+  }
 }

@@ -66,7 +66,12 @@ import {
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
-import { offeredEncounters, resolveEncounter } from '../dm/encounters.js';
+import {
+  EncounterStartRejectionBudget,
+  offeredEncounters,
+  redactedEncounterId,
+  resolveEncounter,
+} from '../dm/encounters.js';
 import {
   consumeOptionHandle,
   roomTurnKey,
@@ -77,6 +82,17 @@ import {
   type SoloTurnRequest,
   type SoloTurnRunner,
 } from './dmTurn.js';
+
+const encounterStartRejectionBudget = new EncounterStartRejectionBudget();
+function combatStartTelemetry(
+  event: string,
+  fields: Record<string, unknown>,
+): void {
+  console.info(JSON.stringify({ event, ...fields }));
+}
+function telemetryEncounterId(value: string) {
+  return redactedEncounterId(value);
+}
 
 type GameState = {
   characters?: Record<string, ToolExecutorState['actors'][string]>;
@@ -349,11 +365,33 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     );
     // ADR-038: one start_combat per turn; the encounter is marked resolved when its combat starts.
     let startedEncounter: string | undefined;
+    const storyCombatEnabled = this.storyCombatEnabled;
+    const sessionId = request.sessionId;
+    const accountId = request.accountId;
     let startCombatCalled = false;
+    let rejectedStartEncounter: string | undefined;
+    const budgetWithdrawn =
+      this.storyCombatEnabled &&
+      !!initialSceneId &&
+      encounterStartRejectionBudget.isWithdrawn(
+        request.sessionId,
+        request.accountId,
+        initialSceneId,
+      );
     const offeredEncounterKeys =
-      this.storyCombatEnabled && adventure?.ok && initialSceneId
+      this.storyCombatEnabled &&
+      adventure?.ok &&
+      initialSceneId &&
+      !budgetWithdrawn
         ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
         : [];
+    for (const encounterId of offeredEncounterKeys)
+      combatStartTelemetry('CombatStartToolOffered', {
+        sessionId,
+        activeMode: 'exploration',
+        sceneId: initialSceneId,
+        ...telemetryEncounterId(encounterId),
+      });
     const offeredEncounterPrompt =
       adventure?.ok && initialSceneId
         ? offeredEncounterKeys.flatMap((key) => {
@@ -720,37 +758,75 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         let engineCall: unknown = call;
         let encounterMap: unknown;
         if (request.name === 'start_combat') {
-          if (!this.storyCombatEnabled)
+          const rawEncounterId = (
+            request.args as { encounterId?: unknown } | undefined
+          )?.encounterId;
+          const encounterTelemetryId =
+            typeof rawEncounterId === 'string'
+              ? rawEncounterId
+              : JSON.stringify(request.args ?? {});
+          combatStartTelemetry('CombatStartToolCalled', {
+            sessionId,
+            activeMode: 'exploration',
+            sceneId: initialSceneId,
+            ...telemetryEncounterId(encounterTelemetryId),
+          });
+          const rejectEncounterStart = (rejectionCode: string) => {
+            rejectedStartEncounter = encounterTelemetryId;
+            const budget = initialSceneId
+              ? encounterStartRejectionBudget.record(
+                  sessionId,
+                  accountId,
+                  initialSceneId,
+                )
+              : { count: 1, withdrawn: true };
+            combatStartTelemetry('CombatStartRejected', {
+              sessionId,
+              activeMode: 'exploration',
+              ...(initialSceneId ? { sceneId: initialSceneId } : {}),
+              ...telemetryEncounterId(encounterTelemetryId),
+              rejectionCode,
+              rejectionCount: budget.count,
+              withdrawn: budget.withdrawn,
+            });
+          };
+          if (!storyCombatEnabled)
             return {
               ok: false,
               error: 'unknown-tool',
               hint: 'Authored combat starts are unavailable.',
               events: [],
             };
-          if (startCombatCalled)
+          if (startCombatCalled) {
+            rejectEncounterStart('duplicate-call');
             return {
               ok: false,
               error: 'turn-budget-exhausted',
               hint: 'Combat has already been considered this turn; narrate the established outcome.',
               events: [],
             };
+          }
           startCombatCalled = true;
-          if (state.combatRoom && !state.combatRoom.ended)
+          if (state.combatRoom && !state.combatRoom.ended) {
+            rejectEncounterStart('active-combat');
             return {
               ok: false,
               error: 'illegal-transition',
               hint: 'An encounter is already active.',
               events: [],
             };
+          }
           const asKey = StartCombatEncounterArgsSchema.safeParse(request.args);
           if (asKey.success) {
-            if (startedEncounter)
+            if (startedEncounter) {
+              rejectEncounterStart('duplicate-call');
               return {
                 ok: false,
                 error: 'turn-budget-exhausted',
                 hint: 'Combat has already started this turn; narrate it.',
                 events: [],
               };
+            }
             const resolved =
               adventure?.ok && initialSceneId
                 ? resolveEncounter(
@@ -760,7 +836,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                     resolvedSet,
                   )
                 : ({ ok: false, code: 'unknown-encounter' } as const);
-            if (!resolved.ok)
+            if (!resolved.ok) {
+              rejectEncounterStart(resolved.code);
               return {
                 ok: false,
                 error:
@@ -770,18 +847,21 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 hint: `${resolved.code}: choose one of the offered encounter keys.`,
                 events: [],
               };
+            }
             encounterMap = adventure!.ok
               ? adventure!.adventure.maps.find(
                   (map) => map.mapId === resolved.mapId,
                 )
               : undefined;
-            if (!encounterMap)
+            if (!encounterMap) {
+              rejectEncounterStart('encounter-roster-invalid');
               return {
                 ok: false,
                 error: 'no-spawn-space',
                 hint: 'The encounter map is unavailable.',
                 events: [],
               };
+            }
             engineCall = {
               name: 'start_combat',
               args: {
@@ -1158,6 +1238,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       settled = await attempt(attemptTier);
     }
     const { result, narration } = settled;
+    if (rejectedStartEncounter && result.narration.trim())
+      combatStartTelemetry('CombatNarratedWithoutStart', {
+        sessionId: request.sessionId,
+        activeMode: 'exploration',
+        ...(initialSceneId ? { sceneId: initialSceneId } : {}),
+        ...telemetryEncounterId(rejectedStartEncounter),
+      });
     const hiddenNow = concealedEntities({
       concealed: [
         ...concealedEntities(state),

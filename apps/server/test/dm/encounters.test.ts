@@ -3,7 +3,9 @@ import { AdventureSchema } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import adventureData from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import {
+  EncounterStartRejectionBudget,
   offeredEncounters,
+  redactedEncounterId,
   resolveEncounter,
   toEngineMonsterId,
 } from '../../src/dm/encounters.js';
@@ -133,5 +135,41 @@ describe('ADR-038 rollout flag', () => {
     expect(storyCombatFlagEnabled(undefined)).toBe(false);
     expect(storyCombatFlagEnabled('false')).toBe(false);
     expect(storyCombatFlagEnabled('true')).toBe(true);
+  });
+});
+
+describe('combat-start rejection accounting', () => {
+  it('keeps six rejected starts in the rolling window and withdraws on the seventh for only that seat and scene', () => {
+    const budget = new EncounterStartRejectionBudget();
+    for (let index = 1; index <= 6; index++)
+      expect(
+        budget.record('session-a', 'seat-a', sceneId, index * 100).withdrawn,
+      ).toBe(false);
+    expect(budget.record('session-a', 'seat-a', sceneId, 700).withdrawn).toBe(
+      true,
+    );
+    expect(budget.isWithdrawn('session-a', 'seat-a', sceneId)).toBe(true);
+    expect(budget.isWithdrawn('session-a', 'seat-b', sceneId)).toBe(false);
+    expect(budget.isWithdrawn('session-a', 'seat-a', 'scene-other')).toBe(
+      false,
+    );
+  });
+
+  it('expires old rejections after 60 seconds and redacts malformed encounter keys', () => {
+    const budget = new EncounterStartRejectionBudget();
+    for (let index = 0; index < 6; index++)
+      budget.record('session-a', 'seat-a', sceneId, index * 10);
+    expect(budget.record('session-a', 'seat-a', sceneId, 60_100)).toMatchObject(
+      {
+        count: 1,
+        withdrawn: false,
+      },
+    );
+    expect(redactedEncounterId('encounter-e2-lookouts')).toEqual({
+      encounterId: 'encounter-e2-lookouts',
+    });
+    expect(redactedEncounterId('unsafe key with text')).toMatchObject({
+      encounterIdHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    });
   });
 });
