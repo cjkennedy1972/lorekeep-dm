@@ -131,6 +131,47 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it('keeps clarification details out of StateSync and replays them only to the owner', async () => {
+    const f = party();
+    const actionId = randomUUID();
+    f.room.state.openClarifications = {
+      [actionId]: {
+        accountId: f.accountA,
+        playerName: 'Owner',
+        text: 'private player text',
+        question: 'Which door?',
+        deadlineAt: Date.now() + 60_000,
+      },
+    } as never;
+
+    const guestMessages: Record<string, unknown>[] = [];
+    await f.room.subscribe(f.accountB, {
+      send(message: Record<string, unknown>) {
+        guestMessages.push(message);
+      },
+    });
+    const guestSync = guestMessages.find(
+      (message) => message.type === 'StateSync',
+    )!;
+    expect(guestSync.payload).not.toHaveProperty('state.openClarifications');
+    expect(JSON.stringify(guestSync)).not.toContain('private player text');
+
+    await f.room.subscribe(f.accountA, { send() {} });
+    await f.room.disconnect(f.accountA);
+
+    const ownerMessages: Record<string, unknown>[] = [];
+    await f.room.subscribe(f.accountA, {
+      send(message: Record<string, unknown>) {
+        ownerMessages.push(message);
+      },
+    });
+    expect(ownerMessages).toContainEqual(
+      expect.objectContaining({
+        type: 'ClarificationRequested',
+        payload: { actionId, question: 'Which door?' },
+      }),
+    );
+  });
   it('omits bound seat identifiers from solo and empty-party StateSync payloads', async () => {
     for (const options of [
       { partyMode: false, bindA: false, bindB: false },
