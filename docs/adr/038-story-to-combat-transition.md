@@ -57,3 +57,7 @@ This decision also amends ADR-034 §5’s `CombatStarted.order` visibility row: 
 ## Verification record
 
 Docs-only decision. Source inspection: ADR-022 §2.3, ADR-007, ADR-018; Adventure 01 `scenes[].encounterIds` and `encounters[]`; investigation `combat-start-investigation.md`. Prettier check and PR status are recorded with the implementation review; live behavior is not verified by this ADR.
+
+## Correction — 2026-10-27
+
+Correction: Decision item 7 (explicit monster-id mapping table validated at adventure load) is superseded. Authored adventure ids are already in the catalog namespace (monster:goblin-warrior) and the engine adventure validator (packages/engine/src/adventure/validate.ts) already rejects dangling encounter monsters at load; the engine start_combat input uses srd:monster/<slug> and converts back (tools/combat.ts). The server therefore converts with a prefix rule (toEngineMonsterId) and needs no table.
