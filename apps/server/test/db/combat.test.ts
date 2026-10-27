@@ -256,6 +256,7 @@ function authoredEncounterDm(
   requests: LlmRequest[],
   encounterId: string,
   calls = 1,
+  extraArgs: Record<string, unknown> = {},
 ): LlmAdapter {
   return {
     capabilities: () => ({
@@ -279,7 +280,7 @@ function authoredEncounterDm(
               type: 'tool-call' as const,
               id: `authored-start-${index}`,
               name: 'start_combat',
-              arguments: { encounterId },
+              arguments: { encounterId, ...extraArgs },
             }));
       for (const chunk of chunks) yield chunk;
     },
@@ -747,6 +748,34 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     } finally {
       client.close();
       telemetry.mockRestore();
+    }
+  }, 30_000);
+
+  it('rejects a freeform roster supplied beside a valid encounter key', async () => {
+    stack = await Stack.boot('adr038-freeform-roster-rejected', {
+      adapter: authoredEncounterDm([], 'encounter-e2-lookouts', 1, {
+        enemies: [{ monsterId: 'srd:monster/goblin-minion', count: 8 }],
+      }),
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({ ...preCombatGame(hero), characters: { [account]: hero } }),
+      { id: 'adventure:01-hollow-under-marrowfell', sceneId: 'scene-warren-gallery' },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until((message) => message.type === 'NarrationCompleted', from, 20_000);
+      expect(client.log.filter((message) => message.type === 'ToolRejected')).toHaveLength(1);
+      const saved = await savedGame(table);
+      expect(saved.gameState.combatRoom).toBeUndefined();
+      expect(saved.gameState.resolvedEncounters).toBeUndefined();
+    } finally {
+      client.close();
     }
   }, 30_000);
 

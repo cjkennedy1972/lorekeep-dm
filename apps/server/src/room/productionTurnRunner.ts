@@ -378,7 +378,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const storyCombatEnabled = this.storyCombatEnabled;
     const sessionId = request.sessionId;
     const accountId = request.accountId;
-    let rejectedStartEncounter: string | undefined;
     const budgetWithdrawn =
       this.storyCombatEnabled &&
       !!initialSceneId &&
@@ -777,13 +776,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               ? rawEncounterId
               : JSON.stringify(request.args ?? {});
           combatStartTelemetry('CombatStartToolCalled', {
-            sessionId,
+            sessionIdHash: telemetrySessionId(sessionId),
             activeMode: 'exploration',
             sceneId: initialSceneId,
             ...telemetryEncounterId(encounterTelemetryId),
           });
           const rejectEncounterStart = (rejectionCode: string) => {
-            rejectedStartEncounter = encounterTelemetryId;
             const budget = initialSceneId
               ? encounterStartRejectionBudget.record(
                   sessionId,

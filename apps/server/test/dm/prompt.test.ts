@@ -111,7 +111,7 @@ describe('DM prompt builder', () => {
     expect(unavailable.blocks[2]).not.toContain('Encounters you may start');
   });
 
-  it('keeps combat tool behavior unchanged when encounter keys are supplied', () => {
+  it('keeps start_combat encounter-only in combat mode', () => {
     const value = buildPrompt({
       ...input(),
       activeMode: 'combat',
@@ -124,8 +124,8 @@ describe('DM prompt builder', () => {
       schema: { properties?: Record<string, unknown> };
     }[];
     const startCombat = toolList.find(({ name }) => name === 'start_combat');
-    expect(startCombat?.schema.properties).toHaveProperty('enemies');
-    expect(startCombat?.schema.properties).not.toHaveProperty('encounterId');
+    expect(startCombat?.schema.properties).toHaveProperty('encounterId');
+    expect(startCombat?.schema.properties).not.toHaveProperty('enemies');
     expect(value.blocks[2]).not.toContain('Encounters you may start');
   });
   it('gives X-card steering explicit priority and forbids scene continuation or state changes', () => {
