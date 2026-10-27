@@ -186,12 +186,16 @@ export async function buildPlayerVisibleRecap(input: {
   signal?: AbortSignal;
   hidden?: readonly HiddenEntity[];
 }): Promise<RecapResult> {
-  let rows: { narration: string }[] = [];
+  let rows: { narration: string; tier: string | null }[] = [];
   try {
-    ({ rows } = await input.db.query<{ narration: string }>(
-      `SELECT payload->>'narration' AS narration
+    ({ rows } = await input.db.query<{
+      narration: string;
+      tier: string | null;
+    }>(
+      `SELECT payload->>'narration' AS narration, payload->>'tier' AS tier
          FROM events WHERE session_id=$1 AND type='NarrationCompleted'
           AND NULLIF(payload->>'narration','') IS NOT NULL
+          AND payload->>'tier' IN ('family','standard')
         ORDER BY seq DESC LIMIT 32`,
       [input.sessionId],
     ));

@@ -7,7 +7,10 @@ import { createApp } from '../../src/app.js';
 import { COOKIE_NAME, createSession } from '../../src/accounts/sessions.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
-import { SAFE_RECAP_FALLBACK } from '../../src/dm/recap.js';
+import {
+  buildPlayerVisibleRecap,
+  SAFE_RECAP_FALLBACK,
+} from '../../src/dm/recap.js';
 import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
@@ -50,7 +53,10 @@ async function createAccount(email = `${randomUUID()}@example.test`) {
   return { id, token: await createSession(db, id, 'recap-gate-test') };
 }
 
-async function createResumableTable(ownerId: string) {
+async function createResumableTable(
+  ownerId: string,
+  tier: string | undefined = 'standard',
+) {
   const id = randomUUID();
   await db.query(
     `INSERT INTO sessions(id,owner_account_id,name,mode,catalog_version) VALUES($1,$2,'Recap table','solo',$3)`,
@@ -71,6 +77,7 @@ async function createResumableTable(ownerId: string) {
       randomUUID(),
       JSON.stringify({
         narration: 'The adventurer followed the lantern light into Greyfen.',
+        ...(tier ? { tier } : {}),
       }),
     ],
   );
@@ -177,6 +184,47 @@ describe('resume recap and the live DM allowlist', () => {
     // The authored block verdict is exercised; recap generation does not call the narrator.
     expect(moderationEndpoint.requests.length).toBe(moderationCalls + 1);
     expect(endpoint.requests.length).toBe(generationCalls);
+  });
+
+  it('excludes mature and unknown-tier narration from resume and list recaps', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id);
+    const addNarration = async (narration: string, tier?: string) => {
+      await db.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb
+           FROM events WHERE session_id=$1`,
+        [
+          table,
+          randomUUID(),
+          JSON.stringify({ narration, ...(tier ? { tier } : {}) }),
+        ],
+      );
+    };
+    await addNarration('MATURE_MARKER forbidden scene.', 'mature');
+    await addNarration('UNKNOWN_MARKER unclassified scene.');
+    await addNarration('STANDARD_MARKER the party found a bridge.', 'standard');
+
+    const built = await buildPlayerVisibleRecap({ db, sessionId: table });
+    expect(built.recap).toContain('STANDARD_MARKER');
+    expect(built.recap).not.toContain('MATURE_MARKER');
+    expect(built.recap).not.toContain('UNKNOWN_MARKER');
+
+    const resume = await fetch(`${base}/api/tables/${table}`, {
+      headers: { cookie: `${COOKIE_NAME}=${player.token}` },
+    });
+    expect(resume.status).toBe(200);
+    const resumeBody = await resume.text();
+    expect(resumeBody).not.toContain('MATURE_MARKER');
+    expect(resumeBody).not.toContain('UNKNOWN_MARKER');
+
+    const list = await fetch(`${base}/api/tables`, {
+      headers: { cookie: `${COOKIE_NAME}=${player.token}` },
+    });
+    expect(list.status).toBe(200);
+    const listBody = await list.text();
+    expect(listBody).not.toContain('MATURE_MARKER');
+    expect(listBody).not.toContain('UNKNOWN_MARKER');
   });
 
   it('still calls the endpoint for an allowlisted operator owner', async () => {

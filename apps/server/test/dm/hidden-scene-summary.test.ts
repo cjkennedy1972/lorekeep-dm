@@ -94,7 +94,14 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
     const db = {
       query: async (sql: string) =>
         sql.includes("type='NarrationCompleted'")
-          ? { rows: [{ narration: 'The party entered the ruined hall.' }] }
+          ? {
+              rows: [
+                {
+                  narration: 'The party entered the ruined hall.',
+                  tier: 'standard',
+                },
+              ],
+            }
           : sql.includes('scene_summaries')
             ? { rows: [{ text: 'The key is under the throne.' }] }
             : sql.includes('registry_entries')
@@ -112,7 +119,9 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
     prompts.length = 0;
     const db = {
       query: async () => ({
-        rows: [{ narration: 'The party entered the ruined hall.' }],
+        rows: [
+          { narration: 'The party entered the ruined hall.', tier: 'standard' },
+        ],
       }),
     } as never;
     const out = await buildResumeRecap({
@@ -217,7 +226,14 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
     const db = {
       query: async (sql: string) =>
         sql.includes("type='NarrationCompleted'")
-          ? { rows: [{ narration: 'The party entered the ruined hall.' }] }
+          ? {
+              rows: [
+                {
+                  narration: 'The party entered the ruined hall.',
+                  tier: 'standard',
+                },
+              ],
+            }
           : sql.includes('registry_entries')
             ? {
                 rows: [

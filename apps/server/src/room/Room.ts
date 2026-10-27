@@ -4713,6 +4713,7 @@ export class Room {
     // Mature narration reaches only the connections present now, so a joiner never receives a turn it was not present for.
     const audience = new Set(this.connections.values());
     let matureAudience: ReadonlySet<Connection> | undefined;
+    let narrationTier: 'family' | 'standard' | 'mature' | undefined;
     let liveCompletion: unknown;
     let committedCompletion = false;
     const turnAbort = new AbortController();
@@ -4738,6 +4739,12 @@ export class Room {
         (event) => {
           const type = event.type;
           if (type === 'NarrationTier') {
+            narrationTier =
+              event.tier === 'family' ||
+              event.tier === 'standard' ||
+              event.tier === 'mature'
+                ? event.tier
+                : undefined;
             matureAudience =
               (event as { tier?: unknown }).tier === 'mature'
                 ? audience
@@ -4851,7 +4858,11 @@ export class Room {
             seq: undefined,
             turnId: id,
             type: 'NarrationCompleted',
-            payload: { actionId, narration: result.narration },
+            payload: {
+              actionId,
+              narration: result.narration,
+              tier: narrationTier,
+            },
           });
           writes.push({
             seq: undefined,
