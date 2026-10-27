@@ -223,13 +223,59 @@ describe('encounter tool withdrawal', () => {
     budget.record('session-a', 'scene-next', 'turn-2', 'reason', 6);
     budget.clearSession('session-a');
     expect(budget.isWithdrawn('session-a', 'scene-next', 7)).toBe(false);
-    budget.record('s1', 'a', 't', 'r', 10);
-    budget.record('s2', 'b', 't', 'r', 11);
-    budget.record('s3', 'c', 't', 'r', 12);
-    expect(budget.isWithdrawn('s1', 'a', 13)).toBe(false);
-    expect(budget.isWithdrawn('s3', 'c', 13)).toBe(true);
-    budget.record('s3', 'c', 't2', 'r', 200);
-    expect(budget.isWithdrawn('s3', 'c', 301)).toBe(false);
+    const boundedBudget = new EncounterStartRejectionBudget(6, 60_000, 2, 100);
+    boundedBudget.record('s1', 'a', 't', 'r', 10);
+    boundedBudget.record('s2', 'b', 't', 'r', 11);
+    boundedBudget.record('s3', 'c', 't', 'r', 12);
+    expect(boundedBudget.isWithdrawn('s1', 'a', 13)).toBe(false);
+    expect(boundedBudget.isWithdrawn('s3', 'c', 13)).toBe(false);
+    boundedBudget.record('s3', 'c', 't2', 'r', 200);
+    expect(boundedBudget.isWithdrawn('s3', 'c', 301)).toBe(false);
+  });
+
+  it('keeps withdrawn scenes through age and size pruning until lifecycle clear', () => {
+    const budget = new EncounterStartRejectionBudget(1, 60_000, 1, 100);
+    budget.enterScene('session-a', 'scene-a', 1);
+    budget.record('session-a', 'scene-a', 'turn-1', 'reason-1', 2);
+    budget.record('session-a', 'scene-a', 'turn-2', 'reason-2', 3);
+    expect(budget.isWithdrawn('session-a', 'scene-a', 3)).toBe(true);
+
+    // A non-withdrawn entry creates cache pressure but cannot evict withdrawal.
+    budget.record('session-b', 'scene-b', 'turn-1', 'reason', 4);
+    expect(budget.isWithdrawn('session-a', 'scene-a', 4)).toBe(true);
+    expect(budget.isWithdrawn('session-a', 'scene-a', 2 + 61 * 60_000)).toBe(
+      true,
+    );
+    expect(
+      budget.isWithdrawn('session-a', 'scene-a', 2 + 2 * 60 * 60_000),
+    ).toBe(true);
+
+    // Age pruning must not discard scene tracking needed to observe this change.
+    budget.enterScene('session-a', 'scene-next', 2 + 2 * 60 * 60_000 + 1);
+    expect(
+      budget.isWithdrawn('session-a', 'scene-a', 2 + 2 * 60 * 60_000 + 2),
+    ).toBe(false);
+    budget.record(
+      'session-a',
+      'scene-next',
+      'turn-2',
+      'reason-1',
+      2 + 2 * 60 * 60_000 + 3,
+    );
+    budget.record(
+      'session-a',
+      'scene-next',
+      'turn-3',
+      'reason-2',
+      2 + 2 * 60 * 60_000 + 4,
+    );
+    expect(
+      budget.isWithdrawn('session-a', 'scene-next', 2 + 2 * 60 * 60_000 + 4),
+    ).toBe(true);
+    budget.clearSession('session-a');
+    expect(
+      budget.isWithdrawn('session-a', 'scene-next', 2 + 2 * 60 * 60_000 + 5),
+    ).toBe(false);
   });
 
   it('removes start_combat affordances once the rejection budget is withdrawn for a scene', () => {

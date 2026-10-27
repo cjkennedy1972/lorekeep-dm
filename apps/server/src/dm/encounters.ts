@@ -134,7 +134,9 @@ export class EncounterStartRejectionBudget {
     if (sceneId === undefined) this.activeSceneBySession.delete(sessionId);
     else this.activeSceneBySession.set(sessionId, { sceneId, touchedAt: now });
     while (this.activeSceneBySession.size > this.maxEntries) {
-      const oldest = this.activeSceneBySession.keys().next().value;
+      const oldest = [...this.activeSceneBySession.keys()].find(
+        (id) => !this.hasWithdrawnEntry(id),
+      );
       if (oldest === undefined) break;
       this.activeSceneBySession.delete(oldest);
     }
@@ -188,13 +190,17 @@ export class EncounterStartRejectionBudget {
 
   private prune(now: number): void {
     for (const [sessionId, active] of this.activeSceneBySession)
-      if (now - active.touchedAt > this.maxAgeMs)
+      if (
+        now - active.touchedAt > this.maxAgeMs &&
+        !this.hasWithdrawnEntry(sessionId)
+      )
         this.activeSceneBySession.delete(sessionId);
     for (const [key, entry] of this.entries) {
       entry.rejectedAt = entry.rejectedAt.filter(
         (at) => now - at < this.windowMs,
       );
-      if (now - entry.touchedAt > this.maxAgeMs) this.entries.delete(key);
+      if (!entry.withdrawn && now - entry.touchedAt > this.maxAgeMs)
+        this.entries.delete(key);
       else if (entry.turns.size > 256) {
         for (const turnId of [...entry.turns.keys()].slice(
           0,
@@ -204,10 +210,20 @@ export class EncounterStartRejectionBudget {
       }
     }
     while (this.entries.size > this.maxEntries) {
-      const oldest = this.entries.keys().next().value;
+      const oldest = [...this.entries.entries()].find(
+        ([, entry]) => !entry.withdrawn,
+      )?.[0];
+      // Withdrawn entries are bounded by the session/scene lifecycle and are
+      // cleared by clearSession; never let generic cache pressure re-arm combat.
       if (oldest === undefined) break;
       this.entries.delete(oldest);
     }
+  }
+
+  private hasWithdrawnEntry(sessionId: string): boolean {
+    for (const [key, entry] of this.entries)
+      if (entry.withdrawn && key.startsWith(`${sessionId}:`)) return true;
+    return false;
   }
 
   private key(sessionId: string, sceneId: string): string {
