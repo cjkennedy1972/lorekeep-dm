@@ -44,54 +44,72 @@ export async function judgeLeaveIntent(
   }
 }
 
+export type SceneCloseExecutor = NonNullable<DmToolContext['closeScene']> & {
+  reset: () => void;
+};
+
 export function createSceneCloseExecutor(input: {
   sceneId?: string;
   nextSceneIds: readonly string[];
   allowSummary: (summary: string) => Promise<boolean>;
   playerText: string;
   judgeLeave: LeaveJudge;
-}): NonNullable<DmToolContext['closeScene']> {
+}): SceneCloseExecutor {
   let judgments = 0;
-  return async ({ summary, nextSceneId }): Promise<ToolExecution> => {
-    if (!input.sceneId)
-      return {
-        ok: false,
-        error: 'unknown-tool',
-        hint: 'Scene closing is unavailable outside an active solo adventure.',
-      };
-    judgments += 1;
-    const leave =
-      judgments <= MAX_LEAVE_JUDGMENTS_PER_TURN &&
-      (await input.judgeLeave(input.playerText));
-    if (!leave)
-      return {
-        ok: false,
-        error: 'unknown-tool',
-        hint: 'Scene closing is only accepted when the player clearly asks their character to leave or finish the scene.',
-      };
-    if (nextSceneId && !input.nextSceneIds.includes(nextSceneId))
-      return {
-        ok: false,
-        error: 'invalid-scene-transition',
-        hint: 'Choose one of the authored next scenes listed in the context, or omit nextSceneId.',
-      };
-    if (!(await input.allowSummary(summary)))
-      return {
-        ok: false,
-        error: 'schema-violation',
-        hint: 'The scene summary was rejected by the table safety settings. Use a safer summary.',
-      };
-    const event = {
-      type: 'SceneClosed',
-      sceneId: input.sceneId,
+  const execute: SceneCloseExecutor = Object.assign(
+    async ({
       summary,
-      ...(nextSceneId ? { nextSceneId } : {}),
-    };
-    return {
-      ok: true,
-      summary: 'The current scene was closed.',
-      events: [],
-      output: { events: [event] },
-    };
-  };
+      nextSceneId,
+    }: {
+      summary: string;
+      nextSceneId?: string;
+    }): Promise<ToolExecution> => {
+      if (!input.sceneId)
+        return {
+          ok: false,
+          error: 'unknown-tool',
+          hint: 'Scene closing is unavailable outside an active solo adventure.',
+        };
+      judgments += 1;
+      const leave =
+        judgments <= MAX_LEAVE_JUDGMENTS_PER_TURN &&
+        (await input.judgeLeave(input.playerText));
+      if (!leave)
+        return {
+          ok: false,
+          error: 'unknown-tool',
+          hint: 'Scene closing is only accepted when the player clearly asks their character to leave or finish the scene.',
+        };
+      if (nextSceneId && !input.nextSceneIds.includes(nextSceneId))
+        return {
+          ok: false,
+          error: 'invalid-scene-transition',
+          hint: 'Choose one of the authored next scenes listed in the context, or omit nextSceneId.',
+        };
+      if (!(await input.allowSummary(summary)))
+        return {
+          ok: false,
+          error: 'schema-violation',
+          hint: 'The scene summary was rejected by the table safety settings. Use a safer summary.',
+        };
+      const event = {
+        type: 'SceneClosed',
+        sceneId: input.sceneId,
+        summary,
+        ...(nextSceneId ? { nextSceneId } : {}),
+      };
+      return {
+        ok: true,
+        summary: 'The current scene was closed.',
+        events: [],
+        output: { events: [event] },
+      };
+    },
+    {
+      reset: () => {
+        judgments = 0;
+      },
+    },
+  );
+  return execute;
 }

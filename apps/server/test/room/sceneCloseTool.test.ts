@@ -258,6 +258,28 @@ describe('judgeLeaveIntent', () => {
 });
 
 describe('scene close judgment cap', () => {
+  it('starts a retry with a fresh close-scene judgment budget', async () => {
+    const judgeLeave = vi.fn(async () => true);
+    const executor = createSceneCloseExecutor({
+      sceneId: 'loc_redteam',
+      nextSceneIds: ['loc_tavern'],
+      allowSummary: async () => true,
+      playerText: 'We head out to the tavern.',
+      judgeLeave,
+    });
+
+    // The refused attempt called close_scene twice before its refusal was seen.
+    await executor(closeArgs);
+    await executor(closeArgs);
+
+    // A retry must behave like a clean attempt, not inherit the exhausted cap.
+    executor.reset();
+    await expect(executor(closeArgs)).resolves.toMatchObject({
+      ok: true,
+      output: { events: [{ type: 'SceneClosed', sceneId: 'loc_redteam' }] },
+    });
+  });
+
   it('stops consulting the judge after the per-turn cap and fails closed', async () => {
     const judgeLeave = vi.fn(async () => true);
     const allowSummary = vi.fn(async () => true);

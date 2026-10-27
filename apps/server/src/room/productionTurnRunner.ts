@@ -509,29 +509,42 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           ],
         ),
       );
+    // Retry attempts must start from the same tool and Room state as the turn.
+    const cloneEngineState = (value: unknown) => {
+      if (!value || typeof value !== 'object' || !('catalog' in value))
+        return structuredClone(value);
+      const { catalog: engineCatalog, ...cloneable } = value as Record<
+        string,
+        unknown
+      >;
+      return { ...structuredClone(cloneable), catalog: engineCatalog };
+    };
+    const turnStartEngineState = cloneEngineState(engineState);
     // Authoritative Room combat state for map tools; tracks every commit within this DM turn.
-    let liveRoom = state.combatRoom;
+    const turnStartRoom = state.combatRoom;
+    let liveRoom = turnStartRoom;
     let pendingRoom: RoomCombatState | undefined;
     let spentHandle: string | undefined;
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
       .map(([, character]) => character.id);
+    const closeSceneExecutor = createSceneCloseExecutor({
+      sceneId: adventure?.ok ? initialSceneId : undefined,
+      nextSceneIds: currentScene?.nextSceneIds ?? [],
+      allowSummary: allowPlayerVisibleText,
+      playerText: request.text,
+      judgeLeave:
+        this.leaveJudgeOverride ??
+        ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
+    });
     const context: DmToolContext = {
       seed: 0,
       rollIndex: 0,
       turnId: request.actionId,
       state,
       engineState,
-      closeScene: createSceneCloseExecutor({
-        sceneId: adventure?.ok ? initialSceneId : undefined,
-        nextSceneIds: currentScene?.nextSceneIds ?? [],
-        allowSummary: allowPlayerVisibleText,
-        playerText: request.text,
-        judgeLeave:
-          this.leaveJudgeOverride ??
-          ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
-      }),
+      closeScene: closeSceneExecutor,
       commitState(previous, output) {
         // Room rejects combat commands while turnInFlight (Room.ts:1347), and queued DM turns run serially.
         // These resource snapshots therefore cannot overwrite a concurrent combat spend.
@@ -873,7 +886,17 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const emittedSceneEvents: unknown[] = [];
     const attemptEvents: DMTurnEvent[] = [];
     let refused = false;
+    const preTurnState = structuredClone(state);
     const attempt = async (attemptTier: ContentTier) => {
+      closeSceneExecutor.reset();
+      context.state = structuredClone(preTurnState);
+      context.engineState = cloneEngineState(turnStartEngineState);
+      liveRoom = turnStartRoom;
+      pendingRoom = undefined;
+      spentHandle = undefined;
+      attemptEvents.length = 0;
+      emittedSceneEvents.length = 0;
+      registryEvents.length = 0;
       refused = false;
       const narration: DMTurnEvent[] = [];
       const result = await runTurn({

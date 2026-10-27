@@ -466,6 +466,17 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let hadToolError = false;
   let usedFinalText = false;
   let endpointFailed = false;
+  const turnStartState = structuredClone(input.context.state);
+  const cloneEngineState = (value: unknown) => {
+    if (!value || typeof value !== 'object' || !('catalog' in value))
+      return structuredClone(value);
+    const { catalog: engineCatalog, ...cloneable } = value as Record<
+      string,
+      unknown
+    >;
+    return { ...structuredClone(cloneable), catalog: engineCatalog };
+  };
+  const turnStartEngineState = cloneEngineState(input.context.engineState);
   let clarification: TurnResult['clarification'];
   const makeFallback = (reason: NonNullable<TurnResult['fallback']>) => {
     fallback = reason;
@@ -877,7 +888,8 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   if (endpointFailed) {
     // Endpoint failure invalidates the in-flight turn; state is committed by the caller only on success.
     events.length = 0;
-    input.context.state = input.prompt.turn.state;
+    input.context.state = structuredClone(turnStartState);
+    input.context.engineState = cloneEngineState(turnStartEngineState);
   }
   const sourceText = finalText;
   const gated: string[] = [];

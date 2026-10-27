@@ -794,7 +794,9 @@ describe('DM orchestrator', () => {
     expect(result.fallback).toBe('endpoint-error');
     expect(result.narration).toContain('not resolved');
     expect(result.events).toHaveLength(0);
-    expect(result.state).toEqual({ characters: [character] });
+    // The turn-start state, not prompt.turn.state: that prompt field is a projection whose
+    // `characters` is an array, and restoring it persisted character keys "0", "1".
+    expect(result.state).toEqual({ unchanged: true });
   });
   it('applies a tool once and does not retry when the following endpoint request fails', async () => {
     const applied: string[] = [];
