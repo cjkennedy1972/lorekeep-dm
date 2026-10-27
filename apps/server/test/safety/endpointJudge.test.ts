@@ -6,6 +6,7 @@ import {
 import {
   endpointJudgeBudget,
   JudgeBudget,
+  OUTPUT_NO_SESSION_BUCKET,
 } from '../../src/safety/judgeBudget.js';
 import { createConfiguredAdapter } from '../../src/llm/config.js';
 import { parseVerdictReply } from '../../src/safety/moderator.js';
@@ -71,7 +72,7 @@ describe('production endpoint judge wrapper', () => {
     expect(acquire).toHaveBeenCalledWith(
       'output',
       expect.any(Number),
-      'unknown',
+      OUTPUT_NO_SESSION_BUCKET,
     );
   });
 
@@ -354,6 +355,7 @@ describe('production endpoint judge wrapper', () => {
       text: 'The door opens.',
       tier: 'standard',
       direction: 'output',
+      sessionId: 'table-under-test',
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(adapter.complete).toHaveBeenCalledTimes(4);
@@ -373,7 +375,12 @@ describe('production endpoint judge wrapper', () => {
     const parser = vi.fn(parseVerdictReply);
     const judge = createEndpointJudge(dbStub(), parser);
     const output = (text: string) =>
-      judge.moderate({ text, tier: 'standard', direction: 'output' });
+      judge.moderate({
+        text,
+        tier: 'standard',
+        direction: 'output',
+        sessionId: 'table-under-test',
+      });
     const lost = Array.from({ length: 4 }, (_, i) =>
       output(`A narration request ${i} that never settles.`),
     );

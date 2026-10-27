@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JudgeBudget } from '../../src/safety/judgeBudget.js';
+import {
+  JudgeBudget,
+  OUTPUT_NO_SESSION_BUCKET,
+} from '../../src/safety/judgeBudget.js';
 
 describe('shared judge budget', () => {
   it('caps chat at two slots and preserves one action-input slot', () => {
@@ -132,13 +135,24 @@ describe('shared judge budget', () => {
       expect(slot.kind).toBe('acquired');
       if (slot.kind === 'acquired') slot.release();
     }
-    expect(budget.acquire('output', 5)).toEqual({
+    expect(budget.acquire('output', 5, OUTPUT_NO_SESSION_BUCKET)).toEqual({
       kind: 'limited',
       class: 'output',
     });
-    const table = budget.acquire('output', 5, 'table-a');
-    expect(table.kind).toBe('acquired');
-    if (table.kind === 'acquired') table.release();
+    // No-session traffic cannot spend or inherit a real table's 60/minute allowance.
+    for (let i = 0; i < 60; i++) {
+      const table = budget.acquire('output', i, 'table-a');
+      expect(table.kind).toBe('acquired');
+      if (table.kind === 'acquired') table.release();
+    }
+    expect(budget.acquire('output', 60, 'table-a')).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
+    expect(budget.acquire('output', 60, OUTPUT_NO_SESSION_BUCKET)).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
   });
 
   it('caps chat at 120/min, actions at 80/min and output at 160/min', () => {

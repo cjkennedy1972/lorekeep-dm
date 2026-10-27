@@ -17,6 +17,7 @@ import {
 } from './moderator.js';
 import type { ContentTier } from './tier.js';
 import { loadContentTierState } from './tierLoader.js';
+import { OUTPUT_NO_SESSION_BUCKET } from './judgeBudget.js';
 import { endpointJudgeBudget, withJudgeHardCap } from './judgeBudget.js';
 
 export const INPUT_SURFACES = [
@@ -357,7 +358,7 @@ export function createEndpointJudge(
       const budget = endpointJudgeBudget.acquire(
         direction === 'output' ? 'output' : (budgetClass ?? 'action-input'),
         Date.now(),
-        sessionId ?? 'unknown',
+        sessionId ?? OUTPUT_NO_SESSION_BUCKET,
       );
       if (budget.kind === 'limited')
         return { kind: 'limited', class: budget.class };

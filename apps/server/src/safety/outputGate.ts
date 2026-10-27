@@ -1,10 +1,5 @@
 import pino from 'pino';
 import type { ContentTier } from './tier.js';
-
-const outputGateLogger = pino({
-  name: 'output-gate',
-  level: process.env.LOG_LEVEL === 'debug' ? 'debug' : 'info',
-});
 import {
   failClosedVerdict,
   MAX_RULE_SPAN_CHARS,
@@ -13,6 +8,11 @@ import {
   type Moderator,
   type Verdict,
 } from './moderator.js';
+
+const outputGateLogger = pino({
+  name: 'output-gate',
+  level: process.env.LOG_LEVEL === 'debug' ? 'debug' : 'info',
+});
 
 export const SAFE_REDIRECT_TEMPLATE =
   'The narrator pauses, and the scene turns to the next thing the party notices.';
