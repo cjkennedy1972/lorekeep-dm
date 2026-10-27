@@ -529,21 +529,22 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const otherSeatIds = Object.entries(actors)
       .filter(([accountId]) => accountId !== request.accountId)
       .map(([, character]) => character.id);
+    const closeSceneExecutor = createSceneCloseExecutor({
+      sceneId: adventure?.ok ? initialSceneId : undefined,
+      nextSceneIds: currentScene?.nextSceneIds ?? [],
+      allowSummary: allowPlayerVisibleText,
+      playerText: request.text,
+      judgeLeave:
+        this.leaveJudgeOverride ??
+        ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
+    });
     const context: DmToolContext = {
       seed: 0,
       rollIndex: 0,
       turnId: request.actionId,
       state,
       engineState,
-      closeScene: createSceneCloseExecutor({
-        sceneId: adventure?.ok ? initialSceneId : undefined,
-        nextSceneIds: currentScene?.nextSceneIds ?? [],
-        allowSummary: allowPlayerVisibleText,
-        playerText: request.text,
-        judgeLeave:
-          this.leaveJudgeOverride ??
-          ((text) => judgeLeaveIntent(judgeAdapter, text, request.signal)),
-      }),
+      closeScene: closeSceneExecutor,
       commitState(previous, output) {
         // Room rejects combat commands while turnInFlight (Room.ts:1347), and queued DM turns run serially.
         // These resource snapshots therefore cannot overwrite a concurrent combat spend.
@@ -887,6 +888,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     let refused = false;
     const preTurnState = structuredClone(state);
     const attempt = async (attemptTier: ContentTier) => {
+      closeSceneExecutor.reset();
       context.state = structuredClone(preTurnState);
       context.engineState = cloneEngineState(turnStartEngineState);
       liveRoom = turnStartRoom;
