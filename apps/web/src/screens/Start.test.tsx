@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, test, vi } from 'vitest';
 import { Start } from './Start';
 import { http } from '../api';
+import { gameStore } from '../state/store';
 import {
   renderApp,
   seedAccount,
@@ -56,7 +57,7 @@ test('My games lists resume link with recap and retries failed loads', async () 
 
 afterEach(() => vi.restoreAllMocks());
 
-test('start reports field-level errors and does not retry without the character', async () => {
+test('start reports field-level errors and keeps the built character on retry', async () => {
   const fetch = vi.fn().mockResolvedValue({
     ok: false,
     status: 400,
@@ -67,6 +68,7 @@ test('start reports field-level errors and does not retry without the character'
     }),
   });
   vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  gameStore.setCharacter(null);
   startAt();
   await userEvent.type(screen.getByLabelText('Game name'), 'Test game');
   await userEvent.click(
@@ -79,10 +81,44 @@ test('start reports field-level errors and does not retry without the character'
   await userEvent.click(
     screen.getByRole('button', { name: 'Create solo game' }),
   );
-  await waitFor(() =>
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Create a character before starting your game.',
-    ),
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  const retryBody = JSON.parse(fetch.mock.calls[1]![1]!.body as string);
+  expect(retryBody.character).toMatchObject({
+    id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+    classId: expect.stringMatching(/^class:/),
+    level: 1,
+    equipment: expect.arrayContaining([
+      expect.objectContaining({ itemId: expect.stringMatching(/^equipment:/) }),
+    ]),
+  });
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    'Character: id: invalid uuid',
   );
+});
+
+test('solo start auto-builds a character when none has been made', async () => {
+  gameStore.setCharacter(null);
+  const fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 201,
+    json: async () => ({ game: { id: 'new-game' } }),
+  });
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  startAt();
+  await userEvent.type(screen.getByLabelText('Game name'), 'Quick start');
+  await userEvent.selectOptions(screen.getByLabelText('Starting level'), '2');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
+  await screen.findByText('Game ready');
   expect(fetch).toHaveBeenCalledTimes(1);
+  const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+  expect(body.character).toMatchObject({
+    id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+    classId: expect.stringMatching(/^class:/),
+    level: 2,
+    equipment: expect.arrayContaining([
+      expect.objectContaining({ itemId: expect.stringMatching(/^equipment:/) }),
+    ]),
+  });
 });

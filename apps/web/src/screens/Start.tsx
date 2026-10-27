@@ -2,7 +2,11 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Character } from '@game/schema';
 import { api } from '../api';
-import { QuickBuild } from '../features/character/QuickBuild';
+import {
+  buildQuickCharacter,
+  QuickBuild,
+} from '../features/character/QuickBuild';
+import { gameStore } from '../state/store';
 import { CreationWizard } from '../features/character/CreationWizard';
 
 const ADVENTURE = 'adventure:01-hollow-under-marrowfell';
@@ -16,9 +20,18 @@ export function Start() {
   const navigate = useNavigate();
   async function create(character?: Character) {
     setError('');
-    if (!character) {
-      setError('Create a character before starting your game.');
-      return;
+    const selectedCharacter = character ?? gameStore.getState().character;
+    let characterToCreate = selectedCharacter
+      ? { ...selectedCharacter, level: Number(level) }
+      : undefined;
+    if (!characterToCreate) {
+      try {
+        characterToCreate = {
+          ...buildQuickCharacter(undefined, Number(level)),
+        };
+      } catch {
+        // Quick build is best-effort; the server still supports its default hero.
+      }
     }
     setBusy(true);
     const result = await api<{ game: { id: string } }>('/api/tables', {
@@ -26,7 +39,7 @@ export function Start() {
       adventureId: ADVENTURE,
       difficulty,
       startingLevel: Number(level),
-      character,
+      ...(characterToCreate ? { character: characterToCreate } : {}),
     });
     setBusy(false);
     if (result.ok) navigate(`/rooms/${result.data.game.id}/game`);
@@ -126,9 +139,8 @@ export function Start() {
       </form>
       <div hidden={creation !== 'quick'}>
         <QuickBuild
-          onBuild={(character) =>
-            void create({ ...character, level: Number(level) })
-          }
+          startingLevel={Number(level)}
+          onBuild={(character) => void create(character)}
         />
       </div>
       {creation === 'wizard' && (
