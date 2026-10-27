@@ -56,3 +56,12 @@ test('a restricted account is told live DM is not enabled, with no retry', () =>
     canRetry: false,
   });
 });
+
+test('a restriction named by the round is a generic retryable failure, not a restriction notice', () => {
+  expect(
+    turnFailureNotice('LIVE_DM_RESTRICTED', 'Live DM is not enabled.', true),
+  ).toEqual({
+    message: 'The DM could not complete that turn.',
+    canRetry: true,
+  });
+});

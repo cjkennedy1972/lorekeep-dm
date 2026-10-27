@@ -138,6 +138,7 @@ function mount() {
 
 describe('Game screen (live Room)', () => {
   beforeEach(() => {
+    hoisted.privateRoundSubmission = undefined;
     http.fetch = async () =>
       new Response(
         JSON.stringify({ game: { recap: 'A short recap.', name: 'Fixture' } }),
@@ -354,6 +355,60 @@ describe('Game screen (live Room)', () => {
       screen.getByRole('button', { name: 'Retry this action' }),
     ).toBeInTheDocument();
     hoisted.privateRoundSubmission = undefined;
+  });
+
+  it('a round-path restriction for a seat that is not restricted shows the generic failure with Retry', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    hoisted.privateRoundSubmission = {
+      roundId: 'round-7',
+      actionId: 'mine-1',
+      text: 'I search the room.',
+      queued: true,
+    };
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    // The server broadcasts the round's restriction to every seat; it names the round, not this seat's action.
+    push('Error', {
+      code: 'LIVE_DM_RESTRICTED',
+      message: 'Live DM is not enabled for this account.',
+      actionId: 'round-7',
+    });
+    expect(
+      screen.getByText('The DM could not complete that turn.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Live DM is not enabled for this account.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Your action')).toHaveValue(
+      'I search the room.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Retry this action' }));
+    expect(hoisted.send).toHaveBeenLastCalledWith('PlayerAction', {
+      text: 'I search the room.',
+    });
+    hoisted.privateRoundSubmission = undefined;
+  });
+
+  it('a single-action restriction for this seat keeps the restricted copy and no Retry', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ActionQueued', { actionId: 'mine-1' });
+    push('Error', {
+      code: 'LIVE_DM_RESTRICTED',
+      message: 'Live DM is not enabled for this account.',
+      actionId: 'mine-1',
+    });
+    expect(
+      screen.getByText('Live DM is not enabled for this account.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retry this action' }),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps report action and rewind banner available in the live story log', async () => {

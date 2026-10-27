@@ -374,11 +374,10 @@ export function Game() {
           // that round is the one this seat submitted into; any other failure leaves this seat alone.
           const mine = pendingActionRef.current;
           const round = submittedRound.current;
-          const ownFailure =
-            !!mine &&
-            (actionId === mine.id ||
-              (round?.actionId === mine.id && actionId === round.roundId));
-          if (ownFailure) {
+          const ownAction = !!mine && actionId === mine.id;
+          const viaRound =
+            !!mine && round?.actionId === mine.id && actionId === round.roundId;
+          if (ownAction || viaRound) {
             updatePendingAction(() => null);
             failedActionText.current = mine.text;
             setActionDraft(mine.text);
@@ -388,6 +387,7 @@ export function Game() {
                 String(
                   payload.message ?? 'The DM could not complete that turn.',
                 ),
+                viaRound,
               ),
             );
           }

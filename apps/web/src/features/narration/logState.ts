@@ -32,20 +32,31 @@ export type NarrationLogState = {
 };
 
 const LIVE_DM_RESTRICTED_MESSAGE = 'Live DM is not enabled for this account.';
+const GENERIC_TURN_FAILURE_MESSAGE = 'The DM could not complete that turn.';
 
 /** Codes the server sends when the DM turn for a submitted action did not complete. */
 export function isTurnFailure(code: string): boolean {
   return code === 'TURN_FAILED' || code === 'LIVE_DM_RESTRICTED';
 }
 
-/** What the sender sees beside the action box after their turn failed. */
+/**
+ * What the sender sees beside the action box after their turn failed. `viaRound` is true when the
+ * failure names the round this seat submitted into rather than the seat's own action.
+ */
 export function turnFailureNotice(
   code: string,
   message: string,
+  viaRound = false,
 ): { message: string; canRetry: boolean } {
-  // A restricted account cannot retry: the server will reject the same action again.
-  if (code === 'LIVE_DM_RESTRICTED')
+  if (code === 'LIVE_DM_RESTRICTED') {
+    // The round path broadcasts the round's restriction to every seat, so it does not say whether
+    // this seat is restricted. Show the generic failure and keep Retry; the server fix will send
+    // the restriction only to the restricted account.
+    if (viaRound)
+      return { message: GENERIC_TURN_FAILURE_MESSAGE, canRetry: true };
+    // A restricted account cannot retry: the server will reject the same action again.
     return { message: LIVE_DM_RESTRICTED_MESSAGE, canRetry: false };
+  }
   return { message, canRetry: true };
 }
 
