@@ -1043,3 +1043,119 @@ describe('DM orchestrator: combat narration tool scope (ADR-034 §2)', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('narration leak guard', () => {
+  it('retries tool-error explanations and never completes with meta text', async () => {
+    const h = setup(
+      [
+        [
+          call('move', 'move_to', {
+            entityId: 'ent_ayla',
+            targetRef: 'ent_wall',
+            mode: 'cover',
+          }),
+        ],
+        [
+          {
+            type: 'text',
+            delta: 'The move_to tool requires an active combat.',
+          },
+        ],
+        [{ type: 'text', delta: narration }],
+      ],
+      () => ({
+        ok: false,
+        error: 'not-in-combat',
+        hint: 'combat is not active',
+      }),
+    );
+    h.input.prompt.activeMode = 'combat';
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(narration);
+    expect(
+      h.events.some(
+        (e) =>
+          (e as { type?: string }).type === 'NarrationCompleted' &&
+          /move_to|tool/i.test(String((e as { text?: string }).text)),
+      ),
+    ).toBe(false);
+    expect(h.requests).toHaveLength(3);
+  });
+
+  it('rejects entity and UUID references embedded in narration', async () => {
+    const h = setup([
+      [
+        {
+          type: 'text',
+          delta:
+            'The actor is 80a812a0-400e-494e-bbb7-d3c75861caff (ent_goblin).',
+        },
+      ],
+      [{ type: 'text', delta: narration }],
+    ]);
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(narration);
+    expect(h.requests).toHaveLength(2);
+  });
+
+  it('lets ordinary prose containing "attack" or "tool" through without a retry', async () => {
+    for (const text of [
+      'The goblin lunges; its attack glances off your shield.',
+      'The thief sets down a lockpicking tool and listens at the door.',
+    ]) {
+      const h = setup([[{ type: 'text', delta: text }]]);
+      const result = await runTurn(h.input);
+      expect(result.narration).toBe(text);
+      expect(h.requests).toHaveLength(1);
+    }
+  });
+
+  it('catches fullwidth, zero-width and unhyphenated-UUID leaks', async () => {
+    for (const leak of [
+      'The ｍｏｖｅ＿ｔｏ ｔｏｏｌ failed.',
+      'The move\u200b_to call failed.',
+      'Actor 80a812a0400e494ebbb7d3c75861caff acts.',
+      'A function  call went wrong.',
+    ]) {
+      const h = setup([
+        [{ type: 'text', delta: leak }],
+        [{ type: 'text', delta: narration }],
+      ]);
+      const result = await runTurn(h.input);
+      expect(result.narration).toBe(narration);
+      expect(h.requests).toHaveLength(2);
+    }
+  });
+
+  it('rethrows an abort that happens during the repair request', async () => {
+    const h = setup([[{ type: 'text', delta: 'The move_to tool failed.' }]]);
+    const controller = new AbortController();
+    h.input.signal = controller.signal;
+    const inner = h.input.adapter;
+    let calls = 0;
+    h.input.adapter = {
+      ...inner,
+      probe: (signal) => inner.probe(signal),
+      async *complete(request) {
+        if (++calls === 2) {
+          controller.abort();
+          throw new Error('aborted');
+        }
+        yield* inner.complete(request);
+      },
+    };
+    await expect(runTurn(h.input)).rejects.toBeDefined();
+    expect(h.events).not.toContainEqual(
+      expect.objectContaining({ type: 'NarrationCompleted' }),
+    );
+  });
+
+  it('retries reasoning-only/empty narration and safely redirects if still empty', async () => {
+    const h = setup([
+      [{ type: 'text', delta: '' }],
+      [{ type: 'text', delta: '' }],
+    ]);
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(SAFE_REDIRECT_TEMPLATE);
+  });
+});
