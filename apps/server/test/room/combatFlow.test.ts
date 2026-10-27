@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   combatTracker,
+  combatOpeningSummary,
   REACTION_TIMEOUT_MS,
   type RoomCombatState,
 } from '../../src/room/combat.js';
@@ -56,6 +57,24 @@ function engaged() {
 }
 
 describe('combat bootstrap from the DM start_combat result', () => {
+  it('builds the moderation fallback summary from the viewer projection', () => {
+    const { state } = bootstrapped();
+    const hidden = state.entities.filter((entity) => entity.team === 'enemies');
+    const hiddenIds = hidden.map((entity) => entity.id);
+    const summary = combatOpeningSummary({
+      ...state,
+      entities: state.entities.map((entity) =>
+        hiddenIds.includes(entity.id) ? { ...entity, hidden: true } : entity,
+      ),
+    });
+    expect(summary).toContain('Combat begins.');
+    for (const entity of hidden) {
+      expect(summary).not.toContain(entity.id);
+      expect(summary).not.toContain(`${entity.pos.x}, ${entity.pos.y}`);
+    }
+    expect(summary).toContain('initiative');
+  });
+
   it('places the party and monsters on the structured map with initiative and the active turn', () => {
     const { state, game, events } = bootstrapped();
     const party = state.entities.find((e) => e.id === 'ent_aria')!;
