@@ -138,7 +138,9 @@ test.describe('party pointer equivalents for move', () => {
         await expect(map).toHaveAttribute('data-moving', 'false');
         for (const { page: p } of others)
           await expect(
-            p.getByText(`Active combatant: ${caster!.member.entityId}`),
+            p.locator(
+              `.game-active[data-entity-id="${caster!.member.entityId}"]`,
+            ),
           ).toBeVisible();
       });
     } finally {

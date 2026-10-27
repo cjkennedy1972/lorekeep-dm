@@ -320,6 +320,152 @@ hr {
 form.form {
   margin-bottom: var(--space-4);
 }
-label + select {
-  margin-inline-start: var(--space-2);
+
+/* Screens beyond the tokens: consistent cards, clear primary actions */
+main.main--card,
+main.main--wide {
+  border-top: 3px solid var(--accent);
+}
+main.main--card > h1:first-child,
+main.main--card > section > h1:first-child,
+main.main--wide > h1:first-child,
+main.main--wide > section > h1:first-child {
+  position: relative;
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+main.main--card > h1:first-child::after,
+main.main--card > section > h1:first-child::after,
+main.main--wide > h1:first-child::after,
+main.main--wide > section > h1:first-child::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0 auto;
+  bottom: 0;
+  width: 3rem;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 3px;
+}
+main.main--card .form {
+  max-width: none;
+}
+main.main--card .form > button[type='submit'] {
+  justify-self: stretch;
+}
+.panel {
+  margin-block: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+}
+.panel > h2:first-child {
+  margin-top: 0;
+  font-size: var(--text-md);
+  font-family: var(--font-body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.empty-card {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: center;
+  margin-block: var(--space-3);
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--border-soft) 45%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--border-soft) 45%, transparent) 1px,
+      transparent 1px
+    ),
+    var(--surface-2);
+  background-size:
+    1.75rem 1.75rem,
+    1.75rem 1.75rem,
+    auto;
+  border: 2px dashed var(--border-ui);
+  border-radius: var(--radius-lg);
+}
+.empty-card p {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+}
+.empty-card .empty-card__hint {
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  color: var(--fg-muted);
+}
+
+/* Lobby seats read as small player cards */
+.seats {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: 0;
+  list-style: none;
+}
+.seats li {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-inline-start: 0.3rem solid var(--border-ui);
+  border-radius: var(--radius);
+}
+.seats li[data-presence='connected'] {
+  border-inline-start-color: var(--success);
+}
+.seats .presence,
+.seats .round-ready,
+.seats .character-binding {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+/* Radio groups inside a fieldset become choice cards */
+fieldset > label:has(input[type='radio']) {
+  margin: var(--space-1) var(--space-1) var(--space-1) 0;
+  padding: 0 var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+fieldset > label:has(input[type='radio']:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+fieldset > label:has(input[type='radio']:focus-visible) {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: 2px;
+}
+.page-links a.button {
+  min-height: var(--target-min);
+}
+.game-card__resume {
+  font-size: var(--text-md);
+}
+.seats li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+.seats .character-binding {
+  margin-inline-start: auto;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+}
+.field label + select,
+.field select {
+  margin-inline-start: 0;
+  width: 100%;
+  max-width: 28rem;
 }

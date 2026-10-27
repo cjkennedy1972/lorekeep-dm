@@ -6,6 +6,7 @@ import {
 } from '@playwright/test';
 import {
   closeMember,
+  displayNameOf,
   openMember,
   readState,
   type Member,
@@ -124,11 +125,13 @@ test.describe('party keyboard-only opportunity attack', () => {
           dialog.getByRole('button', { name: 'Accept' }),
         ).toBeFocused();
         for (const v of others) {
-          await expect(
-            v.page.getByRole('status').filter({
-              hasText: `Reaction window open for ${reactorEntity}`,
-            }),
-          ).toBeVisible();
+          // The window names the reactor by the display name this seat's tracker shows, never by raw entity id.
+          const reactorName = await displayNameOf(v.page, reactorEntity);
+          const notice = v.page.getByRole('status').filter({
+            hasText: `Reaction window open for ${reactorName}.`,
+          });
+          await expect(notice).toBeVisible();
+          await expect(notice).not.toContainText(reactorEntity);
           await expect(v.page.getByRole('dialog', DIALOG)).toHaveCount(0);
         }
       });

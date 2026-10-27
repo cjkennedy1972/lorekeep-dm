@@ -203,9 +203,13 @@ export function CreationWizard({ onSave }: Props) {
       <nav aria-label="Creation progress">
         <ol className="wizard-progress">
           {steps.map((label, i) => (
-            <li key={label} aria-current={i === step ? 'step' : undefined}>
+            <li
+              key={label}
+              aria-current={i === step ? 'step' : undefined}
+              data-done={i < step}
+            >
               <span className="wizard-step-number">{i + 1}</span>
-              {label}
+              <span className="wizard-step-label">{label}</span>
             </li>
           ))}
         </ol>

@@ -15,6 +15,8 @@ import { DEFAULT_VIEWPORT } from '../features/map/viewport.js';
 import { createTokenDrawCommands } from '../features/map/tokens.js';
 import { MapKeyboard } from '../features/map/keyboard.js';
 import { TokenTable } from '../features/map/TokenTable.js';
+import { createEntityNamer } from '../features/map/names.js';
+import { TurnBanner } from '../features/game/TurnBanner.js';
 import { Describe } from '../features/map/Describe.js';
 import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
@@ -126,9 +128,11 @@ export function Game() {
   );
   const { id = '' } = useParams();
   const { account } = useAuth();
-  const [resume, setResume] = useState<{ recap: string; name: string } | null>(
-    null,
-  );
+  const [resume, setResume] = useState<{
+    recap: string;
+    name: string;
+    premise?: string;
+  } | null>(null);
   const [seatClaims, setSeatClaims] = useState<
     {
       claimId: string;
@@ -144,7 +148,7 @@ export function Game() {
   const loadGame = () => {
     setResumeLoading(true);
     setResumeError('');
-    void api<{ game: { recap: string; name: string } }>(
+    void api<{ game: { recap: string; name: string; premise?: string } }>(
       `/api/tables/${id}`,
     ).then((result) => {
       if (result.ok) setResume(result.data.game);
@@ -547,6 +551,20 @@ export function Game() {
       } as ServerMessage,
     ]);
   };
+  const characters = asRecord(asRecord(room?.gameState).characters) as Record<
+    string,
+    { id?: string; name?: string } | undefined
+  >;
+  const nameOf = useMemo(
+    () =>
+      createEntityNamer({
+        entities,
+        seats: room?.seats,
+        characters,
+      }),
+    // `characters` is rebuilt from room state each render; room is the real dependency.
+    [entities, room],
+  );
   const tokenCommands = useMemo(
     () =>
       tracker
@@ -580,12 +598,16 @@ export function Game() {
             Object.fromEntries(
               entities.map((item) => [
                 item.id,
-                { team: item.team, name: item.id, maxHp: Math.max(item.hp, 1) },
+                {
+                  team: item.team,
+                  name: nameOf(item.id),
+                  maxHp: Math.max(item.hp, 1),
+                },
               ]),
             ),
           )
         : [],
-    [tracker, entities],
+    [tracker, entities, nameOf],
   );
   const trackerFirst = tracker ? activeOf(tracker) : null;
   const active = trackerFirst;
@@ -695,6 +717,12 @@ export function Game() {
       </section>
     );
   const activeEntity = entities.find((item) => item.id === active);
+  const selfCharacterId = account ? characters[account.id]?.id : undefined;
+  const yourTurn = Boolean(
+    active &&
+      (active === selfCharacterId ||
+        (selfSeat && active === `ent_seat_${selfSeat.seatId}`)),
+  );
   const actions = Array.isArray(asRecord(options).actions)
     ? (asRecord(options).actions as unknown[])
     : [];
@@ -746,7 +774,11 @@ export function Game() {
       </p>
       <section aria-label="Safety controls" className="game-safety-controls">
         <h2>Safety controls</h2>
-        <p role="status" aria-live="polite">
+        <p
+          role="status"
+          aria-live="polite"
+          data-state={safetyNotice || room.paused ? 'notice' : 'active'}
+        >
           {safetyNotice ||
             (room.paused
               ? room.pauseCause === 'no-connected-seats'
@@ -803,14 +835,32 @@ export function Game() {
           <p>Only the host can resume the table.</p>
         )}
         <details className="game-safety__more">
-          <summary>About these controls</summary>
+          <summary>
+            <span>About these controls</span>
+          </summary>
           <p>
             Pause stops new narration after the current turn. X-card and pause
             also apply to party chat. No explanation is needed.
           </p>
         </details>
       </section>
-      <div className="game-layout">
+      <div className="game-layout" data-combat={tracker ? 'true' : 'false'}>
+        {tracker && (
+          <div className="game-area game-area--banner">
+            <TurnBanner
+              round={tracker.round}
+              activeName={active ? nameOf(active) : null}
+              yourTurn={yourTurn}
+              initiative={tracker.initiative.map((item) => ({
+                entityId: item.entityId,
+                name: nameOf(item.entityId),
+                active: item.entityId === trackerFirst,
+              }))}
+              roundClock={room.roundsEnabled ? room.round : undefined}
+              outcome={tracker.ended?.outcome}
+            />
+          </div>
+        )}
         <div
           className="game-area game-area--story"
           id="game-story"
@@ -818,7 +868,7 @@ export function Game() {
         >
           {resume?.recap && (
             <section aria-label="Previously on" className="game-recap">
-              <details open={!narrow}>
+              <details open={!narrow && !tracker}>
                 <summary>
                   <h2>Previously on…</h2>
                 </summary>
@@ -837,15 +887,16 @@ export function Game() {
               return result.ok ? null : result.message;
             }}
             combatantNames={Object.fromEntries(
-              entities.map((entity) => [
-                entity.id,
-                entity.name ??
-                  entity.id
-                    .replace(/^ent_/, '')
-                    .replace(/_\d+$/, '')
-                    .replaceAll('-', ' '),
-              ]),
+              entities.map((entity) => [entity.id, nameOf(entity.id)]),
             )}
+            opening={{
+              title: 'The adventure begins',
+              body:
+                resume?.premise ||
+                (resume?.name
+                  ? `${resume.name} is ready. Choose a quick action below, or describe what your character does, and the DM will take it from there.`
+                  : 'Choose a quick action below, or describe what your character does, and the DM will take it from there.'),
+            }}
             // The server has no retry message: retrying resubmits the last action as a new one.
             onRetry={() => {
               if (lastActionText.current) submitAction(lastActionText.current);
@@ -880,15 +931,16 @@ export function Game() {
         </div>
         <div className="game-area game-area--map">
           {!tracker && (
-            <p className="game-map__empty">
+            <div className="game-map__empty">
               <span className="game-map__empty-icon" aria-hidden="true">
                 ⚔
               </span>
-              <span>
+              <h2>The battle map</h2>
+              <p>
                 Combat starts when a fight breaks out. Describe the encounter in
                 your action.
-              </span>
-            </p>
+              </p>
+            </div>
           )}
           {map && (
             <section aria-label="Battle map" className="game-map">
@@ -901,8 +953,9 @@ export function Game() {
                   send({ command: 'reaction', reactionId, choice })
                 }
                 reactionRemainingMs={reaction ? reactionRemainingMs : undefined}
+                nameOf={nameOf}
               >
-                {(pickCell) => (
+                {(pickCell, mapView) => (
                   <div
                     className="game-map__canvas"
                     aria-label={`Battle map ${map.w} columns by ${map.h} rows; tokens listed below`}
@@ -945,7 +998,11 @@ export function Game() {
                             renderer.draw(
                               canvas.getContext('2d')!,
                               map,
-                              { cellSize: 32 },
+                              {
+                                cellSize: 32,
+                                cursor: mapView.cursor,
+                                moving: mapView.moving,
+                              },
                               tokenCommands,
                             );
                         }}
@@ -969,10 +1026,20 @@ export function Game() {
                   </div>
                 )}
               </MapKeyboard>
-              <TokenTable store={gameStore} viewerId={active ?? undefined} />
-              <Describe store={gameStore} viewerId={active ?? undefined} />
+              <TokenTable
+                store={gameStore}
+                viewerId={active ?? undefined}
+                nameOf={nameOf}
+              />
+              <Describe
+                store={gameStore}
+                viewerId={active ?? undefined}
+                nameOf={nameOf}
+              />
             </section>
           )}
+        </div>
+        <div className="game-area game-area--actions">
           {tracker && (
             <section aria-label="Combat commands">
               <h2>Combat actions</h2>
@@ -997,7 +1064,7 @@ export function Game() {
                         })
                       }
                     >
-                      Attack {String(item.targetId)}
+                      Attack {nameOf(String(item.targetId))}
                     </button>
                   );
                 if (item.kind === 'spell')
@@ -1017,7 +1084,8 @@ export function Game() {
                         })
                       }
                     >
-                      Cast {String(item.spellId)} on {String(item.targetId)}
+                      Cast {String(item.spellId)} on{' '}
+                      {nameOf(String(item.targetId))}
                     </button>
                   );
                 if (item.kind === 'move')
@@ -1039,9 +1107,7 @@ export function Game() {
               {areas.length > 0 && (
                 <AreaAim
                   areas={areas}
-                  nameOf={(id) =>
-                    entities.find((entity) => entity.id === id)?.name ?? id
-                  }
+                  nameOf={nameOf}
                   onCast={(area) =>
                     send({
                       command: 'cast',
@@ -1060,14 +1126,15 @@ export function Game() {
               </button>
               {reaction && (
                 <p role="status">
-                  {reaction.entityId} reaction: {reaction.trigger}. Resolve
-                  within {Math.ceil(reactionRemainingMs / 1000)} seconds.
+                  {nameOf(reaction.entityId)} reaction: {reaction.trigger}.
+                  Resolve within {Math.ceil(reactionRemainingMs / 1000)}{' '}
+                  seconds.
                 </p>
               )}
               {!reaction && reactionNotice && (
                 <p role="status">
-                  Reaction window open for {reactionNotice.entityId}. Waiting
-                  for their response; closes in{' '}
+                  Reaction window open for {nameOf(reactionNotice.entityId)}.
+                  Waiting for their response; closes in{' '}
                   {Math.ceil(noticeRemainingMs / 1000)} seconds.
                 </p>
               )}
@@ -1076,7 +1143,11 @@ export function Game() {
           {tracker?.ended && (
             <p role="status">CombatEnded: {tracker.ended.outcome}</p>
           )}
-          {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
+          {activeEntity && (
+            <p className="game-active" data-entity-id={activeEntity.id}>
+              Active combatant: {nameOf(activeEntity.id)}
+            </p>
+          )}
           {tracker &&
             trackerFirst === null &&
             tracker.activeEntityId === null && (
@@ -1087,7 +1158,14 @@ export function Game() {
           className="game-area game-area--side"
           aria-label="Character and party"
         >
-          <Sheet store={gameStore} />
+          <Sheet
+            store={gameStore}
+            emptyAction={
+              <Link className="sheet-empty__link" to={`/rooms/${id}`}>
+                Build or choose a character
+              </Link>
+            }
+          />
           {tracker && (
             <section aria-labelledby="tracker-heading">
               <h2 id="tracker-heading">Round {tracker.round}</h2>
@@ -1099,7 +1177,9 @@ export function Game() {
                       item.entityId === trackerFirst ? 'step' : undefined
                     }
                   >
-                    {item.entityId}
+                    <span data-entity-id={item.entityId}>
+                      {nameOf(item.entityId)}
+                    </span>
                     {item.entityId === trackerFirst ? ' (active)' : ''}
                   </li>
                 ))}

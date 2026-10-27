@@ -136,7 +136,9 @@ export function Lobby() {
       <h1>{room.name}</h1>
       <ConnectionStatus status={live.status} />
       <p>
-        <Link to={`/rooms/${id}/game`}>Enter game</Link>
+        <Link className="button" to={`/rooms/${id}/game`}>
+          Enter game
+        </Link>
       </p>
       <h2 id="seats-heading">Players ({seats.length} of 6)</h2>
       <ul aria-labelledby="seats-heading" className="seats">
@@ -181,7 +183,7 @@ export function Lobby() {
           resyncing={live.needsResync}
         />
       )}
-      <section aria-labelledby="rules-heading">
+      <section aria-labelledby="rules-heading" className="panel">
         <h2 id="rules-heading">Table rules</h2>
         <p>
           Rounds: <strong>{live.room?.roundsEnabled ? 'on' : 'off'}</strong>.
@@ -207,7 +209,7 @@ export function Lobby() {
           time.
         </p>
       </section>
-      <section aria-labelledby="content-heading">
+      <section aria-labelledby="content-heading" className="panel">
         <h2 id="content-heading">Content settings</h2>
         <p>
           Table setting:{' '}
@@ -265,7 +267,7 @@ export function Lobby() {
         </p>
       </section>
       {room.isHost && (
-        <section aria-labelledby="invite-heading">
+        <section aria-labelledby="invite-heading" className="panel">
           <h2 id="invite-heading">Invite players</h2>
           {room.code ? (
             <>

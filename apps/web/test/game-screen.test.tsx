@@ -189,7 +189,7 @@ describe('Game screen (live Room)', () => {
         { kind: 'move', optionId: 'm', destination: { x: 2, y: 2 }, cost: 5 },
       ],
     });
-    await user.click(screen.getByRole('button', { name: 'Attack ent_goblin' }));
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
     expect(hoisted.send).toHaveBeenLastCalledWith('CombatCommand', {
       command: 'attack',
       targetId: 'ent_goblin',
@@ -225,9 +225,7 @@ describe('Game screen (live Room)', () => {
         name: /burning hands at 3, 3, facing east; 1 affected/,
       }),
     );
-    expect(
-      screen.getByText('1 affected: ent_goblin (enemy).'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('1 affected: Goblin (enemy).')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Cast area' }));
     expect(hoisted.send).toHaveBeenLastCalledWith('CombatCommand', {
       command: 'cast',
@@ -299,7 +297,9 @@ describe('Game screen (live Room)', () => {
       (t) => t.getAttribute('data-active') === 'true',
     );
     expect(active).toHaveLength(1);
-    expect(active[0]!.textContent).toContain('ent_goblin');
+    // Tokens show the derived display name, never the raw id.
+    expect(active[0]!.textContent).toContain('Goblin');
+    expect(active[0]!.textContent).not.toContain('ent_goblin');
     // order changes -> highlight follows the first entry
     push('CombatTracker', tracker([HERO_ID, 'ent_goblin']));
     const after = within(
@@ -310,7 +310,7 @@ describe('Game screen (live Room)', () => {
     ).toHaveLength(1);
     expect(
       after.find((t) => t.getAttribute('data-active') === 'true')!.textContent,
-    ).toContain(HERO_ID);
+    ).toContain('Aria');
   });
 
   it('shows no active token and says so while a creature hidden from this viewer acts', () => {
@@ -348,7 +348,7 @@ describe('Game screen (live Room)', () => {
     expect(live).toHaveAttribute('aria-live', 'polite');
     expect(live!.textContent).toMatch(
       new RegExp(
-        `${HERO_ID}: 30 feet movement remaining\\. Threats within 30 feet: `,
+        `Aria: 30 feet movement remaining\\. Threats within 30 feet: `,
       ),
     );
     const first = live!.textContent;
@@ -363,7 +363,7 @@ describe('Game screen (live Room)', () => {
         .getAllByRole('status')
         .find((el) => /movement remaining/.test(el.textContent ?? ''))!
         .textContent,
-    ).toMatch(/ent_goblin: /);
+    ).toMatch(/Goblin: /);
   });
 
   it('updates the character sheet HP and slots within 1 s of the event', async () => {
@@ -418,7 +418,7 @@ describe('Game screen (live Room)', () => {
       timeoutMs: 5000,
     });
     expect(
-      screen.getByText(/Reaction window open for ent_goblin/),
+      screen.getByText(/Reaction window open for Goblin/),
     ).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(

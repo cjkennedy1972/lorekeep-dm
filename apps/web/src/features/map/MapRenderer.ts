@@ -3,6 +3,9 @@ import type { Battlemap } from '@game/schema';
 /** View-space options shared by renderers; map coordinates remain in cells. */
 export interface MapView {
   readonly cellSize?: number;
+  /** Keyboard or pointer cursor cell; drawn as a ring so keyboard users can see where they are. */
+  readonly cursor?: { readonly x: number; readonly y: number } | null;
+  readonly moving?: boolean;
 }
 
 /** Deterministic, serializable drawing vocabulary used by canvas and headless tests. */

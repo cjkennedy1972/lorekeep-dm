@@ -290,7 +290,7 @@ export function OperatorSettings() {
     <>
       <h1>Operator settings</h1>
       {error && <p role="alert">{error}</p>}
-      <section aria-labelledby="operator-endpoints">
+      <section aria-labelledby="operator-endpoints" className="panel">
         <h2 id="operator-endpoints">Model endpoints</h2>
         {slots.map((slot) => (
           <EndpointForm
@@ -301,7 +301,7 @@ export function OperatorSettings() {
           />
         ))}
       </section>
-      <section aria-labelledby="operator-usage">
+      <section aria-labelledby="operator-usage" className="panel">
         <h2 id="operator-usage">Usage by table</h2>
         <p>
           All-time aggregate: {total.calls} calls; {total.inputTokens} input and{' '}

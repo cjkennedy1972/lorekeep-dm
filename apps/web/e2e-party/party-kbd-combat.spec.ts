@@ -8,6 +8,7 @@ import {
 import {
   activeCombatantId,
   closeMember,
+  displayNameOf,
   openMember,
   readState,
   SYNC_BUDGET_MS,
@@ -123,10 +124,12 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
       // Options are sent on request: the keyboard requests them, then the list offers the attack.
       await tabTo(page, 'Refresh combat options');
       await page.keyboard.press('Enter');
-      const attack = page.getByRole('button', { name: `Attack ${goblin}` });
+      // Attack buttons carry the target's display name, not its entity id: read it from the tracker entry.
+      const goblinName = await displayNameOf(page, goblin);
+      const attack = page.getByRole('button', { name: `Attack ${goblinName}` });
       await expect(attack).toBeVisible();
       const framesBefore = active.frames.length;
-      await tabTo(page, `Attack ${goblin}`, 200);
+      await tabTo(page, `Attack ${goblinName}`, 200);
       await page.keyboard.press('Enter');
       // The server resolves the attack and pushes its RollEvent for the attacking seat.
       await expect
@@ -180,7 +183,7 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
       // Confirming a move does not end the turn.
       for (const { page: p } of others)
         await expect(
-          p.getByText(`Active combatant: ${activeId}`),
+          p.locator(`.game-active[data-entity-id="${activeId}"]`),
         ).toBeVisible();
     });
 

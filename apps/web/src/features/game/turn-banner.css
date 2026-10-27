@@ -1,0 +1,147 @@
+/* "Whose turn is it": the loudest thing on the combat screen. */
+.turn-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background:
+    radial-gradient(
+      ellipse at 0% 50%,
+      color-mix(in srgb, var(--accent) 16%, transparent),
+      transparent 60%
+    ),
+    var(--surface);
+  border: 1px solid var(--border-ui);
+  border-inline-start: 0.35rem solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow), var(--glow);
+}
+.turn-banner[data-your-turn='true'] {
+  border-color: var(--accent);
+  background:
+    radial-gradient(
+      ellipse at 0% 50%,
+      color-mix(in srgb, var(--accent) 30%, transparent),
+      transparent 65%
+    ),
+    var(--surface-2);
+}
+.turn-banner p {
+  display: grid;
+  margin: 0;
+}
+.turn-banner__kicker {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.turn-banner[data-your-turn='true'] .turn-banner__kicker {
+  color: var(--accent);
+}
+.turn-banner__number {
+  font-family: var(--font-serif);
+  font-size: var(--text-2xl);
+  line-height: 1;
+}
+.turn-banner__who {
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  line-height: 1.15;
+}
+.turn-banner__turn {
+  min-width: 10rem;
+}
+.turn-banner__order {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.turn-banner__order li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.15rem var(--space-2) 0.15rem 0.15rem;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+}
+.turn-banner__order li[data-active='true'] {
+  color: var(--fg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.turn-banner__chip {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding-inline: 0.2rem;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--surface-2);
+  border-radius: 999px;
+}
+.turn-banner__order li[data-active='true'] .turn-banner__chip {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.turn-banner__clock {
+  margin-inline-start: auto;
+  text-align: end;
+}
+.turn-banner__time {
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 40rem) {
+  .turn-banner {
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+  .turn-banner__number,
+  .turn-banner__who,
+  .turn-banner__time {
+    font-size: var(--text-lg);
+  }
+  .turn-banner__chip-name {
+    display: none;
+  }
+  .turn-banner__order li {
+    padding-inline-end: 0.15rem;
+  }
+}
+@media (max-width: 40rem) {
+  .turn-banner {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'round turn clock'
+      'order order order';
+    align-items: start;
+  }
+  .turn-banner__round {
+    grid-area: round;
+  }
+  .turn-banner__turn {
+    grid-area: turn;
+    min-width: 0;
+  }
+  .turn-banner__clock {
+    grid-area: clock;
+    margin-inline-start: 0;
+  }
+  .turn-banner__order {
+    grid-area: order;
+  }
+}

@@ -2,7 +2,11 @@ import { distance, type Placed } from '@game/rules-engine';
 import { useEffect, useMemo, useState } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
 
-type Props = { store?: typeof gameStore; viewerId?: string };
+type Props = {
+  store?: typeof gameStore;
+  viewerId?: string;
+  nameOf?: (entityId: string) => string;
+};
 type Row = {
   id: string;
   name: string;
@@ -14,7 +18,11 @@ type Row = {
 };
 
 /** Screen-reader and keyboard-friendly inventory of every map token and feature. */
-export function TokenTable({ store = gameStore, viewerId }: Props) {
+export function TokenTable({
+  store = gameStore,
+  viewerId,
+  nameOf = (entityId) => entityId,
+}: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
   const [ascending, setAscending] = useState(true);
   useEffect(() => store.subscribe(() => setState(store.getState())), [store]);
@@ -26,7 +34,7 @@ export function TokenTable({ store = gameStore, viewerId }: Props) {
     if (!state.battlemap) return [] as Row[];
     const tokens: Row[] = state.mapEntities.map((entity) => ({
       id: entity.id,
-      name: entity.id,
+      name: nameOf(entity.id),
       kind: entity.kind,
       x: entity.pos.x,
       y: entity.pos.y,
@@ -71,7 +79,7 @@ export function TokenTable({ store = gameStore, viewerId }: Props) {
           a.name.localeCompare(b.name) ||
           a.id.localeCompare(b.id)),
     );
-  }, [state, viewer, ascending]);
+  }, [state, viewer, ascending, nameOf]);
   return (
     <section aria-label="Tokens and terrain">
       <h2>Tokens and terrain</h2>
@@ -96,7 +104,9 @@ export function TokenTable({ store = gameStore, viewerId }: Props) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <th scope="row">{row.name}</th>
+              <th scope="row" data-entity-id={row.id}>
+                {row.name}
+              </th>
               <td>{row.kind}</td>
               <td>
                 {String.fromCharCode(65 + row.x)}
