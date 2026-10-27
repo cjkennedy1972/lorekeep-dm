@@ -5,6 +5,10 @@ import { expect, test, type BrowserContext } from '@playwright/test';
 const API = 'http://localhost:8787';
 
 async function signedIn(context: BrowserContext, name: string) {
+  // Host tools are a collapsed drawer that remembers being opened; this spec drives them.
+  await context.addInitScript(() => {
+    localStorage.setItem('lorekeep.drawer.host', 'open');
+  });
   const response = await context.request.post(`${API}/api/signup`, {
     data: {
       email: `round-${randomUUID()}@example.com`,

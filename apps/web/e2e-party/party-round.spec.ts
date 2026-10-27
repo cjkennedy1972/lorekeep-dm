@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import AxeBuilder from '@axe-core/playwright';
 import {
   expect,
   test,
@@ -48,6 +49,7 @@ async function openAs(
   account: Account,
   table: string,
   path: string,
+  { drawers = true }: { drawers?: boolean } = {},
 ) {
   const savedStorage = storageByAccount.get(account.accountId);
   const context = await browser.newContext(
@@ -57,6 +59,12 @@ async function openAs(
     await context.addCookies([
       { name: 'sid', value: account.token, url: origin },
     ]);
+  // Host tools and party chat are collapsed drawers that remember being opened; most specs drive them.
+  await context.addInitScript((open) => {
+    for (const id of ['host', 'chat'])
+      if (open) localStorage.setItem(`lorekeep.drawer.${id}`, 'open');
+      else localStorage.removeItem(`lorekeep.drawer.${id}`);
+  }, drawers);
   const page = await context.newPage();
   const frames: ServerFrame[] = [];
   page.on('websocket', (socket) =>
@@ -124,6 +132,57 @@ test.describe.serial('party round and host panels (real server)', () => {
         storageByAccount.set(accountId, saved);
       }
       await Promise.all(players.map(closeAs));
+    }
+  });
+
+  test('host tools and party chat start collapsed and open from the keyboard; axe is clean with them open', async ({
+    browser,
+  }) => {
+    const { table, host } = state();
+    const view = await openAs(browser, host, table, `/rooms/${table}/game`, {
+      drawers: false,
+    });
+    try {
+      const { page } = view;
+      const hostTools = page.locator('details.drawer', {
+        has: page.getByText('Host tools', { exact: true }),
+      });
+      const chat = page.locator('details.drawer', {
+        has: page.getByText('Party chat', { exact: true }),
+      });
+      await expect(hostTools).not.toHaveAttribute('open', '');
+      await expect(chat).not.toHaveAttribute('open', '');
+      await expect(
+        page.getByRole('region', { name: 'Host controls' }),
+      ).toBeHidden();
+      // Safety stays one click away, never collapsed.
+      await expect(
+        page.getByRole('button', { name: 'X-card (anonymous)' }),
+      ).toBeVisible();
+      await hostTools.locator('summary').focus();
+      await page.keyboard.press('Enter');
+      await expect(
+        page.getByRole('region', { name: 'Host controls' }),
+      ).toBeVisible();
+      await chat.locator('summary').focus();
+      await page.keyboard.press('Space');
+      await expect(
+        page.getByRole('button', { name: 'Send chat' }),
+      ).toBeVisible();
+      for (const colorScheme of ['dark', 'light'] as const) {
+        await page.emulateMedia({ colorScheme });
+        const { violations } = await new AxeBuilder({ page })
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+          .analyze();
+        expect(
+          violations
+            .filter((v) => v.impact === 'critical' || v.impact === 'serious')
+            .map((v) => `${v.id}: ${v.nodes.map((n) => n.target).join(' | ')}`),
+          colorScheme,
+        ).toEqual([]);
+      }
+    } finally {
+      await closeAs(view);
     }
   });
 

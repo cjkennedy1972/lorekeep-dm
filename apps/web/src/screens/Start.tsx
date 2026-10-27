@@ -97,7 +97,11 @@ export function Start() {
             Guided wizard
           </label>
         </fieldset>
-        {error && <p role="alert">{error}</p>}
+        {error && (
+          <p role="alert" className="form-error">
+            {error}
+          </p>
+        )}
         {creation === 'quick' && (
           <button type="submit" disabled={busy}>
             {busy ? 'Creating game…' : 'Create solo game'}

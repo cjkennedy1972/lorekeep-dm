@@ -28,6 +28,8 @@ import { useRoom } from '../room/useRoom.js';
 import { api, http } from '../api.js';
 import { gameStore } from '../state/store.js';
 import { ChatPanel } from '../features/chat/ChatPanel.js';
+import { Drawer } from '../features/game/Drawer.js';
+import '../styles/game.css';
 
 const renderer = new Canvas2DRenderer();
 const NARROW_QUERY = '(max-width: 760px)';
@@ -618,7 +620,7 @@ export function Game() {
   const isHost = selfSeat?.isHost === true;
   if (live.removed === 'kicked')
     return (
-      <section>
+      <section className="game-notice">
         <h1>Removed from table</h1>
         <p role="alert">
           The host removed you from this table. You can no longer send to it.
@@ -628,7 +630,7 @@ export function Game() {
     );
   if (live.removed === 'ended')
     return (
-      <section>
+      <section className="game-notice">
         <h1>Table ended</h1>
         <p role="status">The host ended this table.</p>
         <Link to="/rooms">My games</Link>
@@ -636,7 +638,7 @@ export function Game() {
     );
   if (live.unseated)
     return (
-      <section>
+      <section className="game-notice">
         <h1>Not seated</h1>
         <p role="status">You&apos;re not seated at this table.</p>
         <button type="button" onClick={live.rejoin}>
@@ -647,16 +649,22 @@ export function Game() {
     );
   if (id && resumeLoading)
     return (
-      <section>
+      <section className="game-notice">
         <h1>Game</h1>
-        <p role="status">Loading your game and recap…</p>
+        <p role="status" className="loading">
+          <span className="spinner" aria-hidden="true" />
+          Loading your game and recap…
+        </p>
+        <div className="skeleton" aria-hidden="true" />
       </section>
     );
   if (id && resumeError)
     return (
-      <section>
+      <section className="game-notice">
         <h1>Game unavailable</h1>
-        <p role="alert">{resumeError}</p>
+        <p role="alert" className="form-error">
+          {resumeError}
+        </p>
         <button type="button" onClick={loadGame}>
           Retry
         </button>
@@ -665,10 +673,14 @@ export function Game() {
     );
   if (!room)
     return (
-      <section>
+      <section className="game-notice">
         <h1>Game</h1>
         <ConnectionStatus status={live.status} />
-        <p role="status">Waiting for room state…</p>
+        <p role="status" className="loading">
+          <span className="spinner" aria-hidden="true" />
+          Waiting for room state…
+        </p>
+        <div className="skeleton" aria-hidden="true" />
       </section>
     );
   const activeEntity = entities.find((item) => item.id === active);
@@ -684,18 +696,12 @@ export function Game() {
       typeof asRecord(value).optionId === 'string',
   );
   return (
-    <main className="game-screen">
-      <header>
+    <div className="game-screen">
+      <header className="game-header">
         <h1>{id ? 'Game' : 'Encounter'}</h1>
         <ConnectionStatus status={live.status} />
         <Link to={`/rooms/${id}`}>Back to lobby</Link>
       </header>
-      {resume?.recap && (
-        <section aria-label="Previously on">
-          <h2>Previously on…</h2>
-          <p>{resume.recap}</p>
-        </section>
-      )}
       {live.status === 'connected' && live.error && (
         <p role="alert">
           The game server is unavailable. Your game is safe; retry your action
@@ -763,344 +769,400 @@ export function Game() {
         ) : (
           <p>Only the host can resume the table.</p>
         )}
-        <p>
-          Pause stops new narration after the current turn. X-card and pause
-          also apply to party chat. No explanation is needed.
-        </p>
+        <details className="game-safety__more">
+          <summary>About these controls</summary>
+          <p>
+            Pause stops new narration after the current turn. X-card and pause
+            also apply to party chat. No explanation is needed.
+          </p>
+        </details>
       </section>
-      {room.roundsEnabled && (
-        <RoundPanel
-          round={room.round}
-          closeAnnouncement={live.roundCloseAnnouncement}
-          seats={room.seats}
-          myActionId={live.privateRoundSubmission?.actionId}
-          myText={
-            room.roundsEnabled
-              ? live.privateRoundSubmission?.text
-              : pendingAction?.text
-          }
-          connected={live.status === 'connected'}
-          send={live.send}
-          onEdited={(text) =>
-            updatePendingAction((current) => current && { ...current, text })
-          }
-        />
-      )}
-      {isHost && (
-        <>
-          <HostControls
-            round={room.round}
-            roundDurationMs={room.roundDurationMs ?? null}
-            connected={live.status === 'connected'}
-            paused={room.paused === true}
-            pauseCause={room.pauseCause}
-            send={live.send}
-            seats={room.seats}
-            selfSeatId={selfSeat?.seatId}
-            lateJoinRequests={room.lateJoinRequests}
-          />
-          <TurnTimerControl
-            turnTimerMs={room.turnTimerMs}
-            turnTimeoutAction={room.turnTimeoutAction}
-            connected={live.status === 'connected'}
-            send={live.send}
-          />
-          {seatClaims.length > 0 && (
-            <section aria-label="Device claims">
-              <h2>Reconnect claims</h2>
-              {seatClaims.map((claim) => (
-                <div key={claim.claimId}>
-                  <p>
-                    {claim.displayName} needs approval to reconnect on a new
-                    device.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={live.status !== 'connected'}
-                    onClick={() =>
-                      live.send('ApproveSeatClaim', { claimId: claim.claimId })
-                    }
+      <div className="game-layout">
+        <div className="game-area game-area--map">
+          {!tracker && (
+            <p className="game-map__empty">
+              <span className="game-map__empty-icon" aria-hidden="true">
+                ⚔
+              </span>
+              <span>
+                Combat starts when a fight breaks out. Describe the encounter in
+                your action.
+              </span>
+            </p>
+          )}
+          {map && (
+            <section aria-label="Battle map" className="game-map">
+              <h2>Battle map</h2>
+              <MapKeyboard
+                store={gameStore}
+                onMove={(destination) => send({ command: 'move', destination })}
+                reactionPrompt={reaction}
+                onReactionChoice={(reactionId, choice) =>
+                  send({ command: 'reaction', reactionId, choice })
+                }
+                reactionRemainingMs={reaction ? reactionRemainingMs : undefined}
+              >
+                {(pickCell) => (
+                  <div
+                    className="game-map__canvas"
+                    aria-label={`Battle map ${map.w} columns by ${map.h} rows; tokens listed below`}
                   >
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    disabled={live.status !== 'connected'}
-                    onClick={() =>
-                      live.send('DenySeatClaim', { claimId: claim.claimId })
-                    }
-                  >
-                    Deny
-                  </button>
-                </div>
-              ))}
+                    {/* Pointer input is a shortcut only; keyboard users reach the same move flow through MapKeyboard. */}
+                    {narrow && (
+                      <button
+                        type="button"
+                        aria-expanded={mapShown}
+                        aria-controls="game-map-canvas"
+                        onClick={() => setMapShown((shown) => !shown)}
+                      >
+                        {mapShown ? 'Hide map' : 'Show map'}
+                      </button>
+                    )}
+                    {mapVisible && (
+                      <canvas
+                        id="game-map-canvas"
+                        aria-hidden="true"
+                        onClick={(event) => {
+                          const rect =
+                            event.currentTarget.getBoundingClientRect();
+                          const scaleX = event.currentTarget.width / rect.width;
+                          const scaleY =
+                            event.currentTarget.height / rect.height;
+                          const cell = hitTestCell(
+                            (event.clientX - rect.left) * scaleX,
+                            (event.clientY - rect.top) * scaleY,
+                            DEFAULT_VIEWPORT,
+                            32,
+                            map.w,
+                            map.h,
+                          );
+                          if (cell) pickCell(cell);
+                        }}
+                        width={canvasSize.width}
+                        height={canvasSize.height}
+                        ref={(canvas) => {
+                          if (canvas)
+                            renderer.draw(
+                              canvas.getContext('2d')!,
+                              map,
+                              { cellSize: 32 },
+                              tokenCommands,
+                            );
+                        }}
+                        data-command-count={canvasCommands.length}
+                      />
+                    )}
+                    <ul aria-label="Combat tokens">
+                      {tokenCommands.map((token) => (
+                        <li
+                          key={token.entityId}
+                          data-active={token.entityId === trackerFirst}
+                          data-x={token.x}
+                          data-y={token.y}
+                        >
+                          {token.teamMarker.shape} {token.name} —{' '}
+                          {token.hpLabel}
+                          {token.active ? ', active' : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </MapKeyboard>
+              <TokenTable store={gameStore} viewerId={active ?? undefined} />
+              <Describe store={gameStore} viewerId={active ?? undefined} />
             </section>
           )}
-        </>
-      )}
-      <ChatPanel
-        roomId={id}
-        messages={chatMessages}
-        room={room}
-        isHost={isHost}
-        connected={live.status === 'connected'}
-        error={chatError}
-        onSend={(text) => Boolean(live.send('ChatSend', { text }))}
-        onMute={(seatId, muted) =>
-          Boolean(live.send('MuteChat', { seatId, muted }))
-        }
-      />
-      <ActionInput
-        onSubmit={submitAction}
-        pending={Boolean(pendingAction)}
-        pendingText={pendingAction?.text}
-        pendingSince={pendingAction?.submittedAt}
-        onEditPending={() => {
-          if (!pendingAction) return;
-          setActionDraft(pendingAction.text);
-        }}
-        initialText={actionDraft}
-        onDraftChange={setActionDraft}
-        clarification={clarification}
-        onReply={(actionId, reply) => {
-          setClarification(null);
-          setError('');
-          updatePendingAction(() => ({
-            id: actionId,
-            text: reply,
-            acknowledged: true,
-            submittedAt: Date.now(),
-          }));
-          live.send('ClarificationAnswer', { actionId, answer: reply });
-        }}
-      />
-      {!tracker && (
-        <p>
-          Combat has not started. Describe the encounter above to begin combat.
-        </p>
-      )}
-      {tracker && (
-        <section aria-labelledby="tracker-heading">
-          <h2 id="tracker-heading">Round {tracker.round}</h2>
-          <ol aria-label="Initiative tracker">
-            {tracker.initiative.map((item, index) => (
-              <li
-                key={`${item.entityId}-${index}`}
-                aria-current={
-                  item.entityId === trackerFirst ? 'step' : undefined
-                }
+          {tracker && (
+            <section aria-label="Combat commands">
+              <h2>Combat actions</h2>
+              <button
+                type="button"
+                onClick={() => send({ command: 'options' })}
               >
-                {item.entityId}
-                {item.entityId === trackerFirst ? ' (active)' : ''}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-      {map && (
-        <section aria-label="Battle map" className="game-map">
-          <h2>Battle map</h2>
-          <MapKeyboard
-            store={gameStore}
-            onMove={(destination) => send({ command: 'move', destination })}
-            reactionPrompt={reaction}
-            onReactionChoice={(reactionId, choice) =>
-              send({ command: 'reaction', reactionId, choice })
-            }
-            reactionRemainingMs={reaction ? reactionRemainingMs : undefined}
-          >
-            {(pickCell) => (
-              <div
-                className="game-map__canvas"
-                aria-label={`Battle map ${map.w} columns by ${map.h} rows; tokens listed below`}
-              >
-                {/* Pointer input is a shortcut only; keyboard users reach the same move flow through MapKeyboard. */}
-                {narrow && (
-                  <button
-                    type="button"
-                    aria-expanded={mapShown}
-                    aria-controls="game-map-canvas"
-                    onClick={() => setMapShown((shown) => !shown)}
-                  >
-                    {mapShown ? 'Hide map' : 'Show map'}
-                  </button>
-                )}
-                {mapVisible && (
-                  <canvas
-                    id="game-map-canvas"
-                    aria-hidden="true"
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      const scaleX = event.currentTarget.width / rect.width;
-                      const scaleY = event.currentTarget.height / rect.height;
-                      const cell = hitTestCell(
-                        (event.clientX - rect.left) * scaleX,
-                        (event.clientY - rect.top) * scaleY,
-                        DEFAULT_VIEWPORT,
-                        32,
-                        map.w,
-                        map.h,
-                      );
-                      if (cell) pickCell(cell);
-                    }}
-                    width={canvasSize.width}
-                    height={canvasSize.height}
-                    ref={(canvas) => {
-                      if (canvas)
-                        renderer.draw(
-                          canvas.getContext('2d')!,
-                          map,
-                          { cellSize: 32 },
-                          tokenCommands,
-                        );
-                    }}
-                    data-command-count={canvasCommands.length}
-                  />
-                )}
-                <ul aria-label="Combat tokens">
-                  {tokenCommands.map((token) => (
-                    <li
-                      key={token.entityId}
-                      data-active={token.entityId === trackerFirst}
-                      data-x={token.x}
-                      data-y={token.y}
+                Refresh combat options
+              </button>
+              {actions.map((value, index) => {
+                const item = asRecord(value);
+                if (item.kind === 'attack')
+                  return (
+                    <button
+                      key={String(item.optionId ?? index)}
+                      type="button"
+                      onClick={() =>
+                        send({
+                          command: 'attack',
+                          targetId: String(item.targetId),
+                          attackId: String(item.attackId),
+                        })
+                      }
                     >
-                      {token.teamMarker.shape} {token.name} — {token.hpLabel}
-                      {token.active ? ', active' : ''}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </MapKeyboard>
-          <TokenTable store={gameStore} viewerId={active ?? undefined} />
-          <Describe store={gameStore} viewerId={active ?? undefined} />
-        </section>
-      )}
-      {tracker && (
-        <section aria-label="Combat commands">
-          <h2>Combat actions</h2>
-          <button type="button" onClick={() => send({ command: 'options' })}>
-            Refresh combat options
-          </button>
-          {actions.map((value, index) => {
-            const item = asRecord(value);
-            if (item.kind === 'attack')
-              return (
-                <button
-                  key={String(item.optionId ?? index)}
-                  type="button"
-                  onClick={() =>
-                    send({
-                      command: 'attack',
-                      targetId: String(item.targetId),
-                      attackId: String(item.attackId),
-                    })
+                      Attack {String(item.targetId)}
+                    </button>
+                  );
+                if (item.kind === 'spell')
+                  return (
+                    <button
+                      key={String(item.optionId ?? index)}
+                      type="button"
+                      onClick={() =>
+                        send({
+                          command: 'cast',
+                          spellId: String(item.spellId),
+                          slotLevel: 1,
+                          target: {
+                            kind: 'entity',
+                            ref: String(item.targetId),
+                          },
+                        })
+                      }
+                    >
+                      Cast {String(item.spellId)} on {String(item.targetId)}
+                    </button>
+                  );
+                if (item.kind === 'move')
+                  return (
+                    <button
+                      key={String(item.optionId ?? index)}
+                      type="button"
+                      onClick={() =>
+                        send({ command: 'move', destination: item.destination })
+                      }
+                    >
+                      Move to {Number(asRecord(item.destination).x) + 1},{' '}
+                      {Number(asRecord(item.destination).y) + 1} (
+                      {String(item.cost)} feet)
+                    </button>
+                  );
+                return null;
+              })}
+              {areas.length > 0 && (
+                <AreaAim
+                  areas={areas}
+                  nameOf={(id) =>
+                    entities.find((entity) => entity.id === id)?.name ?? id
                   }
-                >
-                  Attack {String(item.targetId)}
-                </button>
-              );
-            if (item.kind === 'spell')
-              return (
-                <button
-                  key={String(item.optionId ?? index)}
-                  type="button"
-                  onClick={() =>
+                  onCast={(area) =>
                     send({
                       command: 'cast',
-                      spellId: String(item.spellId),
+                      spellId: area.spellId,
                       slotLevel: 1,
-                      target: { kind: 'entity', ref: String(item.targetId) },
+                      target: { kind: 'option', ref: area.optionId },
                     })
                   }
-                >
-                  Cast {String(item.spellId)} on {String(item.targetId)}
-                </button>
-              );
-            if (item.kind === 'move')
-              return (
-                <button
-                  key={String(item.optionId ?? index)}
-                  type="button"
-                  onClick={() =>
-                    send({ command: 'move', destination: item.destination })
-                  }
-                >
-                  Move to {Number(asRecord(item.destination).x) + 1},{' '}
-                  {Number(asRecord(item.destination).y) + 1} (
-                  {String(item.cost)} feet)
-                </button>
-              );
-            return null;
-          })}
-          {areas.length > 0 && (
-            <AreaAim
-              areas={areas}
-              nameOf={(id) =>
-                entities.find((entity) => entity.id === id)?.name ?? id
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => send({ command: 'end-turn' })}
+              >
+                End turn
+              </button>
+              {reaction && (
+                <p role="status">
+                  {reaction.entityId} reaction: {reaction.trigger}. Resolve
+                  within {Math.ceil(reactionRemainingMs / 1000)} seconds.
+                </p>
+              )}
+              {!reaction && reactionNotice && (
+                <p role="status">
+                  Reaction window open for {reactionNotice.entityId}. Waiting
+                  for their response; closes in{' '}
+                  {Math.ceil(noticeRemainingMs / 1000)} seconds.
+                </p>
+              )}
+            </section>
+          )}
+          {tracker?.ended && (
+            <p role="status">CombatEnded: {tracker.ended.outcome}</p>
+          )}
+          {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
+          {tracker &&
+            trackerFirst === null &&
+            tracker.activeEntityId === null && (
+              <p role="status">An unseen creature is acting.</p>
+            )}
+        </div>
+        <div className="game-area game-area--story">
+          {resume?.recap && (
+            <section aria-label="Previously on" className="game-recap">
+              <details open={!narrow}>
+                <summary>
+                  <h2>Previously on…</h2>
+                </summary>
+                <p>{resume.recap}</p>
+              </details>
+            </section>
+          )}
+          <NarrationLog
+            messages={messages}
+            onReport={async (messageRef, category, reason) => {
+              const result = await api(`/api/rooms/${id}/reports`, {
+                messageRef,
+                category,
+                reason,
+              });
+              return result.ok ? null : result.message;
+            }}
+            combatantNames={Object.fromEntries(
+              entities.map((entity) => [
+                entity.id,
+                entity.name ??
+                  entity.id
+                    .replace(/^ent_/, '')
+                    .replace(/_\d+$/, '')
+                    .replaceAll('-', ' '),
+              ]),
+            )}
+            // The server has no retry message: retrying resubmits the last action as a new one.
+            onRetry={() => {
+              if (lastActionText.current) submitAction(lastActionText.current);
+            }}
+          />
+        </div>
+        <div className="game-area game-area--dock">
+          <ActionInput
+            onSubmit={submitAction}
+            pending={Boolean(pendingAction)}
+            pendingText={pendingAction?.text}
+            pendingSince={pendingAction?.submittedAt}
+            onEditPending={() => {
+              if (!pendingAction) return;
+              setActionDraft(pendingAction.text);
+            }}
+            initialText={actionDraft}
+            onDraftChange={setActionDraft}
+            clarification={clarification}
+            onReply={(actionId, reply) => {
+              setClarification(null);
+              setError('');
+              updatePendingAction(() => ({
+                id: actionId,
+                text: reply,
+                acknowledged: true,
+                submittedAt: Date.now(),
+              }));
+              live.send('ClarificationAnswer', { actionId, answer: reply });
+            }}
+          />
+        </div>
+        <aside
+          className="game-area game-area--side"
+          aria-label="Character and party"
+        >
+          <Sheet store={gameStore} />
+          {tracker && (
+            <section aria-labelledby="tracker-heading">
+              <h2 id="tracker-heading">Round {tracker.round}</h2>
+              <ol aria-label="Initiative tracker">
+                {tracker.initiative.map((item, index) => (
+                  <li
+                    key={`${item.entityId}-${index}`}
+                    aria-current={
+                      item.entityId === trackerFirst ? 'step' : undefined
+                    }
+                  >
+                    {item.entityId}
+                    {item.entityId === trackerFirst ? ' (active)' : ''}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+          {room.roundsEnabled && (
+            <RoundPanel
+              round={room.round}
+              closeAnnouncement={live.roundCloseAnnouncement}
+              seats={room.seats}
+              myActionId={live.privateRoundSubmission?.actionId}
+              myText={
+                room.roundsEnabled
+                  ? live.privateRoundSubmission?.text
+                  : pendingAction?.text
               }
-              onCast={(area) =>
-                send({
-                  command: 'cast',
-                  spellId: area.spellId,
-                  slotLevel: 1,
-                  target: { kind: 'option', ref: area.optionId },
-                })
+              connected={live.status === 'connected'}
+              send={live.send}
+              onEdited={(text) =>
+                updatePendingAction(
+                  (current) => current && { ...current, text },
+                )
               }
             />
           )}
-          <button type="button" onClick={() => send({ command: 'end-turn' })}>
-            End turn
-          </button>
-          {reaction && (
-            <p role="status">
-              {reaction.entityId} reaction: {reaction.trigger}. Resolve within{' '}
-              {Math.ceil(reactionRemainingMs / 1000)} seconds.
-            </p>
+          {isHost && (
+            <Drawer id="host" title="Host tools">
+              <HostControls
+                round={room.round}
+                roundDurationMs={room.roundDurationMs ?? null}
+                connected={live.status === 'connected'}
+                paused={room.paused === true}
+                pauseCause={room.pauseCause}
+                send={live.send}
+                seats={room.seats}
+                selfSeatId={selfSeat?.seatId}
+                lateJoinRequests={room.lateJoinRequests}
+              />
+              <TurnTimerControl
+                turnTimerMs={room.turnTimerMs}
+                turnTimeoutAction={room.turnTimeoutAction}
+                connected={live.status === 'connected'}
+                send={live.send}
+              />
+              {seatClaims.length > 0 && (
+                <section aria-label="Device claims">
+                  <h2>Reconnect claims</h2>
+                  {seatClaims.map((claim) => (
+                    <div key={claim.claimId}>
+                      <p>
+                        {claim.displayName} needs approval to reconnect on a new
+                        device.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={live.status !== 'connected'}
+                        onClick={() =>
+                          live.send('ApproveSeatClaim', {
+                            claimId: claim.claimId,
+                          })
+                        }
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        disabled={live.status !== 'connected'}
+                        onClick={() =>
+                          live.send('DenySeatClaim', { claimId: claim.claimId })
+                        }
+                      >
+                        Deny
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              )}
+            </Drawer>
           )}
-          {!reaction && reactionNotice && (
-            <p role="status">
-              Reaction window open for {reactionNotice.entityId}. Waiting for
-              their response; closes in {Math.ceil(noticeRemainingMs / 1000)}{' '}
-              seconds.
-            </p>
-          )}
-        </section>
-      )}
-      {tracker?.ended && (
-        <p role="status">CombatEnded: {tracker.ended.outcome}</p>
-      )}
-      {activeEntity && <p>Active combatant: {activeEntity.id}</p>}
-      {tracker && trackerFirst === null && tracker.activeEntityId === null && (
-        <p role="status">An unseen creature is acting.</p>
-      )}
-      <NarrationLog
-        messages={messages}
-        onReport={async (messageRef, category, reason) => {
-          const result = await api(`/api/rooms/${id}/reports`, {
-            messageRef,
-            category,
-            reason,
-          });
-          return result.ok ? null : result.message;
-        }}
-        combatantNames={Object.fromEntries(
-          entities.map((entity) => [
-            entity.id,
-            entity.name ??
-              entity.id
-                .replace(/^ent_/, '')
-                .replace(/_\d+$/, '')
-                .replaceAll('-', ' '),
-          ]),
-        )}
-        // The server has no retry message: retrying resubmits the last action as a new one.
-        onRetry={() => {
-          if (lastActionText.current) submitAction(lastActionText.current);
-        }}
-      />
-      <Sheet store={gameStore} />
-    </main>
+          <Drawer
+            id="chat"
+            title="Party chat"
+            badge={chatMessages.length || undefined}
+          >
+            <ChatPanel
+              roomId={id}
+              messages={chatMessages}
+              room={room}
+              isHost={isHost}
+              connected={live.status === 'connected'}
+              error={chatError}
+              onSend={(text) => Boolean(live.send('ChatSend', { text }))}
+              onMute={(seatId, muted) =>
+                Boolean(live.send('MuteChat', { seatId, muted }))
+              }
+            />
+          </Drawer>
+        </aside>
+      </div>
+    </div>
   );
 }

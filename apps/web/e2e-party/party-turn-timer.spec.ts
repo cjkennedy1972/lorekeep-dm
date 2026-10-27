@@ -24,6 +24,10 @@ async function openAs(browser: Browser, account: Account, table: string) {
   await context.addCookies([
     { name: 'sid', value: account.token, url: origin },
   ]);
+  // The turn timer lives in the host tools drawer, which starts collapsed and remembers being opened.
+  await context.addInitScript(() => {
+    localStorage.setItem('lorekeep.drawer.host', 'open');
+  });
   const page: Page = await context.newPage();
   const frames: ServerFrame[] = [];
   page.on('websocket', (socket) =>

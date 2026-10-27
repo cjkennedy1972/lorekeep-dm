@@ -56,10 +56,10 @@ export function Sheet({
   return (
     <section aria-labelledby="sheet-title" className="character-sheet">
       <h1 id="sheet-title">{character.name}</h1>
-      <p>
+      <p className="sheet-subtitle">
         {character.classId.replace(/^class:/, '')} · Level {character.level}
       </p>
-      <dl aria-label="Combat statistics">
+      <dl aria-label="Combat statistics" className="sheet-stats">
         <div>
           <dt>Armor Class</dt>
           <dd>{ac}</dd>
@@ -69,16 +69,24 @@ export function Sheet({
           <dd aria-label={hpLabel}>
             {character.hp.current} / {character.hp.max}
             {character.hp.temp > 0 ? ` (+${character.hp.temp} temp)` : ''}
+            <span className="sheet-hp" aria-hidden="true">
+              <span
+                className="sheet-hp__fill"
+                style={{
+                  width: `${Math.max(0, Math.min(100, (character.hp.current / Math.max(character.hp.max, 1)) * 100))}%`,
+                }}
+              />
+            </span>
           </dd>
         </div>
-        <div>
+        <div className="sheet-stats__xp">
           <dt>Experience points</dt>
           <dd>0 XP</dd>
         </div>
       </dl>
       <section aria-labelledby="abilities-title">
         <h2 id="abilities-title">Abilities</h2>
-        <dl>
+        <dl className="sheet-abilities">
           {Object.entries(abilityNames).map(([key, label]) => {
             const score = character.abilities[key as keyof typeof abilityNames];
             return (
@@ -95,7 +103,7 @@ export function Sheet({
       <section aria-labelledby="conditions-title">
         <h2 id="conditions-title">Conditions</h2>
         {conditions.length ? (
-          <ul>
+          <ul className="sheet-conditions">
             {conditions.map((condition) => (
               <li key={condition}>{condition}</li>
             ))}
@@ -107,13 +115,27 @@ export function Sheet({
       <section aria-labelledby="slots-title">
         <h2 id="slots-title">Spell slots</h2>
         {Object.keys(character.slots).length ? (
-          <ul>
+          <ul className="sheet-slots">
             {Object.entries(character.slots)
               .sort(([a], [b]) => Number(a) - Number(b))
               .map(([level, slot]) => (
                 <li key={level}>
-                  Level {level}: {Math.max(0, slot.max - slot.used)} of{' '}
-                  {slot.max} remaining
+                  <span>
+                    Level {level}: {Math.max(0, slot.max - slot.used)} of{' '}
+                    {slot.max} remaining
+                  </span>
+                  <span className="sheet-pips" aria-hidden="true">
+                    {Array.from({ length: slot.max }, (_, pip) => (
+                      <span
+                        key={pip}
+                        className={
+                          pip < slot.max - slot.used
+                            ? 'sheet-pip sheet-pip--full'
+                            : 'sheet-pip'
+                        }
+                      />
+                    ))}
+                  </span>
                 </li>
               ))}
           </ul>
@@ -124,7 +146,7 @@ export function Sheet({
       <section aria-labelledby="inventory-title">
         <h2 id="inventory-title">Inventory</h2>
         {character.equipment.length ? (
-          <ul>
+          <ul className="sheet-inventory">
             {character.equipment.map((item) => (
               <li key={item.itemId}>
                 {item.itemId.replace(/^equipment:/, '').replaceAll('-', ' ')} ×{' '}

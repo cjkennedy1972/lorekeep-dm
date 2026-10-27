@@ -13,6 +13,11 @@ export type Frame = { type?: string; payload?: Record<string, unknown> };
 
 /** Signs up a fresh adult account in this browser context. */
 export async function signedIn(context: BrowserContext, name: string) {
+  // Host tools and party chat are collapsed drawers that remember being opened; these specs drive them.
+  await context.addInitScript(() => {
+    for (const id of ['host', 'chat'])
+      localStorage.setItem(`lorekeep.drawer.${id}`, 'open');
+  });
   const response = await context.request.post(`${API}/api/signup`, {
     data: {
       email: `round-${randomUUID()}@example.com`,
