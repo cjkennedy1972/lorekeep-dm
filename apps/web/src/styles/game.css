@@ -151,9 +151,9 @@
 }
 .game-area--dock {
   grid-area: dock;
-  position: sticky;
-  bottom: var(--space-2);
-  z-index: 3;
+}
+.game-area--story:focus {
+  outline: none;
 }
 .game-area--side {
   grid-area: side;
@@ -172,6 +172,8 @@
   }
   /* Sticky bottom action bar on small screens */
   .game-area--dock {
+    position: sticky;
+    z-index: 3;
     bottom: 0;
     margin-inline: calc(var(--space-3) * -1);
     padding: var(--space-2);
@@ -620,4 +622,11 @@
   .game-map td {
     padding-inline: 0.2rem;
   }
+}
+
+.action-input__count {
+  grid-column: 1 / -1;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  text-align: end;
 }

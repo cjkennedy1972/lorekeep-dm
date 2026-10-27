@@ -143,6 +143,27 @@ describe('Game screen (live Room)', () => {
     gameStore.setCombatState(initialGameState().combat);
   });
 
+  it('skip link focuses the action textarea; composer precedes map controls in tab order', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    const skip = screen.getByRole('link', { name: 'Skip to your action' });
+    const firstFocusable = document
+      .querySelector('.game-screen')!
+      .querySelector('a[href], button, textarea, input, [tabindex="0"]');
+    expect(firstFocusable).toBe(skip);
+    await user.click(skip);
+    expect(screen.getByLabelText('Your action')).toHaveFocus();
+    await user.click(screen.getByRole('link', { name: 'Skip to story' }));
+    expect(document.getElementById('game-story')).toHaveFocus();
+    const textarea = screen.getByLabelText('Your action');
+    const endTurn = screen.getByRole('button', { name: 'End turn' });
+    expect(
+      textarea.compareDocumentPosition(endTurn) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('sends flat CombatCommand payloads the server schema accepts', async () => {
     const user = userEvent.setup();
     mount();

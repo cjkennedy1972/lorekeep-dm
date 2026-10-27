@@ -697,6 +697,28 @@ export function Game() {
   );
   return (
     <div className="game-screen">
+      <div className="game-skip-links">
+        <a
+          className="skip-link"
+          href="#player-action"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById('player-action')?.focus();
+          }}
+        >
+          Skip to your action
+        </a>
+        <a
+          className="skip-link"
+          href="#game-story"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById('game-story')?.focus();
+          }}
+        >
+          Skip to story
+        </a>
+      </div>
       <header className="game-header">
         <h1>{id ? 'Game' : 'Encounter'}</h1>
         <ConnectionStatus status={live.status} />
@@ -778,6 +800,73 @@ export function Game() {
         </details>
       </section>
       <div className="game-layout">
+        <div
+          className="game-area game-area--story"
+          id="game-story"
+          tabIndex={-1}
+        >
+          {resume?.recap && (
+            <section aria-label="Previously on" className="game-recap">
+              <details open={!narrow}>
+                <summary>
+                  <h2>Previously on…</h2>
+                </summary>
+                <p>{resume.recap}</p>
+              </details>
+            </section>
+          )}
+          <NarrationLog
+            messages={messages}
+            onReport={async (messageRef, category, reason) => {
+              const result = await api(`/api/rooms/${id}/reports`, {
+                messageRef,
+                category,
+                reason,
+              });
+              return result.ok ? null : result.message;
+            }}
+            combatantNames={Object.fromEntries(
+              entities.map((entity) => [
+                entity.id,
+                entity.name ??
+                  entity.id
+                    .replace(/^ent_/, '')
+                    .replace(/_\d+$/, '')
+                    .replaceAll('-', ' '),
+              ]),
+            )}
+            // The server has no retry message: retrying resubmits the last action as a new one.
+            onRetry={() => {
+              if (lastActionText.current) submitAction(lastActionText.current);
+            }}
+          />
+        </div>
+        <div className="game-area game-area--dock">
+          <ActionInput
+            onSubmit={submitAction}
+            pending={Boolean(pendingAction)}
+            pendingText={pendingAction?.text}
+            pendingSince={pendingAction?.submittedAt}
+            onEditPending={() => {
+              if (!pendingAction) return;
+              setActionDraft(pendingAction.text);
+            }}
+            initialText={actionDraft}
+            onDraftChange={setActionDraft}
+            clarification={clarification}
+            onReply={(actionId, reply) => {
+              setClarification(null);
+              setError('');
+              updatePendingAction(() => ({
+                id: actionId,
+                text: reply,
+                acknowledged: true,
+                submittedAt: Date.now(),
+              }));
+              live.send('ClarificationAnswer', { actionId, answer: reply });
+            }}
+          />
+        </div>
         <div className="game-area game-area--map">
           {!tracker && (
             <p className="game-map__empty">
@@ -982,69 +1071,6 @@ export function Game() {
             tracker.activeEntityId === null && (
               <p role="status">An unseen creature is acting.</p>
             )}
-        </div>
-        <div className="game-area game-area--story">
-          {resume?.recap && (
-            <section aria-label="Previously on" className="game-recap">
-              <details open={!narrow}>
-                <summary>
-                  <h2>Previously on…</h2>
-                </summary>
-                <p>{resume.recap}</p>
-              </details>
-            </section>
-          )}
-          <NarrationLog
-            messages={messages}
-            onReport={async (messageRef, category, reason) => {
-              const result = await api(`/api/rooms/${id}/reports`, {
-                messageRef,
-                category,
-                reason,
-              });
-              return result.ok ? null : result.message;
-            }}
-            combatantNames={Object.fromEntries(
-              entities.map((entity) => [
-                entity.id,
-                entity.name ??
-                  entity.id
-                    .replace(/^ent_/, '')
-                    .replace(/_\d+$/, '')
-                    .replaceAll('-', ' '),
-              ]),
-            )}
-            // The server has no retry message: retrying resubmits the last action as a new one.
-            onRetry={() => {
-              if (lastActionText.current) submitAction(lastActionText.current);
-            }}
-          />
-        </div>
-        <div className="game-area game-area--dock">
-          <ActionInput
-            onSubmit={submitAction}
-            pending={Boolean(pendingAction)}
-            pendingText={pendingAction?.text}
-            pendingSince={pendingAction?.submittedAt}
-            onEditPending={() => {
-              if (!pendingAction) return;
-              setActionDraft(pendingAction.text);
-            }}
-            initialText={actionDraft}
-            onDraftChange={setActionDraft}
-            clarification={clarification}
-            onReply={(actionId, reply) => {
-              setClarification(null);
-              setError('');
-              updatePendingAction(() => ({
-                id: actionId,
-                text: reply,
-                acknowledged: true,
-                submittedAt: Date.now(),
-              }));
-              live.send('ClarificationAnswer', { actionId, answer: reply });
-            }}
-          />
         </div>
         <aside
           className="game-area game-area--side"
