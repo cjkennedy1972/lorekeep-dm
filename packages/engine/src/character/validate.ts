@@ -220,12 +220,20 @@ export function validateCharacter(
         ),
       );
     else {
-      const itemNames = char.equipment.map((x) =>
-        entryBy(catalog, 'equipment', x.itemId)?.name.toLowerCase(),
-      );
+      const normalizeItemName = (value: string) =>
+        value.replace(/[’‘]/g, "'").toLowerCase();
+      const itemNames = char.equipment.map((x) => {
+        const name = entryBy(catalog, 'equipment', x.itemId)?.name;
+        return name ? normalizeItemName(name) : undefined;
+      });
       for (const required of option.items) {
-        if (/\d+\s*GP/i.test(required) || /\(any\)/i.test(required)) continue;
-        const name = required.replace(/^\d+\s+/, '').toLowerCase();
+        if (
+          /\d+\s*GP/i.test(required) ||
+          /\(any\)/i.test(required) ||
+          /\bor\b/i.test(required)
+        )
+          continue;
+        const name = normalizeItemName(required.replace(/^\d+\s+/, ''));
         if (
           !itemNames.some(
             (actual) =>

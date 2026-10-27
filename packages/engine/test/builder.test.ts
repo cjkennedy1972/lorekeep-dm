@@ -38,6 +38,18 @@ describe('quickBuild', () => {
   });
   test('rejects unknown class', () =>
     expect(() => quickBuild(catalog, 'class:nope', 1)).toThrow());
+  test.each(['class:fighter', 'class:wizard'])(
+    '%s starts with resolved equipment',
+    (id) => {
+      const character = quickBuild(catalog, id, 0x28).character;
+      expect(character.equipment.length).toBeGreaterThan(0);
+      expect(
+        character.equipment.every((item) =>
+          catalog.get('equipment', item.itemId),
+        ),
+      ).toBe(true);
+    },
+  );
 });
 
 describe('CharacterBuilder', () => {

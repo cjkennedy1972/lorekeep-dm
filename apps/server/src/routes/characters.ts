@@ -15,7 +15,7 @@ type App = Parameters<typeof registerAuthRoutes>[0];
 const characterDataSchema = CharacterSchema.omit({ id: true });
 const createCharacterInput = z
   .object({
-    character: characterDataSchema,
+    character: characterDataSchema.extend({ id: z.string().optional() }),
   })
   .strict();
 const updateCharacterInput = z

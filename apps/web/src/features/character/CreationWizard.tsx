@@ -8,6 +8,7 @@ import {
   type RuleViolation,
 } from '@game/rules-engine';
 import type { Character } from '@game/schema';
+import { newCharacterId } from './id';
 import { gameStore } from '../../state/store';
 import { loadCharacterCatalog } from './catalog';
 import './creation-wizard.css';
@@ -82,7 +83,7 @@ function OptionList({
   );
 }
 function asCharacter(input: CharacterInput): Character {
-  const character = { ...input };
+  const character = { ...input, id: newCharacterId() };
   delete character.abilityGeneration;
   delete character.equipmentOption;
   delete character.backgroundSkills;

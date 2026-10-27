@@ -6,6 +6,7 @@ import {
   type CharacterInput,
 } from '@game/rules-engine';
 import type { Character } from '@game/schema';
+import { newCharacterId } from './id';
 import { gameStore } from '../../state/store';
 import { loadCharacterCatalog } from './catalog';
 import { SaveToAccount } from './SaveToAccount';
@@ -13,8 +14,21 @@ import { SaveToAccount } from './SaveToAccount';
 const catalog = loadCharacterCatalog();
 const classes = catalog.entries.filter((entry) => entry.kind === 'class');
 
+export function buildQuickCharacter(
+  classId?: string,
+  startingLevel = 1,
+): Character {
+  const result = quickBuild(catalog, classId, 32, startingLevel);
+  const violations = validateCharacter(result.character, catalog);
+  if (violations.length)
+    throw new Error(violations.map((v) => v.message).join('; '));
+  const character = asCharacter(result.character);
+  gameStore.setCharacter(character);
+  return character;
+}
+
 function asCharacter(input: CharacterInput): Character {
-  const character = { ...input };
+  const character = { ...input, id: newCharacterId() };
   delete character.abilityGeneration;
   delete character.equipmentOption;
   delete character.backgroundSkills;
@@ -23,16 +37,15 @@ function asCharacter(input: CharacterInput): Character {
 
 export function QuickBuild({
   onBuild,
-}: { onBuild?: (character: Character) => void } = {}) {
+  startingLevel = 1,
+}: {
+  onBuild?: (character: Character) => void;
+  startingLevel?: number;
+} = {}) {
   const [classId, setClassId] = useState('');
   const [saved, setSaved] = useState(false);
   const build = () => {
-    const result = quickBuild(catalog, classId || undefined, 32);
-    const violations = validateCharacter(result.character, catalog);
-    if (violations.length)
-      throw new Error(violations.map((v) => v.message).join('; '));
-    const character = asCharacter(result.character);
-    gameStore.setCharacter(character);
+    const character = buildQuickCharacter(classId || undefined, startingLevel);
     if (onBuild) onBuild(character);
     else setSaved(true);
   };
