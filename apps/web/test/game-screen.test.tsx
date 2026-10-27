@@ -411,6 +411,89 @@ describe('Game screen (live Room)', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('shows a clarifying question only to the seat whose own action it asks about', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(
+      screen.getByLabelText('Your action'),
+      'I ask the innkeeper.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ClarificationRequested', {
+      actionId: 'their-action',
+      question: 'Which door?',
+    });
+    expect(
+      screen.queryByRole('form', { name: 'Reply to clarifying question' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Which door?')).not.toBeInTheDocument();
+    push('ClarificationRequested', {
+      actionId: 'mine-1',
+      question: 'Which door?',
+    });
+    expect(
+      screen.getByRole('form', { name: 'Reply to clarifying question' }),
+    ).toHaveTextContent('Which door?');
+  });
+
+  it('a state sync leaves the owner reply prompt open', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(
+      screen.getByLabelText('Your action'),
+      'I ask the innkeeper.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ClarificationRequested', {
+      actionId: 'mine-1',
+      question: 'Which door?',
+    });
+    push('StateSync', { state: { openClarifications: {} } });
+    expect(
+      screen.getByRole('form', { name: 'Reply to clarifying question' }),
+    ).toHaveTextContent('Which door?');
+  });
+
+  it('the owner answers the prompt, and an error for that action ends it', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(
+      screen.getByLabelText('Your action'),
+      'I ask the innkeeper.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ClarificationRequested', {
+      actionId: 'mine-1',
+      question: 'Which door?',
+    });
+    await user.type(screen.getByLabelText('Your reply'), 'The red one.');
+    await user.click(
+      screen.getByRole('button', { name: 'Reply to this action' }),
+    );
+    expect(hoisted.send).toHaveBeenLastCalledWith('ClarificationAnswer', {
+      actionId: 'mine-1',
+      answer: 'The red one.',
+    });
+    expect(
+      screen.queryByRole('form', { name: 'Reply to clarifying question' }),
+    ).not.toBeInTheDocument();
+    push('ClarificationRequested', {
+      actionId: 'mine-1',
+      question: 'Which door?',
+    });
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'Turn failed.',
+      actionId: 'mine-1',
+    });
+    expect(
+      screen.queryByRole('form', { name: 'Reply to clarifying question' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('keeps report action and rewind banner available in the live story log', async () => {
     const user = userEvent.setup();
     mount();
