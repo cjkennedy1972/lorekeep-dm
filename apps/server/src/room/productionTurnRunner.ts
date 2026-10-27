@@ -1158,7 +1158,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       attemptEvents.length = 0;
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
-      rejectedStartEncounter = undefined;
       attemptState = { startCombatCalled: false, liveRoom: turnStartRoom };
       refused = false;
       const narration: DMTurnEvent[] = [];
