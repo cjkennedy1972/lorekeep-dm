@@ -20,6 +20,10 @@ const duration = z.enum([
   'until-removed',
 ]);
 
+export const StartCombatEncounterArgsSchema = strict({
+  encounterId: z.string().regex(/^[a-z0-9:_-]{1,64}$/),
+});
+
 export const DMToolArgsSchema = {
   close_scene: strict({
     summary: z.string().max(1200),

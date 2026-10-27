@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import {
   DMToolArgsSchema,
+  StartCombatEncounterArgsSchema,
   DMToolErrorCodeSchema,
   DMTurnEventSchema,
   EndpointConfigSchema,
@@ -198,4 +199,21 @@ test('move_to takes marker/feature/entity refs only, not area option handles or 
   expect(parse('opt_a1b2c3d4')).toBe(false);
   expect(parse('3,4')).toBe(false);
   expect(parse('mk_altar')).toBe(true);
+});
+
+test('ADR-038 model-facing start_combat accepts only authored encounter keys', () => {
+  expect(
+    StartCombatEncounterArgsSchema.safeParse({
+      encounterId: 'encounter-e2-lookouts',
+    }).success,
+  ).toBe(true);
+  expect(
+    StartCombatEncounterArgsSchema.safeParse({ encounterId: 'bad key' })
+      .success,
+  ).toBe(false);
+  expect(
+    StartCombatEncounterArgsSchema.safeParse({
+      enemies: [{ monsterId: 'srd:monster/goblin', count: 2 }],
+    }).success,
+  ).toBe(false);
 });
