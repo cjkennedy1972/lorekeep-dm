@@ -97,18 +97,6 @@ export function ActionInput({
           </button>
         </form>
       )}
-      <div className="action-input__quick" aria-label="Quick actions">
-        {QUICK_ACTIONS.map((action) => (
-          <button
-            type="button"
-            key={action.label}
-            disabled={pending}
-            onClick={() => submit(action.text)}
-          >
-            {action.label}
-          </button>
-        ))}
-      </div>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -127,10 +115,27 @@ export function ActionInput({
           maxLength={4000}
           required
         />
+        {text.length >= 3500 && (
+          <span className="action-input__count" aria-live="off">
+            {text.length} / 4000
+          </span>
+        )}
         <button type="submit" disabled={!text.trim() || pending}>
           Send action
         </button>
       </form>
+      <div className="action-input__quick" aria-label="Quick actions">
+        {QUICK_ACTIONS.map((action) => (
+          <button
+            type="button"
+            key={action.label}
+            disabled={pending}
+            onClick={() => submit(action.text)}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
     </section>
   );
 }

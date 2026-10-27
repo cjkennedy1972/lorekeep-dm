@@ -3,16 +3,31 @@
   gap: var(--space-3);
   max-width: 28rem;
 }
+.form > button[type='submit'] {
+  justify-self: start;
+}
+label {
+  font-weight: 600;
+}
+.field label {
+  color: var(--fg);
+}
 .field {
   display: grid;
   gap: var(--space-1);
 }
+input,
+textarea {
+  font: inherit;
+}
 .field input,
 .field select,
 input#invite-link,
-input#room-name {
+input#room-name,
+textarea {
   font: inherit;
-  padding: var(--space-2);
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
   max-width: 100%;
   box-sizing: border-box;
   color: var(--fg);
@@ -25,10 +40,33 @@ input#invite-link {
   max-width: 28rem;
   display: block;
 }
+.field input:hover,
+textarea:hover {
+  border-color: var(--fg-muted);
+}
+.field input[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg));
+}
 .field-error,
 .form-error {
   color: var(--danger);
   margin: 0;
+  font-weight: 600;
+}
+.field-error::before,
+.form-error::before {
+  /* Warning sign so an error is never colour alone; the empty alt text keeps it out of the accessible description. */
+  content: '\26A0\00a0';
+  content: '\26A0\00a0' / '';
+}
+.form-error {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger);
+  border-inline-start-width: 0.3rem;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
 }
 .field-hint {
   color: var(--fg-muted);
@@ -48,36 +86,65 @@ input#invite-link {
 }
 button {
   font: inherit;
+  font-weight: 600;
+  min-height: var(--target-min);
   padding: var(--space-2) var(--space-3);
   color: var(--on-accent);
   background: var(--accent);
-  border: 0;
+  border: 2px solid transparent;
   border-radius: var(--radius);
   cursor: pointer;
+  transition:
+    filter var(--transition),
+    background var(--transition),
+    transform var(--transition);
+}
+button:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 .seats {
   padding-left: var(--space-4);
 }
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 button.secondary {
   color: var(--fg);
-  background: var(--bg);
+  background: transparent;
   border: 2px solid var(--border-ui);
+}
+button.secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+  filter: none;
 }
 button.danger {
   background: var(--danger);
   color: var(--bg);
 }
 button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
+}
+a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: var(--radius);
+}
+a.button:hover {
+  color: var(--on-accent);
+  filter: brightness(1.12);
+}
+a.button.secondary {
+  color: var(--fg);
+  background: transparent;
+  border: 2px solid var(--border-ui);
 }
 .modal-backdrop {
   position: fixed;
@@ -87,7 +154,7 @@ button:disabled {
   background: rgb(0 0 0 / 0.6);
 }
 .modal {
-  background: var(--bg);
+  background: var(--surface);
   color: var(--fg);
   max-width: 34rem;
   max-height: 90vh;
@@ -96,6 +163,98 @@ button:disabled {
   border: 2px solid var(--border-ui);
   border-radius: var(--radius);
 }
+/* Games list (My tables): cards with a prominent Resume */
+.games-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-3) 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.game-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-inline-start: 0.3rem solid var(--accent);
+  border-radius: var(--radius);
+}
+.game-card__meta {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+.game-card__recap {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--fg-muted);
+}
+.game-card__resume {
+  justify-self: start;
+}
+.page-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+.page-links p {
+  margin: 0;
+}
+
+/* Loading / connecting: a lantern-ring spinner or skeleton, never bare text */
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--fg-muted);
+  margin: var(--space-3) 0;
+}
+.spinner {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 3px solid var(--border-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none !important;
+    border-top-color: var(--accent);
+    border-right-color: var(--accent);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.skeleton {
+  height: 4.5rem;
+  border-radius: var(--radius);
+  background: linear-gradient(
+    90deg,
+    var(--surface-2),
+    var(--border-soft),
+    var(--surface-2)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
 .sessions {
   list-style: none;
   padding: 0;
@@ -108,4 +267,59 @@ button:disabled {
   gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
+}
+
+fieldset {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+legend {
+  padding: 0 var(--space-2);
+  font-weight: 700;
+  color: var(--verdigris);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--accent);
+  vertical-align: middle;
+}
+fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  padding-inline-end: var(--space-3);
+}
+textarea {
+  box-sizing: border-box;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--border-ui);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  max-width: 100%;
+}
+hr {
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+}
+.form .field {
+  margin-block: 0;
+}
+.form + div h2,
+.form + section h2 {
+  margin-top: var(--space-4);
+}
+.page-links a.button {
+  min-height: var(--target-min);
+}
+form.form {
+  margin-bottom: var(--space-4);
+}
+label + select {
+  margin-inline-start: var(--space-2);
 }

@@ -12,11 +12,12 @@
 }
 .sandbox-grid > section,
 .sandbox aside > section {
-  border: 1px solid #81786d;
+  border: 1px solid var(--border-ui);
   border-radius: 0.5rem;
   padding: 1rem;
   margin-bottom: 1rem;
-  background: #fffdf8;
+  background: var(--surface);
+  color: var(--fg);
 }
 #crypt-map {
   display: block;

@@ -12,11 +12,12 @@ export interface Prefs {
 const KEY = 'lorekeep.prefs';
 
 export function loadPrefs(): Prefs {
-  const dark =
+  // Dark is the house look; light only when the OS asks for it.
+  const light =
     typeof matchMedia === 'function' &&
-    matchMedia('(prefers-color-scheme: dark)').matches;
+    matchMedia('(prefers-color-scheme: light)').matches;
   const base: Prefs = {
-    theme: dark ? 'dark' : 'light',
+    theme: light ? 'light' : 'dark',
     palette: 'default',
     textSize: 'normal',
     dyslexiaFont: false,

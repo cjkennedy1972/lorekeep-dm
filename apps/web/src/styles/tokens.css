@@ -1,53 +1,76 @@
 /* Design tokens. Colors are hex only: src/a11y/contrast.test.ts parses this file and checks ratios. */
+/* Lantern-lit dark fantasy: ink backgrounds, parchment text, ember accent, verdigris secondary. */
 :root {
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 1rem;
   --space-4: 1.5rem;
   --space-5: 2.5rem;
+  --text-xs: 0.8125rem;
   --text-sm: 0.875rem;
   --text-md: 1rem;
   --text-lg: 1.25rem;
   --text-xl: 1.75rem;
-  --radius: 0.375rem;
+  --text-2xl: 2.25rem;
+  --radius: 0.5rem;
+  --radius-lg: 0.875rem;
   --focus-width: 3px;
+  --target-min: 2.75rem;
   --transition: 150ms ease;
-  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-serif:
+    'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia,
+    'Times New Roman', serif;
   --letter-spacing: normal;
   --word-spacing: normal;
 }
 
-/* Light (default) */
+/* Dark (default) */
 :root,
-[data-theme='light'] {
-  --bg: #ffffff;
-  --surface: #f4f4f6;
-  --fg: #1a1a1a;
-  --fg-muted: #595959;
-  --border-ui: #767676;
-  --accent: #1d4ed8;
-  --on-accent: #ffffff;
-  --danger: #b00020;
-  --success: #1b6e2d;
-  --focus: #1d4ed8;
+[data-theme='dark'] {
+  --bg: #14110f;
+  --surface: #1e1a16;
+  --surface-2: #29231c;
+  --fg: #f1e7d3;
+  --fg-muted: #b9ad94;
+  --border-ui: #8a7c63;
+  --border-soft: #3b3328;
+  --accent: #e8a33d;
+  --on-accent: #1a1207;
+  --verdigris: #6cc0ad;
+  --danger: #ff8f80;
+  --success: #82d3a1;
+  --focus: #ffd37a;
+  --shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.45);
+  --glow: 0 0 2rem rgb(232 163 61 / 0.12);
+  color-scheme: dark;
 }
 
-[data-theme='dark'] {
-  --bg: #121214;
-  --surface: #1e1e22;
-  --fg: #f2f2f2;
-  --fg-muted: #a8a8b0;
-  --border-ui: #8a8a92;
-  --accent: #8ab4ff;
-  --on-accent: #0b1020;
-  --danger: #ff8a8a;
-  --success: #6fd38a;
-  --focus: #8ab4ff;
+[data-theme='light'] {
+  --bg: #f6efe0;
+  --surface: #fffaf0;
+  --surface-2: #ece1c9;
+  --fg: #2a2016;
+  --fg-muted: #5c5039;
+  --border-ui: #857656;
+  --border-soft: #d9ccb0;
+  --accent: #8f4a00;
+  --on-accent: #fff7e8;
+  --verdigris: #1c6657;
+  --danger: #a3231b;
+  --success: #1f6b3c;
+  --focus: #8f4a00;
+  --shadow: 0 0.5rem 1.25rem rgb(70 45 10 / 0.18);
+  --glow: none;
+  color-scheme: light;
 }
 
 /* Colorblind-safe (Okabe-Ito derived): status never relies on red/green alone */
 [data-theme='light'][data-palette='cvd'] {
   --accent: #0072b2;
+  --on-accent: #ffffff;
+  --verdigris: #00695c;
   --danger: #a84300;
   --success: #00695c;
   --focus: #0072b2;
@@ -55,6 +78,8 @@
 
 [data-theme='dark'][data-palette='cvd'] {
   --accent: #56b4e9;
+  --on-accent: #0b1020;
+  --verdigris: #5fd1b0;
   --danger: #ffa05c;
   --success: #5fd1b0;
   --focus: #56b4e9;
@@ -82,7 +107,15 @@ html[data-dyslexia-font='on'] {
 
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      ellipse at 50% -10%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 55%
+    ),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--fg);
   font-family: var(--font-body);
   font-size: var(--text-md);
@@ -91,9 +124,27 @@ body {
   word-spacing: var(--word-spacing);
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+h1 {
+  font-size: var(--text-xl);
+  margin-block: 0 var(--space-3);
+}
+h2 {
+  font-size: var(--text-lg);
+}
 a {
   color: var(--accent);
+  text-underline-offset: 0.2em;
   transition: color var(--transition);
+}
+a:hover {
+  color: var(--fg);
 }
 
 /* Visible on every interactive element */
@@ -116,6 +167,7 @@ a {
   position: absolute;
   left: var(--space-2);
   top: var(--space-2);
+  z-index: 10;
   padding: var(--space-2) var(--space-3);
   background: var(--accent);
   color: var(--on-accent);
@@ -126,32 +178,105 @@ a {
   transform: none;
 }
 
+/* App shell */
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border-ui);
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border-bottom: 1px solid var(--border-soft);
+  backdrop-filter: blur(6px);
+}
+.app-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  letter-spacing: 0.03em;
+  color: var(--fg);
+}
+.app-brand__mark {
+  color: var(--accent);
+  filter: drop-shadow(
+    0 0 0.4rem color-mix(in srgb, var(--accent) 55%, transparent)
+  );
 }
 .app-nav ul {
   display: flex;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-1);
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.app-nav a[aria-current='page'] {
-  font-weight: 700;
+.app-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  text-decoration: none;
 }
+.app-nav a:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.app-nav a[aria-current='page'] {
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: inset 0 -3px 0 var(--accent);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+/* Page content sits on a card; the game route is full-bleed */
 main {
+  box-sizing: border-box;
+  margin-inline: auto;
   padding: var(--space-4) var(--space-3);
-  max-width: 60rem;
+}
+main.main--card {
+  width: min(100% - 2rem, 34rem);
+  margin-block: var(--space-5);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow), var(--glow);
+}
+main.main--wide {
+  width: min(100% - 2rem, 56rem);
+  margin-block: var(--space-4);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow), var(--glow);
+}
+main.main--game {
+  width: 100%;
+  padding: var(--space-3);
+  max-width: 96rem;
+}
+@media (max-width: 30rem) {
+  main.main--card,
+  main.main--wide {
+    width: 100%;
+    margin-block: 0;
+    border-radius: 0;
+    border-inline: 0;
+  }
 }
 main:focus {
   outline: none;
 }
+
 .field {
   display: flex;
   align-items: center;
@@ -186,6 +311,7 @@ main:focus {
 }
 select {
   font: inherit;
+  min-height: var(--target-min);
   padding: var(--space-1) var(--space-2);
   color: var(--fg);
   background: var(--bg);

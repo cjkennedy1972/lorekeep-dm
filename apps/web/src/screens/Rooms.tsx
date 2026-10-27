@@ -32,36 +32,55 @@ export function Rooms() {
       <h1 id="games-title">My games</h1>
       {error ? (
         <>
-          <p role="alert">{error}</p>
+          <p role="alert" className="form-error">
+            {error}
+          </p>
           <button onClick={load}>Retry loading games</button>
         </>
       ) : games === null ? (
-        <p role="status">Loading your games…</p>
+        <>
+          <p role="status" className="loading">
+            <span className="spinner" aria-hidden="true" />
+            Loading your games…
+          </p>
+          <div className="skeleton" aria-hidden="true" />
+        </>
       ) : games.length ? (
-        <ul aria-label="Your games">
+        <ul aria-label="Your games" className="games-list">
           {games.map((game) => (
-            <li key={game.id}>
-              <Link to={`/rooms/${game.id}/game`}>Resume {game.name}</Link>{' '}
-              <span>
+            <li key={game.id} className="game-card">
+              <Link
+                className="button game-card__resume"
+                to={`/rooms/${game.id}/game`}
+              >
+                Resume {game.name}
+              </Link>
+              <span className="game-card__meta">
                 {game.status} · {game.difficulty} · Level{' '}
                 {game.startingLevel ?? '?'}
               </span>
-              {game.recap && <p>Previously on: {game.recap}</p>}
+              {game.recap && (
+                <p className="game-card__recap">Previously on: {game.recap}</p>
+              )}
             </li>
           ))}
         </ul>
       ) : (
         <p>You have no games yet.</p>
       )}
-      <p>
-        <Link to="/start">Start a solo game</Link>
-      </p>
-      <p>
-        <Link to="/characters/new">Build a character</Link>
-      </p>
-      <p>
-        Have an invite code? <Link to="/join">Join a table</Link>
-      </p>
+      <div className="page-links">
+        <p>
+          <Link className="button" to="/start">
+            Start a solo game
+          </Link>
+        </p>
+        <p>
+          <Link to="/characters/new">Build a character</Link>
+        </p>
+        <p>
+          Have an invite code? <Link to="/join">Join a table</Link>
+        </p>
+      </div>
     </section>
   );
 }

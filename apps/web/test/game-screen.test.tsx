@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { axe } from 'jest-axe';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Battlemap, ServerMessage } from '@game/schema';
@@ -140,6 +141,27 @@ describe('Game screen (live Room)', () => {
     seq = 0;
     gameStore.setCharacter(null);
     gameStore.setCombatState(initialGameState().combat);
+  });
+
+  it('skip link focuses the action textarea; composer precedes map controls in tab order', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    const skip = screen.getByRole('link', { name: 'Skip to your action' });
+    const firstFocusable = document
+      .querySelector('.game-screen')!
+      .querySelector('a[href], button, textarea, input, [tabindex="0"]');
+    expect(firstFocusable).toBe(skip);
+    await user.click(skip);
+    expect(screen.getByLabelText('Your action')).toHaveFocus();
+    await user.click(screen.getByRole('link', { name: 'Skip to story' }));
+    expect(document.getElementById('game-story')).toHaveFocus();
+    const textarea = screen.getByLabelText('Your action');
+    const endTurn = screen.getByRole('button', { name: 'End turn' });
+    expect(
+      textarea.compareDocumentPosition(endTurn) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('sends flat CombatCommand payloads the server schema accepts', async () => {
@@ -422,6 +444,55 @@ describe('Game screen (live Room)', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Decline' })).toBeInTheDocument();
+  });
+});
+
+describe('Game screen layout', () => {
+  beforeEach(() => {
+    http.fetch = async () =>
+      new Response(
+        JSON.stringify({ game: { recap: 'A short recap.', name: 'Fixture' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    HTMLCanvasElement.prototype.getContext = (() =>
+      new Proxy({}, { get: () => () => undefined })) as never;
+    hoisted.send.mockClear();
+    seq = 0;
+    gameStore.setCharacter(null);
+    gameStore.setCombatState(initialGameState().combat);
+  });
+
+  it('before combat: map placeholder explains how a fight starts; safety is a toolbar, panels are collapsed drawers; no nested main', async () => {
+    const { container } = mount();
+    expect(
+      await screen.findByText(/Combat starts when a fight breaks out/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('region', { name: 'Safety controls' }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: /X-card/ })).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Narration log' })).toBeVisible();
+    // The app shell owns the <main> landmark; the game screen must not add a second one.
+    expect(container.querySelector('main')).toBeNull();
+    for (const drawer of container.querySelectorAll('details.drawer'))
+      expect(drawer).not.toHaveAttribute('open');
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
+  it('in combat: the tracker and the map replace the placeholder, and axe stays clean', async () => {
+    const { container } = mount();
+    await screen.findByText(/Combat starts when a fight breaks out/);
+    await push('CombatTracker', tracker([HERO_ID, 'ent_goblin']));
+    expect(
+      screen.queryByText(/Combat starts when a fight breaks out/),
+    ).toBeNull();
+    expect(
+      screen.getByRole('list', { name: 'Initiative tracker' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('application', { name: 'Battle map' }),
+    ).toBeInTheDocument();
+    expect((await axe(container)).violations).toEqual([]);
   });
 });
 

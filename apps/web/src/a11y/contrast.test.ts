@@ -27,12 +27,25 @@ const textPairs: [string, string][] = [
   ['--danger', '--bg'],
   ['--success', '--bg'],
   ['--on-accent', '--accent'],
+  // Lantern palette: card and inset surfaces, verdigris secondary, status colors on cards.
+  ['--fg', '--surface-2'],
+  ['--fg-muted', '--surface-2'],
+  ['--accent', '--surface-2'],
+  ['--verdigris', '--bg'],
+  ['--verdigris', '--surface'],
+  ['--verdigris', '--surface-2'],
+  ['--danger', '--surface'],
+  ['--danger', '--surface-2'],
+  ['--success', '--surface'],
 ];
 const graphicPairs: [string, string][] = [
   ['--border-ui', '--bg'],
   ['--focus', '--bg'],
   ['--focus', '--surface'],
   ['--accent', '--bg'],
+  ['--border-ui', '--surface'],
+  ['--border-ui', '--surface-2'],
+  ['--focus', '--surface-2'],
 ];
 
 describe.each([
@@ -59,6 +72,14 @@ describe.each([
 test('contrast helper: black/white is 21:1 and a failing pair is detected', () => {
   expect(contrast('#000000', '#ffffff')).toBeCloseTo(21, 5);
   expect(contrast('#777777', '#888888')).toBeLessThan(TEXT);
+});
+
+test('dark is the default theme and light is a data-theme override', () => {
+  // :root shares its block with the dark theme, so an unthemed page renders dark.
+  expect(tokens).toMatch(/:root,\s*\[data-theme='dark'\]\s*\{/);
+  expect(vars("[data-theme='light']")['--bg']).not.toBe(
+    vars("[data-theme='dark']")['--bg'],
+  );
 });
 
 test('prefers-reduced-motion block disables transitions and animations', () => {

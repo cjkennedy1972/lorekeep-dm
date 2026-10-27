@@ -1,14 +1,40 @@
 .narration-log {
   position: relative;
-  border: 1px solid #81786d;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  background: #fffdf8;
-  color: #201d19;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow), var(--glow);
+}
+
+/* The story is the hero: serif, generous measure, quiet chrome. */
+.narration-log > h2 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.narration-log__entries p {
+  margin: 0;
+}
+.narration-log__turn
+  > p:not(.narration-log__label):not(.narration-log__fallback) {
+  font-family: var(--font-serif);
+  font-size: 1.1875rem;
+  line-height: 1.7;
+  max-width: 62ch;
 }
 
 .narration-log__entries {
-  max-height: 28rem;
+  min-height: 10rem;
+  max-height: var(--story-max-height, 28rem);
   overflow-y: auto;
   overscroll-behavior: contain;
   list-style: none;
@@ -18,7 +44,7 @@
 }
 
 .narration-log__entries:focus-visible {
-  outline: 3px solid #243b78;
+  outline: var(--focus-width) solid var(--focus);
   outline-offset: 3px;
 }
 
@@ -26,12 +52,41 @@
 .narration-log__error,
 .narration-log__pending {
   margin-block: 1rem;
-  padding: 0.75rem;
-  border-inline-start: 0.25rem solid #66543b;
+  padding: 0.25rem 0.25rem 0.25rem 1rem;
+  border-inline-start: 0.2rem solid var(--border-soft);
+}
+.narration-log__turn:last-child {
+  border-inline-start-color: var(--accent);
+}
+.narration-log__error,
+.narration-log__pending {
+  padding-block: 0.75rem;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+.narration-log__pending {
+  color: var(--fg-muted);
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+.narration-log__pending::after {
+  content: '';
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-inline-start: 0.5em;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ember-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ember-pulse {
+  50% {
+    opacity: 0.25;
+  }
 }
 
 .narration-log__error {
-  border-inline-start-color: #8b1d14;
+  border-inline-start-color: var(--danger);
 }
 
 .narration-log__pending {
@@ -41,9 +96,9 @@
 .narration-log__rewind {
   margin-block: 0.75rem;
   padding: 0.75rem;
-  border: 2px solid #66543b;
-  border-radius: 0.35rem;
-  background: #fff5d8;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface-2);
   font-weight: 700;
 }
 
@@ -68,12 +123,16 @@
 }
 
 .narration-log__latest {
+  align-self: center;
   min-height: 2.75rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .narration-log__entries {
     scroll-behavior: auto;
+  }
+  .narration-log__pending::after {
+    animation: none;
   }
 }
 
@@ -92,7 +151,17 @@
 
 .narration-log__fallback {
   padding: 0.5rem 0.75rem;
-  border-inline-start: 0.25rem solid #8b6b22;
-  background: #fff5d8;
+  border-inline-start: 0.25rem solid var(--accent);
+  background: var(--surface-2);
   font-weight: 600;
+}
+
+.narration-log__entries:empty::before {
+  content: 'Your story begins with your first action. Choose one below, or describe what you do.';
+  display: block;
+  padding: var(--space-4) var(--space-2);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.1875rem;
+  color: var(--fg-muted);
 }
