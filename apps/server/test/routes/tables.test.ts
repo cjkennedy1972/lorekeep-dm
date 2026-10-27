@@ -17,9 +17,12 @@ function characterWithCondition(source: string) {
 }
 
 function registerCreateTableRoute(inputGate: InputGate, calls: string[]) {
+  let createdCharacter = characterWithCondition('a giant spider bite');
   const db = {
-    query: async (sql: string) => {
+    query: async (sql: string, params?: unknown[]) => {
       calls.push(sql);
+      if (/INSERT INTO sessions/.test(sql) && typeof params?.[8] === 'string')
+        createdCharacter = JSON.parse(params[8]) as typeof createdCharacter;
       if (/UPDATE auth_sessions/.test(sql))
         return {
           rows: [{ account_id: 'acc', token_hash: 'h' }],
@@ -37,7 +40,7 @@ function registerCreateTableRoute(inputGate: InputGate, calls: string[]) {
               adventure_id: 'adventure:01-hollow-under-marrowfell',
               difficulty: 'moderate',
               catalog_version: 'test',
-              character: characterWithCondition('a giant spider bite'),
+              character: createdCharacter,
             },
           ],
           rowCount: 1,
@@ -180,6 +183,28 @@ describe('solo table lifecycle routes', () => {
     expect(calls.some((sql) => /INSERT INTO sessions/.test(sql))).toBe(false);
     await app.close();
   });
+
+  it.each(['class:fighter', 'class:wizard'])(
+    'creates a %s table from a quickBuild character, replacing its client ID',
+    async (classId) => {
+      const calls: string[] = [];
+      const app = registerCreateTableRoute(allowInputGate, calls);
+      const character = quickBuild(loadCatalog(), classId, 0x28, 1).character;
+      expect(character.id).not.toMatch(/^[0-9a-f-]{36}$/i);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/tables',
+        headers: { cookie: `sid=${token}` },
+        payload: { name: 'A table', character },
+      });
+      expect(response.statusCode).toBe(201);
+      expect(response.json().game.character.classId).toBe(classId);
+      expect(response.json().game.character.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      await app.close();
+    },
+  );
 
   it('returns safe Zod paths and codes for invalid character fields', async () => {
     const calls: string[] = [];
