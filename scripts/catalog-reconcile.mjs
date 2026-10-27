@@ -447,7 +447,11 @@ const diff = {
 const totalMissing = Object.values(summary).reduce((n, s) => n + s.missing, 0);
 // Spellbook is intentionally retained: the Wizard's class starting-equipment text names it,
 // although the SRD equipment index has no corresponding gear-table entry.
-const reviewedExtras = { 'equipment:gear-and-tools': ['Spellbook'] };
+const reviewedExtras = {
+  'equipment:gear-and-tools': ['Spellbook'],
+  // Adventure #1's lookout is a slightly tougher authored variant of the SRD goblin warrior.
+  monster: ['Goblin Lookout'],
+};
 const unexpectedExtras = Object.entries(kinds).flatMap(([kind, value]) =>
   value.extra
     .filter((name) => !(reviewedExtras[kind] ?? []).includes(name))
