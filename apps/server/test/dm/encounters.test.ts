@@ -45,7 +45,13 @@ describe('authored encounter resolution (ADR-038)', () => {
   });
   it('rejects an encounter that is active and invalid authored roster/map data', () => {
     expect(
-      resolveEncounter(adventure, sceneId, lookouts, new Set(), new Set([lookouts])),
+      resolveEncounter(
+        adventure,
+        sceneId,
+        lookouts,
+        new Set(),
+        new Set([lookouts]),
+      ),
     ).toEqual({ ok: false, code: 'ENCOUNTER_ALREADY_USED' });
     const invalidRoster = {
       ...adventure,
@@ -61,7 +67,9 @@ describe('authored encounter resolution (ADR-038)', () => {
     const invalidMap = {
       ...adventure,
       encounters: adventure.encounters.map((encounter) =>
-        encounter.id === lookouts ? { ...encounter, mapId: 'missing-map' } : encounter,
+        encounter.id === lookouts
+          ? { ...encounter, mapId: 'missing-map' }
+          : encounter,
       ),
     };
     expect(resolveEncounter(invalidMap, sceneId, lookouts, new Set())).toEqual({
@@ -95,6 +103,9 @@ describe('authored encounter resolution (ADR-038)', () => {
     expect(offeredEncounters(adventure, sceneId, new Set([lookouts]))).toEqual(
       [],
     );
+    expect(
+      offeredEncounters(adventure, sceneId, new Set(), new Set([lookouts])),
+    ).toEqual([]);
     expect(
       offeredEncounters(adventure, 'scene-marowfell-well', new Set()),
     ).toEqual([]);

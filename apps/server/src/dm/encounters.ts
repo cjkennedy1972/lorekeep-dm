@@ -75,6 +75,10 @@ export function offeredEncounters(
     const encounter = adventure.encounters.find(
       (candidate) => candidate.id === id,
     );
-    return !!encounter && (encounter.repeatable || !resolvedSet.has(id));
+    return (
+      !!encounter &&
+      !activeEncounterIds.has(id) &&
+      (encounter.repeatable || !resolvedSet.has(id))
+    );
   });
 }
