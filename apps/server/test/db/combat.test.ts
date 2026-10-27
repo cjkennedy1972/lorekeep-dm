@@ -580,6 +580,11 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       expect(committed.gameState.resolvedEncounters).toContain(key);
       expect(committed.gameState.combatRoom?.map).toBeDefined();
       expect(
+        committed.gameState.combatRoom?.entities.find(
+          (entity) => entity.team === 'enemies',
+        )?.pos,
+      ).toEqual({ x: 24, y: 5 });
+      expect(
         validRequests[0]?.messages.map((message) => message.content).join(' '),
       ).toContain(key);
       expect(

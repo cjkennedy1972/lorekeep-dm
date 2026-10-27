@@ -889,10 +889,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             engineCall = {
               name: 'start_combat',
               args: {
-                enemies: resolved.enemies.map(({ monsterId, count }) => ({
-                  monsterId,
-                  count,
-                })),
+                enemies: resolved.enemies.map(
+                  ({ monsterId, count, spawnRef }) => ({
+                    monsterId,
+                    count,
+                    spawnRef,
+                  }),
+                ),
                 ambushSide: resolved.ambushSide,
               },
             };

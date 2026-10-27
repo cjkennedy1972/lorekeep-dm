@@ -79,6 +79,17 @@ describe('authored encounter resolution (ADR-038)', () => {
       ok: false,
       code: 'encounter-roster-invalid',
     });
+    const invalidMarker = {
+      ...adventure,
+      encounters: adventure.encounters.map((encounter) =>
+        encounter.id === lookouts
+          ? { ...encounter, enemySpawnMarkerId: 'missing-marker' }
+          : encounter,
+      ),
+    };
+    expect(
+      resolveEncounter(invalidMarker, sceneId, lookouts, new Set()),
+    ).toEqual({ ok: false, code: 'encounter-roster-invalid' });
   });
   it('allows only authored repeatable encounters to restart after resolution', () => {
     const repeatable = {
@@ -157,6 +168,8 @@ describe('combat-start rejection accounting', () => {
         .withdrawn,
     ).toBe(true);
     expect(budget.isWithdrawn('session-a', sceneId, 700)).toBe(true);
+    expect(budget.isWithdrawn('session-a', sceneId, 30_700)).toBe(true);
+    expect(budget.isWithdrawn('session-a', sceneId, 61_700)).toBe(true);
     expect(budget.isWithdrawn('session-b', sceneId, 700)).toBe(false);
     expect(budget.isWithdrawn('session-a', 'scene-other', 700)).toBe(false);
   });

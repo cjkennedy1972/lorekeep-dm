@@ -45,10 +45,16 @@ export function resolveEncounter(
     return { ok: false, code: 'encounter-not-in-scene' };
   // Fail closed if unvalidated adventure data reaches a live turn. Adventure load is
   // responsible for catalog validation; this guards the server-to-engine contract.
+  const map = adventure.maps.find(
+    (candidate) => candidate.mapId === encounter.mapId,
+  );
   if (
     !encounter.monsterIds.length ||
     encounter.monsterIds.some((id) => !/^monster:[a-z0-9-]+$/u.test(id)) ||
-    !adventure.maps.some((map) => map.mapId === encounter.mapId)
+    !map ||
+    !map.markers.some(
+      (marker) => marker.markerId === encounter.enemySpawnMarkerId,
+    )
   )
     return { ok: false, code: 'encounter-roster-invalid' };
   // Authored rosters list one creature per entry (there is no authored count field).
@@ -188,7 +194,6 @@ export class EncounterStartRejectionBudget {
       entry.rejectedAt = entry.rejectedAt.filter(
         (at) => now - at < this.windowMs,
       );
-      entry.withdrawn = entry.rejectedAt.length > this.limit;
       if (now - entry.touchedAt > this.maxAgeMs) this.entries.delete(key);
       else if (entry.turns.size > 256) {
         for (const turnId of [...entry.turns.keys()].slice(
