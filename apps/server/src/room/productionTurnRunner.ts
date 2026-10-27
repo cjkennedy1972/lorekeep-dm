@@ -873,7 +873,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const emittedSceneEvents: unknown[] = [];
     const attemptEvents: DMTurnEvent[] = [];
     let refused = false;
+    const preTurnState = structuredClone(state);
     const attempt = async (attemptTier: ContentTier) => {
+      context.state = structuredClone(preTurnState);
       refused = false;
       const narration: DMTurnEvent[] = [];
       const result = await runTurn({
