@@ -10,40 +10,45 @@ Exploration prompts currently omit `start_combat` (ADR-022 §2.3; `apps/server/s
 
 ## Decision
 
-Offer the model a constrained `start_combat` affordance during exploration only when the current scene declares one or more encounters. The model selects an encounter by its authored key; it does not author enemies, counts, IDs, positions, or map details. The server resolves that key from adventure data, validates scene membership and unresolved status, then invokes the existing start-combat executor using the authoritative roster and spawn/map data. No lexical inference or server guess from narration/player prose starts combat.
+Offer the model a constrained `start_combat` affordance during exploration only when the current scene declares one or more encounters. The model supplies only an authored encounter key. It cannot choose ambush side, initiative modifiers, monster IDs/counts, positions, or map details. The server resolves the key from adventure data, validates scene membership and use status, then invokes the existing start-combat executor using the authoritative roster and spawn/map data. No lexical inference or server guess from narration/player prose starts combat.
 
-The prompt includes each declared encounter's key and a one-line hook derived from authored scene data; it excludes entity UUIDs and secrets. It explicitly says hostile action/combat narration must be preceded by a successful `start_combat` call. If the model narrates combat without a call, preserve that narration behavior but emit an observability event; do not infer combat state.
+A call is valid only in a turn whose accepted player action the model judges hostile, or when the encounter's authored data declares a scene-entry trigger. The server does not judge player intent. Ambush side and initiative modifiers come only from encounter-authored data (default: none). The model must not supply `ambushSide`. The prompt includes each eligible encounter's key and a one-line hook derived from authored scene data; it excludes entity UUIDs and secrets. Hostile action/combat narration must be preceded by a successful call. If the model narrates combat without one, preserve narration behavior but emit an observability event; do not infer combat state.
 
-On success, the existing combat bootstrap publishes map/combat state. The same turn's narration describes the opening. Subsequent resolved combat turns retain the single-narration rule (ADR-033).
+Roster and combat parameters are authoritative authored data. The model cannot alter monster IDs or counts. Solo scaling applies only when adventure data declares it; otherwise use the authored roster as-is. For scenes with multiple encounters, the model may select any unresolved encounter key declared on the current scene, one per call.
+
+An encounter becomes `resolved` whenever the engine ends its combat, regardless of victory, flee, or defeat. It cannot be started again unless its authored data has `repeatable: true` (none do in Adventure 01). Starting an already-active or resolved encounter is rejected with closed code `ENCOUNTER_ALREADY_USED`. State is per session. XP and loot are awarded only through existing resolution paths, never at combat start. A successful start commits atomically with the turn (event-before-narration per ADR-022). If the output gate holds the opening narration, show the standard holding notice and an engine-generated mechanical opening summary (combatants, initiative order, and positions from server data, with no model text); combat remains live because rollback would desynchronize persisted engine events.
 
 ## Data contract and validation
 
-1. Change the `start_combat` tool schema to require `encounterId: string` (the exact field name and value space of adventure `encounters[].id`, e.g. `encounter-e2-lookouts`). Remove model-supplied `enemies`, `monsterId`, `count`, `spawnRef`, and `ambushSide` from this transition tool. Existing executor input is constructed server-side.
-2. Scene ownership is expressed by `scenes[].encounterIds`; catalog data is `encounters[].id`, `monsterIds`, `mapId`, `partySpawnMarkerId`, and `enemySpawnMarkerId`. Preserve these authored field names. Resolve every `monsterIds` entry and its roster/count semantics via the adventure/catalog adapter; do not reinterpret a scene key as a monster ID.
-3. Reconcile namespaces in that adapter: map adventure IDs (`monster:<slug>`) to canonical engine catalog IDs (`srd:monster/<slug>`) through an explicit, validated mapping. Do not string-rewrite unknown values or silently fall back. Missing/ambiguous mapping rejects with `encounter-roster-invalid`; content validation should catch it before play.
-4. Validate the current `sceneId`, that `encounterId` is listed in its `encounterIds`, that it resolves in the active adventure, and that it has not already been resolved in this session. Rejections do not mutate game state. Closed rejection codes: `encounter-not-in-scene`, `unknown-encounter`, `encounter-already-resolved`, `encounter-roster-invalid`; existing engine errors still apply after resolution. Serialize validation and executor invocation with the Room's authoritative command path to prevent duplicate starts.
-5. Mark an encounter resolved only after the executor succeeds, durably with session state/replay semantics. Retry/idempotency must return the original successful result rather than create duplicate combatants.
+1. `start_combat` requires `encounterId: string`, exactly an adventure `encounters[].id` (e.g. `encounter-e2-lookouts`). Remove model-supplied `enemies`, `monsterId`, `count`, `spawnRef`, and `ambushSide`; construct executor input server-side.
+2. Scene ownership uses `scenes[].encounterIds`; encounter data uses `encounters[].id`, `monsterIds`, `mapId`, `partySpawnMarkerId`, and `enemySpawnMarkerId`. Preserve these authored field names. Resolve roster/count semantics through the adventure/catalog adapter; never interpret a scene key as a monster ID.
+3. Map adventure IDs (`monster:<slug>`) to canonical engine catalog IDs (`srd:monster/<slug>`) through a build-time validated table in the adventure data loader. Validate every encounter roster against the catalog at load; a missing mapping fails adventure load, not a live turn. This validation and its test are implementation scope. Do not string-rewrite unknown values or silently fall back.
+4. Validate current `sceneId`, scene membership, encounter existence, trigger eligibility, and per-session active/resolved state. Serialize validation and executor invocation with the Room's authoritative command path. Rejections do not mutate game state. Closed errors include `encounter-not-in-scene`, `unknown-encounter`, `ENCOUNTER_ALREADY_USED`, and `encounter-roster-invalid`; existing engine errors still apply after resolution.
+5. Allow at most one `start_combat` call per turn; a second is rejected and counts toward `MAX_TOOL_CALLS`. Allow at most one successful start per encounter per session. Rejected calls are logged and counted per session. `CombatStartRejected` records the rejected encounter ID only if it matches `^[a-z0-9:_-]{1,64}$`; otherwise record a hash. Never record player text.
+6. A rejected start returns a closed error to the model, which must continue in prose without combat. The player sees no technical error details.
 
-## Prompt, moderation, and observability
-
-The exploration prompt offers the tool only for declared unresolved encounters and includes `{encounterId, hook}` for each; hooks are authored, concise, and contain no UUIDs or hidden/private facts. Player text remains quoted untrusted input under ADR-007. No new free-text field or authority path is introduced: an encounter key is a lookup into server-owned data, not permission to start arbitrary combat. Existing output moderation still applies to narration; hostile action never bypasses server validation.
+## Moderation and observability
 
 Record structured events for `CombatStartToolOffered`, `CombatStartToolCalled`, `CombatStartRejected`, and `CombatNarratedWithoutStart`. Include `activeMode`, `sceneId`, `encounterId` when known, and rejection code where applicable. Record offered tool names and redacted arguments (for this tool, key only; never prompt text, UUIDs, roster secrets, or raw model reasoning). Apply existing retention/access controls; telemetry is diagnostic, not an alternate state transition. The narrated-without-start event is derived from turn/tool outcome, not a lexical content classifier.
 
-## Rollout and verification
+## Rollout, acceptance criteria, and verification
 
 Ship schema, prompt, validation, and telemetry together behind a server feature flag defaulting OFF. Enable in development, verify content mapping and event traces, then canary a small set of sessions; monitor start success/rejection rates and narrated-without-start events before default-on. Roll back by disabling the affordance; existing combat remains unchanged.
 
-Required automated route/unit coverage uses a stub model that calls `start_combat` with: a valid current-scene key (combat starts, authoritative roster/map used); an invalid key; a valid key already resolved; and a key declared only by another scene. Also verify tool absence when no encounter is declared, atomic duplicate-call behavior, namespace mapping failures, and that narration without a call emits observability but starts no combat.
+The implementation PR is accepted only when it demonstrates all of the following:
 
-Live smoke checklist: enter a scene with a declared encounter; confirm offered schema/context contains only key and hook; trigger a hostile opening; confirm map/initiative/combat panel appears from executor state; confirm one opening narration and no duplicate combat; attempt a cross-scene/used key and confirm rejection/no state change; narrate hostility without a tool call and confirm no combat plus diagnostic event; inspect logs for redaction.
+- Route/unit coverage for valid current-scene keys (authoritative roster/map), invalid and cross-scene keys, already-active/resolved keys, hostile-action and authored scene-entry eligibility, and no tool when no encounter is declared.
+- Atomic duplicate-call handling; one call per turn, MAX_TOOL_CALLS accounting, per-session rejection counts/logging and redaction; rejection leaves state unchanged and returns a closed model error with no technical player-facing error.
+- Authored repeatable/resolved behavior across victory, flee, and defeat; XP/loot only through existing resolution; no model-supplied roster, counts, ambush, or initiative overrides; authored solo scaling only.
+- Build-time monster-ID mapping and roster/catalog validation, including a test proving a missing mapping fails adventure load.
+- Moderation-gated opening behavior: held narration shows the standard notice plus engine-generated mechanical opening summary, with combat still live.
+- Live smoke: on Adventure 01, a simulated player reaches the map within five provoke attempts; confirm map/initiative/combat state comes from the executor, opening narration is not duplicated, and logs contain no player text or secrets.
 
-## Alternatives and open questions
+## Alternatives
 
 - Keep the existing freeform roster tool in exploration: rejected because it invites hallucinated IDs/counts and bypasses authored encounter constraints.
 - Deterministic lexical or prose trigger: rejected because it is ambiguous, spoofable by quoted/player text, and cannot establish encounter intent safely.
-- Open questions: should an encounter be marked resolved permanently or become available again after `end_combat`/retreat? What is the canonical adapter for adventure `monster:` IDs to SRD catalog IDs, and can future encounter data express counts explicitly? Which authored field supplies the one-line hook without revealing hidden facts?
 
 ## Verification record
 
-Docs-only decision. Source inspection: ADR-022 §2.3, ADR-007, ADR-018; adventure 01 `scenes[].encounterIds` and `encounters[]`; investigation `combat-start-investigation.md`. Prettier check and PR status are recorded with the implementation review; live behavior is not verified by this ADR.
+Docs-only decision. Source inspection: ADR-022 §2.3, ADR-007, ADR-018; Adventure 01 `scenes[].encounterIds` and `encounters[]`; investigation `combat-start-investigation.md`. Prettier check and PR status are recorded with the implementation review; live behavior is not verified by this ADR.
