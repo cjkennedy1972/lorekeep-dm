@@ -344,6 +344,37 @@ function combatStartDm(refuseOnCall?: number): {
   return { adapter, calls: () => calls };
 }
 
+function combatMoveRetryDm(refuseFirstAttempt: boolean): LlmAdapter {
+  let calls = 0;
+  return {
+    capabilities: () => ({
+      streaming: true,
+      nativeTools: true,
+      jsonSchema: true,
+    }),
+    probe: async () => true,
+    async *complete() {
+      calls += 1;
+      if (refuseFirstAttempt && calls === 2)
+        throw new LlmEndpointError('endpoint-refusal', 'refused');
+      if (calls === 1 || (refuseFirstAttempt && calls === 3)) {
+        yield {
+          type: 'tool-call',
+          id: `move-${calls}`,
+          name: 'move_to',
+          arguments: {
+            entityId: 'ent_aria',
+            targetRef: 'mk_entrance',
+            mode: 'within',
+          },
+        } as LlmChunk;
+        return;
+      }
+      yield { type: 'text', delta: 'Aria moves into position.' };
+    },
+  };
+}
+
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';
   process.env.LLM_FIXTURE_MODE = 'strict';
@@ -906,6 +937,68 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       client.close();
     }
   }, 30_000);
+
+  it('discards combat tool state from a refused attempt before retrying', async () => {
+    const combat = placed(bootstrapped().state, {
+      ent_aria: { x: 7, y: 2 },
+      'ent_goblin-minion_1': { x: 8, y: 2 },
+      'ent_goblin-minion_2': { x: 13, y: 16 },
+    });
+    const game = (account: string) => ({
+      ...preCombatGame(),
+      gameEngine: {
+        ...preCombatGame().gameEngine,
+        actors: { ent_aria: hero },
+      },
+      characters: { [account]: hero },
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: combat,
+    });
+    const runOnce = async (adapter: LlmAdapter, label: string) => {
+      stack = await Stack.boot(label, { adapter, endpointAllowsMature: true });
+      const user = await newUser();
+      const table = await seedTable(stack, user, game);
+      await db.query(
+        'UPDATE sessions SET moderation_verified=true, endpoint_allows_mature=true WHERE id=$1',
+        [table],
+      );
+      try {
+        const runner = new ProductionSoloTurnRunner(
+          db,
+          undefined,
+          'strict',
+          'unused.ndjson',
+          adapter,
+          true,
+          true,
+        );
+        const result = await runner.run(
+          {
+            sessionId: table,
+            accountId: user.id,
+            actionId: randomUUID(),
+            text: 'Move to the entrance.',
+            state: game(user.id),
+          },
+          () => {},
+        );
+        const state = result.state as {
+          combatRoom?: RoomCombatState;
+          gameEngine?: unknown;
+        };
+        return { combatRoom: state.combatRoom, gameEngine: state.gameEngine };
+      } finally {
+        await stack?.stop();
+        stack = undefined;
+      }
+    };
+    const clean = await runOnce(combatMoveRetryDm(false), 'clean-combat-move');
+    const retried = await runOnce(
+      combatMoveRetryDm(true),
+      'refused-combat-move',
+    );
+    expect(retried).toEqual(clean);
+  }, 60_000);
 
   it('keeps character keys as account ids through a committed start without refusal', async () => {
     const { adapter, calls } = combatStartDm();
