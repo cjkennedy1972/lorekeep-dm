@@ -174,10 +174,11 @@ export function narrationLogReducer(
       };
     }
     case 'Error': {
-      // Errors are per-seat, so they never enter the shared story log. A failed turn only ends the
-      // thinking status; the sender sees the failure beside the action box (turnFailureNotice).
-      // The round path names the round here, not the turn's action id, so a failed turn clears
-      // whichever turn is pending: the server runs one turn at a time.
+      // Turn failures are broadcast to every seat but never enter the shared story log. A failed
+      // turn only ends the shared thinking status. Only the seat whose own action failed gets its
+      // text back and a Retry (Game.tsx matches the action or round id). The round path names the
+      // round here, not the turn's action id, so a failed turn clears whichever turn is pending:
+      // the server runs one turn at a time.
       const code = String(payload.code ?? 'ERROR');
       const actionId =
         typeof payload.actionId === 'string' ? payload.actionId : undefined;

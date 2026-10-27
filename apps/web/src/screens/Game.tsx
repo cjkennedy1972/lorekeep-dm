@@ -369,10 +369,17 @@ export function Game() {
           return;
         }
         if (isTurnFailure(String(payload.code ?? ''))) {
-          // Errors are per-seat: only the sender sees the failure and gets their text back.
+          // The server broadcasts a turn failure to every seat. Only the seat whose own action
+          // failed gets its text back. A round failure names the round, so it also matches when
+          // that round is the one this seat submitted into; any other failure leaves this seat alone.
           const mine = pendingActionRef.current;
-          updatePendingAction(() => null);
-          if (mine) {
+          const round = submittedRound.current;
+          const ownFailure =
+            !!mine &&
+            (actionId === mine.id ||
+              (round?.actionId === mine.id && actionId === round.roundId));
+          if (ownFailure) {
+            updatePendingAction(() => null);
             failedActionText.current = mine.text;
             setActionDraft(mine.text);
             setTurnFailure(
@@ -466,6 +473,19 @@ export function Game() {
     live.privateRoundSubmission,
     seededAt,
   );
+  // The server clears the private submission on RoundResolved, before the round's turn runs and
+  // can fail. Keep the round this seat submitted into so that failure can still be matched.
+  const submittedRound = useRef<{ actionId: string; roundId: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    const submission = live.privateRoundSubmission;
+    if (submission)
+      submittedRound.current = {
+        actionId: submission.actionId,
+        roundId: submission.roundId,
+      };
+  }, [live.privateRoundSubmission]);
   useEffect(() => {
     if (!room?.gameState) return;
     const gs = asRecord(room.gameState);
