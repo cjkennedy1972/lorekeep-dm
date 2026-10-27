@@ -59,6 +59,13 @@ describe('DM prompt builder', () => {
         },
       },
       offeredEncounterKeys: ['encounter-e2-lookouts'],
+      offeredEncounters: [
+        {
+          key: 'encounter-e2-lookouts',
+          hook: 'Lookouts wait.',
+          startTrigger: 'hostile-action',
+        },
+      ],
     });
     const toolList = JSON.parse(
       available.blocks[0].split('TOOLS\n')[1].split('\n\n')[0],
@@ -71,13 +78,28 @@ describe('DM prompt builder', () => {
       encounterId: expect.any(Object),
     });
     expect(available.blocks[2]).toContain(
-      'encounter-e2-lookouts — The Old Watchtower',
+      "encounter-e2-lookouts — Lookouts wait.; call only if the player's accepted action is hostile",
     );
     expect(available.blocks[2]).toContain(
-      'If a hostile action begins, call start_combat with the encounterId before narrating the fight. Never narrate a combat resolution without it. Do not mention tools, ids, or rules text to the player.',
+      'Never narrate a combat resolution without a successful start_combat call. Do not mention tools, ids, or rules text to the player.',
     );
     expect(available.blocks[2]).not.toMatch(/monster:|srd:monster\//);
     expect(available.blocks[2]).not.toContain('monsterIds');
+
+    const entryPrompt = buildPrompt({
+      ...input(),
+      offeredEncounterKeys: ['entry-encounter'],
+      offeredEncounters: [
+        {
+          key: 'entry-encounter',
+          hook: 'A door opens.',
+          startTrigger: 'scene-entry',
+        },
+      ],
+    });
+    expect(entryPrompt.blocks[2]).toContain(
+      'entry-encounter — A door opens.; starts on scene entry: call start_combat on your first turn in this scene',
+    );
 
     const unavailable = buildPrompt(input());
     const unavailableTools = JSON.parse(

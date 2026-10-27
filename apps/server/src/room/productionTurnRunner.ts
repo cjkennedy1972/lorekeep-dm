@@ -346,6 +346,27 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       adventure?.ok && initialSceneId
         ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
         : [];
+    const offeredEncounterPrompt =
+      adventure?.ok && initialSceneId
+        ? offeredEncounterKeys.flatMap((key) => {
+            const encounter = adventure.adventure.encounters.find(
+              (item) => item.id === key,
+            );
+            if (!encounter) return [];
+            return [
+              {
+                key,
+                hook:
+                  currentScene?.text
+                    .split(/(?<=[.!?])\s+/u)[0]
+                    ?.slice(0, 240) ??
+                  currentScene?.title ??
+                  'Current scene',
+                startTrigger: encounter.startTrigger,
+              },
+            ];
+          })
+        : [];
     const nextScenes = currentScene
       ? currentScene.nextSceneIds.flatMap((id) => {
           const scene = adventure!.ok
@@ -1066,6 +1087,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               ? 'combat'
               : 'exploration',
           offeredEncounterKeys,
+          offeredEncounters: offeredEncounterPrompt,
           turn: {
             state: {
               characters: Object.values(actors).map((actor) =>

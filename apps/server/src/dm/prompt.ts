@@ -54,6 +54,12 @@ export interface BuildPromptInput {
   toolSchemas?: Readonly<Record<string, unknown>>;
   /** Authored encounter keys eligible to start in this exploration scene. */
   offeredEncounterKeys?: readonly string[];
+  /** Authored, one-line scene hooks and trigger policy for offered encounters. */
+  offeredEncounters?: readonly {
+    key: string;
+    hook: string;
+    startTrigger: 'hostile-action' | 'scene-entry';
+  }[];
 }
 export interface PromptResult {
   blocks: [string, string, string, string];
@@ -246,14 +252,21 @@ function makeDynamic(
     `CURRENT PLAYER\n${quoteData('PLAYER', input.turn.playerText)}`,
     input.activeMode !== 'combat' &&
     !input.readOnlyTools &&
-    input.offeredEncounterKeys?.length
+    (input.offeredEncounters?.length || input.offeredEncounterKeys?.length)
       ? [
           'Encounters you may start from this scene:',
-          ...input.offeredEncounterKeys.map(
-            (key) =>
-              `${key} — ${input.session.currentScene?.title ?? 'Current scene'}`,
+          ...(
+            input.offeredEncounters ??
+            (input.offeredEncounterKeys ?? []).map((key) => ({
+              key,
+              hook: input.session.currentScene?.title ?? 'Current scene',
+              startTrigger: 'hostile-action' as const,
+            }))
+          ).map(
+            ({ key, hook, startTrigger }) =>
+              `${key} — ${hook}; ${startTrigger === 'scene-entry' ? 'starts on scene entry: call start_combat on your first turn in this scene' : "call only if the player's accepted action is hostile"}`,
           ),
-          'If a hostile action begins, call start_combat with the encounterId before narrating the fight. Never narrate a combat resolution without it. Do not mention tools, ids, or rules text to the player.',
+          'Never narrate a combat resolution without a successful start_combat call. Do not mention tools, ids, or rules text to the player.',
         ].join('\n')
       : '',
   ]
