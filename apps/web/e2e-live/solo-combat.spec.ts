@@ -68,7 +68,12 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
       );
       continue;
     }
-    if (!(await page.getByText(`Active combatant: ${heroId}`).isVisible())) {
+    // The line shows the display name; the entity id rides along in data-entity-id.
+    if (
+      !(await page
+        .locator(`.game-active[data-entity-id="${heroId}"]`)
+        .isVisible())
+    ) {
       await page.waitForTimeout(150);
       continue;
     }
@@ -93,7 +98,7 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
         const foes = [
           ...document.querySelectorAll('[aria-label="Combat tokens"] li'),
         ]
-          .filter((t) => /goblin/.test(t.textContent ?? ''))
+          .filter((t) => /goblin/i.test(t.textContent ?? ''))
           .map(at);
         let best = -1;
         let bestD = Infinity;
