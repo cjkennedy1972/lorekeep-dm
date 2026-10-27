@@ -74,19 +74,8 @@ export const DMToolArgsSchema = {
     source: z.string().min(3).max(80),
     duration,
   }),
-  start_combat: strict({
-    enemies: z
-      .array(
-        strict({
-          monsterId: catalog('monster'),
-          count: z.int().min(1).max(8),
-          spawnRef: targetRef.optional(),
-        }),
-      )
-      .min(1)
-      .max(12),
-    ambushSide: z.enum(['party', 'enemies', 'none']).optional(),
-  }),
+  // Model input selects an authored encounter; the server resolves its roster.
+  start_combat: StartCombatEncounterArgsSchema,
   call_for_rest: strict({
     kind: z.enum(['short', 'long']),
     hitDiceToSpend: z.int().min(0).max(20).optional(),

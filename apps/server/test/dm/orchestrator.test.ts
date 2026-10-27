@@ -660,9 +660,7 @@ describe('DM orchestrator', () => {
     const h = setup(
       [
         [
-          call('c1', 'start_combat', {
-            enemies: [{ monsterId: 'srd:monster/goblin', count: 1 }],
-          }),
+          call('c1', 'start_combat', { encounterId: 'encounter-e2-lookouts' }),
           { type: 'text', delta: 'premature prose' },
         ],
         [{ type: 'text', delta: narration }],

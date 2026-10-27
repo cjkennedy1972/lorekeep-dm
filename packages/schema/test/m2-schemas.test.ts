@@ -45,7 +45,7 @@ const valid = {
     source: 'Help',
     duration: 'until-removed',
   },
-  start_combat: { enemies: [{ monsterId: 'srd:monster/goblin', count: 2 }] },
+  start_combat: { encounterId: 'encounter-main' },
   end_combat: { outcome: 'party-victory' },
   move_to: { entityId: 'ent_ayla', targetRef: 'mk_altar', mode: 'cover' },
   suggest_area_target: {
@@ -212,7 +212,8 @@ test('ADR-038 model-facing start_combat accepts only authored encounter keys', (
       .success,
   ).toBe(false);
   expect(
-    StartCombatEncounterArgsSchema.safeParse({
+    DMToolArgsSchema.start_combat.safeParse({
+      encounterId: 'encounter-e2-lookouts',
       enemies: [{ monsterId: 'srd:monster/goblin', count: 2 }],
     }).success,
   ).toBe(false);
