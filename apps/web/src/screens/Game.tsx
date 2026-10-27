@@ -326,14 +326,23 @@ export function Game() {
           );
       }
       if (message.type === 'ClarificationRequested') {
+        // Broadcast to every seat, but the question belongs to one seat's action: only that seat
+        // shows the reply prompt. Other seats ignore it.
         const payload = asRecord(message.payload);
         const actionId = String(payload.actionId ?? '');
-        setClarification({
-          actionId,
-          question: String(payload.question ?? ''),
-        });
-        updatePendingAction((current) =>
-          current && current.id === actionId ? null : current,
+        if (pendingActionRef.current?.id === actionId) {
+          setClarification({
+            actionId,
+            question: String(payload.question ?? ''),
+          });
+          updatePendingAction(() => null);
+        }
+      }
+      if (message.type === 'Error' || message.type === 'NarrationCompleted') {
+        // The prompt ends when the action it asked about ends. A state sync never ends it.
+        const actionId = String(asRecord(message.payload).actionId ?? '');
+        setClarification((current) =>
+          current && current.actionId === actionId ? null : current,
         );
       }
       if (message.type === 'NarrationCompleted') {
