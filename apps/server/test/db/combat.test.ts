@@ -1408,13 +1408,17 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
   }, 60_000);
 
   it('keeps character keys as account ids through a committed start without refusal', async () => {
-    const { adapter, calls } = combatStartDm();
+    const requests: LlmRequest[] = [];
     stack = await Stack.boot('control-character-keys', {
-      adapter,
+      adapter: authoredEncounterDm(requests, 'encounter-e2-lookouts'),
       endpointAllowsMature: true,
+      storyCombatEnabled: true,
     });
     const user = await newUser();
-    const table = await seedTable(stack, user, preCombat);
+    const table = await seedTable(stack, user, preCombat, {
+      id: 'adventure:01-hollow-under-marrowfell',
+      sceneId: 'scene-warren-gallery',
+    });
     await db.query(
       'UPDATE sessions SET moderation_verified=true, endpoint_allows_mature=true WHERE id=$1',
       [table],
@@ -1425,7 +1429,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       client.say('I advance toward the lookouts.');
       await client.until((m) => m.type === 'CombatTracker', from, 20_000);
       await client.until((m) => m.type === 'NarrationCompleted', from, 20_000);
-      expect(calls()).toBe(2);
+      expect(requests).toHaveLength(2);
       const { gameState } = await savedGame(table);
       expect(Object.keys(gameState.characters ?? {})).toEqual([user.id]);
     } finally {
