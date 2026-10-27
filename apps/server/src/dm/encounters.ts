@@ -4,7 +4,8 @@ import type { Adventure } from '@game/schema';
 export type EncounterErrorCode =
   | 'ENCOUNTER_ALREADY_USED'
   | 'unknown-encounter'
-  | 'encounter-not-in-scene';
+  | 'encounter-not-in-scene'
+  | 'encounter-roster-invalid';
 
 export interface ResolvedEnemy {
   monsterId: string;
@@ -27,17 +28,29 @@ export function resolveEncounter(
   sceneId: string,
   encounterKey: string,
   resolvedSet: ReadonlySet<string>,
+  activeEncounterIds: ReadonlySet<string> = new Set(),
 ):
   | { ok: true; enemies: ResolvedEnemy[]; ambushSide: 'none'; mapId: string }
   | { ok: false; code: EncounterErrorCode } {
   const encounter = adventure.encounters.find(({ id }) => id === encounterKey);
   if (!encounter) return { ok: false, code: 'unknown-encounter' };
-  if (resolvedSet.has(encounterKey) && !encounter.repeatable)
+  if (
+    activeEncounterIds.has(encounterKey) ||
+    (resolvedSet.has(encounterKey) && !encounter.repeatable)
+  )
     return { ok: false, code: 'ENCOUNTER_ALREADY_USED' };
   const scene = adventure.scenes.find(({ id }) => id === sceneId);
   if (!scene?.encounterIds.includes(encounterKey))
     return { ok: false, code: 'encounter-not-in-scene' };
-  // Authored rosters list one creature per entry (ponytail: no authored counts yet).
+  // Fail closed if unvalidated adventure data reaches a live turn. Adventure load is
+  // responsible for catalog validation; this guards the server-to-engine contract.
+  if (
+    !encounter.monsterIds.length ||
+    encounter.monsterIds.some((id) => !/^monster:[a-z0-9-]+$/u.test(id)) ||
+    !adventure.maps.some((map) => map.mapId === encounter.mapId)
+  )
+    return { ok: false, code: 'encounter-roster-invalid' };
+  // Authored rosters list one creature per entry (there is no authored count field).
   return {
     ok: true,
     enemies: encounter.monsterIds.map((authoredId) => ({
@@ -55,6 +68,7 @@ export function offeredEncounters(
   adventure: Adventure,
   sceneId: string,
   resolvedSet: ReadonlySet<string>,
+  activeEncounterIds: ReadonlySet<string> = new Set(),
 ): string[] {
   const scene = adventure.scenes.find(({ id }) => id === sceneId);
   return (scene?.encounterIds ?? []).filter((id) => {
