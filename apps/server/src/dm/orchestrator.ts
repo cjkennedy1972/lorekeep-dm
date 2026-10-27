@@ -559,7 +559,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           const result = {
             ok: false,
             error: code,
-            hint: `${hint} ${META_RETRY}`,
+            hint,
             ...(terminal ? { terminal: true } : {}),
           };
           messages.push({
