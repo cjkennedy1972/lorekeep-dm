@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   DMToolArgsSchema,
   DMToolCallSchema,
+  DMToolErrorCodeSchema,
   type DMToolErrorCode,
   type DMToolName,
   type DMTurnEvent,
@@ -46,10 +47,23 @@ const POLICY_ERRORS = new Set<DMToolErrorCode>([
   'dc-out-of-range',
 ]);
 const RECOVERABLE_ERRORS = new Set<DMToolErrorCode>(['not-actors-turn']);
+// Only snake_case tool names and hyphenated error codes: plain-English names such as `attack` must not trip the guard.
 const META_LEAK_PATTERN = new RegExp(
-  `(?:\\b(?:${DMToolCallSchema.options.map((o) => o.shape.name.value).join('|')})\\b|\\btool\\b|function call|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|\\bent_[a-z0-9_-]+\\b|\\b(?:malformed-ref|schema-violation|unknown-tool|not-in-combat|unknown-entity|out-of-range)\\b)`,
+  `(?:\\b(?:${[
+    ...DMToolCallSchema.options.map((o) => o.shape.name.value as string),
+    ...DMToolErrorCodeSchema.options,
+  ]
+    .filter((n) => /[_-]/.test(n))
+    .join(
+      '|',
+    )})\\b|\\btool\\b|function\\s+call|[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}|\\bent_[a-z0-9_-]+\\b)`,
   'i',
 );
+// NFKC + zero-width stripping so fullwidth and invisible-character variants cannot slip past the pattern.
+const leaksMeta = (text: string): boolean =>
+  META_LEAK_PATTERN.test(
+    text.normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, ''),
+  );
 const META_RETRY =
   'Continue in-fiction. Never mention tools, function calls, identifiers, internal rules, or error messages. Give only a brief player-facing narration; if no safe narration is possible, say what happens next neutrally.';
 const BUDGET_ERRORS = new Set<DMToolErrorCode>([
@@ -808,13 +822,15 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     };
   }
   if (hadToolError) messages.push({ role: 'user', content: META_RETRY });
-  if (!finalText || META_LEAK_PATTERN.test(finalText)) {
+  if (!finalText || leaksMeta(finalText)) {
     const wasEmpty = !finalText;
     // One bounded, tool-free repair attempt; never expose reasoning or tool diagnostics.
     try {
       let repaired = '';
       for await (const chunk of input.adapter.complete({
-        messages: [...messages, { role: 'user', content: META_RETRY }],
+        messages: hadToolError
+          ? messages
+          : [...messages, { role: 'user', content: META_RETRY }],
         maxTokens: 256,
         toolMode: input.toolMode,
         tools: [],
@@ -822,12 +838,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       }))
         if (chunk.type === 'text') repaired += chunk.delta;
       finalText =
-        repaired && !META_LEAK_PATTERN.test(repaired)
-          ? repaired
-          : SAFE_REDIRECT_TEMPLATE;
+        repaired && !leaksMeta(repaired) ? repaired : SAFE_REDIRECT_TEMPLATE;
       usedFinalText = !!repaired && finalText === repaired;
       if (wasEmpty && !repaired) fallback = 'no-narration';
-    } catch {
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
       finalText = SAFE_REDIRECT_TEMPLATE;
       if (wasEmpty) fallback = 'no-narration';
     }

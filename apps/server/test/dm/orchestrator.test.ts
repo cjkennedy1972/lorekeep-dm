@@ -1098,6 +1098,54 @@ describe('narration leak guard', () => {
     expect(h.requests).toHaveLength(2);
   });
 
+  it('lets ordinary combat prose containing "attack" through without a retry', async () => {
+    const text = 'The goblin lunges; its attack glances off your shield.';
+    const h = setup([[{ type: 'text', delta: text }]]);
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(text);
+    expect(h.requests).toHaveLength(1);
+  });
+
+  it('catches fullwidth, zero-width and unhyphenated-UUID leaks', async () => {
+    for (const leak of [
+      'The ｍｏｖｅ＿ｔｏ ｔｏｏｌ failed.',
+      'The move\u200b_to call failed.',
+      'Actor 80a812a0400e494ebbb7d3c75861caff acts.',
+      'A function  call went wrong.',
+    ]) {
+      const h = setup([
+        [{ type: 'text', delta: leak }],
+        [{ type: 'text', delta: narration }],
+      ]);
+      const result = await runTurn(h.input);
+      expect(result.narration).toBe(narration);
+      expect(h.requests).toHaveLength(2);
+    }
+  });
+
+  it('rethrows an abort that happens during the repair request', async () => {
+    const h = setup([[{ type: 'text', delta: 'The move_to tool failed.' }]]);
+    const controller = new AbortController();
+    h.input.signal = controller.signal;
+    const inner = h.input.adapter;
+    let calls = 0;
+    h.input.adapter = {
+      ...inner,
+      probe: (signal) => inner.probe(signal),
+      async *complete(request) {
+        if (++calls === 2) {
+          controller.abort();
+          throw new Error('aborted');
+        }
+        yield* inner.complete(request);
+      },
+    };
+    await expect(runTurn(h.input)).rejects.toBeDefined();
+    expect(h.events).not.toContainEqual(
+      expect.objectContaining({ type: 'NarrationCompleted' }),
+    );
+  });
+
   it('retries reasoning-only/empty narration and safely redirects if still empty', async () => {
     const h = setup([
       [{ type: 'text', delta: '' }],
