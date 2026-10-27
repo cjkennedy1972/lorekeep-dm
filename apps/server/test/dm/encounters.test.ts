@@ -25,6 +25,7 @@ describe('authored encounter resolution (ADR-038)', () => {
         },
       ],
       ambushSide: 'none',
+      mapId: 'adv01-warrens',
     });
   });
   it('rejects unknown, other-scene and already-used keys with closed codes', () => {

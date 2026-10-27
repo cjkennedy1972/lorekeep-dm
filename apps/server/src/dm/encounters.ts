@@ -28,7 +28,7 @@ export function resolveEncounter(
   encounterKey: string,
   resolvedSet: ReadonlySet<string>,
 ):
-  | { ok: true; enemies: ResolvedEnemy[]; ambushSide: 'none' }
+  | { ok: true; enemies: ResolvedEnemy[]; ambushSide: 'none'; mapId: string }
   | { ok: false; code: EncounterErrorCode } {
   const encounter = adventure.encounters.find(({ id }) => id === encounterKey);
   if (!encounter) return { ok: false, code: 'unknown-encounter' };
@@ -46,6 +46,7 @@ export function resolveEncounter(
       spawnRef: encounter.enemySpawnMarkerId,
     })),
     ambushSide: 'none',
+    mapId: encounter.mapId,
   };
 }
 

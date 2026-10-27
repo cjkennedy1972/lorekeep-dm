@@ -1,4 +1,8 @@
-import { AdventureSchema, type DMTurnEvent } from '@game/schema';
+import {
+  AdventureSchema,
+  StartCombatEncounterArgsSchema,
+  type DMTurnEvent,
+} from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { concealedEntities } from './eventVisibility.js';
@@ -62,7 +66,7 @@ import {
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
-import { offeredEncounters } from '../dm/encounters.js';
+import { offeredEncounters, resolveEncounter } from '../dm/encounters.js';
 import {
   consumeOptionHandle,
   roomTurnKey,
@@ -91,6 +95,7 @@ type GameState = {
   resolvedEncounters?: string[];
 };
 type CombatOutput = {
+  map?: unknown;
   entities?: { id: string; hp: number }[];
   combat?: unknown;
   xp?: Record<string, number>;
@@ -117,6 +122,7 @@ export function mergeCombatOutput<T extends object>(
       ),
     },
     ...(name === 'start_combat' ? { combatSeed: out.rng } : {}),
+    ...(name === 'start_combat' && out.map ? { map: out.map } : {}),
   };
 }
 /** Live combatant whose turn it is; not persisted. Null outside combat or once combat ended. */
@@ -333,6 +339,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           )
         : [],
     );
+    // ADR-038: one start_combat per turn; the encounter is marked resolved when its combat starts.
+    let startedEncounter: string | undefined;
     const offeredEncounterKeys =
       adventure?.ok && initialSceneId
         ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
@@ -641,6 +649,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         return {
           ...(previous as GameState),
           gameEngine: withoutCatalog(nextEngine),
+          ...(startedEncounter
+            ? { resolvedEncounters: [...resolvedSet, startedEncounter] }
+            : {}),
           ...(committedRoom ? { combatRoom: committedRoom } : {}),
           characters: Object.fromEntries(
             Object.entries((previous as GameState).characters ?? actors).map(
@@ -675,6 +686,62 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             events: ['RestVoteRequested'],
             value: { state: current, events: [event], rng: seed },
           };
+        }
+        let engineCall: unknown = call;
+        let encounterMap: unknown;
+        if (request.name === 'start_combat') {
+          const asKey = StartCombatEncounterArgsSchema.safeParse(request.args);
+          if (asKey.success) {
+            if (startedEncounter)
+              return {
+                ok: false,
+                error: 'turn-budget-exhausted',
+                hint: 'Combat has already started this turn; narrate it.',
+                events: [],
+              };
+            const resolved =
+              adventure?.ok && initialSceneId
+                ? resolveEncounter(
+                    adventure.adventure,
+                    initialSceneId,
+                    asKey.data.encounterId,
+                    resolvedSet,
+                  )
+                : ({ ok: false, code: 'unknown-encounter' } as const);
+            if (!resolved.ok)
+              return {
+                ok: false,
+                error:
+                  resolved.code === 'ENCOUNTER_ALREADY_USED'
+                    ? 'illegal-transition'
+                    : 'unknown-entity',
+                hint: `${resolved.code}: choose one of the offered encounter keys.`,
+                events: [],
+              };
+            encounterMap = adventure!.ok
+              ? adventure!.adventure.maps.find(
+                  (map) => map.mapId === resolved.mapId,
+                )
+              : undefined;
+            if (!encounterMap)
+              return {
+                ok: false,
+                error: 'no-spawn-space',
+                hint: 'The encounter map is unavailable.',
+                events: [],
+              };
+            engineCall = {
+              name: 'start_combat',
+              args: {
+                enemies: resolved.enemies.map(({ monsterId, count }) => ({
+                  monsterId,
+                  count,
+                })),
+                ambushSide: resolved.ambushSide,
+              },
+            };
+            startedEncounter = asKey.data.encounterId;
+          }
         }
         const serializedArgs = JSON.stringify(request.args ?? {});
         if (otherSeatIds.some((id) => serializedArgs.includes(id)))
@@ -748,13 +815,26 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 ),
               }
             : current;
-        const result = worldExecute
+        const rawResult = worldExecute
           ? worldExecute(current.world, request.args)
           : execute(
-              { ...spellState, turnActorId: liveTurnActorId(state) },
-              call,
+              {
+                ...spellState,
+                ...(encounterMap ? { map: encounterMap } : {}),
+                turnActorId: liveTurnActorId(state),
+              } as never,
+              engineCall as never,
               seed,
             );
+        // The encounter map rides on the start_combat output so mergeCombatOutput persists it.
+        const result =
+          encounterMap && rawResult.ok
+            ? {
+                ...rawResult,
+                value: { ...(rawResult.value as object), map: encounterMap },
+              }
+            : rawResult;
+        if (!rawResult.ok) startedEncounter = undefined;
         if (!result.ok) return { ...result, events: [] };
         // An area handle is single-use (ADR-022 §2.2): spend it on the cast that used it.
         const castTarget = (
