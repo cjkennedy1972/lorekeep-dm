@@ -1250,12 +1250,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       settled = await attempt(attemptTier);
     }
     const { result, narration } = settled;
-    if (rejectedStartEncounter && result.narration.trim())
+    if (
+      offeredEncounterKeys.length > 0 &&
+      result.narration.trim() &&
+      !startedEncounter
+    )
       combatStartTelemetry('CombatNarratedWithoutStart', {
         sessionId: request.sessionId,
         activeMode: 'exploration',
         ...(initialSceneId ? { sceneId: initialSceneId } : {}),
-        ...telemetryEncounterId(rejectedStartEncounter),
+        ...telemetryEncounterId(offeredEncounterKeys[0]!),
       });
     const hiddenNow = concealedEntities({
       concealed: [
