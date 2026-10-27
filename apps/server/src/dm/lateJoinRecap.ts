@@ -123,6 +123,7 @@ export async function buildLateJoinRecap(input: {
     input.moderator,
     input.tier,
     input.tableLines,
+    input.sessionId,
   );
   return { recap: gated.recap, fallback: gated.fallback };
 }

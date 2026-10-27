@@ -135,6 +135,7 @@ export function registerTableRoutes(
       recapModerator,
       tier,
       tableLines,
+      sessionId,
     );
     if (!result.fallback) {
       screenedRecaps.set(key, {
@@ -427,6 +428,7 @@ export function registerTableRoutes(
         recapModerator,
         recapTier,
         recapTableLines,
+        request.params.id,
       );
       if (row.mode === 'solo')
         await db.query(

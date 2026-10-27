@@ -651,6 +651,12 @@ describe('metrics', () => {
     expect(end).toMatchObject({ kind: 'end', outcome: 'approved' });
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.firstApprovedMs).toBeTypeOf('number');
+    expect(end.metrics.chunks[0]).toMatchObject({
+      chunkIndex: 0,
+      chars: expect.any(Number),
+      judgeMs: expect.any(Number),
+      firstApprovedMs: end.metrics.firstApprovedMs,
+    });
     expect(end.metrics.regenerations).toBe(0);
     expect(
       end.metrics.chunks.map((c) => [c.attempt, c.verdict, c.source]),

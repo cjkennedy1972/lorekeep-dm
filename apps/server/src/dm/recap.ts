@@ -32,6 +32,7 @@ export async function gateRecap(
   moderator: Moderator,
   tier: ContentTier,
   tableLines: readonly string[],
+  sessionId: string,
 ): Promise<RecapResult> {
   if (!result.recap) return result;
   try {
@@ -40,6 +41,7 @@ export async function gateRecap(
       tier,
       tableLines,
       direction: 'output',
+      sessionId,
     });
     if (verdict.verdict === 'allow') return result;
   } catch {

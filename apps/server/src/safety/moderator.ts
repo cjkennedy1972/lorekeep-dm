@@ -46,7 +46,7 @@ export function failClosedVerdict(
   };
 }
 
-export interface ModerationRequest {
+interface ModerationRequestBase {
   text: string;
   tier: ContentTier;
   tableLines?: readonly string[];
@@ -55,13 +55,17 @@ export interface ModerationRequest {
   /** Turn-scoped deterministic scanner. When set, it judges `text` in place of `context + text`; message-level rules need the whole turn, not a carry. */
   turn?: DeterministicTurn;
   direction: Direction;
-  /** Table/session key for output fairness; absent callers share the 'unknown' bucket. */
-  sessionId?: string;
   /** Chat has an explicit budget class while sharing input capacity with actions. */
   budgetClass?: 'action-input' | 'chat';
   /** Optional caller deadline (chat receipt bound); aborts the in-flight judge request. */
   signal?: AbortSignal;
 }
+
+export type ModerationRequest = ModerationRequestBase &
+  (
+    | { direction: 'input'; sessionId?: string }
+    | { direction: 'output'; sessionId: string }
+  );
 
 export interface Moderator {
   moderate(req: ModerationRequest): Promise<Verdict>;
@@ -102,13 +106,12 @@ export interface ChatMessage {
 }
 
 export interface JudgeChatRequest {
+  sessionId?: string;
   messages: ChatMessage[];
   temperature: 0;
   max_tokens: number;
   signal: AbortSignal;
   direction: Direction;
-  /** Table/session key for output fairness; absent callers share the 'unknown' bucket. */
-  sessionId?: string;
   budgetClass?: 'action-input' | 'chat' | 'output';
 }
 

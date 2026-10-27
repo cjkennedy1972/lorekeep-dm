@@ -18,6 +18,8 @@ const LOST_CALL_LIMITS: Partial<Record<CapacityClass, number>> = {
   chat: 2,
 };
 const OUTPUT_SESSION_PER_MINUTE_LIMIT = 60;
+export const OUTPUT_NO_SESSION_BUCKET = 'output-gate-no-session';
+const OUTPUT_NO_SESSION_PER_MINUTE_LIMIT = 5;
 
 export type JudgeBudgetResult =
   | { kind: 'acquired'; release: () => void; markLost: () => void }
@@ -45,7 +47,7 @@ export class JudgeBudget {
   acquire(
     budgetClass: BudgetClass,
     now = Date.now(),
-    sessionId = 'unknown',
+    sessionId = OUTPUT_NO_SESSION_BUCKET,
   ): JudgeBudgetResult {
     const recent = this.calls[budgetClass].filter((at) => at > now - WINDOW_MS);
     this.calls[budgetClass] = recent;
@@ -63,13 +65,16 @@ export class JudgeBudget {
       budgetClass === 'output'
         ? (this.outputCallsBySession.get(sessionId) ?? [])
         : undefined;
+    const sessionLimit =
+      sessionId === OUTPUT_NO_SESSION_BUCKET
+        ? OUTPUT_NO_SESSION_PER_MINUTE_LIMIT
+        : OUTPUT_SESSION_PER_MINUTE_LIMIT;
     if (
       (lostLimit !== undefined &&
         this.unsettledLost[budgetClass] >= lostLimit) ||
       recent.length >= PER_MINUTE_LIMITS[budgetClass] ||
       this.inFlight[budgetClass] >= IN_FLIGHT_LIMITS[budgetClass] ||
-      (sessionCalls !== undefined &&
-        sessionCalls.length >= OUTPUT_SESSION_PER_MINUTE_LIMIT)
+      (sessionCalls !== undefined && sessionCalls.length >= sessionLimit)
     )
       return { kind: 'limited', class: budgetClass };
     recent.push(now);

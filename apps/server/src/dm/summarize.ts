@@ -335,6 +335,7 @@ export async function closeScene(
             tier: input.tier,
             tableLines: input.tableLines,
             direction: 'output',
+            sessionId: input.sessionId,
           })
         ).verdict === 'allow'
       );

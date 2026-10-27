@@ -125,6 +125,22 @@ describe('shared judge budget', () => {
     vi.useRealTimers();
   });
 
+  it('isolates callers without a session in a small dedicated output bucket', () => {
+    const budget = new JudgeBudget();
+    for (let i = 0; i < 5; i++) {
+      const slot = budget.acquire('output', i);
+      expect(slot.kind).toBe('acquired');
+      if (slot.kind === 'acquired') slot.release();
+    }
+    expect(budget.acquire('output', 5)).toEqual({
+      kind: 'limited',
+      class: 'output',
+    });
+    const table = budget.acquire('output', 5, 'table-a');
+    expect(table.kind).toBe('acquired');
+    if (table.kind === 'acquired') table.release();
+  });
+
   it('caps chat at 120/min, actions at 80/min and output at 160/min', () => {
     const budget = new JudgeBudget();
     for (let i = 0; i < 120; i++) {

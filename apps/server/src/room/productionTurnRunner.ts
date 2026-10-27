@@ -384,6 +384,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           tier,
           tableLines,
           direction: 'output',
+          sessionId: request.sessionId,
         });
         return verdict.verdict === 'allow';
       } catch {
