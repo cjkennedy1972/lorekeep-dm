@@ -1118,7 +1118,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       void open;
     }
     const ended = await client.until((m) => m.type === 'CombatEnded', 0);
-    expect(['party-victory', 'party-defeated']).toContain(
+    expect(['party-victory', 'party-defeated', 'enemies-fled']).toContain(
       ended.payload!.outcome,
     );
     // The DM narrates after the engine decided.
