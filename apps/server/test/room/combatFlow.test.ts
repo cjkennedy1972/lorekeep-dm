@@ -17,6 +17,7 @@ import {
 import { joinSeated } from '../helpers/room.js';
 import { carryPromptSeq, promptIdOf } from '../../src/room/combatTypes.js';
 import { answerReaction, settle } from '../../src/room/combatEngine.js';
+import { projectEventForViewer } from '../../src/room/eventVisibility.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -73,6 +74,39 @@ describe('combat bootstrap from the DM start_combat result', () => {
       expect(summary).not.toContain(`${entity.pos.x}, ${entity.pos.y}`);
     }
     expect(summary).toContain('initiative');
+  });
+
+  it('projects the held-opening summary and CombatStarted list to the same controller', () => {
+    const { state, events } = bootstrapped();
+    const hiddenId = 'ent_goblin-minion_1';
+    const hiddenState = {
+      ...state,
+      entities: state.entities.map((entity) =>
+        entity.id === hiddenId ? { ...entity, hidden: true } : entity,
+      ),
+    };
+    const started = events.find((event) => event.type === 'CombatStarted')!;
+    const noControl = projectEventForViewer(
+      started,
+      new Set([hiddenId]),
+      new Set(),
+    )!;
+    const controller = projectEventForViewer(
+      started,
+      new Set([hiddenId]),
+      new Set([hiddenId]),
+    )!;
+    const ordinarySummary = combatOpeningSummary(hiddenState);
+    const controllerSummary = combatOpeningSummary(
+      hiddenState,
+      new Set([hiddenId]),
+    );
+    expect(JSON.stringify(noControl)).not.toContain(hiddenId);
+    expect(ordinarySummary).not.toContain(hiddenId);
+    expect(JSON.stringify(controller)).toContain(hiddenId);
+    expect(controllerSummary).toContain(
+      hiddenState.entities.find((e) => e.id === hiddenId)!.name,
+    );
   });
 
   it('places the party and monsters on the structured map with initiative and the active turn', () => {

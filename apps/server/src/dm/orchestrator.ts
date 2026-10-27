@@ -811,12 +811,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         turnId: input.turnId,
         text: gatedQuestion.text,
         index: 0,
+        ...(gatedQuestion.unavailable ? { moderationHeld: true } : {}),
       });
       emit({
         type: 'NarrationCompleted',
         turnId: input.turnId,
         text: gatedQuestion.text,
         words: words(gatedQuestion.text),
+        ...(gatedQuestion.unavailable ? { moderationHeld: true } : {}),
       });
     }
     return {
@@ -937,6 +939,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       turnId: input.turnId,
       text: finalText,
       index: index++,
+      ...(gateOutcome === 'redirected' && gateHadUnavailableVerdict
+        ? { moderationHeld: true }
+        : {}),
     });
   }
   finalCount = words(finalText);
@@ -945,6 +950,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     turnId: input.turnId,
     text: finalText,
     words: finalCount,
+    ...(gateOutcome === 'redirected' && gateHadUnavailableVerdict
+      ? { moderationHeld: true }
+      : {}),
     ...(fallback ? { fallback } : {}),
   });
   const inSeq = input.eventSeqStart ?? 0;

@@ -278,6 +278,14 @@ describe('DM orchestrator', () => {
           expect.objectContaining({
             type: 'NarrationCompleted',
             text: moderationHoldingNotice,
+            moderationHeld: true,
+          }),
+        );
+        expect(h.streamed).toContainEqual(
+          expect.objectContaining({
+            type: 'NarrationChunk',
+            text: moderationHoldingNotice,
+            moderationHeld: true,
           }),
         );
         expect(streamedText).not.toContain('Safe narration');
