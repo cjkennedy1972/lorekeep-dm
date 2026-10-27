@@ -46,6 +46,12 @@ const POLICY_ERRORS = new Set<DMToolErrorCode>([
   'dc-out-of-range',
 ]);
 const RECOVERABLE_ERRORS = new Set<DMToolErrorCode>(['not-actors-turn']);
+const META_LEAK_PATTERN = new RegExp(
+  `(?:\\b(?:${DMToolCallSchema.options.map((o) => o.shape.name.value).join('|')})\\b|\\btool\\b|function call|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|\\bent_[a-z0-9_-]+\\b|\\b(?:malformed-ref|schema-violation|unknown-tool|not-in-combat|unknown-entity|out-of-range)\\b)`,
+  'i',
+);
+const META_RETRY =
+  'Continue in-fiction. Never mention tools, function calls, identifiers, internal rules, or error messages. Give only a brief player-facing narration; if no safe narration is possible, say what happens next neutrally.';
 const BUDGET_ERRORS = new Set<DMToolErrorCode>([
   'turn-budget-exhausted',
   'lookup-budget-exhausted',
@@ -438,6 +444,13 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     finalCut = false,
     sceneClosed = false;
   const callCapHits = new Set<string>();
+  const toolObservations: {
+    name: string;
+    argKeys: string[];
+    outcome: string;
+  }[] = [];
+  let hadToolError = false;
+  let usedFinalText = false;
   let endpointFailed = false;
   let clarification: TurnResult['clarification'];
   const makeFallback = (reason: NonNullable<TurnResult['fallback']>) => {
@@ -500,6 +513,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       }
       if (calls.length === 0) {
         finalText = textDeltas.join('');
+        usedFinalText = !!finalText;
         finalCut = requestOut >= request.maxTokens;
         done = true;
         break;
@@ -524,6 +538,16 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           terminal = false,
         ) => {
           const argHash = callHash(call.name, call.arguments);
+          toolObservations.push({
+            name: call.name,
+            argKeys: Object.keys(
+              call.arguments && typeof call.arguments === 'object'
+                ? (call.arguments as object)
+                : {},
+            ),
+            outcome: code,
+          });
+          hadToolError = true;
           emit({
             type: 'ToolCallRejected',
             turnId: input.turnId,
@@ -535,7 +559,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           const result = {
             ok: false,
             error: code,
-            hint,
+            hint: `${hint} ${META_RETRY}`,
             ...(terminal ? { terminal: true } : {}),
           };
           messages.push({
@@ -663,6 +687,12 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         );
         if (!outcome.ok) {
           const code = outcome.error ?? 'schema-violation';
+          toolObservations.push({
+            name: call.name,
+            argKeys: Object.keys(validated.value as object),
+            outcome: code,
+          });
+          hadToolError = true;
           if (RECOVERABLE_ERRORS.has(code)) {
             // ponytail: an out-of-turn call never executed, so it must not spend the turn's tool-call cap.
             toolCalls--;
@@ -684,6 +714,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           }
           continue;
         }
+        toolObservations.push({
+          name: call.name,
+          argKeys: Object.keys(validated.value as object),
+          outcome: 'ok',
+        });
         if (call.name === 'close_scene') sceneClosed = true;
         const toolResult = {
           ok: true,
@@ -772,6 +807,43 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       ...(gatedQuestion.approved ? { clarification } : {}),
     };
   }
+  if (hadToolError) messages.push({ role: 'user', content: META_RETRY });
+  if (!finalText || META_LEAK_PATTERN.test(finalText)) {
+    const wasEmpty = !finalText;
+    // One bounded, tool-free repair attempt; never expose reasoning or tool diagnostics.
+    try {
+      let repaired = '';
+      for await (const chunk of input.adapter.complete({
+        messages: [...messages, { role: 'user', content: META_RETRY }],
+        maxTokens: 256,
+        toolMode: input.toolMode,
+        tools: [],
+        signal: input.signal,
+      }))
+        if (chunk.type === 'text') repaired += chunk.delta;
+      finalText =
+        repaired && !META_LEAK_PATTERN.test(repaired)
+          ? repaired
+          : SAFE_REDIRECT_TEMPLATE;
+      usedFinalText = !!repaired && finalText === repaired;
+      if (wasEmpty && !repaired) fallback = 'no-narration';
+    } catch {
+      finalText = SAFE_REDIRECT_TEMPLATE;
+      if (wasEmpty) fallback = 'no-narration';
+    }
+  }
+  console.info(
+    JSON.stringify({
+      event: 'dm_turn_observability',
+      sessionId: input.sessionId ?? null,
+      turnId: input.turnId,
+      toolsOffered: toolSchemas(input).map((tool) => tool.name),
+      toolCalls: toolObservations,
+      activeMode: input.prompt.activeMode,
+      sceneId: input.prompt.sceneId,
+      narrationSource: usedFinalText ? 'final-text' : 'fallback',
+    }),
+  );
   const finalWords = words(finalText);
   const keepWords = Math.max(
     0,

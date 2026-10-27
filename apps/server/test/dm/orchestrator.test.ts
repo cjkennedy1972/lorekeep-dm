@@ -1043,3 +1043,67 @@ describe('DM orchestrator: combat narration tool scope (ADR-034 §2)', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('narration leak guard', () => {
+  it('retries tool-error explanations and never completes with meta text', async () => {
+    const h = setup(
+      [
+        [
+          call('move', 'move_to', {
+            entityId: 'ent_ayla',
+            targetRef: 'ent_wall',
+            mode: 'cover',
+          }),
+        ],
+        [
+          {
+            type: 'text',
+            delta: 'The move_to tool requires an active combat.',
+          },
+        ],
+        [{ type: 'text', delta: narration }],
+      ],
+      () => ({
+        ok: false,
+        error: 'not-in-combat',
+        hint: 'combat is not active',
+      }),
+    );
+    h.input.prompt.activeMode = 'combat';
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(narration);
+    expect(
+      h.events.some(
+        (e) =>
+          (e as { type?: string }).type === 'NarrationCompleted' &&
+          /move_to|tool/i.test(String((e as { text?: string }).text)),
+      ),
+    ).toBe(false);
+    expect(h.requests).toHaveLength(3);
+  });
+
+  it('rejects entity and UUID references embedded in narration', async () => {
+    const h = setup([
+      [
+        {
+          type: 'text',
+          delta:
+            'The actor is 80a812a0-400e-494e-bbb7-d3c75861caff (ent_goblin).',
+        },
+      ],
+      [{ type: 'text', delta: narration }],
+    ]);
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(narration);
+    expect(h.requests).toHaveLength(2);
+  });
+
+  it('retries reasoning-only/empty narration and safely redirects if still empty', async () => {
+    const h = setup([
+      [{ type: 'text', delta: '' }],
+      [{ type: 'text', delta: '' }],
+    ]);
+    const result = await runTurn(h.input);
+    expect(result.narration).toBe(SAFE_REDIRECT_TEMPLATE);
+  });
+});
