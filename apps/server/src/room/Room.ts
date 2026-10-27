@@ -1772,7 +1772,11 @@ export class Room {
     });
   }
 
-  persistRecap(recap: { recap: string; memoryHash: string }): Promise<void> {
+  persistRecap(recap: {
+    recap: string;
+    memoryHash: string;
+    provenanceVersion?: number;
+  }): Promise<void> {
     return this.enqueue(async () => {
       const gameState = {
         ...((this.state.gameState as Record<string, unknown>) ?? {}),

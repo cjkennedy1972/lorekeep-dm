@@ -33,10 +33,16 @@ const db = {
     queries.push(sql);
     if (sql.includes('FROM session_seat_characters'))
       return { rows: bindings, rowCount: bindings.length };
-    if (sql.includes('FROM scene_summaries'))
-      return { rows: summaries.map((text) => ({ text })), rowCount: 1 };
-    if (sql.includes('FROM registry_entries'))
-      return { rows: [{ text: 'location Well: dry and old' }], rowCount: 1 };
+    if (sql.includes("type='NarrationCompleted'"))
+      return {
+        rows: summaries.map((narration) => ({ narration })),
+        rowCount: 1,
+      };
+    if (sql.includes('registry_entries'))
+      return {
+        rows: [{ text: 'npc Secret Keeper: the key is under the throne' }],
+        rowCount: 1,
+      };
     if (sql.includes('FROM sessions WHERE id'))
       return {
         rows: [{ content_tier: 'standard', host_tier_cap: null }],
@@ -106,6 +112,12 @@ beforeEach(() => {
 });
 
 describe('GET /api/late-join/:requestId/recap', () => {
+  it('returns no recap when no player-visible narration has been committed', async () => {
+    summaries = [];
+    const body = (await get(build())).json();
+    expect(body.recap).toBe('');
+  });
+
   it('returns a <=150-word recap plus table settings to the pending owner', async () => {
     adapter = llm(Array.from({ length: 400 }, (_, i) => `w${i}`).join(' '));
     const res = await get(build());
@@ -133,18 +145,20 @@ describe('GET /api/late-join/:requestId/recap', () => {
       'Scene 1: Brann said "the key is under the stone" to the warden.',
     ];
     const body = (await get(build())).json();
-    expect(body.recap).not.toMatch(/Brann|under the stone/);
+    expect(body.recap).not.toMatch(
+      /Brann|under the stone|Secret Keeper|under the throne/,
+    );
     const sql = queries.join('\n');
-    expect(sql).not.toMatch(/FROM events|chat/i);
-    expect(sql).toContain("entity_type IN ('npc','location','quest')");
+    expect(sql).toContain("type='NarrationCompleted'");
+    expect(sql).not.toContain('registry_entries');
   });
 
-  it('drops scene summaries when a deleted player left a redacted binding', async () => {
+  it('omits narration when a deleted player left a redacted binding', async () => {
     bindings = [{ name: 'Deleted player', redacted: true }];
     summaries = ['Scene 1: Orlo killed the warden.'];
     const body = (await get(build())).json();
     expect(body.recap).not.toContain('Orlo');
-    expect(queries.join('\n')).not.toContain('FROM scene_summaries');
+    expect(queries.join('\n')).toContain("type='NarrationCompleted'");
   });
 
   it('scrubs a character name the LLM itself emits (post-LLM scrub)', async () => {

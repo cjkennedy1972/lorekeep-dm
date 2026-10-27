@@ -16,7 +16,11 @@ import adventure01 from '../../../../packages/engine/adventures/01/adventure.jso
 import { RegistryMemory } from '../dm/memory.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { concealedEntities } from '../room/eventVisibility.js';
-import { buildResumeRecap, gateRecap } from '../dm/recap.js';
+import {
+  buildResumeRecap,
+  gateRecap,
+  RECAP_PROVENANCE_VERSION,
+} from '../dm/recap.js';
 import {
   createConfiguredAdapter,
   createEndpointEgress,
@@ -323,7 +327,14 @@ export function registerTableRoutes(
     );
     const games = await Promise.all(
       result.rows.map(async (row: Record<string, unknown>) => {
-        const recap = (row.recap as { recap?: string } | null)?.recap ?? '';
+        const stored = row.recap as {
+          recap?: string;
+          provenanceVersion?: number;
+        } | null;
+        const recap =
+          stored?.provenanceVersion === RECAP_PROVENANCE_VERSION
+            ? (stored.recap ?? '')
+            : '';
         return gameView({
           ...row,
           recap: { recap: await screenStoredRecap(String(row.id), recap) },
@@ -378,7 +389,9 @@ export function registerTableRoutes(
         await recapSafety(request.params.id);
       const prior = (row.state?.recap ??
         (row.state?.gameState as Record<string, unknown> | undefined)
-          ?.recap) as { recap: string; memoryHash: string } | undefined;
+          ?.recap) as
+        | { recap: string; memoryHash: string; provenanceVersion?: number }
+        | undefined;
       const endpointSlot = process.env.SOLO_TURN_ENDPOINT_SLOT ?? 'fast';
       const mode = fixtureModeFromEnvironment();
       let adapter;
@@ -435,6 +448,7 @@ export function registerTableRoutes(
       await room.persistRecap({
         recap: recap.recap,
         memoryHash: recap.memoryHash,
+        provenanceVersion: RECAP_PROVENANCE_VERSION,
       });
       return {
         game: {

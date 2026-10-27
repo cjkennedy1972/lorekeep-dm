@@ -463,8 +463,8 @@ describe('scene summaries and recap', () => {
       query: async (sql: string) => {
         queries.push(sql);
         return {
-          rows: sql.includes('FROM scene_summaries')
-            ? [{ text: 'The party reached the bridge.' }]
+          rows: sql.includes("type='NarrationCompleted'")
+            ? [{ narration: 'The party reached the bridge.' }]
             : [],
           rowCount: 1,
         };
@@ -500,6 +500,7 @@ describe('scene summaries and recap', () => {
       previousSnapshotRecap: {
         recap: first.recap,
         memoryHash: first.memoryHash,
+        provenanceVersion: 2,
       },
       adapter,
     });
@@ -511,6 +512,7 @@ describe('scene summaries and recap', () => {
       previousSnapshotRecap: {
         recap: first.recap,
         memoryHash: first.memoryHash,
+        provenanceVersion: 2,
       },
       changed: true,
       adapter: changedAdapter,

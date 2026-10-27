@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { LlmAdapter, LlmChunk } from '../../src/llm/adapter.js';
 import {
@@ -88,6 +89,48 @@ const run = (adapter: LlmAdapter, db: never) =>
 const leaks = (text: string) => /ent_shade_77|Vexra/i.test(text);
 
 describe('scene close uses the public view (ADR-034 §3)', () => {
+  it('builds seated recap from player-visible narration, not a DM-authored close summary', async () => {
+    prompts.length = 0;
+    const db = {
+      query: async (sql: string) =>
+        sql.includes("type='NarrationCompleted'")
+          ? { rows: [{ narration: 'The party entered the ruined hall.' }] }
+          : sql.includes('scene_summaries')
+            ? { rows: [{ text: 'The key is under the throne.' }] }
+            : sql.includes('registry_entries')
+              ? { rows: [{ text: 'npc Secret Keeper: knows the vault code' }] }
+              : { rows: [] },
+    } as never;
+    const out = await buildResumeRecap({ db, sessionId: 's', adapter: echo() });
+    expect(prompts.join('\n')).toContain('The party entered the ruined hall.');
+    expect(prompts.join('\n')).not.toContain('key is under the throne');
+    expect(prompts.join('\n')).not.toContain('Secret Keeper');
+    expect(out.recap).not.toContain('key is under the throne');
+  });
+
+  it('rebuilds an unmarked legacy snapshot recap from visible narration', async () => {
+    prompts.length = 0;
+    const db = {
+      query: async () => ({
+        rows: [{ narration: 'The party entered the ruined hall.' }],
+      }),
+    } as never;
+    const out = await buildResumeRecap({
+      db,
+      sessionId: 's',
+      adapter: echo(),
+      previousSnapshotRecap: {
+        recap: 'The key is under the throne.',
+        memoryHash: createHash('sha256')
+          .update(JSON.stringify([['The party entered the ruined hall.'], []]))
+          .digest('hex'),
+      },
+    });
+    expect(out.recap).toContain('The party entered the ruined hall.');
+    expect(out.recap).not.toContain('key is under the throne');
+    expect(out.provenanceVersion).toBe(2);
+  });
+
   it('does not send hidden-entity events to the LLM or store them', async () => {
     const { rows, db } = capture();
     await run(echo(), db);
@@ -168,6 +211,33 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
           : [],
     }),
   } as never;
+
+  it('late-join recap excludes secret registry facts and only gives the echo model shown narration', async () => {
+    prompts.length = 0;
+    const db = {
+      query: async (sql: string) =>
+        sql.includes("type='NarrationCompleted'")
+          ? { rows: [{ narration: 'The party entered the ruined hall.' }] }
+          : sql.includes('registry_entries')
+            ? {
+                rows: [
+                  { text: 'npc Secret Keeper: the key is under the throne' },
+                ],
+              }
+            : { rows: [] },
+    } as never;
+    const out = await buildLateJoinRecap({
+      db,
+      sessionId: 's',
+      moderator: allow,
+      tier: 'standard',
+      tableLines: [],
+      adapter: echo(),
+    });
+    expect(prompts.join('\n')).toContain('The party entered the ruined hall.');
+    expect(prompts.join('\n')).not.toMatch(/Secret Keeper|under the throne/);
+    expect(out.recap).not.toMatch(/Secret Keeper|under the throne/);
+  });
 
   it('late-join recap scrubs hidden text from rows written before the filter existed', async () => {
     prompts.length = 0;
