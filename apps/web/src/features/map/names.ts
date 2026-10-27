@@ -8,14 +8,18 @@ const SEAT_PREFIX = 'ent_seat_';
 const titleCase = (word: string) =>
   word ? word[0]!.toUpperCase() + word.slice(1) : word;
 
-/** "ent_goblin-minion_1" becomes "Goblin Minion 1"; ids never leak through when only a catalog id is known. */
+/**
+ * "ent_goblin-minion_1" becomes "Goblin Minion". The trailing id number is dropped, so a lone entity
+ * never shows it and twins are numbered by the namer in visible order instead.
+ */
 export function nameFromCatalogId(id: string): string {
-  const base = id.replace(/^ent_/, '');
-  const numbered = /^(.*?)[_-]?(\d+)$/.exec(base);
-  const stem = (numbered ? numbered[1]! : base).replace(/[_-]+/g, ' ').trim();
+  const stem = id
+    .replace(/^ent_/, '')
+    .replace(/[_-]?\d+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
   const words = stem.split(/\s+/).filter(Boolean).map(titleCase).join(' ');
-  if (!words) return numbered ? `Creature ${numbered[2]}` : 'Creature';
-  return numbered ? `${words} ${numbered[2]}` : words;
+  return words || 'Creature';
 }
 
 /** Two letters at most; a trailing number keeps twins apart ("Goblin Minion 2" is "G2"). */
@@ -80,15 +84,15 @@ export function createEntityNamer(input: {
     names.set(entity.id, nameFromCatalogId(entity.id));
   }
   // Twins ("Goblin Minion" x2) get numbers so the tracker, tokens and legend stay unambiguous.
-  // Numbers count only the entities this viewer was sent, in map order, so 1..n has no gaps and
-  // never encodes an id, which could reveal a hidden sibling.
+  // Names are grouped before any numbering, and numbers count only the entities this viewer was sent,
+  // in map order, so 1..n has no gaps and never encodes an id, which could reveal a hidden sibling.
   const tally = new Map<string, string[]>();
   for (const [id, name] of names)
     tally.set(name, [...(tally.get(name) ?? []), id]);
   for (const [name, ids] of tally) {
     if (ids.length < 2) continue;
     ids.forEach((id, index) => {
-      names.set(id, /\d$/.test(name) ? name : `${name} ${index + 1}`);
+      names.set(id, `${name} ${index + 1}`);
     });
   }
   return (entityId) =>
