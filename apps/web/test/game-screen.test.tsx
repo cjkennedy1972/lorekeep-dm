@@ -11,15 +11,23 @@ import { initialGameState } from '../src/state/gameStore.js';
 import { http } from '../src/api.js';
 
 const hoisted = vi.hoisted(() => ({
-  send: vi.fn(() => true),
+  send: vi.fn((): string | boolean => true),
   onMessage: undefined as ((m: ServerMessage) => void) | undefined,
   room: undefined as unknown,
   account: { id: 'acct-1' },
+  privateRoundSubmission: undefined as
+    | { roundId: string; actionId: string; text: string; queued: boolean }
+    | undefined,
 }));
 vi.mock('../src/room/useRoom.js', () => ({
   useRoom: (opts: { onMessage: (m: ServerMessage) => void }) => {
     hoisted.onMessage = opts.onMessage;
-    return { room: hoisted.room, status: 'connected', send: hoisted.send };
+    return {
+      room: hoisted.room,
+      status: 'connected',
+      send: hoisted.send,
+      privateRoundSubmission: hoisted.privateRoundSubmission,
+    };
   },
 }));
 
@@ -130,6 +138,7 @@ function mount() {
 
 describe('Game screen (live Room)', () => {
   beforeEach(() => {
+    hoisted.privateRoundSubmission = undefined;
     http.fetch = async () =>
       new Response(
         JSON.stringify({ game: { recap: 'A short recap.', name: 'Fixture' } }),
@@ -252,6 +261,153 @@ describe('Game screen (live Room)', () => {
     });
     expect(
       screen.queryByText('Queued: I search the room.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('a turn failure for another seat leaves this seat queued and offers no retry', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ActionQueued', { actionId: 'mine-1' });
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'The DM could not complete that turn. You can try again.',
+      actionId: 'their-action',
+    });
+    expect(screen.getByText('Queued: I search the room.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Your action')).toHaveValue('');
+    expect(
+      screen.queryByRole('button', { name: 'Retry this action' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'The DM could not complete that turn. You can try again.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('a turn failure for this seat restores its text and offers Retry', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ActionQueued', { actionId: 'mine-1' });
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'The DM could not complete that turn. You can try again.',
+      actionId: 'mine-1',
+    });
+    expect(
+      screen.queryByText('Queued: I search the room.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Your action')).toHaveValue(
+      'I search the room.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Retry this action' }));
+    expect(hoisted.send).toHaveBeenLastCalledWith('PlayerAction', {
+      text: 'I search the room.',
+    });
+  });
+
+  it('a round failure restores only the seat whose submission was in that round', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    hoisted.privateRoundSubmission = {
+      roundId: 'round-7',
+      actionId: 'mine-1',
+      text: 'I search the room.',
+      queued: true,
+    };
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'The DM could not complete that round. Try again.',
+      actionId: 'round-9',
+    });
+    expect(screen.getByText('Queued: I search the room.')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retry this action' }),
+    ).not.toBeInTheDocument();
+    // The server resolves the round (clearing the private submission) before its turn can fail.
+    hoisted.privateRoundSubmission = undefined;
+    push('RoundResolved', {
+      roundId: 'round-7',
+      closeReason: 'all-submitted',
+      actions: [],
+    });
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'The DM could not complete that round. Try again.',
+      actionId: 'round-7',
+    });
+    expect(
+      screen.queryByText('Queued: I search the room.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Your action')).toHaveValue(
+      'I search the room.',
+    );
+    expect(
+      screen.getByRole('button', { name: 'Retry this action' }),
+    ).toBeInTheDocument();
+    hoisted.privateRoundSubmission = undefined;
+  });
+
+  it('a round-path restriction for a seat that is not restricted shows the generic failure with Retry', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    hoisted.privateRoundSubmission = {
+      roundId: 'round-7',
+      actionId: 'mine-1',
+      text: 'I search the room.',
+      queued: true,
+    };
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    // The server broadcasts the round's restriction to every seat; it names the round, not this seat's action.
+    push('Error', {
+      code: 'LIVE_DM_RESTRICTED',
+      message: 'Live DM is not enabled for this account.',
+      actionId: 'round-7',
+    });
+    expect(
+      screen.getByText('The DM could not complete that turn.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Live DM is not enabled for this account.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Your action')).toHaveValue(
+      'I search the room.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Retry this action' }));
+    expect(hoisted.send).toHaveBeenLastCalledWith('PlayerAction', {
+      text: 'I search the room.',
+    });
+    hoisted.privateRoundSubmission = undefined;
+  });
+
+  it('a single-action restriction for this seat keeps the restricted copy and no Retry', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ActionQueued', { actionId: 'mine-1' });
+    push('Error', {
+      code: 'LIVE_DM_RESTRICTED',
+      message: 'Live DM is not enabled for this account.',
+      actionId: 'mine-1',
+    });
+    expect(
+      screen.getByText('Live DM is not enabled for this account.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retry this action' }),
     ).not.toBeInTheDocument();
   });
 

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ActionIdSchema, type ServerMessage } from '@game/schema';
 import { NarrationLog } from '../src/features/narration/NarrationLog.js';
 import { roomReducer, initialRoomView } from '../src/room/reducer.js';
@@ -162,7 +162,6 @@ describe('NarrationLog', () => {
         actionId: ActionIdSchema.parse('00000000-0000-4000-8000-0000000000a2'),
       },
     };
-    const retry = vi.fn();
     const sequence: ServerMessage[] = [
       {
         seq: 1,
@@ -193,12 +192,11 @@ describe('NarrationLog', () => {
       },
       error,
     ];
-    render(<NarrationLog messages={sequence} onRetry={retry} />);
+    render(<NarrationLog messages={sequence} />);
     await screen.findByText('No chunks here.');
     expect(screen.getByText('The door opens.')).toBeInTheDocument();
     expect(screen.queryByText('TURN_FAILED:')).not.toBeInTheDocument();
     expect(screen.queryByText('Try again.')).not.toBeInTheDocument();
-    expect(retry).not.toHaveBeenCalled();
   });
 
   it('passes axe in default and reduced-motion contexts', async () => {

@@ -24,13 +24,41 @@ export type NarrationTurn = {
 
 export type LogEntry =
   | { kind: 'pending'; actionId: string }
-  | { kind: 'turn'; turn: NarrationTurn }
-  | { kind: 'error'; actionId?: string; code: string; message: string };
+  | { kind: 'turn'; turn: NarrationTurn };
 
 export type NarrationLogState = {
   entries: LogEntry[];
   announced: string[];
 };
+
+const LIVE_DM_RESTRICTED_MESSAGE = 'Live DM is not enabled for this account.';
+const GENERIC_TURN_FAILURE_MESSAGE = 'The DM could not complete that turn.';
+
+/** Codes the server sends when the DM turn for a submitted action did not complete. */
+export function isTurnFailure(code: string): boolean {
+  return code === 'TURN_FAILED' || code === 'LIVE_DM_RESTRICTED';
+}
+
+/**
+ * What the sender sees beside the action box after their turn failed. `viaRound` is true when the
+ * failure names the round this seat submitted into rather than the seat's own action.
+ */
+export function turnFailureNotice(
+  code: string,
+  message: string,
+  viaRound = false,
+): { message: string; canRetry: boolean } {
+  if (code === 'LIVE_DM_RESTRICTED') {
+    // The round path broadcasts the round's restriction to every seat, so it does not say whether
+    // this seat is restricted. Show the generic failure and keep Retry; the server fix will send
+    // the restriction only to the restricted account.
+    if (viaRound)
+      return { message: GENERIC_TURN_FAILURE_MESSAGE, canRetry: true };
+    // A restricted account cannot retry: the server will reject the same action again.
+    return { message: LIVE_DM_RESTRICTED_MESSAGE, canRetry: false };
+  }
+  return { message, canRetry: true };
+}
 
 export const initialNarrationLog: NarrationLogState = {
   entries: [],
@@ -157,25 +185,24 @@ export function narrationLogReducer(
       };
     }
     case 'Error': {
+      // Turn failures are broadcast to every seat but never enter the shared story log. A failed
+      // turn only ends the shared thinking status. Only the seat whose own action failed gets its
+      // text back and a Retry (Game.tsx matches the action or round id). The round path names the
+      // round here, not the turn's action id, so a failed turn clears whichever turn is pending:
+      // the server runs one turn at a time.
       const code = String(payload.code ?? 'ERROR');
       const actionId =
         typeof payload.actionId === 'string' ? payload.actionId : undefined;
-      const entries = state.entries.filter(
-        (entry) => !(entry.kind === 'pending' && entry.actionId === actionId),
-      );
+      const turnFailed = isTurnFailure(code);
       return {
         ...state,
-        entries: [
-          ...entries,
-          {
-            kind: 'error',
-            ...(actionId ? { actionId } : {}),
-            code,
-            message: String(
-              payload.message ?? 'The action could not be completed.',
+        entries: state.entries.filter(
+          (entry) =>
+            !(
+              entry.kind === 'pending' &&
+              (turnFailed || entry.actionId === actionId)
             ),
-          },
-        ],
+        ),
       };
     }
     case 'ToolRejected':
