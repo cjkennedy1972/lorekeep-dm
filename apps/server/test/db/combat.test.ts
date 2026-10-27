@@ -13,7 +13,12 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
-import type { LlmRequest } from '../../src/llm/adapter.js';
+import { LlmEndpointError } from '../../src/llm/adapter.js';
+import type {
+  LlmAdapter,
+  LlmChunk,
+  LlmRequest,
+} from '../../src/llm/adapter.js';
 import { scriptedDm } from '../room/scriptedDm.js';
 import type { RoomCombatState } from '../../src/room/combat.js';
 import {
@@ -44,14 +49,19 @@ class Stack {
     readonly base: string,
     readonly requests: LlmRequest[],
   ) {}
-  static async boot(node: string): Promise<Stack> {
+  static async boot(
+    node: string,
+    options: { adapter?: LlmAdapter; endpointAllowsMature?: boolean } = {},
+  ): Promise<Stack> {
     const requests: LlmRequest[] = [];
     const runner = new ProductionSoloTurnRunner(
       db,
       undefined,
       'strict',
       'unused.ndjson',
-      scriptedDm(requests),
+      options.adapter ?? scriptedDm(requests),
+      true,
+      options.endpointAllowsMature ?? false,
     );
     const rooms = new RoomRegistry(
       new Persistence(db),
@@ -292,6 +302,47 @@ const storedTypes = async (table: string) =>
       [table],
     )
   ).rows;
+
+/**
+ * Starts combat on call 1. With `refuseOnCall`, that call throws an endpoint refusal and the
+ * retry's start_combat is the call after it; every other call narrates.
+ */
+function combatStartDm(refuseOnCall?: number): {
+  adapter: LlmAdapter;
+  calls: () => number;
+} {
+  let calls = 0;
+  const adapter: LlmAdapter = {
+    capabilities: () => ({
+      streaming: true,
+      nativeTools: true,
+      jsonSchema: true,
+    }),
+    probe: async () => true,
+    async *complete() {
+      calls += 1;
+      if (calls === refuseOnCall)
+        throw new LlmEndpointError('endpoint-refusal', 'refused');
+      const startCall =
+        calls === 1 ||
+        (refuseOnCall !== undefined && calls === refuseOnCall + 1);
+      if (startCall) {
+        yield {
+          type: 'tool-call',
+          id: `call_start_${calls}`,
+          name: 'start_combat',
+          arguments: {
+            enemies: [{ monsterId: 'srd:monster/goblin-minion', count: 2 }],
+            ambushSide: 'party',
+          },
+        } as LlmChunk;
+        return;
+      }
+      yield { type: 'text', delta: 'Steel rings out across the crypt.' };
+    },
+  };
+  return { adapter, calls: () => calls };
+}
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';
@@ -830,6 +881,57 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     );
     client.close();
   }, 20_000);
+
+  it('keeps character keys as account ids when a refused mature start is retried', async () => {
+    const { adapter, calls } = combatStartDm(2);
+    stack = await Stack.boot('retry-refused-character-keys', {
+      adapter,
+      endpointAllowsMature: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(stack, user, preCombat);
+    await db.query(
+      'UPDATE sessions SET moderation_verified=true, endpoint_allows_mature=true WHERE id=$1',
+      [table],
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until((m) => m.type === 'NarrationCompleted', from, 20_000);
+      expect(calls()).toBe(4);
+      const { gameState } = await savedGame(table);
+      expect(Object.keys(gameState.characters ?? {})).toEqual([user.id]);
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('keeps character keys as account ids through a committed start without refusal', async () => {
+    const { adapter, calls } = combatStartDm();
+    stack = await Stack.boot('control-character-keys', {
+      adapter,
+      endpointAllowsMature: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(stack, user, preCombat);
+    await db.query(
+      'UPDATE sessions SET moderation_verified=true, endpoint_allows_mature=true WHERE id=$1',
+      [table],
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until((m) => m.type === 'CombatTracker', from, 20_000);
+      await client.until((m) => m.type === 'NarrationCompleted', from, 20_000);
+      expect(calls()).toBe(2);
+      const { gameState } = await savedGame(table);
+      expect(Object.keys(gameState.characters ?? {})).toEqual([user.id]);
+    } finally {
+      client.close();
+    }
+  }, 30_000);
 
   it('rejects illegal commands with no state change and keeps other accounts out', async () => {
     stack = await Stack.boot('combat-illegal');
