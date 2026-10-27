@@ -62,9 +62,18 @@ export function registerCharacterRoutes(app: App, db: Pool) {
     const body = request.body;
     const isUpdate =
       typeof body === 'object' && body !== null && 'expectedRevision' in body;
-    const parsed = isUpdate
-      ? updateCharacterInput.safeParse(body)
-      : createCharacterInput.safeParse(body);
+    const includesClientCharacterId =
+      typeof body === 'object' &&
+      body !== null &&
+      'character' in body &&
+      typeof body.character === 'object' &&
+      body.character !== null &&
+      'id' in body.character;
+    const parsed = includesClientCharacterId
+      ? { success: false as const }
+      : isUpdate
+        ? updateCharacterInput.safeParse(body)
+        : createCharacterInput.safeParse(body);
     if (!parsed.success)
       return reply.code(400).send({
         code: 'INVALID_CHARACTER',

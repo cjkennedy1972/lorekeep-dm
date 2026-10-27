@@ -159,7 +159,15 @@ export function registerTableRoutes(
         message:
           'Check the table, adventure, difficulty and character choices.',
         details: parsed.error.issues.map((issue) => ({
-          path: issue.path.join('.'),
+          path: issue.path
+            .map((part, index) =>
+              (issue.path[index - 1] === 'abilities' ||
+                issue.path[index - 1] === 'slots') &&
+              typeof part === 'string'
+                ? '*'
+                : part,
+            )
+            .join('.'),
           code: issue.code,
         })),
       });
