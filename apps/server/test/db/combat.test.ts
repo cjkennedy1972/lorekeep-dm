@@ -184,7 +184,10 @@ class Client {
   }
   private lastSent = 0;
   /** Sends a combat command and resolves with its outcome: the next tracker, or the Error for that action. */
-  async command(payload: Record<string, unknown>, retries = 40): Promise<Wire> {
+  async command(
+    payload: Record<string, unknown>,
+    retries = 200,
+  ): Promise<Wire> {
     let rateLimited = 0;
     for (let attempt = 0; attempt < retries; attempt++) {
       // Leave headroom beneath the gateway's 10/s per-socket message limit.
@@ -215,18 +218,11 @@ class Client {
         mark,
       );
       // Admission rejects while the DM narrates the previous resolved turn
-      // (phase `narrating`). Wait for that narration to finish (the Room commits
-      // the next phase before it broadcasts NarrationCompleted), then resend.
+      // (phase `narrating`); retry Room admission after a short backoff.
       if (reply.payload?.code === 'narration-in-progress') {
-        await this.until(
-          (m) => m.type === 'NarrationCompleted',
-          mark,
-          20_000,
-        ).catch((e: Error) => {
-          throw new Error(
-            `${e.message}; command ${JSON.stringify(payload)} stuck behind narration; frames: ${this.log.map((m) => m.type + (m.payload?.code ? `:${m.payload.code}` : '')).join(',')}`,
-          );
-        });
+        // A completion frame can race the rejected command; retry against Room
+        // admission itself instead of waiting for a frame that may already have arrived.
+        await new Promise((r) => setTimeout(r, 250));
         continue;
       }
       // RATE_LIMITED is rejected before the Room sees the command, so resending is safe.
@@ -272,16 +268,20 @@ function authoredEncounterDm(
       const hasToolResult = request.messages.some(
         (message) => message.role === 'tool',
       );
-      const chunks: LlmChunk[] = hasToolResult
-        ? [{ type: 'text', delta: 'The scene changes.' }]
-        : [
-            {
-              type: 'tool-call',
-              id: 'authored-start',
-              name: 'start_combat',
-              arguments: { encounterId },
-            },
-          ];
+      const startCombatOffered = request.tools?.some(
+        (tool) => tool.name === 'start_combat',
+      );
+      const chunks: LlmChunk[] =
+        !startCombatOffered || hasToolResult
+          ? [{ type: 'text', delta: 'The scene changes.' }]
+          : [
+              {
+                type: 'tool-call',
+                id: 'authored-start',
+                name: 'start_combat',
+                arguments: { encounterId },
+              },
+            ];
       for (const chunk of chunks) yield chunk;
     },
   };
@@ -575,6 +575,12 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       expect(
         validRequests[0]?.messages.map((message) => message.content).join(' '),
       ).toContain(key);
+      expect(
+        JSON.stringify(
+          validRequests[0]?.tools?.find((tool) => tool.name === 'start_combat')
+            ?.parameters,
+        ),
+      ).toContain('encounterId');
     } finally {
       client.close();
     }
@@ -657,11 +663,28 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
   }, 60_000);
 
   it('start_combat populates the Room, monsters act, and a non-controller cannot accept an opportunity attack', async () => {
-    stack = await Stack.boot('combat-full');
+    const encounterKey = 'encounter-e2-lookouts';
+    const combatRequests: LlmRequest[] = [];
+    const adapter = authoredEncounterDm(combatRequests, encounterKey);
+    stack = await Stack.boot('combat-full', {
+      adapter,
+      storyCombatEnabled: true,
+    });
     const user = await newUser();
-    const table = await seedTable(stack, user, preCombat);
+    const table = await seedTable(
+      stack,
+      user,
+      () => ({ ...preCombatGame(hero), characters: { [user.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
     await stack.stop();
-    stack = await Stack.boot('combat-full-2');
+    stack = await Stack.boot('combat-full-2', {
+      adapter,
+      storyCombatEnabled: true,
+    });
     const client = await Client.open(stack, user, table);
     // A recovered seat is `returning` until ADR-031's full 10 s reconnect hold.
     await client.until(
@@ -687,10 +710,10 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     expect(goblin).toMatchObject({ hpState: 'healthy' });
     expect(goblin).not.toHaveProperty('hp');
     await client.until((m) => m.type === 'NarrationCompleted', mark);
-    expect(stack.requests.length).toBeGreaterThanOrEqual(2);
+    expect(combatRequests.length).toBeGreaterThanOrEqual(1);
     const boot = await savedGame(table);
     expect(boot.gameState.combatActors).toEqual({ [user.id]: 'ent_aria' });
-    expect(boot.gameState.combatRoom?.entities).toHaveLength(3);
+    expect(boot.gameState.combatRoom?.entities).toHaveLength(2);
 
     // Play the hero with the same options a client sees; kite once to provoke (and accept) an opportunity attack.
     let kited = false;

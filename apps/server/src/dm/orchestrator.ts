@@ -3,6 +3,7 @@ import {
   DMToolArgsSchema,
   DMToolCallSchema,
   DMToolErrorCodeSchema,
+  StartCombatEncounterArgsSchema,
   type DMToolErrorCode,
   type DMToolName,
   type DMTurnEvent,
@@ -231,12 +232,19 @@ function toolSchemas(input: TurnInput): LlmTool[] {
           input.toolDescriptions?.[name] ?? `Validated ${name} action.`,
         // Native tool calling needs real JSON schemas; empty parameters made models emit {} args.
         parameters: (input.toolSchemas?.[name] ??
-          zodSchema(
-            DMToolArgsSchema[name as keyof typeof DMToolArgsSchema],
-          )) as Record<string, unknown>,
+          zodSchema(toolArgsSchema(input, name))) as Record<string, unknown>,
       },
     ];
   });
+}
+function toolArgsSchema(input: TurnInput, name: string) {
+  if (
+    name === 'start_combat' &&
+    input.prompt.activeMode !== 'combat' &&
+    input.prompt.offeredEncounterKeys?.length
+  )
+    return StartCombatEncounterArgsSchema;
+  return DMToolArgsSchema[name as keyof typeof DMToolArgsSchema];
 }
 function canAskClarification(input: TurnInput): boolean {
   return (
@@ -248,6 +256,7 @@ function canAskClarification(input: TurnInput): boolean {
 function safeArgs(
   name: string,
   args: unknown,
+  input: TurnInput,
 ):
   | { success: true; value: unknown }
   | { success: false; hint: string; error: DMToolErrorCode } {
@@ -257,7 +266,7 @@ function safeArgs(
       error: 'unknown-tool',
       hint: 'Use a tool from the supplied tool list.',
     };
-  const schema = DMToolArgsSchema[name as DMToolName];
+  const schema = toolArgsSchema(input, name);
   const parsed = schema.safeParse(args);
   if (!parsed.success)
     return {
@@ -554,7 +563,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       });
       // Any prose co-emitted with calls is intentionally discarded.
       for (const call of calls) {
-        const validated = safeArgs(call.name, call.arguments);
+        const validated = safeArgs(call.name, call.arguments, input);
         const callSite = `${call.name}:${callHash(call.name, validated.success ? validated.value : call.arguments)}`;
         const attempt = (attempts.get(callSite) ?? 0) + 1;
         const reject = (
