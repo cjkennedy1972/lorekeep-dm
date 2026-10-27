@@ -32,7 +32,7 @@ export function resolveEncounter(
   | { ok: false; code: EncounterErrorCode } {
   const encounter = adventure.encounters.find(({ id }) => id === encounterKey);
   if (!encounter) return { ok: false, code: 'unknown-encounter' };
-  if (resolvedSet.has(encounterKey))
+  if (resolvedSet.has(encounterKey) && !encounter.repeatable)
     return { ok: false, code: 'ENCOUNTER_ALREADY_USED' };
   const scene = adventure.scenes.find(({ id }) => id === sceneId);
   if (!scene?.encounterIds.includes(encounterKey))
@@ -57,5 +57,10 @@ export function offeredEncounters(
   resolvedSet: ReadonlySet<string>,
 ): string[] {
   const scene = adventure.scenes.find(({ id }) => id === sceneId);
-  return (scene?.encounterIds ?? []).filter((id) => !resolvedSet.has(id));
+  return (scene?.encounterIds ?? []).filter((id) => {
+    const encounter = adventure.encounters.find(
+      (candidate) => candidate.id === id,
+    );
+    return !!encounter && (encounter.repeatable || !resolvedSet.has(id));
+  });
 }

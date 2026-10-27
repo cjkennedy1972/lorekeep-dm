@@ -43,6 +43,25 @@ describe('authored encounter resolution (ADR-038)', () => {
       resolveEncounter(adventure, sceneId, lookouts, new Set([lookouts])),
     ).toEqual({ ok: false, code: 'ENCOUNTER_ALREADY_USED' });
   });
+  it('allows only authored repeatable encounters to restart after resolution', () => {
+    const repeatable = {
+      ...adventure,
+      encounters: adventure.encounters.map((encounter) =>
+        encounter.id === lookouts
+          ? { ...encounter, repeatable: true }
+          : encounter,
+      ),
+    };
+    expect(
+      resolveEncounter(repeatable, sceneId, lookouts, new Set([lookouts])).ok,
+    ).toBe(true);
+    expect(
+      resolveEncounter(adventure, sceneId, lookouts, new Set([lookouts])),
+    ).toEqual({ ok: false, code: 'ENCOUNTER_ALREADY_USED' });
+    expect(
+      offeredEncounters(repeatable, sceneId, new Set([lookouts])),
+    ).toContain(lookouts);
+  });
   it("offers only the current scene's unresolved encounters", () => {
     expect(offeredEncounters(adventure, sceneId, new Set())).toEqual([
       lookouts,

@@ -341,6 +341,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     );
     // ADR-038: one start_combat per turn; the encounter is marked resolved when its combat starts.
     let startedEncounter: string | undefined;
+    let startCombatCalled = false;
     const offeredEncounterKeys =
       adventure?.ok && initialSceneId
         ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
@@ -690,6 +691,21 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         let engineCall: unknown = call;
         let encounterMap: unknown;
         if (request.name === 'start_combat') {
+          if (startCombatCalled)
+            return {
+              ok: false,
+              error: 'turn-budget-exhausted',
+              hint: 'Combat has already been considered this turn; narrate the established outcome.',
+              events: [],
+            };
+          startCombatCalled = true;
+          if (state.combatRoom && !state.combatRoom.ended)
+            return {
+              ok: false,
+              error: 'illegal-transition',
+              hint: 'An encounter is already active.',
+              events: [],
+            };
           const asKey = StartCombatEncounterArgsSchema.safeParse(request.args);
           if (asKey.success) {
             if (startedEncounter)
@@ -740,7 +756,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 ambushSide: resolved.ambushSide,
               },
             };
-            startedEncounter = asKey.data.encounterId;
           }
         }
         const serializedArgs = JSON.stringify(request.args ?? {});
@@ -835,6 +850,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               }
             : rawResult;
         if (!rawResult.ok) startedEncounter = undefined;
+        else if (request.name === 'start_combat' && encounterMap)
+          startedEncounter = (request.args as { encounterId: string })
+            .encounterId;
         if (!result.ok) return { ...result, events: [] };
         // An area handle is single-use (ADR-022 §2.2): spend it on the cast that used it.
         const castTarget = (

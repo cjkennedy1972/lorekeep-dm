@@ -301,6 +301,7 @@ export function reconcileCombat(
     {
       type: 'CombatStarted',
       combatants: built.state.entities.map((e) => ({ id: e.id, pos: e.pos })),
+      order: built.state.combat.initiative.map(({ entityId }) => entityId),
     },
     {
       type: 'TurnStarted',
