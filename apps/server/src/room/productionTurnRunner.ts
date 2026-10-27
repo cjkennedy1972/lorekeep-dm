@@ -250,6 +250,13 @@ function refusalWatch(adapter: LlmAdapter, onRefusal: () => void): LlmAdapter {
   };
 }
 
+/** ADR-038 stays disabled by default until the rollout flag is explicitly enabled. */
+export function storyCombatFlagEnabled(
+  value = process.env.LOREKEEP_ADR_038_STORY_COMBAT,
+): boolean {
+  return value === 'true';
+}
+
 export class ProductionSoloTurnRunner implements SoloTurnRunner {
   private readonly catalog = loadCatalog();
   private readonly egress = createEndpointEgress();
@@ -267,6 +274,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly endpointAllowsMature = false,
     private readonly moderatorOverride?: Moderator,
     private readonly leaveJudgeOverride?: LeaveJudge,
+    private readonly storyCombatEnabled = storyCombatFlagEnabled(),
   ) {}
 
   async run(
@@ -343,7 +351,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     let startedEncounter: string | undefined;
     let startCombatCalled = false;
     const offeredEncounterKeys =
-      adventure?.ok && initialSceneId
+      this.storyCombatEnabled && adventure?.ok && initialSceneId
         ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
         : [];
     const offeredEncounterPrompt =
@@ -712,6 +720,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         let engineCall: unknown = call;
         let encounterMap: unknown;
         if (request.name === 'start_combat') {
+          if (!this.storyCombatEnabled)
+            return {
+              ok: false,
+              error: 'unknown-tool',
+              hint: 'Authored combat starts are unavailable.',
+              events: [],
+            };
           if (startCombatCalled)
             return {
               ok: false,

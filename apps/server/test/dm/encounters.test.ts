@@ -124,3 +124,14 @@ describe('authored encounter resolution (ADR-038)', () => {
       }
   });
 });
+
+describe('ADR-038 rollout flag', () => {
+  it('is disabled unless explicitly set to true', async () => {
+    const { storyCombatFlagEnabled } = await import(
+      '../../src/room/productionTurnRunner.js'
+    );
+    expect(storyCombatFlagEnabled(undefined)).toBe(false);
+    expect(storyCombatFlagEnabled('false')).toBe(false);
+    expect(storyCombatFlagEnabled('true')).toBe(true);
+  });
+});
