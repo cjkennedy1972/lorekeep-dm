@@ -24,8 +24,15 @@ type Props = {
   onReactionChoice?: (reactionId: string, choice: 'take' | 'decline') => void;
   /** Remaining server window for the prompt; shown as text so the deadline is not conveyed by motion or color. */
   reactionRemainingMs?: number;
-  /** Map surface; receives pickCell so a pointer click enters the same move preview as the keyboard. */
-  children?: ReactNode | ((pickCell: (cell: GridPos) => void) => ReactNode);
+  /** Human name for an entity id; defaults to the id itself. */
+  nameOf?: (entityId: string) => string;
+  /** Map surface; receives pickCell so a pointer click enters the same move preview as the keyboard, and the keyboard cursor so the canvas can draw it. */
+  children?:
+    | ReactNode
+    | ((
+        pickCell: (cell: GridPos) => void,
+        view: { cursor: GridPos | null; moving: boolean },
+      ) => ReactNode);
 };
 
 const same = (a: GridPos, b: GridPos) => a.x === b.x && a.y === b.y;
@@ -40,6 +47,7 @@ export function MapKeyboard({
   reactionPrompt,
   onReactionChoice,
   reactionRemainingMs,
+  nameOf = (entityId) => entityId,
   children,
 }: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
@@ -373,7 +381,7 @@ export function MapKeyboard({
       data-moving={moving}
     >
       <p>
-        Selected: {selectedId ?? 'none'}
+        Selected: {selectedId ? nameOf(selectedId) : 'none'}
         {point ? `; cursor ${point.x + 1}, ${point.y + 1}` : ''}
       </p>
       {moving && (
@@ -436,8 +444,8 @@ export function MapKeyboard({
         >
           <h2 id="map-reaction-title">Opportunity attack</h2>
           <p>
-            {reaction.hostileId} can make an opportunity attack against{' '}
-            {reaction.moverId}.
+            {nameOf(reaction.hostileId)} can make an opportunity attack against{' '}
+            {nameOf(reaction.moverId)}.
           </p>
           {reactionRemainingMs !== undefined && (
             <p>
@@ -449,7 +457,9 @@ export function MapKeyboard({
           <button onClick={() => resolve('decline')}>Decline</button>
         </div>
       )}
-      {typeof children === 'function' ? children(pickCell) : children}
+      {typeof children === 'function'
+        ? children(pickCell, { cursor: point, moving })
+        : children}
     </div>
   );
 }

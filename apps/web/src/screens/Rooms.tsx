@@ -66,7 +66,13 @@ export function Rooms() {
           ))}
         </ul>
       ) : (
-        <p>You have no games yet.</p>
+        <div className="empty-card">
+          <p>You have no games yet.</p>
+          <p className="empty-card__hint">
+            Start a solo adventure, or join a friend&apos;s table with an invite
+            code.
+          </p>
+        </div>
       )}
       <div className="page-links">
         <p>
@@ -75,7 +81,9 @@ export function Rooms() {
           </Link>
         </p>
         <p>
-          <Link to="/characters/new">Build a character</Link>
+          <Link className="button secondary" to="/characters/new">
+            Build a character
+          </Link>
         </p>
         <p>
           Have an invite code? <Link to="/join">Join a table</Link>

@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { ServerMessage } from '@game/schema';
 import { RollBreakdown } from '../../RollBreakdown.js';
 import {
@@ -19,6 +19,8 @@ type Props = {
   ) => Promise<string | null>;
   onRetry?: (actionId: string) => void;
   onResubmit?: (actionId: string) => void;
+  /** Shown in place of an empty log, before the first narration arrives. */
+  opening?: { title: string; body: ReactNode };
 };
 
 function rollEvent(payload: RollPayload) {
@@ -40,6 +42,7 @@ export function NarrationLog({
   onReport,
   onRetry,
   onResubmit,
+  opening,
 }: Props) {
   const [state, dispatch] = useReducer(
     (current: typeof initialNarrationLog, message: ServerMessage) =>
@@ -287,6 +290,11 @@ export function NarrationLog({
                 className="narration-log__pending"
               >
                 The DM is thinking…
+                <span className="thinking-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
               </li>
             );
           }
@@ -420,6 +428,14 @@ export function NarrationLog({
             });
           })}
       </ol>
+      {opening &&
+        state.entries.length === 0 &&
+        !messages.some((message) => message.type === 'CombatEvents') && (
+          <div className="narration-log__opening">
+            <h3>{opening.title}</h3>
+            <p>{opening.body}</p>
+          </div>
+        )}
       {reportMessage && <p role="status">{reportMessage}</p>}
       {state.entries.some((entry) => entry.kind === 'pending') && (
         <p className="sr-only" role="status" aria-live="polite">

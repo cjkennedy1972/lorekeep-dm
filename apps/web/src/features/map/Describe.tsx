@@ -6,13 +6,32 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
 
-type Props = { store?: typeof gameStore; viewerId?: string };
+type Props = {
+  store?: typeof gameStore;
+  viewerId?: string;
+  /** Human name for an entity id; ids in the engine's prose are swapped for names. */
+  nameOf?: (entityId: string) => string;
+};
 
 /** On-demand battlefield prose and once-per-active-turn combat status. */
-export function Describe({ store = gameStore, viewerId }: Props) {
+export function Describe({
+  store = gameStore,
+  viewerId,
+  nameOf = (entityId) => entityId,
+}: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
   const [verbosity, setVerbosity] = useState<DescribeVerbosity>('standard');
   const [text, setText] = useState('');
+  /** The rules engine writes entity ids into its prose; show names instead (longest id first so one id never clips another). */
+  const named = (prose: string) =>
+    [...gameStore.getState().mapEntities, ...state.mapEntities]
+      .map((entity) => entity.id)
+      .filter((entityId, index, all) => all.indexOf(entityId) === index)
+      .sort((a, b) => b.length - a.length)
+      .reduce(
+        (out, entityId) => out.replaceAll(entityId, nameOf(entityId)),
+        prose,
+      );
   const activeId = state.combat.activeEntityId;
   const viewer = viewerId ?? activeId;
   const resources = viewer ? state.combat.resources[viewer] : undefined;
@@ -44,13 +63,15 @@ export function Describe({ store = gameStore, viewerId }: Props) {
       return;
     }
     setTurnAnnouncement(
-      `${activeId}: ${resources?.movementRemaining ?? 0} feet movement remaining. Threats within 30 feet: ${threatsWithin({ map: state.battlemap, entities: state.mapEntities.map((entity) => ({ ...entity, team: entity.team ?? entity.kind })) }, activeId)}.`,
+      named(
+        `${activeId}: ${resources?.movementRemaining ?? 0} feet movement remaining. Threats within 30 feet: ${threatsWithin({ map: state.battlemap, entities: state.mapEntities.map((entity) => ({ ...entity, team: entity.team ?? entity.kind })) }, activeId)}.`,
+      ),
     );
     // This effect is keyed only to the turn identity: movement/event renders do not re-announce.
   }, [turnKey]);
   const renderDescription = () => {
     if (!descriptionState || !viewer) return;
-    setText(describe(descriptionState, viewer, { verbosity }));
+    setText(named(describe(descriptionState, viewer, { verbosity })));
   };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

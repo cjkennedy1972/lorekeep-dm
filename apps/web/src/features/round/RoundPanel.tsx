@@ -180,7 +180,12 @@ export function RoundPanel({
           <h3 id="round-submitted-heading">Submitted</h3>
           <ul aria-labelledby="round-submitted-heading" className="round-seats">
             {eligible.map((seatId) => (
-              <li key={seatId}>
+              <li
+                key={seatId}
+                data-status={
+                  submittedSeats.has(seatId) ? 'submitted' : 'waiting'
+                }
+              >
                 {name(seatId)}:{' '}
                 {submittedSeats.has(seatId) ? 'submitted' : 'waiting'}
               </li>

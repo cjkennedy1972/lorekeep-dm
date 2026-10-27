@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { contrast } from './contrast';
+import { MAP_PALETTE } from '../features/map/Canvas2DRenderer';
 
 const tokens = readFileSync('src/styles/tokens.css', 'utf8');
 
@@ -89,4 +90,60 @@ test('prefers-reduced-motion block disables transitions and animations', () => {
     );
   expect(m?.[1]).toMatch(/transition:\s*none\s*!important/);
   expect(m?.[1]).toMatch(/animation:\s*none\s*!important/);
+});
+
+/** Blends `ink` at `alpha` over `base`, like the canvas does for pattern and grid strokes. */
+function blend(ink: string, alpha: number, base: string): string {
+  const n = (hex: string, shift: number) =>
+    (Number.parseInt(hex.slice(1), 16) >> shift) & 255;
+  const mix = (shift: number) =>
+    Math.round(n(ink, shift) * alpha + n(base, shift) * (1 - alpha));
+  return `#${[16, 8, 0].map((shift) => mix(shift).toString(16).padStart(2, '0')).join('')}`;
+}
+
+describe('map canvas palette (dark ink and parchment, used in both themes)', () => {
+  const P = MAP_PALETTE;
+  const graphics: [string, string, string][] = [
+    ['wall edge on floor', P.edgeWall, P.floor],
+    ['door edge on floor', P.edgeDoor, P.floor],
+    ['window edge on floor', P.edgeWindow, P.floor],
+    ['feature outline on floor', P.feature, P.floor],
+    ['marker dot on floor', P.markerFill, P.floor],
+    ['party token on floor', P.tokenParty, P.floor],
+    ['foe token on floor', P.tokenFoe, P.floor],
+    ['neutral token on floor', P.tokenOther, P.floor],
+    ['active ring on floor', P.activeRing, P.floor],
+    ['active outer ring on floor', P.activeRingOuter, P.floor],
+    ['keyboard cursor on floor', P.cursor, P.floor],
+    ['active ring on rubble', P.activeRing, P.rubble],
+    ['keyboard cursor on rubble', P.cursor, P.rubble],
+    ['pillar on floor', P.pillar, P.floor],
+    [
+      'pattern strokes on floor',
+      blend(P.patternInk, P.patternAlpha, P.floor),
+      P.floor,
+    ],
+    [
+      'pattern strokes on rubble',
+      blend(P.patternInk, P.patternAlpha, P.rubble),
+      P.rubble,
+    ],
+    [
+      'pattern strokes on wall',
+      blend(P.patternInk, P.patternAlpha, P.wall),
+      P.wall,
+    ],
+    ['wall edge on wall fill', P.edgeWall, P.wall],
+  ];
+  test.each(graphics)('%s >= 3:1', (_label, fg, bg) => {
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(GRAPHIC);
+  });
+  test.each([
+    ['token initials on party token', P.tokenInk, P.tokenParty],
+    ['token initials on foe token', P.tokenInk, P.tokenFoe],
+    ['token initials on neutral token', P.tokenInk, P.tokenOther],
+    ['marker label on its dark halo', P.markerText, P.markerStroke],
+  ])('text: %s >= 4.5:1', (_label, fg, bg) => {
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(TEXT);
+  });
 });

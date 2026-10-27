@@ -23,21 +23,47 @@
   text-transform: uppercase;
 }
 .wizard-progress {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(5rem, 1fr));
+  display: flex;
   gap: var(--space-2);
   list-style: none;
   margin: 0 0 var(--space-4);
-  padding: 0;
-  overflow-x: auto;
+  padding: 0 0 var(--space-1);
 }
 .wizard-progress li {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  min-width: max-content;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--fg-muted);
   font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.wizard-progress li:last-child {
+  flex: 0 0 auto;
+}
+/* A thin rail joins the steps; finished steps light it up. */
+.wizard-progress li:not(:last-child)::after {
+  content: '';
+  flex: 1 1 1rem;
+  min-width: 0.75rem;
+  height: 2px;
+  margin-inline-end: var(--space-1);
+  background: var(--border-soft);
+  border-radius: 2px;
+}
+.wizard-progress li[data-done='true']::after {
+  background: var(--verdigris);
+}
+.wizard-progress li[data-done='true'] {
+  color: var(--fg);
+}
+.wizard-progress li[data-done='true'] .wizard-step-number {
+  background: transparent;
+  border-color: var(--verdigris);
+  color: var(--verdigris);
+  font-weight: 700;
 }
 .wizard-progress li[aria-current='step'] {
   color: var(--fg);
@@ -65,9 +91,19 @@
 .wizard-panel,
 .wizard-summary {
   padding: clamp(1rem, 3vw, 1.8rem);
-  border: 1px solid var(--border-ui);
-  border-radius: calc(var(--radius) * 2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.wizard-summary {
+  background: var(--surface-2);
+}
+.wizard-summary .wizard-kicker {
+  color: var(--verdigris);
+}
+.wizard-save button {
+  width: 100%;
 }
 .wizard-panel h2,
 .wizard-summary h2 {
@@ -87,17 +123,37 @@
 }
 .wizard-option {
   display: flex;
-  gap: var(--space-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition:
+    border-color var(--transition),
+    background var(--transition);
+}
+.wizard-option:hover {
+  border-color: var(--border-ui);
+}
+.wizard-option label {
+  display: flex;
+  flex: 1;
+  gap: var(--space-3);
   align-items: flex-start;
   padding: var(--space-3);
-  border: 1px solid var(--border-ui);
-  border-radius: var(--radius);
-  background: var(--bg);
   cursor: pointer;
 }
 .wizard-option:has(input:checked) {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  box-shadow: inset 0.25rem 0 0 var(--accent);
+}
+.wizard-option:has(input:focus-visible) {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: 2px;
+}
+.wizard-option label > span {
+  display: grid;
+  gap: 0.15rem;
 }
 .wizard-option input {
   flex: 0 0 auto;
@@ -175,12 +231,42 @@
   .wizard-summary {
     position: static;
   }
-  .wizard-progress {
-    grid-template-columns: repeat(7, max-content);
-  }
 }
 @media (max-width: 420px) {
   .wizard-abilities {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Narrow screens: numbers for every step, the name only for the current one (all names stay in the DOM). */
+.wizard-step-number {
+  flex: none;
+}
+@media (max-width: 60rem) {
+  .wizard-progress {
+    gap: var(--space-1);
+  }
+  .wizard-progress li,
+  .wizard-progress li:last-child {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+  .wizard-progress li::after {
+    content: none !important;
+  }
+  .wizard-progress li:not([aria-current='step']) .wizard-step-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .wizard-progress li[aria-current='step'] {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .wizard-progress li[aria-current='step'] .wizard-step-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }

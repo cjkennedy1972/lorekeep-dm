@@ -156,12 +156,6 @@
   font-weight: 600;
 }
 
-.narration-log__entries:empty::before {
-  content: 'Your story begins with your first action. Choose one below, or describe what you do.';
-  display: block;
-  padding: var(--space-4) var(--space-2);
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 1.1875rem;
-  color: var(--fg-muted);
+.narration-log__entries:empty {
+  min-height: 0;
 }

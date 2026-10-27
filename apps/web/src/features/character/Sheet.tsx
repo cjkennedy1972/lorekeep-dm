@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
 import type { Character } from '@game/schema';
 import { gameStore, type GameStore } from '../../state/gameStore';
 import { loadCharacterCatalog } from './catalog';
@@ -6,6 +6,8 @@ import { loadCharacterCatalog } from './catalog';
 export interface SheetProps {
   character?: Character | null;
   store?: GameStore;
+  /** Shown under the empty state, e.g. a link to build or choose a character. */
+  emptyAction?: ReactNode;
 }
 
 const abilityNames = {
@@ -29,6 +31,7 @@ const conditionLabels = new Map(
 export function Sheet({
   character: suppliedCharacter,
   store = gameStore,
+  emptyAction,
 }: SheetProps) {
   const state = useSyncExternalStore(
     store.subscribe,
@@ -40,9 +43,10 @@ export function Sheet({
   const announcement = state.announcement;
   if (!character)
     return (
-      <section aria-labelledby="sheet-title">
+      <section aria-labelledby="sheet-title" className="sheet-empty">
         <h1 id="sheet-title">Character sheet</h1>
         <p>No character selected.</p>
+        {emptyAction}
       </section>
     );
 
@@ -51,6 +55,11 @@ export function Sheet({
     const label = conditionLabels.get(condition.conditionId);
     return label ? [label.toLowerCase()] : [];
   });
+  const hpRatio = character.hp.current / Math.max(character.hp.max, 1);
+  const hpState = hpRatio <= 0.25 ? 'critical' : hpRatio <= 0.5 ? 'warn' : 'ok';
+  const hpWord = { ok: 'Healthy', warn: 'Wounded', critical: 'Critical' }[
+    hpState
+  ];
   const hpLabel = `Hit points ${character.hp.current} of ${character.hp.max}`;
 
   return (
@@ -69,13 +78,20 @@ export function Sheet({
           <dd aria-label={hpLabel}>
             {character.hp.current} / {character.hp.max}
             {character.hp.temp > 0 ? ` (+${character.hp.temp} temp)` : ''}
-            <span className="sheet-hp" aria-hidden="true">
+            <span
+              className="sheet-hp"
+              aria-hidden="true"
+              data-hp-state={hpState}
+            >
               <span
                 className="sheet-hp__fill"
                 style={{
                   width: `${Math.max(0, Math.min(100, (character.hp.current / Math.max(character.hp.max, 1)) * 100))}%`,
                 }}
               />
+            </span>
+            <span className="sheet-hp__text" data-hp-state={hpState}>
+              {hpWord}
             </span>
           </dd>
         </div>

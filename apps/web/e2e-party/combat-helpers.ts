@@ -98,11 +98,10 @@ export async function closeMember(view: View) {
 
 /** The tracker's first entry is the active combatant; the server names it in the "Active combatant:" line. */
 export async function activeCombatantId(page: Page): Promise<string> {
-  const line = page.getByText(/^Active combatant: /);
+  // The line shows the display name; the entity id rides along in data-entity-id.
+  const line = page.locator('.game-active');
   await expect(line).toBeVisible();
-  return ((await line.textContent()) ?? '')
-    .replace('Active combatant: ', '')
-    .trim();
+  return ((await line.getAttribute('data-entity-id')) ?? '').trim();
 }
 
 /**
@@ -171,7 +170,9 @@ export async function tokenTable(page: Page) {
   const tokens: { id: string; kind: string; x: number; y: number }[] = [];
   for (let i = 0; i < count; i += 1) {
     const row = rows.nth(i);
-    const id = ((await row.locator('th').textContent()) ?? '').trim();
+    const id = (
+      (await row.locator('th').getAttribute('data-entity-id')) ?? ''
+    ).trim();
     const cells = await row.locator('td').allTextContents();
     const match = /^([A-Z]+)(\d+)$/.exec(cells[1]?.trim() ?? '');
     if (!match) continue;

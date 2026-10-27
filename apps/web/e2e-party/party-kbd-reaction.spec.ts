@@ -124,11 +124,12 @@ test.describe('party keyboard-only opportunity attack', () => {
           dialog.getByRole('button', { name: 'Accept' }),
         ).toBeFocused();
         for (const v of others) {
-          await expect(
-            v.page.getByRole('status').filter({
-              hasText: `Reaction window open for ${reactorEntity}`,
-            }),
-          ).toBeVisible();
+          // The window names the reactor by display name, never by raw entity id.
+          const notice = v.page.getByRole('status').filter({
+            hasText: 'Reaction window open for ',
+          });
+          await expect(notice).toBeVisible();
+          await expect(notice).not.toContainText(reactorEntity);
           await expect(v.page.getByRole('dialog', DIALOG)).toHaveCount(0);
         }
       });

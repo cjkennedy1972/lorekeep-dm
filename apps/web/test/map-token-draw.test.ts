@@ -79,8 +79,9 @@ describe('token drawing', () => {
     // Only the active PC (team index 0 → circle) draws arcs: body r=11.52 plus rings at +5 and +9.
     const tokenArcs = arcs.filter((radius) => radius > 10);
     expect(tokenArcs).toEqual([16.52, 20.52, 11.52]);
-    expect(texts).toContain('P');
+    // Tokens carry the combatant's initials; the team is the shape.
     expect(texts).toContain('M');
+    expect(texts).toContain('O');
   });
 
   it('keeps the map draw unchanged when no tokens are passed', () => {

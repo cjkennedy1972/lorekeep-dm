@@ -1,6 +1,7 @@
 import { rleDecode, type Battlemap } from '@game/schema';
 import type { MapDrawCommand, MapRenderer, MapView } from './MapRenderer.js';
 import type { TeamMarker, TokenDrawCommand } from './tokens.js';
+import { initialsOf } from './names.js';
 
 /** Stable pattern identities keep terrain distinguishable without relying on hue. */
 export function terrainPatternId(terrainId: string): string {
@@ -73,11 +74,47 @@ export function createMapDrawCommands(
   return commands;
 }
 
+/**
+ * Dark parchment-and-ink palette for the lantern-lit UI. Hex only: src/a11y/contrast.test.ts parses
+ * this block and checks every drawn element against the floor. Terrain stays distinguishable by
+ * pattern as well as fill, and teams by shape as well as hue.
+ */
+export const MAP_PALETTE = {
+  floor: '#3b3328',
+  rubble: '#54472f',
+  pillar: '#8c8171',
+  wall: '#1a1612',
+  fallback: '#463d30',
+  /** Pattern and grid strokes are this ink drawn at the alpha below. */
+  patternInk: '#f1e7d3',
+  patternAlpha: 0.5,
+  gridInk: '#f1e7d3',
+  gridAlpha: 0.1,
+  edgeWall: '#f1e7d3',
+  edgeDoor: '#f0a64a',
+  edgeWindow: '#7fd0e0',
+  feature: '#d9c9a3',
+  markerFill: '#f0a64a',
+  markerStroke: '#14110f',
+  markerText: '#f7ecd4',
+  tokenParty: '#8fd6c4',
+  tokenFoe: '#ffa393',
+  tokenOther: '#f1e7d3',
+  tokenInk: '#14110f',
+  activeRing: '#ffd37a',
+  activeRingOuter: '#fff1c9',
+  cursor: '#7fd0e0',
+} as const;
+
 const TERRAIN_COLORS: Readonly<Record<string, string>> = {
-  floor: '#d9d2c3',
-  rubble: '#b8a98c',
-  pillar: '#655f58',
-  'stone-wall': '#48433e',
+  floor: MAP_PALETTE.floor,
+  rubble: MAP_PALETTE.rubble,
+  pillar: MAP_PALETTE.pillar,
+  'stone-wall': MAP_PALETTE.wall,
+};
+const withAlpha = (hex: string, alpha: number) => {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
 };
 
 /** Canvas2D renderer v1. The command generator is independent of browser APIs. */
@@ -105,14 +142,18 @@ export class Canvas2DRenderer implements MapRenderer {
       const top = command.y * size;
       switch (command.type) {
         case 'terrain': {
-          context.fillStyle = TERRAIN_COLORS[command.terrainId] ?? '#c5c5c5';
+          context.fillStyle =
+            TERRAIN_COLORS[command.terrainId] ?? MAP_PALETTE.fallback;
           context.fillRect(left, top, size, size);
           // Pattern strokes encode terrain independently of its fill color.
           context.save();
           context.beginPath();
           context.rect(left, top, size, size);
           context.clip();
-          context.strokeStyle = 'rgba(20, 20, 20, 0.42)';
+          context.strokeStyle = withAlpha(
+            MAP_PALETTE.patternInk,
+            MAP_PALETTE.patternAlpha,
+          );
           context.lineWidth = 1;
           if (command.patternId.endsWith('rubble')) {
             for (let offset = -size; offset < size * 2; offset += 8) {
@@ -138,7 +179,10 @@ export class Canvas2DRenderer implements MapRenderer {
           break;
         }
         case 'grid':
-          context.strokeStyle = 'rgba(35, 30, 25, 0.35)';
+          context.strokeStyle = withAlpha(
+            MAP_PALETTE.gridInk,
+            MAP_PALETTE.gridAlpha,
+          );
           context.lineWidth = 1;
           context.strokeRect(left, top, size, size);
           break;
@@ -146,10 +190,10 @@ export class Canvas2DRenderer implements MapRenderer {
           context.save();
           context.strokeStyle =
             command.kind === 'wall'
-              ? '#28231f'
+              ? MAP_PALETTE.edgeWall
               : command.kind === 'door'
-                ? '#8b4e20'
-                : '#76a8b4';
+                ? MAP_PALETTE.edgeDoor
+                : MAP_PALETTE.edgeWindow;
           context.lineWidth = command.kind === 'wall' ? 4 : 3;
           const x =
             left + (command.orientation === 'vertical' ? size : size / 2);
@@ -172,7 +216,7 @@ export class Canvas2DRenderer implements MapRenderer {
         }
         case 'feature':
           context.save();
-          context.strokeStyle = '#211d19';
+          context.strokeStyle = MAP_PALETTE.feature;
           context.lineWidth = 2;
           context.setLineDash(command.tags.includes('difficult') ? [2, 3] : []);
           context.strokeRect(left + 5, top + 5, size - 10, size - 10);
@@ -180,8 +224,8 @@ export class Canvas2DRenderer implements MapRenderer {
           break;
         case 'marker':
           context.save();
-          context.fillStyle = '#fff8d6';
-          context.strokeStyle = '#302a22';
+          context.fillStyle = MAP_PALETTE.markerFill;
+          context.strokeStyle = MAP_PALETTE.markerStroke;
           context.beginPath();
           context.arc(
             left + size / 2,
@@ -193,7 +237,16 @@ export class Canvas2DRenderer implements MapRenderer {
           context.fill();
           context.stroke();
           context.font = `${Math.max(10, size * 0.35)}px sans-serif`;
-          context.fillStyle = '#171411';
+          // Dark halo keeps the label legible over any terrain.
+          context.lineWidth = 3;
+          context.lineJoin = 'round';
+          context.strokeStyle = MAP_PALETTE.markerStroke;
+          context.strokeText(
+            command.label,
+            left + size * 0.58,
+            top + size * 0.35,
+          );
+          context.fillStyle = MAP_PALETTE.markerText;
           context.fillText(
             command.label,
             left + size * 0.58,
@@ -204,11 +257,13 @@ export class Canvas2DRenderer implements MapRenderer {
       }
     }
     for (const token of tokens) drawToken(context, token, size);
+    if (view.cursor)
+      drawCursor(context, view.cursor, size, view.moving === true);
     return commands;
   }
 }
 
-/** Draws a combatant as a team shape with a letter; the active ring is a double stroke, not a color cue. */
+/** Draws a combatant as a team shape with the name's initials; the active ring is a double stroke, not a color cue. */
 function drawToken(
   context: CanvasRenderingContext2D,
   token: TokenDrawCommand,
@@ -220,28 +275,68 @@ function drawToken(
   const radius = span * 0.36;
   context.save();
   if (token.active) {
-    context.strokeStyle = '#111111';
+    context.strokeStyle = MAP_PALETTE.activeRing;
     context.lineWidth = 3;
     context.beginPath();
     context.arc(cx, cy, radius + 5, 0, Math.PI * 2);
     context.stroke();
+    context.strokeStyle = MAP_PALETTE.activeRingOuter;
     context.setLineDash([3, 3]);
     context.beginPath();
     context.arc(cx, cy, radius + 9, 0, Math.PI * 2);
     context.stroke();
     context.setLineDash([]);
   }
-  context.fillStyle = '#fffdf6';
-  context.strokeStyle = '#1d1a16';
+  context.fillStyle =
+    token.team === 'party'
+      ? MAP_PALETTE.tokenParty
+      : token.team === 'monster' || token.team === 'enemies'
+        ? MAP_PALETTE.tokenFoe
+        : MAP_PALETTE.tokenOther;
+  context.strokeStyle = MAP_PALETTE.tokenInk;
   context.lineWidth = 2;
   drawShape(context, token.teamMarker.shape, cx, cy, radius);
   context.fill();
   context.stroke();
-  context.fillStyle = '#171411';
-  context.font = `bold ${Math.max(10, radius * 1.1)}px sans-serif`;
+  const initials = initialsOf(token.name);
+  context.fillStyle = MAP_PALETTE.tokenInk;
+  context.font = `bold ${Math.max(10, radius * (initials.length > 1 ? 0.95 : 1.1))}px sans-serif`;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillText(token.teamMarker.letter, cx, cy);
+  context.fillText(initials, cx, cy);
+  context.restore();
+}
+
+/** Cursor cell: corner brackets plus a dashed frame while a move is being previewed. */
+function drawCursor(
+  context: CanvasRenderingContext2D,
+  cell: { x: number; y: number },
+  size: number,
+  moving: boolean,
+): void {
+  const left = cell.x * size;
+  const top = cell.y * size;
+  const arm = size * 0.3;
+  context.save();
+  context.strokeStyle = MAP_PALETTE.cursor;
+  context.lineWidth = 3;
+  if (moving) {
+    context.setLineDash([4, 3]);
+    context.strokeRect(left + 1.5, top + 1.5, size - 3, size - 3);
+    context.setLineDash([]);
+  }
+  for (const [px, py, dx, dy] of [
+    [left + 1.5, top + 1.5, 1, 1],
+    [left + size - 1.5, top + 1.5, -1, 1],
+    [left + 1.5, top + size - 1.5, 1, -1],
+    [left + size - 1.5, top + size - 1.5, -1, -1],
+  ] as const) {
+    context.beginPath();
+    context.moveTo(px + dx * arm, py);
+    context.lineTo(px, py);
+    context.lineTo(px, py + dy * arm);
+    context.stroke();
+  }
   context.restore();
 }
 

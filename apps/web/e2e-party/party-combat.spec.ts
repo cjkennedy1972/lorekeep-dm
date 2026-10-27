@@ -32,11 +32,11 @@ test('three browsers: keyboard-only party move and cancel, synced to every seat 
 
     // The server names the active combatant. It must be one of this table's party seats, bound to a
     // sheet, not an enemy, and the seat's browser must be the one that drives the move.
-    const activeText = views[0]!.page.getByText(/^Active combatant: /);
+    const activeText = views[0]!.page.locator('.game-active');
     await expect(activeText).toBeVisible();
-    const activeId = ((await activeText.textContent()) ?? '')
-      .replace('Active combatant: ', '')
-      .trim();
+    const activeId = (
+      (await activeText.getAttribute('data-entity-id')) ?? ''
+    ).trim();
     const active = views.find((v) => v.member.entityId === activeId);
     expect(
       active,
@@ -112,7 +112,7 @@ test('three browsers: keyboard-only party move and cancel, synced to every seat 
     // Confirmation is not a turn end: the moved seat stays the active combatant.
     for (const { page } of others)
       await expect(
-        page.getByText(`Active combatant: ${activeId}`),
+        page.locator(`.game-active[data-entity-id="${activeId}"]`),
       ).toBeVisible();
   } finally {
     for (const view of views) await closeMember(view);
