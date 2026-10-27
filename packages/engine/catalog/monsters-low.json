@@ -3781,7 +3781,7 @@
     "cr": 0.25,
     "creatureType": "fey",
     "hp": 11,
-    "hpDice": "3d6",
+    "hpDice": "3d6+1",
     "ac": 15,
     "initiative": 2,
     "size": "small",
