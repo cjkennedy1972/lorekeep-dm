@@ -51,7 +51,11 @@ class Stack {
   ) {}
   static async boot(
     node: string,
-    options: { adapter?: LlmAdapter; endpointAllowsMature?: boolean; storyCombatEnabled?: boolean } = {},
+    options: {
+      adapter?: LlmAdapter;
+      endpointAllowsMature?: boolean;
+      storyCombatEnabled?: boolean;
+    } = {},
   ): Promise<Stack> {
     const requests: LlmRequest[] = [];
     const runner = new ProductionSoloTurnRunner(
@@ -764,6 +768,80 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     } finally {
       client.close();
       telemetry.mockRestore();
+    }
+  }, 30_000);
+
+  it('retries a refused mature start with fresh combat interception state', async () => {
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls += 1;
+        if (calls === 2)
+          throw new LlmEndpointError('endpoint-refusal', 'refused');
+        if (calls === 1 || calls === 3) {
+          yield {
+            type: 'tool-call',
+            id: `retry-start-${calls}`,
+            name: 'start_combat',
+            arguments: { encounterId: 'encounter-e2-lookouts' },
+          } as LlmChunk;
+          return;
+        }
+        yield {
+          type: 'text',
+          delta: 'Steel rings out across the crypt.',
+        } as LlmChunk;
+      },
+    };
+    stack = await Stack.boot('adr038-refusal-retry-state', {
+      adapter,
+      storyCombatEnabled: true,
+      endpointAllowsMature: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    await db.query(
+      'UPDATE sessions SET moderation_verified=true, endpoint_allows_mature=true WHERE id=$1',
+      [table],
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until(
+        (message) => message.type === 'CombatTracker',
+        from,
+        20_000,
+      );
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(calls).toBe(4);
+      expect(
+        client.log.some((message) => message.type === 'ToolRejected'),
+      ).toBe(false);
+      expect((await savedGame(table)).gameState.combatRoom).toBeDefined();
+    } finally {
+      client.close();
     }
   }, 30_000);
 

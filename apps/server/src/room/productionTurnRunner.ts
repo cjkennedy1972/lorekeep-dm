@@ -351,6 +351,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           );
     if (!catalog) throw new Error('Pinned catalog version unavailable');
     const state = asRecord(request.state) as GameState;
+    const initialCombatRoom = state.combatRoom;
     const initialSceneId = state.sceneId;
     let transitionedSceneId: string | undefined;
     let adventureCompleted: boolean | undefined;
@@ -374,7 +375,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       startCombatCalled: boolean;
       liveRoom?: RoomCombatState;
       pendingRoom?: RoomCombatState;
-    } = { startCombatCalled: false, liveRoom: state.combatRoom };
+    } = { startCombatCalled: false, liveRoom: initialCombatRoom };
     const storyCombatEnabled = this.storyCombatEnabled;
     const sessionId = request.sessionId;
     const accountId = request.accountId;
@@ -822,7 +823,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             };
           }
           attemptState.startCombatCalled = true;
-          if (state.combatRoom && !state.combatRoom.ended) {
+          if (attemptState.liveRoom && !attemptState.liveRoom.ended) {
             rejectEncounterStart('active-combat');
             return {
               ok: false,
