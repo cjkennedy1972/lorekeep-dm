@@ -53,6 +53,18 @@ describe('entity display names', () => {
     expect(namer('ent_goblin-minion_2')).toBe('Goblin Minion 2');
   });
 
+  it('numbers visible twins in order, so an id gap never reveals a hidden sibling', () => {
+    // ent_goblin-minion_1 is hidden from this viewer and never reaches the namer.
+    const namer = createEntityNamer({
+      entities: [
+        { id: 'ent_goblin-minion_2', kind: 'monster', name: 'Goblin Minion' },
+        { id: 'ent_goblin-minion_3', kind: 'monster', name: 'Goblin Minion' },
+      ],
+    });
+    expect(namer('ent_goblin-minion_2')).toBe('Goblin Minion 1');
+    expect(namer('ent_goblin-minion_3')).toBe('Goblin Minion 2');
+  });
+
   it('names a solo character entity by its character id', () => {
     const namer = createEntityNamer({
       entities: [{ id: 'c-9', kind: 'character' }],

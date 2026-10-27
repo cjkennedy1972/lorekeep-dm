@@ -80,14 +80,15 @@ export function createEntityNamer(input: {
     names.set(entity.id, nameFromCatalogId(entity.id));
   }
   // Twins ("Goblin Minion" x2) get numbers so the tracker, tokens and legend stay unambiguous.
+  // Numbers count only the entities this viewer was sent, in map order, so 1..n has no gaps and
+  // never encodes an id, which could reveal a hidden sibling.
   const tally = new Map<string, string[]>();
   for (const [id, name] of names)
     tally.set(name, [...(tally.get(name) ?? []), id]);
   for (const [name, ids] of tally) {
     if (ids.length < 2) continue;
     ids.forEach((id, index) => {
-      const suffix = /(\d+)$/.exec(id)?.[1] ?? String(index + 1);
-      names.set(id, /\d$/.test(name) ? name : `${name} ${suffix}`);
+      names.set(id, /\d$/.test(name) ? name : `${name} ${index + 1}`);
     });
   }
   return (entityId) =>
