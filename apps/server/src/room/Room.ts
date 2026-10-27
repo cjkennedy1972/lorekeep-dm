@@ -5199,7 +5199,7 @@ export class Room {
             } as ServerMessage);
         if (clarification) {
           this.scheduleClarificationTimer(actionId, deadlineAt);
-          this.broadcast({
+          this.connections.get(accountId)?.send({
             seq: this.seq,
             type: 'ClarificationRequested',
             payload: { actionId, question: clarification.question },

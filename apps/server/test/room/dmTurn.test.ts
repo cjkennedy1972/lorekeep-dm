@@ -296,11 +296,15 @@ describe('Room solo DM turn lifecycle', () => {
     const owner = randomUUID();
     const other = randomUUID();
     const ownerMessages: { type: string; payload?: unknown }[] = [];
+    const otherMessages: { type: string; payload?: unknown }[] = [];
     await joinSeated(room, owner, {
       send: (message) =>
         ownerMessages.push(message as { type: string; payload?: unknown }),
     });
-    await joinSeated(room, other, { send() {} });
+    await joinSeated(room, other, {
+      send: (message) =>
+        otherMessages.push(message as { type: string; payload?: unknown }),
+    });
     const actionId = randomUUID();
     expect(await room.submitAction(owner, actionId, 'open the door')).toBe(
       true,
@@ -312,6 +316,11 @@ describe('Room solo DM turn lifecycle', () => {
         payload: { actionId, question: 'Which door?' },
       }),
     );
+    expect(
+      otherMessages.some(
+        (message) => message.type === 'ClarificationRequested',
+      ),
+    ).toBe(false);
     expect(events.some((event) => event.type === 'ActionAccepted')).toBe(false);
     expect(
       await room.answerClarification(other, actionId, 'the left one'),
