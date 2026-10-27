@@ -198,6 +198,42 @@ describe('tracker', () => {
     expect(result.state.phase).toBe('awaiting-command');
   });
 
+  it.each([
+    [
+      'victory',
+      (entity: RoomCombatState['entities'][number]) =>
+        entity.team === 'enemies' ? { ...entity, hp: 0 } : entity,
+      'party-victory',
+    ],
+    [
+      'defeat',
+      (entity: RoomCombatState['entities'][number]) =>
+        entity.team === 'party' ? { ...entity, hp: 0 } : entity,
+      'party-defeated',
+    ],
+    [
+      'flee',
+      (entity: RoomCombatState['entities'][number]) =>
+        entity.team === 'enemies' ? { ...entity, fled: true } : entity,
+      'enemies-fled',
+    ],
+  ] as const)(
+    'settles authored encounter combat on %s without an early reward event',
+    (_label, changeEntity, outcome) => {
+      const { state } = bootstrapped();
+      const settled = settle({
+        ...state,
+        entities: state.entities.map(changeEntity),
+      });
+      expect(settled.state.ended?.outcome).toBe(outcome);
+      expect(
+        settled.events.some((event) =>
+          /Xp|Loot|Reward/u.test(String(event.type)),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it('terminates an open move when CombatEnded closes the encounter', () => {
     const e = engaged();
     const moving = ok(

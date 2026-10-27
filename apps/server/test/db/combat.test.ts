@@ -51,7 +51,7 @@ class Stack {
   ) {}
   static async boot(
     node: string,
-    options: { adapter?: LlmAdapter; endpointAllowsMature?: boolean } = {},
+    options: { adapter?: LlmAdapter; endpointAllowsMature?: boolean; storyCombatEnabled?: boolean } = {},
   ): Promise<Stack> {
     const requests: LlmRequest[] = [];
     const runner = new ProductionSoloTurnRunner(
@@ -62,6 +62,9 @@ class Stack {
       options.adapter ?? scriptedDm(requests),
       true,
       options.endpointAllowsMature ?? false,
+      undefined,
+      undefined,
+      options.storyCombatEnabled,
     );
     const rooms = new RoomRegistry(
       new Persistence(db),
@@ -253,6 +256,37 @@ class Client {
   }
 }
 
+function authoredEncounterDm(
+  requests: LlmRequest[],
+  encounterId: string,
+): LlmAdapter {
+  return {
+    capabilities: () => ({
+      streaming: true,
+      nativeTools: true,
+      jsonSchema: true,
+    }),
+    probe: async () => true,
+    async *complete(request: LlmRequest) {
+      requests.push(request);
+      const hasToolResult = request.messages.some(
+        (message) => message.role === 'tool',
+      );
+      const chunks: LlmChunk[] = hasToolResult
+        ? [{ type: 'text', delta: 'The scene changes.' }]
+        : [
+            {
+              type: 'tool-call',
+              id: 'authored-start',
+              name: 'start_combat',
+              arguments: { encounterId },
+            },
+          ];
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
+
 async function newUser() {
   const id = randomUUID();
   await db.query(
@@ -267,6 +301,7 @@ async function seedTable(
   s: Stack,
   owner: { id: string },
   game: (account: string) => Record<string, unknown>,
+  adventure?: { id: string; sceneId: string },
 ) {
   const table = randomUUID();
   await db.query(
@@ -274,11 +309,19 @@ async function seedTable(
     [table, owner.id, 'Crypt'],
   );
   sessionIds.push(table);
+  if (adventure)
+    await db.query('UPDATE sessions SET adventure_id=$2 WHERE id=$1', [
+      table,
+      adventure.id,
+    ]);
   const room = await s.rooms.get(table);
   const resumeToken = await room.seat(owner.id, 'Aria');
   if (resumeToken) Client.resumeTokens.set(`${table}:${owner.id}`, resumeToken);
   const gameState = game(owner.id);
-  await room.persistGameState(gameState);
+  await room.persistGameState({
+    ...gameState,
+    ...(adventure ? { sceneId: adventure.sceneId } : {}),
+  });
   return table;
 }
 const preCombat = (account: string) => {
@@ -494,6 +537,124 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       g.close();
     }
   }, 30_000);
+
+  it('validates authored encounter keys through the production turn route', async () => {
+    const key = 'encounter-e2-lookouts';
+    const validRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-valid-route', {
+      adapter: authoredEncounterDm(validRequests, key),
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const validTable = await seedTable(
+      stack,
+      user,
+      () => ({ ...preCombatGame(hero), characters: { [user.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, validTable);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until(
+        (message) => message.type === 'CombatTracker',
+        from,
+        20_000,
+      );
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      const committed = await savedGame(validTable);
+      expect(committed.gameState.resolvedEncounters).toContain(key);
+      expect(committed.gameState.combatRoom?.map).toBeDefined();
+      expect(
+        validRequests[0]?.messages.map((message) => message.content).join(' '),
+      ).toContain(key);
+    } finally {
+      client.close();
+    }
+    await stack.stop();
+
+    const invalidRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-cross-scene-route', {
+      adapter: authoredEncounterDm(invalidRequests, key),
+      storyCombatEnabled: true,
+    });
+    const otherUser = await newUser();
+    const invalidTable = await seedTable(
+      stack,
+      otherUser,
+      () => ({ ...preCombatGame(hero), characters: { [otherUser.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-boss-hall',
+      },
+    );
+    const rejectedClient = await Client.open(stack, otherUser, invalidTable);
+    try {
+      const from = rejectedClient.log.length;
+      rejectedClient.say('I look for a way forward.');
+      await rejectedClient.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        rejectedClient.log.filter((message) => message.type === 'ToolRejected'),
+      ).toHaveLength(1);
+      expect(JSON.stringify(rejectedClient.log)).not.toContain(
+        'encounter-not-in-scene',
+      );
+      const unchanged = await savedGame(invalidTable);
+      expect(unchanged.gameState.combatRoom).toBeUndefined();
+      expect(unchanged.gameState.resolvedEncounters).toBeUndefined();
+      expect(JSON.stringify(invalidRequests)).toContain(
+        'encounter-not-in-scene',
+      );
+    } finally {
+      rejectedClient.close();
+    }
+    await stack.stop();
+
+    const emptyRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-no-encounter-route', {
+      adapter: authoredEncounterDm(emptyRequests, key),
+      storyCombatEnabled: true,
+    });
+    const emptyUser = await newUser();
+    const emptyTable = await seedTable(
+      stack,
+      emptyUser,
+      () => ({ ...preCombatGame(hero), characters: { [emptyUser.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-marowfell-well',
+      },
+    );
+    const emptyClient = await Client.open(stack, emptyUser, emptyTable);
+    try {
+      const from = emptyClient.log.length;
+      emptyClient.say('I study the well.');
+      await emptyClient.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        emptyRequests[0]?.messages.map((message) => message.content).join(' '),
+      ).not.toContain('start_combat');
+      expect(
+        (await savedGame(emptyTable)).gameState.combatRoom,
+      ).toBeUndefined();
+    } finally {
+      emptyClient.close();
+    }
+  }, 60_000);
 
   it('start_combat populates the Room, monsters act, and a non-controller cannot accept an opportunity attack', async () => {
     stack = await Stack.boot('combat-full');
