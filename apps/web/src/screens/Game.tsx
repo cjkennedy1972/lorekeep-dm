@@ -19,6 +19,7 @@ import { Describe } from '../features/map/Describe.js';
 import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
 import { ActionInput } from '../features/input/ActionInput.js';
+import { pendingInputFor } from '../features/input/pendingInput.js';
 import { RoundPanel } from '../features/round/RoundPanel.js';
 import { HostControls } from '../features/round/HostControls.js';
 import { TurnTimerControl } from '../features/round/TurnTimerControl.js';
@@ -429,6 +430,16 @@ export function Game() {
     question: string;
   } | null>(null);
   const room = live.room;
+  // Reloading mid-turn loses local pending state; the server's private submission restores it.
+  const seededAt = useMemo(
+    () => Date.now(),
+    [live.privateRoundSubmission?.actionId],
+  );
+  const inputPending = pendingInputFor(
+    pendingAction,
+    live.privateRoundSubmission,
+    seededAt,
+  );
   useEffect(() => {
     if (!room?.gameState) return;
     const gs = asRecord(room.gameState);
@@ -844,12 +855,12 @@ export function Game() {
         <div className="game-area game-area--dock">
           <ActionInput
             onSubmit={submitAction}
-            pending={Boolean(pendingAction)}
-            pendingText={pendingAction?.text}
-            pendingSince={pendingAction?.submittedAt}
+            pending={Boolean(inputPending)}
+            pendingText={inputPending?.text}
+            pendingSince={inputPending?.submittedAt}
             onEditPending={() => {
-              if (!pendingAction) return;
-              setActionDraft(pendingAction.text);
+              if (!inputPending) return;
+              setActionDraft(inputPending.text);
             }}
             initialText={actionDraft}
             onDraftChange={setActionDraft}

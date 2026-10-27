@@ -41,6 +41,8 @@ export interface RoomClientOptions {
   WebSocketImpl?: typeof WebSocket;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  /** How long one connection attempt may take to reach SeatAuthenticated before it is abandoned and retried. */
+  authTimeoutMs?: number;
   onMessage?: (message: import('@game/schema').ServerMessage) => void;
 }
 
@@ -58,9 +60,11 @@ export function createRoomClient(opts: RoomClientOptions) {
   const WS = opts.WebSocketImpl ?? WebSocket;
   const base = opts.baseDelayMs ?? 500;
   const max = opts.maxDelayMs ?? 10_000;
+  const authTimeout = opts.authTimeoutMs ?? 15_000;
   let snap = initial;
   let socket: WebSocket | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let authWatchdog: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
   let generation = 0;
   let resumeToken: string | undefined;
@@ -137,6 +141,7 @@ export function createRoomClient(opts: RoomClientOptions) {
         }
       }
       attempt = 0;
+      clearTimeout(authWatchdog);
       set({
         status: 'connected',
         error: null,
@@ -146,6 +151,8 @@ export function createRoomClient(opts: RoomClientOptions) {
     }
     if (msg.type === 'SeatClaimPending') {
       pendingClaimId = String(msg.payload.claimId ?? '');
+      // The host decides when to approve, so a pending claim is not a stalled handshake.
+      clearTimeout(authWatchdog);
       set({ error: 'Waiting for the host to approve this device.' });
     }
     if (
@@ -206,8 +213,23 @@ export function createRoomClient(opts: RoomClientOptions) {
     timer = setTimeout(() => void connect(connectionGeneration), delay);
   };
 
+  /** A ticket fetch, socket open, or seat resume that never completes must not leave the UI on "Connecting…". */
+  const watchAuth = (connectionGeneration: number) => {
+    clearTimeout(authWatchdog);
+    authWatchdog = setTimeout(() => {
+      if (!isActive(connectionGeneration)) return;
+      // Bumping the generation drops the stalled ticket request and any frames from the abandoned socket.
+      generation++;
+      const stalled = socket;
+      socket = undefined;
+      stalled?.close();
+      scheduleReconnect(generation);
+    }, authTimeout);
+  };
+
   async function connect(connectionGeneration: number) {
     if (!isActive(connectionGeneration)) return;
+    watchAuth(connectionGeneration);
     try {
       const res = await doFetch(`${opts.baseUrl}/api/ws-ticket`, {
         method: 'POST',
@@ -227,9 +249,14 @@ export function createRoomClient(opts: RoomClientOptions) {
       const ws = new WS(url.href);
       socket = ws;
       ws.onopen = () => {
+        if (socket !== ws) return;
         set({ status: 'connecting' });
       };
-      ws.onmessage = (e) => onMessage(e.data);
+      // A superseded socket may still deliver frames; only the current socket may change state.
+      ws.onmessage = (e) => {
+        if (socket !== ws) return;
+        onMessage(e.data);
+      };
       ws.onclose = (e) => {
         if (socket !== ws) return;
         const removed = removalForClose(e.code, e.reason);
@@ -284,6 +311,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       stopped = true;
       generation++;
       clearTimeout(timer);
+      clearTimeout(authWatchdog);
       const s = socket;
       socket = undefined;
       s?.close();
