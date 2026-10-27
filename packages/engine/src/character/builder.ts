@@ -58,10 +58,12 @@ const of = <K extends CatalogEntry['kind']>(
 function findItem(catalog: CharacterCatalog, text: string) {
   const name = text
     .replace(/^\d+\s+/, '')
+    .replace(/[’‘]/g, "'")
+    .replace(/\s*\([^)]*\)/g, '')
     .toLowerCase()
     .trim();
   return of(catalog, 'equipment').find((e) => {
-    const n = e.name.toLowerCase();
+    const n = e.name.replace(/[’‘]/g, "'").toLowerCase();
     return n === name || `${n}s` === name;
   });
 }
@@ -142,8 +144,8 @@ export class CharacterBuilder {
     return (klass.startingEquipment ?? [])
       .filter(
         (o) =>
-          !this.violations(this.assemble(o.option)).some((v) =>
-            ['WRONG_EQUIPMENT', 'ABSENT_EQUIPMENT'].includes(v.code),
+          !this.violations(this.assemble(o.option)).some(
+            (v) => v.code === 'WRONG_EQUIPMENT',
           ),
       )
       .map((o) => ({

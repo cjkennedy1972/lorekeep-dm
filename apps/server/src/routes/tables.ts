@@ -54,7 +54,7 @@ const createSchema = z.object({
     .default('adventure:01-hollow-under-marrowfell'),
   difficulty: z.enum(['easy', 'moderate', 'hard']).default('moderate'),
   startingLevel: z.number().int().min(1).max(5).default(1),
-  character: CharacterSchema.optional(),
+  character: CharacterSchema.extend({ id: z.string().optional() }).optional(),
   classId: z.string().optional(),
 });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -158,6 +158,10 @@ export function registerTableRoutes(
         code: 'INVALID_INPUT',
         message:
           'Check the table, adventure, difficulty and character choices.',
+        details: parsed.error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          code: issue.code,
+        })),
       });
     const body = parsed.data;
     if (createHits.hit(accountId) > CREATE_PER_HOUR)
@@ -212,15 +216,16 @@ export function registerTableRoutes(
         code: 'ADVENTURE_UNAVAILABLE',
         message: 'That adventure is not available yet.',
       });
-    let character =
-      body.character ??
-      quickBuild(catalog, body.classId, 0x28, body.startingLevel).character;
+    const character = {
+      ...(body.character ??
+        quickBuild(catalog, body.classId, 0x28, body.startingLevel).character),
+      id: randomUUID(),
+    };
     if (character.level !== body.startingLevel)
       return reply.code(400).send({
         code: 'INVALID_CHARACTER',
         message: 'Starting level does not match the character.',
       });
-    character = { ...character, id: randomUUID() };
     const violations = validateCharacter(character, catalog);
     if (violations.length || character.level !== body.startingLevel)
       return reply.code(400).send({

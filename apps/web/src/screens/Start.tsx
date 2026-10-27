@@ -16,6 +16,10 @@ export function Start() {
   const navigate = useNavigate();
   async function create(character?: Character) {
     setError('');
+    if (!character) {
+      setError('Create a character before starting your game.');
+      return;
+    }
     setBusy(true);
     const result = await api<{ game: { id: string } }>('/api/tables', {
       name,
@@ -26,7 +30,23 @@ export function Start() {
     });
     setBusy(false);
     if (result.ok) navigate(`/rooms/${result.data.game.id}/game`);
-    else setError(result.message);
+    else {
+      const details = Array.isArray(result.data?.details)
+        ? result.data.details
+            .map((detail) => {
+              if (typeof detail !== 'object' || detail === null) return '';
+              const item = detail as { path?: unknown; code?: unknown };
+              return typeof item.path === 'string' &&
+                typeof item.code === 'string'
+                ? `${item.path.replace(/^character\./, '')}: ${item.code.replaceAll('_', ' ')}`
+                : '';
+            })
+            .filter(Boolean)
+        : [];
+      setError(
+        details.length ? `Character: ${details.join('; ')}` : result.message,
+      );
+    }
   }
   function submit(event: FormEvent) {
     event.preventDefault();

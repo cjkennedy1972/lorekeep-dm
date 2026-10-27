@@ -6,6 +6,7 @@ import {
   type CharacterInput,
 } from '@game/rules-engine';
 import type { Character } from '@game/schema';
+import { newCharacterId } from './id';
 import { gameStore } from '../../state/store';
 import { loadCharacterCatalog } from './catalog';
 import { SaveToAccount } from './SaveToAccount';
@@ -14,7 +15,7 @@ const catalog = loadCharacterCatalog();
 const classes = catalog.entries.filter((entry) => entry.kind === 'class');
 
 function asCharacter(input: CharacterInput): Character {
-  const character = { ...input };
+  const character = { ...input, id: newCharacterId() };
   delete character.abilityGeneration;
   delete character.equipmentOption;
   delete character.backgroundSkills;

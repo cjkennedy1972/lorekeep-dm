@@ -181,6 +181,28 @@ describe('solo table lifecycle routes', () => {
     await app.close();
   });
 
+  it('returns safe Zod paths and codes for invalid character fields', async () => {
+    const calls: string[] = [];
+    const app = registerCreateTableRoute(allowInputGate, calls);
+    const character = characterWithCondition('a giant spider bite');
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tables',
+      headers: { cookie: `sid=${token}` },
+      payload: {
+        name: 'A table',
+        character: { ...character, name: '' },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      code: 'INVALID_INPUT',
+      details: [{ path: 'character.name', code: 'too_small' }],
+    });
+    expect(response.body).not.toContain('a giant spider bite');
+    await app.close();
+  });
+
   it('blocks a valid condition source before inserting a session', async () => {
     const calls: string[] = [];
     const checked: string[] = [];

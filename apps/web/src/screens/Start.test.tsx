@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { Start } from './Start';
 import { http } from '../api';
 import {
@@ -51,4 +52,37 @@ test('My games lists resume link with recap and retries failed loads', async () 
   expect(
     await screen.findByRole('link', { name: 'Resume Memory' }),
   ).toHaveAttribute('href', expect.stringMatching(/\/rooms\/.+\/game/));
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+test('start reports field-level errors and does not retry without the character', async () => {
+  const fetch = vi.fn().mockResolvedValue({
+    ok: false,
+    status: 400,
+    json: async () => ({
+      code: 'INVALID_INPUT',
+      message: 'Generic invalid input',
+      details: [{ path: 'character.id', code: 'invalid_uuid' }],
+    }),
+  });
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  startAt();
+  await userEvent.type(screen.getByLabelText('Game name'), 'Test game');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Build and save character' }),
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Character: id: invalid uuid',
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Create a character before starting your game.',
+    ),
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
 });
