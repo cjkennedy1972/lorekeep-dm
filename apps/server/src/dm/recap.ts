@@ -92,6 +92,11 @@ function hashMemories(
 export async function buildRecap(input: RecapInput): Promise<RecapResult> {
   const memoryHash = hashMemories(input.memories, input.lastEvents);
   if (
+    !input.memories.some((memory) => memory.trim()) &&
+    !input.lastEvents?.length
+  )
+    return { recap: '', memoryHash, cached: false, fallback: false };
+  if (
     input.changed !== true &&
     input.previousSnapshotRecap?.memoryHash === memoryHash
   )
@@ -157,7 +162,8 @@ export async function buildResumeRecap(input: {
   ).map(scrub);
   const built = await buildRecap({
     memories,
-    lastEvents: input.lastEvents,
+    // Raw event summaries are not a visibility-filtered recap source.
+    lastEvents: undefined,
     previousSnapshotRecap: input.previousSnapshotRecap,
     changed: input.changed,
     adapter: input.adapter,

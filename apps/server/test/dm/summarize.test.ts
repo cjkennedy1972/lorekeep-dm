@@ -6,6 +6,7 @@ import {
   gateRecap,
   MAX_RECAP_WORDS,
   SAFE_RECAP_FALLBACK,
+  buildResumeRecap,
 } from '../../src/dm/recap.js';
 import {
   boundSummary,
@@ -427,6 +428,63 @@ describe('scene summaries and recap', () => {
     expect(result.registryDiffs).toEqual([]);
     expect(result.summary).toContain('LocationChanged');
     expect(events).toEqual(before);
+  });
+
+  it('returns no recap for a new game, ignoring prior snapshot text and raw events', async () => {
+    const adapter = new FixtureAdapter('secret key location');
+    const db = {
+      query: async () => ({ rows: [], rowCount: 0 }),
+      connect: async () => {
+        throw new Error('unused');
+      },
+    } as never;
+    const result = await buildResumeRecap({
+      db,
+      sessionId: 'new-game',
+      lastEvents: [
+        {
+          type: 'GameStarted',
+          summary: 'The hidden key is beneath the throne.',
+        },
+      ],
+      previousSnapshotRecap: {
+        recap: 'The hidden key is beneath the throne.',
+        memoryHash: 'old',
+      },
+      adapter,
+    });
+    expect(result.recap).toBe('');
+    expect(adapter.calls).toBe(0);
+  });
+
+  it('builds resume recap only from scene summaries, never registry facts or raw events', async () => {
+    const queries: string[] = [];
+    const db = {
+      query: async (sql: string) => {
+        queries.push(sql);
+        return {
+          rows: sql.includes('FROM scene_summaries')
+            ? [{ text: 'The party reached the bridge.' }]
+            : [],
+          rowCount: 1,
+        };
+      },
+      connect: async () => {
+        throw new Error('unused');
+      },
+    } as never;
+    const adapter = new FixtureAdapter('The party reached the bridge.');
+    const result = await buildResumeRecap({
+      db,
+      sessionId: 'existing-game',
+      lastEvents: [
+        { type: 'SecretDiscovered', summary: 'The boss wears the key.' },
+      ],
+      adapter,
+    });
+    expect(result.recap).toBe('The party reached the bridge.');
+    expect(queries.join(' ')).not.toContain('registry_entries');
+    expect(adapter.calls).toBe(1);
   });
 
   it('assembles recap within the word limit and reuses unchanged snapshot recap without calling the adapter', async () => {

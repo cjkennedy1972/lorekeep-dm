@@ -14,7 +14,6 @@ import { adventure01RegistrySeed } from '@game/rules-engine/adventure-node';
 import { CREATE_PER_HOUR } from './sessions.js';
 import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import { RegistryMemory } from '../dm/memory.js';
-import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import { concealedEntities } from '../room/eventVisibility.js';
 import { buildResumeRecap, gateRecap } from '../dm/recap.js';
@@ -377,20 +376,6 @@ export function registerTableRoutes(
         });
       const { tier: recapTier, tableLines: recapTableLines } =
         await recapSafety(request.params.id);
-      const latestEvents = await db.query<{
-        type: string;
-        payload: Record<string, unknown>;
-      }>(
-        `SELECT type,payload FROM events WHERE session_id=$1 AND ${REVERTED_TURN_EXCLUSION} ORDER BY seq DESC LIMIT 4`,
-        [request.params.id],
-      );
-      const recent = latestEvents.rows.reverse().map((event) => ({
-        type: event.type,
-        summary:
-          typeof event.payload?.summary === 'string'
-            ? event.payload.summary
-            : undefined,
-      }));
       const prior = (row.state?.recap ??
         (row.state?.gameState as Record<string, unknown> | undefined)
           ?.recap) as { recap: string; memoryHash: string } | undefined;
@@ -432,7 +417,6 @@ export function registerTableRoutes(
         hidden: concealedEntities(room?.state?.gameState),
         db,
         sessionId: request.params.id,
-        lastEvents: recent,
         previousSnapshotRecap: prior,
         adapter,
       });
