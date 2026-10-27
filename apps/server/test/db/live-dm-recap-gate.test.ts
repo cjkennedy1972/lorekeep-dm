@@ -62,6 +62,18 @@ async function createResumableTable(ownerId: string) {
     'scene:opening',
     'The adventurer followed the lantern light into Greyfen.',
   );
+  await db.query(
+    `INSERT INTO events(session_id,seq,turn_id,type,payload)
+     SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb
+       FROM events WHERE session_id=$1`,
+    [
+      id,
+      randomUUID(),
+      JSON.stringify({
+        narration: 'The adventurer followed the lantern light into Greyfen.',
+      }),
+    ],
+  );
   return id;
 }
 
@@ -193,7 +205,7 @@ describe('resume recap and the live DM allowlist', () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).not.toContain('Unsafe historical recap');
-    expect(body).toContain(SAFE_RECAP_FALLBACK);
+    expect(JSON.parse(body).games[0].recap).toBe('');
   });
 });
 
