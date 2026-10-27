@@ -254,3 +254,121 @@ test('clears a stored resume token after the host denies its claim', async () =>
   client.stop();
   vi.unstubAllGlobals();
 });
+
+/** A socket that opens but never authenticates, or never opens at all. */
+function silentSockets() {
+  const made: { closed: boolean }[] = [];
+  class SilentSocket {
+    static OPEN = 1;
+    readyState = 0;
+    closed = false;
+    onopen: (() => void) | null = null;
+    onmessage: ((e: unknown) => void) | null = null;
+    onclose: ((e: unknown) => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor() {
+      made.push(this);
+    }
+    send() {}
+    close() {
+      this.closed = true;
+      this.readyState = 3;
+    }
+  }
+  return {
+    made,
+    WebSocketImpl: SilentSocket as unknown as typeof globalThis.WebSocket,
+  };
+}
+
+const ticketFetch = (
+  ticket: () => Promise<Response> | undefined = () => undefined,
+) => {
+  let calls = 0;
+  const fetchImpl = (() => {
+    calls++;
+    return (
+      ticket() ??
+      Promise.resolve(
+        new Response(JSON.stringify({ ticket: 'ticket' }), { status: 200 }),
+      )
+    );
+  }) as unknown as typeof fetch;
+  return { fetchImpl, calls: () => calls };
+};
+
+test('frames from a superseded socket are ignored after a reconnect', async () => {
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+    baseDelayMs: 10,
+  });
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  const stale = sockets.at(-1)!;
+  const opened = sockets.length;
+  stale.terminate();
+  await vi.waitFor(() => {
+    expect(sockets.length).toBeGreaterThan(opened);
+    expect(client.getSnapshot().status).toBe('connected');
+  });
+  expect(sockets.at(-1)).not.toBe(stale);
+  stale.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        seq: 999_999,
+        type: 'Error',
+        payload: { code: 'STALE', message: 'stale frame' },
+      }),
+    ),
+    false,
+  );
+  await new Promise((r) => setTimeout(r, 30));
+  expect(client.getSnapshot().error).not.toBe('stale frame');
+  expect(client.getSnapshot().lastSeq).toBeLessThan(999_999);
+  client.stop();
+});
+
+test('a socket that never authenticates is abandoned after the auth timeout', async () => {
+  const { made, WebSocketImpl } = silentSockets();
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: ticketFetch().fetchImpl,
+    WebSocketImpl,
+    baseDelayMs: 5,
+    authTimeoutMs: 40,
+  });
+  client.start();
+  await vi.waitFor(() => expect(made.length).toBeGreaterThanOrEqual(2), {
+    timeout: 2000,
+  });
+  expect(made[0]!.closed).toBe(true);
+  expect(client.getSnapshot().status).not.toBe('connected');
+  client.stop();
+});
+
+test('a ticket request that never settles is retried after the auth timeout', async () => {
+  const { made, WebSocketImpl } = silentSockets();
+  let first = true;
+  const ticket = ticketFetch(() => {
+    if (!first) return undefined;
+    first = false;
+    return new Promise<Response>(() => {});
+  });
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: ticket.fetchImpl,
+    WebSocketImpl,
+    baseDelayMs: 5,
+    authTimeoutMs: 40,
+  });
+  client.start();
+  await vi.waitFor(() => expect(made.length).toBeGreaterThanOrEqual(1), {
+    timeout: 2000,
+  });
+  expect(ticket.calls()).toBeGreaterThanOrEqual(2);
+  expect(client.getSnapshot().status).not.toBe('connected');
+  client.stop();
+});
