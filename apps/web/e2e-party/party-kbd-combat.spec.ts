@@ -8,6 +8,7 @@ import {
 import {
   activeCombatantId,
   closeMember,
+  displayNameOf,
   openMember,
   readState,
   SYNC_BUDGET_MS,
@@ -123,8 +124,8 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
       // Options are sent on request: the keyboard requests them, then the list offers the attack.
       await tabTo(page, 'Refresh combat options');
       await page.keyboard.press('Enter');
-      // Attack buttons carry the target's display name, not its entity id.
-      const goblinName = 'Goblin Minion 1';
+      // Attack buttons carry the target's display name, not its entity id: read it from the tracker entry.
+      const goblinName = await displayNameOf(page, goblin);
       const attack = page.getByRole('button', { name: `Attack ${goblinName}` });
       await expect(attack).toBeVisible();
       const framesBefore = active.frames.length;

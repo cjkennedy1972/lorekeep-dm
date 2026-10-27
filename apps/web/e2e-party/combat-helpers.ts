@@ -161,6 +161,24 @@ export async function openAreaTable(
   return views;
 }
 
+/**
+ * The display name the UI shows for an entity, read from the initiative tracker entry that carries its
+ * data-entity-id. Failing here means the name is missing or the tracker shows the raw id.
+ */
+export async function displayNameOf(
+  page: Page,
+  entityId: string,
+): Promise<string> {
+  const label = page.locator(
+    `ol[aria-label="Initiative tracker"] [data-entity-id="${entityId}"]`,
+  );
+  await expect(label).toBeVisible();
+  const name = ((await label.textContent()) ?? '').trim();
+  expect(name, `${entityId} shows a display name`).not.toBe('');
+  expect(name, `${entityId} shows a name, not its raw id`).not.toBe(entityId);
+  return name;
+}
+
 /** Map cells from the token table: "B3" is column B, row 3 (the coordinates the screen reader hears). */
 export async function tokenTable(page: Page) {
   const rows = page.locator(
