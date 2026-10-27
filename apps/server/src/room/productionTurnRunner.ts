@@ -622,8 +622,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const turnStartEngineState = cloneEngineState(engineState);
     // Authoritative Room combat state for map tools; tracks every commit within this DM turn.
     const turnStartRoom = state.combatRoom;
-    let liveRoom = turnStartRoom;
-    let pendingRoom: RoomCombatState | undefined;
     let spentHandle: string | undefined;
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
@@ -1152,8 +1150,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       closeSceneExecutor.reset();
       context.state = structuredClone(preTurnState);
       context.engineState = cloneEngineState(turnStartEngineState);
-      liveRoom = turnStartRoom;
-      pendingRoom = undefined;
       spentHandle = undefined;
       attemptEvents.length = 0;
       emittedSceneEvents.length = 0;
