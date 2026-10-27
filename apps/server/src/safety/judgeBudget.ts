@@ -13,11 +13,11 @@ const PER_MINUTE_LIMITS: Record<CapacityClass, number> = {
 };
 const WINDOW_MS = 60_000;
 export const JUDGE_UPSTREAM_HARD_CAP_MS = 60_000;
-const LOST_CALL_LIMITS: Record<CapacityClass, number> = {
+const LOST_CALL_LIMITS: Partial<Record<CapacityClass, number>> = {
   'action-input': 1,
   chat: 2,
-  output: 4,
 };
+const OUTPUT_SESSION_PER_MINUTE_LIMIT = 60;
 
 export type JudgeBudgetResult =
   | { kind: 'acquired'; release: () => void; markLost: () => void }
@@ -40,17 +40,43 @@ export class JudgeBudget {
     chat: 0,
     output: 0,
   };
+  private readonly outputCallsBySession = new Map<string, number[]>();
 
-  acquire(budgetClass: BudgetClass, now = Date.now()): JudgeBudgetResult {
+  acquire(
+    budgetClass: BudgetClass,
+    now = Date.now(),
+    sessionId = 'unknown',
+  ): JudgeBudgetResult {
     const recent = this.calls[budgetClass].filter((at) => at > now - WINDOW_MS);
     this.calls[budgetClass] = recent;
+    const lostLimit = LOST_CALL_LIMITS[budgetClass];
+    if (budgetClass === 'output') {
+      // Global output admission limits successful keys to at most 160/minute, so
+      // this opportunistic pruning keeps per-session history bounded as tables churn.
+      for (const [key, timestamps] of this.outputCallsBySession) {
+        const active = timestamps.filter((at) => at > now - WINDOW_MS);
+        if (active.length === 0) this.outputCallsBySession.delete(key);
+        else this.outputCallsBySession.set(key, active);
+      }
+    }
+    const sessionCalls =
+      budgetClass === 'output'
+        ? (this.outputCallsBySession.get(sessionId) ?? [])
+        : undefined;
     if (
-      this.unsettledLost[budgetClass] >= LOST_CALL_LIMITS[budgetClass] ||
+      (lostLimit !== undefined &&
+        this.unsettledLost[budgetClass] >= lostLimit) ||
       recent.length >= PER_MINUTE_LIMITS[budgetClass] ||
-      this.inFlight[budgetClass] >= IN_FLIGHT_LIMITS[budgetClass]
+      this.inFlight[budgetClass] >= IN_FLIGHT_LIMITS[budgetClass] ||
+      (sessionCalls !== undefined &&
+        sessionCalls.length >= OUTPUT_SESSION_PER_MINUTE_LIMIT)
     )
       return { kind: 'limited', class: budgetClass };
     recent.push(now);
+    if (sessionCalls !== undefined) {
+      sessionCalls.push(now);
+      this.outputCallsBySession.set(sessionId, sessionCalls);
+    }
     this.inFlight[budgetClass] += 1;
     const startedAt = Date.now();
     let state: 'in-flight' | 'lost' | 'settled' = 'in-flight';
@@ -62,13 +88,14 @@ export class JudgeBudget {
         if (state === 'in-flight') this.inFlight[budgetClass] -= 1;
         else {
           this.unsettledLost[budgetClass] -= 1;
+          if (budgetClass === 'output') this.inFlight[budgetClass] -= 1;
           if (lostTimer !== undefined) clearTimeout(lostTimer);
         }
         state = 'settled';
       },
       markLost: () => {
         if (state !== 'in-flight') return;
-        this.inFlight[budgetClass] -= 1;
+        if (budgetClass !== 'output') this.inFlight[budgetClass] -= 1;
         this.unsettledLost[budgetClass] += 1;
         state = 'lost';
         const remaining = Math.max(
@@ -78,6 +105,7 @@ export class JudgeBudget {
         lostTimer = setTimeout(() => {
           if (state !== 'lost') return;
           this.unsettledLost[budgetClass] -= 1;
+          if (budgetClass === 'output') this.inFlight[budgetClass] -= 1;
           state = 'settled';
         }, remaining);
         lostTimer.unref?.();

@@ -352,9 +352,12 @@ export function createEndpointJudge(
       signal,
       direction,
       budgetClass,
+      sessionId,
     }) => {
       const budget = endpointJudgeBudget.acquire(
         direction === 'output' ? 'output' : (budgetClass ?? 'action-input'),
+        Date.now(),
+        sessionId ?? 'unknown',
       );
       if (budget.kind === 'limited')
         return { kind: 'limited', class: budget.class };

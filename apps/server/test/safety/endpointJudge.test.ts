@@ -68,7 +68,11 @@ describe('production endpoint judge wrapper', () => {
     await vi.waitFor(() => expect(adapter.complete).toHaveBeenCalledTimes(1));
     adapter.pending[0]!.resolve();
     await expect(verdict).resolves.toMatchObject({ verdict: 'allow' });
-    expect(acquire).toHaveBeenCalledWith('output');
+    expect(acquire).toHaveBeenCalledWith(
+      'output',
+      expect.any(Number),
+      'unknown',
+    );
   });
 
   it('does not parse a typed capacity result from the production wrapper', async () => {

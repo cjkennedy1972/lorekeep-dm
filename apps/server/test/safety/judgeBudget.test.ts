@@ -146,11 +146,11 @@ describe('shared judge budget', () => {
       class: 'action-input',
     });
     for (let i = 0; i < 160; i++) {
-      const result = budget.acquire('output', 200);
+      const result = budget.acquire('output', 200, `table-${i}`);
       expect(result.kind).toBe('acquired');
       if (result.kind === 'acquired') result.release();
     }
-    expect(budget.acquire('output', 200)).toEqual({
+    expect(budget.acquire('output', 200, 'table-last')).toEqual({
       kind: 'limited',
       class: 'output',
     });

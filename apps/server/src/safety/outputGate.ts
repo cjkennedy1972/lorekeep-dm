@@ -66,6 +66,8 @@ export interface OutputGateOptions {
   moderator: Moderator;
   tier: ContentTier;
   tableLines?: readonly string[];
+  /** Table/session key for output judge fairness. Missing IDs share one 'unknown' bucket. */
+  sessionId?: string;
   now?: () => number;
   /** Max judge calls in flight; also caps chunks held unconsumed, so the upstream is read no faster than verdicts are taken. */
   maxInFlight?: number;
@@ -257,6 +259,7 @@ async function* gate(opts: OutputGateOptions): AsyncGenerator<GateEvent> {
             tier: opts.tier,
             tableLines: opts.tableLines,
             direction: 'output',
+            ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
           });
           // A missing or malformed runtime response is an outage, even if a
           // caller's static type claims every request returns a Verdict.

@@ -876,6 +876,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       refused = false;
       const narration: DMTurnEvent[] = [];
       const result = await runTurn({
+        sessionId: request.sessionId,
         signal: request.signal,
         turnId: request.actionId,
         allowClarification: request.allowClarification,

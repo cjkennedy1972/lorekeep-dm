@@ -233,7 +233,7 @@ describe('block and regenerate', () => {
     );
     expect(calls).toEqual([[1, []]]);
     expect(chunkTexts(events)).toEqual(['Good start.']);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
   });
 
   it('block on chunk 3: keeps emitted prefix, regenerates from it, never shows the blocked chunk', async () => {
@@ -351,8 +351,11 @@ describe('block and regenerate', () => {
       expect(starts).toBe(2);
       expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
       expect(chunkTexts(events)).toEqual(['Hi.']);
-      expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
-      const end = events.at(-1);
+      expect(events!.at(-1)).toMatchObject({
+        kind: 'end',
+        outcome: 'approved',
+      });
+      const end = events!.at(-1);
       if (end?.kind !== 'end') throw new Error('no end');
       expect(end.metrics.chunks[0]).toMatchObject({
         verdict: 'block',
@@ -387,8 +390,8 @@ describe('block and regenerate', () => {
     expect(starts).toBe(2);
     expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
     expect(chunkTexts(events)).toEqual(['Safe turn.']);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
-    const end = events.at(-1);
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks).toContainEqual(
       expect.objectContaining({
@@ -418,7 +421,10 @@ describe('block and regenerate', () => {
     );
     expect(chunkTexts(events)).toEqual([]);
     expect(events).toContainEqual({ kind: 'regenerate', attempt: 1 });
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
+    expect(events!.at(-1)).toMatchObject({
+      kind: 'end',
+      outcome: 'redirected',
+    });
   });
 
   it('a source error stops emission and propagates', async () => {
@@ -473,7 +479,7 @@ describe('bounded judging and buffering', () => {
     );
     expect(chunkTexts(events).join('')).toBe(expected);
     expect(peak).toBeLessThanOrEqual(2);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
   });
 
   it('forced cuts keep every chunk within maxChunkChars and concatenate to the input', async () => {
@@ -525,7 +531,7 @@ describe('bounded judging and buffering', () => {
     const chunks = chunkTexts(events);
     expect(chunks.join('')).toBe(text);
     expect(Math.max(...chunks.map((c) => c.length))).toBeLessThanOrEqual(400);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
     console.info(
       `200k-delta gate run: ${elapsedMs.toFixed(0)} ms, ${chunks.length} chunks`,
     );
@@ -549,7 +555,7 @@ describe('bounded judging and buffering', () => {
     );
     expect(calls).toEqual([1]);
     expect(chunkTexts(events).at(-1)).toBe('Calm.');
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks.find((c) => c.verdict === 'block')).toMatchObject(
       {
@@ -641,7 +647,7 @@ describe('metrics', () => {
         tier: 'family',
       }),
     );
-    const end = events.at(-1);
+    const end = events!.at(-1);
     expect(end).toMatchObject({ kind: 'end', outcome: 'approved' });
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.firstApprovedMs).toBeTypeOf('number');
@@ -685,7 +691,7 @@ describe('abandoned and hung upstreams', () => {
         tier: 'family',
       }),
     );
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
     expect(ret).toHaveBeenCalledTimes(1);
   });
 
@@ -728,7 +734,7 @@ describe('verdict bound', () => {
     );
     expect(events.some((e) => e.kind === 'regenerate')).toBe(true);
     expect(chunkTexts(events)).toEqual(['Ok.']);
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks[0]).toMatchObject({
       verdict: 'block',
@@ -752,7 +758,10 @@ describe('per-turn ceiling', () => {
       }),
     );
     expect(events.some((e) => e.kind === 'regenerate')).toBe(false);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
+    expect(events!.at(-1)).toMatchObject({
+      kind: 'end',
+      outcome: 'redirected',
+    });
   });
 });
 
@@ -799,7 +808,7 @@ describe('deterministic window across forced cuts', () => {
     );
     const out = chunkTexts(events).join('');
     expect(out).not.toContain('禁词');
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks[1]).toMatchObject({
       verdict: 'block',
@@ -823,7 +832,7 @@ describe('denylist across the 400-char carry', () => {
       }),
     );
     expect(chunkTexts(events).join('')).not.toContain('Strahd');
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks[1]).toMatchObject({
       verdict: 'block',
@@ -891,8 +900,8 @@ describe('turn-scoped hard floor across the carry', () => {
     expect(text.charCodeAt(64)).toBeGreaterThanOrEqual(0xdc00);
     expect(text.charCodeAt(64)).toBeLessThanOrEqual(0xdfff);
     expect(chunkTexts(events).join('')).not.toMatch(/child|nude/i);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
-    const end = events.at(-1);
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks).toEqual(
       expect.arrayContaining([
@@ -926,7 +935,7 @@ describe('turn-scoped hard floor across the carry', () => {
       }),
     );
     expect(chunkTexts(events).join('')).not.toContain('nude');
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
       expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
@@ -954,7 +963,7 @@ describe('turn-scoped hard floor across the carry', () => {
     expect(events.filter((event) => event.kind === 'regenerate')).toHaveLength(
       0,
     );
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.outcome).toBe('approved');
   });
@@ -980,7 +989,7 @@ describe('message-level taint never leaks emitted text', () => {
     const emitted = chunkTexts(events).join('');
     expect(sexualFirst.length).toBeGreaterThan(64);
     expect(emitted).not.toMatch(/nude/i);
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
       expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
@@ -1005,7 +1014,7 @@ describe('message-level taint never leaks emitted text', () => {
     const emitted = chunkTexts(events).join('');
     expect(minorFirst.length).toBeGreaterThan(64);
     expect(emitted).not.toMatch(/child|nude/i);
-    const end = events.at(-1);
+    const end = events!.at(-1);
     if (end?.kind !== 'end') throw new Error('no end');
     expect(end.metrics.chunks.filter((c) => c.verdict === 'block')).toEqual([
       expect.objectContaining({ attempt: 0, source: 'hardfloor' }),
@@ -1153,7 +1162,7 @@ describe('tail hold-back and config guards', () => {
       }),
     );
     expect(chunkTexts(events).join('')).toBe('Safe.');
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
   });
 
   it('a first chunk of at least 64 chars emits everything but its held tail at its own verdict', async () => {
@@ -1248,8 +1257,8 @@ describe('realistic judge latency and shared output capacity', () => {
     budget: JudgeBudget,
     state: { active: number; peak: number; calls: number },
   ): Moderator => ({
-    moderate: async () => {
-      const slot = budget.acquire('output');
+    moderate: async (req) => {
+      const slot = budget.acquire('output', Date.now(), req.sessionId);
       if (slot.kind === 'limited')
         return {
           verdict: 'block',
@@ -1264,12 +1273,12 @@ describe('realistic judge latency and shared output capacity', () => {
       state.active++;
       state.peak = Math.max(state.peak, state.active);
       try {
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 300));
         return {
           verdict: 'allow',
           category: 'none',
           source: 'judge',
-          latencyMs: 200,
+          latencyMs: 300,
           unavailable: false,
         };
       } finally {
@@ -1279,7 +1288,7 @@ describe('realistic judge latency and shared output capacity', () => {
     },
   });
 
-  const play = (moderator: Moderator) =>
+  const play = (moderator: Moderator, sessionId = 'table-a') =>
     runOutputGate({
       stream: async function* () {
         yield* chunks;
@@ -1287,16 +1296,28 @@ describe('realistic judge latency and shared output capacity', () => {
       regenerate: async function* () {},
       moderator,
       tier: 'standard',
+      sessionId,
       maxRegenerations: 0,
     });
 
-  it('approves all ten chunks from one turn with a 200 ms judge', async () => {
+  const collectWithTimers = async (generators: AsyncGenerator<GateEvent>[]) => {
+    vi.useFakeTimers();
+    try {
+      const result = Promise.all(generators.map(collect));
+      await vi.runAllTimersAsync();
+      return await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  it('approves all ten chunks from one turn with a 300 ms judge', async () => {
     const state = { active: 0, peak: 0, calls: 0 };
-    const events = await collect(
+    const [events] = await collectWithTimers([
       play(delayedBudgetModerator(new JudgeBudget(), state)),
-    );
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
-    expect(events.at(-1)).toMatchObject({
+    ]);
+    expect(events!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(events!.at(-1)).toMatchObject({
       metrics: {
         chunks: Array.from({ length: 10 }, () =>
           expect.objectContaining({ verdict: 'allow', source: 'judge' }),
@@ -1309,13 +1330,62 @@ describe('realistic judge latency and shared output capacity', () => {
   it('allows two concurrent turns under the shared four-call cap', async () => {
     const state = { active: 0, peak: 0, calls: 0 };
     const moderator = delayedBudgetModerator(new JudgeBudget(), state);
-    const [first, second] = await Promise.all([
-      collect(play(moderator)),
-      collect(play(moderator)),
+    const [first, second] = await collectWithTimers([
+      play(moderator, 'table-a'),
+      play(moderator, 'table-b'),
     ]);
-    expect(first.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
-    expect(second.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(first!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
+    expect(second!.at(-1)).toMatchObject({ kind: 'end', outcome: 'approved' });
     expect(state).toMatchObject({ calls: 20, peak: 2 });
+  });
+
+  it('limits one table at 60/minute without starving another table', () => {
+    const budget = new JudgeBudget();
+    for (let i = 0; i < 60; i++) {
+      const slot = budget.acquire('output', 1_000, 'busy-table');
+      expect(slot.kind).toBe('acquired');
+      if (slot.kind === 'acquired') slot.release();
+    }
+    expect(budget.acquire('output', 1_000, 'busy-table')).toMatchObject({
+      kind: 'limited',
+      class: 'output',
+    });
+    const otherTable = budget.acquire('output', 1_000, 'other-table');
+    expect(otherTable.kind).toBe('acquired');
+    if (otherTable.kind === 'acquired') otherTable.release();
+  });
+
+  it('counts lost calls inside the same four-call output bound until settlement', () => {
+    vi.useFakeTimers({ now: 1_000 });
+    try {
+      const budget = new JudgeBudget();
+      const lost = budget.acquire('output', 1_000, 'table-a');
+      expect(lost.kind).toBe('acquired');
+      if (lost.kind !== 'acquired') return;
+      lost.markLost();
+      const remaining = Array.from({ length: 3 }, () =>
+        budget.acquire('output', 1_000, 'table-b'),
+      );
+      expect(remaining.every((slot) => slot.kind === 'acquired')).toBe(true);
+      for (const slot of remaining)
+        if (slot.kind === 'acquired') slot.release();
+      const replacements = Array.from({ length: 3 }, () =>
+        budget.acquire('output', 1_000, 'table-c'),
+      );
+      expect(replacements.every((slot) => slot.kind === 'acquired')).toBe(true);
+      expect(budget.acquire('output', 1_000, 'table-d')).toMatchObject({
+        kind: 'limited',
+        class: 'output',
+      });
+      for (const slot of replacements)
+        if (slot.kind === 'acquired') slot.release();
+      lost.release();
+      const recovered = budget.acquire('output', 1_000, 'table-c');
+      expect(recovered.kind).toBe('acquired');
+      if (recovered.kind === 'acquired') recovered.release();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fails closed on a genuine judge failure with no narration emitted', async () => {
@@ -1335,6 +1405,9 @@ describe('realistic judge latency and shared output capacity', () => {
       }),
     );
     expect(events.some((event) => event.kind === 'chunk')).toBe(false);
-    expect(events.at(-1)).toMatchObject({ kind: 'end', outcome: 'redirected' });
+    expect(events!.at(-1)).toMatchObject({
+      kind: 'end',
+      outcome: 'redirected',
+    });
   });
 });
