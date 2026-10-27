@@ -62,6 +62,7 @@ import {
 } from '../llm/recorded.js';
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
+import { offeredEncounters } from '../dm/encounters.js';
 import {
   consumeOptionHandle,
   roomTurnKey,
@@ -87,6 +88,7 @@ type GameState = {
   lastPlayerText?: string;
   world?: WorldRegistry;
   combatRoom?: RoomCombatState;
+  resolvedEncounters?: string[];
 };
 type CombatOutput = {
   entities?: { id: string; hp: number }[];
@@ -324,6 +326,17 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const currentScene = adventure?.ok
       ? adventure.adventure.scenes.find((scene) => scene.id === initialSceneId)
       : undefined;
+    const resolvedSet = new Set(
+      Array.isArray(state.resolvedEncounters)
+        ? state.resolvedEncounters.filter(
+            (value): value is string => typeof value === 'string',
+          )
+        : [],
+    );
+    const offeredEncounterKeys =
+      adventure?.ok && initialSceneId
+        ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
+        : [];
     const nextScenes = currentScene
       ? currentScene.nextSceneIds.flatMap((id) => {
           const scene = adventure!.ok
@@ -954,6 +967,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             (state as { combatRoom?: unknown }).combatRoom
               ? 'combat'
               : 'exploration',
+          offeredEncounterKeys,
           turn: {
             state: {
               characters: Object.values(actors).map((actor) =>

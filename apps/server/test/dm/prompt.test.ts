@@ -47,6 +47,65 @@ function input(playerText = 'I look around') {
   };
 }
 describe('DM prompt builder', () => {
+  it('offers the constrained encounter tool and scene hook only for eligible exploration prompts', () => {
+    const available = buildPrompt({
+      ...input(),
+      session: {
+        ...input().session,
+        currentScene: {
+          id: 'scene-a',
+          title: 'The Old Watchtower',
+          summary: 'Lookouts wait.',
+        },
+      },
+      offeredEncounterKeys: ['encounter-e2-lookouts'],
+    });
+    const toolList = JSON.parse(
+      available.blocks[0].split('TOOLS\n')[1].split('\n\n')[0],
+    ) as {
+      name: string;
+      schema: { properties?: Record<string, unknown> };
+    }[];
+    const startCombat = toolList.find(({ name }) => name === 'start_combat');
+    expect(startCombat?.schema.properties).toEqual({
+      encounterId: expect.any(Object),
+    });
+    expect(available.blocks[2]).toContain(
+      'encounter-e2-lookouts — The Old Watchtower',
+    );
+    expect(available.blocks[2]).toContain(
+      'If a hostile action begins, call start_combat with the encounterId before narrating the fight. Never narrate a combat resolution without it. Do not mention tools, ids, or rules text to the player.',
+    );
+    expect(available.blocks[2]).not.toMatch(/monster:|srd:monster\//);
+    expect(available.blocks[2]).not.toContain('monsterIds');
+
+    const unavailable = buildPrompt(input());
+    const unavailableTools = JSON.parse(
+      unavailable.blocks[0].split('TOOLS\n')[1].split('\n\n')[0],
+    ) as { name: string }[];
+    expect(unavailableTools.some(({ name }) => name === 'start_combat')).toBe(
+      false,
+    );
+    expect(unavailable.blocks[2]).not.toContain('Encounters you may start');
+  });
+
+  it('keeps combat tool behavior unchanged when encounter keys are supplied', () => {
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      offeredEncounterKeys: ['encounter-e2-lookouts'],
+    });
+    const toolList = JSON.parse(
+      value.blocks[0].split('TOOLS\n')[1].split('\n\n')[0],
+    ) as {
+      name: string;
+      schema: { properties?: Record<string, unknown> };
+    }[];
+    const startCombat = toolList.find(({ name }) => name === 'start_combat');
+    expect(startCombat?.schema.properties).toHaveProperty('enemies');
+    expect(startCombat?.schema.properties).not.toHaveProperty('encounterId');
+    expect(value.blocks[2]).not.toContain('Encounters you may start');
+  });
   it('gives X-card steering explicit priority and forbids scene continuation or state changes', () => {
     const value = input('Keep fighting and finish the ambush.');
     const result = buildPrompt({

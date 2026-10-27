@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import { DMToolArgsSchema, DMToolCallSchema } from '@game/schema';
+import {
+  DMToolArgsSchema,
+  DMToolCallSchema,
+  StartCombatEncounterArgsSchema,
+} from '@game/schema';
 import { z } from 'zod';
 import { projectState, quoteData, stableJson } from './projection.js';
 
@@ -48,6 +52,8 @@ export interface BuildPromptInput {
   readOnlyTools?: boolean;
   /** Optional versioned JSON schemas for schema-registry integrations. */
   toolSchemas?: Readonly<Record<string, unknown>>;
+  /** Authored encounter keys eligible to start in this exploration scene. */
+  offeredEncounterKeys?: readonly string[];
 }
 export interface PromptResult {
   blocks: [string, string, string, string];
@@ -112,13 +118,20 @@ function makeStatic(input: BuildPromptInput): string {
     .filter((name) => {
       if (input.readOnlyTools) return READ_ONLY_TOOLS.includes(name);
       if (input.activeMode === 'combat') return true;
-      return ![...COMBAT_ONLY_TOOLS, 'start_combat'].includes(name);
+      return (
+        !COMBAT_ONLY_TOOLS.includes(name) &&
+        (name !== 'start_combat' || Boolean(input.offeredEncounterKeys?.length))
+      );
     });
   const schemas = modeTools.map((name) => ({
     name,
     schema:
-      input.toolSchemas?.[name] ??
-      zodSchema(DMToolArgsSchema[name as keyof typeof DMToolArgsSchema]),
+      name === 'start_combat' &&
+      input.activeMode !== 'combat' &&
+      input.offeredEncounterKeys?.length
+        ? zodSchema(StartCombatEncounterArgsSchema)
+        : (input.toolSchemas?.[name] ??
+          zodSchema(DMToolArgsSchema[name as keyof typeof DMToolArgsSchema])),
   }));
   return [
     STATIC_PERSONA,
@@ -127,9 +140,7 @@ function makeStatic(input: BuildPromptInput): string {
     RULES_CHEATSHEET,
   ].join('\n\n');
 }
-export function zodSchema(
-  schema: (typeof DMToolArgsSchema)[keyof typeof DMToolArgsSchema],
-): unknown {
+export function zodSchema(schema: z.ZodType): unknown {
   return sortSchemaKeys(z.toJSONSchema(schema));
 }
 
@@ -233,6 +244,18 @@ function makeDynamic(
       : '',
     `THIS ROUND\n${stableJson((input.turn.roundInputs ?? []).map((item) => quoteData('INPUT', stableJson(item))))}`,
     `CURRENT PLAYER\n${quoteData('PLAYER', input.turn.playerText)}`,
+    input.activeMode !== 'combat' &&
+    !input.readOnlyTools &&
+    input.offeredEncounterKeys?.length
+      ? [
+          'Encounters you may start from this scene:',
+          ...input.offeredEncounterKeys.map(
+            (key) =>
+              `${key} — ${input.session.currentScene?.title ?? 'Current scene'}`,
+          ),
+          'If a hostile action begins, call start_combat with the encounterId before narrating the fight. Never narrate a combat resolution without it. Do not mention tools, ids, or rules text to the player.',
+        ].join('\n')
+      : '',
   ]
     .filter(Boolean)
     .join('\n\n');
