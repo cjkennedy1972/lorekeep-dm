@@ -22,7 +22,11 @@ const rows = [
   },
 ];
 
-function setup(eligible: boolean, ownerId: string, historyRows = rows) {
+function setup(
+  eligible: boolean,
+  ownerId: string,
+  historyRows: typeof rows | null = rows,
+) {
   const events: StoredEvent[] = [];
   const store: RoomStore = {
     async isAccountActive() {
@@ -41,14 +45,18 @@ function setup(eligible: boolean, ownerId: string, historyRows = rows) {
       events.push(...stored);
       return { events: stored };
     },
-    async loadNarrationHistory(_sessionId, accountId) {
-      return historyRows.map((row) => {
-        const { actionText, ...publicRow } = row;
-        return accountId === ownerId
-          ? { ...publicRow, ...(actionText ? { actionText } : {}) }
-          : publicRow;
-      });
-    },
+    ...(historyRows
+      ? {
+          async loadNarrationHistory(_sessionId: string, accountId: string) {
+            return historyRows.map((row) => {
+              const { actionText, ...publicRow } = row;
+              return accountId === ownerId
+                ? { ...publicRow, ...(actionText ? { actionText } : {}) }
+                : publicRow;
+            });
+          },
+        }
+      : {}),
     async matureEligibleAccounts(accountIds) {
       return eligible ? accountIds : [];
     },
@@ -84,6 +92,21 @@ describe('narration history sync', () => {
     expect(
       connectionA.sent.filter((message) => message.type === 'NarrationHistory'),
     ).toHaveLength(initialHistoryCount);
+  });
+
+  it('sends an empty history message on a same-sequence reconnect without stored narration', async () => {
+    const accountId = randomUUID();
+    const room = setup(false, accountId, null);
+    const first = recorder();
+    await joinSeated(room, accountId, first, 'Player');
+
+    const reconnect = recorder();
+    await room.subscribe(accountId, reconnect, room.seq);
+
+    expect(
+      reconnect.sent.find((message) => message.type === 'NarrationHistory')
+        ?.payload,
+    ).toEqual({ turns: [] });
   });
 
   it('sends bounded committed viewer history on reconnect and withholds mature narration when ineligible', async () => {

@@ -151,6 +151,21 @@ export function Game() {
   const [spotlightNotice, setSpotlightNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLoading, setResumeLoading] = useState(false);
+  const [openingStateSynced, setOpeningStateSynced] = useState(false);
+  const [openingHistorySynced, setOpeningHistorySynced] = useState(false);
+  const [openingSyncTimedOut, setOpeningSyncTimedOut] = useState(false);
+  useEffect(() => {
+    setOpeningStateSynced(false);
+    setOpeningHistorySynced(false);
+    setOpeningSyncTimedOut(false);
+    const timeout = window.setTimeout(
+      () => setOpeningSyncTimedOut(true),
+      1_500,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [id]);
+  const openingReady =
+    openingSyncTimedOut || (openingStateSynced && openingHistorySynced);
   const loadGame = () => {
     setResumeLoading(true);
     setResumeError('');
@@ -226,6 +241,7 @@ export function Game() {
         );
       }
       if (message.type === 'StateSync') {
+        setOpeningStateSynced(true);
         live.send('ChatHistoryRequest');
         const state = asRecord(message.payload.state);
         setSafetyNotice((current) =>
@@ -239,6 +255,7 @@ export function Game() {
               : current,
         );
       }
+      if (message.type === 'NarrationHistory') setOpeningHistorySynced(true);
       if (message.type === 'CombatTracker') {
         // Combat can start after we joined, so the join-time state has no map yet.
         if (!mapRef.current && !resyncAsked.current) {
@@ -1012,6 +1029,7 @@ export function Game() {
           )}
           <NarrationLog
             messages={messages}
+            openingReady={openingReady}
             onReport={async (messageRef, category, reason) => {
               const result = await api(`/api/rooms/${id}/reports`, {
                 messageRef,

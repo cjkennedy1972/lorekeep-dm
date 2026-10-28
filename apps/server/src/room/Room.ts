@@ -1072,8 +1072,7 @@ export class Room {
             state: this.clientState(accountId),
           },
         });
-      if (lastSeq !== this.seq)
-        await this.sendNarrationHistory(accountId, connection);
+      await this.sendNarrationHistory(accountId, connection);
       this.sendCombatSnapshot(connection, accountId);
       this.sendSeatPrivateRoundSync(accountId);
       for (const [actionId, open] of Object.entries(
@@ -1117,7 +1116,6 @@ export class Room {
     accountId: string,
     connection: Connection,
   ): Promise<void> {
-    if (!this.store.loadNarrationHistory) return;
     let matureEligible = false;
     try {
       matureEligible =
@@ -1131,11 +1129,13 @@ export class Room {
       ReturnType<NonNullable<typeof this.store.loadNarrationHistory>>
     > = [];
     try {
-      rows = await this.store.loadNarrationHistory(
-        this.sessionId,
-        accountId,
-        matureEligible,
-      );
+      rows = this.store.loadNarrationHistory
+        ? await this.store.loadNarrationHistory(
+            this.sessionId,
+            accountId,
+            matureEligible,
+          )
+        : [];
     } catch {
       rows = [];
     }

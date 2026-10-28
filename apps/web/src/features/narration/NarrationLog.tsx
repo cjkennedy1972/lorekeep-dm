@@ -19,6 +19,7 @@ type Props = {
   ) => Promise<string | null>;
   /** Shown in place of an empty log, before the first narration arrives. */
   opening?: { title: string; body: ReactNode };
+  openingReady?: boolean;
 };
 
 function rollEvent(payload: RollPayload) {
@@ -39,6 +40,7 @@ export function NarrationLog({
   combatantNames = {},
   onReport,
   opening,
+  openingReady = true,
 }: Props) {
   const [state, dispatch] = useReducer(
     (current: typeof initialNarrationLog, message: ServerMessage) =>
@@ -230,7 +232,7 @@ export function NarrationLog({
       node.scrollHeight - node.scrollTop - node.clientHeight < 40;
     if (historyOnly) {
       setLatest(false);
-      if (atBottom) node.scrollTop = node.scrollHeight;
+      node.scrollTop = node.scrollHeight;
       return;
     }
     setLatest(!atBottom);
@@ -434,6 +436,7 @@ export function NarrationLog({
           })}
       </ol>
       {opening &&
+        openingReady &&
         state.entries.length === 0 &&
         !messages.some((message) => message.type === 'NarrationHistory') &&
         !messages.some((message) => message.type === 'NarrationCompleted') &&

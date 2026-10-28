@@ -137,7 +137,7 @@ test('restored history does not show the new-narration jump control while scroll
   const view = render(<NarrationLog messages={[]} />);
   const list = view.container.querySelector('ol')!;
   Object.defineProperties(list, {
-    scrollHeight: { configurable: true, value: 300 },
+    scrollHeight: { configurable: true, value: 3_000 },
     clientHeight: { configurable: true, value: 100 },
     scrollTop: { configurable: true, writable: true, value: 0 },
   });
@@ -157,5 +157,6 @@ test('restored history does not show the new-narration jump control while scroll
     />,
   );
   expect(await screen.findByText('An old scene.')).toBeInTheDocument();
+  expect(list.scrollTop).toBe(3_000);
   expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
 });

@@ -173,6 +173,27 @@ describe('Game screen (live Room)', () => {
     ).toBeTruthy();
   });
 
+  it('holds the opening placeholder between StateSync and restored narration history', () => {
+    mount();
+    push('StateSync', { state: { openClarifications: {} } });
+    expect(
+      screen.queryByRole('heading', { name: 'The adventure begins' }),
+    ).not.toBeInTheDocument();
+
+    push('NarrationHistory', {
+      turns: [
+        {
+          turnId: 'restored-opening',
+          text: 'The restored story is ready.',
+          tier: 'standard',
+        },
+      ],
+    });
+    expect(
+      screen.getByText('The restored story is ready.'),
+    ).toBeInTheDocument();
+  });
+
   it('sends flat CombatCommand payloads the server schema accepts', async () => {
     const user = userEvent.setup();
     mount();
