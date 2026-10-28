@@ -180,11 +180,20 @@ function clientGameState(
         continue;
       }
       const card = character as Record<string, unknown>;
-      characters[seatId] = Object.fromEntries(
-        ['id', 'name', 'speciesId', 'classId', 'level', 'hp']
-          .filter((field) => field in card)
-          .map((field) => [field, card[field]]),
-      );
+      const publicFields = ['id', 'name', 'speciesId', 'classId', 'level'];
+      characters[seatId] = {
+        ...Object.fromEntries(
+          publicFields
+            .filter((field) => field in card)
+            .map((field) => [field, card[field]]),
+        ),
+        ...(card.hp &&
+        typeof card.hp === 'object' &&
+        !Array.isArray(card.hp) &&
+        'current' in card.hp
+          ? { hp: { current: (card.hp as { current: unknown }).current } }
+          : {}),
+      };
     }
     result[key] = characters;
   }

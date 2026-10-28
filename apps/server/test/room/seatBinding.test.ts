@@ -456,7 +456,7 @@ describe('ADR-035 party seat gating', () => {
       speciesId: 'species:human',
       classId: 'class:cleric',
       level: 3,
-      hp: privateSheet.hp,
+      hp: { current: 8 },
     });
     expect(other.characters[f.seatA]).not.toHaveProperty('privateNotes');
     expect(own.characters[f.seatA]).toEqual(privateSheet);
@@ -774,20 +774,43 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
       expect(wire).not.toContain('rogue');
       expect(wire).not.toContain('"x":7');
       expect(wire).toContain('goblin');
+      expect(wire).not.toContain('"hp":7');
+      expect(wire).not.toContain('"maxHp":7');
+      expect(wire).toContain('"hpState":"healthy"');
     }
     // server-side authoritative state is unchanged
     expect(JSON.stringify(f.room.state.gameState)).toContain('rogue');
   });
 
   it('gives other seats only the public PC set, the controller its full sheet', async () => {
-    const { f, seen } = await twoSeatCombat();
+    const { f, entA, entB, seen } = await twoSeatCombat();
     const own = JSON.stringify(await seen(f.accountA));
     expect(own).toContain('atk-secret');
     expect(own).toContain('"ac":15');
     const other = JSON.stringify(await seen(f.accountB));
     for (const secret of ['atk-secret', '"ac":15', '"str":17', '"dex":6'])
       expect(other).not.toContain(secret);
-    expect(other).toContain('"hp":5');
+    const projected = (
+      f.room.clientState(f.accountB).gameState as {
+        combatRoom: {
+          entities: {
+            id: string;
+            maxHp?: number;
+            hp?: number;
+            hpState?: string;
+          }[];
+        };
+      }
+    ).combatRoom.entities;
+    const otherCharacter = projected.find((entity) => entity.id === entA);
+    const ownCharacter = projected.find((entity) => entity.id === entB);
+    const monster = projected.find((entity) => entity.id === 'goblin');
+    expect(otherCharacter).toHaveProperty('hp', 5);
+    expect(otherCharacter).not.toHaveProperty('maxHp');
+    expect(ownCharacter).toHaveProperty('maxHp', 9);
+    expect(monster).not.toHaveProperty('hp');
+    expect(monster).not.toHaveProperty('maxHp');
+    expect(monster).toHaveProperty('hpState', 'healthy');
   });
 
   it('shows a hidden entity only to its controller', async () => {

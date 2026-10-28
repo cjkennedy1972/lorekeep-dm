@@ -95,9 +95,18 @@ const NON_PUBLIC_PC_FIELDS = [
  * Per-viewer projection (ADR-034 §3, ADR-035). A hidden entity is removed outright from
  * everything a viewer receives (entities, initiative, resources, reaction prompt, dodge,
  * concentration) unless the viewer controls it: no pos, no hp, no existence. Another seat's
- * character keeps only the ADR-035 public set (no ac, speed, abilities, saves, attacks). Authoritative
+ * character keeps the ADR-035 public stats (current party HP, no max HP; no ac, speed, abilities,
+ * saves, attacks). Non-party entities expose only coarse HP state. Authoritative
  * server state is untouched; this only shapes what is serialized to a client.
  */
+function hpStateFor(hp: number, maxHp: number): 'healthy' | 'wounded' | 'down' {
+  return hp <= 0
+    ? 'down'
+    : hp / Math.max(1, maxHp) > 0.5
+      ? 'healthy'
+      : 'wounded';
+}
+
 export function projectCombatForViewer<T extends RoomCombatState>(
   full: T,
   controlled: ReadonlySet<string> = new Set(),
@@ -125,12 +134,30 @@ export function projectCombatForViewer<T extends RoomCombatState>(
     entities: state.entities
       .filter((entity) => !hidden.has(entity.id))
       .map((entity) => {
-        if (entity.kind !== 'character' || controlled.has(entity.id))
-          return entity;
-        // ADR-035 public set: sheet stats belong to the controlling seat only.
-        const pub = { ...entity };
-        for (const key of NON_PUBLIC_PC_FIELDS) delete pub[key];
-        return pub;
+        if (controlled.has(entity.id)) return entity;
+        if (entity.kind === 'character') {
+          // ADR-035 makes current party HP public; max HP is not part of the
+          // public projection. Sheet stats belong to the controlling seat.
+          const pub: Record<string, unknown> = { ...entity };
+          for (const key of NON_PUBLIC_PC_FIELDS) delete pub[key];
+          delete pub.maxHp;
+          if (entity.team !== 'party') {
+            pub.hpState = hpStateFor(entity.hp, entity.maxHp);
+            delete pub.hp;
+          }
+          return pub as typeof entity;
+        }
+        const pub: Record<string, unknown> = { ...entity };
+        if (entity.team !== 'party') {
+          // Non-party HP is intentionally coarse in the tracker. Keep the same
+          // contract in combatRoom and its checkpoints/reconnect projection.
+          pub.hpState = hpStateFor(entity.hp, entity.maxHp);
+          delete pub.hp;
+          delete pub.maxHp;
+        } else {
+          delete pub.maxHp;
+        }
+        return pub as typeof entity;
       }),
     combat: {
       ...state.combat,
@@ -219,22 +246,20 @@ export function combatTracker(
     round: state.combat.round,
     initiative: ordered.map(({ entityId, total }) => ({ entityId, total })),
     activeEntityId: active,
-    entities: state.entities.map(
-      ({ id, kind, team, hp, maxHp, pos, fled }) => ({
+    entities: state.entities.map((entity) => {
+      const { id, kind, team, hp, maxHp, pos, fled } = entity;
+      const existingHpState = (entity as typeof entity & { hpState?: string })
+        .hpState;
+      return {
         id,
         kind,
         team,
-        ...(team === 'party' ? { hp } : {}),
-        hpState:
-          hp <= 0
-            ? 'down'
-            : hp / Math.max(1, maxHp) > 0.5
-              ? 'healthy'
-              : 'wounded',
+        ...(team === 'party' && typeof hp === 'number' ? { hp } : {}),
+        hpState: existingHpState ?? hpStateFor(hp, maxHp),
         pos,
         ...(fled ? { fled } : {}),
-      }),
-    ),
+      };
+    }),
     resources: state.combat.resources,
     ...(state.ended ? { ended: state.ended } : {}),
   };
