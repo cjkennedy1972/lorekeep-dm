@@ -3875,7 +3875,28 @@ export class Room {
       const map = (combatRoom?.map ?? engine?.map) as
         | import('@game/schema').Battlemap
         | undefined;
-      if (!binding || !game || !map) continue;
+      if (!binding || !game) continue;
+      if (!map) {
+        // Story rounds have no tactical spawn requirement. Commit membership at
+        // this safe boundary so the next RoundOpened can include the bound seat.
+        // Active combat still requires its legal map placement below.
+        if (combatRoom && !combatRoom.ended && combatRoom.combat.activeEntityId)
+          continue;
+        await this.persist('LateJoinAdmitted', {
+          requestId: request.requestId,
+          seatId: seat.seatId,
+        });
+        this.lateJoinAuthTokenHashes.delete(request.requestId);
+        const expiryTimer = this.lateJoinExpiryTimers.get(request.requestId);
+        if (expiryTimer) clearTimeout(expiryTimer);
+        this.lateJoinExpiryTimers.delete(request.requestId);
+        this.broadcast({
+          seq: this.seq,
+          type: 'StateSync',
+          payload: this.clientSyncPayload(),
+        });
+        continue;
+      }
       const rawEntities =
         combatRoom?.entities ??
         (engine?.entities as Array<Record<string, unknown>> | undefined) ??

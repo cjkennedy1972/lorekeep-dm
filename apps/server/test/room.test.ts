@@ -1442,6 +1442,64 @@ describe('room actor', () => {
       );
     });
 
+    it('includes approved bound late joiners in the next story round without a battlemap', async () => {
+      const { store, events, setCharacterSnapshot } = fixture();
+      const host = randomUUID();
+      const character = quickBuild(loadCatalog(), undefined, 0x37, 1).character;
+      setCharacterSnapshot(character);
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(
+        store,
+        lease,
+        await store.loadLatest(id),
+        undefined,
+        undefined,
+        [],
+        true,
+      );
+      await room.seat(host, 'Host');
+      await room.bindSeatCharacter(
+        host,
+        character.id,
+        1,
+        async () => true,
+        randomUUID(),
+      );
+      await room.persistGameState({ sceneId: 'story-scene' });
+
+      const joiners = [randomUUID(), randomUUID()];
+      for (const accountId of joiners) {
+        const requestId = await room.requestLateJoin(
+          accountId,
+          randomUUID(),
+          1,
+          randomUUID(),
+        );
+        await room.approveLateJoin(host, randomUUID(), requestId);
+      }
+
+      await room.resolveNow(host);
+
+      const opened = events
+        .filter((event) => event.type === 'RoundOpened')
+        .at(-1);
+      const eligibleSeatIds = (opened?.payload as { eligibleSeatIds: string[] })
+        .eligibleSeatIds;
+      const joinerSeatIds = joiners.map(
+        (accountId) =>
+          room.state.seats.find((seat) => seat.accountId === accountId)!.seatId,
+      );
+      expect(eligibleSeatIds).toEqual(expect.arrayContaining(joinerSeatIds));
+      expect(joinerSeatIds).toHaveLength(2);
+      expect(
+        joinerSeatIds.every((seatId) => room.seatCharacters.has(seatId)),
+      ).toBe(true);
+      expect(room.state.lateJoinRequests).toEqual([]);
+      expect(
+        events.filter((event) => event.type === 'LateJoinSpawned'),
+      ).toHaveLength(0);
+    });
+
     it('admits approved exploration joiners at a committed scene boundary', async () => {
       const { store, events, setCharacterSnapshot, sessionConvertedToParty } =
         fixture();
