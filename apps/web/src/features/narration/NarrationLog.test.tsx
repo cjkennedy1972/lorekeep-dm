@@ -294,7 +294,11 @@ test('a combat batch shows one roll card per attack and announces the batch once
     <NarrationLog
       messages={[combatBatch]}
       combatantNames={{ ent_aria: 'Aria', ent_goblin: 'Goblin' }}
-      combatantKinds={{ ent_aria: 'pc', ent_goblin: 'monster' }}
+      combatants={{
+        ent_aria: { kind: 'pc', hpState: 'healthy' },
+        ent_goblin: { kind: 'monster', hpState: 'healthy' },
+      }}
+      ownEntityIds={new Set(['ent_aria'])}
     />,
   );
 
@@ -305,4 +309,65 @@ test('a combat batch shows one roll card per attack and announces the batch once
   expect(
     screen.getByText(/Aria/, { selector: '[role="status"]' }),
   ).toBeInTheDocument();
+});
+
+test('a monster attack on another seat’s PC is announced without its total or HP numbers', () => {
+  const monsterBatch = {
+    seq: 31,
+    type: 'CombatEvents',
+    payload: {
+      events: [
+        {
+          type: 'RollEvent',
+          actorId: 'ent_goblin',
+          label: 'attack monster:goblin:claw',
+          dice: '1d20',
+          rolls: [10],
+          modifier: 4,
+          total: 14,
+        },
+        {
+          type: 'RollEvent',
+          actorId: 'ent_goblin',
+          label: 'damage monster:goblin:claw',
+          dice: '1d6',
+          rolls: [5],
+          modifier: 0,
+          total: 5,
+        },
+        {
+          type: 'HpChanged',
+          entityId: 'ent_thorin',
+          from: 20,
+          to: 15,
+          damage: 5,
+        },
+      ],
+    },
+  } as unknown as ServerMessage;
+
+  const { container } = render(
+    <NarrationLog
+      messages={[monsterBatch]}
+      combatantNames={{
+        ent_aria: 'Aria',
+        ent_goblin: 'Goblin',
+        ent_thorin: 'Thorin',
+      }}
+      combatants={{
+        ent_aria: { kind: 'pc' },
+        ent_thorin: { kind: 'pc' },
+        ent_goblin: { kind: 'monster' },
+      }}
+      ownEntityIds={new Set(['ent_aria'])}
+    />,
+  );
+
+  const card = container.querySelector('.narration-log__roll');
+  expect(card).toHaveTextContent('Goblin hits Thorin with Claw.');
+  const live = screen.getByText(/Goblin hits Thorin/, {
+    selector: '[role="status"]',
+  });
+  expect(live.textContent).not.toMatch(/\d/);
+  expect(live.textContent).not.toContain('attack roll');
 });

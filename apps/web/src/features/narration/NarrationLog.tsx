@@ -14,15 +14,21 @@ import {
   visibleChunks,
   type RollPayload,
 } from './logState.js';
-import { rollCardText, summarizeCombatRolls } from './combatRolls.js';
+import {
+  rollCardText,
+  summarizeCombatRolls,
+  type CombatantFacts,
+} from './combatRolls.js';
 import { NarrationText } from './narrationText.js';
 import './narration-log.css';
 
 type Props = {
   messages: readonly ServerMessage[];
   combatantNames?: Readonly<Record<string, string>>;
-  /** Whether each combatant is a player character or a monster; monster HP is never shown as a number. */
-  combatantKinds?: Readonly<Record<string, 'pc' | 'monster'>>;
+  /** Each combatant's kind and HP status word; monster HP is never shown as a number. */
+  combatants?: Readonly<Record<string, CombatantFacts>>;
+  /** The viewer's own entities. Only their attacks show a total, and only their own PC's HP shows numbers. */
+  ownEntityIds?: ReadonlySet<string>;
   onReport?: (
     messageRef: number,
     category: string,
@@ -34,6 +40,8 @@ type Props = {
   /** Incremented for every server history restore, including an identical reconnect replay. */
   historyRestoreKey?: number;
 };
+
+const NO_ENTITIES: ReadonlySet<string> = new Set();
 
 function rollEvent(payload: RollPayload) {
   if (!payload.breakdown) return null;
@@ -51,7 +59,8 @@ function rollEvent(payload: RollPayload) {
 export function NarrationLog({
   messages,
   combatantNames = {},
-  combatantKinds = {},
+  combatants = {},
+  ownEntityIds = NO_ENTITIES,
   onReport,
   opening,
   openingReady = true,
@@ -163,7 +172,7 @@ export function NarrationLog({
       // One polite announcement per batch keeps a fight from flooding the live region.
       if (!announcedCombatBatches.current.has(message.seq)) {
         announcedCombatBatches.current.add(message.seq);
-        const cards = summarizeCombatRolls(events, (id) => combatantKinds[id]);
+        const cards = summarizeCombatRolls(events, combatants, ownEntityIds);
         if (cards.length)
           setAnnouncement(
             cards.map((card) => rollCardText(card, nameOfActor)).join(' '),
@@ -194,7 +203,7 @@ export function NarrationLog({
           setAnnouncement(`${name}: concentration lost`);
       });
     }
-  }, [messages, combatantNames, combatantKinds]);
+  }, [messages, combatantNames, combatants, ownEntityIds]);
 
   useEffect(() => {
     for (const message of messages) {
@@ -475,7 +484,8 @@ export function NarrationLog({
             if (!Array.isArray(events)) return [];
             const rollItems = summarizeCombatRolls(
               events,
-              (id) => combatantKinds[id],
+              combatants,
+              ownEntityIds,
             ).map((card, cardIndex) => (
               <li
                 key={`combat-${messageIndex}-roll-${cardIndex}`}
