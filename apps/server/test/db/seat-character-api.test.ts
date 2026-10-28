@@ -22,6 +22,35 @@ async function account() {
 }
 
 describe('account-owned character API', () => {
+  it('rejects wizard armor that the class is not proficient in', async () => {
+    const owner = await account();
+    const ownerToken = await createSession(db, owner, 'test');
+    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const character = CharacterSchema.omit({ id: true }).parse(
+      quickBuild(loadCatalog(), 'class:wizard', 0x36, 1).character,
+    );
+    character.equipment.push({
+      itemId: 'equipment:plate-armor',
+      qty: 1,
+      equipped: true,
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/me/characters',
+        headers: { cookie: `sid=${ownerToken}` },
+        payload: { character },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        code: 'INVALID_CHARACTER',
+        message: 'Character could not be saved.',
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it('lists only picker fields and creates/updates characters with revision checks', async () => {
     const owner = await account();
     const stranger = await account();

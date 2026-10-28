@@ -18,6 +18,34 @@ const COST: Record<number, number> = {
   15: 9,
 };
 const STANDARD = [15, 14, 13, 12, 10, 8];
+const ARMOR_PROFICIENCY: Record<string, string> = {
+  'padded armor': 'Light armor',
+  'leather armor': 'Light armor',
+  'studded leather armor': 'Light armor',
+  'hide armor': 'Medium armor',
+  'chain shirt': 'Medium armor',
+  'scale mail': 'Medium armor',
+  breastplate: 'Medium armor',
+  'half plate armor': 'Medium armor',
+  'ring mail': 'Heavy armor',
+  'chain mail': 'Heavy armor',
+  'splint armor': 'Heavy armor',
+  'plate armor': 'Heavy armor',
+};
+const TWO_HANDED_WEAPONS = new Set([
+  'greataxe',
+  'greatclub',
+  'greatsword',
+  'glaive',
+  'halberd',
+  'heavy crossbow',
+  'light crossbow',
+  'longbow',
+  'maul',
+  'musket',
+  'pike',
+  'shortbow',
+]);
 const SKILLS = new Set([
   'acrobatics',
   'animal-handling',
@@ -195,6 +223,81 @@ export function validateCharacter(
         'DUPLICATE_PROFICIENCY',
         'proficiencies',
         'Proficiencies must not contain duplicates',
+      ),
+    );
+
+  const equipped = char.equipment.filter((item) => item.equipped);
+  const equippedBodyArmor = equipped.filter((item) => {
+    const entry = entryBy(catalog, 'equipment', item.itemId);
+    return entry?.category === 'armor' && entry.name.toLowerCase() !== 'shield';
+  });
+  const equippedShields = equipped.filter((item) => {
+    const entry = entryBy(catalog, 'equipment', item.itemId);
+    return entry?.category === 'armor' && entry.name.toLowerCase() === 'shield';
+  });
+  const equippedWeapons = equipped.filter(
+    (item) => entryBy(catalog, 'equipment', item.itemId)?.category === 'weapon',
+  );
+  let invalidEquippedLoadout =
+    equippedBodyArmor.length > 1 ||
+    equippedShields.length > 1 ||
+    equippedWeapons.length > 2;
+  const selectedEquipmentOption = klass?.startingEquipment?.find(
+    (option) => option.option === char.equipmentOption,
+  );
+  for (const item of [...equippedBodyArmor, ...equippedShields]) {
+    const entry = entryBy(catalog, 'equipment', item.itemId);
+    if (!entry || item.qty <= 0) {
+      invalidEquippedLoadout = true;
+      continue;
+    }
+    const requiredProficiency =
+      entry.name.toLowerCase() === 'shield'
+        ? 'Shields'
+        : ARMOR_PROFICIENCY[entry.name.toLowerCase()];
+    if (
+      !requiredProficiency ||
+      !klass?.armorProficiencies?.includes(requiredProficiency)
+    )
+      invalidEquippedLoadout = true;
+    if (char.equipmentOption && klass?.startingEquipment?.length) {
+      const selectedNames = (selectedEquipmentOption?.items ?? []).flatMap(
+        (text) =>
+          text.split(/\bor\b/i).map((name) =>
+            name
+              .replace(/^\d+\s+/, '')
+              .replace(/\s*\([^)]*\)/g, '')
+              .replace(/[’‘]/g, "'")
+              .trim()
+              .toLowerCase(),
+          ),
+      );
+      if (
+        !selectedNames.includes(entry.name.replace(/[’‘]/g, "'").toLowerCase())
+      )
+        invalidEquippedLoadout = true;
+    }
+  }
+  for (const item of equippedWeapons)
+    if (item.qty <= 0) invalidEquippedLoadout = true;
+  if (
+    equippedShields.length &&
+    equippedWeapons.some((item) => {
+      const name = entryBy(
+        catalog,
+        'equipment',
+        item.itemId,
+      )?.name.toLowerCase();
+      return name !== undefined && TWO_HANDED_WEAPONS.has(name);
+    })
+  )
+    invalidEquippedLoadout = true;
+  if (invalidEquippedLoadout)
+    out.push(
+      violation(
+        'WRONG_EQUIPMENT',
+        'equipment',
+        'Equipped equipment is not valid for this character.',
       ),
     );
 

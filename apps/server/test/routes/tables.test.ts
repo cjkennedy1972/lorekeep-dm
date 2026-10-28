@@ -206,6 +206,32 @@ describe('solo table lifecycle routes', () => {
     },
   );
 
+  it('rejects a wizard table character with equipped plate armor', async () => {
+    const calls: string[] = [];
+    const app = registerCreateTableRoute(allowInputGate, calls);
+    const character = quickBuild(
+      loadCatalog(),
+      'class:wizard',
+      0x28,
+      1,
+    ).character;
+    character.equipment.push({
+      itemId: 'equipment:plate-armor',
+      qty: 1,
+      equipped: true,
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tables',
+      headers: { cookie: `sid=${token}` },
+      payload: { name: 'A table', character },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'INVALID_CHARACTER' });
+    expect(calls.some((sql) => /INSERT INTO sessions/.test(sql))).toBe(false);
+    await app.close();
+  });
+
   it('returns safe Zod paths and codes for invalid character fields', async () => {
     const calls: string[] = [];
     const app = registerCreateTableRoute(allowInputGate, calls);
