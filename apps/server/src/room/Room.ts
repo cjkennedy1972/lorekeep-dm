@@ -5262,11 +5262,24 @@ export class Room {
             const cleared = { ...turnGameState } as Record<string, unknown>;
             delete cleared.lastCombatBeat;
             turnGameState = cleared;
-          } else if (!clarification && !moderationHeld && result.narration) {
+          } else if (
+            !clarification &&
+            !moderationHeld &&
+            result.narration &&
+            (narrationTier === 'family' || narrationTier === 'standard')
+          ) {
             turnGameState = {
               ...turnGameState,
               lastCombatBeat: result.narration.slice(0, 600),
             };
+          } else if (
+            !clarification &&
+            narrationTier !== 'family' &&
+            narrationTier !== 'standard'
+          ) {
+            const cleared = { ...turnGameState } as Record<string, unknown>;
+            delete cleared.lastCombatBeat;
+            turnGameState = cleared;
           }
         }
         const deadlineAt = Date.now() + CLARIFICATION_TIMEOUT_MS;

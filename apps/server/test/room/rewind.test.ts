@@ -111,6 +111,7 @@ function setup() {
         state: {
           map: { revision: n, cells: `cells-after-${n}` },
           lastNarration: `narration ${n}`,
+          lastCombatBeat: `combat beat ${n}`,
         },
         turnSeed: '0x0000000000000001',
         usage: { in: 1, out: 1 },
@@ -138,6 +139,9 @@ describe('rewind last resolved turn', () => {
     await room.rewindLastTurn(owner);
 
     expect(room.state.gameState).toEqual(afterFirst);
+    expect(room.state.gameState).toMatchObject({
+      lastCombatBeat: 'combat beat 1',
+    });
     expect(room.seq).toBeGreaterThan(firstSeq);
     expect(room.seq).toBe(events.at(-1)?.seq);
     const reverted = events.filter((event) => event.type === 'TurnReverted');
