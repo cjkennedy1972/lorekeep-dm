@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   Room,
-  RoomSeatRequiredError,
   type RoomStore,
 } from '../../src/room/Room.js';
 import type { CombatRuntime } from '../../src/room/combat.js';
@@ -258,7 +257,7 @@ async function probeFixture(turnRunner?: SoloTurnRunner) {
 
 describe('PROBE', () => {
   it('PROBE-1 live RollEvent naming a hidden actor, delivered to a non-controlling seat', async () => {
-    let ids = { entA: '' };
+    const ids = { entA: '' };
     const turnRunner = {
       async run(_req: unknown, emit: (e: Record<string, unknown>) => void) {
         emit({
@@ -310,18 +309,24 @@ describe('PROBE', () => {
       f.room.state.gameState as { combatRoom: Record<string, unknown> }
     ).combatRoom;
     const runtime = crt();
-    let picked: { res: any; seed: number } | undefined;
+    let picked:
+      | {
+          res: Extract<ReturnType<CombatRuntime['execute']>, { state: unknown }>;
+          seed: number;
+        }
+      | undefined;
     for (let seed = 1; seed <= 60 && !picked; seed++) {
-      const res: any = runtime.execute({ ...state, seed } as never, entA, {
+      const res = runtime.execute({ ...state, seed } as never, entA, {
         command: 'attack',
         targetId: 'goblin',
         attackId: 'sword',
       } as never);
       if ('code' in res) throw new Error('rejected ' + JSON.stringify(res));
       const hp = res.events.find(
-        (e: any) => e.type === 'HpChanged' && e.entityId === 'goblin',
+        (e) => e.type === 'HpChanged' && e.entityId === 'goblin',
       );
-      if (hp && hp.damage > 0) picked = { res, seed };
+      if (hp && typeof hp.damage === 'number' && hp.damage > 0)
+        picked = { res, seed };
     }
     if (!picked) throw new Error('no damaging seed');
     for (const k of ['a', 'b']) inbox[k]!.length = 0;
@@ -337,22 +342,23 @@ describe('PROBE', () => {
       picked.res.events,
       f.accountA,
     );
-    const rolls = picked.res.events.filter((e: any) => e.type === 'RollEvent');
-    const hpEv = picked.res.events.filter((e: any) => e.type === 'HpChanged');
     const pick = (msgs: Record<string, unknown>[]) =>
       msgs
         .filter((m) => m.type === 'CombatEvents')
-        .flatMap((m) => (m.payload as any).events);
+        .flatMap((m) => {
+          const payload = m.payload as { events: Record<string, unknown>[] };
+          return payload.events;
+        });
     const other = pick(inbox.b!);
     const damageRoll = other.find(
-      (e: any) => e.type === 'RollEvent' && e.label === 'damage',
+      (e) => e.type === 'RollEvent' && e.label === 'damage',
     );
     expect(damageRoll).toBeDefined();
     expect(damageRoll).not.toHaveProperty('damage');
     expect(damageRoll).not.toHaveProperty('total');
     expect(damageRoll).not.toHaveProperty('rolls');
     expect(damageRoll).not.toHaveProperty('modifier');
-    expect(other.find((e: any) => e.type === 'HpChanged')).toMatchObject({
+    expect(other.find((e) => e.type === 'HpChanged')).toMatchObject({
       type: 'HpChanged',
       entityId: 'goblin',
       hpState: 'wounded',
