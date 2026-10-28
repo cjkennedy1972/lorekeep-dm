@@ -207,6 +207,9 @@ export async function loadPlayerNarrationHistoryRows(input: {
               ORDER BY a.seq DESC LIMIT 1) AS action_text
        FROM events e
       WHERE e.session_id=$1 AND e.type='NarrationCompleted'
+        AND e.seq >= COALESCE((SELECT MIN(j.seq) FROM events j
+                                WHERE j.session_id=e.session_id AND j.type='SeatJoined'
+                                  AND j.payload->>'accountId'=$2), 0)
         AND ${REVERTED_TURN_EXCLUSION}
         AND NULLIF(e.payload->>'narration','') IS NOT NULL
         AND e.payload->>'tier' IN ('family','standard','mature')
