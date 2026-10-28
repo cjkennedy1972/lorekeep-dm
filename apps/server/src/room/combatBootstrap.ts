@@ -50,6 +50,143 @@ export type PartyBindings = ReadonlyMap<
 export type Reconciled = { gameState: GameState; events: Ev[] };
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+const WEAPON_ATTACKS: Record<
+  string,
+  {
+    damage: string;
+    damageType: string;
+    finesse?: boolean;
+    ranged?: boolean;
+    range?: { normalFt: number; longFt: number };
+  }
+> = {
+  'equipment:battleaxe': { damage: '1d8', damageType: 'slashing' },
+  'equipment:blowgun': {
+    ranged: true,
+    damage: '1',
+    damageType: 'piercing',
+    range: { normalFt: 25, longFt: 100 },
+  },
+  'equipment:club': { damage: '1d4', damageType: 'bludgeoning' },
+  'equipment:dagger': {
+    damage: '1d4',
+    damageType: 'piercing',
+    finesse: true,
+    range: { normalFt: 20, longFt: 60 },
+  },
+  'equipment:dart': {
+    damage: '1d4',
+    damageType: 'piercing',
+    finesse: true,
+    range: { normalFt: 20, longFt: 60 },
+  },
+  'equipment:flail': { damage: '1d8', damageType: 'bludgeoning' },
+  'equipment:glaive': { damage: '1d10', damageType: 'slashing' },
+  'equipment:greataxe': { damage: '1d12', damageType: 'slashing' },
+  'equipment:greatclub': { damage: '1d8', damageType: 'bludgeoning' },
+  'equipment:greatsword': { damage: '2d6', damageType: 'slashing' },
+  'equipment:halberd': { damage: '1d10', damageType: 'slashing' },
+  'equipment:hand-crossbow': {
+    ranged: true,
+    damage: '1d6',
+    damageType: 'piercing',
+    range: { normalFt: 30, longFt: 120 },
+  },
+  'equipment:handaxe': {
+    damage: '1d6',
+    damageType: 'slashing',
+    range: { normalFt: 20, longFt: 60 },
+  },
+  'equipment:heavy-crossbow': {
+    ranged: true,
+    damage: '1d10',
+    damageType: 'piercing',
+    range: { normalFt: 100, longFt: 400 },
+  },
+  'equipment:javelin': {
+    damage: '1d6',
+    damageType: 'piercing',
+    range: { normalFt: 30, longFt: 120 },
+  },
+  'equipment:lance': { damage: '1d10', damageType: 'piercing' },
+  'equipment:light-crossbow': {
+    ranged: true,
+    damage: '1d8',
+    damageType: 'piercing',
+    range: { normalFt: 80, longFt: 320 },
+  },
+  'equipment:light-hammer': {
+    damage: '1d4',
+    damageType: 'bludgeoning',
+    range: { normalFt: 20, longFt: 60 },
+  },
+  'equipment:longbow': {
+    ranged: true,
+    damage: '1d8',
+    damageType: 'piercing',
+    range: { normalFt: 150, longFt: 600 },
+  },
+  'equipment:longsword': { damage: '1d8', damageType: 'slashing' },
+  'equipment:mace': { damage: '1d6', damageType: 'bludgeoning' },
+  'equipment:maul': { damage: '2d6', damageType: 'bludgeoning' },
+  'equipment:morningstar': { damage: '1d8', damageType: 'piercing' },
+  'equipment:musket': {
+    ranged: true,
+    damage: '1d12',
+    damageType: 'piercing',
+    range: { normalFt: 40, longFt: 120 },
+  },
+  'equipment:pike': { damage: '1d10', damageType: 'piercing' },
+  'equipment:pistol': {
+    ranged: true,
+    damage: '1d10',
+    damageType: 'piercing',
+    range: { normalFt: 30, longFt: 90 },
+  },
+  'equipment:quarterstaff': { damage: '1d6', damageType: 'bludgeoning' },
+  'equipment:rapier': {
+    damage: '1d8',
+    damageType: 'piercing',
+    finesse: true,
+  },
+  'equipment:scimitar': {
+    damage: '1d6',
+    damageType: 'slashing',
+    finesse: true,
+  },
+  'equipment:shortbow': {
+    ranged: true,
+    damage: '1d6',
+    damageType: 'piercing',
+    range: { normalFt: 80, longFt: 320 },
+  },
+  'equipment:shortsword': {
+    damage: '1d6',
+    damageType: 'piercing',
+    finesse: true,
+  },
+  'equipment:sickle': { damage: '1d4', damageType: 'slashing' },
+  'equipment:sling': {
+    ranged: true,
+    damage: '1d4',
+    damageType: 'bludgeoning',
+    range: { normalFt: 30, longFt: 120 },
+  },
+  'equipment:spear': {
+    damage: '1d6',
+    damageType: 'piercing',
+    range: { normalFt: 20, longFt: 60 },
+  },
+  'equipment:trident': {
+    damage: '1d8',
+    damageType: 'piercing',
+    range: { normalFt: 20, longFt: 60 },
+  },
+  'equipment:war-pick': { damage: '1d8', damageType: 'piercing' },
+  'equipment:warhammer': { damage: '1d8', damageType: 'bludgeoning' },
+  'equipment:whip': { damage: '1d4', damageType: 'slashing' },
+};
+
 const unarmed = (character: CharacterInput): CombatAttack => {
   const mod = abilityModifier(character.abilities.str);
   return {
@@ -68,7 +205,7 @@ export function attacksFor(
   catalog: Catalog,
 ): Pick<CombatEntity, 'attacks' | 'abilities' | 'saves'> {
   if (character) {
-    const owned = Object.entries(registry)
+    const registered = Object.entries(registry)
       .filter(([, attack]) => attack.ownerId === entity.id)
       .map(
         ([id, attack]): CombatAttack => ({
@@ -81,10 +218,38 @@ export function attacksFor(
           ...(attack.range ? { range: attack.range } : {}),
         }),
       );
+    const derived = deriveSheet(character, catalog);
+    const weapons = character.equipment.flatMap((item): CombatAttack[] => {
+      const weapon = WEAPON_ATTACKS[item.itemId];
+      if (!weapon || !item.equipped || item.qty <= 0) return [];
+      const strModifier = abilityModifier(character.abilities.str);
+      const dexModifier = abilityModifier(character.abilities.dex);
+      const modifier = weapon.finesse
+        ? Math.max(strModifier, dexModifier)
+        : weapon.ranged
+          ? dexModifier
+          : strModifier;
+      return [
+        {
+          id: item.itemId,
+          name: catalog.get('equipment', item.itemId)?.name ?? item.itemId,
+          attackBonus: modifier + proficiencyBonus(character.level),
+          damage: `${weapon.damage}${modifier > 0 ? `+${modifier}` : modifier < 0 ? modifier : ''}`,
+          damageType: weapon.damageType,
+          ...(weapon.range ? { range: weapon.range } : {}),
+        },
+      ];
+    });
+    const attacks = [
+      ...registered,
+      ...weapons.filter(
+        (weapon) => !registered.some((attack) => attack.id === weapon.id),
+      ),
+    ];
     return {
       abilities: character.abilities,
-      saves: deriveSheet(character, catalog).saves,
-      attacks: owned.length ? owned : [unarmed(character)],
+      saves: derived.saves,
+      attacks: attacks.length ? attacks : [unarmed(character)],
     };
   }
   const catalogId = `monster:${entity.id.replace(/^ent_/, '').replace(/_\d+$/, '')}`;
