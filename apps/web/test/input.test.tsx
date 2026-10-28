@@ -6,6 +6,7 @@ import {
   ActionInput,
   QUICK_ACTIONS,
 } from '../src/features/input/ActionInput.js';
+import { ClarificationReply } from '../src/features/input/ClarificationReply.js';
 
 describe('ActionInput', () => {
   it('submits free-text and keyboard-reachable named quick actions', async () => {
@@ -52,9 +53,9 @@ describe('ActionInput', () => {
     const user = userEvent.setup();
     const onReply = vi.fn();
     render(
-      <ActionInput
-        onSubmit={vi.fn()}
-        clarification={{ actionId: 'action-original', question: 'Which door?' }}
+      <ClarificationReply
+        actionId="action-original"
+        question="Which door?"
         onReply={onReply}
       />,
     );

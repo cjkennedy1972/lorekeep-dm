@@ -19,10 +19,6 @@
   gap: var(--space-1) var(--space-2);
   align-items: end;
 }
-.action-input form[aria-label='Reply to clarifying question'] {
-  grid-template-areas: none;
-  grid-template-columns: 1fr;
-}
 
 .action-input form[aria-label='Player action'] > label {
   grid-area: label;
@@ -93,8 +89,7 @@
 }
 
 /* Quick actions follow the composer in the DOM (tab/reading order) but stay above it visually. */
-.action-input > .action-input__pending,
-.action-input > form[aria-label='Reply to clarifying question'] {
+.action-input > .action-input__pending {
   order: -2;
 }
 .action-input > .action-input__quick {
