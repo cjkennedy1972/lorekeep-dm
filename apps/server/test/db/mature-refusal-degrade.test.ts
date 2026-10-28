@@ -335,7 +335,7 @@ describe('endpoint refusal of a mature prompt', () => {
     const recap = await buildPlayerVisibleRecap({
       db,
       sessionId,
-      accountId: owner.id,
+      accountId: owner,
     });
     expect(recap.recap).toContain(STANDARD_TEXT);
     expect(recap.recap).not.toContain('PARTIAL MATURE');

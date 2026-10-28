@@ -1972,8 +1972,13 @@ describe('room actor', () => {
       { send: (message) => current.push(message) },
       currentSeq,
     );
-    expect(stale).toMatchObject([{ type: 'StateSync', seq: currentSeq }]);
-    expect(current).toEqual([]);
+    expect(stale).toMatchObject([
+      { type: 'StateSync', seq: currentSeq },
+      { type: 'NarrationHistory', payload: { turns: [] } },
+    ]);
+    expect(current).toMatchObject([
+      { type: 'NarrationHistory', payload: { turns: [] } },
+    ]);
   });
   it('edits a queued submission without moving its receipt position and scopes it to its seat', async () => {
     const { store, events } = fixture();

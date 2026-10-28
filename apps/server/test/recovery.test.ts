@@ -96,6 +96,7 @@ describe('room recovery', () => {
     expect(sent).toMatchObject([
       { type: 'PresenceChanged', seq: 2 },
       { type: 'StateSync', seq: 2 },
+      { type: 'NarrationHistory', seq: 2, payload: { turns: [] } },
     ]);
     expect(await room.submit(actionId)).toBe(false);
   });
