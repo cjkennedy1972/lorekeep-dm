@@ -16,6 +16,16 @@ import type { LatestState, StoredEvent } from '../src/persistence/index.js';
 import type { RegistryEvent } from '../src/dm/memory.js';
 import type { SoloTurnRunner } from '../src/room/dmTurn.js';
 
+async function acknowledgeRoomSnapshot(
+  room: Room,
+  accountId: string,
+  seatId: string,
+  snapshotSeq: number,
+): Promise<void> {
+  room.recordLateJoinSnapshot(accountId, seatId, snapshotSeq);
+  await room.acknowledgeLateJoinSnapshot(accountId, seatId, snapshotSeq);
+}
+
 const id = randomUUID();
 const lease = {
   sessionId: id,
@@ -1178,6 +1188,118 @@ describe('room actor', () => {
       expect(new Room(store, lease, await latest()).state.ended).toBe(true);
     });
 
+    it.each([
+      ['leave-after-ack', 'leave', true],
+      ['kick-after-ack', 'kick', true],
+      ['leave-before-ack', 'leave', false, false],
+      ['battlemap-combat-leave-after-ack', 'leave', true, true],
+    ] as const)(
+      '%s before the boundary cancels the approved request',
+      async (_case, departure, acknowledge, combatActive) => {
+        const { store, events } = fixture();
+        const host = randomUUID();
+        const joiner = randomUUID();
+        store.isTableHost = async (_sessionId, accountId) => accountId === host;
+        const room = new Room(store, lease, await store.loadLatest(id));
+        await room.seat(host, 'Host');
+        if (combatActive) {
+          room.state.gameState = {
+            combatRoom: {
+              map: {} as Battlemap,
+              entities: [],
+              combat: {
+                round: 1,
+                activeEntityId: 'host-combatant',
+                initiative: [],
+                resources: {},
+              },
+            },
+          };
+        }
+        room.state.round = {
+          roundId: randomUUID(),
+          status: 'open',
+          eligibleSeatIds: room.state.seats.map((seat) => seat.seatId),
+          deadlineAt: null,
+          submissions: [],
+          queuedSubmissions: [],
+        };
+        const requestId = await room.requestLateJoin(
+          joiner,
+          randomUUID(),
+          1,
+          randomUUID(),
+        );
+        await room.approveLateJoin(host, randomUUID(), requestId);
+        const otherAccount = randomUUID();
+        const otherRequestId = await room.requestLateJoin(
+          otherAccount,
+          randomUUID(),
+          1,
+          randomUUID(),
+        );
+        await room.join(joiner, { send: () => undefined });
+        const joinerSeat = room.state.seats.find(
+          (seat) => seat.accountId === joiner,
+        )!;
+        const deliveredSeq = room.seq;
+        if (acknowledge) {
+          await room.acknowledgeLateJoinSnapshot(
+            joiner,
+            joinerSeat.seatId,
+            deliveredSeq - 1,
+          );
+          expect(
+            (
+              room as unknown as { lateJoinSnapshotAcks: Set<string> }
+            ).lateJoinSnapshotAcks.has(requestId),
+          ).toBe(false);
+          await acknowledgeRoomSnapshot(
+            room,
+            joiner,
+            joinerSeat.seatId,
+            deliveredSeq,
+          );
+        }
+
+        if (departure === 'leave') await room.leave(joiner);
+        else await room.kickSeat(host, randomUUID(), joinerSeat.seatId);
+        await (
+          room as unknown as { admitApprovedLateJoins(): Promise<void> }
+        ).admitApprovedLateJoins();
+
+        expect(room.state.seats.some((seat) => seat.accountId === joiner)).toBe(
+          false,
+        );
+        expect(
+          events.some(
+            (event) =>
+              event.type === 'LateJoinCancelled' &&
+              (event.payload as { requestId: string }).requestId === requestId,
+          ),
+        ).toBe(true);
+        expect(
+          room.state.lateJoinRequests?.some(
+            (request) => request.requestId === otherRequestId,
+          ),
+        ).toBe(true);
+        const replayed = new Room(store, lease, await store.loadLatest(id));
+        expect(
+          replayed.state.lateJoinRequests?.some(
+            (request) => request.requestId === requestId,
+          ),
+        ).toBe(false);
+        expect(
+          events.some(
+            (event) =>
+              event.type === 'LateJoinAdmitted' &&
+              (event.payload as { requestId: string }).requestId === requestId,
+          ),
+        ).toBe(false);
+        await replayed.drain();
+      },
+    );
+
     it('does not persist TableEnded when the table store refuses to end it', async () => {
       const { store, events } = fixture();
       const host = randomUUID();
@@ -1324,7 +1446,8 @@ describe('room actor', () => {
         (seat) => seat.accountId === requester,
       )!;
       expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
-      await room.acknowledgeLateJoinSnapshot(
+      await acknowledgeRoomSnapshot(
+        room,
         requester,
         pendingSeat.seatId,
         room.seq,
@@ -1528,7 +1651,8 @@ describe('room actor', () => {
           (message) => message.type === 'StateSync',
         );
         expect(snapshot).toBeDefined();
-        await room.acknowledgeLateJoinSnapshot(
+        await acknowledgeRoomSnapshot(
+          room,
           accountId,
           room.state.seats.find((seat) => seat.accountId === accountId)!.seatId,
           snapshot!.seq!,
@@ -1670,19 +1794,17 @@ describe('room actor', () => {
       await expect(
         room.submitAction(requester, randomUUID(), 'take a turn'),
       ).rejects.toThrow();
-      await room.acknowledgeLateJoinSnapshot(
-        host,
-        pendingSeat.seatId,
-        room.seq,
-      );
-      await room.acknowledgeLateJoinSnapshot(requester, randomUUID(), room.seq);
+      await acknowledgeRoomSnapshot(room, host, pendingSeat.seatId, room.seq);
+      await acknowledgeRoomSnapshot(room, requester, randomUUID(), room.seq);
       expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
-      await room.acknowledgeLateJoinSnapshot(
+      await acknowledgeRoomSnapshot(
+        room,
         requester,
         pendingSeat.seatId,
         room.seq,
       );
-      await room.acknowledgeLateJoinSnapshot(
+      await acknowledgeRoomSnapshot(
+        room,
         requester,
         pendingSeat.seatId,
         room.seq,
@@ -1830,7 +1952,8 @@ describe('room actor', () => {
         (seat) => seat.accountId === requester,
       )!;
       expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
-      await room.acknowledgeLateJoinSnapshot(
+      await acknowledgeRoomSnapshot(
+        room,
         requester,
         pendingSeat.seatId,
         room.seq,
