@@ -237,6 +237,9 @@ test('clears a stored resume token after the host denies its claim', async () =>
     ),
     false,
   );
+  expect(client.getSnapshot().error).toBe(
+    'A host must approve this device to reconnect. If you are the sole host and have no saved seat token, recovery on a fresh device is currently unavailable; reconnect from the browser or device that has the saved token.',
+  );
   ws.emit(
     'message',
     Buffer.from(

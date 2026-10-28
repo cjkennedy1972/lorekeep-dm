@@ -941,6 +941,7 @@ export function Game() {
       <section className="game-notice">
         <h1>Game</h1>
         <ConnectionStatus status={live.status} />
+        {live.error && <p role="alert">{live.error}</p>}
         <p role="status" className="loading">
           <span className="spinner" aria-hidden="true" />
           Waiting for room state…
