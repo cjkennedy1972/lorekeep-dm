@@ -385,22 +385,44 @@ describe('Room solo DM turn lifecycle', () => {
     expect(await room.submitAction(owner, queued, 'second')).toBe(true);
   });
 
-  it('allows a later retry after an endpoint failure without persisting action state', async () => {
+  it('sends endpoint failures only to the submitter and accepts a later retry', async () => {
     let calls = 0;
     const runner: SoloTurnRunner = {
       async run() {
         calls++;
-        return { ...result, fallback: 'endpoint-error' } as never;
+        return calls === 1
+          ? ({ ...result, fallback: 'endpoint-error' } as never)
+          : (result as never);
       },
     };
     const { room, events, latestSnapshot } = setup(runner);
     const accountId = randomUUID();
-    await joinSeated(room, accountId, { send() {} });
+    const otherAccountId = randomUUID();
+    const messages: { type: string; payload?: Record<string, unknown> }[] = [];
+    const otherMessages: { type: string; payload?: Record<string, unknown> }[] =
+      [];
+    await joinSeated(room, accountId, {
+      send: (message) => messages.push(message as (typeof messages)[number]),
+    });
+    await joinSeated(room, otherAccountId, {
+      send: (message) =>
+        otherMessages.push(message as (typeof otherMessages)[number]),
+    });
     const actionId = randomUUID();
     expect(await room.submitAction(accountId, actionId, 'I look around.')).toBe(
       true,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      messages.find((message) => message.type === 'Error')?.payload,
+    ).toMatchObject({
+      code: 'TURN_FAILED',
+      actionId,
+      message: expect.stringMatching(/try again/i),
+    });
+    expect(otherMessages.some((message) => message.type === 'Error')).toBe(
+      false,
+    );
     expect(events.some((event) => event.type === 'ActionAccepted')).toBe(false);
     expect(
       (latestSnapshot()?.state as { actionIds?: string[] } | undefined)
@@ -410,6 +432,7 @@ describe('Room solo DM turn lifecycle', () => {
       true,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events.some((event) => event.type === 'ActionAccepted')).toBe(true);
     expect(calls).toBe(2);
   });
 
@@ -475,6 +498,66 @@ describe('Room solo DM turn lifecycle', () => {
     expect(otherMessages.some((message) => message.type === 'Error')).toBe(
       false,
     );
+  });
+
+  it('notifies round submitters of endpoint failure and opens a usable next round', async () => {
+    let calls = 0;
+    const runner: SoloTurnRunner = {
+      async run() {
+        calls++;
+        return calls === 1
+          ? ({ ...result, fallback: 'endpoint-error' } as never)
+          : (result as never);
+      },
+    };
+    const { room, events } = setup(runner);
+    const submitters = [randomUUID(), randomUUID()];
+    const spectator = randomUUID();
+    const messages = new Map<
+      string,
+      { type: string; payload?: Record<string, unknown> }[]
+    >();
+    for (const accountId of [...submitters, spectator]) {
+      const received: { type: string; payload?: Record<string, unknown> }[] =
+        [];
+      messages.set(accountId, received);
+      await joinSeated(room, accountId, {
+        send: (message) => received.push(message as (typeof received)[number]),
+      });
+    }
+    room.state = {
+      ...room.state,
+      seats: room.state.seats.map((seat) =>
+        seat.accountId === spectator ? { ...seat, presence: 'away' } : seat,
+      ),
+    };
+    await room.persistGameState({});
+    const roundId = room.state.round!.roundId;
+    for (const accountId of submitters)
+      await room.submitAction(accountId, randomUUID(), 'I take an action.');
+    await vi.waitFor(() => {
+      for (const accountId of submitters)
+        expect(
+          messages
+            .get(accountId)
+            ?.some(
+              (message) =>
+                message.type === 'Error' &&
+                message.payload?.code === 'TURN_FAILED' &&
+                message.payload?.actionId === roundId,
+            ),
+        ).toBe(true);
+    });
+    expect(
+      messages.get(spectator)?.some((message) => message.type === 'Error'),
+    ).toBe(false);
+    expect(room.state.round?.status).toBe('open');
+    for (const accountId of submitters)
+      await room.submitAction(accountId, randomUUID(), 'Retry the action.');
+    await vi.waitFor(() => expect(calls).toBe(2));
+    expect(events.some((event) => event.type === 'ActionAccepted')).toBe(true);
+    expect(room.state.round?.status).toBe('open');
+    await room.drain();
   });
 
   it('sends a round restriction only to the restricted first actor', async () => {
@@ -830,7 +913,7 @@ describe('Room commit safety', () => {
     expect(JSON.stringify(room.clientState())).not.toContain('unsafe');
   });
 
-  it('intentionally commits nothing for an endpoint-error turn, so the event log stays empty for it', async () => {
+  it('does not commit endpoint-error narration or action state', async () => {
     const { room, events, latestSnapshot } = setup({
       async run(_input: unknown, emit: (event: unknown) => void) {
         emit({
@@ -856,13 +939,10 @@ describe('Room commit safety', () => {
       true,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(
-      sent.some(
-        (message) =>
-          message.type === 'NarrationCompleted' &&
-          message.payload?.fallback === 'endpoint-error',
-      ),
-    ).toBe(true);
+    expect(sent.some((message) => message.type === 'Error')).toBe(true);
+    expect(sent.some((message) => message.type === 'NarrationCompleted')).toBe(
+      false,
+    );
     expect(events.length).toBe(storedBefore);
     expect(JSON.stringify(latestSnapshot()?.state)).toBe(before);
   });

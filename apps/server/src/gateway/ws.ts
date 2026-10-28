@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { createApp } from '../app.js';
 import type { Pool } from 'pg';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -67,6 +67,13 @@ import {
 } from './resumeTokens.js';
 
 const MAX_BYTES = 10 * 1024;
+const diagnosticHash = (value: string | undefined) =>
+  value ? createHash('sha256').update(value).digest('hex').slice(0, 16) : null;
+const safeCloseReason = (reason: Buffer) =>
+  reason
+    .toString()
+    .slice(0, 120)
+    .replace(/\b(?:Bearer\s+)?[A-Za-z0-9_-]{32,}\b/g, '[REDACTED]');
 const CHAT_REJECTION = 'That message could not be sent. Try again.';
 const MESSAGE_BUCKET_CAPACITY = 20;
 const MESSAGE_REFILL_PER_SECOND = 10;
@@ -155,6 +162,18 @@ export function installGateway(
           return;
         return reply.code(403).send({ error: 'origin' });
       },
+      onResponse: async (request, reply) => {
+        app.log.info(
+          {
+            event: 'ws_ticket_outcome',
+            requestId: request.id,
+            sessionIdHash: diagnosticHash(request.body?.sessionId),
+            statusCode: reply.statusCode,
+            outcome: reply.statusCode === 200 ? 'issued' : 'rejected',
+          },
+          'WebSocket ticket request completed',
+        );
+      },
     },
     async (request, reply) => {
       const auth = await authenticateRequest(db, request);
@@ -202,6 +221,24 @@ export function installGateway(
       return;
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
+      let authPhase = 'upgraded';
+      let diagnosticSessionHash = diagnosticHash(
+        new URL(request.url ?? '/', 'http://localhost').searchParams.get(
+          'sessionId',
+        ) ?? undefined,
+      );
+      ws.on('close', (code, reason) => {
+        app.log.info(
+          {
+            event: 'ws_close',
+            sessionIdHash: diagnosticSessionHash,
+            phase: authPhase,
+            code,
+            reason: safeCloseReason(reason),
+          },
+          'WebSocket closed',
+        );
+      });
       ws.on('error', () => {});
       const reject = () => ws.close(1008, 'Policy violation');
       if (!validWebSocketOrigin(request.headers.origin, request.headers.host)) {
@@ -243,6 +280,16 @@ export function installGateway(
           reject();
           return;
         }
+        diagnosticSessionHash = diagnosticHash(identity.sessionId);
+        authPhase = 'ticket-consumed';
+        app.log.info(
+          {
+            event: 'ws_upgrade_outcome',
+            sessionIdHash: diagnosticHash(identity.sessionId),
+            outcome: 'ticket-consumed',
+          },
+          'WebSocket ticket accepted',
+        );
         const eligible = await eligibleSession(
           db,
           identity.accountId,
@@ -333,6 +380,15 @@ export function installGateway(
             ),
           ]).then((frame) => JSON.parse(frame.toString()));
         } catch {
+          authPhase = 'resume-challenge-failed';
+          app.log.info(
+            {
+              event: 'ws_resume_outcome',
+              sessionIdHash: diagnosticSessionHash,
+              outcome: 'challenge-failed',
+            },
+            'WebSocket seat resume challenge failed',
+          );
           ws.off('message', resumeFrameHandler);
           ws.close(1008, 'Seat proof required');
           return;
@@ -344,6 +400,15 @@ export function installGateway(
           payload?: { resumeToken?: unknown };
         };
         if (proof.type !== 'ResumeSeat') {
+          authPhase = 'resume-invalid-frame';
+          app.log.info(
+            {
+              event: 'ws_resume_outcome',
+              sessionIdHash: diagnosticSessionHash,
+              outcome: 'invalid-first-frame',
+            },
+            'WebSocket seat resume rejected',
+          );
           ws.off('message', resumeFrameHandler);
           ws.close(1008, 'Seat proof required');
           return;
@@ -427,10 +492,28 @@ export function installGateway(
           pendingClaimId = undefined;
         }
         if (authorization.status !== 'authorized') {
+          authPhase = `resume-${authorization.status}`;
+          app.log.info(
+            {
+              event: 'ws_resume_outcome',
+              sessionIdHash: diagnosticHash(identity.sessionId),
+              outcome: authorization.status,
+            },
+            'WebSocket seat resume rejected',
+          );
           ws.off('message', resumeFrameHandler);
           ws.close(1008, 'Seat authentication failed');
           return;
         }
+        authPhase = 'resume-authorized';
+        app.log.info(
+          {
+            event: 'ws_resume_outcome',
+            sessionIdHash: diagnosticHash(identity.sessionId),
+            outcome: 'authorized',
+          },
+          'WebSocket seat resume authorized',
+        );
         // Do not evict/reserve an existing in-memory socket until the ticket
         // holder has proved the current seat token or received host approval.
         const reservation = connections.reserveSeat(seatKey, ws, true);
