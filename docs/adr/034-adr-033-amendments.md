@@ -150,3 +150,7 @@ Status unchanged: Accepted (2026-10-25). The decision text above is unchanged. T
 
 - **§1 (rest vote cancelled at combat start)** and **§6 (admission codes)** are as recorded on 2026-10-25.
 - **§3 (hidden reactors):** #323 added the reaction visibility split and #325 the per-viewer projection. A Sentinel finding that non-reactor seats still see a reaction decision dialog is open on Workboard card `1ee168bf`. This note does not close it.
+
+## Addendum (2026-10-28): per-hit damage visibility
+
+8. **Per-hit damage.** Per-hit damage is hidden for non-party targets; only the target's controller and party-member targets receive it.

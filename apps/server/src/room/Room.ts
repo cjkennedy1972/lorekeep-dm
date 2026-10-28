@@ -180,11 +180,27 @@ function clientGameState(
         continue;
       }
       const card = character as Record<string, unknown>;
-      characters[seatId] = Object.fromEntries(
-        ['id', 'name', 'speciesId', 'classId', 'level', 'hp']
-          .filter((field) => field in card)
-          .map((field) => [field, card[field]]),
-      );
+      const publicFields = ['id', 'name', 'speciesId', 'classId', 'level'];
+      characters[seatId] = {
+        ...Object.fromEntries(
+          publicFields
+            .filter((field) => field in card)
+            .map((field) => [field, card[field]]),
+        ),
+        ...(card.hp &&
+        typeof card.hp === 'object' &&
+        !Array.isArray(card.hp) &&
+        'current' in card.hp
+          ? {
+              hp: {
+                current: (card.hp as { current: unknown }).current,
+                ...('max' in (card.hp as Record<string, unknown>)
+                  ? { max: (card.hp as Record<string, unknown>).max }
+                  : {}),
+              },
+            }
+          : {}),
+      };
     }
     result[key] = characters;
   }
@@ -415,6 +431,17 @@ export function narrationFact(
   characterIds: ReadonlySet<string> = new Set(),
   characterTargetHit?: boolean,
 ) {
+  if (
+    event.type === 'HpChanged' &&
+    typeof event.entityId === 'string' &&
+    !characterIds.has(event.entityId)
+  ) {
+    return {
+      type: 'HpChanged',
+      entityId: event.entityId,
+      hpState: event.to === 0 ? 'down' : 'wounded',
+    };
+  }
   const fields = Object.fromEntries(
     NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
       const value =
@@ -480,18 +507,19 @@ export function narrationFacts(
             typeof candidate.damage === 'number',
         ),
       );
-    attackDamage.set(
-      event,
-      effects.reduce(
-        (sum, candidate) =>
-          candidate.type === 'HpChanged' &&
-          candidate.entityId === event.targetId &&
-          typeof candidate.damage === 'number'
-            ? sum + candidate.damage
-            : sum,
-        0,
-      ),
-    );
+    if (typeof event.targetId === 'string' && characterIds.has(event.targetId))
+      attackDamage.set(
+        event,
+        effects.reduce(
+          (sum, candidate) =>
+            candidate.type === 'HpChanged' &&
+            candidate.entityId === event.targetId &&
+            typeof candidate.damage === 'number'
+              ? sum + candidate.damage
+              : sum,
+          0,
+        ),
+      );
   });
 
   const consequential = eligible.filter((event) =>
@@ -591,17 +619,19 @@ export function narrationFacts(
           targetId: group[0]!.fact.targetId,
           attacks: group.length,
           hits: group.filter(({ fact }) => fact.hit === true).length,
-          damage: 0,
+          ...(characterIds.has(String(group[0]!.fact.targetId))
+            ? {
+                damage: group.reduce(
+                  (sum, attack) => sum + (attackDamage.get(attack.event) ?? 0),
+                  0,
+                ),
+              }
+            : {}),
           tier: 'must',
         },
         terminal: false,
         order: group[0]!.order,
       });
-      const summary = entries.at(-1)!.fact;
-      summary.damage = group.reduce(
-        (sum, attack) => sum + (attackDamage.get(attack.event) ?? 0),
-        0,
-      );
     }
   }
   for (const { event, fact, order } of attackFacts)
@@ -5104,11 +5134,40 @@ export class Room {
             matureAudience =
               tier === 'family' || tier === 'standard' ? undefined : audience;
           } else if (type === 'RollEvent') {
-            this.broadcast({
-              seq: this.seq,
-              type: 'RollEvent',
-              payload: event,
-            } as ServerMessage);
+            const combat = roomGameState(this.state);
+            const hidden = hiddenIdsOf(combat ?? { entities: [] });
+            for (const [viewer, connection] of this.connections) {
+              const controlled = this.controlledBy(viewer);
+              const projected = projectEventForViewer(
+                event,
+                hidden,
+                controlled,
+              );
+              if (!projected) continue;
+              const actorId = String(projected.entityId ?? '');
+              const targetId = String(projected.targetId ?? '');
+              const target = combat?.entities.find(
+                (entity) => entity.id === targetId,
+              );
+              const revealAttack =
+                projected.kind !== 'attack' || controlled.has(actorId);
+              const revealDamage =
+                projected.kind !== 'damage' ||
+                (target?.team === 'party' && controlled.has(actorId)) ||
+                (target?.team !== 'party' && controlled.has(targetId));
+              connection.send({
+                seq: this.seq,
+                type: 'RollEvent',
+                payload: toWireEvent(
+                  projected,
+                  !!actorId && !controlled.has(actorId),
+                  revealAttack,
+                  revealDamage,
+                  projected.kind !== 'damage' ||
+                    (target?.team === 'party') === true,
+                ),
+              } as ServerMessage);
+            }
           } else if (type === 'NarrationCompleted') {
             // The committed completion below carries the persisted seq; this copy only covers turns that commit none.
             liveCompletion = event;
@@ -5922,13 +5981,57 @@ export class Room {
           seq: this.seq,
           type: 'CombatEvents',
           payload: {
-            events: visible.map((event) =>
-              toWireEvent(
-                event,
-                pcIds.has(String(event.entityId)) &&
-                  !controlled.has(String(event.entityId)),
-              ),
-            ),
+            events: visible.flatMap((event) => {
+              if (
+                event.type === 'HpChanged' &&
+                typeof event.entityId === 'string'
+              ) {
+                const entity = state.entities.find(
+                  (candidate) => candidate.id === event.entityId,
+                );
+                if (!entity && !controlled.has(event.entityId)) return [];
+                if (
+                  entity &&
+                  entity.team !== 'party' &&
+                  !controlled.has(entity.id)
+                ) {
+                  const hp =
+                    typeof event.to === 'number' ? event.to : entity.hp;
+                  const hpState =
+                    hp <= 0
+                      ? 'down'
+                      : hp / Math.max(1, entity.maxHp) > 0.5
+                        ? 'healthy'
+                        : 'wounded';
+                  return [{ type: 'HpChanged', entityId: entity.id, hpState }];
+                }
+              }
+              const target = state.entities.find(
+                (entity) => entity.id === event.targetId,
+              );
+              const revealDamage =
+                event.type !== 'RollEvent' ||
+                event.kind !== 'damage' ||
+                (target?.team === 'party' &&
+                  controlled.has(String(event.entityId))) ||
+                (target?.team !== 'party' &&
+                  controlled.has(String(event.targetId)));
+              return [
+                toWireEvent(
+                  event,
+                  pcIds.has(String(event.entityId)) &&
+                    !controlled.has(String(event.entityId)),
+                  event.type !== 'RollEvent' ||
+                    event.kind !== 'attack' ||
+                    controlled.has(String(event.entityId)),
+                  revealDamage,
+                  event.type === 'RollEvent' &&
+                    event.kind === 'damage' &&
+                    typeof event.targetId === 'string' &&
+                    (target?.team === 'party') === true,
+                ),
+              ];
+            }),
           },
         } as ServerMessage);
     }

@@ -456,7 +456,7 @@ describe('ADR-035 party seat gating', () => {
       speciesId: 'species:human',
       classId: 'class:cleric',
       level: 3,
-      hp: privateSheet.hp,
+      hp: { current: 8, max: 20 },
     });
     expect(other.characters[f.seatA]).not.toHaveProperty('privateNotes');
     expect(own.characters[f.seatA]).toEqual(privateSheet);
@@ -694,8 +694,8 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     const [entA, entB] = [seatEntityId(f.seatA), seatEntityId(f.seatB)];
     f.room.state.gameState = {
       characters: {
-        [f.seatA]: { id: entA, name: 'A' },
-        [f.seatB]: { id: entB, name: 'B' },
+        [f.seatA]: { id: entA, name: 'A', hp: { current: 5, max: 9 } },
+        [f.seatB]: { id: entB, name: 'B', hp: { current: 5, max: 9 } },
       },
       combatRoom: {
         seed: 424242,
@@ -774,20 +774,50 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
       expect(wire).not.toContain('rogue');
       expect(wire).not.toContain('"x":7');
       expect(wire).toContain('goblin');
+      expect(wire).not.toContain('"hp":7');
+      expect(wire).not.toContain('"maxHp":7');
+      expect(wire).toContain('"hpState":"healthy"');
     }
     // server-side authoritative state is unchanged
     expect(JSON.stringify(f.room.state.gameState)).toContain('rogue');
   });
 
   it('gives other seats only the public PC set, the controller its full sheet', async () => {
-    const { f, seen } = await twoSeatCombat();
+    const { f, entA, entB, seen } = await twoSeatCombat();
     const own = JSON.stringify(await seen(f.accountA));
     expect(own).toContain('atk-secret');
     expect(own).toContain('"ac":15');
     const other = JSON.stringify(await seen(f.accountB));
     for (const secret of ['atk-secret', '"ac":15', '"str":17', '"dex":6'])
       expect(other).not.toContain(secret);
-    expect(other).toContain('"hp":5');
+    const projected = (
+      f.room.clientState(f.accountB).gameState as {
+        combatRoom: {
+          entities: {
+            id: string;
+            maxHp?: number;
+            hp?: number;
+            hpState?: string;
+          }[];
+        };
+      }
+    ).combatRoom.entities;
+    const otherCharacter = projected.find((entity) => entity.id === entA);
+    const ownCharacter = projected.find((entity) => entity.id === entB);
+    const monster = projected.find((entity) => entity.id === 'goblin');
+    expect(otherCharacter).toHaveProperty('hp', 5);
+    expect(otherCharacter).toHaveProperty('maxHp', 9);
+    expect(otherCharacter).toHaveProperty('hpState', 'healthy');
+    expect(ownCharacter).toHaveProperty('maxHp', 9);
+    expect(monster).not.toHaveProperty('hp');
+    expect(monster).not.toHaveProperty('maxHp');
+    expect(monster).toHaveProperty('hpState', 'healthy');
+    const otherCards = (
+      f.room.clientState(f.accountB).gameState as {
+        characters: Record<string, { hp?: { current?: number; max?: number } }>;
+      }
+    ).characters;
+    expect(otherCards[f.seatA]?.hp).toEqual({ current: 5, max: 9 });
   });
 
   it('shows a hidden entity only to its controller', async () => {
@@ -862,6 +892,105 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(tracker.activeEntityId).toBe(seatEntityId(f.seatA));
   });
 
+  it('filters streamed rolls naming hidden actors or targets from non-controllers', async () => {
+    let entA = '';
+    const f = party({
+      bindB: true,
+      turnRunner: {
+        async run(_request, onEvent) {
+          onEvent({
+            type: 'RollEvent',
+            kind: 'attack',
+            entityId: 'rogue',
+            targetId: entA,
+            attackId: 'hidden-actor-attack',
+            hit: true,
+          });
+          onEvent({
+            type: 'RollEvent',
+            kind: 'damage',
+            entityId: entA,
+            targetId: 'hidden-target',
+            attackId: 'hidden-target-attack',
+            publicDamage: 4,
+          });
+          return {
+            events: [],
+            narration: '',
+            state: {},
+            fallback: 'endpoint-error',
+            endpointRetryable: true,
+          } as never;
+        },
+      } as unknown as SoloTurnRunner,
+    });
+    entA = seatEntityId(f.seatA);
+    const entB = seatEntityId(f.seatB);
+    const game = {
+      characters: {
+        [f.seatA]: { id: 'rogue' },
+        [f.seatB]: { id: 'hidden-target' },
+      },
+      combatRoom: {
+        entities: [
+          {
+            id: 'rogue',
+            hidden: true,
+            kind: 'monster',
+            team: 'foe',
+            hp: 8,
+            maxHp: 8,
+          },
+          { id: entA, kind: 'character', team: 'party', hp: 8, maxHp: 8 },
+          { id: entB, kind: 'character', team: 'party', hp: 8, maxHp: 8 },
+          {
+            id: 'hidden-target',
+            hidden: true,
+            kind: 'monster',
+            team: 'foe',
+            hp: 8,
+            maxHp: 8,
+          },
+        ],
+        combat: {
+          round: 1,
+          activeEntityId: entA,
+          initiative: [],
+          resources: {},
+        },
+      },
+    };
+    f.room.state.gameState = game;
+    const inbox = {
+      [f.accountA]: [] as Record<string, unknown>[],
+      [f.accountB]: [] as Record<string, unknown>[],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (message: Record<string, unknown>) =>
+          void inbox[account]!.push(message),
+      });
+    for (const messages of Object.values(inbox)) messages.length = 0;
+
+    await expect(
+      (
+        f.room as unknown as { resolveTurn(...args: unknown[]): Promise<void> }
+      ).resolveTurn(f.accountA, randomUUID(), 'roll', 'A', false),
+    ).rejects.toThrow();
+
+    const rolls = (account: string) =>
+      inbox[account]!.filter((message) => message.type === 'RollEvent').map(
+        (message) => message.payload,
+      );
+    expect(rolls(f.accountA)).toHaveLength(1);
+    expect(JSON.stringify(rolls(f.accountA))).toContain('hidden-actor-attack');
+    expect(JSON.stringify(rolls(f.accountA))).not.toContain('hidden-target');
+    expect(rolls(f.accountB)).toHaveLength(1);
+    expect(JSON.stringify(rolls(f.accountB))).toContain('hidden-target-attack');
+    expect(JSON.stringify(rolls(f.accountB))).not.toContain('rogue');
+    expect(JSON.stringify(rolls(f.accountB))).not.toContain(entB);
+  });
+
   it("hides a PC's roll modifier, weapon and spell name from other seats, not from its controller", async () => {
     const { f, entA } = await twoSeatCombat();
     const state = f.room.state.gameState as { combatRoom: unknown };
@@ -894,13 +1023,31 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     ).announceCombat(
       state.combatRoom,
       [
-        roll({ kind: 'attack', attackId: 'rapier' }, '1d20+5', 5),
+        roll(
+          {
+            kind: 'attack',
+            attackId: 'rapier',
+            targetId: seatEntityId(f.seatB),
+            hit: true,
+          },
+          '1d20+5',
+          5,
+        ),
         roll(
           { kind: 'save', spellId: 'fireball', dc: 13, success: true },
           '1d20+3',
           3,
         ),
-        roll({ kind: 'damage', attackId: 'rapier' }, '1d8+3', 3),
+        roll(
+          {
+            kind: 'damage',
+            attackId: 'rapier',
+            targetId: seatEntityId(f.seatB),
+            publicDamage: 6,
+          },
+          '1d8+3',
+          3,
+        ),
       ],
       undefined,
     );
@@ -912,9 +1059,88 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     const other = wire(f.accountB);
     for (const secret of ['+5', '+3', 'rapier', 'fireball', 'modifier'])
       expect(other).not.toContain(secret);
-    expect(other).toContain('"dice":"1d20"');
-    expect(other).toContain('"total":19');
-    expect(other).toContain('"rolls":[14]');
+    expect(other).toContain('"hit":true');
+    expect(other).toContain('"targetId":"' + seatEntityId(f.seatB) + '"');
+    const otherEvents = (
+      JSON.parse(other)[0]!.payload as { events: Record<string, unknown>[] }
+    ).events;
+    expect(otherEvents[0]).not.toHaveProperty('total');
+    expect(otherEvents[0]).not.toHaveProperty('rolls');
+    expect(otherEvents[0]).not.toHaveProperty('modifier');
+    expect(otherEvents[2]).toMatchObject({
+      damage: 6,
+      targetId: seatEntityId(f.seatB),
+    });
+    expect(otherEvents[2]).not.toHaveProperty('total');
+    expect(otherEvents[2]).not.toHaveProperty('rolls');
+    expect(otherEvents[2]).not.toHaveProperty('modifier');
+  });
+
+  it('redacts damage-roll totals against monsters from both combat viewers', async () => {
+    const { f, entA } = await twoSeatCombat();
+    const state = f.room.state.gameState as { combatRoom: unknown };
+    const inbox = {
+      [f.accountA]: [] as Record<string, unknown>[],
+      [f.accountB]: [] as Record<string, unknown>[],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (message: Record<string, unknown>) =>
+          void inbox[account]!.push(message),
+      });
+    for (const messages of Object.values(inbox)) messages.length = 0;
+
+    const combat = state.combatRoom as {
+      entities: { id: string; hp: number }[];
+    };
+    combat.entities.find((entity) => entity.id === 'goblin')!.hp = 3;
+    (
+      f.room as unknown as { announceCombat(...args: unknown[]): void }
+    ).announceCombat(
+      state.combatRoom,
+      [
+        {
+          type: 'RollEvent',
+          entityId: entA,
+          kind: 'damage',
+          attackId: 'greatsword',
+          targetId: 'goblin',
+          breakdown: {
+            expression: '1d4',
+            dice: [{ sides: 4, value: 4, kept: true }],
+            modifiers: [],
+            total: 4,
+          },
+          publicDamage: 4,
+        },
+        { type: 'HpChanged', entityId: 'goblin', from: 7, to: 3, damage: 4 },
+      ],
+      f.accountA,
+    );
+
+    for (const account of [f.accountA, f.accountB]) {
+      const messages = inbox[account]!.filter(
+        (message) => message.type === 'CombatEvents',
+      );
+      const event = (
+        messages[0]!.payload as { events: Record<string, unknown>[] }
+      ).events[0]!;
+      expect(event).toMatchObject({ actorId: entA, targetId: 'goblin' });
+      if (account === f.accountB) {
+        expect(event).not.toHaveProperty('damage');
+        expect(event).not.toHaveProperty('total');
+        expect(event).not.toHaveProperty('rolls');
+        expect(event).not.toHaveProperty('modifier');
+        const events = (
+          messages[0]!.payload as { events: Record<string, unknown>[] }
+        ).events;
+        expect(events.find((item) => item.type === 'HpChanged')).toEqual({
+          type: 'HpChanged',
+          entityId: 'goblin',
+          hpState: 'wounded',
+        });
+      }
+    }
   });
 
   it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {
@@ -979,5 +1205,77 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(other).toEqual([events[4]]);
     expect(JSON.stringify(other)).not.toContain('rogue');
     expect(JSON.stringify(other)).not.toContain('"x":7');
+  });
+
+  it('redacts monster HP numbers from queued narration facts while retaining party HP', async () => {
+    const { f, entA } = await twoSeatCombat();
+    const roomInternals = f.room as unknown as {
+      turnInFlight: boolean;
+      queueNarration(
+        events: Record<string, unknown>[],
+        accountId: string,
+        turnId: string,
+        characterIds: Set<string>,
+      ): void;
+      queuedActions: { combatFacts: Record<string, unknown>[] }[];
+    };
+    roomInternals.turnInFlight = true;
+    roomInternals.queueNarration(
+      [
+        { type: 'HpChanged', entityId: 'goblin', from: 7, to: 3, damage: 4 },
+        { type: 'HpChanged', entityId: entA, from: 5, to: 3, damage: 2 },
+      ],
+      f.accountA,
+      'turn',
+      new Set([entA]),
+    );
+    const facts = roomInternals.queuedActions[0]!.combatFacts;
+    expect(facts[0]).toEqual({
+      type: 'HpChanged',
+      entityId: 'goblin',
+      hpState: 'wounded',
+      tier: 'must',
+    });
+    expect(JSON.stringify(facts[0])).not.toMatch(/[0-9]/);
+    expect(facts[1]).toEqual({
+      type: 'HpChanged',
+      entityId: entA,
+      from: 5,
+      to: 3,
+      damage: 2,
+      tier: 'must',
+    });
+  });
+
+  it('projects monster HP events per viewer but preserves public party HP events', async () => {
+    const { f, entA } = await twoSeatCombat();
+    const state = f.room.state.gameState as {
+      combatRoom: { entities: { id: string }[] };
+    };
+    const inbox: Record<string, Record<string, unknown>[]> = {
+      [f.accountA]: [],
+      [f.accountB]: [],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (m: Record<string, unknown>) => void inbox[account]!.push(m),
+      });
+    for (const messages of Object.values(inbox)) messages.length = 0;
+    const events = [
+      { type: 'HpChanged', entityId: 'goblin', from: 4, to: 0, damage: 4 },
+      { type: 'HpChanged', entityId: entA, from: 5, to: 3, damage: 2 },
+    ];
+    (
+      f.room as unknown as { announceCombat(...a: unknown[]): void }
+    ).announceCombat(state.combatRoom, events, undefined);
+    const received = (account: string) =>
+      inbox[account]!.filter((m) => m.type === 'CombatEvents').flatMap(
+        (m) => (m.payload as { events: Record<string, unknown>[] }).events,
+      );
+    for (const account of [f.accountA, f.accountB])
+      expect(received(account)).toEqual([
+        { type: 'HpChanged', entityId: 'goblin', hpState: 'down' },
+        events[1],
+      ]);
   });
 });

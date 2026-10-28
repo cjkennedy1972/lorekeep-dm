@@ -95,9 +95,18 @@ const NON_PUBLIC_PC_FIELDS = [
  * Per-viewer projection (ADR-034 §3, ADR-035). A hidden entity is removed outright from
  * everything a viewer receives (entities, initiative, resources, reaction prompt, dodge,
  * concentration) unless the viewer controls it: no pos, no hp, no existence. Another seat's
- * character keeps only the ADR-035 public set (no ac, speed, abilities, saves, attacks). Authoritative
+ * character keeps the ADR-035 public stats (current and max party HP; no AC, speed, abilities,
+ * saves, attacks). Non-party entities expose only coarse HP state. Authoritative
  * server state is untouched; this only shapes what is serialized to a client.
  */
+function hpStateFor(hp: number, maxHp: number): 'healthy' | 'wounded' | 'down' {
+  return hp <= 0
+    ? 'down'
+    : hp / Math.max(1, maxHp) > 0.5
+      ? 'healthy'
+      : 'wounded';
+}
+
 export function projectCombatForViewer<T extends RoomCombatState>(
   full: T,
   controlled: ReadonlySet<string> = new Set(),
@@ -125,12 +134,32 @@ export function projectCombatForViewer<T extends RoomCombatState>(
     entities: state.entities
       .filter((entity) => !hidden.has(entity.id))
       .map((entity) => {
-        if (entity.kind !== 'character' || controlled.has(entity.id))
-          return entity;
-        // ADR-035 public set: sheet stats belong to the controlling seat only.
-        const pub = { ...entity };
-        for (const key of NON_PUBLIC_PC_FIELDS) delete pub[key];
-        return pub;
+        if (controlled.has(entity.id)) return entity;
+        if (entity.kind === 'character') {
+          // ADR-034 §6 makes both current and max party HP public. Other sheet
+          // stats remain private to the controlling seat.
+          const pub: Record<string, unknown> = { ...entity };
+          for (const key of NON_PUBLIC_PC_FIELDS) delete pub[key];
+          if (entity.team !== 'party') {
+            pub.hpState = hpStateFor(entity.hp, entity.maxHp);
+            delete pub.hp;
+            delete pub.maxHp;
+          } else {
+            pub.hpState = hpStateFor(entity.hp, entity.maxHp);
+          }
+          return pub as typeof entity;
+        }
+        const pub: Record<string, unknown> = { ...entity };
+        if (entity.team !== 'party') {
+          // Non-party HP is intentionally coarse in the tracker. Keep the same
+          // contract in combatRoom and its checkpoints/reconnect projection.
+          pub.hpState = hpStateFor(entity.hp, entity.maxHp);
+          delete pub.hp;
+          delete pub.maxHp;
+        } else {
+          pub.hpState = hpStateFor(entity.hp, entity.maxHp);
+        }
+        return pub as typeof entity;
       }),
     combat: {
       ...state.combat,
@@ -219,22 +248,21 @@ export function combatTracker(
     round: state.combat.round,
     initiative: ordered.map(({ entityId, total }) => ({ entityId, total })),
     activeEntityId: active,
-    entities: state.entities.map(
-      ({ id, kind, team, hp, maxHp, pos, fled }) => ({
+    entities: state.entities.map((entity) => {
+      const { id, kind, team, hp, maxHp, pos, fled } = entity;
+      const existingHpState = (entity as typeof entity & { hpState?: string })
+        .hpState;
+      return {
         id,
         kind,
         team,
-        ...(team === 'party' ? { hp } : {}),
-        hpState:
-          hp <= 0
-            ? 'down'
-            : hp / Math.max(1, maxHp) > 0.5
-              ? 'healthy'
-              : 'wounded',
+        ...(team === 'party' && typeof hp === 'number' ? { hp } : {}),
+        ...(team === 'party' && typeof maxHp === 'number' ? { maxHp } : {}),
+        hpState: existingHpState ?? hpStateFor(hp, maxHp),
         pos,
         ...(fled ? { fled } : {}),
-      }),
-    ),
+      };
+    }),
     resources: state.combat.resources,
     ...(state.ended ? { ended: state.ended } : {}),
   };
@@ -458,16 +486,37 @@ export function createCombatRuntime(
         });
         if ('error' in result)
           return reject('That target is not a legal attack.');
-        const resolvedEvents = result.events.map((event) =>
-          event.type === 'RollEvent' && event.kind === 'attack'
-            ? {
-                ...event,
-                targetId: target.id,
-                targetAc: target.ac ?? 10,
-                hit: result.hit,
-              }
-            : event,
-        );
+        const resolvedEvents = result.events.map((event) => {
+          if (event.type !== 'RollEvent') return event;
+          if (event.kind === 'attack')
+            return {
+              ...event,
+              targetId: target.id,
+              targetAc: target.ac ?? 10,
+              hit: result.hit,
+            };
+          if (event.kind === 'damage') {
+            const hp = result.events.find(
+              (candidate) =>
+                candidate.type === 'HpChanged' &&
+                (candidate as unknown as Record<string, unknown>).entityId ===
+                  target.id,
+            );
+            return {
+              ...event,
+              targetId: target.id,
+              ...(hp &&
+              typeof (hp as unknown as Record<string, unknown>).damage ===
+                'number'
+                ? {
+                    publicDamage: (hp as unknown as Record<string, unknown>)
+                      .damage,
+                  }
+                : {}),
+            };
+          }
+          return event;
+        });
         const hit = withHp(
           {
             ...state,
@@ -592,14 +641,45 @@ function defaultCatalog(): Catalog {
 export function toWireEvent(
   event: Readonly<Record<string, unknown>>,
   concealStats = false,
+  revealAttack = true,
+  revealDamage = true,
+  publicDamage = true,
 ): Record<string, unknown> {
   if (event.type === 'SlotSpent' && event.level === undefined)
     return { ...event, level: event.slotLevel };
   if (event.type === 'RollEvent' && event.breakdown) {
     const roll = event.breakdown as RollBreakdown;
+    if (event.kind === 'attack' && !revealAttack)
+      return {
+        type: 'RollEvent',
+        actorId: event.entityId,
+        ...(typeof event.turnId === 'string' ? { turnId: event.turnId } : {}),
+        label: 'attack',
+        dice: 'attack roll',
+        ...(typeof event.targetId === 'string'
+          ? { targetId: event.targetId }
+          : {}),
+        ...(typeof event.hit === 'boolean' ? { hit: event.hit } : {}),
+      };
+    if (event.kind === 'damage' && !revealDamage)
+      return {
+        type: 'RollEvent',
+        actorId: event.entityId,
+        ...(typeof event.turnId === 'string' ? { turnId: event.turnId } : {}),
+        label: 'damage',
+        dice: 'damage roll',
+        ...(typeof event.targetId === 'string'
+          ? { targetId: event.targetId }
+          : {}),
+        ...(publicDamage && Number.isInteger(event.publicDamage)
+          ? { damage: event.publicDamage }
+          : {}),
+      };
     return {
       type: 'RollEvent',
       actorId: event.entityId,
+      ...(typeof event.turnId === 'string' ? { turnId: event.turnId } : {}),
+      ...(event.kind === 'attack' && revealAttack ? { breakdown: roll } : {}),
       label: concealStats
         ? String(event.kind)
         : `${String(event.kind)} ${String(event.attackId ?? event.spellId)}`,
@@ -611,6 +691,8 @@ export function toWireEvent(
         ? {}
         : { modifier: roll.modifiers.reduce((sum, m) => sum + m.value, 0) }),
       total: roll.total,
+      ...(event.targetId === undefined ? {} : { targetId: event.targetId }),
+      ...(event.hit === undefined ? {} : { hit: event.hit }),
       ...(event.dc === undefined
         ? {}
         : { dc: event.dc, success: event.success }),

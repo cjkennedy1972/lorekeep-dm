@@ -710,7 +710,9 @@ describe('account deletion: coordinates with live Rooms through the session leas
     expect(snapshot.restVote).not.toHaveProperty('castSeatIds');
 
     const room = await reload(f.session);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const voteCancellationDeadline = Date.now() + 1_000;
+    while (room.state.restVote && Date.now() < voteCancellationDeadline)
+      await new Promise((resolve) => setTimeout(resolve, 10));
     expect(room.state.restVote).toBeUndefined();
     expect(
       (
