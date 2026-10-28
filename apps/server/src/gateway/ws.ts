@@ -67,8 +67,10 @@ import {
 } from './resumeTokens.js';
 
 const MAX_BYTES = 10 * 1024;
-const diagnosticHash = (value: string | undefined) =>
-  value ? createHash('sha256').update(value).digest('hex').slice(0, 16) : null;
+const diagnosticHash = (value: unknown) =>
+  typeof value === 'string' && value.length > 0
+    ? createHash('sha256').update(value).digest('hex').slice(0, 16)
+    : null;
 const safeCloseReason = (reason: Buffer) =>
   reason
     .toString()
@@ -165,7 +167,7 @@ export function installGateway(
       onResponse: async (request, reply) => {
         app.log.info(
           {
-            event: 'ws_ticket_outcome',
+            event: 'ws_ticket_response',
             requestId: request.id,
             sessionIdHash: diagnosticHash(request.body?.sessionId),
             statusCode: reply.statusCode,

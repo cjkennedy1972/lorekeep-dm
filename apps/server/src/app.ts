@@ -92,6 +92,7 @@ export function createApp(
     liveDmAllowlistOnly?: boolean;
     endpointAllowsMature?: boolean;
     inputGate?: InputGate;
+    loggerStream?: DestinationStream;
   } = {},
 ) {
   const {
@@ -101,7 +102,7 @@ export function createApp(
   } = options;
   // ponytail: Fastify 5 ignores numeric trustProxy (fails closed), so count hops here; hop 0 is the socket peer.
   const app = Fastify({
-    loggerInstance: createLogger(),
+    loggerInstance: createLogger(options.loggerStream),
     trustProxy:
       typeof trustProxy === 'number'
         ? (_address: string, hop: number) => hop < trustProxy
