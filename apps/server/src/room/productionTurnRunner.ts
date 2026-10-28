@@ -111,6 +111,7 @@ type GameState = {
   catalogVersion?: string;
   difficulty?: string;
   lastNarration?: string;
+  lastCombatBeat?: string;
   lastPlayerText?: string;
   world?: WorldRegistry;
   combatRoom?: RoomCombatState;
@@ -1262,6 +1263,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             lastRestVoteResult: request.lastRestVoteResult,
             activeActorId: narrationActorId(state),
             combatFacts: request.combatFacts,
+            lastCombatBeat: combatLive(state)
+              ? state.lastCombatBeat
+              : undefined,
             registryFacts: memoryContext.registryFacts,
             retrievedMemory: memoryContext.retrievedMemory,
             playerText: narrating

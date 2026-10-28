@@ -1313,6 +1313,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     const table = memoryTable(
       {
         ...e.game,
+        lastCombatBeat: 'A stale previous combat beat.',
         combatActors: { [account]: 'ent_aria' },
         combatRoom: combat,
       },
@@ -1348,6 +1349,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     expect(ended.phase).toBeUndefined();
     expect(ended.turnId).toBeUndefined();
     expect(ended.turnDeadline).toBeUndefined();
+    expect(table.game()).not.toHaveProperty('lastCombatBeat');
   });
 
   it('admits by turn ownership before revealing an in-flight narration gate', async () => {
@@ -1467,6 +1469,9 @@ describe('Room: one persisted narration per resolved combat turn', () => {
 
     expect(table.events.some((event) => event.type === 'TurnResolved')).toBe(
       true,
+    );
+    expect((table.game() as Record<string, unknown>).lastCombatBeat).toBe(
+      'The turn resolves.',
     );
     expect(
       otherMessages.some((message) => message.type === 'TurnResolved'),

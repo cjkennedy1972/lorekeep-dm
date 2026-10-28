@@ -504,24 +504,39 @@ export function narrationFacts(
     ...movementByEntity.values(),
     ...otherIncidental,
   ];
+  const overflowedConsequential = consequential.length > 40;
   const prioritized = [
     ...consequential.filter((event) => event.type === 'CombatEnded'),
     ...consequential.filter((event) => event.type === 'EntityDown'),
     ...consequential.filter((event) => event.type === 'HpChanged'),
-  ].slice(0, 40);
+  ].slice(0, overflowedConsequential ? 39 : 40);
   const remainingBudget = Math.max(0, 40 - prioritized.length);
   const prioritizedCritical = critical.slice(0, remainingBudget);
   const incidentalBudget = Math.max(
     0,
     40 - prioritized.length - prioritizedCritical.length,
   );
-  return [
+  const facts: Record<string, unknown>[] = [
     ...prioritized,
     ...prioritizedCritical,
     ...compactedIncidental.slice(0, incidentalBudget),
-  ].map((event) =>
-    narrationFact(event, characterIds, characterAttackHits.get(event)),
-  );
+  ].map((event) => ({
+    ...narrationFact(event, characterIds, characterAttackHits.get(event)),
+    tier: ['CombatEnded', 'EntityDown', 'HpChanged', 'AttackResolved'].includes(
+      event.type === 'RollEvent' && event.kind === 'attack'
+        ? 'AttackResolved'
+        : String(event.type),
+    )
+      ? 'must'
+      : 'may',
+  }));
+  if (overflowedConsequential)
+    facts.push({
+      type: 'NarrationOverflow',
+      detail: 'and other effects are not listed',
+      tier: 'must',
+    });
+  return facts;
 }
 
 export class RoomPausedError extends Error {
@@ -5235,6 +5250,24 @@ export class Room {
               type: 'TurnOpened',
               payload: openedTurn,
             });
+        }
+        if (combatTurnId) {
+          const completedRoom = (
+            turnGameState as { combatRoom?: RoomCombatState }
+          ).combatRoom;
+          if (
+            completedRoom?.ended ||
+            combatEvents.some((event) => event.type === 'CombatEnded')
+          ) {
+            const cleared = { ...turnGameState } as Record<string, unknown>;
+            delete cleared.lastCombatBeat;
+            turnGameState = cleared;
+          } else if (!clarification && !moderationHeld && result.narration) {
+            turnGameState = {
+              ...turnGameState,
+              lastCombatBeat: result.narration.slice(0, 600),
+            };
+          }
         }
         const deadlineAt = Date.now() + CLARIFICATION_TIMEOUT_MS;
         const restVoteClosePayload = writes.find(

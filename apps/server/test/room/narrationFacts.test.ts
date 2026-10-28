@@ -143,7 +143,14 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       characterIds,
     );
     const attacks = facts.filter((fact) => fact.type === 'AttackResolved');
-    expect(attacks).toEqual([
+    expect(attacks.every((fact) => fact.tier === 'must')).toBe(true);
+    expect(
+      attacks.map((fact) =>
+        Object.fromEntries(
+          Object.entries(fact).filter(([key]) => key !== 'tier'),
+        ),
+      ),
+    ).toEqual([
       {
         type: 'AttackResolved',
         actorId: 'ent_goblin',
@@ -192,6 +199,7 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       type: 'EntityDown',
       entityId: 'ent_down_pc',
       outcome: 'dead',
+      tier: 'must',
     });
     expect(facts).toContainEqual({
       type: 'HpChanged',
@@ -199,6 +207,7 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       from: 12,
       to: 7,
       damage: 5,
+      tier: 'must',
     });
   });
 
@@ -267,6 +276,9 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       })),
     ]);
     expect(manyConsequences).toHaveLength(40);
+    expect(manyConsequences.at(-1)).toMatchObject({
+      type: 'NarrationOverflow',
+    });
     expect(manyConsequences.slice(0, 2).map((fact) => fact.type)).toEqual([
       'CombatEnded',
       'EntityDown',
@@ -312,6 +324,7 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
     expect(facts).toContainEqual({
       type: 'CombatEnded',
       outcome: events.at(-1)?.outcome,
+      tier: 'must',
     });
     expect(facts.at(-1)).toMatchObject({ type: 'EntityMoved', cost: 75 });
   });
