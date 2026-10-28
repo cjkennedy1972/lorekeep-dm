@@ -2318,6 +2318,8 @@ export class Room {
         type: 'NarrationCompleted',
         actionId: narrationId,
         narration,
+        // Fixed server-authored fallback text contains no model narration.
+        tier: 'standard',
         fallback: 'endpoint-error',
       },
       { type: 'TurnFallback', turnId, reason: 'endpoint-error' },
@@ -2361,7 +2363,7 @@ export class Room {
     this.broadcast({
       seq: this.seq,
       type: 'NarrationCompleted',
-      payload: { turnId, text: narration },
+      payload: { turnId, text: narration, tier: 'standard' },
     } as ServerMessage);
   }
 

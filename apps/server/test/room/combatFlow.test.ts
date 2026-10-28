@@ -1747,6 +1747,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
         ?.payload,
     ).toMatchObject({
       narration: expect.stringContaining('storyteller has lost the thread'),
+      tier: 'standard',
     });
     expect(
       table.events.filter((event) => event.type === 'NarrationCommitted'),

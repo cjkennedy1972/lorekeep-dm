@@ -11,6 +11,7 @@ import type {
 } from '../../src/llm/adapter.js';
 import { LlmEndpointError } from '../../src/llm/adapter.js';
 import { Persistence } from '../../src/persistence/index.js';
+import { buildPlayerVisibleRecap } from '../../src/dm/recap.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { Room, type Connection } from '../../src/room/Room.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
@@ -320,12 +321,20 @@ describe('endpoint refusal of a mature prompt', () => {
       [sessionId],
     );
     expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toMatchObject({
+      narration: STANDARD_TEXT,
+      tier: 'standard',
+    });
     expect(JSON.stringify(seen.sent)).not.toContain('PARTIAL MATURE');
     const { rows: allEvents } = await db.query(
       'SELECT payload FROM events WHERE session_id=$1',
       [sessionId],
     );
     expect(JSON.stringify(allEvents)).not.toContain('PARTIAL MATURE');
+    expect(JSON.stringify(allEvents)).toContain(STANDARD_TEXT);
+    const recap = await buildPlayerVisibleRecap({ db, sessionId });
+    expect(recap.recap).toContain(STANDARD_TEXT);
+    expect(recap.recap).not.toContain('PARTIAL MATURE');
   });
 
   it('retries a stop_reason refusal once at standard, drops the partial mature text, and retries mature next turn', async () => {

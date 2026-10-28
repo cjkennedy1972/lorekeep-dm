@@ -817,6 +817,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         turnId: input.turnId,
         text: gatedQuestion.text,
         words: words(gatedQuestion.text),
+        tier: input.outputTier,
       });
     }
     return {
@@ -945,6 +946,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     turnId: input.turnId,
     text: finalText,
     words: finalCount,
+    tier: input.outputTier,
     ...(fallback ? { fallback } : {}),
   });
   const inSeq = input.eventSeqStart ?? 0;
