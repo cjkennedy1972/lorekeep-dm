@@ -115,6 +115,42 @@ function fixture() {
 }
 
 describe('room actor', () => {
+  it('fences stale game-state persists without conflicting on sequential multi-event persists', async () => {
+    const { store, events, enforceExpectedHead } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const commit = (state: unknown, writes: Record<string, unknown>[]) =>
+      (
+        room as unknown as {
+          commitGameState(
+            state: unknown,
+            writes: Record<string, unknown>[],
+          ): Promise<void>;
+        }
+      ).commitGameState(state, writes);
+
+    enforceExpectedHead();
+    await commit({}, [{ type: 'StateChanged', value: 1 }]);
+    await commit({}, [
+      { type: 'StateChanged', value: 2 },
+      { type: 'StateChanged', value: 3 },
+    ]);
+    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5]);
+
+    const committedCount = events.length;
+    events.push({
+      sessionId: id,
+      seq: events.length + 1,
+      turnId: randomUUID(),
+      type: 'ConcurrentWrite',
+      payload: {},
+      ts: new Date(),
+    });
+    await expect(
+      commit({}, [{ type: 'StateChanged', value: 'stale' }]),
+    ).rejects.toThrow('Stale room write');
+    expect(events).toHaveLength(committedCount + 1);
+    expect(events.at(-1)?.type).toBe('ConcurrentWrite');
+  });
   it('does not let an expired late-join timer revoke a seat after another room admitted it', async () => {
     const { store, events, enforceExpectedHead } = fixture();
     const room = new Room(store, lease, await store.loadLatest(id));

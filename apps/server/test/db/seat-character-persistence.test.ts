@@ -49,6 +49,95 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
+  it('admits and binds a new late-join seat in the same transaction on real Postgres', async () => {
+    const f = await fixture();
+    const ownerCharacter = {
+      ...quickBuild(catalog, undefined, 0x31, 1).character,
+      id: randomUUID(),
+    };
+    await db.query(
+      "UPDATE sessions SET mode='solo',character_id=$2,character=$3::jsonb WHERE id=$1",
+      [f.sessionId, ownerCharacter.id, ownerCharacter],
+    );
+    await f.repo.saveOwnedCharacter(f.accountId, ownerCharacter);
+    const guestAccount = randomUUID();
+    await db.query(
+      `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at)
+       VALUES($1,$2,'x','Guest','active',true,now(),'v1',now())`,
+      [guestAccount, `${guestAccount}@example.test`],
+    );
+    const guestCharacter = {
+      ...quickBuild(catalog, undefined, 0x32, 1).character,
+      id: randomUUID(),
+    };
+    const guestRevision = await f.repo.saveOwnedCharacter(
+      guestAccount,
+      guestCharacter,
+    );
+    const lease = {
+      sessionId: f.sessionId,
+      nodeId: 'r3b-first-seat-test',
+      epoch: 1,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    await db.query("UPDATE sessions SET mode='solo' WHERE id=$1", [
+      f.sessionId,
+    ]);
+    await db.query(
+      'INSERT INTO session_lease(session_id,node_id,epoch,expires_at) VALUES($1,$2,$3,$4)',
+      [f.sessionId, lease.nodeId, lease.epoch, lease.expiresAt],
+    );
+    const head = Number(
+      (
+        await db.query(
+          'SELECT COALESCE(MAX(seq),0) AS n FROM events WHERE session_id=$1',
+          [f.sessionId],
+        )
+      ).rows[0].n,
+    );
+    const store = new Persistence(db);
+    const newSeatId = randomUUID();
+    const written = await store.writeTurn(
+      f.sessionId,
+      [
+        {
+          turnId: randomUUID(),
+          type: 'SeatJoined',
+          payload: { seatId: newSeatId, accountId: guestAccount },
+        },
+        {
+          turnId: randomUUID(),
+          type: 'SeatCharacterBound',
+          payload: { seatId: newSeatId },
+        },
+      ],
+      {},
+      lease,
+      [],
+      head,
+      undefined,
+      [],
+      {
+        kind: 'bind',
+        seatId: newSeatId,
+        accountId: guestAccount,
+        characterId: guestCharacter.id,
+        expectedRevision: guestRevision,
+      },
+      'solo-to-party',
+    );
+    expect(written.binding?.seatId).toBe(newSeatId);
+    expect([f.seatA, f.seatB]).toContain(written.ownerBinding?.seatId);
+    const active = await db.query(
+      "SELECT seat_id,account_id FROM session_seat_characters WHERE session_id=$1 AND binding_status='active' ORDER BY account_id",
+      [f.sessionId],
+    );
+    expect(active.rows).toHaveLength(2);
+    expect(active.rows.map((row) => row.seat_id)).toContain(
+      written.ownerBinding?.seatId,
+    );
+    expect(active.rows.map((row) => row.seat_id)).toContain(newSeatId);
+  });
   it('converts a solo session before its first admitted seat is bound', async () => {
     const f = await fixture();
     const lease = {

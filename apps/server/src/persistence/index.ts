@@ -394,6 +394,11 @@ export class Persistence {
       accountId: string;
       characterSnapshot: Record<string, unknown>;
     };
+    ownerBinding?: {
+      seatId: string;
+      accountId: string;
+      characterSnapshot: Record<string, unknown>;
+    };
   }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
@@ -410,12 +415,25 @@ export class Persistence {
       let binding:
         | Awaited<ReturnType<SeatCharacterRepository['bindWithClient']>>
         | undefined;
+      let ownerBinding:
+        | Awaited<ReturnType<SeatCharacterRepository['bindWithClient']>>
+        | undefined;
+      let ownerBoundSeatId: string | undefined;
+      let ownerBoundAccountId: string | undefined;
       if (seatCharacterTransition?.kind === 'bind') {
         binding = await new SeatCharacterRepository(this.pool).bindWithClient(
           client,
           {
             sessionId,
             ...seatCharacterTransition,
+            pendingSeatJoin: events.some(
+              (event) =>
+                event.type === 'SeatJoined' &&
+                (event.payload as { seatId?: unknown; accountId?: unknown })
+                  .seatId === seatCharacterTransition.seatId &&
+                (event.payload as { accountId?: unknown }).accountId ===
+                  seatCharacterTransition.accountId,
+            ),
           },
         );
       } else if (seatCharacterTransition?.kind === 'release') {
@@ -426,6 +444,53 @@ export class Persistence {
           seatCharacterTransition.accountId,
           true,
         );
+      }
+      if (sessionModeTransition === 'solo-to-party') {
+        const owner = await client.query<{
+          owner_account_id: string;
+          character_id: string | null;
+          character: Record<string, unknown> | null;
+        }>(
+          'SELECT owner_account_id,character_id,character FROM sessions WHERE id=$1',
+          [sessionId],
+        );
+        const legacy = owner.rows[0];
+        if (legacy?.character_id && legacy.character) {
+          const ownerSeat = await client.query<{ seat_id: string }>(
+            `SELECT j.payload->>'seatId' AS seat_id FROM events j
+             WHERE j.session_id=$1 AND j.type='SeatJoined'
+               AND j.payload->>'accountId'=$2
+               AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=j.session_id
+                 AND r.type='SeatRevoked' AND r.payload->>'seatId'=j.payload->>'seatId' AND r.seq>j.seq)
+             ORDER BY j.seq DESC LIMIT 1`,
+            [sessionId, legacy.owner_account_id],
+          );
+          const seatId = ownerSeat.rows[0]?.seat_id;
+          if (seatId) {
+            ownerBoundSeatId = seatId;
+            ownerBoundAccountId = legacy.owner_account_id;
+            await client.query(
+              `INSERT INTO account_characters(id,account_id,character)
+               VALUES($1,$2,$3::jsonb) ON CONFLICT(id) DO NOTHING`,
+              [legacy.character_id, legacy.owner_account_id, legacy.character],
+            );
+            const ownerCharacter = await client.query<{ revision: number }>(
+              'SELECT revision FROM account_characters WHERE id=$1 AND account_id=$2',
+              [legacy.character_id, legacy.owner_account_id],
+            );
+            if (ownerCharacter.rowCount !== 1)
+              throw new Error('Legacy owner character could not be retained');
+            ownerBinding = await new SeatCharacterRepository(
+              this.pool,
+            ).bindWithClient(client, {
+              sessionId,
+              seatId,
+              accountId: legacy.owner_account_id,
+              characterId: legacy.character_id,
+              expectedRevision: ownerCharacter.rows[0]!.revision,
+            });
+          }
+        }
       }
       if (expectedHeadSeq !== undefined) {
         const head = await client.query<{ seq: string }>(
@@ -525,6 +590,15 @@ export class Persistence {
                 seatId: seatCharacterTransition!.seatId,
                 accountId: seatCharacterTransition!.accountId,
                 characterSnapshot: binding.characterSnapshot,
+              },
+            }
+          : {}),
+        ...(ownerBinding && sessionModeTransition === 'solo-to-party'
+          ? {
+              ownerBinding: {
+                seatId: ownerBoundSeatId!,
+                accountId: ownerBoundAccountId!,
+                characterSnapshot: ownerBinding.characterSnapshot,
               },
             }
           : {}),

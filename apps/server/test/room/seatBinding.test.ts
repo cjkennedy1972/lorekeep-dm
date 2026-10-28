@@ -31,12 +31,18 @@ function party(
     roundsEnabled?: boolean;
     turnRunner?: SoloTurnRunner;
     failBindingReload?: boolean;
+    ownerBindingOnConversion?: boolean;
   } = {},
 ) {
   const [accountA, accountB, seatA, seatB] = [1, 2, 3, 4].map(() =>
     randomUUID(),
   );
-  const writes: { events: string[]; transition: unknown }[] = [];
+  const writes: {
+    events: string[];
+    transition: unknown;
+    mode: unknown;
+    ownerReturn: boolean;
+  }[] = [];
   const stored: StoredEvent[] = [];
   const store = {
     async loadLatest() {
@@ -57,8 +63,13 @@ function party(
       _c: unknown,
       _d: unknown,
       transition: unknown,
+      sessionModeTransition: unknown,
     ) {
-      writes.push({ events: inputs.map((i) => i.type), transition });
+      writes.push({
+        events: inputs.map((i) => i.type),
+        transition,
+        mode: sessionModeTransition,
+      });
       const out = inputs.map((input, index) => ({
         ...input,
         seq: stored.length + index + 1,
@@ -71,7 +82,7 @@ function party(
         seatId?: string;
         accountId?: string;
       };
-      return {
+      const result = {
         events: out,
         ...(bind.kind === 'bind'
           ? {
@@ -82,7 +93,19 @@ function party(
               },
             }
           : {}),
+        ...(options.ownerBindingOnConversion &&
+        sessionModeTransition === 'solo-to-party'
+          ? {
+              ownerBinding: {
+                seatId: seatA,
+                accountId: accountA,
+                characterSnapshot: { name: 'Owner legacy sheet' },
+              },
+            }
+          : {}),
       };
+      writes.at(-1)!.ownerReturn = Boolean(result.ownerBinding);
+      return result;
     },
     async isTableHost(_id: string, accountId: string) {
       return options.hostA === true && accountId === accountA;
@@ -131,6 +154,45 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it('keeps the solo owner able to submit an action after late-join conversion', async () => {
+    const f = party({
+      partyMode: false,
+      bindA: false,
+      ownerBindingOnConversion: true,
+    });
+    const requestId = randomUUID();
+    const requester = randomUUID();
+    f.room.state = {
+      ...f.room.state,
+      lateJoinRequests: [
+        {
+          requestId,
+          accountId: requester,
+          displayName: 'Late player',
+          approved: true,
+          expiresAt: Date.now() + 60_000,
+          characterId: randomUUID(),
+          expectedRevision: 1,
+        },
+      ],
+    } as never;
+    await (
+      f.room as unknown as { admitApprovedLateJoins(): Promise<void> }
+    ).admitApprovedLateJoins();
+
+    expect(f.writes).toContainEqual(
+      expect.objectContaining({
+        mode: 'solo-to-party',
+        ownerReturn: true,
+      }),
+    );
+    expect(f.room.seatCharacters.get(f.seatA)?.characterSnapshot).toEqual({
+      name: 'Owner legacy sheet',
+    });
+    await expect(
+      f.room.submitAction(f.accountA, randomUUID(), 'I take my turn.'),
+    ).resolves.toBe(true);
+  });
   it('keeps clarification details out of StateSync and replays them only to the owner', async () => {
     const f = party();
     const actionId = randomUUID();

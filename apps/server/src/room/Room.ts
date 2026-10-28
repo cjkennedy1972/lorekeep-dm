@@ -283,7 +283,11 @@ export interface RoomStore {
     rewoundTurnIds?: readonly string[],
     seatCharacterTransition?: SeatCharacterTransition,
     sessionModeTransition?: 'solo-to-party',
-  ): Promise<{ events: StoredEvent[]; binding?: PrivateSeatCharacterBinding }>;
+  ): Promise<{
+    events: StoredEvent[];
+    binding?: PrivateSeatCharacterBinding;
+    ownerBinding?: PrivateSeatCharacterBinding;
+  }>;
   writeHostTierCap(
     sessionId: string,
     cap: HostCap | null,
@@ -1130,6 +1134,8 @@ export class Room {
     this.state = state;
     if (seatCharacterTransition?.kind === 'bind' && stored.binding)
       this.seatBindings.set(seatCharacterTransition.seatId, stored.binding);
+    if (stored.ownerBinding)
+      this.seatBindings.set(stored.ownerBinding.seatId, stored.ownerBinding);
     if (released) this.seatBindings.delete(released.seatId);
     for (const actionId of [...committedActionIds, ...additionalActionIds])
       this.actionIds.add(actionId);
@@ -2757,6 +2763,8 @@ export class Room {
       writes,
       parsed,
       this.lease,
+      [],
+      this.seq,
     );
     this.seq = stored.events.at(-1)?.seq ?? this.seq;
     this.state = parsed;
@@ -6109,7 +6117,12 @@ export class Room {
           type: 'StateSync',
           payload: this.clientSyncPayload(),
         });
-      }).catch(() => undefined);
+      }).catch((error) =>
+        console.error(
+          `Late-join admission failed for ${this.sessionId}`,
+          error,
+        ),
+      );
     if (ended)
       this.broadcast({
         seq: this.seq,
