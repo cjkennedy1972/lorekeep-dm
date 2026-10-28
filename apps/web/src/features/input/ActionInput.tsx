@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './action-input.css';
 
 export const QUICK_ACTIONS = [
@@ -37,9 +37,10 @@ export function ActionInput({
 }: Props) {
   const [text, setText] = useState(initialText);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  // The parent sets the text when a failed action is restored or an edit starts.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The parent sets the text when a failed action is restored, an edit starts, or Retry clears it.
   useEffect(() => {
-    if (initialText) setText(initialText);
+    setText(initialText);
   }, [initialText]);
   useEffect(() => {
     if (!pending || pendingSince === undefined) {
@@ -80,7 +81,14 @@ export function ActionInput({
         <div className="action-input__failure" role="alert">
           <p>{failure.message}</p>
           {failure.canRetry && onRetry && (
-            <button type="button" onClick={onRetry}>
+            <button
+              type="button"
+              onClick={() => {
+                onRetry();
+                // Retry removes this button when the failure clears; keep keyboard focus in the action box.
+                textareaRef.current?.focus();
+              }}
+            >
               Retry this action
             </button>
           )}
@@ -96,6 +104,7 @@ export function ActionInput({
         <label htmlFor="player-action">Your action</label>
         <textarea
           id="player-action"
+          ref={textareaRef}
           value={text}
           onChange={(event) => {
             setText(event.target.value);

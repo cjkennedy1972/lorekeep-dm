@@ -480,6 +480,72 @@ describe('Game screen (live Room)', () => {
     });
   });
 
+  it('Retry while disconnected keeps the failed text so it can be resent later', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ActionQueued', { actionId: 'mine-1' });
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'The DM could not complete that turn. You can try again.',
+      actionId: 'mine-1',
+    });
+    expect(screen.getByLabelText('Your action')).toHaveValue(
+      'I search the room.',
+    );
+
+    // The socket drops before Retry: live.send refuses the resend.
+    hoisted.send.mockReturnValueOnce(false);
+    await user.click(screen.getByRole('button', { name: 'Retry this action' }));
+    expect(
+      screen.getByText(
+        'Not connected, so your action was not sent. Try again.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Your action')).toHaveValue(
+      'I search the room.',
+    );
+    expect(
+      screen.getByRole('button', { name: 'Retry this action' }),
+    ).toBeInTheDocument();
+
+    // Once the socket is back, Retry sends the preserved text and clears the box.
+    hoisted.send.mockReturnValueOnce('mine-2');
+    await user.click(screen.getByRole('button', { name: 'Retry this action' }));
+    expect(hoisted.send).toHaveBeenLastCalledWith('PlayerAction', {
+      text: 'I search the room.',
+    });
+    expect(screen.getByLabelText('Your action')).toHaveValue('');
+    expect(screen.getByText('Queued: I search the room.')).toBeInTheDocument();
+  });
+
+  it('Retry moves keyboard focus to the action box instead of dropping it to the page', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ActionQueued', { actionId: 'mine-1' });
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'The DM could not complete that turn. You can try again.',
+      actionId: 'mine-1',
+    });
+    const retry = screen.getByRole('button', { name: 'Retry this action' });
+    retry.focus();
+    expect(retry).toHaveFocus();
+
+    hoisted.send.mockReturnValueOnce('mine-2');
+    await user.click(retry);
+    // The Retry button unmounts once the failure clears; focus must land on the action box, not on body.
+    expect(
+      screen.queryByRole('button', { name: 'Retry this action' }),
+    ).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByLabelText('Your action'));
+  });
+
   it('a round failure restores only the seat whose submission was in that round', async () => {
     const user = userEvent.setup();
     hoisted.send.mockReturnValueOnce('mine-1');

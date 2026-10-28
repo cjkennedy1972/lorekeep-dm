@@ -105,3 +105,56 @@ test('axe reports no violations on each wizard step', async () => {
       await user.click(screen.getByRole('button', { name: 'Continue' }));
   }
 });
+
+const heroPanel = () =>
+  screen.getByRole('complementary', { name: 'Build status' });
+
+test('no incomplete-choices error before the player has chosen anything', () => {
+  render(<CreationWizard />);
+  expect(
+    screen.queryByText(
+      /Complete all choices, including at least one class skill/,
+    ),
+  ).not.toBeInTheDocument();
+});
+
+test('Save keeps the incomplete-choices tooltip hidden until an attempted Continue', async () => {
+  const user = userEvent.setup();
+  render(<CreationWizard />);
+  const save = screen.getByRole('button', { name: 'Save character' });
+  expect(save).toBeDisabled();
+  expect(save).not.toHaveAttribute('title');
+  await step(user);
+  expect(save).toHaveAttribute(
+    'title',
+    expect.stringMatching(
+      /Complete all choices, including at least one class skill/,
+    ),
+  );
+});
+
+test('the incomplete-choices error appears after an attempted Continue', async () => {
+  const user = userEvent.setup();
+  render(<CreationWizard />);
+  await step(user);
+  expect(
+    screen.getByText(
+      /Complete all choices, including at least one class skill/,
+    ),
+  ).toBeInTheDocument();
+});
+
+test('the hero panel shows the chosen species after Continue', async () => {
+  const user = userEvent.setup();
+  render(<CreationWizard />);
+  await user.click(screen.getByRole('radio', { name: /Fighter/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Soldier/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Human/ }));
+  await step(user);
+  const speciesValue = within(heroPanel()).getByText('Species')
+    .nextElementSibling as HTMLElement;
+  expect(speciesValue).toHaveTextContent('Human');
+  expect(speciesValue).not.toHaveTextContent('Not chosen');
+});
