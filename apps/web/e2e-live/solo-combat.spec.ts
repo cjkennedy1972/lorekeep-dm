@@ -132,12 +132,13 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
   await expect(ended).toBeVisible({ timeout: 30_000 });
   // The fight must have been played by the keyboard, not skipped.
   expect(steps.some((x) => /^(cast|attack):/.test(x))).toBe(true);
-  expect(await ended.textContent()).toMatch(/^CombatEnded: party-victory$/);
+  // The scripted encounter and engine seed make the solo fight deterministic.
+  await expect(ended).toHaveText('CombatEnded: party-victory');
   // The live sheet shows the seated character (it parses the server's character).
   await expect(page.getByText('No character selected.')).toHaveCount(0);
   const sheet = page.getByRole('region', { name: 'Aria' });
   await expect(sheet).toBeVisible();
-  // Two Burning Hands casts spent both level-1 slots; the live sheet shows it.
+  // Both Burning Hands slots are spent in the deterministic solo encounter.
   await expect(sheet).toContainText('Level 1: 0 of 2 remaining');
   expect(consoleErrors).toEqual([]);
 });

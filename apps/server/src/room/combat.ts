@@ -157,6 +157,24 @@ export function projectCombatForViewer<T extends RoomCombatState>(
       : {}),
   } as T;
 }
+
+/** Mechanical opening summary for moderation-held narration (ADR-038). Project first so hidden entities cannot leak. */
+export function combatOpeningSummary(
+  full: RoomCombatState,
+  controlled: ReadonlySet<string> = new Set(),
+): string {
+  const state = projectCombatForViewer(full, controlled);
+  const byId = new Map(state.entities.map((entity) => [entity.id, entity]));
+  const lines = ['Combat begins.'];
+  for (const [index, initiative] of (state.combat.initiative ?? []).entries()) {
+    const entity = byId.get(initiative.entityId);
+    if (!entity) continue;
+    lines.push(
+      `${index + 1}. ${entity.name ?? 'Combatant'} (initiative ${initiative.total}) at ${entity.pos.x}, ${entity.pos.y}.`,
+    );
+  }
+  return lines.join(' ');
+}
 /** Party combat replaces the M2 ReactionAvailable/ReactionResolved events with the prompt lifecycle (no dual emission). */
 const LEGACY_REACTION_EVENTS = new Set([
   'ReactionAvailable',

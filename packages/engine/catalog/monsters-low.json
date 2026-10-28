@@ -3770,6 +3770,84 @@
     ]
   },
   {
+    "id": "monster:goblin-lookout",
+    "kind": "monster",
+    "catalogVersion": "srd-5.2.1-v0",
+    "srd": {
+      "source": "SRD 5.2.1",
+      "ref": "Monsters A-Z > Goblin Warrior (p. 290)"
+    },
+    "name": "Goblin Lookout",
+    "cr": 0.25,
+    "creatureType": "fey",
+    "hp": 11,
+    "hpDice": "3d6+1",
+    "ac": 15,
+    "initiative": 2,
+    "size": "small",
+    "footprint": 1,
+    "speed": 30,
+    "abilities": {
+      "str": 8,
+      "dex": 15,
+      "con": 10,
+      "int": 10,
+      "wis": 8,
+      "cha": 8
+    },
+    "skills": {
+      "stealth": 6
+    },
+    "passivePerception": 9,
+    "senses": {
+      "darkvision": 60
+    },
+    "attacks": [
+      {
+        "name": "Scimitar",
+        "toHit": 4,
+        "reachFt": 5,
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "slashing"
+          },
+          {
+            "dice": "1d4",
+            "type": "slashing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Slashing damage, plus 2 (1d4) Slashing damage if the attack roll had Advantage."
+      },
+      {
+        "name": "Shortbow",
+        "toHit": 4,
+        "range": {
+          "normalFt": 80,
+          "longFt": 320
+        },
+        "damage": [
+          {
+            "dice": "1d6+2",
+            "type": "piercing"
+          },
+          {
+            "dice": "1d4",
+            "type": "piercing"
+          }
+        ],
+        "effect": "5 (1d6 + 2) Piercing damage, plus 2 (1d4) Piercing damage if the attack roll had Advantage."
+      }
+    ],
+    "traits": [
+      {
+        "name": "Nimble Escape",
+        "kind": "bonus-action",
+        "text": "The goblin takes the Disengage or Hide action."
+      }
+    ]
+  },
+  {
     "id": "monster:gray-ooze",
     "kind": "monster",
     "catalogVersion": "srd-5.2.1-v0",

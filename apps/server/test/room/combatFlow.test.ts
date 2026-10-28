@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   combatTracker,
+  combatOpeningSummary,
   REACTION_TIMEOUT_MS,
   type RoomCombatState,
 } from '../../src/room/combat.js';
@@ -16,6 +17,7 @@ import {
 import { joinSeated } from '../helpers/room.js';
 import { carryPromptSeq, promptIdOf } from '../../src/room/combatTypes.js';
 import { answerReaction, settle } from '../../src/room/combatEngine.js';
+import { projectEventForViewer } from '../../src/room/eventVisibility.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -56,6 +58,57 @@ function engaged() {
 }
 
 describe('combat bootstrap from the DM start_combat result', () => {
+  it('builds the moderation fallback summary from the viewer projection', () => {
+    const { state } = bootstrapped();
+    const hidden = state.entities.filter((entity) => entity.team === 'enemies');
+    const hiddenIds = hidden.map((entity) => entity.id);
+    const summary = combatOpeningSummary({
+      ...state,
+      entities: state.entities.map((entity) =>
+        hiddenIds.includes(entity.id) ? { ...entity, hidden: true } : entity,
+      ),
+    });
+    expect(summary).toContain('Combat begins.');
+    for (const entity of hidden) {
+      expect(summary).not.toContain(entity.id);
+      expect(summary).not.toContain(`${entity.pos.x}, ${entity.pos.y}`);
+    }
+    expect(summary).toContain('initiative');
+  });
+
+  it('projects the held-opening summary and CombatStarted list to the same controller', () => {
+    const { state, events } = bootstrapped();
+    const hiddenId = 'ent_goblin-minion_1';
+    const hiddenState = {
+      ...state,
+      entities: state.entities.map((entity) =>
+        entity.id === hiddenId ? { ...entity, hidden: true } : entity,
+      ),
+    };
+    const started = events.find((event) => event.type === 'CombatStarted')!;
+    const noControl = projectEventForViewer(
+      started,
+      new Set([hiddenId]),
+      new Set(),
+    )!;
+    const controller = projectEventForViewer(
+      started,
+      new Set([hiddenId]),
+      new Set([hiddenId]),
+    )!;
+    const ordinarySummary = combatOpeningSummary(hiddenState);
+    const controllerSummary = combatOpeningSummary(
+      hiddenState,
+      new Set([hiddenId]),
+    );
+    expect(JSON.stringify(noControl)).not.toContain(hiddenId);
+    expect(ordinarySummary).not.toContain(hiddenId);
+    expect(JSON.stringify(controller)).toContain(hiddenId);
+    expect(controllerSummary).toContain(
+      hiddenState.entities.find((e) => e.id === hiddenId)!.name,
+    );
+  });
+
   it('places the party and monsters on the structured map with initiative and the active turn', () => {
     const { state, game, events } = bootstrapped();
     const party = state.entities.find((e) => e.id === 'ent_aria')!;
@@ -119,6 +172,45 @@ describe('combat bootstrap from the DM start_combat result', () => {
   });
 });
 
+describe('monster morale', () => {
+  it('ends combat cleanly when the last goblin flees at one-quarter HP', () => {
+    const { runtime, state } = engaged();
+    const initiative = [
+      { entityId: 'ent_aria', total: 20 },
+      { entityId: 'ent_goblin-minion_1', total: 10 },
+      { entityId: 'ent_goblin-minion_2', total: 5 },
+    ];
+    const lowMorale = {
+      ...state,
+      entities: state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, hp: 1 }
+          : entity.id === 'ent_goblin-minion_2'
+            ? { ...entity, hp: 0 }
+            : entity,
+      ),
+      combat: {
+        ...state.combat,
+        initiative,
+        activeEntityId: 'ent_aria',
+      },
+    };
+
+    const result = ok(
+      runtime.execute(
+        lowMorale,
+        'ent_aria',
+        { command: 'end-turn' },
+        { now: NOW },
+      ),
+    );
+
+    expect(result.state.ended?.outcome).toBe('enemies-fled');
+    expect(types(result.events)).toContain('MonsterPolicy');
+    expect(types(result.events)).toContain('CombatEnded');
+  });
+});
+
 describe('tracker', () => {
   it('clears a stale reaction phase when combat ends during a reaction', () => {
     const { state } = bootstrapped();
@@ -144,6 +236,42 @@ describe('tracker', () => {
     expect(result.state.pendingReaction).toBeUndefined();
     expect(result.state.phase).toBe('awaiting-command');
   });
+
+  it.each([
+    [
+      'victory',
+      (entity: RoomCombatState['entities'][number]) =>
+        entity.team === 'enemies' ? { ...entity, hp: 0 } : entity,
+      'party-victory',
+    ],
+    [
+      'defeat',
+      (entity: RoomCombatState['entities'][number]) =>
+        entity.team === 'party' ? { ...entity, hp: 0 } : entity,
+      'party-defeated',
+    ],
+    [
+      'flee',
+      (entity: RoomCombatState['entities'][number]) =>
+        entity.team === 'enemies' ? { ...entity, fled: true } : entity,
+      'enemies-fled',
+    ],
+  ] as const)(
+    'settles authored encounter combat on %s without an early reward event',
+    (_label, changeEntity, outcome) => {
+      const { state } = bootstrapped();
+      const settled = settle({
+        ...state,
+        entities: state.entities.map(changeEntity),
+      });
+      expect(settled.state.ended?.outcome).toBe(outcome);
+      expect(
+        settled.events.some((event) =>
+          /Xp|Loot|Reward/u.test(String(event.type)),
+        ),
+      ).toBe(false);
+    },
+  );
 
   it('terminates an open move when CombatEnded closes the encounter', () => {
     const e = engaged();

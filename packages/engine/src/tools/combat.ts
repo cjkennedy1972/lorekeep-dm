@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { DMToolArgsSchema, type Battlemap } from '@game/schema';
 import { abilityModifier } from '../dice.js';
 import type { CharacterInput } from '../character/types.js';
@@ -13,6 +14,24 @@ import { rleDecode } from '@game/schema';
 import type { GridPos } from '@game/schema';
 import type { RngState } from '../rng.js';
 import { fail, ok, type ToolResult } from './result.js';
+
+const StartCombatEngineArgsSchema = z
+  .object({
+    enemies: z
+      .array(
+        z
+          .object({
+            monsterId: z.string().regex(/^srd:monster\/[a-z0-9-]+$/),
+            count: z.int().min(1).max(8),
+            spawnRef: z.string().optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(12),
+    ambushSide: z.enum(['party', 'enemies', 'none']).optional(),
+  })
+  .strict();
 
 const XP_BY_CR: Readonly<Record<number, number>> = {
   0: 10,
@@ -128,7 +147,7 @@ export function executeStartCombat(
   args: unknown,
   rng: RngState,
 ): ToolResult<CombatToolOutput> {
-  const parsed = DMToolArgsSchema.start_combat.safeParse(args);
+  const parsed = StartCombatEngineArgsSchema.safeParse(args);
   if (!parsed.success)
     return fail(
       'schema-violation',

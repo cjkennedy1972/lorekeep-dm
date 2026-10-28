@@ -23,8 +23,8 @@ describe('catalog monsters CR 2-5', () => {
   test('count matches expected-counts file and is 108', () => {
     expect(mid).toHaveLength(expected.monster.mid);
     expect(mid).toHaveLength(108);
-    expect(expected.monster.total).toBe(242);
-    expect(expected.monster.low).toBe(134);
+    expect(expected.monster.total).toBe(243);
+    expect(expected.monster.low).toBe(135);
   });
   test('CR buckets match SRD and every entry cites an SRD page', () => {
     for (const [cr, n] of Object.entries(BUCKETS)) {

@@ -1,3 +1,4 @@
+import { encounterStartRejectionBudget } from '../dm/encounters.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { ChatMessageSchema, type ChatHistoryEntry } from '@game/schema';
@@ -277,6 +278,7 @@ export class Persistence {
       [sessionId],
     );
     if (result.rowCount !== 1) throw new Error('Table is not active');
+    encounterStartRejectionBudget.clearSession(sessionId);
   }
 
   async isTableHost(sessionId: string, accountId: string): Promise<boolean> {

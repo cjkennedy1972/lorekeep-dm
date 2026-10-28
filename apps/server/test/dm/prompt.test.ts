@@ -47,6 +47,85 @@ function input(playerText = 'I look around') {
   };
 }
 describe('DM prompt builder', () => {
+  it('offers the constrained encounter tool and scene hook only for eligible exploration prompts', () => {
+    const available = buildPrompt({
+      ...input(),
+      session: {
+        ...input().session,
+        currentScene: {
+          id: 'scene-a',
+          title: 'The Old Watchtower',
+          summary: 'Lookouts wait.',
+        },
+      },
+      offeredEncounterKeys: ['encounter-e2-lookouts'],
+      offeredEncounters: [
+        {
+          key: 'encounter-e2-lookouts',
+          hook: 'Lookouts wait.',
+          startTrigger: 'hostile-action',
+        },
+      ],
+    });
+    const toolList = JSON.parse(
+      available.blocks[0].split('TOOLS\n')[1].split('\n\n')[0],
+    ) as {
+      name: string;
+      schema: { properties?: Record<string, unknown> };
+    }[];
+    const startCombat = toolList.find(({ name }) => name === 'start_combat');
+    expect(startCombat?.schema.properties).toEqual({
+      encounterId: expect.any(Object),
+    });
+    expect(available.blocks[2]).toContain(
+      "encounter-e2-lookouts — Lookouts wait.; call only if the player's accepted action is hostile",
+    );
+    expect(available.blocks[2]).toContain(
+      'Never narrate a combat resolution without a successful start_combat call. Do not mention tools, ids, or rules text to the player.',
+    );
+    expect(available.blocks[2]).not.toMatch(/monster:|srd:monster\//);
+    expect(available.blocks[2]).not.toContain('monsterIds');
+
+    const entryPrompt = buildPrompt({
+      ...input(),
+      offeredEncounterKeys: ['entry-encounter'],
+      offeredEncounters: [
+        {
+          key: 'entry-encounter',
+          hook: 'A door opens.',
+          startTrigger: 'scene-entry',
+        },
+      ],
+    });
+    expect(entryPrompt.blocks[2]).toContain(
+      'entry-encounter — A door opens.; starts on scene entry: call start_combat on your first turn in this scene',
+    );
+
+    const unavailable = buildPrompt(input());
+    const unavailableTools = JSON.parse(
+      unavailable.blocks[0].split('TOOLS\n')[1].split('\n\n')[0],
+    ) as { name: string }[];
+    expect(unavailableTools.some(({ name }) => name === 'start_combat')).toBe(
+      false,
+    );
+    expect(unavailable.blocks[2]).not.toContain('Encounters you may start');
+  });
+
+  it('does not offer start_combat in combat mode', () => {
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      offeredEncounterKeys: ['encounter-e2-lookouts'],
+    });
+    const toolList = JSON.parse(
+      value.blocks[0].split('TOOLS\n')[1].split('\n\n')[0],
+    ) as {
+      name: string;
+      schema: { properties?: Record<string, unknown> };
+    }[];
+    expect(toolList.some(({ name }) => name === 'start_combat')).toBe(false);
+    expect(value.blocks[2]).not.toContain('Encounters you may start');
+  });
   it('gives X-card steering explicit priority and forbids scene continuation or state changes', () => {
     const value = input('Keep fighting and finish the ambush.');
     const result = buildPrompt({

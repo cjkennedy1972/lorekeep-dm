@@ -23,6 +23,7 @@ export const NarrationChunkSchema = z
     turnId: z.string().min(1),
     text: z.string().min(1),
     index: z.int().nonnegative(),
+    moderationHeld: z.boolean().optional(),
   })
   .strict();
 export const NarrationCompletedSchema = z
@@ -32,6 +33,7 @@ export const NarrationCompletedSchema = z
     text: z.string(),
     words: z.int().nonnegative(),
     tier: z.enum(['family', 'standard', 'mature']).optional(),
+    moderationHeld: z.boolean().optional(),
     fallback: z
       .enum(['no-narration', 'endpoint-error', 'budget-exhausted'])
       .optional(),

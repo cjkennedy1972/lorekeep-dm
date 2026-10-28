@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import {
   DMToolArgsSchema,
+  StartCombatEncounterArgsSchema,
   DMToolErrorCodeSchema,
   DMTurnEventSchema,
   EndpointConfigSchema,
@@ -44,7 +45,7 @@ const valid = {
     source: 'Help',
     duration: 'until-removed',
   },
-  start_combat: { enemies: [{ monsterId: 'srd:monster/goblin', count: 2 }] },
+  start_combat: { encounterId: 'encounter-main' },
   end_combat: { outcome: 'party-victory' },
   move_to: { entityId: 'ent_ayla', targetRef: 'mk_altar', mode: 'cover' },
   suggest_area_target: {
@@ -198,4 +199,22 @@ test('move_to takes marker/feature/entity refs only, not area option handles or 
   expect(parse('opt_a1b2c3d4')).toBe(false);
   expect(parse('3,4')).toBe(false);
   expect(parse('mk_altar')).toBe(true);
+});
+
+test('ADR-038 model-facing start_combat accepts only authored encounter keys', () => {
+  expect(
+    StartCombatEncounterArgsSchema.safeParse({
+      encounterId: 'encounter-e2-lookouts',
+    }).success,
+  ).toBe(true);
+  expect(
+    StartCombatEncounterArgsSchema.safeParse({ encounterId: 'bad key' })
+      .success,
+  ).toBe(false);
+  expect(
+    DMToolArgsSchema.start_combat.safeParse({
+      encounterId: 'encounter-e2-lookouts',
+      enemies: [{ monsterId: 'srd:monster/goblin', count: 2 }],
+    }).success,
+  ).toBe(false);
 });

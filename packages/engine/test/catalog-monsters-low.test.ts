@@ -15,10 +15,10 @@ const monsters = cat.entries.flatMap((e) =>
 );
 
 describe('catalog monsters CR 0-1', () => {
-  // SRD 5.2.1 Monsters A-Z (pp. 258-364) has 330 stat blocks; 134 have CR <= 1.
-  test('count matches expected-counts file and is 134', () => {
+  // Catalog has 134 SRD low-CR stat blocks plus the authored Goblin Lookout.
+  test('count matches expected-counts file, including the authored lookout', () => {
     expect(monsters).toHaveLength(expected.monster.low);
-    expect(monsters).toHaveLength(134);
+    expect(monsters).toHaveLength(135);
   });
   test('all are CR 0 to 1 and cite an SRD page', () => {
     for (const m of monsters) {

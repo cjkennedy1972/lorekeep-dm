@@ -324,6 +324,9 @@ importers:
       '@game/schema':
         specifier: workspace:*
         version: link:../schema
+      zod:
+        specifier: 4.1.12
+        version: 4.1.12
     devDependencies:
       '@types/node':
         specifier: 26.0.0

@@ -12,6 +12,7 @@ import {
   X_CARD_REDIRECT_TEMPLATE,
 } from '../../src/safety/outputGate.js';
 import {
+  MAX_TOOL_CALLS,
   runTurn,
   runTurnQueued,
   type TurnInput,
@@ -278,6 +279,14 @@ describe('DM orchestrator', () => {
           expect.objectContaining({
             type: 'NarrationCompleted',
             text: moderationHoldingNotice,
+            moderationHeld: true,
+          }),
+        );
+        expect(h.streamed).toContainEqual(
+          expect.objectContaining({
+            type: 'NarrationChunk',
+            text: moderationHoldingNotice,
+            moderationHeld: true,
           }),
         );
         expect(streamedText).not.toContain('Safe narration');
@@ -600,6 +609,37 @@ describe('DM orchestrator', () => {
     await runTurn(h.input);
     expect(executions).toBe(0);
   });
+  it('counts rejected authored start calls against MAX_TOOL_CALLS', async () => {
+    const execute = vi.fn(() => ({
+      ok: true,
+      summary: 'Started.',
+      events: [],
+    }));
+    const h = setup(
+      [
+        Array.from({ length: MAX_TOOL_CALLS + 1 }, (_, index) =>
+          call(`start-${index}`, 'start_combat', {
+            encounterId: 'encounter-e2-lookouts',
+          }),
+        ),
+      ],
+      execute,
+    );
+    h.input.prompt.offeredEncounterKeys = ['encounter-e2-lookouts'];
+    const result = await runTurn(h.input);
+
+    expect(execute).toHaveBeenCalledTimes(MAX_TOOL_CALLS);
+    expect(
+      h.events.filter(
+        (event) =>
+          (event as { type?: string; error?: string }).type ===
+            'ToolCallRejected' &&
+          (event as { error?: string }).error === 'turn-budget-exhausted',
+      ),
+    ).toHaveLength(1);
+    expect(result.fallback).toBe('budget-exhausted');
+  });
+
   it('replays the assistant tool calls so the follow-up request carries them', async () => {
     const h = setup([
       [call('c1', 'request_check', validCheck)],
@@ -620,9 +660,7 @@ describe('DM orchestrator', () => {
     const h = setup(
       [
         [
-          call('c1', 'start_combat', {
-            enemies: [{ monsterId: 'srd:monster/goblin', count: 1 }],
-          }),
+          call('c1', 'start_combat', { encounterId: 'encounter-e2-lookouts' }),
           { type: 'text', delta: 'premature prose' },
         ],
         [{ type: 'text', delta: narration }],
@@ -1026,6 +1064,35 @@ describe('DM orchestrator: combat narration tool scope (ADR-034 §2)', () => {
           (e as { error?: string }).error === 'unknown-tool',
       ),
     ).toBe(true);
+    expect(result.narration).toBe(narration);
+  });
+
+  it('does not offer or execute start_combat in combat mode, even if injected', async () => {
+    const execute = vi.fn(() => ({ ok: true, summary: 'started', events: [] }));
+    const { input, requests, events } = setup(
+      [
+        [
+          call('start', 'start_combat', {
+            encounterId: 'encounter-e2-lookouts',
+          }),
+        ],
+        [{ type: 'text', delta: narration }],
+      ],
+      execute,
+    );
+    input.prompt.activeMode = 'combat';
+    input.prompt.offeredEncounterKeys = ['encounter-e2-lookouts'];
+    const result = await runTurn(input);
+    expect(
+      requests[0]!.tools!.some((tool) => tool.name === 'start_combat'),
+    ).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'ToolCallRejected',
+        error: 'unknown-tool',
+      }),
+    );
     expect(result.narration).toBe(narration);
   });
 
