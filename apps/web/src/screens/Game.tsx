@@ -20,6 +20,7 @@ import { createEntityNamer } from '../features/map/names.js';
 import { TurnBanner } from '../features/game/TurnBanner.js';
 import { Describe } from '../features/map/Describe.js';
 import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
+import { CombatEndCard } from '../features/combat/CombatEndCard.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
 import {
   isTurnFailure,
@@ -322,6 +323,8 @@ export function Game() {
       if (message.type === 'CombatEnded') {
         setReaction(null);
         setReactionNotice(null);
+        // Options were legal for the fight that just ended; keeping them would offer attacks on dead enemies.
+        setOptions(null);
         setTracker((current) =>
           current
             ? {
@@ -645,8 +648,20 @@ export function Game() {
   };
   const characters = asRecord(asRecord(room?.gameState).characters) as Record<
     string,
-    { id?: string; name?: string } | undefined
+    { id?: string; name?: string; hp?: { max?: number } } | undefined
   >;
+  // The sheet is the only place a PC's real max HP lives. The tracker sends current HP and a status word, never a max.
+  const maxHpOf = (entityId: string): number | undefined => {
+    const sheet = Object.values(characters).find(
+      (item) => item?.id === entityId,
+    );
+    const max =
+      sheet?.hp?.max ??
+      (gameStore.getState().character?.id === entityId
+        ? gameStore.getState().character?.hp.max
+        : undefined);
+    return typeof max === 'number' ? max : undefined;
+  };
   const nameOf = useMemo(
     () =>
       createEntityNamer({
@@ -693,19 +708,23 @@ export function Game() {
                 {
                   team: item.team,
                   name: nameOf(item.id),
-                  maxHp: Math.max(item.hp, 1),
+                  maxHp: maxHpOf(item.id),
+                  hpState: item.hpState,
                 },
               ]),
             ),
           )
         : [],
-    [tracker, entities, nameOf],
+    [tracker, entities, nameOf, room],
   );
   const trackerFirst = tracker ? activeOf(tracker) : null;
   const active = trackerFirst;
-  const describedTracker = tracker
-    ? { ...tracker, activeEntityId: trackerFirst }
-    : null;
+  // Once CombatEnded arrives the combat bar, threat line and initiative leave the screen; only the result remains.
+  const combatOver = Boolean(tracker?.ended);
+  const describedTracker =
+    tracker && !combatOver
+      ? { ...tracker, activeEntityId: trackerFirst }
+      : null;
   useEffect(() => {
     if (tracker)
       gameStore.setCombatState({
@@ -715,7 +734,7 @@ export function Game() {
           dexterity: 0,
           tieOrder: index,
         })),
-        activeEntityId: activeOf(tracker),
+        activeEntityId: combatOver ? null : activeOf(tracker),
         round: tracker.round,
         resources: Object.fromEntries(
           Object.entries(tracker.resources).map(([entityId, value]) => [
@@ -1209,7 +1228,7 @@ export function Game() {
           )}
         </div>
         <div className="game-area game-area--actions">
-          {tracker && (
+          {tracker && !combatOver && (
             <section aria-label="Combat commands">
               <h2>Combat actions</h2>
               <button
@@ -1326,15 +1345,22 @@ export function Game() {
               )}
             </section>
           )}
-          {tracker?.ended && (
-            <p role="status">CombatEnded: {tracker.ended.outcome}</p>
+          {combatOver && (
+            <CombatEndCard
+              outcome={tracker?.ended?.outcome}
+              onContinue={() => {
+                setTracker(null);
+                setOptions(null);
+              }}
+            />
           )}
-          {activeEntity && (
+          {activeEntity && !combatOver && (
             <p className="game-active" data-entity-id={activeEntity.id}>
               Active combatant: {nameOf(activeEntity.id)}
             </p>
           )}
           {tracker &&
+            !combatOver &&
             trackerFirst === null &&
             tracker.activeEntityId === null && (
               <p role="status">An unseen creature is acting.</p>
@@ -1352,7 +1378,7 @@ export function Game() {
               </Link>
             }
           />
-          {tracker && (
+          {tracker && !combatOver && (
             <section aria-labelledby="tracker-heading">
               <h2 id="tracker-heading">Round {tracker.round}</h2>
               <ol aria-label="Initiative tracker">

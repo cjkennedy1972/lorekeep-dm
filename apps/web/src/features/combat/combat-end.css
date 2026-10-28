@@ -1,0 +1,27 @@
+.combat-end {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+}
+
+.combat-end__title {
+  margin: 0;
+}
+
+.combat-end__title:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.combat-end__body {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combat-end * {
+    transition: none;
+    animation: none;
+  }
+}

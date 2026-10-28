@@ -303,6 +303,55 @@ describe('Game screen (live Room)', () => {
     });
   });
 
+  it('CombatEnded clears the combat bar, threat line and stale attacks, then Continue returns to exploration', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a',
+          targetId: 'ent_goblin',
+          attackId: 'equipment:javelin',
+        },
+        { kind: 'move', optionId: 'm', destination: { x: 2, y: 2 }, cost: 5 },
+      ],
+    });
+    expect(
+      screen.getByRole('button', { name: 'Attack Goblin' }),
+    ).toBeInTheDocument();
+
+    push('CombatEnded', { outcome: 'party-victory' });
+
+    expect(
+      within(screen.getByRole('region', { name: 'Combat result' })).getByRole(
+        'status',
+      ),
+    ).toHaveTextContent('Victory');
+    expect(
+      screen.queryByRole('button', { name: 'Attack Goblin' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Move to / }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'End turn' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Threats within 30 feet/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/CombatEnded:/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(
+      screen.queryByRole('region', { name: 'Combat result' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Continue' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('area aim: an aim previews its affected units and Cast sends the option ref', async () => {
     const user = userEvent.setup();
     mount();

@@ -49,7 +49,7 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
     .filter({ hasText: /feet movement remaining\. Threats within 30 feet/ });
   await expect(announce.first()).toBeVisible();
 
-  const ended = page.getByText(/^CombatEnded:/);
+  const ended = page.getByRole('region', { name: 'Combat result' });
   const steps: string[] = [];
   const activate = async (button: Locator, label: string) => {
     steps.push(label);
@@ -133,7 +133,8 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
   // The fight must have been played by the keyboard, not skipped.
   expect(steps.some((x) => /^(cast|attack):/.test(x))).toBe(true);
   // The scripted encounter and engine seed make the solo fight deterministic.
-  await expect(ended).toHaveText('CombatEnded: party-victory');
+  await expect(ended.getByRole('status')).toHaveText(/Victory/);
+  await expect(ended.getByRole('heading', { name: 'Victory' })).toBeVisible();
   // The live sheet shows the seated character (it parses the server's character).
   await expect(page.getByText('No character selected.')).toHaveCount(0);
   const sheet = page.getByRole('region', { name: 'Aria' });
