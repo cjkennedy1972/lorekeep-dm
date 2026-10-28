@@ -219,12 +219,16 @@ async function gateOneShotOutput(
     approved: !redirected,
   };
 }
+function isReadOnlyTurn(input: TurnInput): boolean {
+  return (
+    input.prompt.readOnlyTools === true || input.prompt.activeMode === 'combat'
+  );
+}
 function toolSchemas(input: TurnInput): LlmTool[] {
   return DMToolCallSchema.options.flatMap((option) => {
     const name = option.shape.name.value;
     if (name === 'ask_clarification' && !canAskClarification(input)) return [];
-    if (input.prompt.readOnlyTools && !READ_ONLY_TOOLS.includes(name))
-      return [];
+    if (isReadOnlyTurn(input) && !READ_ONLY_TOOLS.includes(name)) return [];
     if (
       name === 'start_combat' &&
       (input.prompt.activeMode === 'combat' ||
@@ -256,7 +260,7 @@ function canAskClarification(input: TurnInput): boolean {
   return (
     input.allowClarification === true &&
     input.clarificationAsked !== true &&
-    !input.prompt.readOnlyTools
+    !isReadOnlyTurn(input)
   );
 }
 function safeArgs(
@@ -649,10 +653,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           continue;
         }
         attempts.set(callSite, attempt);
-        if (
-          input.prompt.readOnlyTools &&
-          !READ_ONLY_TOOLS.includes(call.name)
-        ) {
+        if (isReadOnlyTurn(input) && !READ_ONLY_TOOLS.includes(call.name)) {
           // ADR-034 §2.2: the engine already applied the mechanics; a mutating call is refused, never executed.
           reject('unknown-tool', 'Only read-only tools exist while narrating.');
           retries++;

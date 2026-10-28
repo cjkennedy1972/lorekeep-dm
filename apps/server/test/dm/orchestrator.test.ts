@@ -941,12 +941,6 @@ describe('DM orchestrator', () => {
 });
 
 describe('DM orchestrator turn order in combat', () => {
-  const npcAttack = (id: string, attackerId: string): LlmChunk =>
-    call(id, 'attack', {
-      attackerId,
-      targetId: 'ent_ayla',
-      attackId: 'srd:weapon/scimitar',
-    });
   const ayla = (id: string): LlmChunk =>
     call(id, 'attack', {
       attackerId: 'ent_ayla',
@@ -980,42 +974,16 @@ describe('DM orchestrator turn order in combat', () => {
       (event) => (event as { type?: string }).type === 'ToolCallRejected',
     );
 
-  it('completes the narration when the DM names five NPC attacks out of turn', async () => {
-    const h = combatSetup([
-      [1, 2, 3, 4, 5].map((n) => npcAttack(`n${n}`, `ent_goblin_${n}`)),
-      [{ type: 'text', delta: narration }],
-    ]);
-    const result = await runTurn(h.input);
-    expect(rejections(h.events)).toHaveLength(5);
-    expect(h.executed).toEqual([]);
-    expect(result.fallback).toBeUndefined();
-    expect(result.narration).toBe(narration);
-    expect(h.requests).toHaveLength(2);
-    expect(h.requests[1]?.messages.at(-1)?.content).toContain(
-      "It is ent_ayla's turn",
-    );
-  });
-
-  it('does not spend the tool-call cap on out-of-turn attacks', async () => {
-    const h = combatSetup([
-      [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) =>
-        npcAttack(`n${n}`, `ent_goblin_${n}`),
-      ),
-      [ayla('a1')],
-      [{ type: 'text', delta: narration }],
-    ]);
-    const result = await runTurn(h.input);
-    expect(h.executed).toEqual(['ent_ayla']);
-    expect(result.fallback).toBeUndefined();
-    expect(result.narration).toBe(narration);
-  });
-
-  it('completes normally when the active combatant attacks', async () => {
+  it('rejects DM attack calls even for the active combatant', async () => {
     const h = combatSetup([[ayla('a1')], [{ type: 'text', delta: narration }]]);
     const result = await runTurn(h.input);
-    expect(h.executed).toEqual(['ent_ayla']);
-    expect(rejections(h.events)).toHaveLength(0);
+    expect(h.executed).toEqual([]);
+    expect(rejections(h.events)).toHaveLength(1);
     expect(result.fallback).toBeUndefined();
+    expect(h.requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual([
+      'rules_lookup',
+      'suggest_area_target',
+    ]);
     expect(h.requests[0]?.messages.map((m) => m.content).join('\n')).toContain(
       'Active combatant: ent_ayla',
     );
@@ -1038,13 +1006,17 @@ describe('DM orchestrator: combat narration tool scope (ADR-034 §2)', () => {
             targetId: 'ent_goblin',
             attackId: 'srd:attack/longsword',
           }),
+          call('c2', 'move_to', {
+            entityId: 'ent_ayla',
+            targetRef: 'ent_cover',
+            mode: 'cover',
+          }),
         ],
         [{ type: 'text', delta: narration }],
       ],
       execute,
     );
     input.prompt.activeMode = 'combat';
-    input.prompt.readOnlyTools = true;
     input.allowClarification = true;
     const result = await runTurn(input);
     expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual([
@@ -1057,13 +1029,13 @@ describe('DM orchestrator: combat narration tool scope (ADR-034 §2)', () => {
       result.events.some((e) => (e as { type?: string }).type === 'HpChanged'),
     ).toBe(false);
     expect(
-      events.some(
+      events.filter(
         (e) =>
           (e as { type?: string; error?: string }).type ===
             'ToolCallRejected' &&
           (e as { error?: string }).error === 'unknown-tool',
       ),
-    ).toBe(true);
+    ).toHaveLength(2);
     expect(result.narration).toBe(narration);
   });
 
