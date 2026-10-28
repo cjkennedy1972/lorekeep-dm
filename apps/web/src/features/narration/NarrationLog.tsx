@@ -50,6 +50,7 @@ export function NarrationLog({
   const [reporting, setReporting] = useState<number | null>(null);
   const [reportMessage, setReportMessage] = useState('');
   const listRef = useRef<HTMLOListElement>(null);
+  const previousEntries = useRef(state.entries);
   const reportTriggerRef = useRef<HTMLButtonElement>(null);
   const reportCategoryRef = useRef<HTMLSelectElement>(null);
   const seen = useRef(new Set<string>());
@@ -206,8 +207,25 @@ export function NarrationLog({
   useEffect(() => {
     const node = listRef.current;
     if (!node) return;
+    const priorKeys = new Set(
+      previousEntries.current.map((entry) =>
+        entry.kind === 'pending' ? `pending:${entry.actionId}` : `turn:${entry.turn.turnId}`,
+      ),
+    );
+    const added = state.entries.filter((entry) =>
+      !priorKeys.has(entry.kind === 'pending' ? `pending:${entry.actionId}` : `turn:${entry.turn.turnId}`),
+    );
+    previousEntries.current = state.entries;
+    const historyOnly = added.length > 0 && added.every(
+      (entry) => entry.kind === 'turn' && entry.turn.history,
+    );
     const atBottom =
       node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+    if (historyOnly) {
+      setLatest(false);
+      if (atBottom) node.scrollTop = node.scrollHeight;
+      return;
+    }
     setLatest(!atBottom);
     if (atBottom) node.scrollTop = node.scrollHeight;
   }, [state.entries]);

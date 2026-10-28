@@ -132,3 +132,28 @@ test('does not put non-narration server payloads in the shared story log', () =>
   expect(screen.queryByText('Should not appear')).not.toBeInTheDocument();
   expect(screen.queryByText('Hidden detail')).not.toBeInTheDocument();
 });
+
+test('restored history does not show the new-narration jump control while scrolled up', async () => {
+  const view = render(<NarrationLog messages={[]} />);
+  const list = view.container.querySelector('ol')!;
+  Object.defineProperties(list, {
+    scrollHeight: { configurable: true, value: 300 },
+    clientHeight: { configurable: true, value: 100 },
+    scrollTop: { configurable: true, writable: true, value: 0 },
+  });
+  view.rerender(
+    <NarrationLog
+      messages={[
+        {
+          seq: 1,
+          type: 'NarrationHistory',
+          payload: {
+            turns: [{ turnId: 'restored', text: 'An old scene.', tier: 'standard' }],
+          },
+        } as ServerMessage,
+      ]}
+    />,
+  );
+  expect(await screen.findByText('An old scene.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
+});
