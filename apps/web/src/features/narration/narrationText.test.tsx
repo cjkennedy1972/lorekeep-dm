@@ -1,7 +1,20 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { NarrationText, splitPrompt } from './narrationText.js';
+import {
+  NarrationText,
+  renderInlineMarkdown,
+  splitPrompt,
+} from './narrationText.js';
+
+// Generous for CI; the old backtracking regex took seconds at these sizes.
+const BUDGET_MS = 200;
+
+function timeMs(run: () => unknown): number {
+  const start = performance.now();
+  run();
+  return performance.now() - start;
+}
 
 test('bold and italic markers render as strong and em, not as literal asterisks', () => {
   const { container } = render(
@@ -63,6 +76,80 @@ test('the closing question is split into its own prompt line without changing it
   expect(prompt?.querySelector('strong')?.textContent).toBe('What do you do?');
   expect(container.textContent).toContain(
     'The well hums with cold light.The stone is warm.',
+  );
+});
+
+test('nested emphasis is shown wholly as literal text, not partly rendered', () => {
+  const { container } = render(
+    <NarrationText text="The rune says **bold *italic* text** plainly." />,
+  );
+
+  expect(container.querySelector('strong')).toBeNull();
+  expect(container.querySelector('em')).toBeNull();
+  expect(container.textContent).toBe(
+    'The rune says **bold *italic* text** plainly.',
+  );
+});
+
+test('unbalanced and mismatched markers render the whole paragraph as literal text', () => {
+  for (const text of [
+    'a **bold word',
+    'a *b and **c**',
+    'x *a *b* y',
+    'p *a**b*',
+  ]) {
+    expect(renderInlineMarkdown(text)).toEqual([text]);
+  }
+});
+
+test('adjacent runs of three or more asterisks are literal', () => {
+  expect(renderInlineMarkdown('**a***b*')).toEqual(['**a***b*']);
+  expect(renderInlineMarkdown('***a***')).toEqual(['***a***']);
+});
+
+test('empty emphasis and markers followed or preceded by spaces are literal', () => {
+  for (const text of ['****', '**', '** **', '* *', 'a ** b']) {
+    expect(renderInlineMarkdown(text)).toEqual([text]);
+  }
+});
+
+test('a backslash-escaped asterisk is literal and never opens emphasis', () => {
+  expect(renderInlineMarkdown('\\*not italic\\*')).toEqual([
+    '\\*not italic\\*',
+  ]);
+});
+
+test('a stray marker does not stop well-formed emphasis elsewhere in the paragraph', () => {
+  const { container } = render(
+    <NarrationText text="The scale reads 5 * 3 and the sign says **danger**." />,
+  );
+
+  expect(container.querySelector('strong')?.textContent).toBe('danger');
+  expect(container.textContent).toContain('5 * 3');
+});
+
+test('a closing question whose markers straddle the split stays in the body', () => {
+  expect(splitPrompt('*Hi.* **What?**')).toEqual({
+    body: '*Hi.* **What?**',
+    prompt: null,
+  });
+});
+
+test('splitPrompt handles long whitespace runs in linear time', () => {
+  const text = `word${' '.repeat(50_000)}x`;
+  expect(timeMs(() => splitPrompt(text))).toBeLessThan(BUDGET_MS);
+});
+
+test('splitPrompt handles 50,000 repeated question fragments in linear time', () => {
+  const text = '? '.repeat(50_000) + 'end';
+  expect(timeMs(() => splitPrompt(text))).toBeLessThan(BUDGET_MS);
+});
+
+test('markdown rendering handles long runs of nested markers in linear time', () => {
+  const nested = '*a '.repeat(20_000) + '?';
+  expect(timeMs(() => renderInlineMarkdown(nested))).toBeLessThan(BUDGET_MS);
+  expect(timeMs(() => splitPrompt('*'.repeat(50_000) + '?'))).toBeLessThan(
+    BUDGET_MS,
   );
 });
 
