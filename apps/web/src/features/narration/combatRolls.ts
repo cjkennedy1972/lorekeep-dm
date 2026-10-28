@@ -25,8 +25,10 @@ export type RollCard = {
   targetKind?: Kind;
   /** Only for the viewer's own PC. */
   targetHp?: { from: number; to: number };
-  /** Another seat's PC that is wounded but not down. */
+  /** Another seat's PC that a hit left wounded but not down. */
   wound?: 'bloodied';
+  /** Another seat's PC that a hit left healthy. */
+  steady?: true;
   down: boolean;
   standing?: boolean;
 };
@@ -91,13 +93,6 @@ function isDamageFor(
   );
 }
 
-/** The wound word another seat may see; exact HP never reaches them. */
-function woundWord(facts: CombatantFacts | undefined): 'bloodied' | undefined {
-  return facts?.kind === 'pc' && facts.hpState === 'wounded'
-    ? 'bloodied'
-    : undefined;
-}
-
 export function summarizeCombatRolls(
   events: readonly unknown[],
   combatants: Readonly<Record<string, CombatantFacts | undefined>>,
@@ -142,7 +137,19 @@ export function summarizeCombatRolls(
     const targetIsOwn = targetId !== '' && ownEntityIds.has(targetId);
     const from = numeric(hpEvent?.from);
     const to = numeric(hpEvent?.to);
-    const down = hit && to === 0;
+    // The state after the hit: the event's own hpState when present, then 0 HP, then the target's status word.
+    const eventState =
+      typeof hpEvent?.hpState === 'string' ? hpEvent.hpState : undefined;
+    const stateAfter = !hit
+      ? undefined
+      : (eventState ?? (to === 0 ? 'down' : target?.hpState));
+    const down = hit && stateAfter === 'down';
+    // Another seat's PC gets a status word on every hit; exact HP never reaches them.
+    const otherPc = hit && !targetIsOwn && targetKind === 'pc' && !down;
+    const wound =
+      otherPc && stateAfter === 'wounded' ? ('bloodied' as const) : undefined;
+    const steady =
+      otherPc && stateAfter === 'healthy' ? (true as const) : undefined;
 
     const damageDealt = hit
       ? (numeric(hpEvent?.damage) ?? numeric(damageEvent?.total))
@@ -157,7 +164,6 @@ export function summarizeCombatRolls(
       to !== undefined
         ? { from, to }
         : undefined;
-    const wound = !targetIsOwn && !down ? woundWord(target) : undefined;
 
     const card: RollCard = {
       attackerId,
@@ -173,7 +179,8 @@ export function summarizeCombatRolls(
       ...(targetKind ? { targetKind } : {}),
       ...(targetHp ? { targetHp } : {}),
       ...(wound ? { wound } : {}),
-      ...(targetKind === 'monster' && to !== undefined && !down
+      ...(steady ? { steady } : {}),
+      ...(targetKind === 'monster' && hit && !down && stateAfter !== undefined
         ? { standing: true }
         : {}),
     };
@@ -203,7 +210,9 @@ export function rollCardText(
       ? ` ${target} is still standing.`
       : card.wound
         ? ` ${target} is ${card.wound}.`
-        : '';
+        : card.steady
+          ? ` ${target} shrugs it off.`
+          : '';
   return `${attacker} hits ${target}${weapon}${damage}.${roll}${hp}${state}`
     .replace(/\s+/g, ' ')
     .trim();

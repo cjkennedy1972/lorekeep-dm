@@ -150,7 +150,7 @@ describe('summarizeCombatRolls: monster attacks', () => {
       hpChanged('ent_thorin', 20, 15),
     ]);
     const text = rollCardText(card, nameOf);
-    expect(text).toBe('Goblin hits Thorin with Claw.');
+    expect(text).toBe('Goblin hits Thorin with Claw. Thorin shrugs it off.');
     expect(text).not.toMatch(/\d/);
     expect(text).not.toContain('attack roll');
   });
@@ -204,6 +204,70 @@ describe('summarizeCombatRolls: other seats’ attacks', () => {
     expect(card.down).toBe(true);
     expect(card.damage).toBeUndefined();
     expect(card.targetHp).toBeUndefined();
+  });
+});
+
+describe('summarizeCombatRolls: every hit on another seat’s PC gets a coarse status', () => {
+  it('says the PC shrugs the hit off when it is still healthy, with no numbers', () => {
+    const card = one([
+      concealedAttack(15, 'ent_bran'),
+      concealedDamage(4, 'ent_bran'),
+      hpChanged('ent_thorin', 20, 16),
+    ]);
+    expect(card.hit).toBe(true);
+    expect(card.steady).toBe(true);
+    const text = rollCardText(card, nameOf);
+    expect(text).toBe('Bran hits Thorin. Thorin shrugs it off.');
+    expect(text).not.toMatch(/\d/);
+  });
+
+  it('says the PC is bloodied when the hit leaves it wounded', () => {
+    const cards = summarizeCombatRolls(
+      [
+        concealedAttack(15, 'ent_bran'),
+        concealedDamage(4, 'ent_bran'),
+        hpChanged('ent_thorin', 20, 12),
+      ],
+      { ...combatants, ent_thorin: { kind: 'pc', hpState: 'wounded' } },
+      viewer,
+    );
+    expect(cards[0]!.hit).toBe(true);
+    expect(cards[0]!.wound).toBe('bloodied');
+    expect(rollCardText(cards[0]!, nameOf)).toBe(
+      'Bran hits Thorin. Thorin is bloodied.',
+    );
+  });
+
+  it('says the PC is down when the hit takes it to 0, with no numbers', () => {
+    const card = one([
+      concealedAttack(15, 'ent_bran'),
+      concealedDamage(9, 'ent_bran'),
+      hpChanged('ent_thorin', 9, 0),
+    ]);
+    const text = rollCardText(card, nameOf);
+    expect(text).toBe('Bran hits Thorin. Thorin is down.');
+    expect(text).not.toMatch(/\d/);
+  });
+
+  it('uses an hpState on the HpChanged event for a monster when present, without to/from numbers', () => {
+    const down = one([
+      ownAttack(17),
+      ownDamage(9),
+      { type: 'HpChanged', entityId: 'ent_goblin', hpState: 'down' },
+    ]);
+    expect(down.down).toBe(true);
+    expect(down.standing).toBeUndefined();
+    expect(rollCardText(down, nameOf)).toBe(
+      'Aria hits Goblin with Javelin for 9. (attack roll 17) Goblin is down.',
+    );
+
+    const standing = one([
+      ownAttack(17),
+      ownDamage(2),
+      { type: 'HpChanged', entityId: 'ent_goblin', hpState: 'wounded' },
+    ]);
+    expect(standing.down).toBe(false);
+    expect(standing.standing).toBe(true);
   });
 });
 
