@@ -136,14 +136,16 @@ export function projectCombatForViewer<T extends RoomCombatState>(
       .map((entity) => {
         if (controlled.has(entity.id)) return entity;
         if (entity.kind === 'character') {
-          // ADR-035 makes current party HP public; max HP is not part of the
-          // public projection. Sheet stats belong to the controlling seat.
+          // ADR-034 §6 makes both current and max party HP public. Other sheet
+          // stats remain private to the controlling seat.
           const pub: Record<string, unknown> = { ...entity };
           for (const key of NON_PUBLIC_PC_FIELDS) delete pub[key];
-          delete pub.maxHp;
           if (entity.team !== 'party') {
             pub.hpState = hpStateFor(entity.hp, entity.maxHp);
             delete pub.hp;
+            delete pub.maxHp;
+          } else {
+            pub.hpState = hpStateFor(entity.hp, entity.maxHp);
           }
           return pub as typeof entity;
         }
@@ -155,7 +157,7 @@ export function projectCombatForViewer<T extends RoomCombatState>(
           delete pub.hp;
           delete pub.maxHp;
         } else {
-          delete pub.maxHp;
+          pub.hpState = hpStateFor(entity.hp, entity.maxHp);
         }
         return pub as typeof entity;
       }),

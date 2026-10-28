@@ -191,7 +191,14 @@ function clientGameState(
         typeof card.hp === 'object' &&
         !Array.isArray(card.hp) &&
         'current' in card.hp
-          ? { hp: { current: (card.hp as { current: unknown }).current } }
+          ? {
+              hp: {
+                current: (card.hp as { current: unknown }).current,
+                ...('max' in (card.hp as Record<string, unknown>)
+                  ? { max: (card.hp as Record<string, unknown>).max }
+                  : {}),
+              },
+            }
           : {}),
       };
     }
@@ -5931,13 +5938,39 @@ export class Room {
           seq: this.seq,
           type: 'CombatEvents',
           payload: {
-            events: visible.map((event) =>
-              toWireEvent(
-                event,
-                pcIds.has(String(event.entityId)) &&
-                  !controlled.has(String(event.entityId)),
-              ),
-            ),
+            events: visible.flatMap((event) => {
+              if (
+                event.type === 'HpChanged' &&
+                typeof event.entityId === 'string'
+              ) {
+                const entity = state.entities.find(
+                  (candidate) => candidate.id === event.entityId,
+                );
+                if (!entity && !controlled.has(event.entityId)) return [];
+                if (
+                  entity &&
+                  entity.team !== 'party' &&
+                  !controlled.has(entity.id)
+                ) {
+                  const hp =
+                    typeof event.to === 'number' ? event.to : entity.hp;
+                  const hpState =
+                    hp <= 0
+                      ? 'down'
+                      : hp / Math.max(1, entity.maxHp) > 0.5
+                        ? 'healthy'
+                        : 'wounded';
+                  return [{ type: 'HpChanged', entityId: entity.id, hpState }];
+                }
+              }
+              return [
+                toWireEvent(
+                  event,
+                  pcIds.has(String(event.entityId)) &&
+                    !controlled.has(String(event.entityId)),
+                ),
+              ];
+            }),
           },
         } as ServerMessage);
     }
