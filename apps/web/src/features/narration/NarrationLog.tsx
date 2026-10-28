@@ -43,6 +43,12 @@ type Props = {
 
 const NO_ENTITIES: ReadonlySet<string> = new Set();
 
+function rollText(payload: RollPayload) {
+  if (payload.label === 'attack' && typeof payload.hit === 'boolean')
+    return payload.hit ? 'Attack hit.' : 'Attack missed.';
+  return 'A roll was made.';
+}
+
 function rollEvent(payload: RollPayload) {
   if (!payload.breakdown) return null;
   return {
@@ -417,7 +423,7 @@ export function NarrationLog({
                       </div>
                     ) : (
                       <p key={`${entry.turn.turnId}-roll-${rollIndex}`}>
-                        Roll result: {JSON.stringify(roll)}
+                        Roll result: {rollText(roll)}
                       </p>
                     );
                   })}
@@ -468,7 +474,7 @@ export function NarrationLog({
                       </div>
                     ) : (
                       <p key={`${entry.turn.turnId}-roll-${rollIndex}`}>
-                        Roll result: {JSON.stringify(roll)}
+                        Roll result: {rollText(roll)}
                       </p>
                     );
                   })}

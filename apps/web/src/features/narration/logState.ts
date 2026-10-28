@@ -10,6 +10,9 @@ export type RollPayload = {
   };
   dc?: number;
   dcReason?: string;
+  label?: string;
+  hit?: boolean;
+  targetId?: string;
   [key: string]: unknown;
 };
 

@@ -139,7 +139,21 @@ describe('Room solo DM turn lifecycle', () => {
     });
     const runner: SoloTurnRunner = {
       async run(_request, emit) {
-        emit({ type: 'RollEvent', turnId: 't1', total: 16 });
+        emit({
+          type: 'RollEvent',
+          turnId: 't1',
+          entityId: 'monster',
+          kind: 'attack',
+          attackId: 'claw',
+          targetId: 'pc',
+          hit: true,
+          breakdown: {
+            expression: '1d20+4',
+            dice: [{ sides: 20, value: 16, kept: true }],
+            modifiers: [{ label: 'attack', value: 4 }],
+            total: 20,
+          },
+        });
         emit({
           type: 'NarrationChunk',
           turnId: 't1',
@@ -159,13 +173,13 @@ describe('Room solo DM turn lifecycle', () => {
     const { room, events, latestSnapshot } = setup(runner);
     const accountId = randomUUID();
     const idleAccountId = randomUUID();
-    const messages: { type: string }[] = [];
-    const idleMessages: { type: string }[] = [];
+    const messages: Record<string, unknown>[] = [];
+    const idleMessages: Record<string, unknown>[] = [];
     await joinSeated(room, accountId, {
-      send: (message) => messages.push(message as { type: string }),
+      send: (message) => messages.push(message as Record<string, unknown>),
     });
     await joinSeated(room, idleAccountId, {
-      send: (message) => idleMessages.push(message as { type: string }),
+      send: (message) => idleMessages.push(message as Record<string, unknown>),
     });
     const actionId = randomUUID();
     expect(
@@ -174,6 +188,17 @@ describe('Room solo DM turn lifecycle', () => {
     expect(
       await room.submitAction(accountId, actionId, 'I check the seal.'),
     ).toBe(false);
+    const streamedRoll = idleMessages.find(
+      (message) => message.type === 'RollEvent',
+    )!;
+    expect(streamedRoll.payload).toMatchObject({
+      actorId: 'monster',
+      targetId: 'pc',
+      hit: true,
+    });
+    expect(streamedRoll.payload).not.toHaveProperty('total');
+    expect(streamedRoll.payload).not.toHaveProperty('rolls');
+    expect(streamedRoll.payload).not.toHaveProperty('modifier');
     expect(
       messages.findIndex((message) => message.type === 'RollEvent'),
     ).toBeLessThan(
@@ -1087,7 +1112,7 @@ describe('Room commit safety', () => {
     const messages: { type: string }[] = [];
     const account = randomUUID();
     await joinSeated(room, account, {
-      send: (message) => messages.push(message as { type: string }),
+      send: (message) => messages.push(message as Record<string, unknown>),
     });
     expect(await room.submitAction(account, randomUUID(), 'I wait.')).toBe(
       true,

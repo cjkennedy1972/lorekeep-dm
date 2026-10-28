@@ -53,6 +53,37 @@ describe('toWireEvent', () => {
     };
     expect(EngineEventSchema.safeParse(toWireEvent(engine)).success).toBe(true);
   });
+  it('redacts attack breakdowns for non-owners while retaining target and outcome', () => {
+    const event = {
+      type: 'RollEvent',
+      entityId: 'monster',
+      kind: 'attack',
+      attackId: 'claw',
+      targetId: 'pc',
+      hit: true,
+      breakdown: {
+        expression: '1d20+5',
+        dice: [{ sides: 20, value: 17, kept: true }],
+        modifiers: [{ label: 'attack', value: 5 }],
+        total: 22,
+      },
+    };
+    const wire = toWireEvent(event, false, false);
+    expect(EngineEventSchema.safeParse(wire).success).toBe(true);
+    expect(wire).toMatchObject({
+      actorId: 'monster',
+      targetId: 'pc',
+      hit: true,
+    });
+    expect(wire).not.toHaveProperty('total');
+    expect(wire).not.toHaveProperty('rolls');
+    expect(wire).not.toHaveProperty('modifier');
+    expect(toWireEvent(event, false, true)).toMatchObject({
+      total: 22,
+      rolls: [17],
+      modifier: 5,
+    });
+  });
   it('accepts a concentration drop with its optional spell id', () => {
     const event = {
       type: 'ConcentrationDropped',

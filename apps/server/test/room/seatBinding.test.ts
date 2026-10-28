@@ -894,13 +894,31 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     ).announceCombat(
       state.combatRoom,
       [
-        roll({ kind: 'attack', attackId: 'rapier' }, '1d20+5', 5),
+        roll(
+          {
+            kind: 'attack',
+            attackId: 'rapier',
+            targetId: seatEntityId(f.seatB),
+            hit: true,
+          },
+          '1d20+5',
+          5,
+        ),
         roll(
           { kind: 'save', spellId: 'fireball', dc: 13, success: true },
           '1d20+3',
           3,
         ),
-        roll({ kind: 'damage', attackId: 'rapier' }, '1d8+3', 3),
+        roll(
+          {
+            kind: 'damage',
+            attackId: 'rapier',
+            targetId: seatEntityId(f.seatB),
+            publicDamage: 6,
+          },
+          '1d8+3',
+          3,
+        ),
       ],
       undefined,
     );
@@ -912,9 +930,21 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     const other = wire(f.accountB);
     for (const secret of ['+5', '+3', 'rapier', 'fireball', 'modifier'])
       expect(other).not.toContain(secret);
-    expect(other).toContain('"dice":"1d20"');
-    expect(other).toContain('"total":19');
-    expect(other).toContain('"rolls":[14]');
+    expect(other).toContain('"hit":true');
+    expect(other).toContain('"targetId":"' + seatEntityId(f.seatB) + '"');
+    const otherEvents = (
+      JSON.parse(other)[0]!.payload as { events: Record<string, unknown>[] }
+    ).events;
+    expect(otherEvents[0]).not.toHaveProperty('total');
+    expect(otherEvents[0]).not.toHaveProperty('rolls');
+    expect(otherEvents[0]).not.toHaveProperty('modifier');
+    expect(otherEvents[2]).toMatchObject({
+      damage: 6,
+      targetId: seatEntityId(f.seatB),
+    });
+    expect(otherEvents[2]).not.toHaveProperty('total');
+    expect(otherEvents[2]).not.toHaveProperty('rolls');
+    expect(otherEvents[2]).not.toHaveProperty('modifier');
   });
 
   it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {

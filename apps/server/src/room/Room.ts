@@ -5104,11 +5104,22 @@ export class Room {
             matureAudience =
               tier === 'family' || tier === 'standard' ? undefined : audience;
           } else if (type === 'RollEvent') {
-            this.broadcast({
-              seq: this.seq,
-              type: 'RollEvent',
-              payload: event,
-            } as ServerMessage);
+            for (const [viewer, connection] of this.connections) {
+              const controlled = this.controlledBy(viewer);
+              const actorId = String(event.entityId ?? '');
+              const revealAttack =
+                event.kind !== 'attack' || controlled.has(actorId);
+              connection.send({
+                seq: this.seq,
+                type: 'RollEvent',
+                payload: toWireEvent(
+                  event,
+                  !!actorId && !controlled.has(actorId),
+                  revealAttack,
+                  controlled.has(actorId),
+                ),
+              } as ServerMessage);
+            }
           } else if (type === 'NarrationCompleted') {
             // The committed completion below carries the persisted seq; this copy only covers turns that commit none.
             liveCompletion = event;
@@ -5927,6 +5938,20 @@ export class Room {
                 event,
                 pcIds.has(String(event.entityId)) &&
                   !controlled.has(String(event.entityId)),
+                event.type !== 'RollEvent' ||
+                  event.kind !== 'attack' ||
+                  controlled.has(String(event.entityId)),
+                event.type !== 'RollEvent' ||
+                  event.kind !== 'damage' ||
+                  controlled.has(String(event.entityId)) ||
+                  (state.entities.find((entity) => entity.id === event.entityId)
+                    ?.kind === 'monster' &&
+                    typeof event.targetId === 'string' &&
+                    controlled.has(String(event.targetId))),
+                event.type === 'RollEvent' &&
+                  event.kind === 'damage' &&
+                  typeof event.targetId === 'string' &&
+                  !hidden.has(String(event.targetId)),
               ),
             ),
           },

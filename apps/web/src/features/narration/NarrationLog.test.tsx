@@ -371,3 +371,26 @@ test('a monster attack on another seat’s PC is announced without its total or 
   expect(live.textContent).not.toMatch(/\d/);
   expect(live.textContent).not.toContain('attack roll');
 });
+
+
+test('renders a redacted attack outcome without fabricating a breakdown', () => {
+  render(
+    <NarrationLog
+      messages={[
+        {
+          seq: 20,
+          type: 'RollEvent',
+          payload: {
+            turnId: 'turn-roll',
+            type: 'RollEvent',
+            label: 'attack',
+            hit: true,
+            actorId: 'monster',
+          },
+        } as ServerMessage,
+      ]}
+    />,
+  );
+  expect(screen.getByText('Roll result: Attack hit.')).toBeInTheDocument();
+  expect(screen.queryByText(/total|rolls|modifier/i)).not.toBeInTheDocument();
+});
