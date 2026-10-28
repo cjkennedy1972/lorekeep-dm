@@ -219,6 +219,35 @@ describe('mature narration delivery', () => {
     ]);
   });
 
+  it('fails closed for an unrecognized narration tier', async () => {
+    const owner = randomUUID();
+    const joiner = randomUUID();
+    const reached = gate();
+    const release = gate();
+    const room = setup(
+      narratingRunner('unrecognized', [
+        { reached: reached.open, wait: release.promise },
+      ]),
+      new Set([owner]),
+    );
+    const ownerConn = recorder();
+    await joinSeated(room, owner, ownerConn, 'Owner');
+    await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+    await reached.promise;
+
+    const joinerConn = recorder();
+    await joinSeated(room, joiner, joinerConn, 'Joiner');
+    release.open();
+    await settle();
+
+    expect(narrationOf(ownerConn).map((m) => m.type)).toEqual([
+      'NarrationChunk',
+      'NarrationChunk',
+      'NarrationCompleted',
+    ]);
+    expect(narrationOf(joinerConn)).toEqual([]);
+  });
+
   it('never puts the last mature narration into a joiner catch-up snapshot', async () => {
     const owner = randomUUID();
     const joiner = randomUUID();

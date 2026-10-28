@@ -2319,6 +2319,7 @@ export class Room {
         type: 'NarrationCompleted',
         actionId: narrationId,
         narration,
+        words: narration.trim().split(/\s+/).length,
         // Fixed server-authored fallback text contains no model narration.
         tier: 'standard',
         fallback: 'endpoint-error',
@@ -4749,10 +4750,10 @@ export class Room {
               event.tier === 'mature'
                 ? event.tier
                 : undefined;
+            const tier = (event as { tier?: unknown }).tier;
+            // Only the two known non-mature tiers are public; unknown tiers fail closed.
             matureAudience =
-              (event as { tier?: unknown }).tier === 'mature'
-                ? audience
-                : undefined;
+              tier === 'family' || tier === 'standard' ? undefined : audience;
           } else if (type === 'RollEvent') {
             this.broadcast({
               seq: this.seq,
