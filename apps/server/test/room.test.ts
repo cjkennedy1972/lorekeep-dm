@@ -1476,6 +1476,7 @@ describe('room actor', () => {
       const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.on('unhandledRejection', onUnhandled);
       try {
+        const eventCountBeforeAttempt = events.length;
         const combat = (
           room.state.gameState as {
             combatRoom: import('../src/room/combatTypes.js').RoomCombatState;
@@ -1486,12 +1487,16 @@ describe('room actor', () => {
           [{ type: 'TurnStarted', round: 2 }],
           host,
         );
-        await vi.waitFor(() =>
-          expect(logged).toHaveBeenCalledWith(
-            `Late-join admission failed for ${id}`,
-            expect.any(Error),
-          ),
-        );
+        await vi.waitFor(() => expect(logged).toHaveBeenCalledTimes(2));
+        const rejection = logged.mock.calls[0]?.[1];
+        expect(rejection).toBeInstanceOf(Error);
+        expect(rejection).toMatchObject({
+          message: 'simulated admission storage failure',
+        });
+        expect(logged.mock.calls[1]).toEqual([
+          `Late-join admission failed for ${id}`,
+          rejection,
+        ]);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(unhandled).toEqual([]);
@@ -1509,8 +1514,23 @@ describe('room actor', () => {
           ),
         ).toBe(true);
         expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
-        expect(events.map((event) => event.type)).not.toContain(
-          'LateJoinAdmitted',
+        expect(
+          room.state.seats.filter((seat) => seat.accountId === requester),
+        ).toEqual([
+          expect.objectContaining({
+            seatId: pendingSeat.seatId,
+            presence: 'returning',
+          }),
+        ]);
+        expect(
+          events.slice(eventCountBeforeAttempt).map((event) => event.type),
+        ).not.toEqual(
+          expect.arrayContaining([
+            'SeatJoined',
+            'SeatCharacterBound',
+            'LateJoinSpawned',
+            'LateJoinAdmitted',
+          ]),
         );
         await expect(
           room.submitAction(requester, randomUUID(), 'Take a turn'),
