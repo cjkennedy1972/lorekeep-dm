@@ -365,15 +365,7 @@ const NARRATION_FACT_FIELDS: Record<string, readonly string[]> = {
   HpChanged: ['entityId', 'from', 'to', 'damage', 'damageType'],
   EntityMoved: ['entityId', 'path', 'cost'],
   EntityDown: ['entityId', 'outcome'],
-  RollEvent: [
-    'entityId',
-    'attackId',
-    'kind',
-    'targetId',
-    'targetAc',
-    'hit',
-    'total',
-  ],
+  RollEvent: ['entityId', 'attackId', 'kind', 'targetId', 'hit', 'total'],
   CombatEnded: ['outcome'],
   // reactionId is only safe while it stays a catalog handle; HANDLE below is the sole guard if that changes.
   ReactionResolved: ['entityId', 'used', 'reactionId'],
@@ -396,7 +388,10 @@ function narrationValue(value: unknown): unknown {
 export function isNarrationFactType(type: string): boolean {
   return Object.hasOwn(NARRATION_FACT_FIELDS, type);
 }
-export function narrationFact(event: Record<string, unknown>) {
+export function narrationFact(
+  event: Record<string, unknown>,
+  characterIds: ReadonlySet<string> = new Set(),
+) {
   const fields = Object.fromEntries(
     NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
       const value =
@@ -411,9 +406,66 @@ export function narrationFact(event: Record<string, unknown>) {
   );
   if (event.type === 'RollEvent' && event.kind === 'attack') {
     const { entityId, ...attack } = fields;
+    if (
+      typeof attack.targetId === 'string' &&
+      characterIds.has(attack.targetId)
+    ) {
+      delete attack.hit;
+      delete attack.total;
+    }
     return { type: 'AttackResolved', actorId: entityId, ...attack };
   }
   return { type: event.type, ...fields };
+}
+
+const CONSEQUENTIAL_NARRATION_TYPES = new Set([
+  'HpChanged',
+  'EntityDown',
+  'CombatEnded',
+]);
+
+/** Preserve every outcome; compact repeated movement and cap only incidental facts. */
+export function narrationFacts(
+  events: readonly Record<string, unknown>[],
+  characterIds: ReadonlySet<string> = new Set(),
+): Record<string, unknown>[] {
+  const eligible = events.filter(
+    (event) =>
+      isNarrationFactType(String(event.type)) &&
+      (event.type !== 'RollEvent' || event.kind === 'attack'),
+  );
+  const critical = eligible.filter(
+    (event) =>
+      CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)) ||
+      (event.type === 'RollEvent' && event.kind === 'attack'),
+  );
+  const incidental = eligible.filter((event) => !critical.includes(event));
+  const movementByEntity = new Map<string, Record<string, unknown>>();
+  const otherIncidental: Record<string, unknown>[] = [];
+  for (const event of incidental) {
+    if (event.type !== 'EntityMoved' || typeof event.entityId !== 'string') {
+      otherIncidental.push(event);
+      continue;
+    }
+    const prior = movementByEntity.get(event.entityId);
+    const priorPath = Array.isArray(prior?.path) ? prior.path : [];
+    const path = Array.isArray(event.path) ? event.path : [];
+    movementByEntity.set(event.entityId, {
+      ...event,
+      path: [...priorPath, ...path].slice(-2),
+      cost:
+        (typeof prior?.cost === 'number' ? prior.cost : 0) +
+        (typeof event.cost === 'number' ? event.cost : 0),
+    });
+  }
+  const compactedIncidental = [
+    ...movementByEntity.values(),
+    ...otherIncidental,
+  ];
+  const budget = Math.max(0, 12 - critical.length);
+  return [...critical, ...compactedIncidental.slice(0, budget)].map((event) =>
+    narrationFact(event, characterIds),
+  );
 }
 
 export class RoomPausedError extends Error {
@@ -5635,6 +5687,11 @@ export class Room {
         [...(state.turnNarrationEvents ?? []), resolvedEvent],
         accountId,
         combatTurnId,
+        new Set(
+          (state.entities ?? [])
+            .filter((entity) => entity.kind === 'character')
+            .map((entity) => entity.id),
+        ),
       );
   }
 
@@ -6018,6 +6075,11 @@ export class Room {
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
     combatTurnId?: string,
+    characterIds: ReadonlySet<string> = new Set(
+      (roomGameState(this.state)?.entities ?? [])
+        .filter((entity) => entity.kind === 'character')
+        .map((entity) => entity.id),
+    ),
   ): void {
     const owner =
       accountId ??
@@ -6032,15 +6094,10 @@ export class Room {
     }
     const combat = roomGameState(this.state);
     const hiddenEntityIds = hiddenIdsOf(combat ?? { entities: [] });
-    const facts = events
-      .filter(
-        (event) =>
-          !namesHiddenEntity(event, hiddenEntityIds) &&
-          isNarrationFactType(String(event.type)) &&
-          (event.type !== 'RollEvent' || event.kind === 'attack'),
-      )
-      .slice(0, 12)
-      .map(narrationFact);
+    const visibleEvents = events.filter(
+      (event) => !namesHiddenEntity(event, hiddenEntityIds),
+    );
+    const facts = narrationFacts(visibleEvents, characterIds);
     const actionId = randomUUID();
     this.pendingActions.add(actionId);
     this.queuedActions.push({

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isNarrationFactType, narrationFact } from '../../src/room/Room.js';
+import {
+  isNarrationFactType,
+  narrationFact,
+  narrationFacts,
+} from '../../src/room/Room.js';
 
 describe('combat narration fact projection (ADR-033 §6.8)', () => {
   it('keeps allowlisted handle/number fields and drops free text and unknown keys', () => {
@@ -45,7 +49,6 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       attackId: 'weapon:scimitar',
       kind: 'attack',
       targetId: 'ent_hero',
-      targetAc: 15,
       hit: true,
       total: 20,
     });
@@ -86,6 +89,66 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
     ).toEqual({
       type: 'CombatEnded',
       outcome: 'party-fled',
+    });
+  });
+
+  it('never exposes AC or AC-derivable attack numbers for character targets', () => {
+    const facts = narrationFacts(
+      [
+        {
+          type: 'RollEvent',
+          entityId: 'ent_goblin',
+          kind: 'attack',
+          attackId: 'weapon:scimitar',
+          targetId: 'ent_pc',
+          targetAc: 17,
+          hit: true,
+          breakdown: { total: 20 },
+        },
+      ],
+      new Set(['ent_pc']),
+    );
+    expect(JSON.stringify(facts)).not.toMatch(/targetAc|17|20|hit/);
+    expect(facts).toEqual([
+      {
+        type: 'AttackResolved',
+        actorId: 'ent_goblin',
+        attackId: 'weapon:scimitar',
+        kind: 'attack',
+        targetId: 'ent_pc',
+      },
+    ]);
+  });
+
+  it('preserves consequential outcomes beyond the cap and compacts movement', () => {
+    const events = [
+      ...Array.from({ length: 13 }, (_, index) => ({
+        type: 'EntityMoved',
+        entityId: 'ent_goblin',
+        path: [{ x: index, y: 0 }],
+        cost: 5,
+      })),
+      {
+        type: 'RollEvent',
+        entityId: 'ent_goblin',
+        kind: 'attack',
+        targetId: 'ent_hero',
+        attackId: 'claw',
+        hit: true,
+        breakdown: { total: 23 },
+      },
+      { type: 'HpChanged', entityId: 'ent_hero', from: 4, to: 0, damage: 4 },
+      { type: 'EntityDown', entityId: 'ent_hero', outcome: 'dead' },
+      { type: 'CombatEnded', outcome: 'party-defeated' },
+    ];
+    const facts = narrationFacts(events, new Set(['ent_hero']));
+    expect(facts.filter((fact) => fact.type === 'EntityMoved')).toHaveLength(1);
+    expect(facts.map((fact) => fact.type)).toContain('AttackResolved');
+    expect(facts.map((fact) => fact.type)).toContain('HpChanged');
+    expect(facts.map((fact) => fact.type)).toContain('EntityDown');
+    expect(facts).toContainEqual({
+      type: 'CombatEnded',
+      outcome: 'party-defeated',
     });
   });
 
