@@ -151,13 +151,9 @@ export function Game() {
   const [spotlightNotice, setSpotlightNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLoading, setResumeLoading] = useState(false);
-  const [openingStateSynced, setOpeningStateSynced] = useState(false);
-  const [openingHistorySynced, setOpeningHistorySynced] = useState(false);
   const [historyRestoreCount, setHistoryRestoreCount] = useState(0);
   const [openingSyncTimedOut, setOpeningSyncTimedOut] = useState(false);
   useEffect(() => {
-    setOpeningStateSynced(false);
-    setOpeningHistorySynced(false);
     setOpeningSyncTimedOut(false);
     const timeout = window.setTimeout(
       () => setOpeningSyncTimedOut(true),
@@ -165,8 +161,6 @@ export function Game() {
     );
     return () => window.clearTimeout(timeout);
   }, [id]);
-  const openingReady =
-    openingSyncTimedOut || (openingStateSynced && openingHistorySynced);
   const loadGame = () => {
     setResumeLoading(true);
     setResumeError('');
@@ -242,7 +236,6 @@ export function Game() {
         );
       }
       if (message.type === 'StateSync') {
-        setOpeningStateSynced(true);
         live.send('ChatHistoryRequest');
         const state = asRecord(message.payload.state);
         setSafetyNotice((current) =>
@@ -257,7 +250,6 @@ export function Game() {
         );
       }
       if (message.type === 'NarrationHistory') {
-        setOpeningHistorySynced(true);
         setHistoryRestoreCount((current) => current + 1);
       }
       if (message.type === 'CombatTracker') {
@@ -434,6 +426,25 @@ export function Game() {
   });
   const [messages, setMessages] = useState<ServerMessage[]>([]);
   const messagesRef = useRef<ServerMessage[]>([]);
+  const historyMessages = messages.filter(
+    (message) => message.type === 'NarrationHistory',
+  );
+  const hasNarrationTurn = messages.some((message) => {
+    if (message.type === 'NarrationHistory')
+      return message.payload.turns.length > 0;
+    return (
+      message.type === 'NarrationChunk' ||
+      message.type === 'NarrationCompleted' ||
+      message.type === 'ActionQueued' ||
+      message.type === 'TurnThinking' ||
+      message.type === 'CombatEvents'
+    );
+  });
+  const openingReady = hasNarrationTurn
+    ? false
+    : (messages.some((message) => message.type === 'StateSync') &&
+        historyMessages.length > 0) ||
+      openingSyncTimedOut;
   const [chatMessages, setChatMessages] = useState<ChatHistoryEntry[]>([]);
   const [chatError, setChatError] = useState('');
   const [tracker, setTracker] = useState<Tracker | null>(null);

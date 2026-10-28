@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Profiler } from 'react';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
@@ -120,7 +121,7 @@ const push = (type: string, payload: Record<string, unknown>) =>
     hoisted.onMessage!({ seq: ++seq, type, payload } as ServerMessage);
   });
 
-function mount() {
+function mount(onRender?: () => void) {
   hoisted.room = {
     gameState: {
       characters: { 'acct-1': hero },
@@ -130,7 +131,14 @@ function mount() {
   return render(
     <MemoryRouter initialEntries={['/']}>
       <Routes>
-        <Route path="/" element={<Game />} />
+        <Route
+          path="/"
+          element={
+            <Profiler id="game-opening" onRender={onRender ?? (() => {})}>
+              <Game />
+            </Profiler>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -171,6 +179,68 @@ describe('Game screen (live Room)', () => {
       textarea.compareDocumentPosition(endTurn) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('never commits the opening placeholder while non-empty history is being restored', () => {
+    const openingVisibilityByCommit: boolean[] = [];
+    mount(() => {
+      openingVisibilityByCommit.push(
+        Boolean(document.querySelector('.narration-log__opening')),
+      );
+    });
+
+    push('StateSync', { state: { openClarifications: {} } });
+    push('NarrationHistory', {
+      turns: [
+        {
+          turnId: 'restored-opening',
+          text: 'The restored story is ready.',
+          tier: 'standard',
+        },
+      ],
+    });
+
+    expect(openingVisibilityByCommit.length).toBeGreaterThan(1);
+    expect(openingVisibilityByCommit).not.toContain(true);
+    expect(
+      screen.getByText('The restored story is ready.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the opening after the real synchronization fallback, then hides it when history arrives', () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      push('StateSync', { state: { openClarifications: {} } });
+      expect(
+        screen.queryByRole('heading', { name: 'The adventure begins' }),
+      ).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1_500);
+      });
+      expect(
+        screen.getByRole('heading', { name: 'The adventure begins' }),
+      ).toBeInTheDocument();
+
+      push('NarrationHistory', {
+        turns: [
+          {
+            turnId: 'late-opening',
+            text: 'The late restored story is ready.',
+            tier: 'standard',
+          },
+        ],
+      });
+      expect(
+        screen.queryByRole('heading', { name: 'The adventure begins' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText('The late restored story is ready.'),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('holds the opening placeholder between StateSync and restored narration history', () => {
