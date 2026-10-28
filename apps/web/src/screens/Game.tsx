@@ -657,17 +657,11 @@ export function Game() {
     string,
     { id?: string; name?: string; hp?: { max?: number } } | undefined
   >;
-  // The sheet is the only place a PC's real max HP lives. The tracker sends current HP and a status word, never a max.
+  // Only the viewer's own sheet carries a max HP the viewer may see. Other seats' PCs and monsters get no max here,
+  // so their tokens show current HP (when the wire sends it) or the status word.
   const maxHpOf = (entityId: string): number | undefined => {
-    const sheet = Object.values(characters).find(
-      (item) => item?.id === entityId,
-    );
-    const max =
-      sheet?.hp?.max ??
-      (gameStore.getState().character?.id === entityId
-        ? gameStore.getState().character?.hp.max
-        : undefined);
-    return typeof max === 'number' ? max : undefined;
+    const own = gameStore.getState().character;
+    return own?.id === entityId ? own.hp.max : undefined;
   };
   const nameOf = useMemo(
     () =>

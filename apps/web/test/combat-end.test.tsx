@@ -7,15 +7,16 @@ import { combatOutcomeCopy } from '../src/features/combat/combatOutcome.js';
 
 describe('combat outcome copy', () => {
   it.each([
-    ['party-victory', 'Victory'],
-    ['enemies-fled', 'Retreat'],
-    ['party-defeated', 'Defeat'],
-  ])('%s reads as %s', (outcome, title) => {
-    expect(combatOutcomeCopy(outcome).title).toBe(title);
+    ['party-victory', 'Victory', 'The last enemy is down.'],
+    ['enemies-fled', 'Retreat', 'The enemies fled the field.'],
+    ['party-defeated', 'Defeat', 'The party has fallen.'],
+    ['dm-ended', 'Encounter ended', 'The storyteller ended the encounter.'],
+  ])('%s reads as %s', (outcome, title, body) => {
+    expect(combatOutcomeCopy(outcome)).toEqual({ title, body });
   });
 
   it('falls back to a neutral title for an outcome it does not know', () => {
-    expect(combatOutcomeCopy('dm-ended').title).toBe('Combat over');
+    expect(combatOutcomeCopy('something-new').title).toBe('Combat over');
     expect(combatOutcomeCopy(undefined).title).toBe('Combat over');
   });
 });
