@@ -794,3 +794,155 @@ describe('Game screen narrow viewport', () => {
     }
   });
 });
+
+describe('Combat bar stays current (options, move shortcut, clarification placement)', () => {
+  const trackerAt = (heroPos: { x: number; y: number }, movement: number) => ({
+    round: 1,
+    activeEntityId: HERO_ID,
+    initiative: [HERO_ID, 'ent_goblin'].map((entityId, i) => ({
+      entityId,
+      total: 20 - i,
+    })),
+    resources: {
+      ...resources,
+      [HERO_ID]: { ...resources[HERO_ID], movementRemaining: movement },
+    },
+    entities: entities.map((entity) =>
+      entity.id === HERO_ID ? { ...entity, pos: heroPos } : entity,
+    ),
+  });
+
+  beforeEach(() => {
+    hoisted.privateRoundSubmission = undefined;
+    http.fetch = async () =>
+      new Response(
+        JSON.stringify({ game: { recap: 'A short recap.', name: 'Fixture' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    HTMLCanvasElement.prototype.getContext = (() =>
+      new Proxy({}, { get: () => () => undefined })) as never;
+    hoisted.send.mockClear();
+    seq = 0;
+    gameStore.setCharacter(null);
+    gameStore.setCombatState(initialGameState().combat);
+  });
+
+  it('requests combat options when this seat turn starts, with no manual refresh', () => {
+    mount();
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    expect(hoisted.send).toHaveBeenCalledWith('CombatCommand', {
+      command: 'options',
+    });
+  });
+
+  it('refetches options after the seat moves, so Attack appears once the target is in reach', () => {
+    mount();
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'move',
+          optionId: 'm1',
+          destination: { x: 2, y: 2 },
+          cost: 5,
+        },
+      ],
+    });
+    expect(
+      screen.queryByRole('button', { name: 'Attack Goblin' }),
+    ).not.toBeInTheDocument();
+
+    hoisted.send.mockClear();
+    push('CombatTracker', trackerAt({ x: 4, y: 2 }, 25));
+    expect(hoisted.send).toHaveBeenCalledWith('CombatCommand', {
+      command: 'options',
+    });
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    expect(
+      screen.getByRole('button', { name: 'Attack Goblin' }),
+    ).toBeInTheDocument();
+  });
+
+  it('drops the options list when the turn passes to someone else', () => {
+    mount();
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    push('CombatTracker', {
+      ...trackerAt({ x: 1, y: 2 }, 0),
+      activeEntityId: 'ent_goblin',
+    });
+    expect(
+      screen.queryByRole('button', { name: 'Attack Goblin' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers Move toward a target that moves the seat to the reachable cell nearest it', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        { kind: 'move', optionId: 'm1', destination: { x: 2, y: 2 }, cost: 5 },
+        { kind: 'move', optionId: 'm2', destination: { x: 3, y: 2 }, cost: 10 },
+        { kind: 'move', optionId: 'm3', destination: { x: 4, y: 2 }, cost: 15 },
+        { kind: 'move', optionId: 'm4', destination: { x: 1, y: 3 }, cost: 5 },
+      ],
+    });
+    await user.click(
+      screen.getByRole('button', { name: 'Move toward Goblin' }),
+    );
+    expect(hoisted.send).toHaveBeenLastCalledWith('CombatCommand', {
+      command: 'move',
+      destination: { x: 4, y: 2 },
+    });
+  });
+
+  it('a clarifying question sits inline in the story, outside the sticky composer and the combat bar', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    hoisted.send.mockReturnValueOnce('mine-1');
+    await user.type(
+      screen.getByLabelText('Your action'),
+      'I ask the innkeeper.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ClarificationRequested', {
+      actionId: 'mine-1',
+      question: 'Which door?',
+    });
+    const form = screen.getByRole('form', {
+      name: 'Reply to clarifying question',
+    });
+    expect(form.closest('.game-area--dock')).toBeNull();
+    expect(form.closest('.game-area--story')).not.toBeNull();
+    expect(form.closest('details')).not.toBeNull();
+    // Keyboard order: the reply comes before the composer, and the combat bar follows it.
+    const composer = screen.getByLabelText('Your action');
+    expect(
+      form.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const endTurn = screen.getByRole('button', { name: 'End turn' });
+    expect(
+      form.compareDocumentPosition(endTurn) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});

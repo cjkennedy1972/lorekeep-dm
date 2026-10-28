@@ -4,6 +4,7 @@ import { useAuth } from '../auth.js';
 import { useRef } from 'react';
 import type { Battlemap, ServerMessage } from '@game/schema';
 import type { ChatHistoryEntry } from '@game/schema';
+import { distance, type Placed } from '@game/rules-engine';
 import {
   BattlemapSchema,
   CharacterSchema,
@@ -25,6 +26,7 @@ import {
   turnFailureNotice,
 } from '../features/narration/logState.js';
 import { ActionInput } from '../features/input/ActionInput.js';
+import { ClarificationReply } from '../features/input/ClarificationReply.js';
 import { pendingInputFor } from '../features/input/pendingInput.js';
 import { RoundPanel } from '../features/round/RoundPanel.js';
 import { HostControls } from '../features/round/HostControls.js';
@@ -709,6 +711,98 @@ export function Game() {
   // Host status comes from the shared seat flag, so only the real host sees enabled host controls.
   const selfSeat = room?.seats?.find((seat) => seat.accountId === account?.id);
   const isHost = selfSeat?.isHost === true;
+  const activeEntity = entities.find((item) => item.id === active);
+  const selfCharacterId = account ? characters[account.id]?.id : undefined;
+  const yourTurn = Boolean(
+    active &&
+      (active === selfCharacterId ||
+        (selfSeat && active === `ent_seat_${selfSeat.seatId}`)),
+  );
+  const actions = Array.isArray(asRecord(options).actions)
+    ? (asRecord(options).actions as unknown[])
+    : [];
+  const areas = (
+    Array.isArray(asRecord(options).areas)
+      ? (asRecord(options).areas as unknown[])
+      : []
+  ).filter(
+    (value): value is AreaOption =>
+      typeof asRecord(value).optionId === 'string',
+  );
+  const answerClarification = (actionId: string, reply: string) => {
+    setClarification(null);
+    setError('');
+    updatePendingAction(() => ({
+      id: actionId,
+      text: reply,
+      acknowledged: true,
+      submittedAt: Date.now(),
+    }));
+    live.send('ClarificationAnswer', { actionId, answer: reply });
+  };
+  const selfEntityId =
+    selfCharacterId ?? (selfSeat ? `ent_seat_${selfSeat.seatId}` : undefined);
+  const selfEntity = entities.find((item) => item.id === selfEntityId);
+  const selfResources =
+    tracker && selfEntityId ? tracker.resources[selfEntityId] : undefined;
+  const moveOptions = actions
+    .map(asRecord)
+    .filter((item) => item.kind === 'move');
+  // The server answers `options` only when asked, and only on this seat's turn. Ask when the turn starts and
+  // whenever a move, attack, or spent resource changes the board, so Attack and Move match the current state.
+  const optionsKey = yourTurn
+    ? JSON.stringify([
+        tracker?.round,
+        selfEntity?.pos,
+        selfResources,
+        entities.map((item) => [item.id, item.pos.x, item.pos.y, item.hp]),
+      ])
+    : null;
+  useEffect(() => {
+    if (optionsKey !== null) send({ command: 'options' });
+  }, [optionsKey]);
+  // Options from an earlier turn are not valid once the turn passes to someone else.
+  useEffect(() => {
+    if (!yourTurn) setOptions(null);
+  }, [yourTurn]);
+  // The reachable cell that leaves the seat nearest the target; ties go to the cheaper move.
+  const nearestStepTo = (foe: Entity) => {
+    if (!selfEntity || !map) return null;
+    const rule = map.diagonalRule;
+    const here = distance(selfEntity as Placed, foe as Placed, rule);
+    let best: {
+      destination: { x: number; y: number };
+      cost: number;
+      feet: number;
+    } | null = null;
+    for (const option of moveOptions) {
+      const destination = {
+        x: Number(asRecord(option.destination).x),
+        y: Number(asRecord(option.destination).y),
+      };
+      const feet = distance(
+        { pos: destination, size: selfEntity.size } as Placed,
+        foe as Placed,
+        rule,
+      );
+      const cost = Number(option.cost);
+      if (
+        feet < here &&
+        (!best || feet < best.feet || (feet === best.feet && cost < best.cost))
+      )
+        best = { destination, cost, feet };
+    }
+    return best;
+  };
+  const foes = selfEntity
+    ? entities.filter(
+        (item) =>
+          item.id !== selfEntity.id &&
+          item.team !== selfEntity.team &&
+          !item.fled &&
+          (typeof item.hp !== 'number' || item.hp > 0),
+      )
+    : [];
   if (live.removed === 'kicked')
     return (
       <section className="game-notice">
@@ -774,24 +868,6 @@ export function Game() {
         <div className="skeleton" aria-hidden="true" />
       </section>
     );
-  const activeEntity = entities.find((item) => item.id === active);
-  const selfCharacterId = account ? characters[account.id]?.id : undefined;
-  const yourTurn = Boolean(
-    active &&
-      (active === selfCharacterId ||
-        (selfSeat && active === `ent_seat_${selfSeat.seatId}`)),
-  );
-  const actions = Array.isArray(asRecord(options).actions)
-    ? (asRecord(options).actions as unknown[])
-    : [];
-  const areas = (
-    Array.isArray(asRecord(options).areas)
-      ? (asRecord(options).areas as unknown[])
-      : []
-  ).filter(
-    (value): value is AreaOption =>
-      typeof asRecord(value).optionId === 'string',
-  );
   return (
     <div className="game-screen">
       <div className="game-skip-links">
@@ -956,6 +1032,14 @@ export function Game() {
                   : 'Choose a quick action below, or describe what your character does, and the DM will take it from there.'),
             }}
           />
+          {clarification && (
+            <ClarificationReply
+              key={clarification.actionId}
+              actionId={clarification.actionId}
+              question={clarification.question}
+              onReply={answerClarification}
+            />
+          )}
         </div>
         <div className="game-area game-area--dock">
           <ActionInput
@@ -977,18 +1061,6 @@ export function Game() {
               failedActionText.current = '';
               setActionDraft('');
               submitAction(text);
-            }}
-            clarification={clarification}
-            onReply={(actionId, reply) => {
-              setClarification(null);
-              setError('');
-              updatePendingAction(() => ({
-                id: actionId,
-                text: reply,
-                acknowledged: true,
-                submittedAt: Date.now(),
-              }));
-              live.send('ClarificationAnswer', { actionId, answer: reply });
             }}
           />
         </div>
@@ -1112,61 +1184,78 @@ export function Game() {
               >
                 Refresh combat options
               </button>
-              {actions.map((value, index) => {
-                const item = asRecord(value);
-                if (item.kind === 'attack')
-                  return (
-                    <button
-                      key={String(item.optionId ?? index)}
-                      type="button"
-                      onClick={() =>
-                        send({
-                          command: 'attack',
-                          targetId: String(item.targetId),
-                          attackId: String(item.attackId),
-                        })
-                      }
-                    >
-                      Attack {nameOf(String(item.targetId))}
-                    </button>
-                  );
-                if (item.kind === 'spell')
-                  return (
-                    <button
-                      key={String(item.optionId ?? index)}
-                      type="button"
-                      onClick={() =>
-                        send({
-                          command: 'cast',
-                          spellId: String(item.spellId),
-                          slotLevel: 1,
-                          target: {
-                            kind: 'entity',
-                            ref: String(item.targetId),
-                          },
-                        })
-                      }
-                    >
-                      Cast {String(item.spellId)} on{' '}
-                      {nameOf(String(item.targetId))}
-                    </button>
-                  );
-                if (item.kind === 'move')
-                  return (
-                    <button
-                      key={String(item.optionId ?? index)}
-                      type="button"
-                      onClick={() =>
-                        send({ command: 'move', destination: item.destination })
-                      }
-                    >
-                      Move to {Number(asRecord(item.destination).x) + 1},{' '}
-                      {Number(asRecord(item.destination).y) + 1} (
-                      {String(item.cost)} feet)
-                    </button>
-                  );
-                return null;
+              {foes.map((foe) => {
+                const step = nearestStepTo(foe);
+                if (!step) return null;
+                return (
+                  <button
+                    key={`toward-${foe.id}`}
+                    type="button"
+                    title={`Move to ${step.destination.x + 1}, ${step.destination.y + 1} (${step.cost} feet)`}
+                    onClick={() =>
+                      send({ command: 'move', destination: step.destination })
+                    }
+                  >
+                    Move toward {nameOf(foe.id)}
+                  </button>
+                );
               })}
+              {actions
+                .filter((value) => asRecord(value).kind !== 'move')
+                .map((value, index) => {
+                  const item = asRecord(value);
+                  if (item.kind === 'attack')
+                    return (
+                      <button
+                        key={String(item.optionId ?? index)}
+                        type="button"
+                        onClick={() =>
+                          send({
+                            command: 'attack',
+                            targetId: String(item.targetId),
+                            attackId: String(item.attackId),
+                          })
+                        }
+                      >
+                        Attack {nameOf(String(item.targetId))}
+                      </button>
+                    );
+                  if (item.kind === 'spell')
+                    return (
+                      <button
+                        key={String(item.optionId ?? index)}
+                        type="button"
+                        onClick={() =>
+                          send({
+                            command: 'cast',
+                            spellId: String(item.spellId),
+                            slotLevel: 1,
+                            target: {
+                              kind: 'entity',
+                              ref: String(item.targetId),
+                            },
+                          })
+                        }
+                      >
+                        Cast {String(item.spellId)} on{' '}
+                        {nameOf(String(item.targetId))}
+                      </button>
+                    );
+                  return null;
+                })}
+              {moveOptions.map((item, index) => (
+                <button
+                  key={String(item.optionId ?? index)}
+                  type="button"
+                  onClick={() =>
+                    send({ command: 'move', destination: item.destination })
+                  }
+                >
+                  Move to {Number(asRecord(item.destination).x) + 1},{' '}
+                  {Number(asRecord(item.destination).y) + 1} (
+                  {String(item.cost)} feet)
+                </button>
+              ))}
               {areas.length > 0 && (
                 <AreaAim
                   areas={areas}

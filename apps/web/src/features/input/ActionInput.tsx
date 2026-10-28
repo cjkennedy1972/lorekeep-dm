@@ -18,8 +18,6 @@ type Props = {
   onEditPending?: () => void;
   initialText?: string;
   onDraftChange?: (text: string) => void;
-  clarification?: { actionId: string; question: string } | null;
-  onReply?: (actionId: string, reply: string) => void;
   /** This player's last action failed; the text is back in the box. */
   failure?: { message: string; canRetry: boolean } | null;
   onRetry?: () => void;
@@ -34,13 +32,10 @@ export function ActionInput({
   onEditPending,
   initialText = '',
   onDraftChange,
-  clarification = null,
-  onReply,
   failure = null,
   onRetry,
 }: Props) {
   const [text, setText] = useState(initialText);
-  const [reply, setReply] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   // The parent sets the text when a failed action is restored or an edit starts.
   useEffect(() => {
@@ -90,31 +85,6 @@ export function ActionInput({
             </button>
           )}
         </div>
-      )}
-      {clarification && (
-        <form
-          aria-label="Reply to clarifying question"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const answer = reply.trim();
-            if (!answer || !onReply) return;
-            onReply(clarification.actionId, answer);
-            setReply('');
-          }}
-        >
-          <p>{clarification.question}</p>
-          <label htmlFor="clarification-reply">Your reply</label>
-          <textarea
-            id="clarification-reply"
-            value={reply}
-            onChange={(event) => setReply(event.target.value)}
-            maxLength={4000}
-            required
-          />
-          <button type="submit" disabled={!reply.trim() || !onReply}>
-            Reply to this action
-          </button>
-        </form>
       )}
       <form
         onSubmit={(event) => {
