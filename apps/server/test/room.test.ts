@@ -1522,16 +1522,19 @@ describe('room actor', () => {
             presence: 'returning',
           }),
         ]);
-        expect(
-          events.slice(eventCountBeforeAttempt).map((event) => event.type),
-        ).not.toEqual(
-          expect.arrayContaining([
-            'SeatJoined',
-            'SeatCharacterBound',
-            'LateJoinSpawned',
-            'LateJoinAdmitted',
-          ]),
-        );
+        const forbiddenAdmissionEvents = [
+          'SeatJoined',
+          'SeatCharacterBound',
+          'LateJoinSpawned',
+          'LateJoinAdmitted',
+        ];
+        for (const type of forbiddenAdmissionEvents) {
+          expect(
+            events
+              .slice(eventCountBeforeAttempt)
+              .some((event) => event.type === type),
+          ).toBe(false);
+        }
         await expect(
           room.submitAction(requester, randomUUID(), 'Take a turn'),
         ).rejects.toThrow();
