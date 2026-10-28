@@ -1059,6 +1059,42 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     });
   });
 
+  it('names the weapon only when one target has several attacks, and lists each attack once', async () => {
+    mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'equipment:javelin',
+        },
+        {
+          kind: 'attack',
+          optionId: 'a2',
+          targetId: 'ent_goblin',
+          attackId: 'equipment:shortbow',
+        },
+        {
+          kind: 'attack',
+          optionId: 'a3',
+          targetId: 'ent_goblin',
+          attackId: 'equipment:javelin',
+        },
+      ],
+    });
+    expect(
+      screen.getByRole('button', { name: 'Attack Goblin with Javelin' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Attack Goblin with Shortbow' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('button', { name: /^Attack Goblin/ }),
+    ).toHaveLength(2);
+  });
+
   it('refetches options after the seat moves, so Attack appears once the target is in reach', () => {
     mount();
     push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));

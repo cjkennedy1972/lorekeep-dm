@@ -1,6 +1,7 @@
 import { distance, type Placed } from '@game/rules-engine';
 import { useEffect, useMemo, useState } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
+import './token-table.css';
 
 type Props = {
   store?: typeof gameStore;
@@ -16,6 +17,12 @@ type Row = {
   feet: number;
   state: string;
 };
+
+/** Maps the server's qualitative HP words to the same wording the token labels use. */
+function stateWord(hpState: string | undefined): string {
+  if (hpState === 'wounded') return 'bloodied';
+  return hpState ?? 'unknown';
+}
 
 /** Screen-reader and keyboard-friendly inventory of every map token and feature. */
 export function TokenTable({
@@ -49,7 +56,7 @@ export function TokenTable({
       state:
         typeof entity.hp === 'number'
           ? `HP ${entity.hp}`
-          : String((entity as { hpState?: string }).hpState ?? 'unknown'),
+          : stateWord((entity as { hpState?: string }).hpState),
     }));
     const features: Row[] = state.battlemap.features.map((feature) => {
       const cell = feature.cells[0]!;
@@ -80,8 +87,9 @@ export function TokenTable({
           a.id.localeCompare(b.id)),
     );
   }, [state, viewer, ascending, nameOf]);
+  // Explicit roles keep the table semantics after the card layout switches the elements to block display.
   return (
-    <section aria-label="Tokens and terrain">
+    <section aria-label="Tokens and terrain" className="token-table">
       <h2>Tokens and terrain</h2>
       <button
         type="button"
@@ -90,10 +98,10 @@ export function TokenTable({
       >
         Distance {ascending ? 'nearest first' : 'farthest first'}
       </button>
-      <table>
+      <table className="token-table__table" role="table">
         <caption>Every token and terrain feature on the battlefield</caption>
         <thead>
-          <tr>
+          <tr role="row">
             <th scope="col">Name</th>
             <th scope="col">Type</th>
             <th scope="col">Coordinates</th>
@@ -103,17 +111,17 @@ export function TokenTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
+            <tr key={row.id} role="row">
               <th scope="row" data-entity-id={row.id}>
                 {row.name}
               </th>
-              <td>{row.kind}</td>
-              <td>
+              <td data-label="Type">{row.kind}</td>
+              <td data-label="Coordinates">
                 {String.fromCharCode(65 + row.x)}
                 {row.y + 1}
               </td>
-              <td>{row.feet} ft</td>
-              <td>{row.state}</td>
+              <td data-label="Distance">{row.feet} ft</td>
+              <td data-label="State">{row.state}</td>
             </tr>
           ))}
         </tbody>
