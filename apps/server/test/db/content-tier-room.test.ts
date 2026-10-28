@@ -254,7 +254,7 @@ describe('mature narration through Room and Persistence', () => {
     const wire = JSON.stringify(reconnect.sent);
     expect(wire).toContain('StateSync');
     expect(wire).toContain('The torch gutters');
-    expect(wire).toContain('\"tier\":\"standard\"');
+    expect(wire).toContain('"tier":"standard"');
     expect(wire).not.toContain('inspect-the-sconce');
   });
 
