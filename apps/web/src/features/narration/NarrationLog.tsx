@@ -1,4 +1,11 @@
-import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { ServerMessage } from '@game/schema';
 import { RollBreakdown } from '../../RollBreakdown.js';
 import {
@@ -7,6 +14,7 @@ import {
   visibleChunks,
   type RollPayload,
 } from './logState.js';
+import { NarrationText } from './narrationText.js';
 import './narration-log.css';
 
 type Props = {
@@ -50,7 +58,11 @@ export function NarrationLog({
       narrationLogReducer(current, message),
     initialNarrationLog,
   );
-  const [latest, setLatest] = useState(false);
+  // Reader is scrolled away from the newest entry; drives the Jump to latest / New narration chip.
+  const [scrolledUp, setScrolledUp] = useState(false);
+  // New live narration arrived while the reader was scrolled up.
+  const [unseen, setUnseen] = useState(false);
+  const followingLatest = useRef(true);
   const [announcement, setAnnouncement] = useState('');
   const [reporting, setReporting] = useState<number | null>(null);
   const [reportMessage, setReportMessage] = useState('');
@@ -213,11 +225,15 @@ export function NarrationLog({
     if (historyRestoreKey === 0) return;
     const node = listRef.current;
     if (!node) return;
+    followingLatest.current = true;
+    setScrolledUp(false);
+    setUnseen(false);
     node.scrollTop = node.scrollHeight;
-    setLatest(false);
   }, [historyRestoreKey]);
 
-  useEffect(() => {
+  // Restored history lands at the bottom with no chip. Live narration follows the bottom while the
+  // reader is there; if the reader has scrolled up, it raises the chip instead of moving the text.
+  useLayoutEffect(() => {
     const node = listRef.current;
     if (!node) return;
     const priorKeys = new Set(
@@ -239,16 +255,37 @@ export function NarrationLog({
     const historyOnly =
       added.length > 0 &&
       added.every((entry) => entry.kind === 'turn' && entry.turn.history);
-    const atBottom =
-      node.scrollHeight - node.scrollTop - node.clientHeight < 40;
     if (historyOnly) {
-      setLatest(false);
+      followingLatest.current = true;
+      setScrolledUp(false);
+      setUnseen(false);
       node.scrollTop = node.scrollHeight;
       return;
     }
-    setLatest(!atBottom);
-    if (atBottom) node.scrollTop = node.scrollHeight;
+    if (followingLatest.current) {
+      node.scrollTop = node.scrollHeight;
+    } else if (added.some((entry) => entry.kind === 'turn')) {
+      setUnseen(true);
+    }
   }, [state.entries]);
+
+  const onListScroll = () => {
+    const node = listRef.current;
+    if (!node) return;
+    const atBottom =
+      node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+    followingLatest.current = atBottom;
+    setScrolledUp(!atBottom);
+    if (atBottom) setUnseen(false);
+  };
+
+  const jumpToLatest = () => {
+    const node = listRef.current;
+    followingLatest.current = true;
+    setUnseen(false);
+    setScrolledUp(false);
+    if (node) node.scrollTop = node.scrollHeight;
+  };
 
   return (
     <section className="narration-log" aria-label="Narration log">
@@ -258,6 +295,7 @@ export function NarrationLog({
       <ol
         className="narration-log__entries"
         ref={listRef}
+        onScroll={onListScroll}
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
         tabIndex={0}
         aria-label="Story entries; use arrow keys or page keys to scroll"
@@ -370,12 +408,15 @@ export function NarrationLog({
                   You: {entry.turn.playerText}
                 </p>
               )}
-              <p>
-                {body ||
-                  (entry.turn.complete
+              {body ? (
+                <NarrationText text={body} />
+              ) : (
+                <p>
+                  {entry.turn.complete
                     ? 'Narration unavailable.'
-                    : 'Waiting for narration…')}
-              </p>
+                    : 'Waiting for narration…'}
+                </p>
+              )}
               {entry.turn.complete &&
                 (() => {
                   const completed = messages.find(
@@ -462,18 +503,13 @@ export function NarrationLog({
           The DM is thinking.
         </p>
       )}
-      {latest && (
+      {scrolledUp && (
         <button
           type="button"
           className="narration-log__latest"
-          onClick={() => {
-            const node = listRef.current;
-            if (node)
-              node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
-            setLatest(false);
-          }}
+          onClick={jumpToLatest}
         >
-          Jump to latest
+          {unseen ? 'New narration' : 'Jump to latest'}
         </button>
       )}
       <div
