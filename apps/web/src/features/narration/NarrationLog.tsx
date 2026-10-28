@@ -209,16 +209,23 @@ export function NarrationLog({
     if (!node) return;
     const priorKeys = new Set(
       previousEntries.current.map((entry) =>
-        entry.kind === 'pending' ? `pending:${entry.actionId}` : `turn:${entry.turn.turnId}`,
+        entry.kind === 'pending'
+          ? `pending:${entry.actionId}`
+          : `turn:${entry.turn.turnId}`,
       ),
     );
-    const added = state.entries.filter((entry) =>
-      !priorKeys.has(entry.kind === 'pending' ? `pending:${entry.actionId}` : `turn:${entry.turn.turnId}`),
+    const added = state.entries.filter(
+      (entry) =>
+        !priorKeys.has(
+          entry.kind === 'pending'
+            ? `pending:${entry.actionId}`
+            : `turn:${entry.turn.turnId}`,
+        ),
     );
     previousEntries.current = state.entries;
-    const historyOnly = added.length > 0 && added.every(
-      (entry) => entry.kind === 'turn' && entry.turn.history,
-    );
+    const historyOnly =
+      added.length > 0 &&
+      added.every((entry) => entry.kind === 'turn' && entry.turn.history);
     const atBottom =
       node.scrollHeight - node.scrollTop - node.clientHeight < 40;
     if (historyOnly) {

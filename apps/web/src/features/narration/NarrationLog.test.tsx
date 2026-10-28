@@ -148,7 +148,9 @@ test('restored history does not show the new-narration jump control while scroll
           seq: 1,
           type: 'NarrationHistory',
           payload: {
-            turns: [{ turnId: 'restored', text: 'An old scene.', tier: 'standard' }],
+            turns: [
+              { turnId: 'restored', text: 'An old scene.', tier: 'standard' },
+            ],
           },
         } as ServerMessage,
       ]}

@@ -214,7 +214,15 @@ describe('resume recap and the live DM allowlist', () => {
     await db.query(
       `INSERT INTO events(session_id,seq,turn_id,type,payload)
        SELECT $1,COALESCE(MAX(seq),0)+1,$2,'SeatJoined',$3::jsonb FROM events WHERE session_id=$1`,
-      [table, randomUUID(), JSON.stringify({ accountId: lateGuest.id, seatId: randomUUID(), displayName: 'Guest' })],
+      [
+        table,
+        randomUUID(),
+        JSON.stringify({
+          accountId: lateGuest.id,
+          seatId: randomUUID(),
+          displayName: 'Guest',
+        }),
+      ],
     );
     for (let i = 0; i < 33; i++) {
       const turnId = randomUUID();

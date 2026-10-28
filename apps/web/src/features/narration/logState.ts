@@ -131,7 +131,13 @@ export function narrationLogReducer(
       let next = state;
       for (const item of message.payload.turns) {
         if (next.revertedTurnIds.includes(item.turnId)) continue;
-        if (next.entries.some((entry) => entry.kind === 'turn' && entry.turn.turnId === item.turnId)) continue;
+        if (
+          next.entries.some(
+            (entry) =>
+              entry.kind === 'turn' && entry.turn.turnId === item.turnId,
+          )
+        )
+          continue;
         next = placeHistoryTurn(next, {
           turnId: item.turnId,
           chunks: {},
