@@ -140,9 +140,11 @@ describe('DM prompt builder', () => {
   it('tells the narrator not to invent outcomes omitted by the overflow cap', () => {
     const facts = narrationFacts(
       Array.from({ length: 45 }, (_, index) => ({
-        type: 'ReactionResolved',
+        type: 'RollEvent',
         entityId: `ent_${index}`,
-        used: true,
+        kind: 'attack',
+        targetId: 'ent_pc',
+        hit: index % 2 === 0,
       })),
     );
     const value = buildPrompt({
@@ -150,10 +152,20 @@ describe('DM prompt builder', () => {
       activeMode: 'combat',
       turn: { ...input().turn, combatFacts: facts },
     });
+    expect(facts).toContainEqual(
+      expect.objectContaining({ type: 'NarrationOverflow' }),
+    );
+    expect(facts).not.toContainEqual(
+      expect.objectContaining({ actorId: 'ent_0' }),
+    );
     expect(value.blocks[2]).toContain('NarrationOverflow');
     expect(value.blocks[2]).toContain(
-      'narrate the listed outcomes and do not invent the unlisted rest',
+      'narrate every listed MUST fact; never contradict or invent a fact',
     );
+    expect(value.blocks[2]).toContain(
+      'further earlier outcomes happened but are not listed: do not guess or describe them; stay general about them',
+    );
+    expect(value.blocks[2]).toContain('the melee rages on');
   });
 
   it('passes the last narration beat as a phrasing reference for combat', () => {
@@ -165,11 +177,12 @@ describe('DM prompt builder', () => {
         turns: [
           { playerText: 'I strike.', narration: 'Steel rings in the dark.' },
         ],
+        lastCombatBeat: 'Steel rings in the dark.',
         combatFacts: [{ type: 'AttackResolved', hit: true }],
       },
     });
     expect(value.blocks[2]).toContain(
-      'PREVIOUS BEAT — use for continuity, do not repeat its phrasing',
+      'PREVIOUS COMBAT BEAT — continuity data only; do not repeat its phrasing',
     );
     expect(value.blocks[2]).toContain('U3RlZWwgcmluZ3MgaW4gdGhlIGRhcmsu');
   });

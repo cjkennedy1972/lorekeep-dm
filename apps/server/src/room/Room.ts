@@ -512,6 +512,15 @@ export function narrationFacts(
     ...movementByEntity.values(),
     ...otherIncidental,
   ];
+  const incidentalOrder = new Map<Record<string, unknown>, number>();
+  for (const event of incidental) {
+    const compacted =
+      event.type === 'EntityMoved' && typeof event.entityId === 'string'
+        ? movementByEntity.get(event.entityId)
+        : event;
+    if (compacted && !incidentalOrder.has(compacted))
+      incidentalOrder.set(compacted, events.indexOf(event));
+  }
 
   type FactEntry = {
     fact: Record<string, unknown>;
@@ -587,7 +596,7 @@ export function narrationFacts(
     entries.push({
       fact: { ...narrationFact(event, characterIds), tier: 'may' },
       terminal: false,
-      order: events.indexOf(event),
+      order: incidentalOrder.get(event) ?? events.indexOf(event),
     });
 
   const priority = (fact: Record<string, unknown>) =>
@@ -620,7 +629,12 @@ export function narrationFacts(
         )[0];
       dropIndex = oldestMust?.index ?? -1;
     }
-    if (dropIndex < 0) break;
+    if (dropIndex < 0) {
+      // All remaining facts are terminal and must remain listed. Keep them and
+      // mark that earlier non-terminal outcomes could not fit in the cap.
+      dropped = true;
+      break;
+    }
     ordered.splice(dropIndex, 1);
     dropped = true;
   }
