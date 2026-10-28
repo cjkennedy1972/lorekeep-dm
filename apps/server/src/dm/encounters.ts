@@ -62,9 +62,10 @@ export function resolveEncounter(
     !map.markers.some(
       (marker) => marker.markerId === encounter.enemySpawnMarkerId,
     ) ||
-    !map.markers.some(
-      (marker) => marker.markerId === encounter.partySpawnMarkerId,
-    )
+    (encounter.partySpawnMarkerId !== undefined &&
+      !map.markers.some(
+        (marker) => marker.markerId === encounter.partySpawnMarkerId,
+      ))
   )
     return { ok: false, code: 'encounter-roster-invalid' };
   // Authored rosters list one creature per entry (there is no authored count field).
@@ -77,7 +78,9 @@ export function resolveEncounter(
     })),
     ambushSide: 'none',
     mapId: encounter.mapId,
-    partySpawnRef: encounter.partySpawnMarkerId,
+    ...(encounter.partySpawnMarkerId
+      ? { partySpawnRef: encounter.partySpawnMarkerId }
+      : {}),
   };
 }
 
