@@ -192,17 +192,10 @@ export class RegistryMemory {
         ORDER BY created_at DESC, id DESC LIMIT $2`,
       [sessionId, boundedLimit],
     );
-    const registry = await this.pool.query<{ text: string }>(
-      `SELECT concat(e.entity_type, ' ', e.name, ': ', f.fact) AS text
-         FROM registry_entries e JOIN registry_facts f ON f.entry_id=e.id
-        WHERE e.session_id=$1 AND e.superseded_by IS NULL AND f.superseded_by IS NULL
-        ORDER BY e.mentioned_at DESC, e.id, f.id LIMIT $2`,
-      [sessionId, boundedLimit * 4],
-    );
-    return [
-      ...rows.map((row) => row.text),
-      ...registry.rows.map((row) => row.text),
-    ];
+    // Registry facts are DM continuity data, not inherently player-visible. The
+    // registry has no per-fact visibility bit, so recap generation must not
+    // infer that every current fact is safe to disclose.
+    return rows.map((row) => row.text);
   }
 
   async upsert(

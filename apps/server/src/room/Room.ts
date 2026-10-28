@@ -1773,7 +1773,11 @@ export class Room {
     });
   }
 
-  persistRecap(recap: { recap: string; memoryHash: string }): Promise<void> {
+  persistRecap(recap: {
+    recap: string;
+    memoryHash: string;
+    provenanceVersion?: number;
+  }): Promise<void> {
     return this.enqueue(async () => {
       const gameState = {
         ...((this.state.gameState as Record<string, unknown>) ?? {}),
@@ -2315,6 +2319,9 @@ export class Room {
         type: 'NarrationCompleted',
         actionId: narrationId,
         narration,
+        words: narration.trim().split(/\s+/).length,
+        // Fixed server-authored fallback text contains no model narration.
+        tier: 'standard',
         fallback: 'endpoint-error',
       },
       { type: 'TurnFallback', turnId, reason: 'endpoint-error' },
@@ -2358,7 +2365,7 @@ export class Room {
     this.broadcast({
       seq: this.seq,
       type: 'NarrationCompleted',
-      payload: { turnId, text: narration },
+      payload: { turnId, text: narration, tier: 'standard' },
     } as ServerMessage);
   }
 
@@ -2486,6 +2493,16 @@ export class Room {
           restoredState.gameState,
           this.state.gameState,
         ),
+      } as typeof restoredState;
+      // Recaps are derived from committed narration and may include the turn
+      // being reverted. Drop both the text and its provenance before snapshotting.
+      const restoredGameState = {
+        ...(restoredState.gameState as Record<string, unknown>),
+      };
+      delete restoredGameState.recap;
+      restoredState = {
+        ...restoredState,
+        gameState: restoredGameState,
       } as typeof restoredState;
       const actionIds = new Set(restored.actionIds);
       for (const event of plan.retained)
@@ -4710,6 +4727,11 @@ export class Room {
     // Mature narration reaches only the connections present now, so a joiner never receives a turn it was not present for.
     const audience = new Set(this.connections.values());
     let matureAudience: ReadonlySet<Connection> | undefined;
+    let narrationTierAnnounced = false;
+    const deliverToInitialAudience = (message: ServerMessage) => {
+      for (const connection of audience) connection.send(message);
+    };
+    let narrationTier: 'family' | 'standard' | 'mature' | undefined;
     let liveCompletion: unknown;
     let moderationHeld = false;
     let committedCompletion = false;
@@ -4736,10 +4758,17 @@ export class Room {
         (event) => {
           const type = event.type;
           if (type === 'NarrationTier') {
-            matureAudience =
-              (event as { tier?: unknown }).tier === 'mature'
-                ? audience
+            narrationTierAnnounced = true;
+            narrationTier =
+              event.tier === 'family' ||
+              event.tier === 'standard' ||
+              event.tier === 'mature'
+                ? event.tier
                 : undefined;
+            const tier = (event as { tier?: unknown }).tier;
+            // Only the two known non-mature tiers are public; unknown tiers fail closed.
+            matureAudience =
+              tier === 'family' || tier === 'standard' ? undefined : audience;
           } else if (type === 'RollEvent') {
             this.broadcast({
               seq: this.seq,
@@ -4760,6 +4789,7 @@ export class Room {
               payload: event,
             } as ServerMessage;
             if (matureAudience) this.deliverMature(message, matureAudience);
+            else if (!narrationTierAnnounced) deliverToInitialAudience(message);
             else this.broadcast(message);
           } else if (type === 'ToolCallRejected') {
             this.broadcast({
@@ -4853,7 +4883,11 @@ export class Room {
             seq: undefined,
             turnId: id,
             type: 'NarrationCompleted',
-            payload: { actionId, narration: result.narration },
+            payload: {
+              actionId,
+              narration: result.narration,
+              tier: narrationTier,
+            },
           });
           writes.push({
             seq: undefined,
@@ -5215,6 +5249,8 @@ export class Room {
           } as ServerMessage;
           if (matureAudience)
             this.deliverMature(reportableNarration, matureAudience);
+          else if (!narrationTierAnnounced)
+            deliverToInitialAudience(reportableNarration);
           else this.broadcast(reportableNarration);
         }
         for (const event of stored.events)
@@ -5263,6 +5299,7 @@ export class Room {
           payload: liveCompletion,
         } as ServerMessage;
         if (matureAudience) this.deliverMature(message, matureAudience);
+        else if (!narrationTierAnnounced) deliverToInitialAudience(message);
         else this.broadcast(message);
       }
       if (!result.clarification) this.pendingActions.delete(actionId);

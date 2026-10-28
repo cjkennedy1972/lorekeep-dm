@@ -7,6 +7,7 @@ import { SAFE_RECAP_FALLBACK } from '../../src/dm/recap.js';
 const moderate = vi.fn(async () => ({ verdict: 'allow' }));
 let recapText: string;
 let revision: string;
+let recapVersion: number | undefined;
 
 vi.mock('../../src/middleware/auth.js', () => ({
   authenticateRequest: async () => ({ account_id: 'acct-1' }),
@@ -36,7 +37,7 @@ function buildApp() {
                 catalog_version: 'v1',
                 last_active_at: new Date(0),
                 character: { level: 1 },
-                recap: { recap: recapText },
+                recap: { recap: recapText, provenanceVersion: recapVersion },
               },
             ],
             rowCount: 1,
@@ -67,6 +68,16 @@ describe('GET /api/tables recap moderation', () => {
     moderate.mockImplementation(async () => ({ verdict: 'allow' }));
     recapText = 'The party entered the hollow.';
     revision = 'rev-1';
+    recapVersion = 2;
+  });
+
+  it('does not serve an unmarked legacy recap even if it contains a leaked fact', async () => {
+    recapVersion = undefined;
+    recapText = 'The key is under the throne.';
+    const app = buildApp();
+    expect(await listRecap(app)).toBe('');
+    expect(moderate).not.toHaveBeenCalled();
+    await app.close();
   });
 
   it('judges a stored recap once and reuses the verdict on repeat list reads', async () => {

@@ -1,21 +1,26 @@
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { LlmAdapter } from '../llm/adapter.js';
-import { RegistryMemory } from './memory.js';
 import { boundSummary, hiddenMatcher, type HiddenEntity } from './summarize.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
+import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
 
 export const MAX_RECAP_WORDS = 150;
 export const MAX_RECAP_CHARS = 1_200;
 export const MAX_RECAP_INPUT_CHARS = 4_000;
 export const SAFE_RECAP_FALLBACK = 'Your adventure is ready to continue.';
+export const RECAP_PROVENANCE_VERSION = 2;
 
 export interface RecapInput {
   memories: readonly string[];
   changed?: boolean;
   lastEvents?: readonly { type: string; summary?: string }[];
-  previousSnapshotRecap?: { recap: string; memoryHash: string };
+  previousSnapshotRecap?: {
+    recap: string;
+    memoryHash: string;
+    provenanceVersion?: number;
+  };
   adapter?: LlmAdapter;
   signal?: AbortSignal;
 }
@@ -24,6 +29,7 @@ export interface RecapResult {
   memoryHash: string;
   cached: boolean;
   fallback: boolean;
+  provenanceVersion?: number;
 }
 
 /** Judge generated, cached, and deterministic recaps before any client exposure. */
@@ -92,18 +98,37 @@ function hashMemories(
 export async function buildRecap(input: RecapInput): Promise<RecapResult> {
   const memoryHash = hashMemories(input.memories, input.lastEvents);
   if (
+    !input.memories.some((memory) => memory.trim()) &&
+    !input.lastEvents?.length
+  )
+    return {
+      recap: '',
+      memoryHash,
+      cached: false,
+      fallback: false,
+      provenanceVersion: RECAP_PROVENANCE_VERSION,
+    };
+  if (
     input.changed !== true &&
-    input.previousSnapshotRecap?.memoryHash === memoryHash
+    input.previousSnapshotRecap?.memoryHash === memoryHash &&
+    input.previousSnapshotRecap.provenanceVersion === RECAP_PROVENANCE_VERSION
   )
     return {
       ...input.previousSnapshotRecap,
       memoryHash,
       cached: true,
       fallback: false,
+      provenanceVersion: RECAP_PROVENANCE_VERSION,
     };
   const fallback = assembleDeterministicRecap(input.memories, input.lastEvents);
   if (!input.adapter || !fallback)
-    return { recap: fallback, memoryHash, cached: false, fallback: true };
+    return {
+      recap: fallback,
+      memoryHash,
+      cached: false,
+      fallback: true,
+      provenanceVersion: RECAP_PROVENANCE_VERSION,
+    };
   try {
     let response = '';
     const requestMemories = input.memories.slice(0, 20);
@@ -135,33 +160,74 @@ export async function buildRecap(input: RecapInput): Promise<RecapResult> {
       memoryHash,
       cached: false,
       fallback: !recap,
+      provenanceVersion: RECAP_PROVENANCE_VERSION,
     };
   } catch {
-    return { recap: fallback, memoryHash, cached: false, fallback: true };
+    return {
+      recap: fallback,
+      memoryHash,
+      cached: false,
+      fallback: true,
+      provenanceVersion: RECAP_PROVENANCE_VERSION,
+    };
   }
 }
 
-export async function buildResumeRecap(input: {
-  db: Pick<Pool, 'query' | 'connect'>;
+/**
+ * The single recap source: committed NarrationCompleted payloads are the exact text
+ * broadcast to players. Scene-close summaries, registry facts, and raw event details
+ * are intentionally excluded. Keep the newest bounded set, then restore chronology.
+ */
+export async function buildPlayerVisibleRecap(input: {
+  db: Pick<Pool, 'query'>;
   sessionId: string;
-  lastEvents?: RecapInput['lastEvents'];
   previousSnapshotRecap?: RecapInput['previousSnapshotRecap'];
   changed?: boolean;
   adapter?: LlmAdapter;
   signal?: AbortSignal;
   hidden?: readonly HiddenEntity[];
 }): Promise<RecapResult> {
+  let rows: { narration: string; tier: string | null }[] = [];
+  try {
+    ({ rows } = await input.db.query<{
+      narration: string;
+      tier: string | null;
+    }>(
+      `SELECT payload->>'narration' AS narration, payload->>'tier' AS tier
+         FROM events WHERE session_id=$1 AND type='NarrationCompleted'
+          AND ${REVERTED_TURN_EXCLUSION}
+          AND NULLIF(payload->>'narration','') IS NOT NULL
+          AND payload->>'tier' IN ('family','standard')
+        ORDER BY seq DESC LIMIT 32`,
+      [input.sessionId],
+    ));
+  } catch {
+    // Missing or unavailable history must never fall back to less-checked memory.
+  }
   const scrub = hiddenMatcher(input.hidden ?? []).scrub;
-  const memories = (
-    await new RegistryMemory(input.db).loadRecapMemory(input.sessionId)
-  ).map(scrub);
+  let remaining = MAX_RECAP_INPUT_CHARS;
+  const bounded = rows
+    .flatMap((row) => {
+      if (remaining <= 0) return [];
+      const text = scrub(row.narration ?? '');
+      const part = text.slice(0, remaining);
+      remaining -= part.length;
+      return part ? [part] : [];
+    })
+    .reverse();
   const built = await buildRecap({
-    memories,
-    lastEvents: input.lastEvents,
-    previousSnapshotRecap: input.previousSnapshotRecap,
+    memories: bounded,
     changed: input.changed,
+    previousSnapshotRecap: input.previousSnapshotRecap,
     adapter: input.adapter,
     signal: input.signal,
   });
-  return { ...built, recap: scrub(built.recap) };
+  return {
+    ...built,
+    recap: scrub(built.recap),
+    provenanceVersion: RECAP_PROVENANCE_VERSION,
+  };
 }
+
+/** Backwards-compatible name; all recap paths use the same player-visible source. */
+export const buildResumeRecap = buildPlayerVisibleRecap;

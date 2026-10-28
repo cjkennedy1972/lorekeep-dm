@@ -1,16 +1,21 @@
 import { allowInputGate } from '../support/allowInputGate.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { createApp } from '../../src/app.js';
 import { COOKIE_NAME, createSession } from '../../src/accounts/sessions.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
-import { SAFE_RECAP_FALLBACK } from '../../src/dm/recap.js';
+import {
+  buildPlayerVisibleRecap,
+  SAFE_RECAP_FALLBACK,
+} from '../../src/dm/recap.js';
 import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
+import { buildLateJoinRecap } from '../../src/dm/lateJoinRecap.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
+import { emptyRoom } from '../../src/room/reducer.js';
 import { SessionLease } from '../../src/room/lease.js';
 import {
   startFakeOpenAIServer,
@@ -33,12 +38,28 @@ const catalog = loadCatalog();
 let db: Pool;
 let endpoint: FakeOpenAIServer;
 let moderationEndpoint: FakeOpenAIServer;
+let moderationChunks: string[];
 let rooms: RoomRegistry;
 let app: ReturnType<typeof createApp>;
 let base = '';
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
 let operatorEmail = '';
+
+const moderationChunk = (verdict: 'allow' | 'block', category: string) =>
+  `data: ${JSON.stringify({
+    choices: [
+      {
+        index: 0,
+        delta: { content: JSON.stringify({ verdict, category }) },
+      },
+    ],
+  })}\n\n`;
+
+afterEach(() => {
+  if (moderationChunks)
+    moderationChunks[0] = moderationChunk('block', 'violence');
+});
 
 async function createAccount(email = `${randomUUID()}@example.test`) {
   const id = randomUUID();
@@ -50,7 +71,10 @@ async function createAccount(email = `${randomUUID()}@example.test`) {
   return { id, token: await createSession(db, id, 'recap-gate-test') };
 }
 
-async function createResumableTable(ownerId: string) {
+async function createResumableTable(
+  ownerId: string,
+  tier: string | undefined = 'standard',
+) {
   const id = randomUUID();
   await db.query(
     `INSERT INTO sessions(id,owner_account_id,name,mode,catalog_version) VALUES($1,$2,'Recap table','solo',$3)`,
@@ -62,18 +86,32 @@ async function createResumableTable(ownerId: string) {
     'scene:opening',
     'The adventurer followed the lantern light into Greyfen.',
   );
+  await db.query(
+    `INSERT INTO events(session_id,seq,turn_id,type,payload)
+     SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb
+       FROM events WHERE session_id=$1`,
+    [
+      id,
+      randomUUID(),
+      JSON.stringify({
+        narration: 'The adventurer followed the lantern light into Greyfen.',
+        ...(tier ? { tier } : {}),
+      }),
+    ],
+  );
   return id;
 }
 
 beforeAll(async () => {
   db = new Pool({ connectionString: databaseUrl });
   endpoint = await startFakeOpenAIServer({ chunks: textStream });
+  moderationChunks = [
+    'data: {"choices":[{"index":0,"delta":{"content":"{\\"verdict\\":\\"block\\",\\"category\\":\\"violence\\"}"}}]}\n\n',
+    'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
+    'data: [DONE]\n\n',
+  ];
   moderationEndpoint = await startFakeOpenAIServer({
-    chunks: [
-      'data: {"choices":[{"index":0,"delta":{"content":"{\\"verdict\\":\\"block\\",\\"category\\":\\"violence\\"}"}}]}\n\n',
-      'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
-      'data: [DONE]\n\n',
-    ],
+    chunks: moderationChunks,
   });
   process.env.NODE_ENV = 'production';
   delete process.env.LLM_FIXTURE_MODE;
@@ -167,6 +205,176 @@ describe('resume recap and the live DM allowlist', () => {
     expect(endpoint.requests.length).toBe(generationCalls);
   });
 
+  it('excludes mature and unknown-tier narration from resume and list recaps', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id);
+    const addNarration = async (narration: string, tier?: string) => {
+      await db.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb
+           FROM events WHERE session_id=$1`,
+        [
+          table,
+          randomUUID(),
+          JSON.stringify({ narration, ...(tier ? { tier } : {}) }),
+        ],
+      );
+    };
+    await addNarration('MATURE_MARKER forbidden scene.', 'mature');
+    await addNarration('UNKNOWN_MARKER unclassified scene.');
+    await addNarration('STANDARD_MARKER the party found a bridge.', 'standard');
+
+    const built = await buildPlayerVisibleRecap({ db, sessionId: table });
+    expect(built.recap).toContain('STANDARD_MARKER');
+    expect(built.recap).not.toContain('MATURE_MARKER');
+    expect(built.recap).not.toContain('UNKNOWN_MARKER');
+
+    const resume = await fetch(`${base}/api/tables/${table}`, {
+      headers: { cookie: `${COOKIE_NAME}=${player.token}` },
+    });
+    expect(resume.status).toBe(200);
+    const resumeBody = await resume.text();
+    expect(resumeBody).not.toContain('MATURE_MARKER');
+    expect(resumeBody).not.toContain('UNKNOWN_MARKER');
+
+    const list = await fetch(`${base}/api/tables`, {
+      headers: { cookie: `${COOKIE_NAME}=${player.token}` },
+    });
+    expect(list.status).toBe(200);
+    const listBody = await list.text();
+    expect(listBody).not.toContain('MATURE_MARKER');
+    expect(listBody).not.toContain('UNKNOWN_MARKER');
+  });
+
+  it('excludes reverted-turn narration from resume and list recaps', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id);
+    const keptTurn = randomUUID();
+    const revertedTurn = randomUUID();
+    const rewindTurn = randomUUID();
+    const addTurnNarration = async (turnId: string, narration: string) => {
+      await db.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb
+           FROM events WHERE session_id=$1`,
+        [table, turnId, JSON.stringify({ narration, tier: 'standard' })],
+      );
+    };
+    await addTurnNarration(
+      keptTurn,
+      'KEPT_MARKER the party crossed the river.',
+    );
+    await addTurnNarration(
+      revertedTurn,
+      'REVERTED_MARKER the party entered the vault.',
+    );
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload)
+       SELECT $1,COALESCE(MAX(seq),0)+1,$2,'TurnReverted',$3::jsonb
+         FROM events WHERE session_id=$1`,
+      [table, rewindTurn, JSON.stringify({ revertedTurnId: revertedTurn })],
+    );
+
+    const built = await buildPlayerVisibleRecap({ db, sessionId: table });
+    expect(built.recap).toContain('KEPT_MARKER');
+    expect(built.recap).not.toContain('REVERTED_MARKER');
+
+    const lateJoin = await buildLateJoinRecap({
+      db,
+      sessionId: table,
+      moderator: { moderate: async () => ({ verdict: 'allow' }) } as never,
+      tier: 'standard',
+      tableLines: [],
+    });
+    expect(lateJoin.recap).toContain('KEPT_MARKER');
+    expect(lateJoin.recap).not.toContain('REVERTED_MARKER');
+
+    const headers = { cookie: `${COOKIE_NAME}=${player.token}` };
+    const resume = await fetch(`${base}/api/tables/${table}`, { headers });
+    expect(resume.status).toBe(200);
+    const resumeBody = await resume.text();
+    expect(resumeBody).not.toContain('REVERTED_MARKER');
+
+    const list = await fetch(`${base}/api/tables`, { headers });
+    expect(list.status).toBe(200);
+    const listBody = await list.text();
+    expect(listBody).not.toContain('REVERTED_MARKER');
+  });
+
+  it('invalidates a recap generated before rewind before serving the table list', async () => {
+    moderationChunks[0] = moderationChunk('allow', 'none');
+    const player = await createAccount();
+    const table = await createResumableTable(player.id);
+    const keptTurn = randomUUID();
+    const revertedTurn = randomUUID();
+    const persistence = new Persistence(db);
+    const initialState = {
+      ...emptyRoom(table),
+      gameState: {
+        recap: {
+          recap: 'KEPT_MARKER followed by REVERTED_MARKER.',
+          memoryHash: 'pre-rewind-cache',
+          provenanceVersion: 2,
+        },
+      },
+    };
+    await persistence.writeTurn(
+      table,
+      [
+        {
+          turnId: keptTurn,
+          type: 'NarrationCompleted',
+          payload: {
+            narration: 'KEPT_MARKER the party crossed the river.',
+            tier: 'standard',
+          },
+        },
+      ],
+      initialState,
+    );
+    await persistence.writeTurn(
+      table,
+      [
+        {
+          turnId: revertedTurn,
+          type: 'NarrationCompleted',
+          payload: {
+            narration: 'REVERTED_MARKER the party entered the vault.',
+            tier: 'standard',
+          },
+        },
+      ],
+      initialState,
+    );
+
+    const room = await rooms.get(table);
+    await room.seat(player.id, 'Recap owner');
+    const headers = { cookie: `${COOKIE_NAME}=${player.token}` };
+    const beforeRewind = await fetch(`${base}/api/tables/${table}`, {
+      headers,
+    });
+    expect(beforeRewind.status).toBe(200);
+    const beforeRewindBody = await beforeRewind.text();
+    expect(beforeRewindBody).toContain('KEPT_MARKER');
+    expect(beforeRewindBody).toContain('REVERTED_MARKER');
+
+    await room.rewindLastTurn(player.id);
+
+    const list = await fetch(`${base}/api/tables`, { headers });
+    expect(list.status).toBe(200);
+    const listBody = await list.text();
+    expect(JSON.parse(listBody).games[0].recap).toBe('');
+    expect(listBody).not.toContain('REVERTED_MARKER');
+
+    const afterRewind = await fetch(`${base}/api/tables/${table}`, {
+      headers,
+    });
+    expect(afterRewind.status).toBe(200);
+    const resumeBody = await afterRewind.text();
+    expect(resumeBody).toContain('KEPT_MARKER');
+    expect(resumeBody).not.toContain('REVERTED_MARKER');
+  });
+
   it('still calls the endpoint for an allowlisted operator owner', async () => {
     const operator = await createAccount(operatorEmail);
     const table = await createResumableTable(operator.id);
@@ -193,7 +401,7 @@ describe('resume recap and the live DM allowlist', () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).not.toContain('Unsafe historical recap');
-    expect(body).toContain(SAFE_RECAP_FALLBACK);
+    expect(JSON.parse(body).games[0].recap).toBe('');
   });
 });
 
