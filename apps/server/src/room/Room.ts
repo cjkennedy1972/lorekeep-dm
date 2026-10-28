@@ -5104,8 +5104,15 @@ export class Room {
             matureAudience =
               tier === 'family' || tier === 'standard' ? undefined : audience;
           } else if (type === 'RollEvent') {
+            const hidden = new Set(
+              concealedEntities(this.state.gameState).map(
+                (entity) => entity.id,
+              ),
+            );
             for (const [viewer, connection] of this.connections) {
               const controlled = this.controlledBy(viewer);
+              const visible = projectEventForViewer(event, hidden, controlled);
+              if (!visible) continue;
               const actorId = String(event.entityId ?? '');
               const targetId = String(event.targetId ?? '');
               const target = roomGameState(this.state)?.entities.find(
@@ -5121,7 +5128,7 @@ export class Room {
                 seq: this.seq,
                 type: 'RollEvent',
                 payload: toWireEvent(
-                  event,
+                  visible,
                   !!actorId && !controlled.has(actorId),
                   revealAttack,
                   revealDamage,
