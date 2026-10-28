@@ -507,18 +507,19 @@ export function narrationFacts(
             typeof candidate.damage === 'number',
         ),
       );
-    attackDamage.set(
-      event,
-      effects.reduce(
-        (sum, candidate) =>
-          candidate.type === 'HpChanged' &&
-          candidate.entityId === event.targetId &&
-          typeof candidate.damage === 'number'
-            ? sum + candidate.damage
-            : sum,
-        0,
-      ),
-    );
+    if (typeof event.targetId === 'string' && characterIds.has(event.targetId))
+      attackDamage.set(
+        event,
+        effects.reduce(
+          (sum, candidate) =>
+            candidate.type === 'HpChanged' &&
+            candidate.entityId === event.targetId &&
+            typeof candidate.damage === 'number'
+              ? sum + candidate.damage
+              : sum,
+          0,
+        ),
+      );
   });
 
   const consequential = eligible.filter((event) =>
@@ -618,17 +619,19 @@ export function narrationFacts(
           targetId: group[0]!.fact.targetId,
           attacks: group.length,
           hits: group.filter(({ fact }) => fact.hit === true).length,
-          damage: 0,
+          ...(characterIds.has(String(group[0]!.fact.targetId))
+            ? {
+                damage: group.reduce(
+                  (sum, attack) => sum + (attackDamage.get(attack.event) ?? 0),
+                  0,
+                ),
+              }
+            : {}),
           tier: 'must',
         },
         terminal: false,
         order: group[0]!.order,
       });
-      const summary = entries.at(-1)!.fact;
-      summary.damage = group.reduce(
-        (sum, attack) => sum + (attackDamage.get(attack.event) ?? 0),
-        0,
-      );
     }
   }
   for (const { event, fact, order } of attackFacts)

@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import {
-  Room,
-  type RoomStore,
-} from '../../src/room/Room.js';
+import { Room, narrationFacts, type RoomStore } from '../../src/room/Room.js';
 import type { CombatRuntime } from '../../src/room/combat.js';
 import type { SoloTurnRunner } from '../../src/room/dmTurn.js';
 import type { StoredEvent } from '../../src/persistence/index.js';
@@ -255,8 +252,8 @@ async function probeFixture(turnRunner?: SoloTurnRunner) {
   return { f, entA, entB };
 }
 
-describe('PROBE', () => {
-  it('PROBE-1 live RollEvent naming a hidden actor, delivered to a non-controlling seat', async () => {
+describe('roll projection security', () => {
+  it('does not deliver a live attack roll naming a hidden actor to a non-controlling seat', async () => {
     const ids = { entA: '' };
     const turnRunner = {
       async run(_req: unknown, emit: (e: Record<string, unknown>) => void) {
@@ -296,7 +293,7 @@ describe('PROBE', () => {
     expect(summarize(inbox.b!)).toEqual([]);
   });
 
-  it('PROBE-2 committed engine attack on visible monster: what each seat receives', async () => {
+  it('projects a committed attack against a visible monster without damage roll details', async () => {
     const { f, entA, entB } = await probeFixture();
     const inbox: Record<string, Record<string, unknown>[]> = { a: [], b: [] };
     await f.room.subscribe(f.accountA, {
@@ -311,7 +308,10 @@ describe('PROBE', () => {
     const runtime = crt();
     let picked:
       | {
-          res: Extract<ReturnType<CombatRuntime['execute']>, { state: unknown }>;
+          res: Extract<
+            ReturnType<CombatRuntime['execute']>,
+            { state: unknown }
+          >;
           seed: number;
         }
       | undefined;
@@ -364,5 +364,32 @@ describe('PROBE', () => {
       hpState: 'wounded',
     });
     expect(entB).toBeTruthy();
+  });
+
+  it('omits summarized damage for monsters but retains it for party characters', () => {
+    const attacks = (targetId: string) =>
+      Array.from({ length: 9 }, () => [
+        {
+          type: 'RollEvent',
+          kind: 'attack',
+          entityId: 'attacker',
+          targetId,
+          hit: true,
+        },
+        { type: 'HpChanged', entityId: targetId, damage: 1 },
+      ]).flat();
+
+    const monster = narrationFacts(attacks('goblin'), new Set(['attacker']));
+    const pc = narrationFacts(
+      attacks('party-pc'),
+      new Set(['attacker', 'party-pc']),
+    );
+
+    expect(
+      monster.find((fact) => fact.type === 'AttackSummary'),
+    ).not.toHaveProperty('damage');
+    expect(pc.find((fact) => fact.type === 'AttackSummary')).toMatchObject({
+      damage: 9,
+    });
   });
 });
