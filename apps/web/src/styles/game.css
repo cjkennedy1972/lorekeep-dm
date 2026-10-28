@@ -383,13 +383,6 @@
   flex-basis: 100%;
   margin: 0;
 }
-.game-screen section[aria-label='Combat commands'] details > summary {
-  min-height: 2.75rem;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  font-weight: 600;
-}
 .game-screen section[aria-label='Combat commands'] > p {
   flex-basis: 100%;
   margin: 0;

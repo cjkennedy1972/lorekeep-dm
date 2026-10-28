@@ -1243,24 +1243,19 @@ export function Game() {
                     );
                   return null;
                 })}
-              {moveOptions.length > 0 && (
-                <details>
-                  <summary>All moves ({moveOptions.length})</summary>
-                  {moveOptions.map((item, index) => (
-                    <button
-                      key={String(item.optionId ?? index)}
-                      type="button"
-                      onClick={() =>
-                        send({ command: 'move', destination: item.destination })
-                      }
-                    >
-                      Move to {Number(asRecord(item.destination).x) + 1},{' '}
-                      {Number(asRecord(item.destination).y) + 1} (
-                      {String(item.cost)} feet)
-                    </button>
-                  ))}
-                </details>
-              )}
+              {moveOptions.map((item, index) => (
+                <button
+                  key={String(item.optionId ?? index)}
+                  type="button"
+                  onClick={() =>
+                    send({ command: 'move', destination: item.destination })
+                  }
+                >
+                  Move to {Number(asRecord(item.destination).x) + 1},{' '}
+                  {Number(asRecord(item.destination).y) + 1} (
+                  {String(item.cost)} feet)
+                </button>
+              ))}
               {areas.length > 0 && (
                 <AreaAim
                   areas={areas}
