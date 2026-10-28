@@ -103,6 +103,25 @@ describe('DM prompt builder', () => {
     );
     expect(value.blocks[2]).toContain('at most 3 sentences');
     expect(value.blocks[2]).toContain(
+      'Write in the same voice and tense as the story so far; address the player character as you.',
+    );
+    expect(value.blocks[2]).toContain(
+      'Give each fact one concrete sensory detail (sound, motion, weight, or light) instead of restating numbers.',
+    );
+    expect(value.blocks[2]).toContain(
+      'Vary verbs and openings from the previous beat; keep stakes and position clear, describing injuries as bloodied or barely standing rather than with numbers.',
+    );
+    expect(value.blocks[2]).toContain(
+      "End on an open beat that returns agency only when it is the player's turn; never ask 'what do you do?' during a monster turn.",
+    );
+    expect(value.blocks[2]).toContain('No mechanics meta-talk');
+    expect(value.blocks[2]).toContain(
+      'Do not invent rolls, damage, movement, enemies, or events.',
+    );
+    expect(value.blocks[2]).toContain(
+      'Combat has ended: narrate the ending shown above and return to exploration',
+    );
+    expect(value.blocks[2]).toContain(
       'return to exploration without introducing enemies',
     );
     const fleePrompt = buildPrompt({
@@ -117,6 +136,24 @@ describe('DM prompt builder', () => {
     expect(fleePrompt.blocks[2]).toContain(
       'return to exploration without introducing enemies',
     );
+  });
+
+  it('passes the last narration beat as a phrasing reference for combat', () => {
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      turn: {
+        ...input().turn,
+        turns: [
+          { playerText: 'I strike.', narration: 'Steel rings in the dark.' },
+        ],
+        combatFacts: [{ type: 'AttackResolved', hit: true }],
+      },
+    });
+    expect(value.blocks[2]).toContain(
+      'PREVIOUS BEAT — use for continuity, do not repeat its phrasing',
+    );
+    expect(value.blocks[2]).toContain('U3RlZWwgcmluZ3MgaW4gdGhlIGRhcmsu');
   });
 
   it('offers the constrained encounter tool and scene hook only for eligible exploration prompts', () => {

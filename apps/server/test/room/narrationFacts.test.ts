@@ -202,6 +202,77 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
     });
   });
 
+  it('does not infer a hit from ongoing damage after another roll', () => {
+    const facts = narrationFacts(
+      [
+        {
+          type: 'RollEvent',
+          entityId: 'ent_goblin',
+          kind: 'attack',
+          targetId: 'ent_pc',
+          hit: false,
+        },
+        {
+          type: 'RollEvent',
+          entityId: 'ent_pc',
+          kind: 'save',
+          targetId: 'ent_pc',
+        },
+        {
+          type: 'HpChanged',
+          entityId: 'ent_pc',
+          from: 8,
+          to: 6,
+          amount: 2,
+          kind: 'damage',
+        },
+      ],
+      new Set(['ent_pc']),
+    );
+    expect(facts.find((fact) => fact.type === 'AttackResolved')).toMatchObject({
+      targetId: 'ent_pc',
+      hit: false,
+    });
+  });
+
+  it('caps total narration facts at 40 while retaining outcome and HP facts first', () => {
+    const events = [
+      ...Array.from({ length: 45 }, (_, index) => ({
+        type: 'RollEvent',
+        entityId: `ent_monster_${index}`,
+        kind: 'attack',
+        targetId: 'ent_pc',
+        hit: false,
+      })),
+      { type: 'CombatEnded', outcome: 'party-defeated' },
+      { type: 'EntityDown', entityId: 'ent_pc', outcome: 'dead' },
+      { type: 'HpChanged', entityId: 'ent_pc', from: 1, to: 0, damage: 1 },
+    ];
+    const facts = narrationFacts(events, new Set(['ent_pc']));
+    expect(facts).toHaveLength(40);
+    expect(facts.slice(0, 3).map((fact) => fact.type)).toEqual([
+      'CombatEnded',
+      'EntityDown',
+      'HpChanged',
+    ]);
+    const manyConsequences = narrationFacts([
+      { type: 'CombatEnded', outcome: 'party-defeated' },
+      { type: 'EntityDown', entityId: 'ent_pc', outcome: 'dead' },
+      ...Array.from({ length: 45 }, (_, index) => ({
+        type: 'HpChanged',
+        entityId: `ent_pc_${index}`,
+        from: 10,
+        to: 9,
+        damage: 1,
+      })),
+    ]);
+    expect(manyConsequences).toHaveLength(40);
+    expect(manyConsequences.slice(0, 2).map((fact) => fact.type)).toEqual([
+      'CombatEnded',
+      'EntityDown',
+    ]);
+  });
+
   it('preserves a long monster turn through combat end and projects the actual outcome', () => {
     const events = [
       ...Array.from({ length: 15 }, (_, index) => ({
@@ -226,13 +297,13 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
     const facts = narrationFacts(events, new Set(['ent_pc']));
     expect(facts.filter((fact) => fact.type === 'EntityMoved')).toHaveLength(1);
     expect(facts.map((fact) => fact.type)).toEqual([
-      'AttackResolved',
-      'HpChanged',
-      'EntityDown',
       'CombatEnded',
+      'EntityDown',
+      'HpChanged',
+      'AttackResolved',
       'EntityMoved',
     ]);
-    expect(facts[0]).toMatchObject({
+    expect(facts[3]).toMatchObject({
       type: 'AttackResolved',
       actorId: 'ent_goblin',
       targetId: 'ent_pc',

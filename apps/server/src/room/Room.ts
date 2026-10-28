@@ -456,9 +456,7 @@ export function narrationFacts(
       return;
     const nextAttack = events.findIndex(
       (candidate, candidateIndex) =>
-        candidateIndex > index &&
-        candidate.type === 'RollEvent' &&
-        candidate.kind === 'attack',
+        candidateIndex > index && candidate.type === 'RollEvent',
     );
     const turnEventEnd = nextAttack < 0 ? events.length : nextAttack;
     characterAttackHits.set(
@@ -468,16 +466,22 @@ export function narrationFacts(
         .some(
           (candidate) =>
             candidate.type === 'HpChanged' &&
-            candidate.entityId === event.targetId,
+            candidate.entityId === event.targetId &&
+            typeof candidate.damage === 'number',
         ),
     );
   });
-  const critical = eligible.filter(
-    (event) =>
-      CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)) ||
-      (event.type === 'RollEvent' && event.kind === 'attack'),
+  const consequential = eligible.filter((event) =>
+    CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)),
   );
-  const incidental = eligible.filter((event) => !critical.includes(event));
+  const critical = eligible.filter(
+    (event) => event.type === 'RollEvent' && event.kind === 'attack',
+  );
+  const incidental = eligible.filter(
+    (event) =>
+      !critical.includes(event) &&
+      !CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)),
+  );
   const movementByEntity = new Map<string, Record<string, unknown>>();
   const otherIncidental: Record<string, unknown>[] = [];
   for (const event of incidental) {
@@ -500,8 +504,22 @@ export function narrationFacts(
     ...movementByEntity.values(),
     ...otherIncidental,
   ];
-  const budget = Math.max(0, 12 - critical.length);
-  return [...critical, ...compactedIncidental.slice(0, budget)].map((event) =>
+  const prioritized = [
+    ...consequential.filter((event) => event.type === 'CombatEnded'),
+    ...consequential.filter((event) => event.type === 'EntityDown'),
+    ...consequential.filter((event) => event.type === 'HpChanged'),
+  ].slice(0, 40);
+  const remainingBudget = Math.max(0, 40 - prioritized.length);
+  const prioritizedCritical = critical.slice(0, remainingBudget);
+  const incidentalBudget = Math.max(
+    0,
+    40 - prioritized.length - prioritizedCritical.length,
+  );
+  return [
+    ...prioritized,
+    ...prioritizedCritical,
+    ...compactedIncidental.slice(0, incidentalBudget),
+  ].map((event) =>
     narrationFact(event, characterIds, characterAttackHits.get(event)),
   );
 }

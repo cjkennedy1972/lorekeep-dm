@@ -247,7 +247,10 @@ function makeDynamic(
       ? [
           'AUTHORITATIVE RESOLVED COMBAT FACTS (this turn only)',
           stableJson(input.turn.combatFacts),
-          'Narrate exactly these outcomes. Do not add, remove, or rename combatants or outcomes. Do not invent rolls, damage, movement, enemies, or events. No mechanics meta-talk, roll arithmetic, or tool names. Use at most 3 sentences; this overrides the usual narration length and hook requirements.',
+          "Narrate exactly these outcomes. Do not add, remove, or rename combatants or outcomes. Do not invent rolls, damage, movement, enemies, or events. No mechanics meta-talk, roll arithmetic, or tool names. Write in the same voice and tense as the story so far; address the player character as you. Give each fact one concrete sensory detail (sound, motion, weight, or light) instead of restating numbers. Vary verbs and openings from the previous beat; keep stakes and position clear, describing injuries as bloodied or barely standing rather than with numbers. Use 2–3 short sentences, at most 3 sentences; this overrides the usual narration length and hook requirements. End on an open beat that returns agency only when it is the player's turn; never ask 'what do you do?' during a monster turn. Do not repeat phrasing across consecutive turns.",
+          input.turn.turns?.at(-1)?.narration
+            ? `PREVIOUS BEAT — use for continuity, do not repeat its phrasing\n${quoteData('DM', input.turn.turns.at(-1)!.narration)}`
+            : '',
           input.turn.combatFacts.some((fact) => fact.type === 'CombatEnded')
             ? 'Combat has ended: narrate the ending shown above and return to exploration without introducing enemies or asking what happened.'
             : '',
