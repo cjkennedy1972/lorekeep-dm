@@ -121,11 +121,14 @@ const push = (type: string, payload: Record<string, unknown>) =>
     hoisted.onMessage!({ seq: ++seq, type, payload } as ServerMessage);
   });
 
-function mount(onRender?: () => void) {
+function mount(
+  onRender?: () => void,
+  extra: { characters?: Record<string, unknown>; entities?: unknown[] } = {},
+) {
   hoisted.room = {
     gameState: {
-      characters: { 'acct-1': hero },
-      combatRoom: { entities, map },
+      characters: { 'acct-1': hero, ...extra.characters },
+      combatRoom: { entities: extra.entities ?? entities, map },
     },
   };
   return render(
@@ -301,6 +304,80 @@ describe('Game screen (live Room)', () => {
       command: 'move',
       destination: { x: 2, y: 2 },
     });
+  });
+
+  it('CombatEnded clears the combat bar, threat line and stale attacks, then Continue returns to exploration', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a',
+          targetId: 'ent_goblin',
+          attackId: 'equipment:javelin',
+        },
+        { kind: 'move', optionId: 'm', destination: { x: 2, y: 2 }, cost: 5 },
+      ],
+    });
+    expect(
+      screen.getByRole('button', { name: 'Attack Goblin' }),
+    ).toBeInTheDocument();
+
+    push('CombatEnded', { outcome: 'party-victory' });
+
+    expect(
+      within(screen.getByRole('region', { name: 'Combat result' })).getByRole(
+        'status',
+      ),
+    ).toHaveTextContent('Victory');
+    expect(
+      screen.queryByRole('button', { name: 'Attack Goblin' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Move to / }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'End turn' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Threats within 30 feet/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/CombatEnded:/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(
+      screen.queryByRole('region', { name: 'Combat result' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Continue' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('a room-state refresh after CombatEnded keeps the result card on screen', () => {
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    push('CombatEnded', { outcome: 'party-victory' });
+    // A reconnect refetches room state; the combat snapshot there carries no ended field.
+    hoisted.room = {
+      gameState: {
+        characters: { 'acct-1': hero },
+        combatRoom: {
+          entities,
+          map,
+          combat: { round: 1, activeEntityId: null, initiative: [] },
+        },
+      },
+    };
+    push('CombatOptions', { actions: [] });
+
+    expect(
+      screen.getByRole('region', { name: 'Combat result' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Combat commands' }),
+    ).not.toBeInTheDocument();
   });
 
   it('area aim: an aim previews its affected units and Cast sends the option ref', async () => {
@@ -694,6 +771,62 @@ describe('Game screen (live Room)', () => {
         .find((el) => /movement remaining/.test(el.textContent ?? ''))!
         .textContent,
     ).toMatch(/Goblin: /);
+  });
+
+  it('shows a max HP only for the viewer’s own character; another seat’s PC gets current HP or a status word', () => {
+    const THORIN_ID = '00000000-0000-4000-8000-0000000000bb';
+    const BRAN_ID = '00000000-0000-4000-8000-0000000000cc';
+    // Another seat's sheet carries a real max; the viewer must not see it even though it is on the room state.
+    const thorin = {
+      ...hero,
+      id: THORIN_ID,
+      name: 'Thorin',
+      hp: { current: 40, max: 50, temp: 0 },
+    };
+    const bran = {
+      ...hero,
+      id: BRAN_ID,
+      name: 'Bran',
+      hp: { current: 9, max: 60, temp: 0 },
+    };
+    const partyEntities = [
+      ...entities,
+      {
+        id: THORIN_ID,
+        kind: 'character',
+        team: 'party',
+        pos: { x: 2, y: 2 },
+        size: 1,
+        hp: 40,
+      },
+      {
+        id: BRAN_ID,
+        kind: 'character',
+        team: 'party',
+        pos: { x: 3, y: 2 },
+        size: 1,
+        hpState: 'wounded',
+      },
+    ];
+    mount(undefined, {
+      characters: { 'acct-2': thorin, 'acct-3': bran },
+      entities: partyEntities,
+    });
+    push('CombatTracker', {
+      ...tracker([HERO_ID, THORIN_ID, BRAN_ID, 'ent_goblin']),
+      entities: partyEntities,
+    });
+    const tokenText = (name: string) =>
+      within(screen.getByRole('list', { name: 'Combat tokens' }))
+        .getAllByRole('listitem')
+        .find((t) => t.textContent!.includes(name))!.textContent!;
+
+    expect(tokenText('Aria')).toContain('HP 30/30');
+    expect(tokenText('Thorin')).toContain('HP 40');
+    expect(tokenText('Thorin')).not.toContain('50');
+    expect(tokenText('Bran')).toContain('bloodied');
+    expect(tokenText('Bran')).not.toContain('60');
+    expect(tokenText('Bran')).not.toContain('HP 9');
   });
 
   it('updates the character sheet HP and slots within 1 s of the event', async () => {

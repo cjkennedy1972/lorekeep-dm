@@ -37,13 +37,48 @@ describe('map token draw commands', () => {
 
   it('shows bloodied enemies at half HP and never their exact numbers', () => {
     const [hero, ogre, goblin] = createTokenDrawCommands(combat, {
+      hero: { maxHp: 12 },
       ogre: { maxHp: 30 },
       goblin: { maxHp: 20 },
     });
-    expect(hero?.hpLabel).toBe('HP 12/12');
+    expect(hero?.hpLabel).toBe('HP 12/12 (healthy)');
     expect(ogre?.hpLabel).toBe('bloodied');
     expect(goblin?.hpLabel).toBe('bloodied');
     expect(ogre?.hpLabel).not.toContain('15');
+  });
+
+  it('never invents a max HP: a PC with an unknown max shows current HP only', () => {
+    // The old fallback used the current HP as the max, so a 4-HP hero read "HP 4/4".
+    const [hero] = createTokenDrawCommands({
+      ...combat,
+      entities: [{ ...combat.entities[0]!, hp: 4 }],
+      initiative: [{ entityId: 'hero', total: 18 }],
+    });
+    expect(hero?.hpLabel).toBe('HP 4');
+  });
+
+  it('derives the status word from the server hpState when no max is known', () => {
+    const [hero, ogre, goblin] = createTokenDrawCommands(combat, {
+      hero: { hpState: 'wounded' },
+      ogre: { hpState: 'wounded' },
+      goblin: { hpState: 'down' },
+    });
+    expect(hero?.hpLabel).toBe('HP 12 (bloodied)');
+    expect(ogre?.hpLabel).toBe('bloodied');
+    expect(goblin?.hpLabel).toBe('down');
+  });
+
+  it('reads a monster at 0 HP as down even when the status says healthy', () => {
+    const [, , goblin] = createTokenDrawCommands(
+      {
+        ...combat,
+        entities: combat.entities.map((e) =>
+          e.id === 'goblin' ? { ...e, hp: 0 } : e,
+        ),
+      },
+      { goblin: { maxHp: 20, hpState: 'healthy' } },
+    );
+    expect(goblin?.hpLabel).toBe('down');
   });
 
   it('highlights the active entity, uses the entity footprint, and labels conditions', () => {

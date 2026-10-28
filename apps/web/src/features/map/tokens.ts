@@ -15,9 +15,14 @@ export interface TeamMarker {
 export interface TokenPresentation {
   readonly name?: string;
   readonly team?: string;
+  /** Only a real max (from the sheet). Never derived from current HP. */
   readonly maxHp?: number;
+  /** Server status word: `healthy` | `wounded` | `down`. */
+  readonly hpState?: string;
   readonly conditions?: readonly string[];
 }
+
+export type HpWord = 'healthy' | 'bloodied' | 'down' | 'unknown';
 
 /** Serializable headless drawing instruction for one combatant. */
 export interface TokenDrawCommand {
@@ -70,9 +75,35 @@ function markerFor(team: string, teamIndex: number): TeamMarker {
   };
 }
 
-function hpLabel(kind: string, hp: number, maxHp: number): string {
-  if (kind === 'character') return `HP ${hp}/${maxHp}`;
-  return hp <= maxHp / 2 ? 'bloodied' : 'healthy';
+/**
+ * The status word for a combatant. Exact HP and a real max decide it when both are known (at or below half is
+ * bloodied, 0 is down); otherwise the server's hpState (`wounded` means bloodied) does.
+ */
+export function hpWord(
+  hp: number | undefined,
+  maxHp: number | undefined,
+  hpState?: string,
+): HpWord {
+  if (hp === 0 || hpState === 'down') return 'down';
+  if (typeof hp === 'number' && typeof maxHp === 'number' && maxHp > 0)
+    return hp * 2 <= maxHp ? 'bloodied' : 'healthy';
+  if (hpState === 'wounded') return 'bloodied';
+  if (hpState === 'healthy') return 'healthy';
+  return 'unknown';
+}
+
+function hpLabel(
+  kind: string,
+  hp: number | undefined,
+  maxHp: number | undefined,
+  hpState?: string,
+): string {
+  const word = hpWord(hp, maxHp, hpState);
+  if (kind === 'character' && typeof hp === 'number') {
+    const amount = typeof maxHp === 'number' ? `HP ${hp}/${maxHp}` : `HP ${hp}`;
+    return word === 'unknown' ? amount : `${amount} (${word})`;
+  }
+  return word;
 }
 
 /**
@@ -101,7 +132,7 @@ export function createTokenDrawCommands(
     const details = presentation[entity.id] ?? {};
     const team =
       details.team ?? (entity.kind === 'character' ? 'party' : entity.kind);
-    const maxHp = details.maxHp ?? Math.max(entity.hp, 1);
+    const maxHp = details.maxHp;
     const conditions = (details.conditions ?? []).map((condition) => {
       const label = condition.trim();
       const key = label.toLowerCase();
@@ -116,7 +147,7 @@ export function createTokenDrawCommands(
       footprint: entity.size,
       team,
       teamMarker: markerFor(team, teamIndices.get(team) ?? 0),
-      hpLabel: hpLabel(entity.kind, entity.hp, maxHp),
+      hpLabel: hpLabel(entity.kind, entity.hp, maxHp, details.hpState),
       conditions,
       active: entity.id === activeId,
     };
