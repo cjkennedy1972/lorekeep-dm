@@ -14,12 +14,15 @@ import {
   visibleChunks,
   type RollPayload,
 } from './logState.js';
+import { rollCardText, summarizeCombatRolls } from './combatRolls.js';
 import { NarrationText } from './narrationText.js';
 import './narration-log.css';
 
 type Props = {
   messages: readonly ServerMessage[];
   combatantNames?: Readonly<Record<string, string>>;
+  /** Whether each combatant is a player character or a monster; monster HP is never shown as a number. */
+  combatantKinds?: Readonly<Record<string, 'pc' | 'monster'>>;
   onReport?: (
     messageRef: number,
     category: string,
@@ -48,6 +51,7 @@ function rollEvent(payload: RollPayload) {
 export function NarrationLog({
   messages,
   combatantNames = {},
+  combatantKinds = {},
   onReport,
   opening,
   openingReady = true,
@@ -74,6 +78,12 @@ export function NarrationLog({
   const announcedTurns = useRef(new Set<string>());
   const announcedRolls = useRef(new Set<string>());
   const announcedCombatEvents = useRef(new Set<string>());
+  const announcedCombatBatches = useRef(new Set<number>());
+  const nameOfActor = (actorId: string) =>
+    combatantNames[actorId] ??
+    (actorId.startsWith('ent_')
+      ? actorId.slice(4).replaceAll('-', ' ')
+      : 'Player');
 
   const reportAction = (message: ServerMessage) => {
     if (!onReport) return null;
@@ -150,6 +160,15 @@ export function NarrationLog({
       if (message.type !== 'CombatEvents') continue;
       const events = (message.payload as { events?: unknown }).events;
       if (!Array.isArray(events)) continue;
+      // One polite announcement per batch keeps a fight from flooding the live region.
+      if (!announcedCombatBatches.current.has(message.seq)) {
+        announcedCombatBatches.current.add(message.seq);
+        const cards = summarizeCombatRolls(events, (id) => combatantKinds[id]);
+        if (cards.length)
+          setAnnouncement(
+            cards.map((card) => rollCardText(card, nameOfActor)).join(' '),
+          );
+      }
       events.forEach((raw, index) => {
         if (!raw || typeof raw !== 'object') return;
         const event = raw as Record<string, unknown>;
@@ -175,7 +194,7 @@ export function NarrationLog({
           setAnnouncement(`${name}: concentration lost`);
       });
     }
-  }, [messages, combatantNames]);
+  }, [messages, combatantNames, combatantKinds]);
 
   useEffect(() => {
     for (const message of messages) {
@@ -454,37 +473,52 @@ export function NarrationLog({
           .flatMap((message, messageIndex) => {
             const events = (message.payload as { events?: unknown }).events;
             if (!Array.isArray(events)) return [];
-            return events.map((raw, eventIndex) => {
-              if (!raw || typeof raw !== 'object') return null;
-              const event = raw as Record<string, unknown>;
-              const actorId = String(
-                event.entityId ?? event.actorId ?? 'Unknown',
-              );
-              const name =
-                combatantNames[actorId] ??
-                (actorId.startsWith('ent_')
-                  ? actorId.slice(4).replaceAll('-', ' ')
-                  : 'Player');
-              if (
-                event.type === 'RollEvent' &&
-                event.kind === 'save' &&
-                typeof event.dc === 'number' &&
-                typeof event.success === 'boolean'
-              )
-                return (
-                  <li key={`combat-${messageIndex}-${eventIndex}`}>
-                    {name}: Constitution save {String(event.total)} vs DC{' '}
-                    {event.dc} - concentration {event.success ? 'kept' : 'lost'}
-                  </li>
+            const rollItems = summarizeCombatRolls(
+              events,
+              (id) => combatantKinds[id],
+            ).map((card, cardIndex) => (
+              <li
+                key={`combat-${messageIndex}-roll-${cardIndex}`}
+                className="narration-log__roll"
+              >
+                {rollCardText(card, nameOfActor)}
+              </li>
+            ));
+            return [
+              ...rollItems,
+              ...events.map((raw, eventIndex) => {
+                if (!raw || typeof raw !== 'object') return null;
+                const event = raw as Record<string, unknown>;
+                const actorId = String(
+                  event.entityId ?? event.actorId ?? 'Unknown',
                 );
-              if (event.type === 'ConcentrationDropped')
-                return (
-                  <li key={`combat-${messageIndex}-${eventIndex}`}>
-                    {name}: concentration lost
-                  </li>
-                );
-              return null;
-            });
+                const name =
+                  combatantNames[actorId] ??
+                  (actorId.startsWith('ent_')
+                    ? actorId.slice(4).replaceAll('-', ' ')
+                    : 'Player');
+                if (
+                  event.type === 'RollEvent' &&
+                  event.kind === 'save' &&
+                  typeof event.dc === 'number' &&
+                  typeof event.success === 'boolean'
+                )
+                  return (
+                    <li key={`combat-${messageIndex}-${eventIndex}`}>
+                      {name}: Constitution save {String(event.total)} vs DC{' '}
+                      {event.dc} - concentration{' '}
+                      {event.success ? 'kept' : 'lost'}
+                    </li>
+                  );
+                if (event.type === 'ConcentrationDropped')
+                  return (
+                    <li key={`combat-${messageIndex}-${eventIndex}`}>
+                      {name}: concentration lost
+                    </li>
+                  );
+                return null;
+              }),
+            ];
           })}
       </ol>
       {opening &&

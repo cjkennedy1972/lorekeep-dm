@@ -173,3 +173,10 @@
 .narration-log__entries:empty {
   min-height: 0;
 }
+
+/* One line per resolved attack in the combat feed. */
+.narration-log__roll {
+  border-left: 3px solid currentColor;
+  padding-left: 0.5rem;
+  margin: 0.25rem 0;
+}

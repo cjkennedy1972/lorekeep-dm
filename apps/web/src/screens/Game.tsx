@@ -1077,6 +1077,12 @@ export function Game() {
             combatantNames={Object.fromEntries(
               entities.map((entity) => [entity.id, nameOf(entity.id)]),
             )}
+            combatantKinds={Object.fromEntries(
+              entities.map((entity) => [
+                entity.id,
+                entity.kind === 'character' ? 'pc' : 'monster',
+              ]),
+            )}
             opening={{
               title: 'The adventure begins',
               body:

@@ -254,3 +254,55 @@ test('shows the opening when the history synchronization fallback is ready witho
 
   expect(screen.getByText('The adventure begins')).toBeInTheDocument();
 });
+
+test('a combat batch shows one roll card per attack and announces the batch once', () => {
+  const combatBatch = {
+    seq: 30,
+    type: 'CombatEvents',
+    payload: {
+      events: [
+        {
+          type: 'RollEvent',
+          actorId: 'ent_aria',
+          label: 'attack equipment:javelin',
+          dice: '1d20',
+          rolls: [15],
+          modifier: 4,
+          total: 19,
+        },
+        {
+          type: 'RollEvent',
+          actorId: 'ent_aria',
+          label: 'damage equipment:javelin',
+          dice: '1d6',
+          rolls: [4],
+          modifier: 0,
+          total: 4,
+        },
+        {
+          type: 'HpChanged',
+          entityId: 'ent_goblin',
+          from: 7,
+          to: 3,
+          damage: 4,
+        },
+      ],
+    },
+  } as unknown as ServerMessage;
+
+  const { container } = render(
+    <NarrationLog
+      messages={[combatBatch]}
+      combatantNames={{ ent_aria: 'Aria', ent_goblin: 'Goblin' }}
+      combatantKinds={{ ent_aria: 'pc', ent_goblin: 'monster' }}
+    />,
+  );
+
+  const cards = container.querySelectorAll('.narration-log__roll');
+  expect(cards).toHaveLength(1);
+  expect(cards[0]).toHaveTextContent('Aria');
+  expect(cards[0]).toHaveTextContent('Goblin');
+  expect(
+    screen.getByText(/Aria/, { selector: '[role="status"]' }),
+  ).toBeInTheDocument();
+});
