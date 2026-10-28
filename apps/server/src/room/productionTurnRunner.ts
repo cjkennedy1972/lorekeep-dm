@@ -1227,6 +1227,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             },
             lastRestVoteResult: request.lastRestVoteResult,
             activeActorId: narrationActorId(state),
+            combatFacts: request.combatFacts,
             registryFacts: memoryContext.registryFacts,
             retrievedMemory: memoryContext.retrievedMemory,
             playerText: narrating

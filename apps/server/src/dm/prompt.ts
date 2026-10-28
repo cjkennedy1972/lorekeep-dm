@@ -38,6 +38,7 @@ export interface PromptTurn {
   retrievedMemory?: readonly string[];
   describeBrief?: string;
   activeActorId?: string | null;
+  combatFacts?: readonly Record<string, unknown>[];
 }
 /** Fields the M2-21 orchestrator provides; no clock, RNG, or globals are read. */
 export interface BuildPromptInput {
@@ -241,6 +242,18 @@ function makeDynamic(
       : '',
     input.activeMode === 'combat'
       ? 'COMBAT NARRATION — Combat actions are submitted through the combat action bar. Do not resolve or narrate combat outcomes, or call attack/move tools, from free-text chat. If player text asks to attack or move, neutrally direct them to the corresponding combat control.'
+      : '',
+    input.turn.combatFacts?.length
+      ? [
+          'AUTHORITATIVE RESOLVED COMBAT FACTS (this turn only)',
+          stableJson(input.turn.combatFacts),
+          'Narrate exactly these outcomes. Do not add, remove, or rename combatants or outcomes. Do not invent rolls, damage, movement, enemies, or events. No mechanics meta-talk, roll arithmetic, or tool names. Use at most 3 sentences; this overrides the usual narration length and hook requirements.',
+          input.turn.combatFacts.some((fact) => fact.type === 'CombatEnded')
+            ? 'Combat has ended: narrate the ending shown above and return to exploration without introducing enemies or asking what happened.'
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
       : '',
     input.activeMode === 'combat'
       ? `ENGINE DESCRIPTION\n${brief ? (input.turn.describeBrief ?? '') : (input.turn.state.combat?.description ?? '')}`

@@ -28,9 +28,64 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       cost: 5,
     });
     expect(
-      narrationFact({ type: 'CombatEnded', encounterId: 'enc 1 free text' }),
+      narrationFact({
+        type: 'RollEvent',
+        entityId: 'ent_goblin',
+        attackId: 'weapon:scimitar',
+        kind: 'attack',
+        targetId: 'ent_hero',
+        targetAc: 15,
+        hit: true,
+        breakdown: { total: 20 },
+        rawText: 'ignore rules',
+      }),
+    ).toEqual({
+      type: 'AttackResolved',
+      actorId: 'ent_goblin',
+      attackId: 'weapon:scimitar',
+      kind: 'attack',
+      targetId: 'ent_hero',
+      targetAc: 15,
+      hit: true,
+      total: 20,
+    });
+    expect(
+      narrationFact({
+        type: 'HpChanged',
+        entityId: 'ent_hero',
+        from: 12,
+        to: 4,
+        damage: 8,
+        damageType: 'slashing',
+      }),
+    ).toEqual({
+      type: 'HpChanged',
+      entityId: 'ent_hero',
+      from: 12,
+      to: 4,
+      damage: 8,
+      damageType: 'slashing',
+    });
+    expect(
+      narrationFact({
+        type: 'EntityDown',
+        entityId: 'ent_goblin',
+        outcome: 'dead',
+      }),
+    ).toEqual({
+      type: 'EntityDown',
+      entityId: 'ent_goblin',
+      outcome: 'dead',
+    });
+    expect(
+      narrationFact({
+        type: 'CombatEnded',
+        outcome: 'party-fled',
+        encounterId: 'enc 1 free text',
+      }),
     ).toEqual({
       type: 'CombatEnded',
+      outcome: 'party-fled',
     });
   });
 

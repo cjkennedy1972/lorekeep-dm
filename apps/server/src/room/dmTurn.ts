@@ -19,6 +19,7 @@ export interface SoloTurnRequest {
   steerAway?: boolean;
   /** Combat narration turn: read-only tool scope (ADR-034 §2). */
   combatNarration?: boolean;
+  combatFacts?: readonly Record<string, unknown>[];
   signal?: AbortSignal;
 }
 

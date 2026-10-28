@@ -1339,7 +1339,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     ).toHaveLength(1);
     expect(requests.map((r) => r.combatNarration)).toEqual([true]);
     expect(requests[0]!.text).toMatch(
-      /^\[Combat resolved by the engine; narrate it, do not change it\] (\{[^]*\})?$/,
+      /^\[Combat resolved by the engine; narrate it, do not change it\]$/,
     );
     expect(requests[0]!.playerName).toBe('Combat');
     expect(table.events.some((event) => event.type === 'TurnOpened')).toBe(
@@ -1685,7 +1685,9 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     let promptText = '';
     const runner = {
       async run(request: unknown) {
-        promptText = String((request as { text?: unknown }).text ?? '');
+        promptText = JSON.stringify(
+          (request as { combatFacts?: unknown }).combatFacts ?? [],
+        );
         return {
           narration: 'The turn resolves.',
           events: [],
@@ -1712,6 +1714,16 @@ describe('Room: one persisted narration per resolved combat turn', () => {
           hp: 1,
         },
         { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+        {
+          type: 'RollEvent',
+          entityId: 'ent_aria',
+          targetId: 'ent_goblin-minion_1',
+          attackId: 'weapon:bow',
+          kind: 'attack',
+          targetAc: 12,
+          hit: true,
+          breakdown: { total: 16 },
+        },
       ],
       combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
     };

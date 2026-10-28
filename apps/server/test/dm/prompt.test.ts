@@ -47,6 +47,78 @@ function input(playerText = 'I look around') {
   };
 }
 describe('DM prompt builder', () => {
+  it('narrates only projected resolved combat facts and closes combat without inventing enemies', () => {
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      readOnlyTools: true,
+      turn: {
+        ...input().turn,
+        combatFacts: [
+          {
+            type: 'AttackResolved',
+            actorId: 'ent_hero',
+            targetId: 'ent_goblin',
+            roll: 18,
+            targetAc: 12,
+            hit: true,
+          },
+          {
+            type: 'HpChanged',
+            entityId: 'ent_goblin',
+            from: 12,
+            to: 4,
+            damage: 8,
+            damageType: 'slashing',
+          },
+          {
+            type: 'AttackResolved',
+            actorId: 'ent_goblin',
+            targetId: 'ent_hero',
+            roll: 7,
+            targetAc: 15,
+            hit: false,
+          },
+          { type: 'EntityDown', entityId: 'ent_goblin', outcome: 'dead' },
+          {
+            type: 'EntityMoved',
+            entityId: 'ent_hero',
+            path: [
+              { x: 1, y: 2 },
+              { x: 2, y: 2 },
+            ],
+            cost: 5,
+          },
+          { type: 'CombatEnded', outcome: 'party-victory' },
+        ],
+      } as never,
+    });
+    expect(value.blocks[2]).toContain('AUTHORITATIVE RESOLVED COMBAT FACTS');
+    expect(value.blocks[2]).toContain('"targetAc":12');
+    expect(value.blocks[2]).toContain('"hit":false');
+    expect(value.blocks[2]).toContain('"outcome":"dead"');
+    expect(value.blocks[2]).toContain('"outcome":"party-victory"');
+    expect(value.blocks[2]).toContain(
+      'Do not add, remove, or rename combatants or outcomes',
+    );
+    expect(value.blocks[2]).toContain('at most 3 sentences');
+    expect(value.blocks[2]).toContain(
+      'return to exploration without introducing enemies',
+    );
+    const fleePrompt = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      turn: {
+        ...input().turn,
+        combatFacts: [{ type: 'CombatEnded', outcome: 'enemies-fled' }],
+      },
+    });
+    expect(fleePrompt.blocks[2]).toContain('"outcome":"enemies-fled"');
+    expect(fleePrompt.blocks[2]).toContain(
+      'return to exploration without introducing enemies',
+    );
+  });
+
   it('offers the constrained encounter tool and scene hook only for eligible exploration prompts', () => {
     const available = buildPrompt({
       ...input(),

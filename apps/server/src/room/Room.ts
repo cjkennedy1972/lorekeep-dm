@@ -362,9 +362,19 @@ export class NotTableHostError extends Error {
 
 /** ADR-033 §6.8: the only engine event fields a combat narration prompt may carry. */
 const NARRATION_FACT_FIELDS: Record<string, readonly string[]> = {
-  HpChanged: ['entityId', 'delta', 'hp'],
+  HpChanged: ['entityId', 'from', 'to', 'damage', 'damageType'],
   EntityMoved: ['entityId', 'path', 'cost'],
-  CombatEnded: [],
+  EntityDown: ['entityId', 'outcome'],
+  RollEvent: [
+    'entityId',
+    'attackId',
+    'kind',
+    'targetId',
+    'targetAc',
+    'hit',
+    'total',
+  ],
+  CombatEnded: ['outcome'],
   // reactionId is only safe while it stays a catalog handle; HANDLE below is the sole guard if that changes.
   ReactionResolved: ['entityId', 'used', 'reactionId'],
 };
@@ -387,15 +397,23 @@ export function isNarrationFactType(type: string): boolean {
   return Object.hasOwn(NARRATION_FACT_FIELDS, type);
 }
 export function narrationFact(event: Record<string, unknown>) {
-  return {
-    type: event.type,
-    ...Object.fromEntries(
-      NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
-        const value = narrationValue(event[key]);
-        return value === undefined ? [] : [[key, value]];
-      }),
-    ),
-  };
+  const fields = Object.fromEntries(
+    NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
+      const value =
+        key === 'total' &&
+        typeof event.breakdown === 'object' &&
+        event.breakdown
+          ? (event.breakdown as { total?: unknown }).total
+          : event[key];
+      const safe = narrationValue(value);
+      return safe === undefined ? [] : [[key, safe]];
+    }),
+  );
+  if (event.type === 'RollEvent' && event.kind === 'attack') {
+    const { entityId, ...attack } = fields;
+    return { type: 'AttackResolved', actorId: entityId, ...attack };
+  }
+  return { type: event.type, ...fields };
 }
 
 export class RoomPausedError extends Error {
@@ -516,6 +534,7 @@ export class Room {
     editedAt?: number;
     clarificationAsked?: boolean;
     combatTurnId?: string;
+    combatFacts?: Record<string, unknown>[];
   }[] = [];
   private nextActionReceiptSeq = 0;
   private readonly clarificationTimers = new Map<string, NodeJS.Timeout>();
@@ -4597,6 +4616,7 @@ export class Room {
           action.clarificationAsked === true,
           undefined,
           action.combatTurnId,
+          action.combatFacts,
         );
         if (this.sceneBoundaryPending)
           await this.enqueue(async () => {
@@ -4718,6 +4738,7 @@ export class Room {
     clarificationAsked: boolean,
     roundId?: string,
     combatTurnId?: string,
+    combatFacts?: readonly Record<string, unknown>[],
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
     const startGame = structuredClone(this.state.gameState ?? {}) as Record<
@@ -4753,6 +4774,7 @@ export class Room {
           clarificationAsked,
           steerAway: xCardAtStart.requested > xCardAtStart.steered,
           ...(combatTurnId ? { combatNarration: true } : {}),
+          ...(combatFacts ? { combatFacts } : {}),
           signal: AbortSignal.any([this.drainAbort.signal, turnAbort.signal]),
         },
         (event) => {
@@ -6014,10 +6036,11 @@ export class Room {
       .filter(
         (event) =>
           !namesHiddenEntity(event, hiddenEntityIds) &&
-          isNarrationFactType(String(event.type)),
+          isNarrationFactType(String(event.type)) &&
+          (event.type !== 'RollEvent' || event.kind === 'attack'),
       )
       .slice(0, 12)
-      .map((event) => JSON.stringify(narrationFact(event)));
+      .map(narrationFact);
     const actionId = randomUUID();
     this.pendingActions.add(actionId);
     this.queuedActions.push({
@@ -6025,7 +6048,8 @@ export class Room {
       actionId,
       originalActionId: actionId,
       editActionIds: [],
-      text: `[Combat resolved by the engine; narrate it, do not change it] ${facts.join(' ')}`,
+      text: '[Combat resolved by the engine; narrate it, do not change it]',
+      combatFacts: facts,
       playerName: 'Combat',
       receiptSeq: ++this.nextActionReceiptSeq,
       ...(combatTurnId ? { combatTurnId } : {}),
