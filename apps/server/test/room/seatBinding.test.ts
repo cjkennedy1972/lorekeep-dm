@@ -154,7 +154,7 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
-  it('keeps the solo owner able to submit an action after late-join conversion', async () => {
+  it('keeps the solo owner able to submit an action while a late join awaits binding', async () => {
     const f = party({
       partyMode: false,
       bindA: false,
@@ -181,14 +181,9 @@ describe('ADR-035 party seat gating', () => {
     ).admitApprovedLateJoins();
 
     expect(f.writes).toContainEqual(
-      expect.objectContaining({
-        mode: 'solo-to-party',
-        ownerReturn: true,
-      }),
+      expect.objectContaining({ events: ['SeatJoined'], ownerReturn: false }),
     );
-    expect(f.room.seatCharacters.get(f.seatA)?.characterSnapshot).toEqual({
-      name: 'Owner legacy sheet',
-    });
+    expect(f.writes[0]?.mode).toBeUndefined();
     await expect(
       f.room.submitAction(f.accountA, randomUUID(), 'I take my turn.'),
     ).resolves.toBe(true);

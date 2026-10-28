@@ -1,4 +1,4 @@
-// Throwaway review probe for PR #395 @ 279d7baf. Not part of the PR. Real Postgres, real Persistence, NO pre-seeded seats.
+// Late-join admission, snapshot acknowledgement, and character-binding lifecycle on real Postgres.
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -137,7 +137,7 @@ const rows = async (sid: string) =>
       type: string;
       payload: Record<string, unknown>;
     }>(
-      'SELECT seq::text,type,payload FROM events WHERE session_id=$1 ORDER BY seq',
+      'SELECT seq::text,type,payload FROM events WHERE session_id=$1 ORDER BY events.seq',
       [sid],
     )
   ).rows;
@@ -164,8 +164,8 @@ async function waitFor(pred: () => boolean | Promise<boolean>, ms = 3000) {
   return pred();
 }
 
-describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
-  it('S1 owner solo (legacy, unbound) -> request -> approve -> admit -> owner/joiner act -> concurrent writes', async () => {
+describe('late-join snapshot acknowledgement and binding', () => {
+  it('approves, acknowledges, binds, spawns, and enables an approved joiner', async () => {
     const f = await solo();
     const room = await open(f);
     await room.seat(f.owner, 'Owner');
@@ -191,7 +191,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
       await waitFor(() => room.state.seats.some((s) => s.accountId === joiner)),
     ).toBe(true);
 
-    expect(await modeOf(f.sessionId)).toBe('party');
+    expect(await modeOf(f.sessionId)).toBe('solo');
     const joinerSeat = room.state.seats.find((s) => s.accountId === joiner)!;
     expect(
       (await store.loadActiveSeatCharacterBindings(f.sessionId)).some(
@@ -228,6 +228,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
         ),
       ),
     ).toBe(true);
+    expect(await modeOf(f.sessionId)).toBe('party');
 
     const ev = await rows(f.sessionId);
     const types = ev.map((e) => e.type);
@@ -279,6 +280,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
       room.submitAction(f.owner, randomUUID(), 'concurrent owner c', 'Owner'),
       room.submitAction(joiner, randomUUID(), 'concurrent joiner d', 'Joiner'),
     ]);
+    expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
     const seqs = (await rows(f.sessionId))
       .map((e) => Number(e.seq))
       .sort((a, b) => a - b);
@@ -307,7 +309,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     await room.drain();
   }, 60_000);
 
-  it('S1b explicit solo bind is refused (SOLO_SESSION) so no re-bind collision path exists pre-conversion', async () => {
+  it('refuses explicit binding while a session remains solo', async () => {
     const f = await solo();
     const room = await open(f);
     await room.seat(f.owner, 'Owner');
@@ -324,7 +326,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     await room.drain();
   }, 60_000);
 
-  it('S2 non-host cannot approve; joiner action not admitted', async () => {
+  it('rejects non-host approval without admitting the joiner', async () => {
     const f = await solo();
     const room = await open(f);
     await room.seat(f.owner, 'Owner');
@@ -351,7 +353,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     await room.drain();
   }, 60_000);
 
-  it('S3 expired request is not admitted', async () => {
+  it('does not admit an expired late-join request', async () => {
     const f = await solo();
     const room = await open(f);
     await room.seat(f.owner, 'Owner');
@@ -392,7 +394,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     await room.drain();
   }, 60_000);
 
-  it('S4 stale character revision cancels late join and revokes the pending seat', async () => {
+  it('keeps the session solo when a stale bind revokes the pending seat', async () => {
     const f = await solo();
     const room = await open(f);
     await room.seat(f.owner, 'Owner');
@@ -472,11 +474,11 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     expect(room.state.seats.some((seat) => seat.accountId === joiner)).toBe(
       false,
     );
-    expect(await modeOf(f.sessionId)).toBe('party');
+    expect(await modeOf(f.sessionId)).toBe('solo');
     await room.drain();
   }, 60_000);
 
-  it('S5 lease fencing: takeover mid-flow blocks owner action and game-state persistence; no conversion/no writes', async () => {
+  it('fences actions and game-state writes after lease takeover', async () => {
     const f = await solo();
     const room = await open(f);
     await room.seat(f.owner, 'Owner');
@@ -494,7 +496,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
       );
     expect(gs.startsWith('rejected')).toBe(true);
     expect((await rows(f.sessionId)).length).toBe(before);
-    const act = await room
+    await room
       .submitAction(f.owner, randomUUID(), 'after takeover', 'Owner')
       .then(
         () => 'ok',

@@ -234,6 +234,7 @@ export class SeatCharacterRepository {
       characterId: string;
       expectedRevision: number;
       pendingSeatJoin?: boolean;
+      allowSolo?: boolean;
     },
   ) {
     try {
@@ -242,7 +243,7 @@ export class SeatCharacterRepository {
         [input.sessionId],
       );
       if (!session.rowCount) throw new SeatCharacterError('NOT_FOUND');
-      if (session.rows[0]!.mode !== 'party')
+      if (session.rows[0]!.mode !== 'party' && !input.allowSolo)
         throw new SeatCharacterError('SOLO_SESSION');
       if (session.rows[0]!.status !== 'active')
         throw new SeatCharacterError('SESSION_INACTIVE');

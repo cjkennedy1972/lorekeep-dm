@@ -402,16 +402,6 @@ export class Persistence {
   }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
-      if (sessionModeTransition === 'solo-to-party') {
-        const converted = await client.query(
-          "UPDATE sessions SET mode='party' WHERE id=$1 AND status='active'",
-          [sessionId],
-        );
-        if (converted.rowCount !== 1)
-          throw new Error(
-            'Solo-to-party conversion requires an active session',
-          );
-      }
       let binding:
         | Awaited<ReturnType<SeatCharacterRepository['bindWithClient']>>
         | undefined;
@@ -434,6 +424,7 @@ export class Persistence {
                 (event.payload as { accountId?: unknown }).accountId ===
                   seatCharacterTransition.accountId,
             ),
+            allowSolo: sessionModeTransition === 'solo-to-party',
           },
         );
       } else if (seatCharacterTransition?.kind === 'release') {
@@ -446,6 +437,16 @@ export class Persistence {
         );
       }
       if (sessionModeTransition === 'solo-to-party') {
+        // The bind has already validated ownership and revision in this transaction.
+        // Any later failure rolls back conversion, binding, and event append together.
+        const converted = await client.query(
+          "UPDATE sessions SET mode='party' WHERE id=$1 AND status='active' AND mode='solo'",
+          [sessionId],
+        );
+        if (converted.rowCount !== 1)
+          throw new Error(
+            'Solo-to-party conversion requires an active session',
+          );
         const owner = await client.query<{
           owner_account_id: string;
           character_id: string | null;
