@@ -192,6 +192,43 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     ).toBe(true);
 
     expect(await modeOf(f.sessionId)).toBe('party');
+    const joinerSeat = room.state.seats.find((s) => s.accountId === joiner)!;
+    expect(
+      (await store.loadActiveSeatCharacterBindings(f.sessionId)).some(
+        (binding) => binding.accountId === joiner,
+      ),
+    ).toBe(false);
+    await expect(
+      room.submitAction(joiner, randomUUID(), 'before snapshot ack', 'Joiner'),
+    ).rejects.toThrow();
+
+    // ADR-035 §3/§4: admission/conversion precedes snapshot ACK, but binding
+    // and playable control wait for the authorized seat's ACK.
+    const joinerConn = conn();
+    await room.subscribe(joiner, joinerConn, -1);
+    const sync = joinerConn.msgs.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as { seq: number } | undefined;
+    expect(sync).toBeDefined();
+    await room.acknowledgeLateJoinSnapshot(
+      joiner,
+      joinerSeat.seatId,
+      sync!.seq,
+    );
+    await room.submitAction(
+      f.owner,
+      randomUUID(),
+      'close the scene again',
+      'Owner',
+    );
+    expect(
+      await waitFor(async () =>
+        (await rows(f.sessionId)).some(
+          (event) => event.type === 'LateJoinAdmitted',
+        ),
+      ),
+    ).toBe(true);
+
     const ev = await rows(f.sessionId);
     const types = ev.map((e) => e.type);
     expect(types).toContain('LateJoinApproved');
@@ -201,62 +238,24 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     expect(types).toContain('LateJoinAdmitted');
     const bindings = await store.loadActiveSeatCharacterBindings(f.sessionId);
     const bound = bindings.map((b) => b.accountId).sort();
-    console.log(
-      'S1 bindings after admit:',
-      bound.length,
-      'owner bound:',
-      bound.includes(f.owner),
-      'joiner bound:',
-      bound.includes(joiner),
-    );
     expect(bound).toContain(joiner);
     expect(bound).toContain(f.owner);
-
-    // Subscribe both viewers after admission to inspect what each receives.
-    const ownerConn = conn();
-    const joinerConn = conn();
-    await room.subscribe(f.owner, ownerConn, -1);
-    await room.subscribe(joiner, joinerConn, -1);
-
-    {
-      const { lateJoinSpawnCell } = await import(
-        '../../src/room/lateJoinSpawn.js'
-      );
-      const g = room.state.gameState as Record<string, unknown> | undefined;
-      const eng = g?.gameEngine as Record<string, unknown> | undefined;
-      console.log(
-        'S1 DEBUG spawnCell(map,[])=',
-        JSON.stringify(lateJoinSpawnCell(map, [])),
-        'hasEngineMap=',
-        !!eng?.map,
-        'gameKeys=',
-        Object.keys(g ?? {}).join(','),
-      );
-    }
-    console.log(
-      'S1 DEBUG events:',
-      (await rows(f.sessionId)).map((e) => e.type).join(' '),
+    const spawn = ev.find((event) => event.type === 'LateJoinSpawned')!;
+    const spawnedEntityId = (spawn.payload as { entityId: string }).entityId;
+    const gameState = room.state.gameState as
+      | {
+          gameEngine?: {
+            entities?: Array<{ id: string; hp?: number; maxHp?: number }>;
+          };
+        }
+      | undefined;
+    const spawnedEntity = gameState?.gameEngine?.entities?.find(
+      (entity) => entity.id === spawnedEntityId,
     );
-    console.log(
-      'S1 DEBUG lateJoinRequests:',
-      JSON.stringify(
-        room.state.lateJoinRequests?.map((r) => ({
-          a: r.accountId === joiner,
-          approved: r.approved,
-          exp: r.expiresAt,
-        })) ?? [],
-      ),
-      'sceneId:',
-      (room.state.gameState as { sceneId?: string } | undefined)?.sceneId,
-      'seatCharKeys:',
-      [...room.seatCharacters.values()].map((b) =>
-        b.accountId === joiner
-          ? 'joiner'
-          : b.accountId === f.owner
-            ? 'owner'
-            : 'other',
-      ),
-    );
+    expect(spawnedEntity).toBeDefined();
+    expect(spawnedEntity!.hp).toBeGreaterThan(0);
+    expect(spawnedEntity!.hp).toBe(spawnedEntity!.maxHp);
+
     // Post-conversion: owner acts, joiner acts.
     await expect(
       room.submitAction(f.owner, randomUUID(), 'owner post-convert', 'Owner'),
@@ -280,16 +279,6 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
       room.submitAction(f.owner, randomUUID(), 'concurrent owner c', 'Owner'),
       room.submitAction(joiner, randomUUID(), 'concurrent joiner d', 'Joiner'),
     ]);
-    console.log(
-      'S1 concurrent outcomes:',
-      results.map(
-        (r) =>
-          r.status +
-          (r.status === 'rejected'
-            ? ':' + String((r.reason as Error).message)
-            : ''),
-      ),
-    );
     const seqs = (await rows(f.sessionId))
       .map((e) => Number(e.seq))
       .sort((a, b) => a - b);
@@ -314,60 +303,6 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
         JSON.stringify(f.ownerChar.character.abilities),
       ),
     };
-    console.log('S1 joiner leak check:', leaks, 'msgTypes:', [
-      ...new Set(joinerConn.msgs.map((m) => (m as { type: string }).type)),
-    ]);
-    for (const m of joinerConn.msgs) {
-      const s = JSON.stringify(m);
-      const i = s.indexOf('"abilities"');
-      if (i >= 0)
-        console.log(
-          'S1 ABIL',
-          (m as { type?: string }).type,
-          s.slice(Math.max(0, i - 200), i + 120),
-        );
-    }
-    console.log(
-      'S1 OWNER seat',
-      room.state.seats.find((s) => s.accountId === f.owner)!.seatId,
-      'JOINER seat',
-      room.state.seats.find((s) => s.accountId === joiner)!.seatId,
-      'ownerCharId',
-      f.ownerChar.character.id,
-      'joinerCharId',
-      jc.character.id,
-      'ownerName',
-      f.ownerChar.character.name,
-      'joinerName',
-      jc.character.name,
-    );
-    for (const m of joinerConn.msgs)
-      if ((m as { type?: string }).type === 'StateSync') {
-        const ch =
-          (
-            m as {
-              payload?: {
-                gameState?: {
-                  characters?: Record<
-                    string,
-                    { name?: string; abilities?: unknown }
-                  >;
-                };
-              };
-            }
-          ).payload?.gameState?.characters ?? {};
-        console.log(
-          'S1 SYNC chars',
-          JSON.stringify(
-            Object.fromEntries(
-              Object.entries(ch).map(([k, v]) => [
-                k,
-                { name: v.name, hasAbilities: v.abilities !== undefined },
-              ]),
-            ),
-          ),
-        );
-      }
     expect(Object.values(leaks).some(Boolean)).toBe(false);
     await room.drain();
   }, 60_000);
@@ -445,18 +380,6 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     }
     await new Promise((r) => setTimeout(r, 200));
     const ev = await rows(f.sessionId);
-    console.log(
-      'S3 events:',
-      ev
-        .map(
-          (e) =>
-            e.type +
-            (e.type === 'LateJoinExpired'
-              ? '(' + JSON.stringify(e.payload.reason) + ')'
-              : ''),
-        )
-        .join(' '),
-    );
     expect(room.state.seats.some((s) => s.accountId === joiner)).toBe(false);
     expect(
       ev.some(
@@ -469,7 +392,7 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
     await room.drain();
   }, 60_000);
 
-  it('S4 failure injection: joiner character revision changes after request -> admission fails, session stays solo', async () => {
+  it('S4 stale character revision cancels late join and revokes the pending seat', async () => {
     const f = await solo();
     const room = await open(f);
     await room.seat(f.owner, 'Owner');
@@ -489,35 +412,67 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
       jc.revision,
     );
     await room.approveLateJoin(f.owner, randomUUID(), req);
-    const closeOutcome = await room
-      .submitAction(f.owner, randomUUID(), 'close the scene', 'Owner')
-      .then(
-        () => 'ok',
-        (e: Error) => 'rejected:' + e.message,
-      );
-    await new Promise((r) => setTimeout(r, 300));
-    const ev = await rows(f.sessionId);
-    console.log(
-      'S4 close outcome:',
-      closeOutcome,
-      'events:',
-      ev.map((e) => e.type).join(' '),
-    );
-    console.log(
-      'S4 mode:',
-      await modeOf(f.sessionId),
-      'joinerSeatInMemory:',
-      room.state.seats.some((s) => s.accountId === joiner),
-    );
-    expect(await modeOf(f.sessionId)).toBe('solo');
+    await room.submitAction(f.owner, randomUUID(), 'close the scene', 'Owner');
     expect(
-      ev.some(
-        (e) =>
-          e.type === 'SeatJoined' &&
-          (e.payload as { accountId?: string }).accountId === joiner,
+      await waitFor(() =>
+        room.state.seats.some((seat) => seat.accountId === joiner),
+      ),
+    ).toBe(true);
+    const staleSeat = room.state.seats.find(
+      (seat) => seat.accountId === joiner,
+    )!;
+    const staleConnection = conn();
+    await room.subscribe(joiner, staleConnection, -1);
+    const staleSync = staleConnection.msgs.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as { seq: number } | undefined;
+    expect(staleSync).toBeDefined();
+    await room.acknowledgeLateJoinSnapshot(
+      joiner,
+      staleSeat.seatId,
+      staleSync!.seq,
+    );
+    await room.submitAction(
+      f.owner,
+      randomUUID(),
+      'close the next scene',
+      'Owner',
+    );
+    expect(
+      await waitFor(async () =>
+        (await rows(f.sessionId)).some(
+          (event) => event.type === 'LateJoinExpired',
+        ),
+      ),
+    ).toBe(true);
+    const ev = await rows(f.sessionId);
+    const expired = ev.find((event) => event.type === 'LateJoinExpired');
+    expect(expired?.payload.reason).toBe('STALE_REVISION');
+    expect(ev.some((event) => event.type === 'SeatRevoked')).toBe(true);
+    expect(ev.some((event) => event.type === 'SeatCharacterBound')).toBe(false);
+    expect(ev.some((event) => event.type === 'LateJoinSpawned')).toBe(false);
+    const gameEngine = (
+      room.state.gameState as {
+        gameEngine?: { entities?: Array<{ id: string }> };
+      }
+    ).gameEngine;
+    expect(
+      gameEngine?.entities?.some(
+        (entity) => entity.id === `ent_seat_${staleSeat.seatId}`,
+      ),
+    ).not.toBe(true);
+    await expect(
+      room.submitAction(joiner, randomUUID(), 'revoked seat action', 'Joiner'),
+    ).rejects.toThrow();
+    expect(
+      (await store.loadActiveSeatCharacterBindings(f.sessionId)).some(
+        (binding) => binding.accountId === joiner,
       ),
     ).toBe(false);
-    expect(ev.some((e) => e.type === 'SeatCharacterBound')).toBe(false);
+    expect(room.state.seats.some((seat) => seat.accountId === joiner)).toBe(
+      false,
+    );
+    expect(await modeOf(f.sessionId)).toBe('party');
     await room.drain();
   }, 60_000);
 
@@ -537,7 +492,6 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
         () => 'ok',
         (e: Error) => 'rejected:' + e.message,
       );
-    console.log('S5a persistGameState after takeover:', gs);
     expect(gs.startsWith('rejected')).toBe(true);
     expect((await rows(f.sessionId)).length).toBe(before);
     const act = await room
@@ -548,15 +502,6 @@ describe('PR395 probe: end-to-end late join (no pre-seeded seats)', () => {
       );
     await new Promise((r) => setTimeout(r, 1500));
     const after = await rows(f.sessionId);
-    console.log(
-      'S5b action:',
-      act,
-      'new events:',
-      after
-        .slice(before)
-        .map((e) => e.type)
-        .join(' ') || '(none)',
-    );
     expect(
       after
         .slice(before)
