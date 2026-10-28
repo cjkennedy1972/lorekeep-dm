@@ -435,7 +435,7 @@ const CONSEQUENTIAL_NARRATION_TYPES = new Set([
   'CombatEnded',
 ]);
 
-/** Preserve every outcome; compact repeated movement and cap only incidental facts. */
+/** Preserve terminal outcomes; compact repeated attacks and never silently cap facts. */
 export function narrationFacts(
   events: readonly Record<string, unknown>[],
   characterIds: ReadonlySet<string> = new Set(),
@@ -446,40 +446,48 @@ export function narrationFacts(
       (event.type !== 'RollEvent' || event.kind === 'attack'),
   );
   const characterAttackHits = new Map<Record<string, unknown>, boolean>();
+  const attackDamage = new Map<Record<string, unknown>, number>();
   events.forEach((event, index) => {
-    if (
-      event.type !== 'RollEvent' ||
-      event.kind !== 'attack' ||
-      typeof event.targetId !== 'string' ||
-      !characterIds.has(event.targetId)
-    )
-      return;
+    if (event.type !== 'RollEvent' || event.kind !== 'attack') return;
     const nextAttack = events.findIndex(
       (candidate, candidateIndex) =>
         candidateIndex > index && candidate.type === 'RollEvent',
     );
     const turnEventEnd = nextAttack < 0 ? events.length : nextAttack;
-    characterAttackHits.set(
-      event,
-      events
-        .slice(index + 1, turnEventEnd)
-        .some(
+    const effects = events.slice(index + 1, turnEventEnd);
+    if (typeof event.targetId === 'string' && characterIds.has(event.targetId))
+      characterAttackHits.set(
+        event,
+        effects.some(
           (candidate) =>
             candidate.type === 'HpChanged' &&
             candidate.entityId === event.targetId &&
             typeof candidate.damage === 'number',
         ),
+      );
+    attackDamage.set(
+      event,
+      effects.reduce(
+        (sum, candidate) =>
+          candidate.type === 'HpChanged' &&
+          candidate.entityId === event.targetId &&
+          typeof candidate.damage === 'number'
+            ? sum + candidate.damage
+            : sum,
+        0,
+      ),
     );
   });
+
   const consequential = eligible.filter((event) =>
     CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)),
   );
-  const critical = eligible.filter(
+  const attacks = eligible.filter(
     (event) => event.type === 'RollEvent' && event.kind === 'attack',
   );
   const incidental = eligible.filter(
     (event) =>
-      !critical.includes(event) &&
+      !attacks.includes(event) &&
       !CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)),
   );
   const movementByEntity = new Map<string, Record<string, unknown>>();
@@ -504,33 +512,120 @@ export function narrationFacts(
     ...movementByEntity.values(),
     ...otherIncidental,
   ];
-  const overflowedConsequential = consequential.length > 40;
-  const prioritized = [
-    ...consequential.filter((event) => event.type === 'CombatEnded'),
-    ...consequential.filter((event) => event.type === 'EntityDown'),
-    ...consequential.filter((event) => event.type === 'HpChanged'),
-  ].slice(0, overflowedConsequential ? 39 : 40);
-  const remainingBudget = Math.max(0, 40 - prioritized.length);
-  const prioritizedCritical = critical.slice(0, remainingBudget);
-  const incidentalBudget = Math.max(
-    0,
-    40 - prioritized.length - prioritizedCritical.length,
-  );
-  const facts: Record<string, unknown>[] = [
-    ...prioritized,
-    ...prioritizedCritical,
-    ...compactedIncidental.slice(0, incidentalBudget),
-  ].map((event) => ({
-    ...narrationFact(event, characterIds, characterAttackHits.get(event)),
-    tier: ['CombatEnded', 'EntityDown', 'HpChanged', 'AttackResolved'].includes(
-      event.type === 'RollEvent' && event.kind === 'attack'
-        ? 'AttackResolved'
-        : String(event.type),
-    )
-      ? 'must'
-      : 'may',
+
+  type FactEntry = {
+    fact: Record<string, unknown>;
+    terminal: boolean;
+    order: number;
+  };
+  const entries: FactEntry[] = [];
+  const finalHpChangeByEntity = new Map<string, Record<string, unknown>>();
+  for (const event of consequential)
+    if (event.type === 'HpChanged' && typeof event.entityId === 'string')
+      finalHpChangeByEntity.set(event.entityId, event);
+  for (const event of consequential) {
+    const finalHp =
+      event.type === 'HpChanged' &&
+      typeof event.entityId === 'string' &&
+      finalHpChangeByEntity.get(event.entityId) === event;
+    entries.push({
+      fact: { ...narrationFact(event, characterIds), tier: 'must' },
+      terminal: event.type !== 'HpChanged' || finalHp,
+      order: events.indexOf(event),
+    });
+  }
+
+  const attackFacts: {
+    event: Record<string, unknown>;
+    fact: Record<string, unknown>;
+    order: number;
+  }[] = attacks.map((event) => ({
+    event,
+    fact: narrationFact(event, characterIds, characterAttackHits.get(event)),
+    order: events.indexOf(event),
   }));
-  if (overflowedConsequential)
+  const compactByPair = attacks.length > 8;
+  const summarized = new Set<Record<string, unknown>>();
+  if (compactByPair) {
+    const groups = new Map<string, typeof attackFacts>();
+    for (const attack of attackFacts) {
+      if (
+        typeof attack.fact.actorId !== 'string' ||
+        typeof attack.fact.targetId !== 'string'
+      )
+        continue;
+      const key = `${attack.fact.actorId}\0${attack.fact.targetId}`;
+      groups.set(key, [...(groups.get(key) ?? []), attack]);
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      group.forEach(({ event }) => summarized.add(event));
+      entries.push({
+        fact: {
+          type: 'AttackSummary',
+          actorId: group[0]!.fact.actorId,
+          targetId: group[0]!.fact.targetId,
+          attacks: group.length,
+          hits: group.filter(({ fact }) => fact.hit === true).length,
+          damage: 0,
+          tier: 'must',
+        },
+        terminal: false,
+        order: group[0]!.order,
+      });
+      const summary = entries.at(-1)!.fact;
+      summary.damage = group.reduce(
+        (sum, attack) => sum + (attackDamage.get(attack.event) ?? 0),
+        0,
+      );
+    }
+  }
+  for (const { event, fact, order } of attackFacts)
+    if (!summarized.has(event))
+      entries.push({ fact: { ...fact, tier: 'must' }, terminal: false, order });
+  for (const event of compactedIncidental)
+    entries.push({
+      fact: { ...narrationFact(event, characterIds), tier: 'may' },
+      terminal: false,
+      order: events.indexOf(event),
+    });
+
+  const priority = (fact: Record<string, unknown>) =>
+    fact.type === 'CombatEnded'
+      ? 0
+      : fact.type === 'EntityDown'
+        ? 1
+        : fact.type === 'HpChanged'
+          ? 2
+          : fact.tier === 'must'
+            ? 3
+            : 4;
+  const ordered = entries.sort(
+    (left, right) =>
+      priority(left.fact) - priority(right.fact) || left.order - right.order,
+  );
+  const cap = 40;
+  let dropped = false;
+  while (ordered.length > (dropped ? cap - 1 : cap)) {
+    let dropIndex = ordered.findIndex(({ fact }) => fact.tier === 'may');
+    if (dropIndex < 0) {
+      const oldestMust = ordered
+        .map(({ fact, terminal }, index) => ({ fact, terminal, index }))
+        .filter(
+          ({ fact, terminal }) => !terminal && fact.type !== 'CombatEnded',
+        )
+        .sort(
+          (left, right) =>
+            ordered[left.index]!.order - ordered[right.index]!.order,
+        )[0];
+      dropIndex = oldestMust?.index ?? -1;
+    }
+    if (dropIndex < 0) break;
+    ordered.splice(dropIndex, 1);
+    dropped = true;
+  }
+  const facts = ordered.map(({ fact }) => fact);
+  if (dropped)
     facts.push({
       type: 'NarrationOverflow',
       detail: 'and other effects are not listed',

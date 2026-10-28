@@ -137,6 +137,25 @@ describe('DM prompt builder', () => {
     );
   });
 
+  it('tells the narrator not to invent outcomes omitted by the overflow cap', () => {
+    const facts = narrationFacts(
+      Array.from({ length: 45 }, (_, index) => ({
+        type: 'ReactionResolved',
+        entityId: `ent_${index}`,
+        used: true,
+      })),
+    );
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      turn: { ...input().turn, combatFacts: facts },
+    });
+    expect(value.blocks[2]).toContain('NarrationOverflow');
+    expect(value.blocks[2]).toContain(
+      'narrate the listed outcomes and do not invent the unlisted rest',
+    );
+  });
+
   it('passes the last narration beat as a phrasing reference for combat', () => {
     const value = buildPrompt({
       ...input(),

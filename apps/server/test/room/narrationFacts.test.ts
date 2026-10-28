@@ -244,7 +244,7 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
     });
   });
 
-  it('caps total narration facts at 40 while retaining outcome and HP facts first', () => {
+  it('caps droppable facts while preserving each entity terminal HP and combat outcomes', () => {
     const events = [
       ...Array.from({ length: 45 }, (_, index) => ({
         type: 'RollEvent',
@@ -264,14 +264,26 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       'EntityDown',
       'HpChanged',
     ]);
+    expect(facts).toContainEqual(
+      expect.objectContaining({
+        type: 'AttackResolved',
+        actorId: 'ent_monster_44',
+      }),
+    );
+    expect(facts).not.toContainEqual(
+      expect.objectContaining({
+        type: 'AttackResolved',
+        actorId: 'ent_monster_0',
+      }),
+    );
     const manyConsequences = narrationFacts([
       { type: 'CombatEnded', outcome: 'party-defeated' },
       { type: 'EntityDown', entityId: 'ent_pc', outcome: 'dead' },
       ...Array.from({ length: 45 }, (_, index) => ({
         type: 'HpChanged',
-        entityId: `ent_pc_${index}`,
-        from: 10,
-        to: 9,
+        entityId: 'ent_pc',
+        from: 60 - index,
+        to: 59 - index,
         damage: 1,
       })),
     ]);
@@ -279,10 +291,96 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
     expect(manyConsequences.at(-1)).toMatchObject({
       type: 'NarrationOverflow',
     });
+    expect(
+      manyConsequences.filter((fact) => fact.type === 'HpChanged'),
+    ).toHaveLength(37);
+    expect(manyConsequences).toContainEqual(
+      expect.objectContaining({ from: 16, to: 15, tier: 'must' }),
+    );
     expect(manyConsequences.slice(0, 2).map((fact) => fact.type)).toEqual([
       'CombatEnded',
       'EntityDown',
     ]);
+  });
+
+  it('compacts repeated attacks, keeps terminal outcomes, and marks any dropped facts', () => {
+    const facts = narrationFacts(
+      [
+        ...Array.from({ length: 45 }, (_, index) => [
+          {
+            type: 'RollEvent',
+            entityId: 'ent_goblin',
+            kind: 'attack',
+            targetId: 'ent_pc',
+            hit: index % 3 !== 0,
+          },
+          ...(index % 3 !== 0
+            ? [
+                {
+                  type: 'HpChanged',
+                  entityId: 'ent_pc',
+                  from: 60 - Math.floor(((index + 1) * 2) / 3) * 2,
+                  to: 58 - Math.floor(((index + 1) * 2) / 3) * 2,
+                  damage: 2,
+                },
+              ]
+            : []),
+        ]).flat(),
+        { type: 'EntityDown', entityId: 'ent_pc', outcome: 'dead' },
+        { type: 'CombatEnded', outcome: 'party-defeated' },
+        ...Array.from({ length: 45 }, (_, index) => ({
+          type: 'ReactionResolved',
+          entityId: `ent_${index}`,
+          used: true,
+        })),
+      ],
+      new Set(['ent_pc']),
+    );
+
+    expect(facts).toContainEqual({
+      type: 'AttackSummary',
+      actorId: 'ent_goblin',
+      targetId: 'ent_pc',
+      attacks: 45,
+      hits: 30,
+      damage: 60,
+      tier: 'must',
+    });
+    expect(facts).toContainEqual({
+      type: 'HpChanged',
+      entityId: 'ent_pc',
+      from: 2,
+      to: 0,
+      damage: 2,
+      tier: 'must',
+    });
+    expect(facts).toContainEqual({
+      type: 'EntityDown',
+      entityId: 'ent_pc',
+      outcome: 'dead',
+      tier: 'must',
+    });
+    expect(facts).toContainEqual({
+      type: 'CombatEnded',
+      outcome: 'party-defeated',
+      tier: 'must',
+    });
+    expect(facts.at(-1)).toMatchObject({
+      type: 'NarrationOverflow',
+      tier: 'must',
+    });
+  });
+
+  it('adds an overflow marker when the cap drops any non-consequential fact', () => {
+    const facts = narrationFacts(
+      Array.from({ length: 41 }, (_, index) => ({
+        type: 'ReactionResolved',
+        entityId: `ent_${index}`,
+        used: true,
+      })),
+    );
+    expect(facts).toHaveLength(40);
+    expect(facts.at(-1)).toMatchObject({ type: 'NarrationOverflow' });
   });
 
   it('preserves a long monster turn through combat end and projects the actual outcome', () => {
