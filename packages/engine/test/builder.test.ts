@@ -145,6 +145,12 @@ describe('quickBuild', () => {
 });
 
 describe('CharacterBuilder', () => {
+  test('class explanations describe the class in fiction, not rules shorthand', () => {
+    for (const option of new CharacterBuilder(catalog).classOptions()) {
+      expect(option.explanation).not.toMatch(/hit die|key ability|\bd\d+\b/i);
+    }
+  });
+
   test('every exposed option has a non-empty explanation', () => {
     const b = new CharacterBuilder(catalog)
       .setClass('class:wizard')

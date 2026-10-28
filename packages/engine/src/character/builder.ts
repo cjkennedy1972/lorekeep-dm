@@ -124,7 +124,7 @@ export class CharacterBuilder {
       return {
         id: c.id,
         label: c.name,
-        explanation: `${c.name}: d${c.hitDie} hit die, key ability ${list(c.primaryAbility.map((a) => ABILITY_NAME[a]))}${first ? `; starts with ${first.name}` : ''}.`,
+        explanation: `${c.name}: relies on ${list(c.primaryAbility.map((a) => ABILITY_NAME[a]))}${first ? `; starts with ${first.name}` : ''}.`,
       };
     });
   }

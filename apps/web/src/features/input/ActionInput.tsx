@@ -37,9 +37,9 @@ export function ActionInput({
 }: Props) {
   const [text, setText] = useState(initialText);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  // The parent sets the text when a failed action is restored or an edit starts.
+  // The parent sets the text when a failed action is restored, an edit starts, or Retry clears it.
   useEffect(() => {
-    if (initialText) setText(initialText);
+    setText(initialText);
   }, [initialText]);
   useEffect(() => {
     if (!pending || pendingSince === undefined) {

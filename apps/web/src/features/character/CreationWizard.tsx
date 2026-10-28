@@ -91,6 +91,8 @@ export function CreationWizard({ onSave }: Props) {
   const [step, setStep] = useState(0);
   const [picks, setPicks] = useState<Picks>(initial);
   const [pointBuy, setPointBuy] = useState([15, 15, 13, 10, 8, 8]);
+  // The 'Complete all choices' message waits until the player tries to move on.
+  const [attempted, setAttempted] = useState(false);
   const update = (next: Partial<Picks>) => setPicks((p) => ({ ...p, ...next }));
   const builder = new CharacterBuilder(catalog);
   if (picks.classId) builder.setClass(picks.classId);
@@ -178,6 +180,9 @@ export function CreationWizard({ onSave }: Props) {
         },
       ]
     : built.violations;
+  const shownViolations = violations.filter(
+    (v) => v.path !== 'wizard' || attempted,
+  );
   const save = () => {
     if (built.character && !violations.length) {
       const character = asCharacter(built.character);
@@ -185,7 +190,10 @@ export function CreationWizard({ onSave }: Props) {
       onSave?.(character);
     }
   };
-  const next = () => setStep((n) => Math.min(steps.length - 1, n + 1));
+  const next = () => {
+    setAttempted(true);
+    setStep((n) => Math.min(steps.length - 1, n + 1));
+  };
   const previous = () => setStep((n) => Math.max(0, n - 1));
   return (
     <section className="creation-wizard" aria-labelledby="creation-title">
@@ -424,12 +432,12 @@ export function CreationWizard({ onSave }: Props) {
             </dd>
           </dl>
           <div className="wizard-save" aria-live="polite">
-            {violations.length > 0 && (
+            {shownViolations.length > 0 && (
               <ul
                 className="form-error"
                 aria-label="Character validation issues"
               >
-                {violations.map((v, i) => (
+                {shownViolations.map((v, i) => (
                   <li key={`${v.code}-${i}`}>{v.message}</li>
                 ))}
               </ul>
