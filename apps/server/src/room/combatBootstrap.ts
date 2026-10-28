@@ -55,7 +55,7 @@ const WEAPON_ATTACKS: Record<
   {
     damage: string;
     damageType: string;
-    ability?: 'str' | 'dex';
+    finesse?: boolean;
     range?: { normalFt: number; longFt: number };
   }
 > = {
@@ -63,20 +63,18 @@ const WEAPON_ATTACKS: Record<
   'equipment:blowgun': {
     damage: '1',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 25, longFt: 100 },
   },
   'equipment:club': { damage: '1d4', damageType: 'bludgeoning' },
   'equipment:dagger': {
     damage: '1d4',
     damageType: 'piercing',
-    ability: 'dex',
+    finesse: true,
     range: { normalFt: 20, longFt: 60 },
   },
   'equipment:dart': {
     damage: '1d4',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 20, longFt: 60 },
   },
   'equipment:flail': { damage: '1d8', damageType: 'bludgeoning' },
@@ -88,7 +86,6 @@ const WEAPON_ATTACKS: Record<
   'equipment:hand-crossbow': {
     damage: '1d6',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 30, longFt: 120 },
   },
   'equipment:handaxe': {
@@ -99,7 +96,6 @@ const WEAPON_ATTACKS: Record<
   'equipment:heavy-crossbow': {
     damage: '1d10',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 100, longFt: 400 },
   },
   'equipment:javelin': {
@@ -111,7 +107,6 @@ const WEAPON_ATTACKS: Record<
   'equipment:light-crossbow': {
     damage: '1d8',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 80, longFt: 320 },
   },
   'equipment:light-hammer': {
@@ -122,7 +117,6 @@ const WEAPON_ATTACKS: Record<
   'equipment:longbow': {
     damage: '1d8',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 150, longFt: 600 },
   },
   'equipment:longsword': { damage: '1d8', damageType: 'slashing' },
@@ -132,39 +126,39 @@ const WEAPON_ATTACKS: Record<
   'equipment:musket': {
     damage: '1d12',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 40, longFt: 120 },
   },
   'equipment:pike': { damage: '1d10', damageType: 'piercing' },
   'equipment:pistol': {
     damage: '1d10',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 30, longFt: 90 },
   },
   'equipment:quarterstaff': { damage: '1d6', damageType: 'bludgeoning' },
-  'equipment:rapier': { damage: '1d8', damageType: 'piercing', ability: 'dex' },
+  'equipment:rapier': {
+    damage: '1d8',
+    damageType: 'piercing',
+    finesse: true,
+  },
   'equipment:scimitar': {
     damage: '1d6',
     damageType: 'slashing',
-    ability: 'dex',
+    finesse: true,
   },
   'equipment:shortbow': {
     damage: '1d6',
     damageType: 'piercing',
-    ability: 'dex',
     range: { normalFt: 80, longFt: 320 },
   },
   'equipment:shortsword': {
     damage: '1d6',
     damageType: 'piercing',
-    ability: 'dex',
+    finesse: true,
   },
   'equipment:sickle': { damage: '1d4', damageType: 'slashing' },
   'equipment:sling': {
     damage: '1d4',
     damageType: 'bludgeoning',
-    ability: 'dex',
     range: { normalFt: 30, longFt: 120 },
   },
   'equipment:spear': {
@@ -216,16 +210,19 @@ export function attacksFor(
     const derived = deriveSheet(character, catalog);
     const weapons = character.equipment.flatMap((item): CombatAttack[] => {
       const weapon = WEAPON_ATTACKS[item.itemId];
-      if (!weapon || item.qty <= 0) return [];
-      const ability = weapon.ability ?? 'str';
-      const modifier = abilityModifier(character.abilities[ability]);
+      if (!weapon || !item.equipped || item.qty <= 0) return [];
+      const strModifier = abilityModifier(character.abilities.str);
+      const dexModifier = abilityModifier(character.abilities.dex);
+      const modifier = weapon.range
+        ? dexModifier
+        : weapon.finesse
+          ? Math.max(strModifier, dexModifier)
+          : strModifier;
       return [
         {
           id: item.itemId,
           name: catalog.get('equipment', item.itemId)?.name ?? item.itemId,
-          attackBonus:
-            derived.attackBonuses[item.itemId] ??
-            modifier + proficiencyBonus(character.level),
+          attackBonus: modifier + proficiencyBonus(character.level),
           damage: `${weapon.damage}${modifier > 0 ? `+${modifier}` : modifier < 0 ? modifier : ''}`,
           damageType: weapon.damageType,
           ...(weapon.range ? { range: weapon.range } : {}),

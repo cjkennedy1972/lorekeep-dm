@@ -72,11 +72,18 @@ describe('saving throw bonuses on combat entities', () => {
 
 describe('starting-gear combat attacks', () => {
   it.each([
-    ['class:cleric', 'equipment:mace', 'Mace', '1d6-1', 'bludgeoning'],
-    ['class:fighter', 'equipment:longsword', 'Longsword', '1d8+2', 'slashing'],
+    ['class:cleric', 'equipment:mace', 'Mace', '1d6-1', 'bludgeoning', 1],
+    [
+      'class:fighter',
+      'equipment:longsword',
+      'Longsword',
+      '1d8+2',
+      'slashing',
+      4,
+    ],
   ])(
     '%s offers its starting weapon attack',
-    (classId, itemId, name, damage, damageType) => {
+    (classId, itemId, name, damage, damageType, attackBonus) => {
       const character = quickBuild(catalog, classId, 0x28, 1).character;
       const weaponCharacter = {
         ...character,
@@ -92,10 +99,53 @@ describe('starting-gear combat attacks', () => {
         expect.objectContaining({
           id: itemId,
           name,
+          attackBonus,
           damage,
           damageType,
         }),
       );
     },
   );
+});
+
+describe('weapon attack abilities', () => {
+  const character = quickBuild(catalog, 'class:fighter', 0x28, 1).character;
+
+  it.each([
+    ['equipment:rapier', 'Rapier', 10, 16, 5, '1d8+3'],
+    ['equipment:rapier', 'Rapier', 14, 12, 4, '1d8+2'],
+    ['equipment:shortbow', 'Shortbow', 10, 16, 5, '1d6+3'],
+  ])(
+    '%s uses the correct ability for its attack and damage',
+    (itemId, name, str, dex, attackBonus, damage) => {
+      const equipped = {
+        ...character,
+        abilities: { ...character.abilities, str, dex },
+        equipment: [{ itemId, qty: 1, equipped: true }],
+      };
+      const { attacks } = attacksFor(
+        { id: equipped.id, team: 'party', speed: 30, ...place },
+        equipped,
+        {},
+        catalog,
+      );
+      expect(attacks).toContainEqual(
+        expect.objectContaining({ id: itemId, name, attackBonus, damage }),
+      );
+    },
+  );
+
+  it('does not offer an unequipped weapon', () => {
+    const unequipped = {
+      ...character,
+      equipment: [{ itemId: 'equipment:longsword', qty: 1, equipped: false }],
+    };
+    const { attacks } = attacksFor(
+      { id: unequipped.id, team: 'party', speed: 30, ...place },
+      unequipped,
+      {},
+      catalog,
+    );
+    expect(attacks).toEqual([expect.objectContaining({ id: 'unarmed' })]);
+  });
 });
