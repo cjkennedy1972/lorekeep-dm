@@ -1077,6 +1077,24 @@ export function Game() {
             combatantNames={Object.fromEntries(
               entities.map((entity) => [entity.id, nameOf(entity.id)]),
             )}
+            combatants={Object.fromEntries(
+              entities.map((entity) => [
+                entity.id,
+                {
+                  kind: (entity.kind === 'character' ? 'pc' : 'monster') as
+                    | 'pc'
+                    | 'monster',
+                  hpState: entity.hpState,
+                },
+              ]),
+            )}
+            ownEntityIds={
+              new Set(
+                [gameStore.getState().character?.id].filter(
+                  (id): id is string => id !== undefined,
+                ),
+              )
+            }
             opening={{
               title: 'The adventure begins',
               body:
