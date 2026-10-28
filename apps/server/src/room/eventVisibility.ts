@@ -26,7 +26,7 @@ export const EVENT_ID_RULES: Readonly<Record<string, Rule>> = {
   EntityPlaced: subject,
   EntityDown: subject,
   HpChanged: subject,
-  RollEvent: { scalars: ['entityId', 'actorId'] },
+  RollEvent: { scalars: ['entityId', 'actorId', 'targetId'] },
   ConditionApplied: subject,
   ConditionRemoved: subject,
   ConditionsTicked: subject,

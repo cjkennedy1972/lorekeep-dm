@@ -384,9 +384,11 @@ export class NotTableHostError extends Error {
 
 /** ADR-033 §6.8: the only engine event fields a combat narration prompt may carry. */
 const NARRATION_FACT_FIELDS: Record<string, readonly string[]> = {
-  HpChanged: ['entityId', 'delta', 'hp'],
+  HpChanged: ['entityId', 'from', 'to', 'damage', 'damageType'],
   EntityMoved: ['entityId', 'path', 'cost'],
-  CombatEnded: [],
+  EntityDown: ['entityId', 'outcome'],
+  RollEvent: ['entityId', 'attackId', 'kind', 'targetId', 'hit', 'total'],
+  CombatEnded: ['outcome'],
   // reactionId is only safe while it stays a catalog handle; HANDLE below is the sole guard if that changes.
   ReactionResolved: ['entityId', 'used', 'reactionId'],
 };
@@ -408,16 +410,257 @@ function narrationValue(value: unknown): unknown {
 export function isNarrationFactType(type: string): boolean {
   return Object.hasOwn(NARRATION_FACT_FIELDS, type);
 }
-export function narrationFact(event: Record<string, unknown>) {
-  return {
-    type: event.type,
-    ...Object.fromEntries(
-      NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
-        const value = narrationValue(event[key]);
-        return value === undefined ? [] : [[key, value]];
-      }),
-    ),
+export function narrationFact(
+  event: Record<string, unknown>,
+  characterIds: ReadonlySet<string> = new Set(),
+  characterTargetHit?: boolean,
+) {
+  const fields = Object.fromEntries(
+    NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
+      const value =
+        key === 'total' &&
+        typeof event.breakdown === 'object' &&
+        event.breakdown
+          ? (event.breakdown as { total?: unknown }).total
+          : event[key];
+      const safe = narrationValue(value);
+      return safe === undefined ? [] : [[key, safe]];
+    }),
+  );
+  if (event.type === 'RollEvent' && event.kind === 'attack') {
+    const { entityId, ...attack } = fields;
+    if (
+      typeof attack.targetId === 'string' &&
+      characterIds.has(attack.targetId)
+    ) {
+      delete attack.total;
+      if (characterTargetHit === undefined) delete attack.hit;
+      else attack.hit = characterTargetHit;
+    }
+    if (typeof entityId === 'string' && characterIds.has(entityId))
+      delete attack.attackId;
+    return { type: 'AttackResolved', actorId: entityId, ...attack };
+  }
+  return { type: event.type, ...fields };
+}
+
+const CONSEQUENTIAL_NARRATION_TYPES = new Set([
+  'HpChanged',
+  'EntityDown',
+  'CombatEnded',
+]);
+
+/** Preserve terminal outcomes; compact repeated attacks and never silently cap facts. */
+export function narrationFacts(
+  events: readonly Record<string, unknown>[],
+  characterIds: ReadonlySet<string> = new Set(),
+): Record<string, unknown>[] {
+  const eligible = events.filter(
+    (event) =>
+      isNarrationFactType(String(event.type)) &&
+      (event.type !== 'RollEvent' || event.kind === 'attack'),
+  );
+  const characterAttackHits = new Map<Record<string, unknown>, boolean>();
+  const attackDamage = new Map<Record<string, unknown>, number>();
+  events.forEach((event, index) => {
+    if (event.type !== 'RollEvent' || event.kind !== 'attack') return;
+    const nextAttack = events.findIndex(
+      (candidate, candidateIndex) =>
+        candidateIndex > index && candidate.type === 'RollEvent',
+    );
+    const turnEventEnd = nextAttack < 0 ? events.length : nextAttack;
+    const effects = events.slice(index + 1, turnEventEnd);
+    if (typeof event.targetId === 'string' && characterIds.has(event.targetId))
+      characterAttackHits.set(
+        event,
+        effects.some(
+          (candidate) =>
+            candidate.type === 'HpChanged' &&
+            candidate.entityId === event.targetId &&
+            typeof candidate.damage === 'number',
+        ),
+      );
+    attackDamage.set(
+      event,
+      effects.reduce(
+        (sum, candidate) =>
+          candidate.type === 'HpChanged' &&
+          candidate.entityId === event.targetId &&
+          typeof candidate.damage === 'number'
+            ? sum + candidate.damage
+            : sum,
+        0,
+      ),
+    );
+  });
+
+  const consequential = eligible.filter((event) =>
+    CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)),
+  );
+  const attacks = eligible.filter(
+    (event) => event.type === 'RollEvent' && event.kind === 'attack',
+  );
+  const incidental = eligible.filter(
+    (event) =>
+      !attacks.includes(event) &&
+      !CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)),
+  );
+  const movementByEntity = new Map<string, Record<string, unknown>>();
+  const otherIncidental: Record<string, unknown>[] = [];
+  for (const event of incidental) {
+    if (event.type !== 'EntityMoved' || typeof event.entityId !== 'string') {
+      otherIncidental.push(event);
+      continue;
+    }
+    const prior = movementByEntity.get(event.entityId);
+    const priorPath = Array.isArray(prior?.path) ? prior.path : [];
+    const path = Array.isArray(event.path) ? event.path : [];
+    movementByEntity.set(event.entityId, {
+      ...event,
+      path: [...priorPath, ...path].slice(-2),
+      cost:
+        (typeof prior?.cost === 'number' ? prior.cost : 0) +
+        (typeof event.cost === 'number' ? event.cost : 0),
+    });
+  }
+  const compactedIncidental = [
+    ...movementByEntity.values(),
+    ...otherIncidental,
+  ];
+  const incidentalOrder = new Map<Record<string, unknown>, number>();
+  for (const event of incidental) {
+    const compacted =
+      event.type === 'EntityMoved' && typeof event.entityId === 'string'
+        ? movementByEntity.get(event.entityId)
+        : event;
+    if (compacted && !incidentalOrder.has(compacted))
+      incidentalOrder.set(compacted, events.indexOf(event));
+  }
+
+  type FactEntry = {
+    fact: Record<string, unknown>;
+    terminal: boolean;
+    order: number;
   };
+  const entries: FactEntry[] = [];
+  const finalHpChangeByEntity = new Map<string, Record<string, unknown>>();
+  for (const event of consequential)
+    if (event.type === 'HpChanged' && typeof event.entityId === 'string')
+      finalHpChangeByEntity.set(event.entityId, event);
+  for (const event of consequential) {
+    const finalHp =
+      event.type === 'HpChanged' &&
+      typeof event.entityId === 'string' &&
+      finalHpChangeByEntity.get(event.entityId) === event;
+    entries.push({
+      fact: { ...narrationFact(event, characterIds), tier: 'must' },
+      terminal: event.type !== 'HpChanged' || finalHp,
+      order: events.indexOf(event),
+    });
+  }
+
+  const attackFacts: {
+    event: Record<string, unknown>;
+    fact: Record<string, unknown>;
+    order: number;
+  }[] = attacks.map((event) => ({
+    event,
+    fact: narrationFact(event, characterIds, characterAttackHits.get(event)),
+    order: events.indexOf(event),
+  }));
+  const compactByPair = attacks.length > 8;
+  const summarized = new Set<Record<string, unknown>>();
+  if (compactByPair) {
+    const groups = new Map<string, typeof attackFacts>();
+    for (const attack of attackFacts) {
+      if (
+        typeof attack.fact.actorId !== 'string' ||
+        typeof attack.fact.targetId !== 'string'
+      )
+        continue;
+      const key = `${attack.fact.actorId}\0${attack.fact.targetId}`;
+      groups.set(key, [...(groups.get(key) ?? []), attack]);
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      group.forEach(({ event }) => summarized.add(event));
+      entries.push({
+        fact: {
+          type: 'AttackSummary',
+          actorId: group[0]!.fact.actorId,
+          targetId: group[0]!.fact.targetId,
+          attacks: group.length,
+          hits: group.filter(({ fact }) => fact.hit === true).length,
+          damage: 0,
+          tier: 'must',
+        },
+        terminal: false,
+        order: group[0]!.order,
+      });
+      const summary = entries.at(-1)!.fact;
+      summary.damage = group.reduce(
+        (sum, attack) => sum + (attackDamage.get(attack.event) ?? 0),
+        0,
+      );
+    }
+  }
+  for (const { event, fact, order } of attackFacts)
+    if (!summarized.has(event))
+      entries.push({ fact: { ...fact, tier: 'must' }, terminal: false, order });
+  for (const event of compactedIncidental)
+    entries.push({
+      fact: { ...narrationFact(event, characterIds), tier: 'may' },
+      terminal: false,
+      order: incidentalOrder.get(event) ?? events.indexOf(event),
+    });
+
+  const priority = (fact: Record<string, unknown>) =>
+    fact.type === 'CombatEnded'
+      ? 0
+      : fact.type === 'EntityDown'
+        ? 1
+        : fact.type === 'HpChanged'
+          ? 2
+          : fact.tier === 'must'
+            ? 3
+            : 4;
+  const ordered = entries.sort(
+    (left, right) =>
+      priority(left.fact) - priority(right.fact) || left.order - right.order,
+  );
+  const cap = 40;
+  let dropped = false;
+  while (ordered.length > (dropped ? cap - 1 : cap)) {
+    let dropIndex = ordered.findIndex(({ fact }) => fact.tier === 'may');
+    if (dropIndex < 0) {
+      const oldestMust = ordered
+        .map(({ fact, terminal }, index) => ({ fact, terminal, index }))
+        .filter(
+          ({ fact, terminal }) => !terminal && fact.type !== 'CombatEnded',
+        )
+        .sort(
+          (left, right) =>
+            ordered[left.index]!.order - ordered[right.index]!.order,
+        )[0];
+      dropIndex = oldestMust?.index ?? -1;
+    }
+    if (dropIndex < 0) {
+      // All remaining facts are terminal and must remain listed. Keep them and
+      // mark that earlier non-terminal outcomes could not fit in the cap.
+      dropped = true;
+      break;
+    }
+    ordered.splice(dropIndex, 1);
+    dropped = true;
+  }
+  const facts = ordered.map(({ fact }) => fact);
+  if (dropped)
+    facts.push({
+      type: 'NarrationOverflow',
+      detail: 'and other effects are not listed',
+      tier: 'must',
+    });
+  return facts;
 }
 
 export class RoomPausedError extends Error {
@@ -538,6 +781,7 @@ export class Room {
     editedAt?: number;
     clarificationAsked?: boolean;
     combatTurnId?: string;
+    combatFacts?: Record<string, unknown>[];
   }[] = [];
   private nextActionReceiptSeq = 0;
   private readonly clarificationTimers = new Map<string, NodeJS.Timeout>();
@@ -4682,6 +4926,7 @@ export class Room {
           action.clarificationAsked === true,
           undefined,
           action.combatTurnId,
+          action.combatFacts,
         );
         if (this.sceneBoundaryPending)
           await this.enqueue(async () => {
@@ -4805,6 +5050,7 @@ export class Room {
     clarificationAsked: boolean,
     roundId?: string,
     combatTurnId?: string,
+    combatFacts?: readonly Record<string, unknown>[],
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
     const startGame = structuredClone(this.state.gameState ?? {}) as Record<
@@ -4840,6 +5086,7 @@ export class Room {
           clarificationAsked,
           steerAway: xCardAtStart.requested > xCardAtStart.steered,
           ...(combatTurnId ? { combatNarration: true } : {}),
+          ...(combatFacts ? { combatFacts } : {}),
           signal: AbortSignal.any([this.drainAbort.signal, turnAbort.signal]),
         },
         (event) => {
@@ -5183,6 +5430,37 @@ export class Room {
               type: 'TurnOpened',
               payload: openedTurn,
             });
+        }
+        if (combatTurnId) {
+          const completedRoom = (
+            turnGameState as { combatRoom?: RoomCombatState }
+          ).combatRoom;
+          if (
+            completedRoom?.ended ||
+            combatEvents.some((event) => event.type === 'CombatEnded')
+          ) {
+            const cleared = { ...turnGameState } as Record<string, unknown>;
+            delete cleared.lastCombatBeat;
+            turnGameState = cleared;
+          } else if (
+            !clarification &&
+            !moderationHeld &&
+            result.narration &&
+            (narrationTier === 'family' || narrationTier === 'standard')
+          ) {
+            turnGameState = {
+              ...turnGameState,
+              lastCombatBeat: result.narration.slice(0, 600),
+            };
+          } else if (
+            !clarification &&
+            narrationTier !== 'family' &&
+            narrationTier !== 'standard'
+          ) {
+            const cleared = { ...turnGameState } as Record<string, unknown>;
+            delete cleared.lastCombatBeat;
+            turnGameState = cleared;
+          }
         }
         const deadlineAt = Date.now() + CLARIFICATION_TIMEOUT_MS;
         const restVoteClosePayload = writes.find(
@@ -5708,6 +5986,11 @@ export class Room {
         [...(state.turnNarrationEvents ?? []), resolvedEvent],
         accountId,
         combatTurnId,
+        new Set(
+          (state.entities ?? [])
+            .filter((entity) => entity.kind === 'character')
+            .map((entity) => entity.id),
+        ),
       );
   }
 
@@ -6091,6 +6374,11 @@ export class Room {
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
     combatTurnId?: string,
+    characterIds: ReadonlySet<string> = new Set(
+      (roomGameState(this.state)?.entities ?? [])
+        .filter((entity) => entity.kind === 'character')
+        .map((entity) => entity.id),
+    ),
   ): void {
     const owner =
       accountId ??
@@ -6105,14 +6393,10 @@ export class Room {
     }
     const combat = roomGameState(this.state);
     const hiddenEntityIds = hiddenIdsOf(combat ?? { entities: [] });
-    const facts = events
-      .filter(
-        (event) =>
-          !namesHiddenEntity(event, hiddenEntityIds) &&
-          isNarrationFactType(String(event.type)),
-      )
-      .slice(0, 12)
-      .map((event) => JSON.stringify(narrationFact(event)));
+    const visibleEvents = events.filter(
+      (event) => !namesHiddenEntity(event, hiddenEntityIds),
+    );
+    const facts = narrationFacts(visibleEvents, characterIds);
     const actionId = randomUUID();
     this.pendingActions.add(actionId);
     this.queuedActions.push({
@@ -6120,7 +6404,8 @@ export class Room {
       actionId,
       originalActionId: actionId,
       editActionIds: [],
-      text: `[Combat resolved by the engine; narrate it, do not change it] ${facts.join(' ')}`,
+      text: '[Combat resolved by the engine; narrate it, do not change it]',
+      combatFacts: facts,
       playerName: 'Combat',
       receiptSeq: ++this.nextActionReceiptSeq,
       ...(combatTurnId ? { combatTurnId } : {}),

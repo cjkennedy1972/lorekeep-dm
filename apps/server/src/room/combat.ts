@@ -458,6 +458,16 @@ export function createCombatRuntime(
         });
         if ('error' in result)
           return reject('That target is not a legal attack.');
+        const resolvedEvents = result.events.map((event) =>
+          event.type === 'RollEvent' && event.kind === 'attack'
+            ? {
+                ...event,
+                targetId: target.id,
+                targetAc: target.ac ?? 10,
+                hit: result.hit,
+              }
+            : event,
+        );
         const hit = withHp(
           {
             ...state,
@@ -470,13 +480,13 @@ export function createCombatRuntime(
               },
             },
           },
-          result.events,
+          resolvedEvents,
         );
         const closing = settle(hit.state);
         return {
           state: closing.state,
           events: [
-            ...result.events,
+            ...resolvedEvents,
             ...hit.events,
             { type: 'ActionSpent', entityId: actorId },
             ...closing.events,

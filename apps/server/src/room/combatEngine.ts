@@ -21,6 +21,20 @@ import {
 } from './combatTypes.js';
 
 type Ev = Record<string, unknown>;
+function annotateAttackRolls(
+  events: readonly Ev[],
+  targetId: string,
+  targetAc: number,
+): Ev[] {
+  const hit = events.some(
+    (event) => event.type === 'HpChanged' && event.entityId === targetId,
+  );
+  return events.map((event) =>
+    event.type === 'RollEvent' && event.kind === 'attack'
+      ? { ...event, targetId, targetAc, hit }
+      : event,
+  );
+}
 const nextSeed = (seed: number) => (seed + 0x9e3779b9) >>> 0;
 const alive = (e: CombatEntity) => e.hp > 0 && !e.fled;
 const isParty = (e: CombatEntity) => e.team === 'party';
@@ -338,7 +352,12 @@ function monsterTurn(
         state.seed ?? 1,
       );
       if ('error' in result) break;
-      events.push(...(result.events as Ev[]), {
+      const attackEvents = annotateAttackRolls(
+        result.events as Ev[],
+        target.id,
+        target.ac ?? 10,
+      );
+      events.push(...attackEvents, {
         type: 'ActionSpent',
         entityId: id,
       });
@@ -354,7 +373,7 @@ function monsterTurn(
             },
           },
         },
-        result.events as Ev[],
+        attackEvents,
       );
       state = hurt.state;
       events.push(...hurt.events);
@@ -503,7 +522,11 @@ function resolvePrompt(
   );
   if ('error' in result)
     return { code: 'COMMAND_REJECTED', message: result.hint };
-  let events = result.events as unknown as Ev[];
+  let events = annotateAttackRolls(
+    result.events as unknown as Ev[],
+    prompt.moverId,
+    state.entities.find((entity) => entity.id === prompt.moverId)?.ac ?? 10,
+  );
   if (state.promptEvents)
     events = [
       cause

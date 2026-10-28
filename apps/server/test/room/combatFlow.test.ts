@@ -1313,6 +1313,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     const table = memoryTable(
       {
         ...e.game,
+        lastCombatBeat: 'A stale previous combat beat.',
         combatActors: { [account]: 'ent_aria' },
         combatRoom: combat,
       },
@@ -1339,7 +1340,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     ).toHaveLength(1);
     expect(requests.map((r) => r.combatNarration)).toEqual([true]);
     expect(requests[0]!.text).toMatch(
-      /^\[Combat resolved by the engine; narrate it, do not change it\] (\{[^]*\})?$/,
+      /^\[Combat resolved by the engine; narrate it, do not change it\]$/,
     );
     expect(requests[0]!.playerName).toBe('Combat');
     expect(table.events.some((event) => event.type === 'TurnOpened')).toBe(
@@ -1348,6 +1349,7 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     expect(ended.phase).toBeUndefined();
     expect(ended.turnId).toBeUndefined();
     expect(ended.turnDeadline).toBeUndefined();
+    expect(table.game()).not.toHaveProperty('lastCombatBeat');
   });
 
   it('admits by turn ownership before revealing an in-flight narration gate', async () => {
@@ -1432,7 +1434,11 @@ describe('Room: one persisted narration per resolved combat turn', () => {
       combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
     };
     const runner = {
-      async run(request: unknown) {
+      async run(
+        request: unknown,
+        onEvent: (event: { type: string; tier: string }) => void,
+      ) {
+        onEvent({ type: 'NarrationTier', tier: 'standard' });
         return {
           narration: 'The turn resolves.',
           events: [],
@@ -1467,6 +1473,9 @@ describe('Room: one persisted narration per resolved combat turn', () => {
 
     expect(table.events.some((event) => event.type === 'TurnResolved')).toBe(
       true,
+    );
+    expect((table.game() as Record<string, unknown>).lastCombatBeat).toBe(
+      'The turn resolves.',
     );
     expect(
       otherMessages.some((message) => message.type === 'TurnResolved'),
@@ -1680,12 +1689,69 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     expect(requests).toHaveLength(1);
   });
 
+  it('stores standard combat beats and clears a prior beat after mature narration', async () => {
+    const runCombatTurn = async (tier: 'standard' | 'mature' | 'unknown') => {
+      const e = bootstrapped();
+      let narrationStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        narrationStarted = resolve;
+      });
+      const runner = {
+        async run(
+          _request: unknown,
+          onEvent: (event: { type: string; tier?: string }) => void,
+        ) {
+          onEvent({ type: 'NarrationTier', tier });
+          narrationStarted();
+          return {
+            narration: `${tier} combat beat`,
+            events: [],
+            state: (_request as { state?: unknown }).state ?? {},
+            usage: { in: 1, out: 1 },
+          } as never;
+        },
+      };
+      const priorBeat = 'the previous public beat';
+      const game = {
+        ...e.game,
+        lastCombatBeat: priorBeat,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: {
+          ...e.state,
+          phase: 'awaiting-command',
+          turnId: `${tier}-turn`,
+          narrationAttempts: 0,
+          combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+        } as RoomCombatState,
+      };
+      const table = memoryTable(game, runner);
+      const room = table.boot();
+      await joinSeated(room, account, table.connection);
+      await room.submitCombatCommand(account, crypto.randomUUID(), {
+        command: 'end-turn',
+      });
+      await room.setPaused(account, false, true);
+      await started;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { room, table, priorBeat };
+    };
+
+    const standard = await runCombatTurn('standard');
+    expect(standard.table.game().lastCombatBeat).toBe('standard combat beat');
+    const mature = await runCombatTurn('mature');
+    expect(mature.table.game()).not.toHaveProperty('lastCombatBeat');
+    const unknown = await runCombatTurn('unknown');
+    expect(unknown.table.game()).not.toHaveProperty('lastCombatBeat');
+  });
+
   it('excludes hidden-entity facts from recovered combat narration input', async () => {
     const e = bootstrapped();
     let promptText = '';
     const runner = {
       async run(request: unknown) {
-        promptText = String((request as { text?: unknown }).text ?? '');
+        promptText = JSON.stringify(
+          (request as { combatFacts?: unknown }).combatFacts ?? [],
+        );
         return {
           narration: 'The turn resolves.',
           events: [],
@@ -1712,6 +1778,16 @@ describe('Room: one persisted narration per resolved combat turn', () => {
           hp: 1,
         },
         { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+        {
+          type: 'RollEvent',
+          entityId: 'ent_aria',
+          targetId: 'ent_goblin-minion_1',
+          attackId: 'weapon:bow',
+          kind: 'attack',
+          targetAc: 12,
+          hit: true,
+          breakdown: { total: 16 },
+        },
       ],
       combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
     };

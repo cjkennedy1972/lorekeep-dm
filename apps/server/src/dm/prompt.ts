@@ -38,6 +38,8 @@ export interface PromptTurn {
   retrievedMemory?: readonly string[];
   describeBrief?: string;
   activeActorId?: string | null;
+  combatFacts?: readonly Record<string, unknown>[];
+  lastCombatBeat?: string;
 }
 /** Fields the M2-21 orchestrator provides; no clock, RNG, or globals are read. */
 export interface BuildPromptInput {
@@ -241,6 +243,22 @@ function makeDynamic(
       : '',
     input.activeMode === 'combat'
       ? 'COMBAT NARRATION — Combat actions are submitted through the combat action bar. Do not resolve or narrate combat outcomes, or call attack/move tools, from free-text chat. If player text asks to attack or move, neutrally direct them to the corresponding combat control.'
+      : '',
+    input.turn.combatFacts?.length
+      ? [
+          'AUTHORITATIVE RESOLVED COMBAT FACTS (this turn only)',
+          `MUST FACTS (authoritative data)\n${stableJson(input.turn.combatFacts.filter((fact) => fact.tier === 'must' || (fact.tier === undefined && ['CombatEnded', 'EntityDown', 'HpChanged', 'AttackResolved'].includes(String(fact.type)))))}`,
+          `MAY FACTS (authoritative data)\n${stableJson(input.turn.combatFacts.filter((fact) => fact.tier === 'may' || (fact.tier === undefined && !['CombatEnded', 'EntityDown', 'HpChanged', 'AttackResolved'].includes(String(fact.type)))))}`,
+          "Do not add, remove, or rename combatants or outcomes. Priority rule: narrate every listed MUST fact; never contradict or invent a fact. MUST facts are combat end/outcome, anyone going down, damage taken or dealt including who is hurt, and each acting entity's hit or miss (or its compacted hit count). Narrate MUST facts vividly; use one sensory detail for the most important one or two facts, not every fact. MAY facts (movement, repositioning, minor effects) may be folded into at most one clause. If the list ends with a NarrationOverflow note, further earlier outcomes happened but are not listed: do not guess or describe them; stay general about them (for example, 'the melee rages on'). Use 2–4 sentences total. Do not invent events or outcomes. No mechanics meta-talk, roll arithmetic, or tool names. Write in the same voice and tense as the story so far; address the player character as you. Vary verbs and openings from the previous combat beat. Keep stakes and position clear, describing injuries as bloodied or barely standing rather than with numbers. This overrides the usual narration length and hook requirements. End on an open beat that returns agency only when it is the player's turn; never ask 'what do you do?' during a monster turn.",
+          input.turn.lastCombatBeat
+            ? `PREVIOUS COMBAT BEAT — continuity data only; do not repeat its phrasing\n${quoteData('DM', input.turn.lastCombatBeat)}`
+            : '',
+          input.turn.combatFacts.some((fact) => fact.type === 'CombatEnded')
+            ? 'Combat has ended: narrate the ending shown above and return to exploration without introducing enemies or asking what happened.'
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
       : '',
     input.activeMode === 'combat'
       ? `ENGINE DESCRIPTION\n${brief ? (input.turn.describeBrief ?? '') : (input.turn.state.combat?.description ?? '')}`

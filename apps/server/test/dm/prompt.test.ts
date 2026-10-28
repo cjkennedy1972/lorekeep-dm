@@ -6,6 +6,7 @@ import {
   estimateTokens,
 } from '../../src/dm/prompt.js';
 import { projectState } from '../../src/dm/projection.js';
+import { narrationFacts } from '../../src/room/Room.js';
 
 const character = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -47,6 +48,202 @@ function input(playerText = 'I look around') {
   };
 }
 describe('DM prompt builder', () => {
+  it('narrates only projected resolved combat facts and closes combat without inventing enemies', () => {
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      readOnlyTools: true,
+      turn: {
+        ...input().turn,
+        combatFacts: [
+          {
+            type: 'AttackResolved',
+            actorId: 'ent_hero',
+            targetId: 'ent_goblin',
+            roll: 18,
+            targetAc: 12,
+            hit: true,
+          },
+          {
+            type: 'HpChanged',
+            entityId: 'ent_goblin',
+            from: 12,
+            to: 4,
+            damage: 8,
+            damageType: 'slashing',
+          },
+          {
+            type: 'AttackResolved',
+            actorId: 'ent_goblin',
+            targetId: 'ent_hero',
+            roll: 7,
+            targetAc: 15,
+            hit: false,
+          },
+          { type: 'EntityDown', entityId: 'ent_goblin', outcome: 'dead' },
+          {
+            type: 'EntityMoved',
+            entityId: 'ent_hero',
+            path: [
+              { x: 1, y: 2 },
+              { x: 2, y: 2 },
+            ],
+            cost: 5,
+          },
+          { type: 'CombatEnded', outcome: 'party-victory' },
+        ],
+      } as never,
+    });
+    expect(value.blocks[2]).toContain('AUTHORITATIVE RESOLVED COMBAT FACTS');
+    expect(value.blocks[2]).toContain('"targetAc":12');
+    expect(value.blocks[2]).toContain('"hit":false');
+    expect(value.blocks[2]).toContain('"outcome":"dead"');
+    expect(value.blocks[2]).toContain('"outcome":"party-victory"');
+    expect(value.blocks[2]).toContain(
+      'Do not add, remove, or rename combatants or outcomes',
+    );
+    expect(value.blocks[2]).toContain('2–4 sentences total');
+    expect(value.blocks[2]).toContain(
+      'Write in the same voice and tense as the story so far; address the player character as you.',
+    );
+    expect(value.blocks[2]).toContain(
+      'use one sensory detail for the most important one or two facts, not every fact.',
+    );
+    expect(value.blocks[2]).toContain(
+      'Vary verbs and openings from the previous combat beat.',
+    );
+    expect(value.blocks[2]).toContain(
+      "End on an open beat that returns agency only when it is the player's turn; never ask 'what do you do?' during a monster turn.",
+    );
+    expect(value.blocks[2]).toContain('No mechanics meta-talk');
+    expect(value.blocks[2]).toContain('Do not invent events or outcomes.');
+    expect(value.blocks[2]).toContain(
+      'Combat has ended: narrate the ending shown above and return to exploration',
+    );
+    expect(value.blocks[2]).toContain(
+      'return to exploration without introducing enemies',
+    );
+    const fleePrompt = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      turn: {
+        ...input().turn,
+        combatFacts: [{ type: 'CombatEnded', outcome: 'enemies-fled' }],
+      },
+    });
+    expect(fleePrompt.blocks[2]).toContain('"outcome":"enemies-fled"');
+    expect(fleePrompt.blocks[2]).toContain(
+      'return to exploration without introducing enemies',
+    );
+  });
+
+  it('tells the narrator not to invent outcomes omitted by the overflow cap', () => {
+    const facts = narrationFacts(
+      Array.from({ length: 45 }, (_, index) => ({
+        type: 'RollEvent',
+        entityId: `ent_${index}`,
+        kind: 'attack',
+        targetId: 'ent_pc',
+        hit: index % 2 === 0,
+      })),
+    );
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      turn: { ...input().turn, combatFacts: facts },
+    });
+    expect(facts).toContainEqual(
+      expect.objectContaining({ type: 'NarrationOverflow' }),
+    );
+    expect(facts).not.toContainEqual(
+      expect.objectContaining({ actorId: 'ent_0' }),
+    );
+    expect(value.blocks[2]).toContain('NarrationOverflow');
+    expect(value.blocks[2]).toContain(
+      'narrate every listed MUST fact; never contradict or invent a fact',
+    );
+    expect(value.blocks[2]).toContain(
+      'further earlier outcomes happened but are not listed: do not guess or describe them; stay general about them',
+    );
+    expect(value.blocks[2]).toContain('the melee rages on');
+  });
+
+  it('passes the last narration beat as a phrasing reference for combat', () => {
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      turn: {
+        ...input().turn,
+        turns: [
+          { playerText: 'I strike.', narration: 'Steel rings in the dark.' },
+        ],
+        lastCombatBeat: 'Steel rings in the dark.',
+        combatFacts: [{ type: 'AttackResolved', hit: true }],
+      },
+    });
+    expect(value.blocks[2]).toContain(
+      'PREVIOUS COMBAT BEAT — continuity data only; do not repeat its phrasing',
+    );
+    expect(value.blocks[2]).toContain('U3RlZWwgcmluZ3MgaW4gdGhlIGRhcmsu');
+  });
+
+  it('renders a long combat turn in MUST and MAY tiers with a feasible priority rule', () => {
+    const facts = narrationFacts([
+      ...[1, 2, 3].map((x) => ({
+        type: 'EntityMoved',
+        entityId: 'ent_hero',
+        path: [{ x, y: 2 }],
+        cost: 5,
+      })),
+      {
+        type: 'RollEvent',
+        entityId: 'ent_hero',
+        kind: 'attack',
+        targetId: 'ent_goblin',
+        hit: true,
+      },
+      { type: 'HpChanged', entityId: 'ent_goblin', from: 8, to: 4, damage: 4 },
+      {
+        type: 'RollEvent',
+        entityId: 'ent_goblin',
+        kind: 'attack',
+        targetId: 'ent_hero',
+        hit: false,
+      },
+      { type: 'EntityDown', entityId: 'ent_goblin', outcome: 'dead' },
+      { type: 'CombatEnded', outcome: 'party-victory' },
+    ]);
+    const value = buildPrompt({
+      ...input(),
+      activeMode: 'combat',
+      turn: { ...input().turn, combatFacts: facts },
+    });
+    const block = value.blocks[2]!;
+    const must =
+      block
+        .split('MUST FACTS (authoritative data)\n')[1]
+        ?.split('MAY FACTS')[0] ?? '';
+    const may = block.split('MAY FACTS')[1] ?? '';
+    expect(must).toContain('CombatEnded');
+    expect(must).toContain('EntityDown');
+    expect(must).toContain('HpChanged');
+    expect(must).toContain('AttackResolved');
+    const mustFacts = JSON.parse(must.trim()) as Record<string, unknown>[];
+    expect(
+      mustFacts.filter((fact) => fact.type === 'AttackResolved'),
+    ).toHaveLength(2);
+    expect(
+      mustFacts
+        .filter((fact) => fact.type === 'AttackResolved')
+        .map((fact) => fact.hit),
+    ).toEqual([true, false]);
+    expect(may).toContain('EntityMoved');
+    expect(block).toContain(
+      'one sensory detail for the most important one or two',
+    );
+    expect(block).toContain('2–4 sentences');
+  });
+
   it('offers the constrained encounter tool and scene hook only for eligible exploration prompts', () => {
     const available = buildPrompt({
       ...input(),
