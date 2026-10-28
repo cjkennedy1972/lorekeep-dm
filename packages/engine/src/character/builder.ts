@@ -54,6 +54,34 @@ const of = <K extends CatalogEntry['kind']>(
     (e): e is Extract<CatalogEntry, { kind: K }> => e.kind === kind,
   );
 
+const RANGED_WEAPON_NAMES = new Set([
+  'blowgun',
+  'dart',
+  'hand crossbow',
+  'heavy crossbow',
+  'javelin',
+  'light crossbow',
+  'longbow',
+  'musket',
+  'pistol',
+  'shortbow',
+  'sling',
+]);
+const TWO_HANDED_WEAPON_NAMES = new Set([
+  'greataxe',
+  'greatclub',
+  'greatsword',
+  'glaive',
+  'halberd',
+  'heavy crossbow',
+  'light crossbow',
+  'longbow',
+  'maul',
+  'musket',
+  'pike',
+  'shortbow',
+]);
+
 /** Strip a leading count and trailing plural so "4 Handaxes" finds Handaxe. */
 function findItem(catalog: CharacterCatalog, text: string) {
   const name = text
@@ -245,10 +273,44 @@ export class CharacterBuilder {
     const equipment = (option?.items ?? []).flatMap((text) => {
       const item = findItem(this.catalog, text);
       const qty = Number(/^\d+/.exec(text)?.[0] ?? 1);
-      return item
-        ? [{ itemId: item.id, qty, equipped: item.category !== 'gear' }]
-        : [];
+      return item ? [{ itemId: item.id, qty, equipped: false }] : [];
     });
+    const weapons = equipment.filter(
+      (item) =>
+        this.catalog.get('equipment', item.itemId)?.category === 'weapon',
+    );
+    const meleeWeapon = weapons.find((item) => {
+      const name = this.catalog
+        .get('equipment', item.itemId)!
+        .name.toLowerCase();
+      return !RANGED_WEAPON_NAMES.has(name);
+    });
+    const mainHand = meleeWeapon ?? weapons[0];
+    if (mainHand) mainHand.equipped = true;
+    const mainHandName = mainHand
+      ? this.catalog.get('equipment', mainHand.itemId)!.name.toLowerCase()
+      : undefined;
+    for (const item of equipment) {
+      const entry = this.catalog.get('equipment', item.itemId);
+      if (entry?.category !== 'armor') continue;
+      const name = entry.name.toLowerCase();
+      if (name === 'shield') {
+        item.equipped =
+          !mainHandName || !TWO_HANDED_WEAPON_NAMES.has(mainHandName);
+      } else if (
+        !equipment.some((other) => {
+          const otherEntry = this.catalog.get('equipment', other.itemId);
+          return (
+            other !== item &&
+            other.equipped &&
+            otherEntry?.category === 'armor' &&
+            otherEntry.name.toLowerCase() !== 'shield'
+          );
+        })
+      ) {
+        item.equipped = true;
+      }
+    }
 
     const spellAbility = klass.spellcastingAbility;
     const spells = spellAbility

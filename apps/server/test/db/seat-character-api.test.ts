@@ -22,6 +22,112 @@ async function account() {
 }
 
 describe('account-owned character API', () => {
+  it('rejects wizard armor that the class is not proficient in', async () => {
+    const owner = await account();
+    const ownerToken = await createSession(db, owner, 'test');
+    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const character = CharacterSchema.omit({ id: true }).parse(
+      quickBuild(loadCatalog(), 'class:wizard', 0x36, 1).character,
+    );
+    character.equipment.push({
+      itemId: 'equipment:plate-armor',
+      qty: 1,
+      equipped: true,
+    });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/me/characters',
+        headers: { cookie: `sid=${ownerToken}` },
+        payload: { character },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        code: 'INVALID_CHARACTER',
+        message: 'Character could not be saved.',
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('validates account character payloads and accepts quick builds for all classes', async () => {
+    const owner = await account();
+    const ownerToken = await createSession(db, owner, 'test');
+    const app = createApp(db, { cookieSecret: 'test-secret' });
+    const post = (character: unknown) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/me/characters',
+        headers: { cookie: `sid=${ownerToken}` },
+        payload: { character },
+      });
+    const catalog = loadCatalog();
+    try {
+      const fighter = CharacterSchema.omit({ id: true }).parse(
+        quickBuild(catalog, 'class:fighter', 0x28, 1).character,
+      );
+      for (const invalid of [
+        {
+          ...fighter,
+          equipmentOption: undefined,
+          equipment: [
+            ...fighter.equipment,
+            { itemId: 'equipment:plate-armor', qty: 1, equipped: true },
+            { itemId: 'equipment:shield', qty: 1, equipped: true },
+          ],
+        },
+        {
+          ...fighter,
+          equipmentOption: 'C',
+          equipment: [
+            ...fighter.equipment,
+            { itemId: 'equipment:plate-armor', qty: 1, equipped: true },
+          ],
+        },
+        (() => {
+          const monk = CharacterSchema.omit({ id: true }).parse(
+            quickBuild(catalog, 'class:monk', 0x29, 1).character,
+          );
+          return {
+            ...monk,
+            abilities: { ...monk.abilities, wis: 30, dex: 30 },
+          };
+        })(),
+        {
+          ...CharacterSchema.omit({ id: true }).parse(
+            quickBuild(catalog, 'class:barbarian', 0x30, 1).character,
+          ),
+          abilityGeneration: undefined,
+          abilities: { ...fighter.abilities, con: 30 },
+        },
+      ]) {
+        const response = await post(invalid);
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({ code: 'INVALID_CHARACTER' });
+      }
+      for (const entry of catalog.entries.filter(
+        (item) => item.kind === 'class',
+      )) {
+        const classOwner = await account();
+        const classToken = await createSession(db, classOwner, 'test');
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/me/characters',
+          headers: { cookie: `sid=${classToken}` },
+          payload: {
+            character: CharacterSchema.omit({ id: true }).parse(
+              quickBuild(catalog, entry.id, 0x28, 1).character,
+            ),
+          },
+        });
+        expect(response.statusCode, entry.id).toBe(201);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
   it('lists only picker fields and creates/updates characters with revision checks', async () => {
     const owner = await account();
     const stranger = await account();

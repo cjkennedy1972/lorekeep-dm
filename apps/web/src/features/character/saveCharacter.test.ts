@@ -29,6 +29,21 @@ describe('createCharacterBody', () => {
     });
   });
 
+  test('preserves the generation and equipment-option evidence for server validation', () => {
+    const fullCharacter = {
+      ...character,
+      abilityGeneration: {
+        method: 'standard-array',
+        baseAbilities: { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 8 },
+      },
+      equipmentOption: 'A',
+    } as Character;
+    expect(createCharacterBody(fullCharacter).character).toMatchObject({
+      abilityGeneration: { method: 'standard-array' },
+      equipmentOption: 'A',
+    });
+  });
+
   test('does not mutate the character it was given', () => {
     createCharacterBody(character);
     expect(character.id).toBe(LOCAL_ID);

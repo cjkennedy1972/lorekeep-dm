@@ -39,6 +39,10 @@ test('completes and saves a Fighter build with keyboard controls only', async ()
   await user.click(screen.getByRole('button', { name: 'Save character' }));
   expect(gameStore.getState().character).not.toBeNull();
   expect(gameStore.getState().character?.name).toBe('Talia');
+  expect(gameStore.getState().character).toMatchObject({
+    abilityGeneration: { method: 'standard-array' },
+    equipmentOption: expect.any(String),
+  });
   expect(validateCharacter(gameStore.getState().character!, catalog)).toEqual(
     [],
   );

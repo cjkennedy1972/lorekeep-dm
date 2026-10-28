@@ -21,6 +21,20 @@ const SKILL_ABILITY: Record<string, Ability> = {
   stealth: 'dex',
   survival: 'wis',
 };
+const ARMOR_CLASS: Record<string, { base: number; maxDex?: number }> = {
+  breastplate: { base: 14, maxDex: 2 },
+  'chain mail': { base: 16, maxDex: 0 },
+  'chain shirt': { base: 13, maxDex: 2 },
+  'half plate armor': { base: 15, maxDex: 2 },
+  'hide armor': { base: 12, maxDex: 2 },
+  'leather armor': { base: 11 },
+  'padded armor': { base: 11 },
+  'plate armor': { base: 18, maxDex: 0 },
+  'ring mail': { base: 14, maxDex: 0 },
+  'scale mail': { base: 14, maxDex: 2 },
+  'splint armor': { base: 17, maxDex: 0 },
+  'studded leather armor': { base: 12 },
+};
 const mod = (score: number) => Math.floor((score - 10) / 2);
 const proficiencyBonus = (level: number) => 2 + Math.floor((level - 1) / 4);
 export interface DerivedSheet {
@@ -54,10 +68,41 @@ export function deriveSheet(
         (char.proficiencies.skills.includes(skill) ? prof : 0),
     ]),
   );
+  const equipped = char.equipment
+    .filter((item) => item.equipped && item.qty > 0)
+    .map((item) => ({
+      item,
+      entry: catalog.get('equipment', item.itemId),
+    }));
+  const bodyArmor = equipped.find(
+    ({ entry }) =>
+      entry?.category === 'armor' && entry.name.toLowerCase() !== 'shield',
+  );
+  const armor = bodyArmor
+    ? ARMOR_CLASS[bodyArmor.entry!.name.toLowerCase()]
+    : undefined;
+  const shieldEquipped = equipped.some(
+    ({ entry }) =>
+      entry?.category === 'armor' && entry.name.toLowerCase() === 'shield',
+  );
+  const unarmoredDefenseAbility =
+    klass?.id === 'class:barbarian'
+      ? 'con'
+      : klass?.id === 'class:monk' && !shieldEquipped
+        ? 'wis'
+        : undefined;
+  const ac = armor
+    ? armor.base + Math.min(mod(char.abilities.dex), armor.maxDex ?? Infinity)
+    : 10 +
+      mod(char.abilities.dex) +
+      (!bodyArmor && unarmoredDefenseAbility
+        ? mod(char.abilities[unarmoredDefenseAbility])
+        : 0);
+  const shieldBonus = shieldEquipped ? 2 : 0;
   const attackBonuses = Object.fromEntries(
-    char.equipment
-      .filter((i) => i.equipped)
-      .map((i) => [i.itemId, mod(char.abilities.str) + prof]),
+    equipped
+      .filter(({ entry }) => entry?.category === 'weapon')
+      .map(({ item }) => [item.itemId, mod(char.abilities.str) + prof]),
   );
   const spellSlots: Record<string, number> = {};
   for (const [i, count] of (
@@ -66,7 +111,7 @@ export function deriveSheet(
     if (count) spellSlots[String(i + 1)] = count;
   const spellAbility = klass?.spellcastingAbility;
   return {
-    ac: 10 + mod(char.abilities.dex),
+    ac: ac + shieldBonus,
     maxHp: klass
       ? klass.hitDie +
         mod(char.abilities.con) +

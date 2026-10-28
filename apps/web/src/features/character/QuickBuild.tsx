@@ -29,9 +29,6 @@ export function buildQuickCharacter(
 
 function asCharacter(input: CharacterInput): Character {
   const character = { ...input, id: newCharacterId() };
-  delete character.abilityGeneration;
-  delete character.equipmentOption;
-  delete character.backgroundSkills;
   return character as Character;
 }
 

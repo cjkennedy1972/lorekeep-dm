@@ -26,6 +26,10 @@ test('quick build saves a legal character in at most two clicks for every class'
       screen.getByRole('button', { name: 'Build and save character' }),
     );
     expect(gameStore.getState().character).not.toBeNull();
+    expect(gameStore.getState().character).toMatchObject({
+      abilityGeneration: { method: 'standard-array' },
+      equipmentOption: expect.any(String),
+    });
     expect(validateCharacter(gameStore.getState().character!, catalog)).toEqual(
       [],
     );

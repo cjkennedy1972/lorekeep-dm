@@ -5,6 +5,7 @@ import type { Ability } from '@game/schema';
 import { loadCatalog } from '../src/catalog-node.js';
 import { deriveSheet } from '../src/character/derive.js';
 import { validateCharacter } from '../src/character/validate.js';
+import { quickBuild } from '../src/character/builder.js';
 import type { CharacterInput } from '../src/character/types.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../catalog');
@@ -92,6 +93,112 @@ const codes = (c: CharacterInput) =>
   validateCharacter(c, catalog).map((v) => v.code);
 
 describe('character validator', () => {
+  test('rejects equipped armor without proficiency or inventory and duplicate armor slots', () => {
+    const wizard = quickBuild(catalog, 'class:wizard', 41, 1).character;
+    wizard.equipment.push({
+      itemId: 'equipment:plate-armor',
+      qty: 1,
+      equipped: true,
+    });
+    expect(codes(wizard)).toContain('WRONG_EQUIPMENT');
+    const wizardShield = quickBuild(catalog, 'class:wizard', 45, 1).character;
+    wizardShield.equipment.push({
+      itemId: 'equipment:shield',
+      qty: 1,
+      equipped: true,
+    });
+    expect(codes(wizardShield)).toContain('WRONG_EQUIPMENT');
+
+    const fighter = quickBuild(catalog, 'class:fighter', 42, 1).character;
+    fighter.equipment.push({
+      itemId: 'equipment:plate-armor',
+      qty: 1,
+      equipped: true,
+    });
+    fighter.equipment.push({
+      itemId: 'equipment:chain-mail',
+      qty: 1,
+      equipped: true,
+    });
+    expect(codes(fighter)).toContain('WRONG_EQUIPMENT');
+
+    const shieldUser = quickBuild(catalog, 'class:fighter', 43, 1).character;
+    shieldUser.equipment.push({
+      itemId: 'equipment:shield',
+      qty: 1,
+      equipped: true,
+    });
+    shieldUser.equipment.push({
+      itemId: 'equipment:shield',
+      qty: 1,
+      equipped: true,
+    });
+    expect(codes(shieldUser)).toContain('WRONG_EQUIPMENT');
+
+    const absent = quickBuild(catalog, 'class:fighter', 44, 1).character;
+    absent.equipment.push({
+      itemId: 'equipment:plate-armor',
+      qty: 0,
+      equipped: true,
+    });
+    expect(codes(absent)).toContain('WRONG_EQUIPMENT');
+
+    const threeWeapons = character();
+    threeWeapons.equipment = [
+      { itemId: 'equipment:longsword', qty: 1, equipped: true },
+      { itemId: 'equipment:dagger', qty: 1, equipped: true },
+      { itemId: 'equipment:shortsword', qty: 1, equipped: true },
+    ];
+    expect(codes(threeWeapons)).toContain('WRONG_EQUIPMENT');
+
+    const twoHandedWithShield = character();
+    twoHandedWithShield.equipment = [
+      { itemId: 'equipment:greatsword', qty: 1, equipped: true },
+      { itemId: 'equipment:shield', qty: 1, equipped: true },
+    ];
+    expect(codes(twoHandedWithShield)).toContain('WRONG_EQUIPMENT');
+  });
+
+  test('zero-quantity equipped armor does not contribute to AC', () => {
+    const fighter = quickBuild(catalog, 'class:fighter', 53, 1).character;
+    const empty = { ...fighter, equipment: [] };
+    const depleted = {
+      ...fighter,
+      equipment: [{ itemId: 'equipment:plate-armor', qty: 0, equipped: true }],
+    };
+    expect(deriveSheet(depleted, catalog).ac).toBe(
+      deriveSheet(empty, catalog).ac,
+    );
+    expect(codes(depleted)).toContain('WRONG_EQUIPMENT');
+  });
+
+  test('quickBuild characters for every class validate with their starting AC', () => {
+    const classes = catalog.entries.filter((entry) => entry.kind === 'class');
+    expect(classes).toHaveLength(12);
+    for (const [index, klass] of classes.entries()) {
+      const built = quickBuild(catalog, klass.id, 100 + index, 1).character;
+      expect(validateCharacter(built, catalog), klass.id).toEqual([]);
+      const withExtraArmor = {
+        ...built,
+        equipment: [
+          ...built.equipment.map((item) => ({
+            ...item,
+            equipped:
+              catalog.get('equipment', item.itemId)?.category === 'armor' &&
+              catalog.get('equipment', item.itemId)?.name.toLowerCase() !==
+                'shield'
+                ? false
+                : item.equipped,
+          })),
+          { itemId: 'equipment:plate-armor', qty: 1, equipped: true },
+        ],
+      };
+      expect(deriveSheet(withExtraArmor, catalog).ac, klass.id).toBeGreaterThan(
+        deriveSheet(built, catalog).ac,
+      );
+      expect(codes(withExtraArmor), klass.id).toContain('WRONG_EQUIPMENT');
+    }
+  });
   test('reports specific codes for required illegal cases', () => {
     const pointBuy = character();
     pointBuy.abilityGeneration = {
