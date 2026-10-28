@@ -403,7 +403,9 @@ export class Persistence {
           [sessionId],
         );
         if (converted.rowCount !== 1)
-          throw new Error('Solo-to-party conversion requires an active session');
+          throw new Error(
+            'Solo-to-party conversion requires an active session',
+          );
       }
       let binding:
         | Awaited<ReturnType<SeatCharacterRepository['bindWithClient']>>

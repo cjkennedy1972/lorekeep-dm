@@ -79,9 +79,10 @@ describe('party seat-character persistence', () => {
   });
   it('rejects first-seat admission when the solo session is no longer active', async () => {
     const f = await fixture();
-    await db.query("UPDATE sessions SET mode='solo', status='archived', archived_at=now() WHERE id=$1", [
-      f.sessionId,
-    ]);
+    await db.query(
+      "UPDATE sessions SET mode='solo', status='archived', archived_at=now() WHERE id=$1",
+      [f.sessionId],
+    );
     const lease = {
       sessionId: f.sessionId,
       nodeId: 'r3b-archived-admission-test',
@@ -105,7 +106,13 @@ describe('party seat-character persistence', () => {
     await expect(
       store.writeTurn(
         f.sessionId,
-        [{ turnId: randomUUID(), type: 'SeatJoined', payload: { seatId: f.seatB } }],
+        [
+          {
+            turnId: randomUUID(),
+            type: 'SeatJoined',
+            payload: { seatId: f.seatB },
+          },
+        ],
         {},
         lease,
         [],
