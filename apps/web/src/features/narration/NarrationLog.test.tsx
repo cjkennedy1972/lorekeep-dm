@@ -179,3 +179,78 @@ test('restored history does not show the new-narration jump control while scroll
   );
   expect(list.scrollTop).toBe(3_000);
 });
+
+const opening = {
+  title: 'The adventure begins',
+  body: 'A new journey awaits.',
+};
+const stateSync = {
+  seq: 1,
+  type: 'StateSync',
+  payload: { state: {} },
+} as ServerMessage;
+
+test('shows the opening after StateSync and empty narration history are synchronized', () => {
+  render(
+    <NarrationLog
+      messages={[
+        stateSync,
+        {
+          seq: 2,
+          type: 'NarrationHistory',
+          payload: { turns: [] },
+        } as ServerMessage,
+      ]}
+      opening={opening}
+      openingReady
+    />,
+  );
+
+  expect(screen.getByText('The adventure begins')).toBeInTheDocument();
+  expect(screen.getByText('A new journey awaits.')).toBeInTheDocument();
+});
+
+test('does not flash the opening when synchronized narration history has turns', () => {
+  const view = render(
+    <NarrationLog
+      messages={[stateSync]}
+      opening={opening}
+      openingReady={false}
+    />,
+  );
+  expect(screen.queryByText('The adventure begins')).not.toBeInTheDocument();
+
+  view.rerender(
+    <NarrationLog
+      messages={[
+        stateSync,
+        {
+          seq: 2,
+          type: 'NarrationHistory',
+          payload: {
+            turns: [
+              {
+                turnId: 'restored',
+                text: 'The road stretches north.',
+                tier: 'standard',
+              },
+            ],
+          },
+        } as ServerMessage,
+      ]}
+      opening={opening}
+      openingReady
+    />,
+  );
+
+  expect(screen.getByText('The road stretches north.')).toBeInTheDocument();
+  expect(screen.queryByText('The adventure begins')).not.toBeInTheDocument();
+});
+
+test('shows the opening when the history synchronization fallback is ready without history', () => {
+  render(
+    <NarrationLog messages={[stateSync]} opening={opening} openingReady />,
+  );
+
+  expect(screen.getByText('The adventure begins')).toBeInTheDocument();
+});

@@ -269,7 +269,7 @@ describe('mature narration through Room and Persistence', () => {
     expect(wire).not.toContain(matureText);
   });
 
-  it('replays standard narration but not another seat’s action to an opted-out reconnecting seat', async () => {
+  it('replays standard narration but never mature narration to an opted-out seat', async () => {
     const owner = await account(false);
     const optedOut = await account(true);
     const sessionId = await session(owner);
