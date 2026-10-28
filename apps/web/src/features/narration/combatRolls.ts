@@ -57,7 +57,7 @@ function rollKind(label: unknown): {
   };
 }
 
-function weaponName(attackId: string | undefined): string | undefined {
+export function weaponName(attackId: string | undefined): string | undefined {
   if (!attackId) return undefined;
   const slug = attackId.split(':').pop() ?? attackId;
   const words = slug

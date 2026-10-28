@@ -79,8 +79,9 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
     );
 
     await test.step('keyboard reaches the battlefield controls with a visible focus ring', async () => {
-      await tabTo(page, 'Describe battlefield (Alt+D)');
+      // The token table renders before the Describe panel in the DOM, so Tab reaches Sort first.
       await tabTo(page, 'Sort by distance');
+      await tabTo(page, 'Describe battlefield (Alt+D)');
       await expect(map).toBeVisible();
     });
 
@@ -126,10 +127,16 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
       await page.keyboard.press('Enter');
       // Attack buttons carry the target's display name, not its entity id: read it from the tracker entry.
       const goblinName = await displayNameOf(page, goblin);
-      const attack = page.getByRole('button', { name: `Attack ${goblinName}` });
-      await expect(attack).toBeVisible();
+      // The name gains " with <Weapon>" when the goblin has several attacks, so match the prefix and tab to the exact name.
+      const attacks = page.getByRole('button', {
+        name: new RegExp(
+          `^Attack ${goblinName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+        ),
+      });
+      await expect(attacks.first()).toBeVisible();
+      const attackName = (await attacks.first().textContent())?.trim() ?? '';
       const framesBefore = active.frames.length;
-      await tabTo(page, `Attack ${goblinName}`, 200);
+      await tabTo(page, attackName, 200);
       await page.keyboard.press('Enter');
       // The server resolves the attack and pushes its RollEvent for the attacking seat.
       await expect

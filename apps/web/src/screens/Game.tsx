@@ -37,6 +37,7 @@ import { ConnectionStatus } from '../room/ConnectionStatus.js';
 import { useRoom } from '../room/useRoom.js';
 import { api, http } from '../api.js';
 import { gameStore } from '../state/store.js';
+import { weaponName } from '../features/narration/combatRolls.js';
 import { ChatPanel } from '../features/chat/ChatPanel.js';
 import { Drawer } from '../features/game/Drawer.js';
 import '../styles/game.css';
@@ -800,6 +801,28 @@ export function Game() {
   const moveOptions = actions
     .map(asRecord)
     .filter((item) => item.kind === 'move');
+  const nonMoveActions = actions.filter(
+    (value) => asRecord(value).kind !== 'move',
+  );
+  // Attack options are de-duplicated by target and weapon; the count per target decides whether to name the weapon.
+  const firstAttackIndex = new Set<number>();
+  const attackCountByTarget = new Map<string, number>();
+  {
+    const seen = new Set<string>();
+    nonMoveActions.forEach((value, index) => {
+      const item = asRecord(value);
+      if (item.kind !== 'attack') return;
+      const key = `${String(item.targetId)}|${String(item.attackId)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      firstAttackIndex.add(index);
+      const target = String(item.targetId);
+      attackCountByTarget.set(
+        target,
+        (attackCountByTarget.get(target) ?? 0) + 1,
+      );
+    });
+  }
   // The server answers `options` only when asked, and only on this seat's turn. Ask when the turn starts and
   // whenever a move, attack, or spent resource changes the board, so Attack and Move match the current state.
   const optionsKey = yourTurn
@@ -1236,6 +1259,7 @@ export function Game() {
               <TokenTable
                 store={gameStore}
                 viewerId={active ?? undefined}
+                ownEntityId={gameStore.getState().character?.id}
                 nameOf={nameOf}
               />
               <Describe
@@ -1272,62 +1296,77 @@ export function Game() {
                   </button>
                 );
               })}
-              {actions
-                .filter((value) => asRecord(value).kind !== 'move')
-                .map((value, index) => {
-                  const item = asRecord(value);
-                  if (item.kind === 'attack')
-                    return (
-                      <button
-                        key={String(item.optionId ?? index)}
-                        type="button"
-                        onClick={() =>
-                          send({
-                            command: 'attack',
-                            targetId: String(item.targetId),
-                            attackId: String(item.attackId),
-                          })
-                        }
-                      >
-                        Attack {nameOf(String(item.targetId))}
-                      </button>
-                    );
-                  if (item.kind === 'spell')
-                    return (
-                      <button
-                        key={String(item.optionId ?? index)}
-                        type="button"
-                        onClick={() =>
-                          send({
-                            command: 'cast',
-                            spellId: String(item.spellId),
-                            slotLevel: 1,
-                            target: {
-                              kind: 'entity',
-                              ref: String(item.targetId),
-                            },
-                          })
-                        }
-                      >
-                        Cast {String(item.spellId)} on{' '}
-                        {nameOf(String(item.targetId))}
-                      </button>
-                    );
-                  return null;
-                })}
-              {moveOptions.map((item, index) => (
-                <button
-                  key={String(item.optionId ?? index)}
-                  type="button"
-                  onClick={() =>
-                    send({ command: 'move', destination: item.destination })
-                  }
-                >
-                  Move to {Number(asRecord(item.destination).x) + 1},{' '}
-                  {Number(asRecord(item.destination).y) + 1} (
-                  {String(item.cost)} feet)
-                </button>
-              ))}
+              {nonMoveActions.map((value, index) => {
+                const item = asRecord(value);
+                if (item.kind === 'attack') {
+                  // The same target and weapon can be offered twice; show it once.
+                  if (!firstAttackIndex.has(index)) return null;
+                  const targetName = nameOf(String(item.targetId));
+                  const weapon =
+                    (attackCountByTarget.get(String(item.targetId)) ?? 0) > 1
+                      ? weaponName(String(item.attackId ?? ''))
+                      : undefined;
+                  return (
+                    <button
+                      key={String(item.optionId ?? index)}
+                      type="button"
+                      onClick={() =>
+                        send({
+                          command: 'attack',
+                          targetId: String(item.targetId),
+                          attackId: String(item.attackId),
+                        })
+                      }
+                    >
+                      {weapon
+                        ? `Attack ${targetName} with ${weapon}`
+                        : `Attack ${targetName}`}
+                    </button>
+                  );
+                }
+                if (item.kind === 'spell')
+                  return (
+                    <button
+                      key={String(item.optionId ?? index)}
+                      type="button"
+                      onClick={() =>
+                        send({
+                          command: 'cast',
+                          spellId: String(item.spellId),
+                          slotLevel: 1,
+                          target: {
+                            kind: 'entity',
+                            ref: String(item.targetId),
+                          },
+                        })
+                      }
+                    >
+                      Cast {String(item.spellId)} on{' '}
+                      {nameOf(String(item.targetId))}
+                    </button>
+                  );
+                return null;
+              })}
+              {moveOptions.length > 0 && (
+                <details className="combat-move-picker">
+                  <summary>
+                    Choose a square to move to ({moveOptions.length})
+                  </summary>
+                  {moveOptions.map((item, index) => (
+                    <button
+                      key={String(item.optionId ?? index)}
+                      type="button"
+                      onClick={() =>
+                        send({ command: 'move', destination: item.destination })
+                      }
+                    >
+                      Move to {Number(asRecord(item.destination).x) + 1},{' '}
+                      {Number(asRecord(item.destination).y) + 1} (
+                      {String(item.cost)} feet)
+                    </button>
+                  ))}
+                </details>
+              )}
               {areas.length > 0 && (
                 <AreaAim
                   areas={areas}
