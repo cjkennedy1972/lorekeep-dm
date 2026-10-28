@@ -1,0 +1,50 @@
+/* Phones: each token is a card with labelled fields. Words are never split mid-word. */
+@media (max-width: 30rem) {
+  .token-table__table,
+  .token-table__table tbody {
+    display: block;
+    width: 100%;
+  }
+  .token-table__table {
+    font-size: var(--text-sm);
+  }
+  .token-table__table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .token-table__table caption {
+    text-align: start;
+    margin-block-end: var(--space-1);
+  }
+  .token-table__table tr {
+    display: grid;
+    grid-template-columns: minmax(6rem, auto) 1fr;
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-2);
+    margin-block-end: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 0.5rem);
+  }
+  .token-table__table th,
+  .token-table__table td {
+    display: block;
+    padding: 0;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+    text-align: start;
+  }
+  .token-table__table th[scope='row'] {
+    grid-column: 1 / -1;
+    font-weight: 600;
+  }
+  .token-table__table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+}

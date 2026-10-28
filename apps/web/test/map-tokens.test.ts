@@ -68,6 +68,15 @@ describe('map token draw commands', () => {
     expect(goblin?.hpLabel).toBe('down');
   });
 
+  it('never prints a monster’s numeric HP, even with no known max or status word', () => {
+    const [, ogre] = createTokenDrawCommands(combat, {
+      ogre: { hpState: 'wounded' },
+    });
+    const [, bare] = createTokenDrawCommands(combat);
+    expect(ogre?.hpLabel).toBe('bloodied');
+    expect(bare?.hpLabel).not.toMatch(/\d/);
+  });
+
   it('reads a monster at 0 HP as down even when the status says healthy', () => {
     const [, , goblin] = createTokenDrawCommands(
       {

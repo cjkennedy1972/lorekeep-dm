@@ -120,6 +120,9 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
         return best;
       });
       if (target >= 0) {
+        // The square list sits behind a disclosure; open it so its buttons are in the accessibility tree.
+        const picker = page.getByText(/^Choose a square to move to/);
+        if (await picker.isVisible()) await picker.click();
         const move = page
           .getByRole('button', { name: /^Move to / })
           .nth(target);
