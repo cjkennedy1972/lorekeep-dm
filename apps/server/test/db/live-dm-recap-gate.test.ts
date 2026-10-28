@@ -74,6 +74,7 @@ async function createAccount(email = `${randomUUID()}@example.test`) {
 async function createResumableTable(
   ownerId: string,
   tier: string | undefined = 'standard',
+  ownerJoined = true,
 ) {
   const id = randomUUID();
   await db.query(
@@ -81,6 +82,22 @@ async function createResumableTable(
     [id, ownerId, catalog.catalogVersion],
   );
   sessionIds.push(id);
+  if (ownerJoined)
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'SeatJoined',$3::jsonb)`,
+      [
+        id,
+        randomUUID(),
+        JSON.stringify({
+          accountId: ownerId,
+          seatId: randomUUID(),
+          displayName: 'Owner',
+          presence: 'offline',
+          isHost: true,
+          chatMuted: false,
+        }),
+      ],
+    );
   await new RegistryMemory(db).closeScene(
     id,
     'scene:opening',
@@ -205,6 +222,145 @@ describe('resume recap and the live DM allowlist', () => {
     expect(endpoint.requests.length).toBe(generationCalls);
   });
 
+  it('loads ordered bounded narration history with reverted turns excluded and only the viewer own action text', async () => {
+    const player = await createAccount();
+    const other = await createAccount();
+    const table = await createResumableTable(player.id);
+    const persistence = new Persistence(db);
+    const lateGuest = await createAccount();
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload)
+       SELECT $1,COALESCE(MAX(seq),0)+1,$2,'SeatJoined',$3::jsonb FROM events WHERE session_id=$1`,
+      [
+        table,
+        randomUUID(),
+        JSON.stringify({
+          accountId: lateGuest.id,
+          seatId: randomUUID(),
+          displayName: 'Guest',
+        }),
+      ],
+    );
+    for (let i = 0; i < 33; i++) {
+      const turnId = randomUUID();
+      const actionId = randomUUID();
+      await db.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         SELECT $1,COALESCE(MAX(seq),0)+1,$2,'RoundActionAccepted',$3::jsonb FROM events WHERE session_id=$1`,
+        [
+          table,
+          randomUUID(),
+          JSON.stringify({
+            submission: {
+              accountId: i === 32 ? other.id : player.id,
+              actionId,
+              actionIds: [actionId],
+              text: `ACTION_${i}`,
+            },
+          }),
+        ],
+      );
+      await db.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb FROM events WHERE session_id=$1`,
+        [
+          table,
+          turnId,
+          JSON.stringify({
+            actionId,
+            narration: `NARRATION_${i}`,
+            tier: 'standard',
+          }),
+        ],
+      );
+      if (i === 31)
+        await db.query(
+          `INSERT INTO events(session_id,seq,turn_id,type,payload)
+           SELECT $1,COALESCE(MAX(seq),0)+1,$2,'TurnReverted',$3::jsonb FROM events WHERE session_id=$1`,
+          [table, randomUUID(), JSON.stringify({ revertedTurnId: turnId })],
+        );
+    }
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload)
+       SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb FROM events WHERE session_id=$1`,
+      [
+        table,
+        randomUUID(),
+        JSON.stringify({ narration: 'MATURE_MARKER', tier: 'mature' }),
+      ],
+    );
+    const history = await persistence.loadNarrationHistory(table, player.id);
+    expect(history.some((entry) => entry.tier === 'mature')).toBe(false);
+    const matureHistory = await persistence.loadNarrationHistory(
+      table,
+      player.id,
+      true,
+    );
+    expect(matureHistory.at(-1)?.tier).toBe('mature');
+    expect(history).toHaveLength(30);
+    expect(history[0]?.narration).toBe('NARRATION_2');
+    expect(history.some((entry) => entry.narration === 'NARRATION_31')).toBe(
+      false,
+    );
+    expect(history.at(-1)).toMatchObject({ narration: 'NARRATION_32' });
+    expect(history.at(-1)?.actionText).toBeUndefined();
+    expect(
+      history.find((entry) => entry.narration === 'NARRATION_2')?.actionText,
+    ).toBe('ACTION_2');
+  });
+
+  it('loads history only from the current seat after a revoke and rejoin', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id, 'standard', false);
+    const oldSeat = randomUUID();
+    const append = async (
+      type: string,
+      payload: object,
+      turnId = randomUUID(),
+    ) => {
+      await db.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         SELECT $1,COALESCE(MAX(seq),0)+1,$2,$3,$4::jsonb FROM events WHERE session_id=$1`,
+        [table, turnId, type, JSON.stringify(payload)],
+      );
+    };
+    await append('SeatJoined', { accountId: player.id, seatId: oldSeat });
+    await append('NarrationCompleted', {
+      narration: 'BEFORE_REVOCATION',
+      tier: 'standard',
+    });
+    await append('SeatRevoked', { accountId: player.id, seatId: oldSeat });
+    await append('NarrationCompleted', {
+      narration: 'DURING_REVOCATION_GAP',
+      tier: 'standard',
+    });
+    await append('SeatJoined', {
+      accountId: player.id,
+      seatId: randomUUID(),
+    });
+    await append('NarrationCompleted', {
+      narration: 'AFTER_REJOIN',
+      tier: 'standard',
+    });
+
+    const history = await new Persistence(db).loadNarrationHistory(
+      table,
+      player.id,
+    );
+    expect(history.map((entry) => entry.narration)).toEqual(['AFTER_REJOIN']);
+  });
+
+  it('returns no narration history when the account has never joined a seat', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id, 'standard', false);
+
+    const history = await new Persistence(db).loadNarrationHistory(
+      table,
+      player.id,
+    );
+    expect(history).toEqual([]);
+  });
+
   it('excludes mature and unknown-tier narration from resume and list recaps', async () => {
     const player = await createAccount();
     const table = await createResumableTable(player.id);
@@ -224,7 +380,11 @@ describe('resume recap and the live DM allowlist', () => {
     await addNarration('UNKNOWN_MARKER unclassified scene.');
     await addNarration('STANDARD_MARKER the party found a bridge.', 'standard');
 
-    const built = await buildPlayerVisibleRecap({ db, sessionId: table });
+    const built = await buildPlayerVisibleRecap({
+      db,
+      sessionId: table,
+      accountId: player.id,
+    });
     expect(built.recap).toContain('STANDARD_MARKER');
     expect(built.recap).not.toContain('MATURE_MARKER');
     expect(built.recap).not.toContain('UNKNOWN_MARKER');
@@ -275,13 +435,18 @@ describe('resume recap and the live DM allowlist', () => {
       [table, rewindTurn, JSON.stringify({ revertedTurnId: revertedTurn })],
     );
 
-    const built = await buildPlayerVisibleRecap({ db, sessionId: table });
+    const built = await buildPlayerVisibleRecap({
+      db,
+      sessionId: table,
+      accountId: player.id,
+    });
     expect(built.recap).toContain('KEPT_MARKER');
     expect(built.recap).not.toContain('REVERTED_MARKER');
 
     const lateJoin = await buildLateJoinRecap({
       db,
       sessionId: table,
+      accountId: player.id,
       moderator: { moderate: async () => ({ verdict: 'allow' }) } as never,
       tier: 'standard',
       tableLines: [],

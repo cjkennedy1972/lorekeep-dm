@@ -19,6 +19,9 @@ type Props = {
   ) => Promise<string | null>;
   /** Shown in place of an empty log, before the first narration arrives. */
   opening?: { title: string; body: ReactNode };
+  openingReady?: boolean;
+  /** Incremented for every server history restore, including an identical reconnect replay. */
+  historyRestoreKey?: number;
 };
 
 function rollEvent(payload: RollPayload) {
@@ -39,6 +42,8 @@ export function NarrationLog({
   combatantNames = {},
   onReport,
   opening,
+  openingReady = true,
+  historyRestoreKey = 0,
 }: Props) {
   const [state, dispatch] = useReducer(
     (current: typeof initialNarrationLog, message: ServerMessage) =>
@@ -50,6 +55,7 @@ export function NarrationLog({
   const [reporting, setReporting] = useState<number | null>(null);
   const [reportMessage, setReportMessage] = useState('');
   const listRef = useRef<HTMLOListElement>(null);
+  const previousEntries = useRef(state.entries);
   const reportTriggerRef = useRef<HTMLButtonElement>(null);
   const reportCategoryRef = useRef<HTMLSelectElement>(null);
   const seen = useRef(new Set<string>());
@@ -168,6 +174,7 @@ export function NarrationLog({
         message.type !== 'RollEvent' &&
         message.type !== 'NarrationChunk' &&
         message.type !== 'NarrationCompleted' &&
+        message.type !== 'NarrationHistory' &&
         message.type !== 'TurnReverted' &&
         message.type !== 'ToolRejected' &&
         message.type !== 'Error'
@@ -203,10 +210,42 @@ export function NarrationLog({
   }, [state]);
 
   useEffect(() => {
+    if (historyRestoreKey === 0) return;
     const node = listRef.current;
     if (!node) return;
+    node.scrollTop = node.scrollHeight;
+    setLatest(false);
+  }, [historyRestoreKey]);
+
+  useEffect(() => {
+    const node = listRef.current;
+    if (!node) return;
+    const priorKeys = new Set(
+      previousEntries.current.map((entry) =>
+        entry.kind === 'pending'
+          ? `pending:${entry.actionId}`
+          : `turn:${entry.turn.turnId}`,
+      ),
+    );
+    const added = state.entries.filter(
+      (entry) =>
+        !priorKeys.has(
+          entry.kind === 'pending'
+            ? `pending:${entry.actionId}`
+            : `turn:${entry.turn.turnId}`,
+        ),
+    );
+    previousEntries.current = state.entries;
+    const historyOnly =
+      added.length > 0 &&
+      added.every((entry) => entry.kind === 'turn' && entry.turn.history);
     const atBottom =
       node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+    if (historyOnly) {
+      setLatest(false);
+      node.scrollTop = node.scrollHeight;
+      return;
+    }
     setLatest(!atBottom);
     if (atBottom) node.scrollTop = node.scrollHeight;
   }, [state.entries]);
@@ -326,6 +365,11 @@ export function NarrationLog({
                       : 'Narration could not be generated; this is a fallback response.'}
                 </p>
               )}
+              {entry.turn.playerText && (
+                <p className="narration-log__player-action">
+                  You: {entry.turn.playerText}
+                </p>
+              )}
               <p>
                 {body ||
                   (entry.turn.complete
@@ -403,7 +447,9 @@ export function NarrationLog({
           })}
       </ol>
       {opening &&
+        openingReady &&
         state.entries.length === 0 &&
+        !messages.some((message) => message.type === 'NarrationCompleted') &&
         !messages.some((message) => message.type === 'CombatEvents') && (
           <div className="narration-log__opening">
             <h3>{opening.title}</h3>

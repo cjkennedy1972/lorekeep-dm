@@ -180,7 +180,9 @@ describe('mature narration through Room and Persistence', () => {
     let lookups = 0;
     store.matureEligibleAccounts = async (ids) => {
       lookups += 1;
-      if (lookups === 1)
+      // The second eligibility lookup is the delivery-time gate; mutate only
+      // after the initial round eligibility decision has already succeeded.
+      if (lookups === 2)
         await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
           owner,
         ]);
@@ -237,7 +239,37 @@ describe('mature narration through Room and Persistence', () => {
     expect(wire).not.toContain('inspect-the-sconce');
   });
 
-  it('does not resend the last mature narration to an opted-out seat that reconnects after the turn', async () => {
+  it('does not replay mature narration when an opted-out seat reconnects', async () => {
+    const owner = await account(false);
+    const optedOut = await account(true);
+    const sessionId = await session(owner);
+    const room = await openRoom(sessionId, singleTextNarrator(LONG_NARRATION));
+    await joinSeated(room, owner, recorder().connection, 'Owner');
+    await joinSeated(room, optedOut, recorder().connection, 'Opted');
+    await room.disconnect(optedOut);
+
+    const turnId = randomUUID();
+    const matureText = 'A mature-only scene from before reconnect.';
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload)
+       SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb
+         FROM events WHERE session_id=$1`,
+      [
+        sessionId,
+        turnId,
+        JSON.stringify({ narration: matureText, tier: 'mature' }),
+      ],
+    );
+
+    const reconnect = recorder();
+    await joinSeated(room, optedOut, reconnect.connection, 'Opted');
+
+    const wire = JSON.stringify(reconnect.sent);
+    expect(wire).toContain('StateSync');
+    expect(wire).not.toContain(matureText);
+  });
+
+  it('replays standard narration but never mature narration to an opted-out seat', async () => {
     const owner = await account(false);
     const optedOut = await account(true);
     const sessionId = await session(owner);
@@ -253,7 +285,8 @@ describe('mature narration through Room and Persistence', () => {
 
     const wire = JSON.stringify(reconnect.sent);
     expect(wire).toContain('StateSync');
-    expect(wire).not.toContain('The torch gutters');
+    expect(wire).toContain('The torch gutters');
+    expect(wire).toContain('"tier":"standard"');
     expect(wire).not.toContain('inspect-the-sconce');
   });
 

@@ -116,6 +116,21 @@ export const ChatMessageSchema = z
 export const ChatHistoryEntrySchema = z
   .object({ seq: z.int().positive(), message: ChatMessageSchema })
   .strict();
+export const NarrationHistoryTurnSchema = z
+  .object({
+    turnId: z.string().min(1),
+    text: z.string().min(1).max(24_000),
+    tier: z.enum(['family', 'standard', 'mature']),
+    actionText: z.string().max(2_000).optional(),
+  })
+  .strict();
+export const NarrationHistorySchema = z.object({
+  seq: z.int().nonnegative(),
+  type: z.literal('NarrationHistory'),
+  payload: z
+    .object({ turns: z.array(NarrationHistoryTurnSchema).max(30) })
+    .strict(),
+});
 export const CombatCommandSchema = z
   .object({
     actionId: ActionIdSchema,
@@ -364,6 +379,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('ChatHistory'),
     payload: z.object({ messages: z.array(ChatHistoryEntrySchema) }).strict(),
   }),
+  NarrationHistorySchema,
   z.object({
     seq: z.int().nonnegative(),
     type: z.enum([
@@ -460,6 +476,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
 export type ClientEnvelope = z.infer<typeof ClientEnvelopeSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ChatHistoryEntry = z.infer<typeof ChatHistoryEntrySchema>;
+export type NarrationHistoryTurn = z.infer<typeof NarrationHistoryTurnSchema>;
 export type CombatCommand = z.infer<typeof CombatCommandSchema>;
 export type StateSync = z.infer<typeof StateSyncSchema>;
 export type PresenceChanged = z.infer<typeof PresenceChangedSchema>;

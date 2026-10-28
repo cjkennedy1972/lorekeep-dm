@@ -17,6 +17,8 @@ export type NarrationTurn = {
   turnId: string;
   chunks: Record<number, string>;
   narration?: string;
+  playerText?: string;
+  history?: boolean;
   fallback?: 'no-narration' | 'endpoint-error' | 'budget-exhausted';
   complete: boolean;
   rollEvents: RollPayload[];
@@ -29,6 +31,7 @@ export type LogEntry =
 export type NarrationLogState = {
   entries: LogEntry[];
   announced: string[];
+  revertedTurnIds: string[];
 };
 
 const LIVE_DM_RESTRICTED_MESSAGE = 'Live DM is not enabled for this account.';
@@ -63,6 +66,7 @@ export function turnFailureNotice(
 export const initialNarrationLog: NarrationLogState = {
   entries: [],
   announced: [],
+  revertedTurnIds: [],
 };
 
 const turnOf = (state: NarrationLogState, turnId: string): NarrationTurn => {
@@ -79,6 +83,23 @@ const turnOf = (state: NarrationLogState, turnId: string): NarrationTurn => {
     }
   );
 };
+
+function placeHistoryTurn(
+  state: NarrationLogState,
+  turn: NarrationTurn,
+): NarrationLogState {
+  const entries = state.entries.filter(
+    (entry) => !(entry.kind === 'turn' && entry.turn.turnId === turn.turnId),
+  );
+  const firstLive = entries.findIndex(
+    (entry) => entry.kind === 'pending' || !entry.turn.history,
+  );
+  entries.splice(firstLive < 0 ? entries.length : firstLive, 0, {
+    kind: 'turn',
+    turn,
+  });
+  return { ...state, entries };
+}
 
 function upsertTurn(
   state: NarrationLogState,
@@ -106,6 +127,29 @@ export function narrationLogReducer(
 ): NarrationLogState {
   const payload = message.payload as Record<string, unknown>;
   switch (message.type) {
+    case 'NarrationHistory': {
+      let next = state;
+      for (const item of message.payload.turns) {
+        if (next.revertedTurnIds.includes(item.turnId)) continue;
+        if (
+          next.entries.some(
+            (entry) =>
+              entry.kind === 'turn' && entry.turn.turnId === item.turnId,
+          )
+        )
+          continue;
+        next = placeHistoryTurn(next, {
+          turnId: item.turnId,
+          chunks: {},
+          narration: item.text,
+          ...(item.actionText ? { playerText: item.actionText } : {}),
+          history: true,
+          complete: true,
+          rollEvents: [],
+        });
+      }
+      return next;
+    }
     case 'ActionQueued':
     case 'TurnThinking': {
       const actionId = String(payload.actionId ?? '');
@@ -182,6 +226,9 @@ export function narrationLogReducer(
           (entry) => !(entry.kind === 'turn' && entry.turn.turnId === turnId),
         ),
         announced: state.announced.filter((id) => id !== turnId),
+        revertedTurnIds: state.revertedTurnIds.includes(turnId)
+          ? state.revertedTurnIds
+          : [...state.revertedTurnIds, turnId],
       };
     }
     case 'Error': {

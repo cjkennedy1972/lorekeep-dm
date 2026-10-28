@@ -151,6 +151,16 @@ export function Game() {
   const [spotlightNotice, setSpotlightNotice] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLoading, setResumeLoading] = useState(false);
+  const [historyRestoreCount, setHistoryRestoreCount] = useState(0);
+  const [openingSyncTimedOut, setOpeningSyncTimedOut] = useState(false);
+  useEffect(() => {
+    setOpeningSyncTimedOut(false);
+    const timeout = window.setTimeout(
+      () => setOpeningSyncTimedOut(true),
+      1_500,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [id]);
   const loadGame = () => {
     setResumeLoading(true);
     setResumeError('');
@@ -238,6 +248,9 @@ export function Game() {
               ? ''
               : current,
         );
+      }
+      if (message.type === 'NarrationHistory') {
+        setHistoryRestoreCount((current) => current + 1);
       }
       if (message.type === 'CombatTracker') {
         // Combat can start after we joined, so the join-time state has no map yet.
@@ -413,6 +426,25 @@ export function Game() {
   });
   const [messages, setMessages] = useState<ServerMessage[]>([]);
   const messagesRef = useRef<ServerMessage[]>([]);
+  const historyMessages = messages.filter(
+    (message) => message.type === 'NarrationHistory',
+  );
+  const hasNarrationTurn = messages.some((message) => {
+    if (message.type === 'NarrationHistory')
+      return message.payload.turns.length > 0;
+    return (
+      message.type === 'NarrationChunk' ||
+      message.type === 'NarrationCompleted' ||
+      message.type === 'ActionQueued' ||
+      message.type === 'TurnThinking' ||
+      message.type === 'CombatEvents'
+    );
+  });
+  const openingReady = hasNarrationTurn
+    ? false
+    : (messages.some((message) => message.type === 'StateSync') &&
+        historyMessages.length > 0) ||
+      openingSyncTimedOut;
   const [chatMessages, setChatMessages] = useState<ChatHistoryEntry[]>([]);
   const [chatError, setChatError] = useState('');
   const [tracker, setTracker] = useState<Tracker | null>(null);
@@ -1012,6 +1044,8 @@ export function Game() {
           )}
           <NarrationLog
             messages={messages}
+            openingReady={openingReady}
+            historyRestoreKey={historyRestoreCount}
             onReport={async (messageRef, category, reason) => {
               const result = await api(`/api/rooms/${id}/reports`, {
                 messageRef,

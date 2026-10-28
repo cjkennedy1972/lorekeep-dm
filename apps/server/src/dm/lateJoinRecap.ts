@@ -53,6 +53,7 @@ export interface LateJoinRecapResult {
 export async function buildLateJoinRecap(input: {
   db: Pick<Pool, 'query'>;
   sessionId: string;
+  accountId?: string;
   moderator: Moderator;
   tier: ContentTier;
   tableLines: readonly string[];
@@ -74,6 +75,7 @@ export async function buildLateJoinRecap(input: {
   const built = await buildPlayerVisibleRecap({
     db: input.db,
     sessionId: input.sessionId,
+    accountId: input.accountId ?? '',
     changed: true,
     adapter: hasRedactedSeat ? undefined : input.adapter,
     signal: AbortSignal.timeout(input.timeoutMs ?? 8_000),

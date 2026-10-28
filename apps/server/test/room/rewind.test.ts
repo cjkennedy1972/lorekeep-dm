@@ -27,7 +27,11 @@ const lease = {
   epoch: 1,
   expiresAt: new Date(Date.now() + 60_000),
 };
-const recorder = (): Connection => ({ send() {} });
+const recorder = (sent: ServerMessage[] = []): Connection => ({
+  send(message) {
+    sent.push(message as ServerMessage);
+  },
+});
 const settle = async () => {
   for (let i = 0; i < 10; i++)
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -123,6 +127,52 @@ function setup() {
 }
 
 describe('rewind last resolved turn', () => {
+  it('serializes an in-flight history query before a queued rewind commit', async () => {
+    const { room, host: owner } = setup();
+    await joinSeated(room, owner, recorder(), 'Owner');
+    await room.submitAction(owner, randomUUID(), 'Open the door.', 'Owner');
+    await settle();
+
+    let releaseHistory!: () => void;
+    let historyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      historyStarted = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      releaseHistory = resolve;
+    });
+    (room as unknown as { store: RoomStore }).store.loadNarrationHistory =
+      async () => {
+        historyStarted();
+        await blocked;
+        return [
+          {
+            turnId: 'turn-1',
+            narration: 'narration 1',
+            tier: 'standard',
+          },
+        ];
+      };
+
+    const sent: ServerMessage[] = [];
+    const reconnecting = room.join(owner, recorder(sent), 'Owner', false, -1, {
+      requireExistingSeat: true,
+    });
+    await started;
+    const rewind = room.rewindLastTurn(owner);
+    releaseHistory();
+    await Promise.all([reconnecting, rewind]);
+
+    const historyIndex = sent.findIndex(
+      (message) => message.type === 'NarrationHistory',
+    );
+    const revertedIndex = sent.findIndex(
+      (message) => message.type === 'TurnReverted',
+    );
+    expect(historyIndex).toBeGreaterThanOrEqual(0);
+    expect(revertedIndex).toBeGreaterThan(historyIndex);
+  });
+
   it('restores state, map and transcript, and emits TurnReverted', async () => {
     const { room, events, host: owner } = setup();
     await joinSeated(room, owner, recorder(), 'Owner');
