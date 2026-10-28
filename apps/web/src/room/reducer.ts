@@ -213,6 +213,7 @@ export function roomReducer(view: RoomView, msg: ServerMessage): RoomView {
     case 'TpkChoiceRequired':
       return view; // surfaced by the client, not part of room state
     case 'Error':
+    case 'NarrationHistory':
     case 'ChatMessage':
     case 'ChatHistory':
     case 'SeatTakenOver':

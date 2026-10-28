@@ -40,6 +40,37 @@ const messages: ServerMessage[] = [
 ];
 
 describe('NarrationLog', () => {
+  it('renders replay history once and dedupes a live completion for the same turn', async () => {
+    const history: ServerMessage = {
+      seq: 8,
+      type: 'NarrationHistory',
+      payload: {
+        turns: [
+          {
+            turnId: 'old-turn',
+            text: 'The old bridge appears.',
+            tier: 'standard',
+            actionText: 'I follow the river.',
+          },
+        ],
+      },
+    };
+    const live: ServerMessage = {
+      seq: 9,
+      type: 'NarrationCompleted',
+      payload: {
+        turnId: 'old-turn',
+        text: 'The old bridge appears.',
+        words: 4,
+      },
+    };
+    render(<NarrationLog messages={[history, history, live]} />);
+    expect(
+      await screen.findByText('The old bridge appears.'),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('You: I follow the river.')).toHaveLength(1);
+    expect(screen.getAllByText('The old bridge appears.')).toHaveLength(1);
+  });
   it('renders and announces concentration saves and drops accessibly', async () => {
     const messages: ServerMessage[] = [
       {

@@ -173,6 +173,60 @@ export async function buildRecap(input: RecapInput): Promise<RecapResult> {
   }
 }
 
+export interface PlayerNarrationHistoryRow {
+  turnId: string;
+  narration: string;
+  tier: 'family' | 'standard' | 'mature';
+  actionText?: string;
+}
+
+/** Shared event-log selection for recaps and replay; private actions are joined only for their owner. */
+export async function loadPlayerNarrationHistoryRows(input: {
+  db: Pick<Pool, 'query'>;
+  sessionId: string;
+  accountId?: string;
+  limit?: number;
+  includeMature?: boolean;
+}): Promise<PlayerNarrationHistoryRow[]> {
+  const { rows } = await input.db.query<{
+    turn_id: string;
+    narration: string;
+    tier: PlayerNarrationHistoryRow['tier'];
+    action_text: string | null;
+  }>(
+    `SELECT e.turn_id::text AS turn_id,
+            e.payload->>'narration' AS narration,
+            e.payload->>'tier' AS tier,
+            (SELECT a.payload->'submission'->>'text'
+               FROM events a
+              WHERE a.session_id=e.session_id
+                AND a.type IN ('RoundActionAccepted','RoundActionEdited')
+                AND a.payload->'submission'->>'accountId'=$2
+                AND ((a.payload->'submission'->'actionIds') ? (e.payload->>'actionId')
+                  OR a.payload->'submission'->>'actionId'=e.payload->>'actionId')
+              ORDER BY a.seq DESC LIMIT 1) AS action_text
+       FROM events e
+      WHERE e.session_id=$1 AND e.type='NarrationCompleted'
+        AND ${REVERTED_TURN_EXCLUSION}
+        AND NULLIF(e.payload->>'narration','') IS NOT NULL
+        AND e.payload->>'tier' IN ('family','standard','mature')
+        AND ($4::boolean OR e.payload->>'tier' IN ('family','standard'))
+      ORDER BY e.seq DESC LIMIT $3`,
+    [
+      input.sessionId,
+      input.accountId ?? '',
+      Math.max(1, Math.min(input.limit ?? 30, 32)),
+      input.includeMature === true,
+    ],
+  );
+  return rows.reverse().map((row) => ({
+    turnId: row.turn_id,
+    narration: row.narration,
+    tier: row.tier,
+    ...(row.action_text ? { actionText: row.action_text } : {}),
+  }));
+}
+
 /**
  * The single recap source: committed NarrationCompleted payloads are the exact text
  * broadcast to players. Scene-close summaries, registry facts, and raw event details
@@ -187,26 +241,20 @@ export async function buildPlayerVisibleRecap(input: {
   signal?: AbortSignal;
   hidden?: readonly HiddenEntity[];
 }): Promise<RecapResult> {
-  let rows: { narration: string; tier: string | null }[] = [];
+  let rows: PlayerNarrationHistoryRow[] = [];
   try {
-    ({ rows } = await input.db.query<{
-      narration: string;
-      tier: string | null;
-    }>(
-      `SELECT payload->>'narration' AS narration, payload->>'tier' AS tier
-         FROM events WHERE session_id=$1 AND type='NarrationCompleted'
-          AND ${REVERTED_TURN_EXCLUSION}
-          AND NULLIF(payload->>'narration','') IS NOT NULL
-          AND payload->>'tier' IN ('family','standard')
-        ORDER BY seq DESC LIMIT 32`,
-      [input.sessionId],
-    ));
+    rows = await loadPlayerNarrationHistoryRows({
+      db: input.db,
+      sessionId: input.sessionId,
+      limit: 32,
+    });
   } catch {
     // Missing or unavailable history must never fall back to less-checked memory.
   }
   const scrub = hiddenMatcher(input.hidden ?? []).scrub;
   let remaining = MAX_RECAP_INPUT_CHARS;
-  const bounded = rows
+  const bounded = [...rows]
+    .reverse()
     .flatMap((row) => {
       if (remaining <= 0) return [];
       const text = scrub(row.narration ?? '');

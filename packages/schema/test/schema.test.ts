@@ -250,3 +250,29 @@ test('account output strips birthdate', () => {
   const birthdate = ({} as Account).birthdate;
   expect(birthdate).toBeUndefined();
 });
+
+test('validates bounded, tiered narration history messages', () => {
+  expect(
+    ServerMessageSchema.safeParse({
+      seq: 12,
+      type: 'NarrationHistory',
+      payload: {
+        turns: [
+          {
+            turnId: uuid,
+            text: 'The gate opens.',
+            tier: 'standard',
+            actionText: 'I push the gate.',
+          },
+        ],
+      },
+    }).success,
+  ).toBe(true);
+  expect(
+    ServerMessageSchema.safeParse({
+      seq: 12,
+      type: 'NarrationHistory',
+      payload: { turns: [{ turnId: uuid, text: 'Secret.', tier: 'unknown' }] },
+    }).success,
+  ).toBe(false);
+});

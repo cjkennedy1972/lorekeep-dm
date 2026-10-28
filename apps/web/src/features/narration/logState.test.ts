@@ -36,6 +36,59 @@ test('a failed round turn clears the thinking entry even though the error names 
   expect(state.entries).toEqual([]);
 });
 
+test('narration history replays once and replaces duplicate live turns by turn id', () => {
+  const history = {
+    seq: 7,
+    type: 'NarrationHistory',
+    payload: {
+      turns: [
+        {
+          turnId: 'turn-old',
+          text: 'Old scene.',
+          tier: 'standard',
+          actionText: 'I look around.',
+        },
+        { turnId: 'turn-live', text: 'Live scene.', tier: 'family' },
+      ],
+    },
+  } as unknown as ServerMessage;
+  const live = {
+    seq: 9,
+    type: 'NarrationCompleted',
+    payload: { turnId: 'turn-live', text: 'Live scene updated.' },
+  } as ServerMessage;
+
+  const liveFirst = narrationLogReducer(initialNarrationLog, live);
+  const once = narrationLogReducer(liveFirst, history);
+  const twice = narrationLogReducer(once, history);
+  const withLive = narrationLogReducer(twice, live);
+
+  expect(withLive.entries).toHaveLength(2);
+  expect(withLive.entries[0]).toMatchObject({
+    kind: 'turn',
+    turn: { turnId: 'turn-old' },
+  });
+  expect(withLive.entries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'turn',
+        turn: expect.objectContaining({
+          turnId: 'turn-old',
+          narration: 'Old scene.',
+          playerText: 'I look around.',
+        }),
+      }),
+      expect.objectContaining({
+        kind: 'turn',
+        turn: expect.objectContaining({
+          turnId: 'turn-live',
+          narration: 'Live scene updated.',
+        }),
+      }),
+    ]),
+  );
+});
+
 test('a turn failure notice keeps the server message and offers a retry', () => {
   expect(
     turnFailureNotice('TURN_FAILED', 'The DM could not complete that round.'),

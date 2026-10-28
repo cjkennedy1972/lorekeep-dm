@@ -3,6 +3,7 @@ import {
   RoomStateSchema,
   TurnRevertedSchema,
   type ChatHistoryEntry,
+  type NarrationHistoryTurn,
   type RoomState,
   type Seat,
   type ServerMessage,
@@ -279,6 +280,18 @@ export interface RoomStore {
     sessionId: string,
     limit?: number,
   ): Promise<ChatHistoryEntry[]>;
+  loadNarrationHistory?(
+    sessionId: string,
+    accountId: string,
+    includeMature?: boolean,
+  ): Promise<
+    {
+      turnId: string;
+      narration: string;
+      tier: 'family' | 'standard' | 'mature';
+      actionText?: string;
+    }[]
+  >;
   /** Accounts among these that are active and not opted out of mature content. */
   matureEligibleAccounts?(accountIds: string[]): Promise<string[]>;
   isAccountActive(accountId: string): Promise<boolean>;
@@ -1057,6 +1070,8 @@ export class Room {
             state: this.clientState(accountId),
           },
         });
+      if (lastSeq !== this.seq)
+        await this.sendNarrationHistory(accountId, connection);
       this.sendCombatSnapshot(connection, accountId);
       this.sendSeatPrivateRoundSync(accountId);
       for (const [actionId, open] of Object.entries(
@@ -1094,6 +1109,57 @@ export class Room {
       },
       finish,
     };
+  }
+
+  private async sendNarrationHistory(
+    accountId: string,
+    connection: Connection,
+  ): Promise<void> {
+    if (!this.store.loadNarrationHistory) return;
+    let matureEligible = false;
+    try {
+      matureEligible =
+        (await this.store.matureEligibleAccounts?.([accountId]))?.includes(
+          accountId,
+        ) ?? false;
+    } catch {
+      matureEligible = false;
+    }
+    let rows: Awaited<
+      ReturnType<NonNullable<typeof this.store.loadNarrationHistory>>
+    > = [];
+    try {
+      rows = await this.store.loadNarrationHistory(
+        this.sessionId,
+        accountId,
+        matureEligible,
+      );
+    } catch {
+      rows = [];
+    }
+    if (this.connections.get(accountId) !== connection) return;
+    let remaining = 24_000;
+    const turns: NarrationHistoryTurn[] = [];
+    for (const row of rows) {
+      if (row.tier === 'mature' && !matureEligible) continue;
+      if (remaining <= 0) break;
+      const text = row.narration.slice(0, remaining);
+      remaining -= text.length;
+      if (!text) continue;
+      const actionText = row.actionText?.slice(0, Math.min(2_000, remaining));
+      if (actionText) remaining -= actionText.length;
+      turns.push({
+        turnId: row.turnId,
+        text,
+        tier: row.tier,
+        ...(actionText ? { actionText } : {}),
+      });
+    }
+    connection.send({
+      seq: this.seq,
+      type: 'NarrationHistory',
+      payload: { turns },
+    });
   }
 
   async loadChatHistory(accountId: string): Promise<ChatHistoryEntry[]> {
@@ -1572,6 +1638,8 @@ export class Room {
             state: this.clientState(accountId),
           },
         });
+      if (lastSeq !== this.seq || options.requireExistingSeat)
+        await this.sendNarrationHistory(accountId, connection);
       this.sendCombatSnapshot(connection, accountId);
       this.sendRoundSnapshot(connection);
       this.sendSeatPrivateRoundSync(accountId);
@@ -6313,7 +6381,7 @@ export class Room {
 
   private broadcast(message: ServerMessage): void {
     if (message.type === 'StateSync') {
-      for (const [accountId, connection] of this.connections)
+      for (const [accountId, connection] of this.connections) {
         connection.send({
           ...message,
           payload: {
@@ -6321,6 +6389,8 @@ export class Room {
             state: this.clientState(accountId),
           },
         });
+        void this.sendNarrationHistory(accountId, connection);
+      }
       return;
     }
     for (const connection of this.connections.values())

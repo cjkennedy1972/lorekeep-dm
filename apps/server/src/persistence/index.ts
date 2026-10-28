@@ -1,4 +1,8 @@
 import { encounterStartRejectionBudget } from '../dm/encounters.js';
+import {
+  loadPlayerNarrationHistoryRows,
+  type PlayerNarrationHistoryRow,
+} from '../dm/recap.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { ChatMessageSchema, type ChatHistoryEntry } from '@game/schema';
@@ -249,6 +253,20 @@ export class Persistence {
           : [];
       })
       .reverse();
+  }
+
+  loadNarrationHistory(
+    sessionId: string,
+    accountId: string,
+    includeMature = false,
+  ): Promise<PlayerNarrationHistoryRow[]> {
+    return loadPlayerNarrationHistoryRows({
+      db: this.pool,
+      sessionId,
+      accountId,
+      limit: 30,
+      includeMature,
+    });
   }
 
   async tableHostAccountId(sessionId: string): Promise<string | undefined> {

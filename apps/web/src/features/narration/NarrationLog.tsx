@@ -168,6 +168,7 @@ export function NarrationLog({
         message.type !== 'RollEvent' &&
         message.type !== 'NarrationChunk' &&
         message.type !== 'NarrationCompleted' &&
+        message.type !== 'NarrationHistory' &&
         message.type !== 'TurnReverted' &&
         message.type !== 'ToolRejected' &&
         message.type !== 'Error'
@@ -324,6 +325,11 @@ export function NarrationLog({
                     : entry.turn.fallback === 'budget-exhausted'
                       ? 'The narration limit was reached; this is a fallback response.'
                       : 'Narration could not be generated; this is a fallback response.'}
+                </p>
+              )}
+              {entry.turn.playerText && (
+                <p className="narration-log__player-action">
+                  You: {entry.turn.playerText}
                 </p>
               )}
               <p>

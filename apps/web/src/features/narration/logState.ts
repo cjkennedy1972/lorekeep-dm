@@ -17,6 +17,8 @@ export type NarrationTurn = {
   turnId: string;
   chunks: Record<number, string>;
   narration?: string;
+  playerText?: string;
+  history?: boolean;
   fallback?: 'no-narration' | 'endpoint-error' | 'budget-exhausted';
   complete: boolean;
   rollEvents: RollPayload[];
@@ -80,6 +82,23 @@ const turnOf = (state: NarrationLogState, turnId: string): NarrationTurn => {
   );
 };
 
+function placeHistoryTurn(
+  state: NarrationLogState,
+  turn: NarrationTurn,
+): NarrationLogState {
+  const entries = state.entries.filter(
+    (entry) => !(entry.kind === 'turn' && entry.turn.turnId === turn.turnId),
+  );
+  const firstLive = entries.findIndex(
+    (entry) => entry.kind === 'pending' || !entry.turn.history,
+  );
+  entries.splice(firstLive < 0 ? entries.length : firstLive, 0, {
+    kind: 'turn',
+    turn,
+  });
+  return { ...state, entries };
+}
+
 function upsertTurn(
   state: NarrationLogState,
   turn: NarrationTurn,
@@ -106,6 +125,20 @@ export function narrationLogReducer(
 ): NarrationLogState {
   const payload = message.payload as Record<string, unknown>;
   switch (message.type) {
+    case 'NarrationHistory': {
+      let next = state;
+      for (const item of message.payload.turns) {
+        const turn = turnOf(next, item.turnId);
+        next = placeHistoryTurn(next, {
+          ...turn,
+          narration: turn.complete ? turn.narration : item.text,
+          ...(item.actionText ? { playerText: item.actionText } : {}),
+          history: true,
+          complete: true,
+        });
+      }
+      return next;
+    }
     case 'ActionQueued':
     case 'TurnThinking': {
       const actionId = String(payload.actionId ?? '');
