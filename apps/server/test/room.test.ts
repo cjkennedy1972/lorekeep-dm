@@ -1479,16 +1479,20 @@ describe('room actor', () => {
       }
 
       await room.resolveNow(host);
+      // The next round is opened inside the actor mailbox. Drain after the
+      // boundary so assertions observe all serialized admission work.
+      await room.drain();
 
       const opened = events
         .filter((event) => event.type === 'RoundOpened')
         .at(-1);
       const eligibleSeatIds = (opened?.payload as { eligibleSeatIds: string[] })
         .eligibleSeatIds;
-      const joinerSeatIds = joiners.map(
-        (accountId) =>
-          room.state.seats.find((seat) => seat.accountId === accountId)!.seatId,
+      const joinerSeats = joiners.map((accountId) =>
+        room.state.seats.find((seat) => seat.accountId === accountId),
       );
+      expect(joinerSeats.every((seat) => seat !== undefined)).toBe(true);
+      const joinerSeatIds = joinerSeats.map((seat) => seat!.seatId);
       expect(eligibleSeatIds).toEqual(expect.arrayContaining(joinerSeatIds));
       expect(joinerSeatIds).toHaveLength(2);
       expect(
