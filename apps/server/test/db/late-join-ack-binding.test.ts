@@ -247,8 +247,8 @@ describe('late-join snapshot acknowledgement and binding', () => {
     ).resolves.toBe(true);
     await room.drain();
   }, 60_000);
-  it.each(['leave', 'kick'] as const)(
-    'cancels an acknowledged joiner before a later story boundary when they %s',
+  it.each(['leave', 'kick', 'cancel', 'deny'] as const)(
+    'atomically terminates an acknowledged joiner before a later story boundary when they %s',
     async (departure) => {
       const f = await solo();
       const room = await open(f);
@@ -286,18 +286,23 @@ describe('late-join snapshot acknowledgement and binding', () => {
       await room.acknowledgeLateJoinSnapshot(joiner, seat.seatId, sync!.seq);
 
       if (departure === 'leave') await room.leave(joiner);
-      else await room.kickSeat(f.owner, randomUUID(), seat.seatId);
+      else if (departure === 'kick')
+        await room.kickSeat(f.owner, randomUUID(), seat.seatId);
+      else if (departure === 'cancel')
+        await room.cancelLateJoin(joiner, randomUUID(), req);
+      else await room.denyLateJoin(f.owner, randomUUID(), req);
       await room.submitAction(
         f.owner,
         randomUUID(),
         'close the next story scene',
       );
       const ev = await rows(f.sessionId);
+      const terminalType =
+        departure === 'deny' ? 'LateJoinDenied' : 'LateJoinCancelled';
       expect(
         ev.some(
           (event) =>
-            event.type === 'LateJoinCancelled' &&
-            event.payload.requestId === req,
+            event.type === terminalType && event.payload.requestId === req,
         ),
       ).toBe(true);
       expect(
@@ -316,6 +321,27 @@ describe('late-join snapshot acknowledgement and binding', () => {
           (request) => request.requestId === req,
         ),
       ).toBe(false);
+      const cancellation = ev.find(
+        (event) =>
+          event.type === terminalType && event.payload.requestId === req,
+      )!;
+      const revocation = ev.find(
+        (event) =>
+          event.type === 'SeatRevoked' && event.payload.accountId === joiner,
+      )!;
+      expect(cancellation.turnId).toBe(revocation.turnId);
+      await (
+        replayed as unknown as {
+          admitApprovedLateJoinsPending(): Promise<void>;
+        }
+      ).admitApprovedLateJoinsPending();
+      const afterRestart = await rows(f.sessionId);
+      expect(
+        afterRestart.filter(
+          (event) =>
+            event.type === 'SeatJoined' && event.payload.accountId === joiner,
+        ),
+      ).toHaveLength(1);
       await room.drain();
       await replayed.drain();
     },

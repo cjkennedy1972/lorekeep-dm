@@ -437,6 +437,14 @@ export function reduceRoom(state: RoomState, event: StoredEvent): RoomState {
               ),
               { ...revoked, presence: 'revoked' },
             ],
+            // A revoked seat's approved request must not be admissible after
+            // recovery, even if its explicit terminal event was not yet replayed.
+            // Keep it until that terminal event so replay metadata can be reduced.
+            lateJoinRequests: (state.lateJoinRequests ?? []).map((request) =>
+              request.accountId === revoked.accountId
+                ? { ...request, approved: false }
+                : request,
+            ),
           }
         : {}),
     });

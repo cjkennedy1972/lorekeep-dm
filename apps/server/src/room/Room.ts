@@ -750,7 +750,7 @@ export class Room {
   private readonly lateJoinAuthTokenHashes = new Map<string, string>();
   /** In-memory snapshot acknowledgements; reconnect must acknowledge again after Room recovery. */
   private readonly lateJoinSnapshotAcks = new Set<string>();
-  private readonly lateJoinSnapshotSeqs = new Map<string, number>();
+  private readonly lateJoinSnapshotSeqs = new Map<string, Set<number>>();
   /** Requests approved before an account's seat was revoked are never admissible. */
   private readonly revokedLateJoinRequests = new Set<string>();
   private readonly lateJoinExpiryTimers = new Map<
@@ -1032,22 +1032,31 @@ export class Room {
       const connection = this.connections.get(seat.accountId);
       this.connections.delete(seat.accountId);
       await this.withdrawSeatActions(seat);
-      await this.persist('SeatRevoked', {
-        seatId: seat.seatId,
-        accountId: seat.accountId,
-        cause: 'late-join-expired',
-      });
+      await this.persist(
+        'SeatRevoked',
+        {
+          seatId: seat.seatId,
+          accountId: seat.accountId,
+          cause: 'late-join-expired',
+        },
+        undefined,
+        [],
+        undefined,
+        [{ type: 'LateJoinExpired', payload: { requestId, reason } }],
+      );
       connection?.close?.(1008, 'Late join expired');
+    } else {
+      await this.persist('LateJoinExpired', { requestId, reason });
     }
-    await this.persist('LateJoinExpired', {
-      requestId,
-      reason,
-    });
     const timer = this.lateJoinExpiryTimers.get(requestId);
     if (timer) clearTimeout(timer);
     this.lateJoinExpiryTimers.delete(requestId);
     this.lateJoinAuthTokenHashes.delete(requestId);
     this.lateJoinSnapshotAcks.delete(requestId);
+    this.lateJoinSnapshotSeqs.delete(requestId);
+    const pendingResume = this.pendingSeatResumeTokens.get(request.accountId);
+    if (pendingResume) clearTimeout(pendingResume.expiryTimer);
+    this.pendingSeatResumeTokens.delete(request.accountId);
     this.broadcast({
       seq: this.seq,
       type: 'StateSync',
@@ -1082,15 +1091,23 @@ export class Room {
         requestId: request.requestId,
         actorAccountId: accountId,
       });
-      this.clearLateJoinTransientState(request.requestId);
+      this.clearLateJoinTransientState(request.requestId, request.accountId);
     }
   }
 
-  private clearLateJoinTransientState(requestId: string): void {
+  private clearLateJoinTransientState(
+    requestId: string,
+    accountId?: string,
+  ): void {
     this.lateJoinAuthTokenHashes.delete(requestId);
     this.lateJoinSnapshotAcks.delete(requestId);
     this.lateJoinSnapshotSeqs.delete(requestId);
     this.revokedLateJoinRequests.delete(requestId);
+    if (accountId) {
+      const pending = this.pendingSeatResumeTokens.get(accountId);
+      if (pending) clearTimeout(pending.expiryTimer);
+      this.pendingSeatResumeTokens.delete(accountId);
+    }
     const timer = this.lateJoinExpiryTimers.get(requestId);
     if (timer) clearTimeout(timer);
     this.lateJoinExpiryTimers.delete(requestId);
@@ -1112,7 +1129,12 @@ export class Room {
     const request = (this.state.lateJoinRequests ?? []).find(
       (item) => item.approved && item.accountId === accountId,
     );
-    if (request) this.lateJoinSnapshotSeqs.set(request.requestId, snapshotSeq);
+    if (request) {
+      const sent =
+        this.lateJoinSnapshotSeqs.get(request.requestId) ?? new Set<number>();
+      sent.add(snapshotSeq);
+      this.lateJoinSnapshotSeqs.set(request.requestId, sent);
+    }
   }
 
   private enqueuePlayer<T>(work: () => Promise<T>): Promise<T> {
@@ -1131,7 +1153,7 @@ export class Room {
     // ADR-035 §2: revoke/leave/kick releases the binding in the same serialized write.
     let released: { seatId: string; reason: string } | undefined;
     let revokedAccountId: string | undefined;
-    if (!seatCharacterTransition && type === 'SeatRevoked') {
+    if (type === 'SeatRevoked') {
       const revoked = payload as {
         seatId?: unknown;
         accountId?: unknown;
@@ -1164,13 +1186,23 @@ export class Room {
       ts: new Date(),
     };
     const inputs = [{ seq: next, turnId, type, payload }];
-    const state = reduceRoom(this.state, event);
-    for (const additional of additionalEvents)
-      inputs.push({ seq: next + inputs.length, turnId, ...additional });
+    let state = reduceRoom(this.state, event);
+    for (const additional of additionalEvents) {
+      const additionalEvent: StoredEvent = {
+        sessionId: this.sessionId,
+        seq: next + inputs.length,
+        turnId,
+        type: additional.type,
+        payload: additional.payload,
+        ts: event.ts,
+      };
+      state = reduceRoom(state, additionalEvent);
+      inputs.push({ seq: additionalEvent.seq, turnId, ...additional });
+    }
     if (released) {
       // Identifier-only: no account, character, revision, hash or sheet data.
       inputs.push({
-        seq: next + 1,
+        seq: next + inputs.length,
         turnId,
         type: 'SeatCharacterReleased',
         payload: released,
@@ -2185,8 +2217,25 @@ export class Room {
       if (this.turnInFlight && this.turnAccountId === accountId)
         this.turnAbort?.abort();
       await this.withdrawSeatActions(seat);
-      await this.persist('SeatRevoked', { seatId: seat.seatId, accountId });
-      await this.cancelLateJoinsForAccount(accountId);
+      const cancellations = (this.state.lateJoinRequests ?? [])
+        .filter((request) => request.accountId === accountId)
+        .map((request) => ({
+          type: 'LateJoinCancelled',
+          payload: { requestId: request.requestId, actorAccountId: accountId },
+        }));
+      await this.persist(
+        'SeatRevoked',
+        { seatId: seat.seatId, accountId },
+        undefined,
+        [],
+        undefined,
+        cancellations,
+      );
+      for (const item of cancellations)
+        this.clearLateJoinTransientState(
+          (item.payload as { requestId: string }).requestId,
+          accountId,
+        );
       this.afterSeatReleased();
       this.broadcast({
         seq: this.seq,
@@ -3708,26 +3757,48 @@ export class Room {
         const connection = this.connections.get(pendingSeat.accountId);
         this.connections.delete(pendingSeat.accountId);
         await this.withdrawSeatActions(pendingSeat);
-        await this.persist('SeatRevoked', {
-          seatId: pendingSeat.seatId,
-          accountId: pendingSeat.accountId,
+        await this.persist(
+          'SeatRevoked',
+          {
+            seatId: pendingSeat.seatId,
+            accountId: pendingSeat.accountId,
+            actorSeatId: actor.seatId,
+            actorAccountId: accountId,
+            cause: 'late-join-declined',
+          },
+          undefined,
+          [],
+          undefined,
+          [
+            {
+              type: 'LateJoinDenied',
+              payload: {
+                requestId,
+                actorSeatId: actor.seatId,
+                actorAccountId: accountId,
+                actionId,
+              },
+            },
+          ],
+        );
+        connection?.close?.(1008, 'Late join declined');
+      } else {
+        await this.persist('LateJoinDenied', {
+          requestId,
           actorSeatId: actor.seatId,
           actorAccountId: accountId,
-          cause: 'late-join-declined',
+          actionId,
         });
-        connection?.close?.(1008, 'Late join declined');
       }
-      await this.persist('LateJoinDenied', {
-        requestId,
-        actorSeatId: actor.seatId,
-        actorAccountId: accountId,
-        actionId,
-      });
       this.lateJoinAuthTokenHashes.delete(requestId);
       const timer = this.lateJoinExpiryTimers.get(requestId);
       if (timer) clearTimeout(timer);
       this.lateJoinExpiryTimers.delete(requestId);
       this.lateJoinSnapshotAcks.delete(requestId);
+      this.lateJoinSnapshotSeqs.delete(requestId);
+      const pendingResume = this.pendingSeatResumeTokens.get(request.accountId);
+      if (pendingResume) clearTimeout(pendingResume.expiryTimer);
+      this.pendingSeatResumeTokens.delete(request.accountId);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3773,28 +3844,49 @@ export class Room {
         const connection = this.connections.get(accountId);
         this.connections.delete(accountId);
         await this.withdrawSeatActions(seat);
-        await this.persist('SeatRevoked', {
-          seatId: seat.seatId,
-          accountId,
-          cause: 'late-join-cancelled',
-        });
+        await this.persist(
+          'SeatRevoked',
+          {
+            seatId: seat.seatId,
+            accountId,
+            cause: 'late-join-cancelled',
+          },
+          undefined,
+          [actionId],
+          undefined,
+          [
+            {
+              type: 'LateJoinCancelled',
+              payload: {
+                requestId,
+                actionId,
+                actorAccountId: accountId,
+              },
+            },
+          ],
+        );
         connection?.close?.(1008, 'Late join cancelled');
+      } else {
+        await this.persist(
+          'LateJoinCancelled',
+          {
+            requestId,
+            actionId,
+            actorAccountId: accountId,
+          },
+          undefined,
+          [actionId],
+        );
       }
-      await this.persist(
-        'LateJoinCancelled',
-        {
-          requestId,
-          actionId,
-          actorAccountId: accountId,
-        },
-        undefined,
-        [actionId],
-      );
       this.lateJoinAuthTokenHashes.delete(requestId);
       const timer = this.lateJoinExpiryTimers.get(requestId);
       if (timer) clearTimeout(timer);
       this.lateJoinExpiryTimers.delete(requestId);
       this.lateJoinSnapshotAcks.delete(requestId);
+      this.lateJoinSnapshotSeqs.delete(requestId);
+      const pendingResume = this.pendingSeatResumeTokens.get(accountId);
+      if (pendingResume) clearTimeout(pendingResume.expiryTimer);
+      this.pendingSeatResumeTokens.delete(accountId);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3821,7 +3913,7 @@ export class Room {
       );
       if (!request) return;
       if (this.revokedLateJoinRequests.has(request.requestId)) return;
-      if (this.lateJoinSnapshotSeqs.get(request.requestId) !== snapshotSeq)
+      if (!this.lateJoinSnapshotSeqs.get(request.requestId)?.has(snapshotSeq))
         return;
       if (request.expiresAt === undefined || request.expiresAt <= Date.now()) {
         await this.expireLateJoinRequestNow(request.requestId, 'expired');
@@ -3948,15 +4040,26 @@ export class Room {
           }
         } catch (error) {
           if (!(error instanceof SeatCharacterError)) throw error;
-          await this.persist('SeatRevoked', {
-            seatId: seat.seatId,
-            accountId: seat.accountId,
-            cause: error.code,
-          });
-          await this.persist('LateJoinExpired', {
-            requestId: request.requestId,
-            reason: error.code,
-          });
+          await this.persist(
+            'SeatRevoked',
+            {
+              seatId: seat.seatId,
+              accountId: seat.accountId,
+              cause: error.code,
+            },
+            undefined,
+            [],
+            undefined,
+            [
+              {
+                type: 'LateJoinExpired',
+                payload: {
+                  requestId: request.requestId,
+                  reason: error.code,
+                },
+              },
+            ],
+          );
           this.broadcast({
             seq: this.seq,
             type: 'Error',
@@ -3971,6 +4074,12 @@ export class Room {
           }
           this.lateJoinAuthTokenHashes.delete(request.requestId);
           this.lateJoinSnapshotAcks.delete(request.requestId);
+          this.lateJoinSnapshotSeqs.delete(request.requestId);
+          const pendingResume = this.pendingSeatResumeTokens.get(
+            request.accountId,
+          );
+          if (pendingResume) clearTimeout(pendingResume.expiryTimer);
+          this.pendingSeatResumeTokens.delete(request.accountId);
           const timer = this.lateJoinExpiryTimers.get(request.requestId);
           if (timer) clearTimeout(timer);
           this.lateJoinExpiryTimers.delete(request.requestId);
@@ -3997,6 +4106,7 @@ export class Room {
         });
         this.lateJoinAuthTokenHashes.delete(request.requestId);
         this.lateJoinSnapshotAcks.delete(request.requestId);
+        this.lateJoinSnapshotSeqs.delete(request.requestId);
         const expiryTimer = this.lateJoinExpiryTimers.get(request.requestId);
         if (expiryTimer) clearTimeout(expiryTimer);
         this.lateJoinExpiryTimers.delete(request.requestId);
@@ -4176,6 +4286,7 @@ export class Room {
       this.state = RoomStateSchema.parse({ ...nextState, gameState });
       this.lateJoinAuthTokenHashes.delete(request.requestId);
       this.lateJoinSnapshotAcks.delete(request.requestId);
+      this.lateJoinSnapshotSeqs.delete(request.requestId);
       const expiryTimer = this.lateJoinExpiryTimers.get(request.requestId);
       if (expiryTimer) clearTimeout(expiryTimer);
       this.lateJoinExpiryTimers.delete(request.requestId);
@@ -4305,15 +4416,35 @@ export class Room {
       const connection = this.connections.get(target.accountId);
       this.connections.delete(target.accountId);
       await this.withdrawSeatActions(target);
-      await this.persist('SeatRevoked', {
-        seatId: target.seatId,
-        accountId: target.accountId,
-        actorSeatId: actor.seatId,
-        actorAccountId: accountId,
-        cause: 'host-kick',
-        actionId,
-      });
-      await this.cancelLateJoinsForAccount(target.accountId);
+      const cancellations = (this.state.lateJoinRequests ?? [])
+        .filter((request) => request.accountId === target.accountId)
+        .map((request) => ({
+          type: 'LateJoinCancelled',
+          payload: {
+            requestId: request.requestId,
+            actorAccountId: target.accountId,
+          },
+        }));
+      await this.persist(
+        'SeatRevoked',
+        {
+          seatId: target.seatId,
+          accountId: target.accountId,
+          actorSeatId: actor.seatId,
+          actorAccountId: accountId,
+          cause: 'host-kick',
+          actionId,
+        },
+        undefined,
+        [],
+        undefined,
+        cancellations,
+      );
+      for (const item of cancellations)
+        this.clearLateJoinTransientState(
+          (item.payload as { requestId: string }).requestId,
+          target.accountId,
+        );
       this.afterSeatReleased();
       this.broadcast({
         seq: this.seq,
