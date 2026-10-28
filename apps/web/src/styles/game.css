@@ -227,6 +227,13 @@
   .game-screen {
     --story-max-height: min(46vh, 26rem);
   }
+  /* Scroll targets (focus, auto-scroll, scroll-into-view) land above the composer; --dock-height is set by useDockHeight. */
+  html {
+    scroll-padding-bottom: var(--dock-height, 0px);
+  }
+  .game-area--story {
+    scroll-margin-bottom: var(--dock-height, 0px);
+  }
 }
 
 /* Recap: a quiet card above the story */

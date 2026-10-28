@@ -136,6 +136,10 @@ export function consumeMessageToken(
   bucket.tokens -= 1;
   return true;
 }
+/** Sent when the input judge or its inputs are down; the client keeps the action so the sender can retry. */
+const STORYTELLER_UNAVAILABLE =
+  'The storyteller is unavailable. Your action is kept; try again.';
+
 export function installGateway(
   app: ReturnType<typeof createApp>,
   db: Pool,
@@ -1644,13 +1648,14 @@ export function installGateway(
             // A retry of a committed edit is an idempotent no-op; do not invoke the judge again.
             if (room.hasActionId(edit.data.actionId)) return;
             return app.inputGate
-              .check({
+              .checkDetailed({
                 text: edit.data.payload.text,
                 surface: 'player-action',
                 accountId: identity.accountId,
                 sessionId: identity.sessionId,
               })
-              .then((decision) => {
+              .then((verdict) => {
+                const decision = verdict.decision;
                 if (decision === 'busy' || decision === 'limited') {
                   room.completeActionReceipt(actionReceiptSeq);
                   return send({
@@ -1665,14 +1670,21 @@ export function installGateway(
                 }
                 if (decision === 'block') {
                   room.completeActionReceipt(actionReceiptSeq);
+                  const unavailable = verdict.source === 'failclosed';
                   return send({
                     seq: room.seq,
                     type: 'Error',
-                    payload: {
-                      code: 'CONTENT_REJECTED',
-                      message: 'That action cannot be sent.',
-                      actionId: edit.data.actionId,
-                    },
+                    payload: unavailable
+                      ? {
+                          code: 'TURN_FAILED',
+                          message: STORYTELLER_UNAVAILABLE,
+                          actionId: edit.data.actionId,
+                        }
+                      : {
+                          code: 'CONTENT_REJECTED',
+                          message: 'That action cannot be sent.',
+                          actionId: edit.data.actionId,
+                        },
                   });
                 }
                 return room
@@ -1854,7 +1866,7 @@ export function installGateway(
               return;
             }
             return Promise.all([
-              app.inputGate.check({
+              app.inputGate.checkDetailed({
                 text: action.data.payload.text,
                 surface: 'player-action',
                 accountId: identity.accountId,
@@ -1865,7 +1877,8 @@ export function installGateway(
                 [identity.accountId],
               ),
             ])
-              .then(async ([allowed, name]) => {
+              .then(async ([verdict, name]) => {
+                const allowed = verdict.decision;
                 if (allowed === 'busy') {
                   room.completeActionReceipt(actionReceiptSeq);
                   return 'busy' as const;
@@ -1876,7 +1889,9 @@ export function installGateway(
                 }
                 if (allowed === 'block') {
                   room.completeActionReceipt(actionReceiptSeq);
-                  return 'rejected' as const;
+                  return verdict.source === 'failclosed'
+                    ? ('unavailable' as const)
+                    : ('rejected' as const);
                 }
                 return room.submitAction(
                   identity.accountId,
@@ -1904,6 +1919,16 @@ export function installGateway(
                     payload: {
                       code: 'RATE_LIMITED',
                       message: 'Too many requests. Try again later.',
+                      actionId: msg.actionId,
+                    },
+                  });
+                if (accepted === 'unavailable')
+                  return send({
+                    seq: room.seq,
+                    type: 'Error',
+                    payload: {
+                      code: 'TURN_FAILED',
+                      message: STORYTELLER_UNAVAILABLE,
                       actionId: msg.actionId,
                     },
                   });

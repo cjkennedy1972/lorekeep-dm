@@ -30,7 +30,21 @@ const allowAll: Moderator = {
 } as never;
 
 let gate: InputGate = { check: async () => 'allow' };
-const app = createApp(db, { inputGate: { check: (i) => gate.check(i) } });
+// Set when a test wants a block to look like an unavailable judge rather than the content.
+let failClosed = false;
+const app = createApp(db, {
+  inputGate: {
+    check: (i) => gate.check(i),
+    checkDetailed: async (i) => {
+      const decision = await gate.check(i);
+      return {
+        decision,
+        attributable: false,
+        source: failClosed && decision === 'block' ? 'failclosed' : undefined,
+      };
+    },
+  },
+});
 const rooms = new RoomRegistry(
   new Persistence(db),
   new SessionLease(db),
@@ -175,6 +189,28 @@ describe('gateway input gate', () => {
     });
     expect(JSON.stringify(reply)).not.toContain('forbidden');
     expect(submit).not.toHaveBeenCalled();
+    ws.close();
+    submit.mockRestore();
+  }, 30_000);
+
+  it('an action blocked because the judge is down gets a retryable storyteller-unavailable turn failure', async () => {
+    gate = { check: async () => 'block' };
+    failClosed = true;
+    const submit = vi.spyOn(Room.prototype, 'submitAction');
+    const ws = await openSocket(tokens[0]!);
+    ws.send(playerAction('A calm plan.'));
+    let reply = await nextMessage(ws);
+    while (reply.type !== 'Error') reply = await nextMessage(ws);
+    expect(reply).toMatchObject({
+      type: 'Error',
+      payload: {
+        code: 'TURN_FAILED',
+        message:
+          'The storyteller is unavailable. Your action is kept; try again.',
+      },
+    });
+    expect(submit).not.toHaveBeenCalled();
+    failClosed = false;
     ws.close();
     submit.mockRestore();
   }, 30_000);
