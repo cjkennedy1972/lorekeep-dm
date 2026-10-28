@@ -286,17 +286,7 @@ export class CharacterBuilder {
       return !RANGED_WEAPON_NAMES.has(name);
     });
     const mainHand = meleeWeapon ?? weapons[0];
-    if (mainHand) {
-      if (mainHand.qty > 1) {
-        equipment.splice(equipment.indexOf(mainHand) + 1, 0, {
-          itemId: mainHand.itemId,
-          qty: mainHand.qty - 1,
-          equipped: false,
-        });
-        mainHand.qty = 1;
-      }
-      mainHand.equipped = true;
-    }
+    if (mainHand) mainHand.equipped = true;
     const mainHandName = mainHand
       ? this.catalog.get('equipment', mainHand.itemId)!.name.toLowerCase()
       : undefined;

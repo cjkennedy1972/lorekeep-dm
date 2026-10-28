@@ -35,7 +35,6 @@ describe('quickBuild', () => {
           catalog.get('equipment', item.itemId)?.category === 'weapon',
       );
       expect(weapons).toHaveLength(1);
-      expect(weapons[0]!.qty).toBe(1);
       const sheet = deriveSheet(character, catalog);
       expect(Object.keys(sheet.attackBonuses)).toEqual([weapons[0]!.itemId]);
       const rangedWeaponNames = new Set([
