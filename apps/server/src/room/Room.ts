@@ -956,7 +956,10 @@ export class Room {
     this.lateJoinExpiryTimers.set(requestId, timer);
   }
 
-  private async expireLateJoinRequestNow(requestId: string): Promise<void> {
+  private async expireLateJoinRequestNow(
+    requestId: string,
+    reason = 'timeout',
+  ): Promise<void> {
     const request = this.state.lateJoinRequests?.find(
       (item) => item.requestId === requestId,
     );
@@ -977,7 +980,7 @@ export class Room {
     }
     await this.persist('LateJoinExpired', {
       requestId,
-      reason: 'timeout',
+      reason,
     });
     const timer = this.lateJoinExpiryTimers.get(requestId);
     if (timer) clearTimeout(timer);
@@ -3668,6 +3671,10 @@ export class Room {
       (request) => request.approved,
     );
     for (const request of approved) {
+      if (request.expiresAt === undefined || request.expiresAt <= Date.now()) {
+        await this.expireLateJoinRequestNow(request.requestId, 'expired');
+        continue;
+      }
       if (
         request.characterId === undefined ||
         request.expectedRevision === undefined
@@ -3678,6 +3685,10 @@ export class Room {
         !(await this.store.isAccountActive(request.accountId))
       )
         continue;
+      if (request.expiresAt === undefined || request.expiresAt <= Date.now()) {
+        await this.expireLateJoinRequestNow(request.requestId, 'expired');
+        continue;
+      }
       let seat = this.state.seats.find(
         (item) => item.accountId === request.accountId,
       );

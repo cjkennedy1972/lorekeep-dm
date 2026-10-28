@@ -1305,6 +1305,63 @@ describe('room actor', () => {
       ).toBe(true);
     });
 
+    it('expires an approved late join that reaches admission after its deadline', async () => {
+      const { store, events } = fixture();
+      const host = randomUUID();
+      const requester = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      let releaseAccountCheck!: (active: boolean) => void;
+      let reachedAccountCheck!: () => void;
+      const accountCheckStarted = new Promise<void>((resolve) => {
+        reachedAccountCheck = resolve;
+      });
+      store.isAccountActive = () => {
+        reachedAccountCheck();
+        return new Promise<boolean>((resolve) => {
+          releaseAccountCheck = resolve;
+        });
+      };
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      const requestId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      const request = room.state.lateJoinRequests?.find(
+        (item) => item.requestId === requestId,
+      );
+      expect(request?.expiresAt).toBeTypeOf('number');
+
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const admission = (
+          room as unknown as { admitApprovedLateJoins(): Promise<void> }
+        ).admitApprovedLateJoins();
+        await accountCheckStarted;
+        vi.setSystemTime((request?.expiresAt ?? Date.now()) + 1);
+        releaseAccountCheck(true);
+        await admission;
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(
+        room.state.seats.some((seat) => seat.accountId === requester),
+      ).toBe(false);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'LateJoinExpired',
+          payload: { requestId, reason: 'expired' },
+        }),
+      );
+      expect(events.map((event) => event.type)).not.toContain(
+        'LateJoinAdmitted',
+      );
+    });
+
     it('does not admit an approved late join after their account becomes inactive', async () => {
       const { store, events, inactiveAccounts } = fixture();
       const host = randomUUID();
