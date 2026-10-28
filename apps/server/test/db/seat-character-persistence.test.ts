@@ -49,7 +49,7 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
-  it('admits and binds a new late-join seat in the same transaction on real Postgres', async () => {
+  it('admits a new late-join seat before acknowledgment and binds it in a later transaction on real Postgres', async () => {
     const f = await fixture();
     const ownerCharacter = {
       ...quickBuild(catalog, undefined, 0x31, 1).character,
@@ -105,6 +105,27 @@ describe('party seat-character persistence', () => {
           type: 'SeatJoined',
           payload: { seatId: newSeatId, accountId: guestAccount },
         },
+      ],
+      {},
+      lease,
+      [],
+      head,
+      undefined,
+      [],
+      undefined,
+      'solo-to-party',
+    );
+    expect(written.binding).toBeUndefined();
+    expect([f.seatA, f.seatB]).toContain(written.ownerBinding?.seatId);
+    const beforeAck = await db.query(
+      "SELECT seat_id FROM session_seat_characters WHERE session_id=$1 AND binding_status='active'",
+      [f.sessionId],
+    );
+    expect(beforeAck.rows).toHaveLength(1);
+    expect(beforeAck.rows[0]!.seat_id).not.toBe(newSeatId);
+    const bound = await store.writeTurn(
+      f.sessionId,
+      [
         {
           turnId: randomUUID(),
           type: 'SeatCharacterBound',
@@ -114,7 +135,7 @@ describe('party seat-character persistence', () => {
       {},
       lease,
       [],
-      head,
+      head + 1,
       undefined,
       [],
       {
@@ -124,10 +145,8 @@ describe('party seat-character persistence', () => {
         characterId: guestCharacter.id,
         expectedRevision: guestRevision,
       },
-      'solo-to-party',
     );
-    expect(written.binding?.seatId).toBe(newSeatId);
-    expect([f.seatA, f.seatB]).toContain(written.ownerBinding?.seatId);
+    expect(bound.binding?.seatId).toBe(newSeatId);
     const active = await db.query(
       "SELECT seat_id,account_id FROM session_seat_characters WHERE session_id=$1 AND binding_status='active' ORDER BY account_id",
       [f.sessionId],
@@ -270,6 +289,7 @@ describe('party seat-character persistence', () => {
         },
       } as unknown as Pool;
       const store = new Persistence(failPool);
+      const newSeatId = randomUUID();
       const head = Number(
         (
           await db.query(
@@ -285,12 +305,7 @@ describe('party seat-character persistence', () => {
             {
               turnId: randomUUID(),
               type: 'SeatJoined',
-              payload: { seatId: f.seatB, accountId: f.accountId },
-            },
-            {
-              turnId: randomUUID(),
-              type: 'SeatCharacterBound',
-              payload: { seatId: f.seatB },
+              payload: { seatId: newSeatId, accountId: f.accountId },
             },
           ],
           {},
@@ -299,13 +314,7 @@ describe('party seat-character persistence', () => {
           head,
           undefined,
           [],
-          {
-            kind: 'bind',
-            seatId: f.seatB,
-            accountId: f.accountId,
-            characterId: f.character.id,
-            expectedRevision: f.revision,
-          },
+          undefined,
           'solo-to-party',
         ),
       ).rejects.toThrow(`injected failure after ${failurePoint}`);
@@ -319,7 +328,7 @@ describe('party seat-character persistence', () => {
       expect(events.rows).toHaveLength(0);
       const bindings = await db.query(
         "SELECT 1 FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2 AND binding_status='active'",
-        [f.sessionId, f.seatB],
+        [f.sessionId, newSeatId],
       );
       expect(bindings.rowCount).toBe(0);
     },

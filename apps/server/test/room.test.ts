@@ -1313,7 +1313,24 @@ describe('room actor', () => {
       await room.submitCombatCommand(host, randomUUID(), {
         command: 'end-turn',
       });
-      // Wait for the admission itself instead of a fixed sleep; slow runners need more than 30 ms.
+      const roomInternals = room as unknown as {
+        enqueue<T>(work: () => Promise<T>): Promise<T>;
+        admitApprovedLateJoins(): Promise<void>;
+      };
+      // Serialize the simulated boundary with the Room mailbox so the test
+      // cannot race the production round-boundary callback.
+      await roomInternals.enqueue(() => roomInternals.admitApprovedLateJoins());
+      const pendingSeat = room.state.seats.find(
+        (seat) => seat.accountId === requester,
+      )!;
+      expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
+      await room.acknowledgeLateJoinSnapshot(
+        requester,
+        pendingSeat.seatId,
+        room.seq,
+      );
+      await roomInternals.enqueue(() => roomInternals.admitApprovedLateJoins());
+      // Wait for the admission
       await vi.waitFor(
         () =>
           expect(events.some((event) => event.type === 'LateJoinSpawned')).toBe(
@@ -1520,6 +1537,36 @@ describe('room actor', () => {
       ).toBe(false);
       await room.submitAction(host, randomUUID(), 'close the scene');
       await new Promise((resolve) => setTimeout(resolve, 100));
+      const pendingSeat = room.state.seats.find(
+        (seat) => seat.accountId === requester,
+      )!;
+      expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
+      expect(events.map((event) => event.type)).not.toContain(
+        'LateJoinSpawned',
+      );
+      await expect(
+        room.submitAction(requester, randomUUID(), 'take a turn'),
+      ).rejects.toThrow();
+      await room.acknowledgeLateJoinSnapshot(
+        host,
+        pendingSeat.seatId,
+        room.seq,
+      );
+      await room.acknowledgeLateJoinSnapshot(requester, randomUUID(), room.seq);
+      expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
+      await room.acknowledgeLateJoinSnapshot(
+        requester,
+        pendingSeat.seatId,
+        room.seq,
+      );
+      await room.acknowledgeLateJoinSnapshot(
+        requester,
+        pendingSeat.seatId,
+        room.seq,
+      );
+      await (
+        room as unknown as { admitApprovedLateJoins(): Promise<void> }
+      ).admitApprovedLateJoins();
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
       ).toBe(true);
@@ -1528,6 +1575,18 @@ describe('room actor', () => {
       expect(events.map((event) => event.type)).toContain('LateJoinAdmitted');
       expect(events.map((event) => event.type)).toContain('LateJoinSpawned');
       expect(events.map((event) => event.type)).toContain('EntityPlaced');
+      expect(
+        events.findIndex((event) => event.type === 'SeatCharacterBound'),
+      ).toBeLessThan(
+        events.findIndex((event) => event.type === 'EntityPlaced'),
+      );
+      expect(
+        events.filter(
+          (event) =>
+            event.type === 'SeatCharacterBound' &&
+            event.payload.seatId === pendingSeat.seatId,
+        ),
+      ).toHaveLength(1);
       expect(
         room.seatCharacters.has(
           room.state.seats.find((seat) => seat.accountId === requester)!.seatId,
@@ -1647,6 +1706,15 @@ describe('room actor', () => {
       const pendingSeat = room.state.seats.find(
         (seat) => seat.accountId === requester,
       )!;
+      expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
+      await room.acknowledgeLateJoinSnapshot(
+        requester,
+        pendingSeat.seatId,
+        room.seq,
+      );
+      await (
+        room as unknown as { admitApprovedLateJoins(): Promise<void> }
+      ).admitApprovedLateJoins();
       expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(true);
       expect(
         room.state.lateJoinRequests?.some(

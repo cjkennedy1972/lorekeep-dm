@@ -794,6 +794,13 @@ export function installGateway(
             ) {
               snapshotAcknowledged = true;
               if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
+              void room
+                .acknowledgeLateJoinSnapshot(
+                  identity.accountId,
+                  seatId,
+                  stateAck.data.payload.seq,
+                )
+                .catch(() => {});
               for (const queued of messagesBeforeSnapshotAck.splice(0))
                 dispatch(queued);
             }

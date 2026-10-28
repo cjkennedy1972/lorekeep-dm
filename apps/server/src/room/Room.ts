@@ -748,6 +748,8 @@ export class Room {
     }
   >();
   private readonly lateJoinAuthTokenHashes = new Map<string, string>();
+  /** In-memory snapshot acknowledgements; reconnect must acknowledge again after Room recovery. */
+  private readonly lateJoinSnapshotAcks = new Set<string>();
   private readonly lateJoinExpiryTimers = new Map<
     string,
     ReturnType<typeof setTimeout>
@@ -990,6 +992,7 @@ export class Room {
     if (timer) clearTimeout(timer);
     this.lateJoinExpiryTimers.delete(requestId);
     this.lateJoinAuthTokenHashes.delete(requestId);
+    this.lateJoinSnapshotAcks.delete(requestId);
     this.broadcast({
       seq: this.seq,
       type: 'StateSync',
@@ -3600,6 +3603,7 @@ export class Room {
       const timer = this.lateJoinExpiryTimers.get(requestId);
       if (timer) clearTimeout(timer);
       this.lateJoinExpiryTimers.delete(requestId);
+      this.lateJoinSnapshotAcks.delete(requestId);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
@@ -3666,11 +3670,50 @@ export class Room {
       const timer = this.lateJoinExpiryTimers.get(requestId);
       if (timer) clearTimeout(timer);
       this.lateJoinExpiryTimers.delete(requestId);
+      this.lateJoinSnapshotAcks.delete(requestId);
       this.broadcast({
         seq: this.seq,
         type: 'StateSync',
         payload: this.clientSyncPayload(),
       });
+    });
+  }
+
+  /** Acknowledge the state snapshot for an authorized pending late-join seat. */
+  acknowledgeLateJoinSnapshot(
+    accountId: string,
+    seatId: string,
+    snapshotSeq: number,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      if (!Number.isSafeInteger(snapshotSeq) || snapshotSeq < 0) return;
+      const seat = this.state.seats.find(
+        (candidate) =>
+          candidate.seatId === seatId && candidate.accountId === accountId,
+      );
+      if (!seat || seat.presence === 'revoked') return;
+      const request = (this.state.lateJoinRequests ?? []).find(
+        (candidate) => candidate.approved && candidate.accountId === accountId,
+      );
+      if (!request) return;
+      if (request.expiresAt === undefined || request.expiresAt <= Date.now()) {
+        await this.expireLateJoinRequestNow(request.requestId, 'expired');
+        return;
+      }
+      this.lateJoinSnapshotAcks.add(request.requestId);
+      if (
+        nextLateJoinBoundary({
+          turnInFlight: this.turnInFlight,
+          combatActive: Boolean(
+            roomGameState(this.state)?.combat?.activeEntityId,
+          ),
+          roundStatus: this.state.round?.status,
+          sceneBoundary: this.sceneBoundaryPending,
+        }) === 'before-next-turn'
+      ) {
+        this.sceneBoundaryPending = false;
+        await this.admitApprovedLateJoins();
+      }
     });
   }
 
@@ -3718,19 +3761,14 @@ export class Room {
           matureOptOut: request.matureOptOut ?? false,
         };
         const convertsSession = !this.bindingEnforced;
+        // Authorization and solo->party conversion are atomic; binding waits for
+        // this seat's acknowledged state snapshot (ADR-035 §3/§4).
         await this.persist(
           'SeatJoined',
           seat,
-          {
-            kind: 'bind',
-            seatId: seat.seatId,
-            accountId: request.accountId,
-            characterId: request.characterId,
-            expectedRevision: request.expectedRevision,
-          },
+          undefined,
           [],
           convertsSession ? 'solo-to-party' : undefined,
-          [{ type: 'SeatCharacterBound', payload: { seatId: seat.seatId } }],
         );
         admittedNow = true;
         if (convertsSession) this.bindingEnforced = true;
@@ -3749,7 +3787,8 @@ export class Room {
           );
       }
       if (!seat) continue;
-      if (!admittedNow && !this.seatBindings.has(seat.seatId)) {
+      if (!this.lateJoinSnapshotAcks.has(request.requestId)) continue;
+      if (!this.seatBindings.has(seat.seatId)) {
         try {
           await this.persist(
             'SeatCharacterBound',
@@ -3783,6 +3822,7 @@ export class Room {
             },
           });
           this.lateJoinAuthTokenHashes.delete(request.requestId);
+          this.lateJoinSnapshotAcks.delete(request.requestId);
           const timer = this.lateJoinExpiryTimers.get(request.requestId);
           if (timer) clearTimeout(timer);
           this.lateJoinExpiryTimers.delete(request.requestId);
@@ -3965,6 +4005,7 @@ export class Room {
       this.seq = stored.events.at(-1)?.seq ?? this.seq;
       this.state = RoomStateSchema.parse({ ...nextState, gameState });
       this.lateJoinAuthTokenHashes.delete(request.requestId);
+      this.lateJoinSnapshotAcks.delete(request.requestId);
       const expiryTimer = this.lateJoinExpiryTimers.get(request.requestId);
       if (expiryTimer) clearTimeout(expiryTimer);
       this.lateJoinExpiryTimers.delete(request.requestId);
