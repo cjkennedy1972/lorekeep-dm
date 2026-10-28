@@ -1442,17 +1442,31 @@ describe('room actor', () => {
       );
     });
 
-    it('includes approved bound late joiners in the next story round without a battlemap', async () => {
+    it('includes acknowledged bound late joiners in the next story round without a battlemap', async () => {
       const { store, events, setCharacterSnapshot } = fixture();
       const host = randomUUID();
       const character = quickBuild(loadCatalog(), undefined, 0x37, 1).character;
       setCharacterSnapshot(character);
       store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const runner: SoloTurnRunner = {
+        async run(request) {
+          return {
+            narration: 'The story beat closes.',
+            events: [
+              { type: 'TurnStarted', turnId: request.actionId },
+              { type: 'SceneClosed', sceneId: 'story-scene', summary: 'Done.' },
+            ],
+            state: request.state as Record<string, unknown>,
+            turnSeed: '0x0000000000000001',
+            usage: { in: 1, out: 1 },
+          };
+        },
+      };
       const room = new Room(
         store,
         lease,
         await store.loadLatest(id),
-        undefined,
+        runner,
         undefined,
         [],
         true,
@@ -1478,26 +1492,77 @@ describe('room actor', () => {
         await room.approveLateJoin(host, randomUUID(), requestId);
       }
 
-      await room.resolveNow(host);
+      await room.submitAction(host, randomUUID(), 'close the scene');
+      await vi.waitFor(() =>
+        expect(
+          joiners.every((accountId) =>
+            room.state.seats.some((seat) => seat.accountId === accountId),
+          ),
+        ).toBe(true),
+      );
+      const joinerSeatIds = joiners.map(
+        (accountId) =>
+          room.state.seats.find((seat) => seat.accountId === accountId)!.seatId,
+      );
+      expect(
+        joinerSeatIds.every((seatId) => !room.seatCharacters.has(seatId)),
+      ).toBe(true);
+      const beforeAckRound = events
+        .filter((event) => event.type === 'RoundOpened')
+        .at(-1);
+      expect(
+        (beforeAckRound?.payload as { eligibleSeatIds: string[] })
+          .eligibleSeatIds,
+      ).not.toEqual(expect.arrayContaining(joinerSeatIds));
+      for (const accountId of joiners)
+        await expect(
+          room.submitAction(accountId, randomUUID(), 'act before snapshot ack'),
+        ).rejects.toThrow();
 
+      for (const accountId of joiners) {
+        const messages: { type?: string; seq?: number }[] = [];
+        await room.subscribe(accountId, {
+          send: (message) => messages.push(message),
+        });
+        const snapshot = messages.find(
+          (message) => message.type === 'StateSync',
+        );
+        expect(snapshot).toBeDefined();
+        await room.acknowledgeLateJoinSnapshot(
+          accountId,
+          room.state.seats.find((seat) => seat.accountId === accountId)!.seatId,
+          snapshot!.seq!,
+        );
+      }
+
+      await room.submitAction(host, randomUUID(), 'close the next story beat');
+      await vi.waitFor(() => {
+        const latestOpened = events
+          .filter((event) => event.type === 'RoundOpened')
+          .at(-1);
+        const latestEligible = (
+          latestOpened?.payload as { eligibleSeatIds?: string[] } | undefined
+        )?.eligibleSeatIds;
+        expect(latestEligible ?? []).toEqual(
+          expect.arrayContaining(joinerSeatIds),
+        );
+      });
       const opened = events
         .filter((event) => event.type === 'RoundOpened')
         .at(-1);
       const eligibleSeatIds = (opened?.payload as { eligibleSeatIds: string[] })
         .eligibleSeatIds;
-      const joinerSeatIds = joiners.map(
-        (accountId) =>
-          room.state.seats.find((seat) => seat.accountId === accountId)!.seatId,
-      );
       expect(eligibleSeatIds).toEqual(expect.arrayContaining(joinerSeatIds));
-      expect(joinerSeatIds).toHaveLength(2);
       expect(
         joinerSeatIds.every((seatId) => room.seatCharacters.has(seatId)),
       ).toBe(true);
-      expect(room.state.lateJoinRequests).toEqual([]);
       expect(
         events.filter((event) => event.type === 'LateJoinSpawned'),
       ).toHaveLength(0);
+      for (const accountId of joiners)
+        await expect(
+          room.submitAction(accountId, randomUUID(), 'take a story turn'),
+        ).resolves.toBe(true);
     });
 
     it('admits approved exploration joiners at a committed scene boundary', async () => {

@@ -3887,6 +3887,7 @@ export class Room {
           seatId: seat.seatId,
         });
         this.lateJoinAuthTokenHashes.delete(request.requestId);
+        this.lateJoinSnapshotAcks.delete(request.requestId);
         const expiryTimer = this.lateJoinExpiryTimers.get(request.requestId);
         if (expiryTimer) clearTimeout(expiryTimer);
         this.lateJoinExpiryTimers.delete(request.requestId);
