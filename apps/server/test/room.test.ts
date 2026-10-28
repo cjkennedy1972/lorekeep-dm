@@ -1478,10 +1478,22 @@ describe('room actor', () => {
         await room.approveLateJoin(host, randomUUID(), requestId);
       }
 
+      // The first boundary creates pending seats so each joiner can bind the
+      // acknowledged snapshot. A following boundary admits the bound seats
+      // before opening the next story round.
       await room.resolveNow(host);
-      // The next round is opened inside the actor mailbox. Drain after the
-      // boundary so assertions observe all serialized admission work.
-      await room.drain();
+      for (const accountId of joiners) {
+        const pendingSeat = room.state.seats.find(
+          (seat) => seat.accountId === accountId,
+        );
+        expect(pendingSeat).toBeDefined();
+        await room.acknowledgeLateJoinSnapshot(
+          accountId,
+          pendingSeat!.seatId,
+          room.seq,
+        );
+      }
+      await room.resolveNow(host);
 
       const opened = events
         .filter((event) => event.type === 'RoundOpened')
