@@ -398,6 +398,7 @@ export function isNarrationFactType(type: string): boolean {
 export function narrationFact(
   event: Record<string, unknown>,
   characterIds: ReadonlySet<string> = new Set(),
+  characterTargetHit?: boolean,
 ) {
   const fields = Object.fromEntries(
     NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
@@ -417,9 +418,12 @@ export function narrationFact(
       typeof attack.targetId === 'string' &&
       characterIds.has(attack.targetId)
     ) {
-      delete attack.hit;
       delete attack.total;
+      if (characterTargetHit === undefined) delete attack.hit;
+      else attack.hit = characterTargetHit;
     }
+    if (typeof entityId === 'string' && characterIds.has(entityId))
+      delete attack.attackId;
     return { type: 'AttackResolved', actorId: entityId, ...attack };
   }
   return { type: event.type, ...fields };
@@ -441,6 +445,33 @@ export function narrationFacts(
       isNarrationFactType(String(event.type)) &&
       (event.type !== 'RollEvent' || event.kind === 'attack'),
   );
+  const characterAttackHits = new Map<Record<string, unknown>, boolean>();
+  events.forEach((event, index) => {
+    if (
+      event.type !== 'RollEvent' ||
+      event.kind !== 'attack' ||
+      typeof event.targetId !== 'string' ||
+      !characterIds.has(event.targetId)
+    )
+      return;
+    const nextAttack = events.findIndex(
+      (candidate, candidateIndex) =>
+        candidateIndex > index &&
+        candidate.type === 'RollEvent' &&
+        candidate.kind === 'attack',
+    );
+    const turnEventEnd = nextAttack < 0 ? events.length : nextAttack;
+    characterAttackHits.set(
+      event,
+      events
+        .slice(index + 1, turnEventEnd)
+        .some(
+          (candidate) =>
+            candidate.type === 'HpChanged' &&
+            candidate.entityId === event.targetId,
+        ),
+    );
+  });
   const critical = eligible.filter(
     (event) =>
       CONSEQUENTIAL_NARRATION_TYPES.has(String(event.type)) ||
@@ -471,7 +502,7 @@ export function narrationFacts(
   ];
   const budget = Math.max(0, 12 - critical.length);
   return [...critical, ...compactedIncidental.slice(0, budget)].map((event) =>
-    narrationFact(event, characterIds),
+    narrationFact(event, characterIds, characterAttackHits.get(event)),
   );
 }
 
