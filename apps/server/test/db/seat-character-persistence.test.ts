@@ -77,6 +77,111 @@ describe('party seat-character persistence', () => {
       expectedRevision: f.revision,
     });
   });
+  it.each(['conversion', 'SeatJoined'] as const)(
+    'rolls back solo conversion and first-seat admission when failure occurs after %s',
+    async (failurePoint) => {
+      const f = await fixture();
+      await db.query("UPDATE sessions SET mode='solo' WHERE id=$1", [
+        f.sessionId,
+      ]);
+      const lease = {
+        sessionId: f.sessionId,
+        nodeId: `r3b-atomic-${failurePoint}`,
+        epoch: 1,
+        expiresAt: new Date(Date.now() + 60_000),
+      };
+      await db.query(
+        'INSERT INTO session_lease(session_id,node_id,epoch,expires_at) VALUES($1,$2,$3,$4)',
+        [f.sessionId, lease.nodeId, lease.epoch, lease.expiresAt],
+      );
+      const failPool = {
+        connect: async () => {
+          const client = await db.connect();
+          let injected = false;
+          let converted = false;
+          return new Proxy(client, {
+            get(target, property) {
+              if (property !== 'query') return Reflect.get(target, property);
+              return async (sql: string, values?: unknown[]) => {
+                const result = await target.query(sql, values as never);
+                const statement = sql.toLowerCase();
+                if (statement.startsWith('update sessions set mode'))
+                  converted = true;
+                const afterJoin =
+                  statement.startsWith('insert into events') &&
+                  values?.[3] === 'SeatJoined';
+                const shouldFail =
+                  failurePoint === 'conversion'
+                    ? statement.startsWith('update sessions set mode')
+                    : afterJoin;
+                if (!injected && shouldFail) {
+                  injected = true;
+                  if (failurePoint === 'SeatJoined' && !converted)
+                    throw new Error('SeatJoined was reached before conversion');
+                  throw new Error(`injected failure after ${failurePoint}`);
+                }
+                return result;
+              };
+            },
+          });
+        },
+      } as unknown as Pool;
+      const store = new Persistence(failPool);
+      const head = Number(
+        (
+          await db.query(
+            'SELECT COALESCE(MAX(seq),0) AS n FROM events WHERE session_id=$1',
+            [f.sessionId],
+          )
+        ).rows[0].n,
+      );
+      await expect(
+        store.writeTurn(
+          f.sessionId,
+          [
+            {
+              turnId: randomUUID(),
+              type: 'SeatJoined',
+              payload: { seatId: f.seatB, accountId: f.accountId },
+            },
+            {
+              turnId: randomUUID(),
+              type: 'SeatCharacterBound',
+              payload: { seatId: f.seatB },
+            },
+          ],
+          {},
+          lease,
+          [],
+          head,
+          undefined,
+          [],
+          {
+            kind: 'bind',
+            seatId: f.seatB,
+            accountId: f.accountId,
+            characterId: f.character.id,
+            expectedRevision: f.revision,
+          },
+          'solo-to-party',
+        ),
+      ).rejects.toThrow(`injected failure after ${failurePoint}`);
+
+      const storeForRead = new Persistence(db);
+      expect(await storeForRead.loadSessionMode(f.sessionId)).toBe('solo');
+      const events = await db.query(
+        'SELECT type FROM events WHERE session_id=$1 AND seq>$2',
+        [f.sessionId, head],
+      );
+      expect(events.rows).toHaveLength(0);
+      const bindings = await db.query(
+        "SELECT 1 FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2 AND binding_status='active'",
+        [f.sessionId, f.seatB],
+      );
+      expect(bindings.rowCount).toBe(0);
+    },
+  );
+
   it('allows only one concurrent binding for a character in a session', async () => {
     const f = await fixture();
     const results = await Promise.allSettled([

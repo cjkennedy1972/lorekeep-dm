@@ -282,6 +282,7 @@ export interface RoomStore {
     registryTurnId?: string,
     rewoundTurnIds?: readonly string[],
     seatCharacterTransition?: SeatCharacterTransition,
+    sessionModeTransition?: 'solo-to-party',
   ): Promise<{ events: StoredEvent[]; binding?: PrivateSeatCharacterBinding }>;
   writeHostTierCap(
     sessionId: string,
@@ -1019,6 +1020,8 @@ export class Room {
     payload: unknown,
     seatCharacterTransition?: SeatCharacterTransition,
     additionalActionIds: readonly string[] = [],
+    sessionModeTransition?: 'solo-to-party',
+    additionalEvents: readonly { type: string; payload: unknown }[] = [],
   ): Promise<StoredEvent> {
     // ADR-035 §2: revoke/leave/kick releases the binding in the same serialized write.
     let released: { seatId: string; reason: string } | undefined;
@@ -1055,6 +1058,8 @@ export class Room {
     };
     const inputs = [{ seq: next, turnId, type, payload }];
     const state = reduceRoom(this.state, event);
+    for (const additional of additionalEvents)
+      inputs.push({ seq: next + inputs.length, turnId, ...additional });
     if (released) {
       // Identifier-only: no account, character, revision, hash or sheet data.
       inputs.push({
@@ -1114,6 +1119,7 @@ export class Room {
       undefined,
       [],
       seatCharacterTransition,
+      sessionModeTransition,
     );
     const committed = stored.events[0];
     if (!committed) throw new Error('Persistence returned no event');
@@ -3675,17 +3681,13 @@ export class Room {
       let seat = this.state.seats.find(
         (item) => item.accountId === request.accountId,
       );
+      let admittedNow = false;
       if (!seat) {
         if (
           this.state.seats.filter((item) => item.presence !== 'revoked')
             .length >= 6
         )
           break;
-        // ADR-037 §4: disable solo-owner recovery before the first additional seat.
-        if (!this.bindingEnforced) {
-          await this.store.convertSessionToParty?.(this.sessionId, this.lease);
-          this.bindingEnforced = true;
-        }
         seat = {
           seatId: randomUUID() as Seat['seatId'],
           accountId: request.accountId,
@@ -3696,7 +3698,23 @@ export class Room {
           chatMutedUntil: null,
           matureOptOut: request.matureOptOut ?? false,
         };
-        await this.persist('SeatJoined', seat);
+        const convertsSession = !this.bindingEnforced;
+        await this.persist(
+          'SeatJoined',
+          seat,
+          {
+            kind: 'bind',
+            seatId: seat.seatId,
+            accountId: request.accountId,
+            characterId: request.characterId,
+            expectedRevision: request.expectedRevision,
+          },
+          [],
+          convertsSession ? 'solo-to-party' : undefined,
+          [{ type: 'SeatCharacterBound', payload: { seatId: seat.seatId } }],
+        );
+        admittedNow = true;
+        if (convertsSession) this.bindingEnforced = true;
         const resumeToken = await this.store.createSeatResumeToken?.(
           this.sessionId,
           seat.seatId,
@@ -3712,7 +3730,7 @@ export class Room {
           );
       }
       if (!seat) continue;
-      if (!this.seatBindings.has(seat.seatId)) {
+      if (!admittedNow && !this.seatBindings.has(seat.seatId)) {
         try {
           await this.persist(
             'SeatCharacterBound',
@@ -3727,11 +3745,12 @@ export class Room {
           );
         } catch (error) {
           if (!(error instanceof SeatCharacterError)) throw error;
-          await this.persist('SeatRevoked', {
-            seatId: seat.seatId,
-            accountId: seat.accountId,
-            cause: error.code,
-          });
+          if (!admittedNow)
+            await this.persist('SeatRevoked', {
+              seatId: seat.seatId,
+              accountId: seat.accountId,
+              cause: error.code,
+            });
           await this.persist('LateJoinExpired', {
             requestId: request.requestId,
             reason: error.code,

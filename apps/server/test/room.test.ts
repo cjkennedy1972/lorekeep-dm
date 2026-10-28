@@ -60,7 +60,10 @@ function fixture() {
       _registryTurnId,
       _rewoundTurnIds,
       transition,
+      sessionModeTransition,
     ) {
+      if (sessionModeTransition === 'solo-to-party')
+        sessionConvertedToParty = true;
       await new Promise((resolve) => setTimeout(resolve, 1));
       if (
         enforceExpectedHead &&

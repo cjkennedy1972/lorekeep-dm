@@ -385,6 +385,7 @@ export class Persistence {
     registryTurnId?: string,
     rewoundTurnIds: readonly string[] = [],
     seatCharacterTransition?: SeatCharacterTransition,
+    sessionModeTransition?: 'solo-to-party',
   ): Promise<{
     events: StoredEvent[];
     snapshot: Snapshot;
@@ -396,6 +397,12 @@ export class Persistence {
   }> {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
+      if (sessionModeTransition === 'solo-to-party') {
+        await client.query(
+          "UPDATE sessions SET mode='party' WHERE id=$1 AND status='active'",
+          [sessionId],
+        );
+      }
       let binding:
         | Awaited<ReturnType<SeatCharacterRepository['bindWithClient']>>
         | undefined;
