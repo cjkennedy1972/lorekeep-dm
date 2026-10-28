@@ -763,8 +763,10 @@ describe('solo turn persisted lifecycle', () => {
     await restarted.drain();
   });
 
-  it('returns one logged 404 for non-string websocket ticket session IDs', async () => {
+  it('logs one outcome and returns 404 for malformed websocket ticket session IDs', async () => {
     const owner = await createUser();
+    const noTableUser = await createUser();
+    const table = await createTable(owner.id);
     const captured: string[] = [];
     const routeApp = createApp(db, {
       inputGate: allowInputGate,
@@ -773,10 +775,35 @@ describe('solo turn persisted lifecycle', () => {
     });
     installGateway(routeApp, db, rooms);
     try {
+      const successBefore = captured.join('').length;
+      const success = await routeApp.inject({
+        method: 'POST',
+        url: '/api/ws-ticket',
+        headers: {
+          host: 'api.example.test',
+          origin: 'http://api.example.test',
+          cookie: `sid=${owner.token}`,
+        },
+        payload: { sessionId: table },
+      });
+      expect(success.statusCode).toBe(200);
+      const successLines = captured
+        .join('')
+        .slice(successBefore)
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(
+        successLines.filter((line) => line.event === 'ws_ticket_outcome'),
+      ).toHaveLength(1);
       for (const [label, body] of [
         ['number', { sessionId: 5 }],
+        ['zero', { sessionId: 0 }],
+        ['false', { sessionId: false }],
+        ['empty', { sessionId: '' }],
         ['object', { sessionId: {} }],
         ['array', { sessionId: ['x'] }],
+        ['uuid array', { sessionId: [table] }],
         ['missing', {}],
       ] as const) {
         const before = captured.join('').length;
@@ -786,7 +813,7 @@ describe('solo turn persisted lifecycle', () => {
           headers: {
             host: 'api.example.test',
             origin: 'http://api.example.test',
-            cookie: `sid=${owner.token}`,
+            cookie: `sid=${label === 'missing' ? noTableUser.token : owner.token}`,
           },
           payload: body,
         });
@@ -805,10 +832,9 @@ describe('solo turn persisted lifecycle', () => {
           (line) => line.event === 'ws_ticket_outcome',
         );
         expect(outcomes).toHaveLength(1);
-        expect(outcomes[0]).toMatchObject({
-          statusCode: 404,
-          sessionIdHash: null,
-        });
+        expect(outcomes[0]).toMatchObject({ statusCode: 404 });
+        expect(outcomes[0]).not.toHaveProperty('sessionId');
+        expect(outcomes[0]).not.toHaveProperty('rawSessionId');
       }
     } finally {
       await routeApp.close();
