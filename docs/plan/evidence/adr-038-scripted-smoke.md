@@ -4,7 +4,8 @@ Summary of the scripted live smoke for ADR-038 story-to-combat (PR #364). The fu
 
 - Source report: `atlas/evidence/adr038-smoke/report-scripted.md` (Atlas workspace)
 - Source sha256: `346e9bc2077ea4448396fa5cde577d80f3c8b73ee226ca082ed21e5bcc6f2d1f`
-- Smoke head: `b3d63dcef1276e3da1bc0ee09f045744037f2944` (`fix: preserve encounter withdrawal and spawn refs`). This is ten commits ahead of `origin/main` at `ce40cf7` (#364). It is not `main`.
+- Smoke head: `b3d63dcef1276e3da1bc0ee09f045744037f2944` (`fix: preserve encounter withdrawal and spawn refs`), a pre-final PR #364 head.
+- Later changes: `572e4e6` and `f5b08c9d` changed the rejection-budget withdrawal handling (separate withdrawal store from counters). They are on `main` (squash `ce40cf7`, tree `f5b08c9d`) and are covered by unit and DB tests. They were NOT part of this live smoke. See `git diff b3d63dce f5b08c9d`.
 - Flag: `LOREKEEP_ADR_038_STORY_COMBAT=true` on the private API. Default off.
 - Scene progression: scripted. The scene was seeded in the database (`scene-marowfell-well` to `scene-warren-gallery`) and the API restarted. The model did not call `close_scene`, so scene progression by the model is not evidenced.
 
@@ -27,7 +28,7 @@ Run 1: five provocations. Provocations 1 to 3 were narrated without a call (`Com
 
 Run 2: `start_combat` was called on provocation 5 (`CombatStarted` at seq 56).
 
-Across the two runs: 2 starts in 10 provocation attempts.
+Across the two runs: 2 starts in about 10 provocation attempts.
 
 ## Known gaps in the evidence
 
@@ -40,4 +41,4 @@ Across the two runs: 2 starts in 10 provocation attempts.
 - Negative scene case for criterion a.
 - Initiative roll values and HP changes from free-text attacks in combat.
 - `close_scene` as a model-driven scene transition.
-- Run against `origin/main` (`ce40cf7`). Re-run required.
+- Live run against `main` (`ce40cf7`, tree `f5b08c9d`). The rejection-budget changes after `b3d63dce` were not smoke-tested live. Re-run required before a live `main` claim.
