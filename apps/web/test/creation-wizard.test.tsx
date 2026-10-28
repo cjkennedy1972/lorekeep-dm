@@ -118,6 +118,21 @@ test('no incomplete-choices error before the player has chosen anything', () => 
   ).not.toBeInTheDocument();
 });
 
+test('Save keeps the incomplete-choices tooltip hidden until an attempted Continue', async () => {
+  const user = userEvent.setup();
+  render(<CreationWizard />);
+  const save = screen.getByRole('button', { name: 'Save character' });
+  expect(save).toBeDisabled();
+  expect(save).not.toHaveAttribute('title');
+  await step(user);
+  expect(save).toHaveAttribute(
+    'title',
+    expect.stringMatching(
+      /Complete all choices, including at least one class skill/,
+    ),
+  );
+});
+
 test('the incomplete-choices error appears after an attempted Continue', async () => {
   const user = userEvent.setup();
   render(<CreationWizard />);

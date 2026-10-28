@@ -628,15 +628,16 @@ export function Game() {
     message: string;
     canRetry: boolean;
   } | null>(null);
-  const submitAction = (text: string) => {
-    lastActionText.current = text;
-    setTurnFailure(null);
+  /** Returns false when the socket refused the action, so the caller keeps its text. */
+  const submitAction = (text: string): boolean => {
     // The wire actionId lets the round panel recognise this player's submission.
     const id = live.send('PlayerAction', { text });
     if (!id) {
       setError('Not connected, so your action was not sent. Try again.');
-      return;
+      return false;
     }
+    lastActionText.current = text;
+    setTurnFailure(null);
     setError('');
     updatePendingAction(() => ({
       id,
@@ -652,6 +653,7 @@ export function Game() {
         payload: { actionId: id },
       } as ServerMessage,
     ]);
+    return true;
   };
   const characters = asRecord(asRecord(room?.gameState).characters) as Record<
     string,
@@ -1130,9 +1132,10 @@ export function Game() {
             onRetry={() => {
               const text = failedActionText.current;
               if (!text) return;
+              // Clear the saved text and box only once the resend is accepted; offline, both stay for another Retry.
+              if (!submitAction(text)) return;
               failedActionText.current = '';
               setActionDraft('');
-              submitAction(text);
             }}
           />
         </div>

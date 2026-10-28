@@ -446,7 +446,7 @@ export function CreationWizard({ onSave }: Props) {
               type="button"
               onClick={save}
               disabled={!built.character || violations.length > 0}
-              title={violations[0]?.message}
+              title={shownViolations[0]?.message}
             >
               Save character
             </button>
