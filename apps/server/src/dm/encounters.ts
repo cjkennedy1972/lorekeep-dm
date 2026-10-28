@@ -101,15 +101,16 @@ export function redactedEncounterId(
 
 /** In-process rolling mutation budget; rejection counters are not game-state mutations. */
 export class EncounterStartRejectionBudget {
-  private readonly entries = new Map<
+  private readonly counters = new Map<
     string,
     {
       rejectedAt: number[];
-      withdrawn: boolean;
       touchedAt: number;
       turns: Map<string, Set<string>>;
     }
   >();
+  // Withdrawals survive age/counter pressure; only exceeding this independent cap can re-arm one.
+  private readonly withdrawn = new Map<string, number>();
   private readonly activeSceneBySession = new Map<
     string,
     { sceneId: string; touchedAt: number }
@@ -120,6 +121,7 @@ export class EncounterStartRejectionBudget {
     private readonly windowMs = 60_000,
     private readonly maxEntries = 2_000,
     private readonly maxAgeMs = 60 * 60_000,
+    private readonly maxWithdrawnEntries = 10_000,
   ) {}
 
   enterScene(
@@ -131,12 +133,19 @@ export class EncounterStartRejectionBudget {
     const previous = this.activeSceneBySession.get(sessionId)?.sceneId;
     if (previous !== undefined && previous !== sceneId)
       this.clearSession(sessionId);
+    // Also clear stale scene withdrawals if the active-scene marker was pressure-evicted.
+    for (const key of this.withdrawn.keys())
+      if (
+        key.startsWith(`${sessionId}:`) &&
+        key !== this.key(sessionId, sceneId ?? '')
+      )
+        this.withdrawn.delete(key);
     if (sceneId === undefined) this.activeSceneBySession.delete(sessionId);
     else this.activeSceneBySession.set(sessionId, { sceneId, touchedAt: now });
     while (this.activeSceneBySession.size > this.maxEntries) {
-      const oldest = [...this.activeSceneBySession.keys()].find(
-        (id) => !this.hasWithdrawnEntry(id),
-      );
+      const oldest = this.activeSceneBySession.keys().next().value as
+        | string
+        | undefined;
       if (oldest === undefined) break;
       this.activeSceneBySession.delete(oldest);
     }
@@ -144,7 +153,7 @@ export class EncounterStartRejectionBudget {
 
   isWithdrawn(sessionId: string, sceneId: string, now = Date.now()): boolean {
     this.prune(now);
-    return this.entries.get(this.key(sessionId, sceneId))?.withdrawn ?? false;
+    return this.withdrawn.has(this.key(sessionId, sceneId));
   }
 
   // ADR-029 §8 shared Mutations bucket is a deliberate follow-up; this remains a separate in-process budget for now.
@@ -157,9 +166,8 @@ export class EncounterStartRejectionBudget {
   ): { count: number; withdrawn: boolean } {
     this.prune(now);
     const key = this.key(sessionId, sceneId);
-    const entry = this.entries.get(key) ?? {
+    const entry = this.counters.get(key) ?? {
       rejectedAt: [],
-      withdrawn: false,
       touchedAt: now,
       turns: new Map<string, Set<string>>(),
     };
@@ -174,33 +182,42 @@ export class EncounterStartRejectionBudget {
         entry.rejectedAt.splice(0, entry.rejectedAt.length - this.limit - 1);
     }
     entry.turns.set(turnId, reasons);
-    entry.withdrawn ||= entry.rejectedAt.length > this.limit;
+    if (entry.rejectedAt.length > this.limit && !this.withdrawn.has(key)) {
+      this.withdrawn.set(key, now);
+      this.pruneWithdrawn();
+    }
     entry.touchedAt = now;
-    this.entries.delete(key);
-    this.entries.set(key, entry);
+    this.counters.delete(key);
+    this.counters.set(key, entry);
     this.prune(now);
-    return { count: entry.rejectedAt.length, withdrawn: entry.withdrawn };
+    return {
+      count: entry.rejectedAt.length,
+      withdrawn: this.withdrawn.has(key),
+    };
   }
 
   clearSession(sessionId: string): void {
     this.activeSceneBySession.delete(sessionId);
-    for (const key of this.entries.keys())
-      if (key.startsWith(`${sessionId}:`)) this.entries.delete(key);
+    for (const key of this.counters.keys())
+      if (key.startsWith(`${sessionId}:`)) this.counters.delete(key);
+    for (const key of this.withdrawn.keys())
+      if (key.startsWith(`${sessionId}:`)) this.withdrawn.delete(key);
   }
 
   private prune(now: number): void {
     for (const [sessionId, active] of this.activeSceneBySession)
       if (
         now - active.touchedAt > this.maxAgeMs &&
-        !this.hasWithdrawnEntry(sessionId)
+        ![...this.withdrawn.keys()].some((key) =>
+          key.startsWith(`${sessionId}:`),
+        )
       )
         this.activeSceneBySession.delete(sessionId);
-    for (const [key, entry] of this.entries) {
+    for (const [key, entry] of this.counters) {
       entry.rejectedAt = entry.rejectedAt.filter(
         (at) => now - at < this.windowMs,
       );
-      if (!entry.withdrawn && now - entry.touchedAt > this.maxAgeMs)
-        this.entries.delete(key);
+      if (now - entry.touchedAt > this.maxAgeMs) this.counters.delete(key);
       else if (entry.turns.size > 256) {
         for (const turnId of [...entry.turns.keys()].slice(
           0,
@@ -209,21 +226,26 @@ export class EncounterStartRejectionBudget {
           entry.turns.delete(turnId);
       }
     }
-    while (this.entries.size > this.maxEntries) {
-      const oldest = [...this.entries.entries()].find(
-        ([, entry]) => !entry.withdrawn,
-      )?.[0];
-      // Withdrawn entries are bounded by the session/scene lifecycle and are
-      // cleared by clearSession; never let generic cache pressure re-arm combat.
+    while (this.counters.size > this.maxEntries) {
+      const oldest = this.counters.keys().next().value as string | undefined;
       if (oldest === undefined) break;
-      this.entries.delete(oldest);
+      this.counters.delete(oldest);
     }
   }
 
-  private hasWithdrawnEntry(sessionId: string): boolean {
-    for (const [key, entry] of this.entries)
-      if (entry.withdrawn && key.startsWith(`${sessionId}:`)) return true;
-    return false;
+  /** The sole withdrawal-loss path: evict the oldest withdrawal beyond its hard cap. */
+  private pruneWithdrawn(): void {
+    while (this.withdrawn.size > this.maxWithdrawnEntries) {
+      let oldestKey: string | undefined;
+      let oldestAt = Number.POSITIVE_INFINITY;
+      for (const [key, withdrawnAt] of this.withdrawn)
+        if (withdrawnAt < oldestAt) {
+          oldestKey = key;
+          oldestAt = withdrawnAt;
+        }
+      if (oldestKey === undefined) break;
+      this.withdrawn.delete(oldestKey);
+    }
   }
 
   private key(sessionId: string, sceneId: string): string {

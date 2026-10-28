@@ -233,6 +233,40 @@ describe('encounter tool withdrawal', () => {
     expect(boundedBudget.isWithdrawn('s3', 'c', 301)).toBe(false);
   });
 
+  it('keeps withdrawals independent of bounded counters and caps withdrawals by oldest-first eviction', () => {
+    const budget = new EncounterStartRejectionBudget(6, 60_000, 1, 100, 2);
+    for (const [sessionId, base] of [
+      ['oldest', 1],
+      ['middle', 20],
+      ['newest-before-fresh', 30],
+    ] as const)
+      for (let index = 1; index <= 7; index++)
+        budget.record(
+          sessionId,
+          'scene',
+          `turn-${index}`,
+          `reason-${index}`,
+          base + index,
+        );
+
+    // A full withdrawal store cannot evict fresh counters before the threshold.
+    for (let index = 1; index <= 7; index++) {
+      const result = budget.record(
+        'fresh',
+        'scene',
+        `turn-${index}`,
+        `reason-${index}`,
+        40 + index,
+      );
+      expect(result.count).toBe(index);
+      expect(result.withdrawn).toBe(index === 7);
+    }
+    expect(budget.isWithdrawn('fresh', 'scene', 50)).toBe(true);
+    expect(budget.isWithdrawn('oldest', 'scene', 50)).toBe(false);
+    expect(budget.isWithdrawn('middle', 'scene', 50)).toBe(false);
+    expect(budget.isWithdrawn('newest-before-fresh', 'scene', 50)).toBe(true);
+  });
+
   it('keeps withdrawn scenes through age and size pruning until lifecycle clear', () => {
     const budget = new EncounterStartRejectionBudget(1, 60_000, 1, 100);
     budget.enterScene('session-a', 'scene-a', 1);
