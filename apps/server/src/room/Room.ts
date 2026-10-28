@@ -5132,10 +5132,14 @@ export class Room {
               tier === 'family' || tier === 'standard' ? undefined : audience;
           } else if (type === 'RollEvent') {
             const combat = roomGameState(this.state);
-            const hidden = hiddenIdsOf(combat);
+            const hidden = hiddenIdsOf(combat ?? { entities: [] });
             for (const [viewer, connection] of this.connections) {
               const controlled = this.controlledBy(viewer);
-              const projected = projectEventForViewer(event, hidden, controlled);
+              const projected = projectEventForViewer(
+                event,
+                hidden,
+                controlled,
+              );
               if (!projected) continue;
               const actorId = String(projected.entityId ?? '');
               const targetId = String(projected.targetId ?? '');
@@ -5146,8 +5150,8 @@ export class Room {
                 projected.kind !== 'attack' || controlled.has(actorId);
               const revealDamage =
                 projected.kind !== 'damage' ||
-                controlled.has(actorId) ||
-                (target?.kind === 'monster' && controlled.has(targetId));
+                (target?.team === 'party' && controlled.has(actorId)) ||
+                (target?.team !== 'party' && controlled.has(targetId));
               connection.send({
                 seq: this.seq,
                 type: 'RollEvent',
@@ -5156,7 +5160,8 @@ export class Room {
                   !!actorId && !controlled.has(actorId),
                   revealAttack,
                   revealDamage,
-                  projected.kind !== 'damage' || target?.team === 'party',
+                  projected.kind !== 'damage' ||
+                    (target?.team === 'party') === true,
                 ),
               } as ServerMessage);
             }
@@ -6004,8 +6009,9 @@ export class Room {
               const revealDamage =
                 event.type !== 'RollEvent' ||
                 event.kind !== 'damage' ||
-                controlled.has(String(event.entityId)) ||
-                (target?.kind === 'monster' &&
+                (target?.team === 'party' &&
+                  controlled.has(String(event.entityId))) ||
+                (target?.team !== 'party' &&
                   controlled.has(String(event.targetId)));
               return [
                 toWireEvent(
@@ -6019,7 +6025,7 @@ export class Room {
                   event.type === 'RollEvent' &&
                     event.kind === 'damage' &&
                     typeof event.targetId === 'string' &&
-                    target?.team === 'party',
+                    (target?.team === 'party') === true,
                 ),
               ];
             }),
