@@ -153,7 +153,10 @@ export function createRoomClient(opts: RoomClientOptions) {
       pendingClaimId = String(msg.payload.claimId ?? '');
       // The host decides when to approve, so a pending claim is not a stalled handshake.
       clearTimeout(authWatchdog);
-      set({ error: 'Waiting for the host to approve this device.' });
+      set({
+        error:
+          'A host must approve this device to reconnect. If you are the sole host and have no saved seat token, recovery on a fresh device is currently unavailable; reconnect from the browser or device that has the saved token.',
+      });
     }
     if (
       (msg.type === 'SeatClaimDenied' || msg.type === 'SeatClaimExpired') &&
