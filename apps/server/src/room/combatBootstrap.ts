@@ -213,10 +213,10 @@ export function attacksFor(
       if (!weapon || !item.equipped || item.qty <= 0) return [];
       const strModifier = abilityModifier(character.abilities.str);
       const dexModifier = abilityModifier(character.abilities.dex);
-      const modifier = weapon.range
-        ? dexModifier
-        : weapon.finesse
-          ? Math.max(strModifier, dexModifier)
+      const modifier = weapon.finesse
+        ? Math.max(strModifier, dexModifier)
+        : weapon.range
+          ? dexModifier
           : strModifier;
       return [
         {

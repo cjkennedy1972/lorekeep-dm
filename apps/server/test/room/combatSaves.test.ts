@@ -135,6 +135,37 @@ describe('weapon attack abilities', () => {
     },
   );
 
+  it.each([
+    [10, 16, 5, '1d4+3'],
+    [16, 10, 5, '1d4+3'],
+  ])(
+    'uses the higher Strength or Dexterity modifier for a finesse dagger',
+    (str, dex, attackBonus, damage) => {
+      const equipped = {
+        ...character,
+        abilities: { ...character.abilities, str, dex },
+        equipment: [
+          { itemId: 'equipment:dagger', qty: 1, equipped: true },
+        ],
+      };
+      const { attacks } = attacksFor(
+        { id: equipped.id, team: 'party', speed: 30, ...place },
+        equipped,
+        {},
+        catalog,
+      );
+      expect(attacks).toContainEqual(
+        expect.objectContaining({
+          id: 'equipment:dagger',
+          name: 'Dagger',
+          attackBonus,
+          damage,
+          damageType: 'piercing',
+        }),
+      );
+    },
+  );
+
   it('does not offer an unequipped weapon', () => {
     const unequipped = {
       ...character,
