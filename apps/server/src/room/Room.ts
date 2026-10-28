@@ -4717,6 +4717,10 @@ export class Room {
     // Mature narration reaches only the connections present now, so a joiner never receives a turn it was not present for.
     const audience = new Set(this.connections.values());
     let matureAudience: ReadonlySet<Connection> | undefined;
+    let narrationTierAnnounced = false;
+    const deliverToInitialAudience = (message: ServerMessage) => {
+      for (const connection of audience) connection.send(message);
+    };
     let narrationTier: 'family' | 'standard' | 'mature' | undefined;
     let liveCompletion: unknown;
     let moderationHeld = false;
@@ -4744,6 +4748,7 @@ export class Room {
         (event) => {
           const type = event.type;
           if (type === 'NarrationTier') {
+            narrationTierAnnounced = true;
             narrationTier =
               event.tier === 'family' ||
               event.tier === 'standard' ||
@@ -4774,6 +4779,7 @@ export class Room {
               payload: event,
             } as ServerMessage;
             if (matureAudience) this.deliverMature(message, matureAudience);
+            else if (!narrationTierAnnounced) deliverToInitialAudience(message);
             else this.broadcast(message);
           } else if (type === 'ToolCallRejected') {
             this.broadcast({
@@ -5233,6 +5239,8 @@ export class Room {
           } as ServerMessage;
           if (matureAudience)
             this.deliverMature(reportableNarration, matureAudience);
+          else if (!narrationTierAnnounced)
+            deliverToInitialAudience(reportableNarration);
           else this.broadcast(reportableNarration);
         }
         for (const event of stored.events)
@@ -5281,6 +5289,7 @@ export class Room {
           payload: liveCompletion,
         } as ServerMessage;
         if (matureAudience) this.deliverMature(message, matureAudience);
+        else if (!narrationTierAnnounced) deliverToInitialAudience(message);
         else this.broadcast(message);
       }
       if (!result.clarification) this.pendingActions.delete(actionId);

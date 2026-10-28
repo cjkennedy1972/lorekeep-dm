@@ -45,12 +45,12 @@ function gate() {
 
 /** A runner that announces the tier, streams chunks, and pauses at each `pause` point. */
 function narratingRunner(
-  tier: string,
+  tier: string | undefined,
   pauses: { reached: () => void; wait: Promise<void> }[],
 ) {
   const runner: SoloTurnRunner = {
     async run(_request, onEvent) {
-      onEvent({ type: 'NarrationTier', tier });
+      if (tier !== undefined) onEvent({ type: 'NarrationTier', tier });
       onEvent({ type: 'NarrationChunk', text: 'chunk-1' });
       for (const pause of pauses) {
         pause.reached();
@@ -217,6 +217,35 @@ describe('mature narration delivery', () => {
       'NarrationChunk',
       'NarrationCompleted',
     ]);
+  });
+
+  it('restricts narration to the initial audience until a tier is announced', async () => {
+    const owner = randomUUID();
+    const joiner = randomUUID();
+    const reached = gate();
+    const release = gate();
+    const room = setup(
+      narratingRunner(undefined, [
+        { reached: reached.open, wait: release.promise },
+      ]),
+      new Set(),
+    );
+    const ownerConn = recorder();
+    await joinSeated(room, owner, ownerConn, 'Owner');
+    await room.submitAction(owner, randomUUID(), 'We look around.', 'Owner');
+    await reached.promise;
+
+    const joinerConn = recorder();
+    await joinSeated(room, joiner, joinerConn, 'Joiner');
+    release.open();
+    await settle();
+
+    expect(narrationOf(ownerConn).map((m) => m.type)).toEqual([
+      'NarrationChunk',
+      'NarrationChunk',
+      'NarrationCompleted',
+    ]);
+    expect(narrationOf(joinerConn)).toEqual([]);
   });
 
   it('fails closed for an unrecognized narration tier', async () => {

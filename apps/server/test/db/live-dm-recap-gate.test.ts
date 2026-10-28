@@ -12,6 +12,7 @@ import {
   SAFE_RECAP_FALLBACK,
 } from '../../src/dm/recap.js';
 import { createEndpointEgress, saveEndpoint } from '../../src/llm/config.js';
+import { buildLateJoinRecap } from '../../src/dm/lateJoinRecap.js';
 import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
@@ -225,6 +226,61 @@ describe('resume recap and the live DM allowlist', () => {
     const listBody = await list.text();
     expect(listBody).not.toContain('MATURE_MARKER');
     expect(listBody).not.toContain('UNKNOWN_MARKER');
+  });
+
+  it('excludes reverted-turn narration from resume and list recaps', async () => {
+    const player = await createAccount();
+    const table = await createResumableTable(player.id);
+    const keptTurn = randomUUID();
+    const revertedTurn = randomUUID();
+    const rewindTurn = randomUUID();
+    const addTurnNarration = async (turnId: string, narration: string) => {
+      await db.query(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         SELECT $1,COALESCE(MAX(seq),0)+1,$2,'NarrationCompleted',$3::jsonb
+           FROM events WHERE session_id=$1`,
+        [table, turnId, JSON.stringify({ narration, tier: 'standard' })],
+      );
+    };
+    await addTurnNarration(
+      keptTurn,
+      'KEPT_MARKER the party crossed the river.',
+    );
+    await addTurnNarration(
+      revertedTurn,
+      'REVERTED_MARKER the party entered the vault.',
+    );
+    await db.query(
+      `INSERT INTO events(session_id,seq,turn_id,type,payload)
+       SELECT $1,COALESCE(MAX(seq),0)+1,$2,'TurnReverted',$3::jsonb
+         FROM events WHERE session_id=$1`,
+      [table, rewindTurn, JSON.stringify({ revertedTurnId: revertedTurn })],
+    );
+
+    const built = await buildPlayerVisibleRecap({ db, sessionId: table });
+    expect(built.recap).toContain('KEPT_MARKER');
+    expect(built.recap).not.toContain('REVERTED_MARKER');
+
+    const lateJoin = await buildLateJoinRecap({
+      db,
+      sessionId: table,
+      moderator: { moderate: async () => ({ verdict: 'allow' }) } as never,
+      tier: 'standard',
+      tableLines: [],
+    });
+    expect(lateJoin.recap).toContain('KEPT_MARKER');
+    expect(lateJoin.recap).not.toContain('REVERTED_MARKER');
+
+    const headers = { cookie: `${COOKIE_NAME}=${player.token}` };
+    const resume = await fetch(`${base}/api/tables/${table}`, { headers });
+    expect(resume.status).toBe(200);
+    const resumeBody = await resume.text();
+    expect(resumeBody).not.toContain('REVERTED_MARKER');
+
+    const list = await fetch(`${base}/api/tables`, { headers });
+    expect(list.status).toBe(200);
+    const listBody = await list.text();
+    expect(listBody).not.toContain('REVERTED_MARKER');
   });
 
   it('still calls the endpoint for an allowlisted operator owner', async () => {

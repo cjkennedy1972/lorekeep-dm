@@ -4,6 +4,7 @@ import type { LlmAdapter } from '../llm/adapter.js';
 import { boundSummary, hiddenMatcher, type HiddenEntity } from './summarize.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
+import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
 
 export const MAX_RECAP_WORDS = 150;
 export const MAX_RECAP_CHARS = 1_200;
@@ -194,6 +195,7 @@ export async function buildPlayerVisibleRecap(input: {
     }>(
       `SELECT payload->>'narration' AS narration, payload->>'tier' AS tier
          FROM events WHERE session_id=$1 AND type='NarrationCompleted'
+          AND ${REVERTED_TURN_EXCLUSION}
           AND NULLIF(payload->>'narration','') IS NOT NULL
           AND payload->>'tier' IN ('family','standard')
         ORDER BY seq DESC LIMIT 32`,
