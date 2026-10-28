@@ -47,7 +47,11 @@ test('the last narration line stays above the sticky composer at 390px', async (
         payload: { turnId: 'dock-6', text: LAST_LINE },
       }),
     );
-    await expect(page.getByText(LAST_LINE)).toBeAttached();
+    // Scope to the visible story list: the sr-only live region repeats this text and would make the locator ambiguous.
+    const visibleLine = page
+      .locator('.narration-log__entries')
+      .getByText(LAST_LINE, { exact: true });
+    await expect(visibleLine).toBeAttached();
 
     // Scroll the page so the story's bottom edge is where a user would land it.
     await page.evaluate(() =>
