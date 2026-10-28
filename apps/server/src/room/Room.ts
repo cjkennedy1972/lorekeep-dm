@@ -3718,6 +3718,24 @@ export class Room {
   }
 
   private async admitApprovedLateJoins(): Promise<void> {
+    try {
+      await this.admitApprovedLateJoinsPending();
+    } catch (error) {
+      console.error(`Late-join admission failed for ${this.sessionId}`, error);
+      this.broadcast({
+        seq: this.seq,
+        type: 'Error',
+        payload: {
+          code: 'LATE_JOIN_ADMISSION_FAILED',
+          message:
+            'A late join could not be completed. The table host should retry or contact support.',
+        },
+      });
+      throw error;
+    }
+  }
+
+  private async admitApprovedLateJoinsPending(): Promise<void> {
     const approved = (this.state.lateJoinRequests ?? []).filter(
       (request) => request.approved,
     );
@@ -3877,7 +3895,7 @@ export class Room {
         team: 'party',
         pos,
         size: 1,
-        hp: character.hp.current,
+        hp: sheet.maxHp,
         maxHp: sheet.maxHp,
         ac: sheet.ac,
         speed: 30,
@@ -3913,7 +3931,7 @@ export class Room {
           },
         );
         const attackData = attacksFor(
-          { ...engineEntity, hp: character.hp.current },
+          { ...engineEntity, hp: sheet.maxHp },
           character,
           (engine?.attacks as Record<string, never> | undefined) ?? {},
           catalog,
