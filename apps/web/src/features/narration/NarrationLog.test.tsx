@@ -372,7 +372,6 @@ test('a monster attack on another seat’s PC is announced without its total or 
   expect(live.textContent).not.toContain('attack roll');
 });
 
-
 test('renders a redacted attack outcome without fabricating a breakdown', () => {
   render(
     <NarrationLog
