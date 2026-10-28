@@ -378,6 +378,20 @@ describe('createInputGate', () => {
     );
   });
 
+  it('reports a real judge outage as a fail-closed detailed block', async () => {
+    const { db } = fakeDb();
+    const { moderator } = stubModerator(() => failClosedVerdict(3));
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkDetailed({ text: innocent, surface: 'player-action' }),
+    ).resolves.toMatchObject({
+      decision: 'block',
+      source: 'failclosed',
+      attributable: false,
+    });
+  });
+
   it('never stores the submitted text in the log row', async () => {
     const { db, queries } = fakeDb();
     const { moderator } = stubModerator(blockVerdict('hate'));

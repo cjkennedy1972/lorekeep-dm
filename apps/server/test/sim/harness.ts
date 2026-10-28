@@ -37,6 +37,15 @@ export function moderationGate(): InputGate {
     text.includes(BLOCKED_MARKER) ? ('block' as const) : ('allow' as const);
   return {
     check: async ({ text }) => verdict(text),
+    checkDetailed: async ({ text }) => {
+      const decision = verdict(text);
+      return {
+        decision,
+        source: 'judge',
+        category: decision === 'block' ? 'other' : 'none',
+        attributable: false,
+      };
+    },
     checkChat: async ({ text }) => ({
       decision: verdict(text),
       attributable: false,
