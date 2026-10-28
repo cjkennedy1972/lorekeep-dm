@@ -325,6 +325,8 @@ export interface RoomStore {
   /** Host setting: abort an in-flight generation when an X-card is pressed. Off unless the host enabled it. */
   xCardAbortEnabled?(sessionId: string): Promise<boolean>;
   setXCardAbortEnabled?(sessionId: string, enabled: boolean): Promise<void>;
+  /** Switches a solo session to party before an additional seat is admitted. */
+  convertSessionToParty?(sessionId: string, lease: Lease): Promise<void>;
 }
 
 export interface ChatReceipt {
@@ -847,7 +849,7 @@ export class Room {
    * ADR-035: persisted `sessions.mode === 'party'` (never seat count or binding size) makes every
    * gameplay command require a bound seat. Solo sessions and legacy SeatJoined replay are unchanged.
    */
-  private readonly bindingEnforced: boolean;
+  private bindingEnforced: boolean;
   seq: number;
 
   get seatCharacters(): ReadonlyMap<string, PrivateSeatCharacterBinding> {
@@ -1108,7 +1110,7 @@ export class Room {
       { ...state, actionIds },
       this.lease,
       [],
-      undefined,
+      this.seq,
       undefined,
       [],
       seatCharacterTransition,
@@ -3679,6 +3681,11 @@ export class Room {
             .length >= 6
         )
           break;
+        // ADR-037 §4: disable solo-owner recovery before the first additional seat.
+        if (!this.bindingEnforced) {
+          await this.store.convertSessionToParty?.(this.sessionId, this.lease);
+          this.bindingEnforced = true;
+        }
         seat = {
           seatId: randomUUID() as Seat['seatId'],
           accountId: request.accountId,
@@ -3723,11 +3730,19 @@ export class Room {
           await this.persist('SeatRevoked', {
             seatId: seat.seatId,
             accountId: seat.accountId,
-            cause: 'late-join-selection-invalid',
+            cause: error.code,
           });
           await this.persist('LateJoinExpired', {
             requestId: request.requestId,
-            reason: 'selection-unavailable',
+            reason: error.code,
+          });
+          this.broadcast({
+            seq: this.seq,
+            type: 'Error',
+            payload: {
+              code: error.code,
+              message: `Late-join character binding failed (${error.code}).`,
+            },
           });
           this.lateJoinAuthTokenHashes.delete(request.requestId);
           const timer = this.lateJoinExpiryTimers.get(request.requestId);

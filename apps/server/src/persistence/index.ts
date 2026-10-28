@@ -649,6 +649,19 @@ export class Persistence {
     }
   }
 
+  /** Convert before another seat is appended, atomically serialized with the room lease. */
+  async convertSessionToParty(
+    sessionId: string,
+    lease: LeaseFence,
+  ): Promise<void> {
+    await this.transaction(sessionId, lease, async (client) => {
+      await client.query(
+        "UPDATE sessions SET mode='party' WHERE id=$1 AND status='active'",
+        [sessionId],
+      );
+    });
+  }
+
   /** Persisted session mode is the only authority for party-mode gating. */
   async loadSessionMode(sessionId: string): Promise<'solo' | 'party'> {
     const { rows } = await this.pool.query<{ mode: string }>(

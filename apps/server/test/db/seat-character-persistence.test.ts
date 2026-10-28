@@ -49,6 +49,34 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
+  it('converts a solo session before its first admitted seat is bound', async () => {
+    const f = await fixture();
+    const lease = {
+      sessionId: f.sessionId,
+      nodeId: 'r3b-conversion-test',
+      epoch: 1,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    await db.query("UPDATE sessions SET mode='solo' WHERE id=$1", [
+      f.sessionId,
+    ]);
+    await db.query(
+      'INSERT INTO session_lease(session_id,node_id,epoch,expires_at) VALUES($1,$2,$3,$4)',
+      [f.sessionId, lease.nodeId, lease.epoch, lease.expiresAt],
+    );
+
+    const store = new Persistence(db);
+    await store.convertSessionToParty(f.sessionId, lease);
+
+    expect(await store.loadSessionMode(f.sessionId)).toBe('party');
+    await f.repo.bind({
+      sessionId: f.sessionId,
+      seatId: f.seatA,
+      accountId: f.accountId,
+      characterId: f.character.id,
+      expectedRevision: f.revision,
+    });
+  });
   it('allows only one concurrent binding for a character in a session', async () => {
     const f = await fixture();
     const results = await Promise.allSettled([

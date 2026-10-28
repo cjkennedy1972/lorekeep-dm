@@ -27,9 +27,14 @@ function fixture() {
   const events: StoredEvent[] = [];
   const registryWrites: RegistryEvent[][] = [];
   const inactiveAccounts = new Set<string>();
+  let sessionConvertedToParty = false;
+  let enforceExpectedHead = false;
   let snapshot: LatestState['snapshot'] = null;
   let characterSnapshot: Record<string, unknown> | undefined;
   const store: RoomStore = {
+    async convertSessionToParty() {
+      sessionConvertedToParty = true;
+    },
     async isAccountActive(accountId) {
       return !inactiveAccounts.has(accountId);
     },
@@ -51,12 +56,18 @@ function fixture() {
       state,
       _lease,
       _registryEvents,
-      _expectedHeadSeq,
+      expectedHeadSeq,
       _registryTurnId,
       _rewoundTurnIds,
       transition,
     ) {
       await new Promise((resolve) => setTimeout(resolve, 1));
+      if (
+        enforceExpectedHead &&
+        expectedHeadSeq !== undefined &&
+        expectedHeadSeq !== events.length
+      )
+        throw new Error('Stale room write');
       const stored = inputs.map((input, index) => ({
         ...input,
         seq: events.length + index + 1,
@@ -89,6 +100,10 @@ function fixture() {
     events,
     registryWrites,
     inactiveAccounts,
+    sessionConvertedToParty: () => sessionConvertedToParty,
+    enforceExpectedHead() {
+      enforceExpectedHead = true;
+    },
     setCharacterSnapshot(value: Record<string, unknown>) {
       characterSnapshot = value;
     },
@@ -97,6 +112,57 @@ function fixture() {
 }
 
 describe('room actor', () => {
+  it('does not let an expired late-join timer revoke a seat after another room admitted it', async () => {
+    const { store, events, enforceExpectedHead } = fixture();
+    const room = new Room(store, lease, await store.loadLatest(id));
+    const host = randomUUID();
+    const requester = randomUUID();
+    await room.seat(host, 'Host');
+    vi.useFakeTimers();
+    try {
+      const requestPromise = room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      const requestId = await requestPromise;
+      enforceExpectedHead();
+
+      // A second lease owner admitted the request while this actor retained stale state.
+      events.push(
+        {
+          sessionId: id,
+          seq: events.length + 1,
+          turnId: randomUUID(),
+          type: 'SeatJoined',
+          payload: {
+            seatId: randomUUID(),
+            accountId: requester,
+            displayName: 'Late joiner',
+            presence: 'returning',
+          },
+          ts: new Date(),
+        },
+        {
+          sessionId: id,
+          seq: events.length + 2,
+          turnId: randomUUID(),
+          type: 'LateJoinAdmitted',
+          payload: { requestId },
+          ts: new Date(),
+        },
+      );
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(events.map((event) => event.type)).not.toContain(
+        'LateJoinExpired',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('expires a legacy late-join request without expiresAt during recovery', async () => {
     const { store, events } = fixture();
     const requestId = randomUUID();
@@ -1264,7 +1330,8 @@ describe('room actor', () => {
     });
 
     it('admits approved exploration joiners at a committed scene boundary', async () => {
-      const { store, events, setCharacterSnapshot } = fixture();
+      const { store, events, setCharacterSnapshot, sessionConvertedToParty } =
+        fixture();
       const host = randomUUID();
       const character = quickBuild(loadCatalog(), undefined, 0x35, 1).character;
       setCharacterSnapshot(character);
@@ -1327,7 +1394,7 @@ describe('room actor', () => {
         runner,
         undefined,
         [],
-        true,
+        false,
       );
       await room.seat(host, 'Host');
       await room.bindSeatCharacter(
@@ -1360,6 +1427,7 @@ describe('room actor', () => {
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
       ).toBe(true);
+      expect(sessionConvertedToParty()).toBe(true);
       expect(events.map((event) => event.type)).toContain('LateJoinApproved');
       expect(events.map((event) => event.type)).toContain('LateJoinAdmitted');
       expect(events.map((event) => event.type)).toContain('LateJoinSpawned');
