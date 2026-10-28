@@ -770,6 +770,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         }
         let engineCall: unknown = call;
         let encounterMap: unknown;
+        let partySpawnRef: string | undefined;
         if (request.name === 'start_combat') {
           const rawEncounterId = (
             request.args as { encounterId?: unknown } | undefined
@@ -872,6 +873,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 events: [],
               };
             }
+            partySpawnRef = resolved.partySpawnRef;
             encounterMap = adventure!.ok
               ? adventure!.adventure.maps.find(
                   (map) => map.mapId === resolved.mapId,
@@ -992,7 +994,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           encounterMap && rawResult.ok
             ? {
                 ...rawResult,
-                value: { ...(rawResult.value as object), map: encounterMap },
+                value: {
+                  ...(rawResult.value as object),
+                  map: {
+                    ...(encounterMap as object),
+                    ...(partySpawnRef ? { partySpawnRef } : {}),
+                  },
+                },
               }
             : rawResult;
         if (!rawResult.ok) attemptState.startedEncounter = undefined;

@@ -29,6 +29,7 @@ describe('authored encounter resolution (ADR-038)', () => {
       ],
       ambushSide: 'none',
       mapId: 'adv01-warrens',
+      partySpawnRef: 'mk_e2_party',
     });
   });
   it('rejects unknown, other-scene and already-used keys with closed codes', () => {
@@ -45,6 +46,22 @@ describe('authored encounter resolution (ADR-038)', () => {
     expect(
       resolveEncounter(adventure, sceneId, lookouts, new Set([lookouts])),
     ).toEqual({ ok: false, code: 'ENCOUNTER_ALREADY_USED' });
+  });
+  it('rejects an unresolvable party marker instead of allowing combat to start', () => {
+    const invalidPartyMarker = {
+      ...adventure,
+      encounters: adventure.encounters.map((encounter) =>
+        encounter.id === lookouts
+          ? { ...encounter, partySpawnMarkerId: 'missing-party-marker' }
+          : encounter,
+      ),
+    };
+    expect(
+      resolveEncounter(invalidPartyMarker, sceneId, lookouts, new Set()),
+    ).toEqual({
+      ok: false,
+      code: 'encounter-roster-invalid',
+    });
   });
   it('rejects an encounter that is active and invalid authored roster/map data', () => {
     expect(

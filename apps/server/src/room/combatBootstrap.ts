@@ -104,7 +104,7 @@ export function attacksFor(
   };
 }
 function partySpawn(
-  map: Battlemap,
+  map: Battlemap & { partySpawnRef?: string },
   taken: readonly { pos: GridPos; size: number }[],
 ): GridPos[] {
   const zones = map.zones.filter((zone) => zone.kind === 'spawn');
@@ -112,7 +112,17 @@ function partySpawn(
     zones.find((z) => /party|pc|player|hero/.test(z.zoneId)) ??
     zones.find((z) => !/foe|enemy|monster/.test(z.zoneId));
   const tiles = rleDecode(map.cells);
-  return (zone?.cells ?? []).filter(
+  const authored = map.partySpawnRef
+    ? map.markers.find((marker) => marker.markerId === map.partySpawnRef)?.cell
+    : undefined;
+  // An authored reference is authoritative: an invalid one must not silently
+  // fall back to a generic spawn zone.
+  const candidates = map.partySpawnRef
+    ? authored
+      ? [authored]
+      : []
+    : (zone?.cells ?? []);
+  return candidates.filter(
     (cell) =>
       !map.palette[tiles[cell.y * map.w + cell.x] ?? 0]?.blocksMove &&
       !taken.some(

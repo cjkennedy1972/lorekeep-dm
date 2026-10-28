@@ -779,6 +779,48 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 30_000);
 
+  it.each([
+    ['encounter-e2-lookouts', 'scene-warren-gallery', { x: 3, y: 5 }],
+    ['encounter-e3-skarrik', 'scene-boss-hall', { x: 22, y: 20 }],
+  ] as const)(
+    'places the party on the authored marker for %s',
+    async (encounterId, sceneId, expectedPos) => {
+      stack = await Stack.boot(`party-marker-${encounterId}`, {
+        adapter: authoredEncounterDm([], encounterId),
+        storyCombatEnabled: true,
+      });
+      const user = await newUser();
+      const table = await seedTable(
+        stack,
+        user,
+        (account) => ({
+          ...preCombatGame(hero),
+          characters: { [account]: hero },
+        }),
+        { id: 'adventure:01-hollow-under-marrowfell', sceneId },
+      );
+      const client = await Client.open(stack, user, table);
+      try {
+        const from = client.log.length;
+        client.say('I move toward the encounter.');
+        await client.until(
+          (message) => message.type === 'CombatTracker',
+          from,
+          20_000,
+        );
+        const saved = await savedGame(table);
+        expect(
+          saved.gameState.combatRoom?.entities.find(
+            (entity) => entity.id === 'ent_aria',
+          )?.pos,
+        ).toEqual(expectedPos);
+      } finally {
+        client.close();
+      }
+    },
+    30_000,
+  );
+
   it('retries a refused mature start with fresh combat interception state', async () => {
     let calls = 0;
     const adapter: LlmAdapter = {
