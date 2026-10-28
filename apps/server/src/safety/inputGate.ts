@@ -217,7 +217,7 @@ export function createInputGate({
           input,
           'other',
           'failclosed',
-          'tier',
+          'boundaries',
         );
         return {
           decision: 'block',

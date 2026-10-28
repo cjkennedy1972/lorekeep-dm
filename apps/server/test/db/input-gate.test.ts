@@ -29,20 +29,27 @@ const allowAll: Moderator = {
   }),
 } as never;
 
-let gate: InputGate = { check: async () => 'allow' };
+function testGate(check: InputGate['check']): InputGate {
+  return {
+    check,
+    checkDetailed: async (input) => {
+      const decision = await check(input);
+      return {
+        decision,
+        attributable: false,
+        source: failClosed && decision === 'block' ? 'failclosed' : 'judge',
+      };
+    },
+  };
+}
+
+let gate: InputGate = testGate(async () => 'allow');
 // Set when a test wants a block to look like an unavailable judge rather than the content.
 let failClosed = false;
 const app = createApp(db, {
   inputGate: {
     check: (i) => gate.check(i),
-    checkDetailed: async (i) => {
-      const decision = await gate.check(i);
-      return {
-        decision,
-        attributable: false,
-        source: failClosed && decision === 'block' ? 'failclosed' : undefined,
-      };
-    },
+    checkDetailed: (i) => gate.checkDetailed(i),
   },
 });
 const rooms = new RoomRegistry(
@@ -173,50 +180,46 @@ afterAll(async () => {
 }, 30_000);
 
 describe('gateway input gate', () => {
-  it('a rejected action never reaches the Room or the DM prompt', async () => {
-    gate = {
-      check: async ({ text }) =>
-        text.includes('forbidden') ? 'block' : 'allow',
-    };
+  it('rejects content and reports retryable judge outages without reaching the Room', async () => {
+    gate = testGate(async ({ text }) =>
+      text.includes('forbidden') ? 'block' : 'allow',
+    );
     const submit = vi.spyOn(Room.prototype, 'submitAction');
     const ws = await openSocket(tokens[0]!);
-    ws.send(playerAction('forbidden plan'));
-    let reply = await nextMessage(ws);
-    while (reply.type !== 'Error') reply = await nextMessage(ws);
-    expect(reply).toMatchObject({
-      type: 'Error',
-      payload: { code: 'CONTENT_REJECTED' },
-    });
-    expect(JSON.stringify(reply)).not.toContain('forbidden');
-    expect(submit).not.toHaveBeenCalled();
-    ws.close();
-    submit.mockRestore();
-  }, 30_000);
+    try {
+      ws.send(playerAction('forbidden plan'));
+      let reply = await nextMessage(ws);
+      while (reply.type !== 'Error') reply = await nextMessage(ws);
+      expect(reply).toMatchObject({
+        type: 'Error',
+        payload: { code: 'CONTENT_REJECTED' },
+      });
+      expect(JSON.stringify(reply)).not.toContain('forbidden');
+      expect(submit).not.toHaveBeenCalled();
 
-  it('an action blocked because the judge is down gets a retryable storyteller-unavailable turn failure', async () => {
-    gate = { check: async () => 'block' };
-    failClosed = true;
-    const submit = vi.spyOn(Room.prototype, 'submitAction');
-    const ws = await openSocket(tokens[0]!);
-    ws.send(playerAction('A calm plan.'));
-    let reply = await nextMessage(ws);
-    while (reply.type !== 'Error') reply = await nextMessage(ws);
-    expect(reply).toMatchObject({
-      type: 'Error',
-      payload: {
-        code: 'TURN_FAILED',
-        message:
-          'The storyteller is unavailable. Your action is kept; try again.',
-      },
-    });
-    expect(submit).not.toHaveBeenCalled();
-    failClosed = false;
-    ws.close();
-    submit.mockRestore();
+      gate = testGate(async () => 'block');
+      failClosed = true;
+      ws.send(playerAction('A calm plan.'));
+      let outageReply = await nextMessage(ws);
+      while (outageReply.type !== 'Error') outageReply = await nextMessage(ws);
+      expect(outageReply).toMatchObject({
+        type: 'Error',
+        payload: {
+          code: 'TURN_FAILED',
+          message:
+            'The storyteller is unavailable. Your action is kept; try again.',
+        },
+      });
+      expect(submit).not.toHaveBeenCalled();
+    } finally {
+      failClosed = false;
+      ws.close();
+      submit.mockRestore();
+    }
   }, 30_000);
 
   it('a capacity-limited action gets a neutral retryable busy response', async () => {
-    gate = { check: async () => 'busy' };
+    gate = testGate(async () => 'busy');
     const submit = vi.spyOn(Room.prototype, 'submitAction');
     const ws = await openSocket(tokens[0]!);
     ws.send(playerAction('A calm plan.'));
@@ -235,7 +238,7 @@ describe('gateway input gate', () => {
   }, 30_000);
 
   it('a revoked seat receives the generic closed-clarification error', async () => {
-    gate = { check: async () => 'allow' };
+    gate = testGate(async () => 'allow');
     const actionId = randomUUID();
     room.state.openClarifications = {
       [actionId]: {
@@ -276,10 +279,9 @@ describe('gateway input gate', () => {
   }, 30_000);
 
   it('a blocked clarification answer is rejected privately and never reaches the Room', async () => {
-    gate = {
-      check: async ({ text }) =>
-        text.includes('forbidden') ? 'block' : 'allow',
-    };
+    gate = testGate(async ({ text }) =>
+      text.includes('forbidden') ? 'block' : 'allow',
+    );
     const answer = vi.spyOn(Room.prototype, 'answerClarification');
     const ws = await openSocket(tokens[0]!);
     const actionId = randomUUID();
@@ -310,12 +312,12 @@ describe('gateway input gate', () => {
   });
 
   it('parallel submissions on one socket reach the Room in arrival order', async () => {
-    gate = {
-      check: ({ text }) =>
+    gate = testGate(
+      ({ text }) =>
         new Promise((resolve) =>
           setTimeout(() => resolve('allow'), text.startsWith('slow') ? 150 : 0),
         ),
-    };
+    );
     const submitted: string[] = [];
     const submit = vi
       .spyOn(Room.prototype, 'submitAction')

@@ -140,6 +140,23 @@ export function consumeMessageToken(
 const STORYTELLER_UNAVAILABLE =
   'The storyteller is unavailable. Your action is kept; try again.';
 
+export function inputBlockErrorPayload<T extends string>(
+  source: 'hardfloor' | 'denylist' | 'judge' | 'failclosed' | undefined,
+  actionId: T,
+) {
+  return source === 'failclosed'
+    ? {
+        code: 'TURN_FAILED' as const,
+        message: STORYTELLER_UNAVAILABLE,
+        actionId,
+      }
+    : {
+        code: 'CONTENT_REJECTED' as const,
+        message: 'That action cannot be sent.',
+        actionId,
+      };
+}
+
 export function installGateway(
   app: ReturnType<typeof createApp>,
   db: Pool,
@@ -1670,21 +1687,13 @@ export function installGateway(
                 }
                 if (decision === 'block') {
                   room.completeActionReceipt(actionReceiptSeq);
-                  const unavailable = verdict.source === 'failclosed';
                   return send({
                     seq: room.seq,
                     type: 'Error',
-                    payload: unavailable
-                      ? {
-                          code: 'TURN_FAILED',
-                          message: STORYTELLER_UNAVAILABLE,
-                          actionId: edit.data.actionId,
-                        }
-                      : {
-                          code: 'CONTENT_REJECTED',
-                          message: 'That action cannot be sent.',
-                          actionId: edit.data.actionId,
-                        },
+                    payload: inputBlockErrorPayload(
+                      verdict.source,
+                      edit.data.actionId,
+                    ),
                   });
                 }
                 return room
