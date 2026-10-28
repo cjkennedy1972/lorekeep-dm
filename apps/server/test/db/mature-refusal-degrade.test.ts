@@ -106,6 +106,21 @@ async function waitForNarrationSent(sent: Sent[], count: number) {
   }
   throw new Error('narration did not complete');
 }
+async function waitForTurnFailed(sent: Sent[]) {
+  for (let i = 0; i < 300; i++) {
+    if (
+      sent.some(
+        (message) =>
+          message.type === 'Error' &&
+          (message.payload as { code?: string } | undefined)?.code ===
+            'TURN_FAILED',
+      )
+    )
+      return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('retryable turn failure was not sent');
+}
 
 async function openRoom(
   sessionId: string,
@@ -220,7 +235,7 @@ describe('endpoint refusal of a mature prompt', () => {
     ).toEqual([]);
   });
 
-  it('persists no scene or tier writes from a successful tool round whose next endpoint call fails', async () => {
+  it('fails retryably without persisting effects when the endpoint fails after a tool round', async () => {
     const owner = await account();
     const sessionId = await session(owner);
     await db.query(
@@ -268,7 +283,7 @@ describe('endpoint refusal of a mature prompt', () => {
     });
 
     await room.submitAction(owner, randomUUID(), 'We open the seal.', 'Owner');
-    await waitForNarrationSent(seen.sent, 1);
+    await waitForTurnFailed(seen.sent);
 
     expect(requests).toBe(2);
     const { rows: events } = await db.query(

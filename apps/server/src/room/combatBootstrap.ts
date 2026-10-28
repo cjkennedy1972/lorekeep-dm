@@ -3,10 +3,12 @@ import {
   deriveSheet,
   emptyCombatState,
   proficiencyBonus,
+  movementNeighbors,
   type Catalog,
   type CharacterInput,
 } from '@game/rules-engine';
 import { rleDecode, type Battlemap, type GridPos } from '@game/schema';
+import type { MovementEntity } from '@game/rules-engine';
 import { runMonsters } from './combatEngine.js';
 import { seatEntityId } from './seatEntity.js';
 import type {
@@ -269,25 +271,76 @@ export function attacksFor(
   };
 }
 function partySpawn(
-  map: Battlemap,
-  taken: readonly { pos: GridPos; size: number }[],
+  map: Battlemap & { partySpawnRef?: string },
+  taken: readonly { id: string; team: string; pos: GridPos; size: number }[],
+  size: number,
 ): GridPos[] {
   const zones = map.zones.filter((zone) => zone.kind === 'spawn');
   const zone =
     zones.find((z) => /party|pc|player|hero/.test(z.zoneId)) ??
     zones.find((z) => !/foe|enemy|monster/.test(z.zoneId));
   const tiles = rleDecode(map.cells);
-  return (zone?.cells ?? []).filter(
-    (cell) =>
-      !map.palette[tiles[cell.y * map.w + cell.x] ?? 0]?.blocksMove &&
-      !taken.some(
-        (t) =>
-          cell.x >= t.pos.x &&
-          cell.x < t.pos.x + t.size &&
-          cell.y >= t.pos.y &&
-          cell.y < t.pos.y + t.size,
-      ),
-  );
+  const authored = map.partySpawnRef
+    ? map.markers.find((marker) => marker.markerId === map.partySpawnRef)?.cell
+    : undefined;
+  // A supplied marker is authoritative. A missing referenced marker is invalid;
+  // only an encounter with no partySpawnRef uses the legacy spawn-zone fallback.
+  if (map.partySpawnRef && !authored) return [];
+  const validTerrain = (cell: GridPos) => {
+    if (
+      cell.x < 0 ||
+      cell.y < 0 ||
+      cell.x + size > map.w ||
+      cell.y + size > map.h
+    )
+      return false;
+    for (let dy = 0; dy < size; dy++)
+      for (let dx = 0; dx < size; dx++) {
+        const tile = tiles[(cell.y + dy) * map.w + cell.x + dx] ?? 0;
+        if (map.palette[tile]?.blocksMove) return false;
+      }
+    return true;
+  };
+  const overlapsTaken = (cell: GridPos) =>
+    taken.some(
+      (entity) =>
+        cell.x < entity.pos.x + entity.size &&
+        cell.x + size > entity.pos.x &&
+        cell.y < entity.pos.y + entity.size &&
+        cell.y + size > entity.pos.y,
+    );
+  if (!authored)
+    return (zone?.cells ?? []).filter(
+      (cell) => validTerrain(cell) && !overlapsTaken(cell),
+    );
+  if (!validTerrain(authored)) return [];
+  const mover: MovementEntity = {
+    id: '__party_spawn_search__',
+    team: 'party',
+    pos: authored,
+    size,
+  };
+  const state = { map, entities: [...taken, mover] };
+  const distances = new Map<string, { cell: GridPos; distance: number }>();
+  const queue = [{ cell: authored, distance: 0 }];
+  distances.set(`${authored.x},${authored.y}`, queue[0]!);
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const cell of movementNeighbors(state, mover, current.cell)) {
+      const key = `${cell.x},${cell.y}`;
+      if (distances.has(key)) continue;
+      const next = { cell, distance: current.distance + 1 };
+      distances.set(key, next);
+      queue.push(next);
+    }
+  }
+  return [...distances.values()]
+    .filter(({ cell }) => validTerrain(cell) && !overlapsTaken(cell))
+    .sort(
+      (a, b) =>
+        a.distance - b.distance || a.cell.y - b.cell.y || a.cell.x - b.cell.x,
+    )
+    .map(({ cell }) => cell);
 }
 
 /**
@@ -369,18 +422,17 @@ function buildRoomCombat(
   );
   const byId = new Map(Object.values(characters).map((c) => [c.id, c]));
   const placed: EngineEntity[] = [];
-  const spawn = partySpawn(
-    engine.map,
-    engine.entities.filter((e) => e.pos.x >= 0),
-  );
+  const taken = engine.entities.filter((entity) => entity.pos.x >= 0);
   for (const entity of engine.entities) {
     if (entity.pos.x >= 0 || entity.team !== 'party') {
       placed.push(entity);
       continue;
     }
-    const cell = spawn.shift();
+    const cell = partySpawn(engine.map, taken, entity.size)[0];
     if (!cell) return null;
-    placed.push({ ...entity, pos: cell });
+    const positioned = { ...entity, pos: cell };
+    placed.push(positioned);
+    taken.push(positioned);
   }
   const entities: CombatEntity[] = placed.map((entity) => {
     const character = byId.get(entity.id);
@@ -432,6 +484,11 @@ function buildRoomCombat(
       seed: engine.combatSeed ?? 1,
     },
   };
+}
+
+/** Pure preflight for the production start-combat transaction. */
+export function canBootstrapCombat(game: GameState, catalog: Catalog): boolean {
+  return buildRoomCombat(game, catalog) !== null;
 }
 
 /**

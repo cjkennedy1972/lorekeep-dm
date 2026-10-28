@@ -1,4 +1,6 @@
 import { allowInputGate } from '../support/allowInputGate.js';
+import { rleEncode } from '@game/schema';
+import adventure01 from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
@@ -57,6 +59,7 @@ class Stack {
       endpointAllowsMature?: boolean;
       storyCombatEnabled?: boolean;
       rejectionBudget?: EncounterStartRejectionBudget;
+      adventureData?: unknown;
     } = {},
   ): Promise<Stack> {
     const requests: LlmRequest[] = [];
@@ -72,6 +75,7 @@ class Stack {
       undefined,
       options.storyCombatEnabled,
       options.rejectionBudget,
+      options.adventureData,
     );
     const rooms = new RoomRegistry(
       new Persistence(db),
@@ -257,6 +261,31 @@ class Client {
   close() {
     this.ws.close();
   }
+}
+
+function forcedEncounterStartDm(encounterId: string): LlmAdapter {
+  let calls = 0;
+  return {
+    capabilities: () => ({
+      streaming: true,
+      nativeTools: true,
+      jsonSchema: true,
+    }),
+    probe: async () => true,
+    async *complete() {
+      calls++;
+      if (calls === 1) {
+        yield {
+          type: 'tool-call',
+          id: `forced-start-${calls}`,
+          name: 'start_combat',
+          arguments: { encounterId },
+        } as LlmChunk;
+      } else {
+        yield { type: 'text', delta: 'The encounter remains ahead.' };
+      }
+    },
+  };
 }
 
 function authoredEncounterDm(
@@ -779,6 +808,219 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 30_000);
 
+  it.each([
+    ['encounter-e2-lookouts', 'scene-warren-gallery', { x: 3, y: 5 }],
+    ['encounter-e3-skarrik', 'scene-boss-hall', { x: 22, y: 20 }],
+  ] as const)(
+    'places the party on the authored marker for %s',
+    async (encounterId, sceneId, expectedPos) => {
+      stack = await Stack.boot(`party-marker-${encounterId}`, {
+        adapter: authoredEncounterDm([], encounterId),
+        storyCombatEnabled: true,
+      });
+      const user = await newUser();
+      const table = await seedTable(
+        stack,
+        user,
+        (account) => ({
+          ...preCombatGame(hero),
+          characters: { [account]: hero },
+        }),
+        { id: 'adventure:01-hollow-under-marrowfell', sceneId },
+      );
+      const client = await Client.open(stack, user, table);
+      try {
+        const from = client.log.length;
+        client.say('I move toward the encounter.');
+        await client.until(
+          (message) => message.type === 'CombatTracker',
+          from,
+          20_000,
+        );
+        const saved = await savedGame(table);
+        expect(
+          saved.gameState.combatRoom?.entities.find(
+            (entity) => entity.id === 'ent_aria',
+          )?.pos,
+        ).toEqual(expectedPos);
+      } finally {
+        client.close();
+      }
+    },
+    30_000,
+  );
+
+  it('rejects an invalid party marker through the production runner without persisting combat state', async () => {
+    const invalidAdventure = structuredClone(adventure01) as unknown as {
+      encounters: Array<{ id: string; partySpawnMarkerId?: string }>;
+    };
+    invalidAdventure.encounters.find(
+      (item) => item.id === 'encounter-e2-lookouts',
+    )!.partySpawnMarkerId = 'missing-party-marker';
+    stack = await Stack.boot('invalid-party-marker-production-runner', {
+      adapter: forcedEncounterStartDm('encounter-e2-lookouts'),
+      storyCombatEnabled: true,
+      adventureData: invalidAdventure,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const before = await savedGame(table);
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I move toward the encounter.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      const after = await savedGame(table);
+      expect(after.gameState.gameEngine).toEqual(before.gameState.gameEngine);
+      expect(after.gameState.combatRoom).toBeUndefined();
+      expect(
+        (await storedTypes(table)).some(
+          (event) => event.type === 'CombatStarted',
+        ),
+      ).toBe(false);
+    } finally {
+      client.close();
+      await stack.stop();
+      stack = undefined;
+    }
+  }, 30_000);
+
+  it('rejects an encounter before commit when the authored map cannot fit the party', async () => {
+    const alteredAdventure = structuredClone(adventure01) as unknown as {
+      maps: Array<{
+        mapId: string;
+        w: number;
+        h: number;
+        palette: Array<{
+          terrainId: string;
+          moveCost: number;
+          blocksMove: boolean;
+          blocksSight: boolean;
+          cover: string;
+          elevation: number;
+        }>;
+        cells: number[];
+        markers: Array<{ markerId: string; cell: { x: number; y: number } }>;
+        zones: Array<{
+          zoneId: string;
+          kind: string;
+          cells: Array<{ x: number; y: number }>;
+        }>;
+      }>;
+    };
+    const map = alteredAdventure.maps.find(
+      (item) => item.mapId === 'adv01-warrens',
+    )!;
+    const partyCell = map.markers.find(
+      (marker) => marker.markerId === 'mk_e2_party',
+    )!.cell;
+    const enemyCell = { x: partyCell.x + 1, y: partyCell.y };
+    const e3PartyCell = map.markers.find(
+      (marker) => marker.markerId === 'mk_e3_party',
+    )!.cell;
+    const e3EnemyCell = { x: e3PartyCell.x + 1, y: e3PartyCell.y };
+    try {
+      map.markers = map.markers.map((marker) =>
+        marker.markerId === 'mk_e2_enemy'
+          ? { ...marker, cell: enemyCell }
+          : marker.markerId === 'mk_e3_enemy'
+            ? { ...marker, cell: e3EnemyCell }
+            : marker,
+      );
+      map.zones = map.zones.map((zone) =>
+        zone.zoneId === 'zone-e2-party'
+          ? { ...zone, cells: [partyCell] }
+          : zone.zoneId === 'zone-e2-enemy'
+            ? { ...zone, cells: [enemyCell] }
+            : zone.zoneId === 'zone-e3-party'
+              ? { ...zone, cells: [e3PartyCell] }
+              : zone.zoneId === 'zone-e3-enemy'
+                ? { ...zone, cells: [e3EnemyCell] }
+                : zone,
+      );
+      const blockedIndex = map.palette.findIndex(
+        (entry) => entry.terrainId === 'rubble',
+      );
+      map.palette[blockedIndex] = {
+        ...map.palette[blockedIndex]!,
+        blocksMove: true,
+      };
+      const grid = Array.from({ length: map.w * map.h }, () => blockedIndex);
+      for (const cell of [partyCell, enemyCell, e3PartyCell, e3EnemyCell])
+        grid[cell.y * map.w + cell.x] = 0;
+      map.cells = rleEncode(grid);
+
+      const requests: LlmRequest[] = [];
+      stack = await Stack.boot('full-party-spawn-capacity', {
+        adapter: authoredEncounterDm(requests, 'encounter-e2-lookouts'),
+        storyCombatEnabled: true,
+        adventureData: alteredAdventure,
+      });
+      const user = await newUser();
+      const extra = { ...hero, id: 'ent_extra_party', name: 'Extra Party' };
+      const table = await seedTable(
+        stack,
+        user,
+        (account) => ({
+          ...preCombatGame(hero),
+          characters: { [account]: hero, 'other-account': extra },
+          gameEngine: {
+            ...preCombatGame(hero).gameEngine,
+            actors: { [hero.id]: hero, [extra.id]: extra },
+            hp: { [hero.id]: hero.hp.current, [extra.id]: extra.hp.current },
+            ac: { [hero.id]: 12, [extra.id]: 12 },
+          },
+        }),
+        {
+          id: 'adventure:01-hollow-under-marrowfell',
+          sceneId: 'scene-warren-gallery',
+        },
+      );
+      const before = await savedGame(table);
+      const client = await Client.open(stack, user, table);
+      try {
+        const from = client.log.length;
+        client.say('I move toward the encounter.');
+        await client.until(
+          (message) => message.type === 'NarrationCompleted',
+          from,
+          20_000,
+        );
+        expect(
+          requests[0]?.tools?.some((tool) => tool.name === 'start_combat'),
+        ).toBe(true);
+        const after = await savedGame(table);
+        expect(after.gameState.gameEngine).toEqual(before.gameState.gameEngine);
+        expect(after.gameState.combatRoom).toBeUndefined();
+        expect(
+          (await storedTypes(table)).some(
+            (event) => event.type === 'CombatStarted',
+          ),
+        ).toBe(false);
+      } finally {
+        client.close();
+      }
+    } finally {
+      await stack?.stop();
+      stack = undefined;
+    }
+  }, 30_000);
+
   it('retries a refused mature start with fresh combat interception state', async () => {
     let calls = 0;
     const adapter: LlmAdapter = {
@@ -955,7 +1197,8 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         const from = client.log.length;
         client.say(`I investigate the hall, attempt ${index}.`);
         await client.until(
-          (message) => message.type === 'NarrationCompleted',
+          (message) =>
+            message.type === 'Error' && message.payload?.code === 'TURN_FAILED',
           from,
           20_000,
         );

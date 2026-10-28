@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AdventureSchema } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
+import { loadAdventure } from '@game/rules-engine/adventure-node';
 import adventureData from '../../../../packages/engine/adventures/01/adventure.json' with { type: 'json' };
 import {
   EncounterStartRejectionBudget,
@@ -29,7 +30,26 @@ describe('authored encounter resolution (ADR-038)', () => {
       ],
       ambushSide: 'none',
       mapId: 'adv01-warrens',
+      partySpawnRef: 'mk_e2_party',
     });
+  });
+  it('allows encounters without a party marker so bootstrap can use the spawn zone', () => {
+    const withoutPartyMarker = {
+      ...adventure,
+      encounters: adventure.encounters.map((encounter) => {
+        if (encounter.id !== lookouts) return encounter;
+        const withoutMarker = { ...encounter };
+        delete withoutMarker.partySpawnMarkerId;
+        return withoutMarker;
+      }),
+    };
+    expect(loadAdventure(withoutPartyMarker, catalog).ok).toBe(true);
+    expect(
+      resolveEncounter(withoutPartyMarker, sceneId, lookouts, new Set()),
+    ).toMatchObject({ ok: true, mapId: 'adv01-warrens' });
+    expect(
+      resolveEncounter(withoutPartyMarker, sceneId, lookouts, new Set()),
+    ).not.toHaveProperty('partySpawnRef');
   });
   it('rejects unknown, other-scene and already-used keys with closed codes', () => {
     expect(resolveEncounter(adventure, sceneId, 'missing', new Set())).toEqual({
@@ -45,6 +65,22 @@ describe('authored encounter resolution (ADR-038)', () => {
     expect(
       resolveEncounter(adventure, sceneId, lookouts, new Set([lookouts])),
     ).toEqual({ ok: false, code: 'ENCOUNTER_ALREADY_USED' });
+  });
+  it('rejects an unresolvable party marker instead of allowing combat to start', () => {
+    const invalidPartyMarker = {
+      ...adventure,
+      encounters: adventure.encounters.map((encounter) =>
+        encounter.id === lookouts
+          ? { ...encounter, partySpawnMarkerId: 'missing-party-marker' }
+          : encounter,
+      ),
+    };
+    expect(
+      resolveEncounter(invalidPartyMarker, sceneId, lookouts, new Set()),
+    ).toEqual({
+      ok: false,
+      code: 'encounter-roster-invalid',
+    });
   });
   it('rejects an encounter that is active and invalid authored roster/map data', () => {
     expect(

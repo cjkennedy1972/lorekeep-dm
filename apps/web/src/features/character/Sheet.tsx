@@ -22,6 +22,15 @@ const modifier = (score: number) => {
   const value = Math.floor((score - 10) / 2);
   return `${value >= 0 ? '+' : ''}${value}`;
 };
+const itemNames = new Map(
+  loadCharacterCatalog()
+    .entries.filter((entry) => entry.kind === 'equipment')
+    .map((entry) => [entry.id, entry.name]),
+);
+/** Catalog names keep their punctuation; the slug id only drops it, so prefer the name. */
+const itemLabel = (itemId: string) =>
+  itemNames.get(itemId) ??
+  itemId.replace(/^equipment:/, '').replaceAll('-', ' ');
 const conditionLabels = new Map(
   loadCharacterCatalog()
     .entries.filter((entry) => entry.kind === 'condition')
@@ -165,8 +174,7 @@ export function Sheet({
           <ul className="sheet-inventory">
             {character.equipment.map((item) => (
               <li key={item.itemId}>
-                {item.itemId.replace(/^equipment:/, '').replaceAll('-', ' ')} ×{' '}
-                {item.qty}
+                {itemLabel(item.itemId)} × {item.qty}
                 {item.equipped ? ' (equipped)' : ''}
               </li>
             ))}

@@ -153,6 +153,8 @@ export interface TurnResult {
   turnSeed: string;
   usage: { in: number; out: number; cacheRead?: number };
   fallback?: 'no-narration' | 'endpoint-error' | 'budget-exhausted';
+  /** True when no usable upstream response was received (transport failure or server error). */
+  endpointRetryable?: boolean;
   clarification?: { actionId: string; question: string };
 }
 
@@ -488,6 +490,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   let hadToolError = false;
   let usedFinalText = false;
   let endpointFailed = false;
+  let endpointRetryable = false;
   const turnStartState = structuredClone(input.context.state);
   const cloneEngineState = (value: unknown) => {
     if (!value || typeof value !== 'object' || !('catalog' in value))
@@ -554,6 +557,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         if (normalized.code === 'stream-aborted' && input.signal?.aborted)
           throw normalized;
         endpointFailed = true;
+        endpointRetryable =
+          normalized.code !== 'endpoint-refusal' &&
+          (normalized.status === undefined || normalized.status >= 500);
         makeFallback('endpoint-error');
         done = true;
         break;
@@ -811,6 +817,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     const normalized = normalizeEndpointError(error);
     if (normalized instanceof LlmEndpointError) {
       endpointFailed = true;
+      endpointRetryable =
+        normalized.code !== 'endpoint-refusal' &&
+        (normalized.status === undefined || normalized.status >= 500);
       makeFallback('endpoint-error');
     } else throw error;
   }
@@ -996,5 +1005,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     turnSeed: seedText,
     usage: { in: totalIn, out: totalOut, ...(cacheRead ? { cacheRead } : {}) },
     ...(fallback ? { fallback } : {}),
+    ...(endpointFailed ? { endpointRetryable } : {}),
   };
 }

@@ -353,6 +353,13 @@ export function nextLateJoinBoundary(input: {
 
 export { RewindRefusedError };
 
+class EndpointTurnError extends Error {
+  constructor() {
+    super('The DM endpoint is unavailable');
+    this.name = 'EndpointTurnError';
+  }
+}
+
 export class NotTableHostError extends Error {
   constructor(message = 'Only the table host can resume') {
     super(message);
@@ -4090,6 +4097,7 @@ export class Room {
       );
     } catch (error) {
       const restricted = error instanceof LiveDmRestrictedError;
+      const endpointFailed = error instanceof EndpointTurnError;
       const failure = {
         seq: this.seq,
         type: 'Error',
@@ -4101,7 +4109,13 @@ export class Room {
           actionId: roundId,
         },
       } as ServerMessage;
-      if (restricted) this.connections.get(first.accountId)?.send(failure);
+      if (endpointFailed) {
+        for (const accountId of new Set(
+          actions.map((action) => action.accountId),
+        ))
+          this.connections.get(accountId)?.send(failure);
+      } else if (restricted)
+        this.connections.get(first.accountId)?.send(failure);
       else this.broadcast(failure);
       if (restricted) {
         const genericFailure = {
@@ -4696,6 +4710,7 @@ export class Room {
           continue;
         }
         const restricted = error instanceof LiveDmRestrictedError;
+        const endpointFailed = error instanceof EndpointTurnError;
         const failure = {
           seq: this.seq,
           type: 'Error',
@@ -4713,7 +4728,8 @@ export class Room {
                 actionId: action.actionId,
               },
         } as ServerMessage;
-        if (restricted) this.connections.get(action.accountId)?.send(failure);
+        if (restricted || endpointFailed)
+          this.connections.get(action.accountId)?.send(failure);
         else this.broadcast(failure);
       }
     }
@@ -4881,6 +4897,14 @@ export class Room {
     }
     this.turnAbort = undefined;
     if (turnAbort.signal.aborted) throw new XCardAbortError();
+    // No narration means the submitted action was not accepted; use the normal
+    // failure cleanup path so the submitter can retry and rounds can advance.
+    if (
+      result.fallback === 'endpoint-error' &&
+      result.endpointRetryable !== false &&
+      !combatTurnId
+    )
+      throw new EndpointTurnError();
     await this.matureDelivery;
     // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
     await this.enqueue(async () => {

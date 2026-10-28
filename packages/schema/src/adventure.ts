@@ -23,7 +23,7 @@ export const AdventureEncounterSchema = z.object({
   id: z.string().min(1),
   monsterIds: z.array(z.string().min(1)).min(1),
   mapId: z.string().min(1),
-  partySpawnMarkerId: z.string().min(1),
+  partySpawnMarkerId: z.string().min(1).optional(),
   enemySpawnMarkerId: z.string().min(1),
   repeatable: z.boolean().default(false),
   startTrigger: z

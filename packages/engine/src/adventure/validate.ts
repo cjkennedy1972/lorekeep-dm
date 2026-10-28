@@ -201,9 +201,11 @@ export function validateAdventure(
           'INVALID_MAP',
           `map ${map.mapId}: ${issue.code}: ${issue.message}`,
         );
-    const party = map.markers.find(
-      (marker) => marker.markerId === encounter.partySpawnMarkerId,
-    );
+    const party = encounter.partySpawnMarkerId
+      ? map.markers.find(
+          (marker) => marker.markerId === encounter.partySpawnMarkerId,
+        )
+      : undefined;
     const enemy = map.markers.find(
       (marker) => marker.markerId === encounter.enemySpawnMarkerId,
     );
@@ -231,7 +233,7 @@ export function validateAdventure(
           ))
       );
     };
-    if (!legal(party) || !legal(enemy))
+    if ((encounter.partySpawnMarkerId && !legal(party)) || !legal(enemy))
       error(
         'INVALID_SPAWN',
         `encounter ${encounter.id} requires legal party and enemy spawn markers`,
