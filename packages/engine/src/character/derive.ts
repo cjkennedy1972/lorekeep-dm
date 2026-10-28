@@ -69,7 +69,7 @@ export function deriveSheet(
     ]),
   );
   const equipped = char.equipment
-    .filter((item) => item.equipped)
+    .filter((item) => item.equipped && item.qty > 0)
     .map((item) => ({
       item,
       entry: catalog.get('equipment', item.itemId),

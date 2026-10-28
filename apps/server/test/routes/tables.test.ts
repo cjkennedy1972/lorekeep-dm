@@ -232,6 +232,118 @@ describe('solo table lifecycle routes', () => {
     await app.close();
   });
 
+  it('rejects a level-one fighter with equipped plate and shield outside the starting kit', async () => {
+    const calls: string[] = [];
+    const app = registerCreateTableRoute(allowInputGate, calls);
+    const character = quickBuild(
+      loadCatalog(),
+      'class:fighter',
+      0x28,
+      1,
+    ).character;
+    delete character.equipmentOption;
+    character.equipment.push(
+      { itemId: 'equipment:plate-armor', qty: 1, equipped: true },
+      { itemId: 'equipment:shield', qty: 1, equipped: true },
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tables',
+      headers: { cookie: `sid=${token}` },
+      payload: { name: 'A table', character },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'INVALID_CHARACTER' });
+    expect(calls.some((sql) => /INSERT INTO sessions/.test(sql))).toBe(false);
+    await app.close();
+  });
+
+  it('rejects a fighter plate loadout even when equipment option C is supplied', async () => {
+    const app = registerCreateTableRoute(allowInputGate, []);
+    const character = quickBuild(
+      loadCatalog(),
+      'class:fighter',
+      0x28,
+      1,
+    ).character;
+    character.equipmentOption = 'C';
+    character.equipment.push({
+      itemId: 'equipment:plate-armor',
+      qty: 1,
+      equipped: true,
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tables',
+      headers: { cookie: `sid=${token}` },
+      payload: { name: 'A table', character },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'INVALID_CHARACTER' });
+    await app.close();
+  });
+
+  it.each([
+    ['class:monk', { wis: 30, dex: 30 }],
+    ['class:barbarian', { con: 30 }],
+  ])('rejects out-of-range abilities for %s', async (classId, scores) => {
+    const app = registerCreateTableRoute(allowInputGate, []);
+    const character = quickBuild(loadCatalog(), classId, 0x28, 1).character;
+    Object.assign(character.abilities, scores);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tables',
+      headers: { cookie: `sid=${token}` },
+      payload: { name: 'A table', character },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'INVALID_CHARACTER' });
+    await app.close();
+  });
+
+  it('rejects high ability scores without abilityGeneration metadata', async () => {
+    const app = registerCreateTableRoute(allowInputGate, []);
+    const character = quickBuild(
+      loadCatalog(),
+      'class:barbarian',
+      0x28,
+      1,
+    ).character;
+    delete character.abilityGeneration;
+    delete character.equipmentOption;
+    character.abilities.con = 30;
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tables',
+      headers: { cookie: `sid=${token}` },
+      payload: { name: 'A table', character },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'INVALID_CHARACTER' });
+    await app.close();
+  });
+
+  it('accepts quickBuild characters for all classes through the table route', async () => {
+    const catalog = loadCatalog();
+    const classIds = catalog.entries
+      .filter((entry) => entry.kind === 'class')
+      .map((entry) => entry.id);
+    for (const classId of classIds) {
+      const app = registerCreateTableRoute(allowInputGate, []);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/tables',
+        headers: { cookie: `sid=${token}` },
+        payload: {
+          name: 'A table',
+          character: quickBuild(catalog, classId, 0x28, 1).character,
+        },
+      });
+      expect(response.statusCode, classId).toBe(201);
+      await app.close();
+    }
+  });
+
   it('returns safe Zod paths and codes for invalid character fields', async () => {
     const calls: string[] = [];
     const app = registerCreateTableRoute(allowInputGate, calls);

@@ -16,6 +16,21 @@ export const CharacterSchema = z.object({
   backgroundId: CatalogIdSchema,
   level: z.int().min(1).max(20),
   abilities: z.record(AbilitySchema, z.int().min(1).max(30)),
+  abilityGeneration: z
+    .object({
+      method: z.enum(['point-buy', 'standard-array', 'manual']),
+      baseAbilities: z.record(AbilitySchema, z.int().min(1).max(30)),
+      asi: z
+        .array(z.object({ ability: AbilitySchema, amount: z.int().positive() }))
+        .optional(),
+    })
+    .optional(),
+  equipmentOption: z.string().min(1).optional(),
+  backgroundSkills: z.array(z.string()).optional(),
+  subclassId: CatalogIdSchema.optional(),
+  levelUpAsi: z
+    .array(z.object({ ability: AbilitySchema, amount: z.int().positive() }))
+    .optional(),
   proficiencies: z.object({
     skills: z.array(z.string()),
     saves: z.array(AbilitySchema),

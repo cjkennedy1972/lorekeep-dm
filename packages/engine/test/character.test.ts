@@ -159,6 +159,19 @@ describe('character validator', () => {
     expect(codes(twoHandedWithShield)).toContain('WRONG_EQUIPMENT');
   });
 
+  test('zero-quantity equipped armor does not contribute to AC', () => {
+    const fighter = quickBuild(catalog, 'class:fighter', 53, 1).character;
+    const empty = { ...fighter, equipment: [] };
+    const depleted = {
+      ...fighter,
+      equipment: [{ itemId: 'equipment:plate-armor', qty: 0, equipped: true }],
+    };
+    expect(deriveSheet(depleted, catalog).ac).toBe(
+      deriveSheet(empty, catalog).ac,
+    );
+    expect(codes(depleted)).toContain('WRONG_EQUIPMENT');
+  });
+
   test('quickBuild characters for every class validate with their starting AC', () => {
     const classes = catalog.entries.filter((entry) => entry.kind === 'class');
     expect(classes).toHaveLength(12);

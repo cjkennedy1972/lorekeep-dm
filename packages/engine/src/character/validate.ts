@@ -107,16 +107,16 @@ export function validateCharacter(
       ),
     );
 
+  if (ABILITIES.some((a) => char.abilities[a] < 1 || char.abilities[a] > 20))
+    out.push(
+      violation(
+        'ABILITY_RANGE',
+        'abilities',
+        'Ability scores must be in range 1-20',
+      ),
+    );
   if (char.abilityGeneration) {
     const gen = char.abilityGeneration;
-    if (ABILITIES.some((a) => char.abilities[a] < 1 || char.abilities[a] > 30))
-      out.push(
-        violation(
-          'ABILITY_RANGE',
-          'abilities',
-          'Ability scores must be in range 1-30',
-        ),
-      );
     if (gen.method === 'point-buy') {
       const scores = ABILITIES.map((a) => gen.baseAbilities[a]);
       const total = scores.reduce((sum, n) => sum + (COST[n] ?? 0), 0);
@@ -245,6 +245,12 @@ export function validateCharacter(
   const selectedEquipmentOption = klass?.startingEquipment?.find(
     (option) => option.option === char.equipmentOption,
   );
+  if (
+    (equippedBodyArmor.length || equippedShields.length) &&
+    klass?.startingEquipment?.length &&
+    !char.equipmentOption
+  )
+    invalidEquippedLoadout = true;
   for (const item of [...equippedBodyArmor, ...equippedShields]) {
     const entry = entryBy(catalog, 'equipment', item.itemId);
     if (!entry || item.qty <= 0) {
