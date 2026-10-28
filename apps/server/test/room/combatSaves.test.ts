@@ -115,6 +115,8 @@ describe('weapon attack abilities', () => {
     ['equipment:rapier', 'Rapier', 10, 16, 5, '1d8+3'],
     ['equipment:rapier', 'Rapier', 14, 12, 4, '1d8+2'],
     ['equipment:shortbow', 'Shortbow', 10, 16, 5, '1d6+3'],
+    ['equipment:spear', 'Spear', 10, 16, 2, '1d6'],
+    ['equipment:handaxe', 'Handaxe', 10, 16, 2, '1d6'],
   ])(
     '%s uses the correct ability for its attack and damage',
     (itemId, name, str, dex, attackBonus, damage) => {

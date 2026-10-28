@@ -56,11 +56,13 @@ const WEAPON_ATTACKS: Record<
     damage: string;
     damageType: string;
     finesse?: boolean;
+    ranged?: boolean;
     range?: { normalFt: number; longFt: number };
   }
 > = {
   'equipment:battleaxe': { damage: '1d8', damageType: 'slashing' },
   'equipment:blowgun': {
+    ranged: true,
     damage: '1',
     damageType: 'piercing',
     range: { normalFt: 25, longFt: 100 },
@@ -75,6 +77,7 @@ const WEAPON_ATTACKS: Record<
   'equipment:dart': {
     damage: '1d4',
     damageType: 'piercing',
+    finesse: true,
     range: { normalFt: 20, longFt: 60 },
   },
   'equipment:flail': { damage: '1d8', damageType: 'bludgeoning' },
@@ -84,6 +87,7 @@ const WEAPON_ATTACKS: Record<
   'equipment:greatsword': { damage: '2d6', damageType: 'slashing' },
   'equipment:halberd': { damage: '1d10', damageType: 'slashing' },
   'equipment:hand-crossbow': {
+    ranged: true,
     damage: '1d6',
     damageType: 'piercing',
     range: { normalFt: 30, longFt: 120 },
@@ -94,6 +98,7 @@ const WEAPON_ATTACKS: Record<
     range: { normalFt: 20, longFt: 60 },
   },
   'equipment:heavy-crossbow': {
+    ranged: true,
     damage: '1d10',
     damageType: 'piercing',
     range: { normalFt: 100, longFt: 400 },
@@ -105,6 +110,7 @@ const WEAPON_ATTACKS: Record<
   },
   'equipment:lance': { damage: '1d10', damageType: 'piercing' },
   'equipment:light-crossbow': {
+    ranged: true,
     damage: '1d8',
     damageType: 'piercing',
     range: { normalFt: 80, longFt: 320 },
@@ -115,6 +121,7 @@ const WEAPON_ATTACKS: Record<
     range: { normalFt: 20, longFt: 60 },
   },
   'equipment:longbow': {
+    ranged: true,
     damage: '1d8',
     damageType: 'piercing',
     range: { normalFt: 150, longFt: 600 },
@@ -124,12 +131,14 @@ const WEAPON_ATTACKS: Record<
   'equipment:maul': { damage: '2d6', damageType: 'bludgeoning' },
   'equipment:morningstar': { damage: '1d8', damageType: 'piercing' },
   'equipment:musket': {
+    ranged: true,
     damage: '1d12',
     damageType: 'piercing',
     range: { normalFt: 40, longFt: 120 },
   },
   'equipment:pike': { damage: '1d10', damageType: 'piercing' },
   'equipment:pistol': {
+    ranged: true,
     damage: '1d10',
     damageType: 'piercing',
     range: { normalFt: 30, longFt: 90 },
@@ -146,6 +155,7 @@ const WEAPON_ATTACKS: Record<
     finesse: true,
   },
   'equipment:shortbow': {
+    ranged: true,
     damage: '1d6',
     damageType: 'piercing',
     range: { normalFt: 80, longFt: 320 },
@@ -157,6 +167,7 @@ const WEAPON_ATTACKS: Record<
   },
   'equipment:sickle': { damage: '1d4', damageType: 'slashing' },
   'equipment:sling': {
+    ranged: true,
     damage: '1d4',
     damageType: 'bludgeoning',
     range: { normalFt: 30, longFt: 120 },
@@ -215,7 +226,7 @@ export function attacksFor(
       const dexModifier = abilityModifier(character.abilities.dex);
       const modifier = weapon.finesse
         ? Math.max(strModifier, dexModifier)
-        : weapon.range
+        : weapon.ranged
           ? dexModifier
           : strModifier;
       return [
