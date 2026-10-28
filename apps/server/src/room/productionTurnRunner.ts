@@ -7,6 +7,7 @@ import {
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { concealedEntities } from './eventVisibility.js';
+import { canBootstrapCombat } from './combatBootstrap.js';
 import { closeScene, hiddenMatcher } from '../dm/summarize.js';
 import {
   createSceneCloseExecutor,
@@ -297,6 +298,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly leaveJudgeOverride?: LeaveJudge,
     private readonly storyCombatEnabled = storyCombatFlagEnabled(),
     private readonly rejectionBudget = encounterStartRejectionBudget,
+    private readonly adventureData: unknown = adventure01,
   ) {}
 
   async run(
@@ -359,7 +361,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     let adventureCompleted: boolean | undefined;
     const adventure =
       table.rows[0].adventure_id === 'adventure:01-hollow-under-marrowfell'
-        ? loadAdventure(AdventureSchema.parse(adventure01), catalog)
+        ? loadAdventure(AdventureSchema.parse(this.adventureData), catalog)
         : undefined;
     const currentScene = adventure?.ok
       ? adventure.adventure.scenes.find((scene) => scene.id === initialSceneId)
@@ -770,14 +772,28 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         }
         let engineCall: unknown = call;
         let encounterMap: unknown;
+        let partySpawnRef: string | undefined;
+        const rawEncounterId = (
+          request.args as { encounterId?: unknown } | undefined
+        )?.encounterId;
+        const encounterTelemetryId =
+          typeof rawEncounterId === 'string'
+            ? rawEncounterId
+            : JSON.stringify(request.args ?? {});
+        const rejectEncounterStart = (rejectionCode: string) => {
+          pendingEncounterRejectionReasons.add(rejectionCode);
+          combatStartTelemetry('CombatStartRejected', {
+            sessionIdHash: telemetrySessionId(sessionId),
+            activeMode: 'exploration',
+            ...(initialSceneId ? { sceneId: initialSceneId } : {}),
+            ...telemetryEncounterId(
+              encounterTelemetryId,
+              new Set(offeredEncounterKeys),
+            ),
+            rejectionCode,
+          });
+        };
         if (request.name === 'start_combat') {
-          const rawEncounterId = (
-            request.args as { encounterId?: unknown } | undefined
-          )?.encounterId;
-          const encounterTelemetryId =
-            typeof rawEncounterId === 'string'
-              ? rawEncounterId
-              : JSON.stringify(request.args ?? {});
           combatStartTelemetry('CombatStartToolCalled', {
             sessionIdHash: telemetrySessionId(sessionId),
             activeMode: 'exploration',
@@ -787,19 +803,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               new Set(offeredEncounterKeys),
             ),
           });
-          const rejectEncounterStart = (rejectionCode: string) => {
-            pendingEncounterRejectionReasons.add(rejectionCode);
-            combatStartTelemetry('CombatStartRejected', {
-              sessionIdHash: telemetrySessionId(sessionId),
-              activeMode: 'exploration',
-              ...(initialSceneId ? { sceneId: initialSceneId } : {}),
-              ...telemetryEncounterId(
-                encounterTelemetryId,
-                new Set(offeredEncounterKeys),
-              ),
-              rejectionCode,
-            });
-          };
           if (!storyCombatEnabled)
             return {
               ok: false,
@@ -872,6 +875,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 events: [],
               };
             }
+            partySpawnRef = resolved.partySpawnRef;
             encounterMap = adventure!.ok
               ? adventure!.adventure.maps.find(
                   (map) => map.mapId === resolved.mapId,
@@ -987,12 +991,42 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
               engineCall as never,
               seed,
             );
+        if (request.name === 'start_combat' && encounterMap && rawResult.ok) {
+          const candidateMap = {
+            ...(encounterMap as object),
+            ...(partySpawnRef ? { partySpawnRef } : {}),
+          };
+          const candidateEngine = mergeCombatOutput(current, 'start_combat', {
+            ...(rawResult.value as object),
+            map: candidateMap,
+          });
+          if (
+            !canBootstrapCombat(
+              { characters: current.actors, gameEngine: candidateEngine },
+              current.catalog,
+            )
+          ) {
+            rejectEncounterStart('no-party-spawn-space');
+            return {
+              ok: false,
+              error: 'no-spawn-space',
+              hint: 'The party cannot fit in the authored encounter map.',
+              events: [],
+            };
+          }
+        }
         // The encounter map rides on the start_combat output so mergeCombatOutput persists it.
         const result =
           encounterMap && rawResult.ok
             ? {
                 ...rawResult,
-                value: { ...(rawResult.value as object), map: encounterMap },
+                value: {
+                  ...(rawResult.value as object),
+                  map: {
+                    ...(encounterMap as object),
+                    ...(partySpawnRef ? { partySpawnRef } : {}),
+                  },
+                },
               }
             : rawResult;
         if (!rawResult.ok) attemptState.startedEncounter = undefined;

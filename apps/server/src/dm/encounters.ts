@@ -12,6 +12,7 @@ export interface ResolvedEnemy {
   monsterId: string;
   count: number;
   spawnRef: string;
+  partySpawnRef?: string;
 }
 
 /**
@@ -31,7 +32,13 @@ export function resolveEncounter(
   resolvedSet: ReadonlySet<string>,
   activeEncounterIds: ReadonlySet<string> = new Set(),
 ):
-  | { ok: true; enemies: ResolvedEnemy[]; ambushSide: 'none'; mapId: string }
+  | {
+      ok: true;
+      enemies: ResolvedEnemy[];
+      ambushSide: 'none';
+      mapId: string;
+      partySpawnRef?: string;
+    }
   | { ok: false; code: EncounterErrorCode } {
   const encounter = adventure.encounters.find(({ id }) => id === encounterKey);
   if (!encounter) return { ok: false, code: 'unknown-encounter' };
@@ -54,7 +61,11 @@ export function resolveEncounter(
     !map ||
     !map.markers.some(
       (marker) => marker.markerId === encounter.enemySpawnMarkerId,
-    )
+    ) ||
+    (encounter.partySpawnMarkerId !== undefined &&
+      !map.markers.some(
+        (marker) => marker.markerId === encounter.partySpawnMarkerId,
+      ))
   )
     return { ok: false, code: 'encounter-roster-invalid' };
   // Authored rosters list one creature per entry (there is no authored count field).
@@ -67,6 +78,9 @@ export function resolveEncounter(
     })),
     ambushSide: 'none',
     mapId: encounter.mapId,
+    ...(encounter.partySpawnMarkerId
+      ? { partySpawnRef: encounter.partySpawnMarkerId }
+      : {}),
   };
 }
 
