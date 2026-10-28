@@ -8,7 +8,7 @@ import {
   eventually,
   moderationGate,
   SimTable,
-  type SimClient,
+  SimClient,
 } from '../sim/harness.js';
 import { spotlight } from '../sim/spotlight.js';
 
@@ -198,6 +198,68 @@ describe('queueing during resolving', () => {
       ),
     ).toContain(queued);
   });
+});
+
+describe('ws-ticket abrupt socket recovery repro', () => {
+  it('resumes after a completed round when a killed client leaves an active-socket claim', async () => {
+    const { table: t } = await startTable(2);
+    const [owner, guest] = t.clients as [SimClient, SimClient];
+
+    // Exercise the owner path after actual gameplay, not just a lobby connection.
+    owner.submit('I search the room');
+    guest.submit('I watch the doorway');
+    await eventually(
+      async () => (await t.events('RoundResolved')).length === 1,
+    );
+
+    // (d) A second socket for the same seat is refused while the first is live.
+    const duplicate = new SimClient(
+      t,
+      owner.accountId,
+      t.tokenFor(0),
+      'Duplicate owner socket',
+    );
+    expect(await duplicate.connect()).toBe(1008);
+
+    // (a) Abrupt client death sends no close frame. Recreate the stale DB claim
+    // after the real gateway's close handler runs to model a lost close notification
+    // (e), then let its 15-second heartbeat lease expire as production does (b).
+    owner.terminate();
+    expect(await owner.waitForClose()).toBe(1006);
+    const room = await t.room();
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === owner.accountId,
+    )!.seatId;
+    await eventually(async () => {
+      const result = await db.query<{ active_socket_id: string | null }>(
+        'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+        [t.sessionId, seatId],
+      );
+      return result.rows[0]?.active_socket_id === null;
+    });
+    await db.query(
+      `UPDATE seat_resume_tokens
+          SET active_socket_id=$3,heartbeat_at=clock_timestamp()
+        WHERE session_id=$1 AND seat_id=$2`,
+      [t.sessionId, seatId, randomUUID()],
+    );
+
+    // The dead socket's still-live claim refuses a resume at first (e), rather
+    // than letting a second controller take over before the lease expires.
+    expect(await owner.connect()).toBe(1008);
+    await new Promise((resolve) => setTimeout(resolve, 15_250));
+
+    // (c) The real HTTP ticket route issues a ticket and the production WS gateway
+    // accepts the owner's retained resume proof after the stale claim expires.
+    expect(await owner.connect()).toBeUndefined();
+    await owner.waitForType('SeatAuthenticated');
+    await owner.waitForType('StateSync');
+    const active = await db.query<{ active_socket_id: string | null }>(
+      'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [t.sessionId, seatId],
+    );
+    expect(active.rows[0]?.active_socket_id).toBeTruthy();
+  }, 30_000);
 });
 
 describe('reconnect', () => {

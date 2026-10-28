@@ -763,6 +763,84 @@ describe('solo turn persisted lifecycle', () => {
     await restarted.drain();
   });
 
+  it('logs one outcome and returns 404 for malformed websocket ticket session IDs', async () => {
+    const owner = await createUser();
+    const noTableUser = await createUser();
+    const table = await createTable(owner.id);
+    const captured: string[] = [];
+    const routeApp = createApp(db, {
+      inputGate: allowInputGate,
+      rooms,
+      loggerStream: { write: (chunk) => captured.push(chunk.toString()) },
+    });
+    installGateway(routeApp, db, rooms);
+    try {
+      const successBefore = captured.join('').length;
+      const success = await routeApp.inject({
+        method: 'POST',
+        url: '/api/ws-ticket',
+        headers: {
+          host: 'api.example.test',
+          origin: 'http://api.example.test',
+          cookie: `sid=${owner.token}`,
+        },
+        payload: { sessionId: table },
+      });
+      expect(success.statusCode).toBe(200);
+      const successLines = captured
+        .join('')
+        .slice(successBefore)
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(
+        successLines.filter((line) => line.event === 'ws_ticket_outcome'),
+      ).toHaveLength(1);
+      for (const [label, body] of [
+        ['number', { sessionId: 5 }],
+        ['zero', { sessionId: 0 }],
+        ['false', { sessionId: false }],
+        ['empty', { sessionId: '' }],
+        ['object', { sessionId: {} }],
+        ['array', { sessionId: ['x'] }],
+        ['uuid array', { sessionId: [table] }],
+        ['missing', {}],
+      ] as const) {
+        const before = captured.join('').length;
+        const response = await routeApp.inject({
+          method: 'POST',
+          url: '/api/ws-ticket',
+          headers: {
+            host: 'api.example.test',
+            origin: 'http://api.example.test',
+            cookie: `sid=${label === 'missing' ? noTableUser.token : owner.token}`,
+          },
+          payload: body,
+        });
+        expect(response.statusCode, label).toBe(404);
+        expect(response.json(), label).toEqual({
+          code: 'NOT_FOUND',
+          message: 'Not found.',
+        });
+        const lines = captured
+          .join('')
+          .slice(before)
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as Record<string, unknown>);
+        const outcomes = lines.filter(
+          (line) => line.event === 'ws_ticket_outcome',
+        );
+        expect(outcomes).toHaveLength(1);
+        expect(outcomes[0]).toMatchObject({ statusCode: 404 });
+        expect(outcomes[0]).not.toHaveProperty('sessionId');
+        expect(outcomes[0]).not.toHaveProperty('rawSessionId');
+      }
+    } finally {
+      await routeApp.close();
+    }
+  });
+
   it('denies websocket tickets for a different table, even for a seated member', async () => {
     const firstOwner = await createUser();
     const secondOwner = await createUser();

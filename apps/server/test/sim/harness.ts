@@ -309,9 +309,20 @@ export class SimClient {
       socket.once('error', () => resolve());
     });
     if (this.closeCode !== undefined) return this.closeCode;
-    // Wait for a StateSync from this socket, not one buffered from an earlier connection.
-    await this.waitFor(() => this.messages('StateSync').length > syncsBefore);
-    return undefined;
+    // Wait for a StateSync from this socket, but return promptly if the gateway
+    // closes it before sync (for example, a concurrent active-socket claim).
+    const outcome = await Promise.race([
+      this.waitFor(() => this.messages('StateSync').length > syncsBefore).then(
+        () => undefined,
+      ),
+      this.closed,
+    ]);
+    return typeof outcome === 'number' ? outcome : undefined;
+  }
+
+  /** Drops the transport without sending a WebSocket close frame. */
+  terminate(): void {
+    this.socket?.terminate();
   }
 
   async disconnect(): Promise<void> {
