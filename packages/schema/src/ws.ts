@@ -119,7 +119,7 @@ export const ChatHistoryEntrySchema = z
 export const NarrationHistoryTurnSchema = z
   .object({
     turnId: z.string().min(1),
-    text: z.string().min(1),
+    text: z.string().min(1).max(24_000),
     tier: z.enum(['family', 'standard', 'mature']),
     actionText: z.string().max(2_000).optional(),
   })

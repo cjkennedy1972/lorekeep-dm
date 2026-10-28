@@ -31,6 +31,7 @@ export type LogEntry =
 export type NarrationLogState = {
   entries: LogEntry[];
   announced: string[];
+  revertedTurnIds: string[];
 };
 
 const LIVE_DM_RESTRICTED_MESSAGE = 'Live DM is not enabled for this account.';
@@ -65,6 +66,7 @@ export function turnFailureNotice(
 export const initialNarrationLog: NarrationLogState = {
   entries: [],
   announced: [],
+  revertedTurnIds: [],
 };
 
 const turnOf = (state: NarrationLogState, turnId: string): NarrationTurn => {
@@ -128,13 +130,16 @@ export function narrationLogReducer(
     case 'NarrationHistory': {
       let next = state;
       for (const item of message.payload.turns) {
-        const turn = turnOf(next, item.turnId);
+        if (next.revertedTurnIds.includes(item.turnId)) continue;
+        if (next.entries.some((entry) => entry.kind === 'turn' && entry.turn.turnId === item.turnId)) continue;
         next = placeHistoryTurn(next, {
-          ...turn,
-          narration: turn.complete ? turn.narration : item.text,
+          turnId: item.turnId,
+          chunks: {},
+          narration: item.text,
           ...(item.actionText ? { playerText: item.actionText } : {}),
           history: true,
           complete: true,
+          rollEvents: [],
         });
       }
       return next;
@@ -215,6 +220,9 @@ export function narrationLogReducer(
           (entry) => !(entry.kind === 'turn' && entry.turn.turnId === turnId),
         ),
         announced: state.announced.filter((id) => id !== turnId),
+        revertedTurnIds: state.revertedTurnIds.includes(turnId)
+          ? state.revertedTurnIds
+          : [...state.revertedTurnIds, turnId],
       };
     }
     case 'Error': {

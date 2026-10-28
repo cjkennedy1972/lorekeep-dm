@@ -118,3 +118,21 @@ test('a restriction named by the round is a generic retryable failure, not a res
     canRetry: true,
   });
 });
+
+test('history never restores a reverted turn or overwrites a live turn', () => {
+  const reverted = replay([
+    { seq: 1, type: 'TurnReverted', payload: { revertedTurnId: 'turn-old' } } as ServerMessage,
+    { seq: 2, type: 'NarrationHistory', payload: { turns: [{ turnId: 'turn-old', text: 'Restored?', tier: 'standard' }] } } as unknown as ServerMessage,
+  ]);
+  expect(reverted.entries).toEqual([]);
+
+  const live = replay([
+    { seq: 1, type: 'ActionQueued', payload: { actionId: 'action' } } as ServerMessage,
+    { seq: 2, type: 'NarrationChunk', payload: { turnId: 'turn-streaming', index: 0, text: 'Live ' } } as ServerMessage,
+    { seq: 3, type: 'NarrationHistory', payload: { turns: [{ turnId: 'turn-streaming', text: 'History complete.', tier: 'standard' }] } } as unknown as ServerMessage,
+  ]);
+  expect(live.entries).toEqual([
+    { kind: 'pending', actionId: 'action' },
+    { kind: 'turn', turn: { turnId: 'turn-streaming', chunks: { 0: 'Live ' }, complete: false, rollEvents: [] } },
+  ]);
+});

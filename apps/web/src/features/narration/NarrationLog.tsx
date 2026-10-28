@@ -410,6 +410,8 @@ export function NarrationLog({
       </ol>
       {opening &&
         state.entries.length === 0 &&
+        !messages.some((message) => message.type === 'NarrationHistory') &&
+        !messages.some((message) => message.type === 'NarrationCompleted') &&
         !messages.some((message) => message.type === 'CombatEvents') && (
           <div className="narration-log__opening">
             <h3>{opening.title}</h3>
