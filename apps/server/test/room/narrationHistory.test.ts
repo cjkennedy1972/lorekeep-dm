@@ -119,6 +119,22 @@ describe('narration history sync', () => {
     });
   });
 
+  it('scrubs concealed entity names and ids from replayed narration', async () => {
+    const accountId = randomUUID();
+    const room = setup(false, accountId, [
+      { turnId: 'hidden', narration: 'Astra (ent_secret) watches.', tier: 'standard' },
+    ]);
+    (room.state as unknown as { gameState: unknown }).gameState = {
+      concealed: [{ id: 'ent_secret', name: 'Astra' }],
+    };
+    const connection = recorder();
+    await joinSeated(room, accountId, connection, 'Player');
+    expect(
+      (connection.sent.find((message) => message.type === 'NarrationHistory')
+        ?.payload as { turns: { text: string }[] }).turns[0]?.text,
+    ).toBe('an unseen presence (an unseen presence) watches.');
+  });
+
   it('caps replay payload characters across the bounded turn history', async () => {
     const accountId = randomUUID();
     const huge = Array.from({ length: 30 }, (_, index) => ({
