@@ -47,6 +47,7 @@ const seatResumeTokens = new Map<string, string>();
 const runner: SoloTurnRunner = {
   async run(request, emit) {
     await new Promise((resolve) => setTimeout(resolve, 80));
+    emit({ type: 'NarrationTier', tier: 'standard' });
     emit({
       type: 'NarrationChunk',
       turnId: request.actionId,
