@@ -115,8 +115,12 @@ describe('weapon attack abilities', () => {
     ['equipment:rapier', 'Rapier', 10, 16, 5, '1d8+3'],
     ['equipment:rapier', 'Rapier', 14, 12, 4, '1d8+2'],
     ['equipment:shortbow', 'Shortbow', 10, 16, 5, '1d6+3'],
+    ['equipment:longbow', 'Longbow', 10, 16, 5, '1d8+3'],
     ['equipment:spear', 'Spear', 10, 16, 2, '1d6'],
     ['equipment:handaxe', 'Handaxe', 10, 16, 2, '1d6'],
+    ['equipment:light-hammer', 'Light Hammer', 10, 16, 2, '1d4'],
+    ['equipment:javelin', 'Javelin', 10, 16, 2, '1d6'],
+    ['equipment:trident', 'Trident', 10, 16, 2, '1d8'],
   ])(
     '%s uses the correct ability for its attack and damage',
     (itemId, name, str, dex, attackBonus, damage) => {
@@ -146,9 +150,7 @@ describe('weapon attack abilities', () => {
       const equipped = {
         ...character,
         abilities: { ...character.abilities, str, dex },
-        equipment: [
-          { itemId: 'equipment:dagger', qty: 1, equipped: true },
-        ],
+        equipment: [{ itemId: 'equipment:dagger', qty: 1, equipped: true }],
       };
       const { attacks } = attacksFor(
         { id: equipped.id, team: 'party', speed: 30, ...place },
@@ -180,5 +182,24 @@ describe('weapon attack abilities', () => {
       catalog,
     );
     expect(attacks).toEqual([expect.objectContaining({ id: 'unarmed' })]);
+  });
+
+  it('offers an unarmed strike when the character has no weapon', () => {
+    const unarmedCharacter = { ...character, equipment: [] };
+    const { attacks } = attacksFor(
+      { id: unarmedCharacter.id, team: 'party', speed: 30, ...place },
+      unarmedCharacter,
+      {},
+      catalog,
+    );
+    expect(attacks).toEqual([
+      expect.objectContaining({
+        id: 'unarmed',
+        name: 'Unarmed strike',
+        attackBonus: 4,
+        damage: '1d1+2',
+        damageType: 'bludgeoning',
+      }),
+    ]);
   });
 });
