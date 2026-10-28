@@ -219,12 +219,16 @@ async function gateOneShotOutput(
     approved: !redirected,
   };
 }
+function isReadOnlyTurn(input: TurnInput): boolean {
+  return (
+    input.prompt.readOnlyTools === true || input.prompt.activeMode === 'combat'
+  );
+}
 function toolSchemas(input: TurnInput): LlmTool[] {
   return DMToolCallSchema.options.flatMap((option) => {
     const name = option.shape.name.value;
     if (name === 'ask_clarification' && !canAskClarification(input)) return [];
-    if (input.prompt.readOnlyTools && !READ_ONLY_TOOLS.includes(name))
-      return [];
+    if (isReadOnlyTurn(input) && !READ_ONLY_TOOLS.includes(name)) return [];
     if (
       name === 'start_combat' &&
       (input.prompt.activeMode === 'combat' ||
@@ -235,7 +239,10 @@ function toolSchemas(input: TurnInput): LlmTool[] {
       {
         name,
         description:
-          input.toolDescriptions?.[name] ?? `Validated ${name} action.`,
+          input.toolDescriptions?.[name] ??
+          (name === 'start_combat'
+            ? 'Start the offered authored encounter for this scene when the accepted player action initiates hostility, before narrating any combat outcome. Pass the exact offered encounterId; the server supplies the roster and map. Never invent enemies or resolve attacks in narration. On success narrate the engine-established encounter start; on rejection do not claim combat began.'
+            : `Validated ${name} action.`),
         // Native tool calling needs real JSON schemas; empty parameters made models emit {} args.
         parameters: (input.toolSchemas?.[name] ??
           zodSchema(toolArgsSchema(input, name))) as Record<string, unknown>,
@@ -256,7 +263,7 @@ function canAskClarification(input: TurnInput): boolean {
   return (
     input.allowClarification === true &&
     input.clarificationAsked !== true &&
-    !input.prompt.readOnlyTools
+    !isReadOnlyTurn(input)
   );
 }
 function safeArgs(
@@ -649,10 +656,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           continue;
         }
         attempts.set(callSite, attempt);
-        if (
-          input.prompt.readOnlyTools &&
-          !READ_ONLY_TOOLS.includes(call.name)
-        ) {
+        if (isReadOnlyTurn(input) && !READ_ONLY_TOOLS.includes(call.name)) {
           // ADR-034 §2.2: the engine already applied the mechanics; a mutating call is refused, never executed.
           reject('unknown-tool', 'Only read-only tools exist while narrating.');
           retries++;

@@ -1,0 +1,57 @@
+.clarification-reply {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border-inline-start: 0.25rem solid var(--accent);
+  border-radius: var(--radius);
+  font-family: var(--font-serif);
+}
+
+.clarification-reply summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.clarification-reply form {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.clarification-reply p {
+  margin: 0;
+}
+
+.clarification-reply label {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.clarification-reply textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 3.5rem;
+  max-height: 10rem;
+  max-width: 100%;
+  resize: vertical;
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--border-ui);
+  border-radius: var(--radius);
+}
+.clarification-reply textarea:focus-visible {
+  border-color: var(--focus);
+}
+
+.clarification-reply button {
+  justify-self: start;
+  min-height: 2.75rem;
+}
