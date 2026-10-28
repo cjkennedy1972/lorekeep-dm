@@ -530,10 +530,12 @@ describe('Room combat command seam', () => {
     const tracker = combatTracker(combat);
     expect(tracker.activeEntityId).toBe(combat.combat.initiative[0]?.entityId);
     expect(tracker.entities[0]).toMatchObject({ id: 'ent_hero', hp: 12 });
+    expect(tracker.entities[0]).toHaveProperty('maxHp', 12);
     expect(tracker.entities[1]).toMatchObject({
       id: 'ent_goblin',
       hpState: 'healthy',
     });
     expect(tracker.entities[1]).not.toHaveProperty('hp');
+    expect(tracker.entities[1]).not.toHaveProperty('maxHp');
   });
 });

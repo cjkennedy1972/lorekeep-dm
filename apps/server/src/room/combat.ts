@@ -95,7 +95,7 @@ const NON_PUBLIC_PC_FIELDS = [
  * Per-viewer projection (ADR-034 §3, ADR-035). A hidden entity is removed outright from
  * everything a viewer receives (entities, initiative, resources, reaction prompt, dodge,
  * concentration) unless the viewer controls it: no pos, no hp, no existence. Another seat's
- * character keeps the ADR-035 public stats (current party HP, no max HP; no ac, speed, abilities,
+ * character keeps the ADR-035 public stats (current and max party HP; no AC, speed, abilities,
  * saves, attacks). Non-party entities expose only coarse HP state. Authoritative
  * server state is untouched; this only shapes what is serialized to a client.
  */
@@ -257,6 +257,7 @@ export function combatTracker(
         kind,
         team,
         ...(team === 'party' && typeof hp === 'number' ? { hp } : {}),
+        ...(team === 'party' && typeof maxHp === 'number' ? { maxHp } : {}),
         hpState: existingHpState ?? hpStateFor(hp, maxHp),
         pos,
         ...(fled ? { fled } : {}),
