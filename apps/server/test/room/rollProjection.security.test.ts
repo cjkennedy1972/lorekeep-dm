@@ -255,8 +255,10 @@ async function probeFixture(turnRunner?: SoloTurnRunner) {
 describe('roll projection security', () => {
   it('does not deliver a live attack roll naming a hidden actor to a non-controlling seat', async () => {
     const ids = { entA: '' };
+    let turnRuns = 0;
     const turnRunner = {
       async run(_req: unknown, emit: (e: Record<string, unknown>) => void) {
+        turnRuns += 1;
         emit({
           type: 'RollEvent',
           entityId: 'rogue',
@@ -276,6 +278,12 @@ describe('roll projection security', () => {
     } as unknown as SoloTurnRunner;
     const { f, entA } = await probeFixture(turnRunner);
     ids.entA = entA;
+    // Account A controls the hidden actor; B does not. Keep the event live so
+    // this exercises per-viewer projection rather than only hidden-id filtering.
+    f.room.state.gameState = {
+      ...(f.room.state.gameState as Record<string, unknown>),
+      combatActors: { [f.accountA]: 'rogue' },
+    };
     const inbox: Record<string, Record<string, unknown>[]> = { a: [], b: [] };
     await f.room.subscribe(f.accountA, {
       send: (m: Record<string, unknown>) => void inbox.a!.push(m),
@@ -284,12 +292,17 @@ describe('roll projection security', () => {
       send: (m: Record<string, unknown>) => void inbox.b!.push(m),
     });
     for (const k of ['a', 'b']) inbox[k]!.length = 0;
-    await f.room
-      .submitAction(f.accountA, randomUUID(), 'I strike', 'A')
-      .catch((e: unknown) => console.log('submitAction threw', String(e)));
-    await new Promise((r) => setTimeout(r, 200));
+    await f.room.submitAction(f.accountA, randomUUID(), 'I strike', 'A');
+    expect(turnRuns).toBe(1);
     const summarize = (msgs: Record<string, unknown>[]) =>
       msgs.filter((m) => m.type === 'RollEvent').map((m) => m.payload ?? m);
+    expect(summarize(inbox.a!)).toHaveLength(1);
+    expect(summarize(inbox.a!)[0]).toMatchObject({
+      type: 'RollEvent',
+      actorId: 'rogue',
+      targetId: entA,
+      label: 'attack bite',
+    });
     expect(summarize(inbox.b!)).toEqual([]);
   });
 
@@ -368,7 +381,7 @@ describe('roll projection security', () => {
 
   it('omits summarized damage for monsters but retains it for party characters', () => {
     const attacks = (targetId: string) =>
-      Array.from({ length: 9 }, () => [
+      Array.from({ length: 9 }, (_, index) => [
         {
           type: 'RollEvent',
           kind: 'attack',
@@ -376,7 +389,7 @@ describe('roll projection security', () => {
           targetId,
           hit: true,
         },
-        { type: 'HpChanged', entityId: targetId, damage: 1 },
+        { type: 'HpChanged', entityId: targetId, damage: index + 1 },
       ]).flat();
 
     const monster = narrationFacts(attacks('goblin'), new Set(['attacker']));
@@ -385,11 +398,27 @@ describe('roll projection security', () => {
       new Set(['attacker', 'party-pc']),
     );
 
+    expect(monster).toContainEqual(
+      expect.objectContaining({
+        type: 'AttackSummary',
+        actorId: 'attacker',
+        targetId: 'goblin',
+        attacks: 9,
+        hits: 9,
+      }),
+    );
     expect(
       monster.find((fact) => fact.type === 'AttackSummary'),
     ).not.toHaveProperty('damage');
-    expect(pc.find((fact) => fact.type === 'AttackSummary')).toMatchObject({
-      damage: 9,
-    });
+    expect(pc).toContainEqual(
+      expect.objectContaining({
+        type: 'AttackSummary',
+        actorId: 'attacker',
+        targetId: 'party-pc',
+        attacks: 9,
+        hits: 9,
+        damage: 45,
+      }),
+    );
   });
 });
