@@ -123,7 +123,16 @@ describe('DM prompt builder', () => {
       name: string;
       schema: { properties?: Record<string, unknown> };
     }[];
-    expect(toolList.some(({ name }) => name === 'start_combat')).toBe(false);
+    expect(toolList.map(({ name }) => name).sort()).toEqual([
+      'rules_lookup',
+      'suggest_area_target',
+    ]);
+    expect(value.blocks[2]).toContain(
+      'Combat actions are submitted through the combat action bar.',
+    );
+    expect(value.blocks[2]).toContain(
+      'neutrally direct them to the corresponding combat control',
+    );
     expect(value.blocks[2]).not.toContain('Encounters you may start');
   });
   it('gives X-card steering explicit priority and forbids scene continuation or state changes', () => {
