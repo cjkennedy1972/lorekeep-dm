@@ -77,6 +77,53 @@ describe('party seat-character persistence', () => {
       expectedRevision: f.revision,
     });
   });
+  it('rejects first-seat admission when the solo session is no longer active', async () => {
+    const f = await fixture();
+    await db.query("UPDATE sessions SET mode='solo', status='archived', archived_at=now() WHERE id=$1", [
+      f.sessionId,
+    ]);
+    const lease = {
+      sessionId: f.sessionId,
+      nodeId: 'r3b-archived-admission-test',
+      epoch: 1,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    await db.query(
+      'INSERT INTO session_lease(session_id,node_id,epoch,expires_at) VALUES($1,$2,$3,$4)',
+      [f.sessionId, lease.nodeId, lease.epoch, lease.expiresAt],
+    );
+    const head = Number(
+      (
+        await db.query(
+          'SELECT COALESCE(MAX(seq),0) AS n FROM events WHERE session_id=$1',
+          [f.sessionId],
+        )
+      ).rows[0].n,
+    );
+    const store = new Persistence(db);
+
+    await expect(
+      store.writeTurn(
+        f.sessionId,
+        [{ turnId: randomUUID(), type: 'SeatJoined', payload: { seatId: f.seatB } }],
+        {},
+        lease,
+        [],
+        head,
+        undefined,
+        [],
+        undefined,
+        'solo-to-party',
+      ),
+    ).rejects.toThrow('Solo-to-party conversion requires an active session');
+
+    expect(await store.loadSessionMode(f.sessionId)).toBe('solo');
+    const events = await db.query(
+      'SELECT type FROM events WHERE session_id=$1 AND seq>$2',
+      [f.sessionId, head],
+    );
+    expect(events.rows).toHaveLength(0);
+  });
   it.each(['conversion', 'SeatJoined'] as const)(
     'rolls back solo conversion and first-seat admission when failure occurs after %s',
     async (failurePoint) => {

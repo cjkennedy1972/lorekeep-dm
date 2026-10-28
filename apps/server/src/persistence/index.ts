@@ -398,10 +398,12 @@ export class Persistence {
     if (events.length === 0) throw new Error('A turn needs at least one event');
     return this.transaction(sessionId, lease, async (client) => {
       if (sessionModeTransition === 'solo-to-party') {
-        await client.query(
+        const converted = await client.query(
           "UPDATE sessions SET mode='party' WHERE id=$1 AND status='active'",
           [sessionId],
         );
+        if (converted.rowCount !== 1)
+          throw new Error('Solo-to-party conversion requires an active session');
       }
       let binding:
         | Awaited<ReturnType<SeatCharacterRepository['bindWithClient']>>
