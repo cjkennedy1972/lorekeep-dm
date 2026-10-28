@@ -352,6 +352,31 @@ describe('Game screen (live Room)', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('a room-state refresh after CombatEnded keeps the result card on screen', () => {
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    push('CombatEnded', { outcome: 'party-victory' });
+    // A reconnect refetches room state; the combat snapshot there carries no ended field.
+    hoisted.room = {
+      gameState: {
+        characters: { 'acct-1': hero },
+        combatRoom: {
+          entities,
+          map,
+          combat: { round: 1, activeEntityId: null, initiative: [] },
+        },
+      },
+    };
+    push('CombatOptions', { actions: [] });
+
+    expect(
+      screen.getByRole('region', { name: 'Combat result' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Combat commands' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('area aim: an aim previews its affected units and Cast sends the option ref', async () => {
     const user = userEvent.setup();
     mount();

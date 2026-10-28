@@ -127,7 +127,10 @@ test('keyboard-only solo combat from start_combat to CombatEnded on the real rec
         continue; // same turn: refresh options again
       }
     }
-    await activate(page.getByRole('button', { name: 'End turn' }), 'end-turn');
+    // The last attack can end the fight; the controls are gone then, so re-check the result card first.
+    const endTurn = page.getByRole('button', { name: 'End turn' });
+    if (!(await endTurn.isVisible())) continue;
+    await activate(endTurn, 'end-turn');
   }
   await expect(ended).toBeVisible({ timeout: 30_000 });
   // The fight must have been played by the keyboard, not skipped.

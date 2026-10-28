@@ -551,6 +551,10 @@ export function Game() {
     }
     if (combat.combat) {
       const c = asRecord(combat.combat);
+      // A room-state refresh after CombatEnded (for example a reconnect) must keep the result on screen.
+      const endedFromState = c.ended
+        ? (asRecord(c.ended) as { outcome: string })
+        : undefined;
       const t = {
         round: Number(c.round ?? 1),
         activeEntityId:
@@ -568,7 +572,10 @@ export function Game() {
           : [],
         resources: asRecord(c.resources) as Tracker['resources'],
       };
-      setTracker(t);
+      setTracker((current) => {
+        const ended = endedFromState ?? current?.ended;
+        return ended ? { ...t, ended } : t;
+      });
       gameStore.setTracker(t);
       gameStore.setCombatState({
         round: t.round,
