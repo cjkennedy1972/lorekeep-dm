@@ -521,6 +521,31 @@ describe('Game screen (live Room)', () => {
     expect(screen.getByText('Queued: I search the room.')).toBeInTheDocument();
   });
 
+  it('Retry moves keyboard focus to the action box instead of dropping it to the page', async () => {
+    const user = userEvent.setup();
+    hoisted.send.mockReturnValueOnce('mine-1');
+    mount();
+    await user.type(screen.getByLabelText('Your action'), 'I search the room.');
+    await user.click(screen.getByRole('button', { name: 'Send action' }));
+    push('ActionQueued', { actionId: 'mine-1' });
+    push('Error', {
+      code: 'TURN_FAILED',
+      message: 'The DM could not complete that turn. You can try again.',
+      actionId: 'mine-1',
+    });
+    const retry = screen.getByRole('button', { name: 'Retry this action' });
+    retry.focus();
+    expect(retry).toHaveFocus();
+
+    hoisted.send.mockReturnValueOnce('mine-2');
+    await user.click(retry);
+    // The Retry button unmounts once the failure clears; focus must land on the action box, not on body.
+    expect(
+      screen.queryByRole('button', { name: 'Retry this action' }),
+    ).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByLabelText('Your action'));
+  });
+
   it('a round failure restores only the seat whose submission was in that round', async () => {
     const user = userEvent.setup();
     hoisted.send.mockReturnValueOnce('mine-1');
