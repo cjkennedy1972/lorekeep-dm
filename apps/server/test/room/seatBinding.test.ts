@@ -892,6 +892,105 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(tracker.activeEntityId).toBe(seatEntityId(f.seatA));
   });
 
+  it('filters streamed rolls naming hidden actors or targets from non-controllers', async () => {
+    let entA = '';
+    const f = party({
+      bindB: true,
+      turnRunner: {
+        async run(_request, onEvent) {
+          onEvent({
+            type: 'RollEvent',
+            kind: 'attack',
+            entityId: 'rogue',
+            targetId: entA,
+            attackId: 'hidden-actor-attack',
+            hit: true,
+          });
+          onEvent({
+            type: 'RollEvent',
+            kind: 'damage',
+            entityId: entA,
+            targetId: 'hidden-target',
+            attackId: 'hidden-target-attack',
+            publicDamage: 4,
+          });
+          return {
+            events: [],
+            narration: '',
+            state: {},
+            fallback: 'endpoint-error',
+            endpointRetryable: true,
+          } as never;
+        },
+      } as unknown as SoloTurnRunner,
+    });
+    entA = seatEntityId(f.seatA);
+    const entB = seatEntityId(f.seatB);
+    const game = {
+      characters: {
+        [f.seatA]: { id: 'rogue' },
+        [f.seatB]: { id: 'hidden-target' },
+      },
+      combatRoom: {
+        entities: [
+          {
+            id: 'rogue',
+            hidden: true,
+            kind: 'monster',
+            team: 'foe',
+            hp: 8,
+            maxHp: 8,
+          },
+          { id: entA, kind: 'character', team: 'party', hp: 8, maxHp: 8 },
+          { id: entB, kind: 'character', team: 'party', hp: 8, maxHp: 8 },
+          {
+            id: 'hidden-target',
+            hidden: true,
+            kind: 'monster',
+            team: 'foe',
+            hp: 8,
+            maxHp: 8,
+          },
+        ],
+        combat: {
+          round: 1,
+          activeEntityId: entA,
+          initiative: [],
+          resources: {},
+        },
+      },
+    };
+    f.room.state.gameState = game;
+    const inbox = {
+      [f.accountA]: [] as Record<string, unknown>[],
+      [f.accountB]: [] as Record<string, unknown>[],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (message: Record<string, unknown>) =>
+          void inbox[account]!.push(message),
+      });
+    for (const messages of Object.values(inbox)) messages.length = 0;
+
+    await expect(
+      (
+        f.room as unknown as { resolveTurn(...args: unknown[]): Promise<void> }
+      ).resolveTurn(f.accountA, randomUUID(), 'roll', 'A', false),
+    ).rejects.toThrow();
+
+    const rolls = (account: string) =>
+      inbox[account]!.filter((message) => message.type === 'RollEvent').map(
+        (message) => message.payload,
+      );
+    expect(rolls(f.accountA)).toHaveLength(1);
+    expect(JSON.stringify(rolls(f.accountA))).toContain('hidden-actor-attack');
+    expect(JSON.stringify(rolls(f.accountA))).not.toContain('hidden-target');
+    expect(rolls(f.accountB)).toHaveLength(1);
+    expect(JSON.stringify(rolls(f.accountB))).toContain('hidden-target-attack');
+    expect(JSON.stringify(rolls(f.accountB))).not.toContain('rogue');
+    expect(JSON.stringify(rolls(f.accountB))).not.toContain(entB);
+  });
+
   it("hides a PC's roll modifier, weapon and spell name from other seats, not from its controller", async () => {
     const { f, entA } = await twoSeatCombat();
     const state = f.room.state.gameState as { combatRoom: unknown };

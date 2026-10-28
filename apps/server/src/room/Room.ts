@@ -5135,11 +5135,7 @@ export class Room {
             const hidden = hiddenIdsOf(combat);
             for (const [viewer, connection] of this.connections) {
               const controlled = this.controlledBy(viewer);
-              const projected = projectEventForViewer(
-                event,
-                hidden,
-                controlled,
-              );
+              const projected = projectEventForViewer(event, hidden, controlled);
               if (!projected) continue;
               const actorId = String(projected.entityId ?? '');
               const targetId = String(projected.targetId ?? '');
