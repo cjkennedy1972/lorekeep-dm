@@ -89,6 +89,14 @@ Cards marked `done` on the board that the prior checklist listed as open: `380ed
 | [#352](https://github.com/cjkennedy1972/lorekeep-dm/pull/352) | Merged (`b1209f5`) | M4 gate 1 six-sim scenarios: host revoke during combat and combat turn-timer races. Closes gate 1. |
 | [#342](https://github.com/cjkennedy1972/lorekeep-dm/pull/342) | Closed, not merged       | Earlier attempt at combat command admission after narration. Not in `main`.                                 |
 
+## ADR-038 story-to-combat reachability (not an architecture §11 gate)
+
+Recorded 2026-10-27 from the ADR-038 scripted smoke. ADR-038 is accepted (see the status note in `docs/adr/038-story-to-combat-transition.md`). This line is not one of the four §11 gates above, and it does not change gate 2 (real playtest, `d102b722`).
+
+| Item | Status | Evidence and caveats |
+|---|---|---|
+| **Gate "combat reachable in real play"** | **MET under scripted scene progression with `LOREKEEP_ADR_038_STORY_COMBAT=true`, on smoke head `b3d63dc`. Not yet re-verified on `main` (`ce40cf7`).** | [`docs/plan/evidence/adr-038-scripted-smoke.md`](evidence/adr-038-scripted-smoke.md). Caveats: (a) the scene was seeded in the database and `close_scene` was not exercised, so model-driven scene progression is not evidenced; (b) `start_combat` is model-dependent: 2 starts in 10 provocation attempts (card `ef7c2830`); (c) free-text attacks in combat returned `unknown-entity` in run 1 and the cause is unconfirmed; the combat action-bar attack path worked in run 2 (card `5fd8ad52` tracks the scene-progression gap); (d) party placement ignores the authored `partySpawnMarkerId` (card `18632c96`); (e) player text can induce start of an authored encounter offered in the current scene (accepted residual, ADR-038 status note item 2); (f) the flag defaults off and is not on in production. The smoke head is ten commits ahead of `main`: `main` has not been smoke-tested. |
+
 ## Scope and interpretation
 
 - Merged since the `b66bb88` reconciliation: #346 (`2dd2f84`) and #352 (`b1209f5`).
@@ -110,4 +118,5 @@ Cards marked `done` on the board that the prior checklist listed as open: `380ed
 - Keyboard-only combat (gate 4): [`docs/plan/evidence/m4-8-keyboard-only-combat.md`](evidence/m4-8-keyboard-only-combat.md), [#339](https://github.com/cjkennedy1972/lorekeep-dm/pull/339), [#344](https://github.com/cjkennedy1972/lorekeep-dm/pull/344), [#348](https://github.com/cjkennedy1972/lorekeep-dm/pull/348), [#350](https://github.com/cjkennedy1972/lorekeep-dm/pull/350).
 - Presence/autopilot/spotlight implementation: [PR #278](https://github.com/cjkennedy1972/lorekeep-dm/pull/278).
 - Late-join flow: [PR #314](https://github.com/cjkennedy1972/lorekeep-dm/pull/314), [#328](https://github.com/cjkennedy1972/lorekeep-dm/pull/328), [#329](https://github.com/cjkennedy1972/lorekeep-dm/pull/329).
+- ADR-038 scripted reachability smoke: [`docs/plan/evidence/adr-038-scripted-smoke.md`](evidence/adr-038-scripted-smoke.md).
 - Remaining milestone evidence: the 9b real 3–4 person map-combat playtest record (`d102b722`), and a real-play reaction if the owner does not accept the gate 4 caveat.

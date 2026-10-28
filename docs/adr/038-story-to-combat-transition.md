@@ -1,6 +1,6 @@
 # ADR-038: Story-to-combat transition
 
-Status: Proposed · Date: 2026-10-27 · Owner: Sage · Depends on: ADR-004, ADR-007, ADR-018, ADR-022, ADR-033, ADR-034
+Status: Accepted (2026-10-27) · Date: 2026-10-27 · Owner: Sage · Depends on: ADR-004, ADR-007, ADR-018, ADR-022, ADR-033, ADR-034
 
 Append-only: this ADR adds a constrained transition from an authored scene encounter to the existing combat executor. It does not edit earlier ADRs or change combat-turn narration rules.
 
@@ -61,3 +61,16 @@ Docs-only decision. Source inspection: ADR-022 §2.3, ADR-007, ADR-018; Adventur
 ## Correction — 2026-10-27
 
 Correction: Decision item 7 (explicit monster-id mapping table validated at adventure load) is superseded. Authored adventure ids are already in the catalog namespace (monster:goblin-warrior) and the engine adventure validator (packages/engine/src/adventure/validate.ts) already rejects dangling encounter monsters at load; the engine start_combat input uses srd:monster/<slug> and converts back (tools/combat.ts). The server therefore converts with a prefix rule (toEngineMonsterId) and needs no table.
+
+## Status update (2026-10-27)
+
+Accepted 2026-10-27, on Atlas's decision as delegated by Chris. The decision text above is unchanged. This note records what `origin/main` ships against the contract (implementation in #364, merged as `ce40cf7`), the deviations that were accepted, and the residuals that remain.
+
+Deviations and residuals:
+
+1. **Rejection budget is not the ADR-029 §8 Mutations bucket.** Decision item 5 counts repeated rejected starts against the shared Mutations counter. The shipped budget is a separate in-process counter, `EncounterStartRejectionBudget` in `apps/server/src/dm/encounters.ts`, scoped by (session, scene). Counters are bounded and evictable. Withdrawals are kept in a separate capped Map: the oldest entry is evicted only on overflow, and the Map is cleared on scene change and by `clearSession`. Because the budget lives in process memory, it resets on process restart. Moving it onto the shared bucket is follow-up card `e7722e8c`.
+2. **`startTrigger` is not enforced server-side.** The server does not judge whether a player action is hostile. Offers are limited to unresolved encounters of the current scene. Prompt injection can therefore induce the model to start an authored encounter offered in the current scene. This is an accepted residual. The transition stays constrained to that authored encounter.
+3. **Model-facing `start_combat` takes `encounterId` only.** The freeform roster (`enemies`, `monsterId`, `count`, `spawnRef`, `ambushSide`) is removed from the model schema. The engine keeps its roster schema internal to the server. `start_combat` is not offered in combat mode, and it is not offered at all unless `LOREKEEP_ADR_038_STORY_COMBAT` is set to `true`. The flag defaults to off.
+4. **Spawn markers.** `spawnRef` flows from the authored `enemySpawnMarkerId` to the engine (`apps/server/src/dm/encounters.ts`). Party placement ignores `partySpawnMarkerId` today: production placement takes the first free cell of the party spawn zone (`apps/server/src/room/combatBootstrap.ts`). Tracked on card `18632c96`.
+5. **Live evidence is scripted.** The smoke run seeded the scene in the database and restarted the API, because the live model rarely calls `close_scene` (card `5fd8ad52`). It therefore does not exercise scene progression by the model. Across two runs, the model called `start_combat` on 2 of 10 provocation attempts (card `ef7c2830`). The summary and checksum are in `docs/plan/evidence/adr-038-scripted-smoke.md`. The full report is outside the repository.
+6. **The smoke head is not `origin/main`.** The smoke ran on `b3d63dc`, which is ten commits ahead of `ce40cf7` on the PR branch. Those commits include encounter-withdrawal and spawn-reference fixes that are not on `main`. `b3d63dc` also replaces the separate withdrawal Map described in residual 1 with a per-entry flag. The evidence therefore does not directly test `main`. Re-running the smoke against `main` is required before the reachability claim is treated as a `main` result.
