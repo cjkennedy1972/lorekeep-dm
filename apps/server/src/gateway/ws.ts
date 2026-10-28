@@ -179,20 +179,38 @@ export function installGateway(
       const auth = await authenticateRequest(db, request);
       if (!auth) return reply.code(401).send({ error: 'unauthorized' });
       const sessionId = request.body?.sessionId;
-      if (sessionId && !/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(sessionId))
+      const logNotFound = (outcome: string) =>
+        request.log.info(
+          {
+            event: 'ws_ticket_outcome',
+            requestId: request.id,
+            outcome,
+            statusCode: 404,
+            sessionIdHash: diagnosticHash(sessionId),
+            accountIdHash: diagnosticHash(auth.account_id),
+          },
+          'WebSocket ticket request rejected',
+        );
+      if (sessionId && !/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(sessionId)) {
+        logNotFound('invalid_session_id');
         return reply
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });
+      }
       const eligible = await eligibleSession(db, auth.account_id, sessionId);
-      if (!eligible)
+      if (!eligible) {
+        logNotFound('no_eligible_active_session');
         return reply
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });
+      }
       const seatId = await currentSeatId(db, auth.account_id, eligible);
-      if (!seatId)
+      if (!seatId) {
+        logNotFound('no_current_seat');
         return reply
           .code(404)
           .send({ code: 'NOT_FOUND', message: 'Not found.' });
+      }
       return {
         ticket: await issueTicket(
           db,
