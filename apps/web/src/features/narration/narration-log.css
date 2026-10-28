@@ -29,7 +29,21 @@
   font-family: var(--font-serif);
   font-size: 1.1875rem;
   line-height: 1.7;
-  max-width: 62ch;
+  max-width: 68ch;
+}
+
+/* Paragraphs from one DM turn are separated by air, not by a bare line break. */
+.narration-log__turn > p + p {
+  margin-block-start: 0.9em;
+}
+
+/* The closing question is set apart so the player's cue is the first thing their eye finds. */
+.narration-log__prompt {
+  margin-block-start: 1.1em;
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--accent);
 }
 
 .narration-log__entries {
@@ -40,7 +54,6 @@
   list-style: none;
   margin: 0;
   padding-inline-start: 0;
-  scroll-behavior: smooth;
 }
 
 .narration-log__entries:focus-visible {
@@ -122,15 +135,16 @@
   font-weight: 700;
 }
 
+/* Sits in the flow below the scrolling story, never over it. */
 .narration-log__latest {
   align-self: center;
   min-height: 2.75rem;
+  padding-inline: 1rem;
+  border-radius: 999px;
+  font-weight: 700;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .narration-log__entries {
-    scroll-behavior: auto;
-  }
   .narration-log__pending::after {
     animation: none;
   }
