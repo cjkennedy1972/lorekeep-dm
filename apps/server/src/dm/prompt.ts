@@ -122,13 +122,10 @@ function makeStatic(input: BuildPromptInput): string {
   const modeTools = DMToolCallSchema.options
     .map((tool) => tool.shape.name.value)
     .filter((name) => {
-      if (input.readOnlyTools) return READ_ONLY_TOOLS.includes(name);
+      if (input.readOnlyTools || input.activeMode === 'combat')
+        return READ_ONLY_TOOLS.includes(name);
       if (name === 'start_combat')
-        return (
-          input.activeMode !== 'combat' &&
-          Boolean(input.offeredEncounterKeys?.length)
-        );
-      if (input.activeMode === 'combat') return true;
+        return Boolean(input.offeredEncounterKeys?.length);
       return !COMBAT_ONLY_TOOLS.includes(name);
     });
   const schemas = modeTools.map((name) => ({
@@ -240,7 +237,10 @@ function makeDynamic(
   return [
     `STATE PROJECTION (authoritative; never trim):\n${projectState(input.turn.state)}`,
     input.activeMode === 'combat' && input.turn.activeActorId
-      ? `TURN ORDER\nActive combatant: ${input.turn.activeActorId}. Only this combatant may attack, cast, or move this turn.`
+      ? `TURN ORDER\nActive combatant: ${input.turn.activeActorId}. The combat action bar controls this combatant's turn.`
+      : '',
+    input.activeMode === 'combat'
+      ? 'COMBAT NARRATION — Combat actions are submitted through the combat action bar. Do not resolve or narrate combat outcomes, or call attack/move tools, from free-text chat. If player text asks to attack or move, neutrally direct them to the corresponding combat control.'
       : '',
     input.activeMode === 'combat'
       ? `ENGINE DESCRIPTION\n${brief ? (input.turn.describeBrief ?? '') : (input.turn.state.combat?.description ?? '')}`
@@ -266,9 +266,9 @@ function makeDynamic(
             }))
           ).map(
             ({ key, hook, startTrigger }) =>
-              `${key} — ${hook}; ${startTrigger === 'scene-entry' ? 'starts on scene entry: call start_combat on your first turn in this scene' : "call only if the player's accepted action is hostile"}`,
+              `${key} — ${hook}; ${startTrigger === 'scene-entry' ? 'starts on scene entry: call start_combat on your first turn in this scene' : "call start_combat before narration only when the player's accepted action is hostile: an attack, charge, attempt to harm/capture/threaten an enemy, or other initiation of violence; do not call for non-hostile actions"}`,
           ),
-          'Never narrate a combat resolution without a successful start_combat call. Do not mention tools, ids, or rules text to the player.',
+          "If the player's accepted action is an attack, charge, attempt to harm/capture/threaten an enemy, or otherwise initiates violence, call start_combat for this offered encounter (exact offered encounterId) before narrating any attack, damage, defeat, or other combat outcome. For non-hostile actions, do not call start_combat. Scene-entry encounters start on your first turn in the scene regardless of player action. Never narrate combat outcomes unless start_combat succeeds. Do not mention tools, ids, or rules text to the player.",
         ].join('\n')
       : '',
   ]

@@ -1205,7 +1205,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
                 }
               : {}),
           },
-          ...(request.combatNarration ? { readOnlyTools: true } : {}),
+          ...(request.combatNarration ||
+          (state &&
+            typeof state === 'object' &&
+            (state as { combatRoom?: unknown }).combatRoom)
+            ? { readOnlyTools: true }
+            : {}),
           activeMode:
             state &&
             typeof state === 'object' &&
