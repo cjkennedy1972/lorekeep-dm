@@ -1011,6 +1011,46 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(JSON.stringify(other)).not.toContain('"x":7');
   });
 
+  it('redacts monster HP numbers from queued narration facts while retaining party HP', async () => {
+    const { f, entA } = await twoSeatCombat();
+    const roomInternals = f.room as unknown as {
+      turnInFlight: boolean;
+      queueNarration(
+        events: Record<string, unknown>[],
+        accountId: string,
+        turnId: string,
+        characterIds: Set<string>,
+      ): void;
+      queuedActions: { combatFacts: Record<string, unknown>[] }[];
+    };
+    roomInternals.turnInFlight = true;
+    roomInternals.queueNarration(
+      [
+        { type: 'HpChanged', entityId: 'goblin', from: 7, to: 3, damage: 4 },
+        { type: 'HpChanged', entityId: entA, from: 5, to: 3, damage: 2 },
+      ],
+      f.accountA,
+      'turn',
+      new Set([entA]),
+    );
+    const facts = roomInternals.queuedActions[0]!.combatFacts;
+    expect(facts[0]).toEqual({
+      type: 'HpChanged',
+      entityId: 'goblin',
+      hpState: 'wounded',
+      tier: 'must',
+    });
+    expect(JSON.stringify(facts[0])).not.toMatch(/[0-9]/);
+    expect(facts[1]).toEqual({
+      type: 'HpChanged',
+      entityId: entA,
+      from: 5,
+      to: 3,
+      damage: 2,
+      tier: 'must',
+    });
+  });
+
   it('projects monster HP events per viewer but preserves public party HP events', async () => {
     const { f, entA } = await twoSeatCombat();
     const state = f.room.state.gameState as {

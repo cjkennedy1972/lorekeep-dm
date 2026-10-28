@@ -431,6 +431,17 @@ export function narrationFact(
   characterIds: ReadonlySet<string> = new Set(),
   characterTargetHit?: boolean,
 ) {
+  if (
+    event.type === 'HpChanged' &&
+    typeof event.entityId === 'string' &&
+    !characterIds.has(event.entityId)
+  ) {
+    return {
+      type: 'HpChanged',
+      entityId: event.entityId,
+      hpState: event.to === 0 ? 'down' : 'wounded',
+    };
+  }
   const fields = Object.fromEntries(
     NARRATION_FACT_FIELDS[String(event.type)]!.flatMap((key) => {
       const value =

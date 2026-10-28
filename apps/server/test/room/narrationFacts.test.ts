@@ -53,14 +53,17 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
       total: 20,
     });
     expect(
-      narrationFact({
-        type: 'HpChanged',
-        entityId: 'ent_hero',
-        from: 12,
-        to: 4,
-        damage: 8,
-        damageType: 'slashing',
-      }),
+      narrationFact(
+        {
+          type: 'HpChanged',
+          entityId: 'ent_hero',
+          from: 12,
+          to: 4,
+          damage: 8,
+          damageType: 'slashing',
+        },
+        new Set(['ent_hero']),
+      ),
     ).toEqual({
       type: 'HpChanged',
       entityId: 'ent_hero',
@@ -276,17 +279,20 @@ describe('combat narration fact projection (ADR-033 §6.8)', () => {
         actorId: 'ent_monster_0',
       }),
     );
-    const manyConsequences = narrationFacts([
-      { type: 'CombatEnded', outcome: 'party-defeated' },
-      { type: 'EntityDown', entityId: 'ent_pc', outcome: 'dead' },
-      ...Array.from({ length: 45 }, (_, index) => ({
-        type: 'HpChanged',
-        entityId: 'ent_pc',
-        from: 60 - index,
-        to: 59 - index,
-        damage: 1,
-      })),
-    ]);
+    const manyConsequences = narrationFacts(
+      [
+        { type: 'CombatEnded', outcome: 'party-defeated' },
+        { type: 'EntityDown', entityId: 'ent_pc', outcome: 'dead' },
+        ...Array.from({ length: 45 }, (_, index) => ({
+          type: 'HpChanged',
+          entityId: 'ent_pc',
+          from: 60 - index,
+          to: 59 - index,
+          damage: 1,
+        })),
+      ],
+      new Set(['ent_pc']),
+    );
     expect(manyConsequences).toHaveLength(40);
     expect(manyConsequences.at(-1)).toMatchObject({
       type: 'NarrationOverflow',
