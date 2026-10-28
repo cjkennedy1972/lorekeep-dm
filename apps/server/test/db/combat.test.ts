@@ -955,7 +955,8 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         const from = client.log.length;
         client.say(`I investigate the hall, attempt ${index}.`);
         await client.until(
-          (message) => message.type === 'NarrationCompleted',
+          (message) =>
+            message.type === 'Error' && message.payload?.code === 'TURN_FAILED',
           from,
           20_000,
         );

@@ -4825,7 +4825,11 @@ export class Room {
     if (turnAbort.signal.aborted) throw new XCardAbortError();
     // No narration means the submitted action was not accepted; use the normal
     // failure cleanup path so the submitter can retry and rounds can advance.
-    if (result.fallback === 'endpoint-error' && !combatTurnId)
+    if (
+      result.fallback === 'endpoint-error' &&
+      result.endpointRetryable !== false &&
+      !combatTurnId
+    )
       throw new EndpointTurnError();
     await this.matureDelivery;
     // Commit inside the mailbox so a combat command or reaction timeout cannot interleave with it.
