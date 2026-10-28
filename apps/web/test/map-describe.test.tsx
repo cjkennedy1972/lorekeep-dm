@@ -125,6 +125,52 @@ describe('battlefield description and token list', () => {
     expect(within(table).getAllByRole('row')).toHaveLength(4);
   });
 
+  it('shows a number only for the viewer’s own entity; everyone else gets a status word, monsters included', () => {
+    const store = setup();
+    // Monsters carry numeric hp on the live path, and another seat's PC may too. Neither may print it.
+    store.setMapEntities([
+      {
+        id: 'hero',
+        kind: 'character',
+        pos: { x: 0, y: 2 },
+        size: 1,
+        hp: 12,
+        team: 'heroes',
+        speed: 30,
+      },
+      {
+        id: 'ally',
+        kind: 'character',
+        pos: { x: 1, y: 2 },
+        size: 1,
+        hp: 9,
+        hpState: 'healthy',
+        team: 'heroes',
+        speed: 30,
+      },
+      {
+        id: 'goblin',
+        kind: 'monster',
+        pos: { x: 4, y: 2 },
+        size: 1,
+        hp: 7,
+        hpState: 'wounded',
+        team: 'foes',
+        speed: 30,
+      },
+    ] as Parameters<typeof store.setMapEntities>[0]);
+    render(<TokenTable store={store} ownEntityId="hero" />);
+    const table = screen.getByRole('table');
+    const row = (name: RegExp) =>
+      within(table).getByRole('row', { name }).textContent ?? '';
+
+    expect(row(/hero/)).toContain('HP 12');
+    expect(row(/ally/)).toContain('healthy');
+    expect(row(/ally/)).not.toContain('HP 9');
+    expect(row(/goblin/)).toContain('bloodied');
+    expect(row(/goblin/)).not.toContain('HP 7');
+  });
+
   it('passes axe accessibility checks', async () => {
     const store = setup();
     const { container } = render(

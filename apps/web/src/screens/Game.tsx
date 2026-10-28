@@ -1259,6 +1259,7 @@ export function Game() {
               <TokenTable
                 store={gameStore}
                 viewerId={active ?? undefined}
+                ownEntityId={gameStore.getState().character?.id}
                 nameOf={nameOf}
               />
               <Describe

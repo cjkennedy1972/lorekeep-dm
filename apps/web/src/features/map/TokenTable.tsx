@@ -6,6 +6,8 @@ import './token-table.css';
 type Props = {
   store?: typeof gameStore;
   viewerId?: string;
+  /** The signed-in seat's own entity. Only this entity's exact HP is printed. */
+  ownEntityId?: string;
   nameOf?: (entityId: string) => string;
 };
 type Row = {
@@ -28,6 +30,7 @@ function stateWord(hpState: string | undefined): string {
 export function TokenTable({
   store = gameStore,
   viewerId,
+  ownEntityId,
   nameOf = (entityId) => entityId,
 }: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
@@ -52,9 +55,9 @@ export function TokenTable({
             state.battlemap!.diagonalRule,
           )
         : 0,
-      // Enemy HP is qualitative on the live path (hpState); sandbox entities carry exact HP.
+      // Exact HP is shown only for the viewer's own entity. Everything else, monsters included, gets the status word.
       state:
-        typeof entity.hp === 'number'
+        entity.id === ownEntityId && typeof entity.hp === 'number'
           ? `HP ${entity.hp}`
           : stateWord((entity as { hpState?: string }).hpState),
     }));
@@ -86,7 +89,7 @@ export function TokenTable({
           a.name.localeCompare(b.name) ||
           a.id.localeCompare(b.id)),
     );
-  }, [state, viewer, ascending, nameOf]);
+  }, [state, viewer, ascending, nameOf, ownEntityId]);
   // Explicit roles keep the table semantics after the card layout switches the elements to block display.
   return (
     <section aria-label="Tokens and terrain" className="token-table">
