@@ -256,7 +256,10 @@ export function Game() {
               : current,
         );
       }
-      if (message.type === 'NarrationHistory') setOpeningHistorySynced(true);
+      if (message.type === 'NarrationHistory') {
+        setOpeningHistorySynced(true);
+        setHistoryRestoreCount((current) => current + 1);
+      }
       if (message.type === 'CombatTracker') {
         // Combat can start after we joined, so the join-time state has no map yet.
         if (!mapRef.current && !resyncAsked.current) {
