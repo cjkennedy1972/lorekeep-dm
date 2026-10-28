@@ -155,6 +155,20 @@ describe('Room solo DM turn lifecycle', () => {
           },
         });
         emit({
+          type: 'RollEvent',
+          turnId: 't1',
+          entityId: 'pc',
+          kind: 'damage',
+          attackId: 'greatsword',
+          targetId: 'monster',
+          breakdown: {
+            expression: '1d8+3',
+            dice: [{ sides: 8, value: 5, kept: true }],
+            modifiers: [{ label: 'damage', value: 3 }],
+            total: 8,
+          },
+        });
+        emit({
           type: 'NarrationChunk',
           turnId: 't1',
           text: 'A quiet ',
@@ -181,6 +195,12 @@ describe('Room solo DM turn lifecycle', () => {
     await joinSeated(room, idleAccountId, {
       send: (message) => idleMessages.push(message as Record<string, unknown>),
     });
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: { [accountId]: { id: 'pc' } },
+      } as never,
+    };
     const actionId = randomUUID();
     expect(
       await room.submitAction(accountId, actionId, 'I check the seal.'),
@@ -199,6 +219,23 @@ describe('Room solo DM turn lifecycle', () => {
     expect(streamedRoll.payload).not.toHaveProperty('total');
     expect(streamedRoll.payload).not.toHaveProperty('rolls');
     expect(streamedRoll.payload).not.toHaveProperty('modifier');
+    const streamedDamage = idleMessages.find(
+      (message) =>
+        message.type === 'RollEvent' &&
+        (message.payload as Record<string, unknown>).label === 'damage',
+    )!;
+    for (const message of [
+      ...messages.filter(
+        (candidate) =>
+          candidate.type === 'RollEvent' &&
+          (candidate.payload as Record<string, unknown>).actorId === 'pc',
+      ),
+      streamedDamage,
+    ]) {
+      expect(message.payload).not.toHaveProperty('total');
+      expect(message.payload).not.toHaveProperty('rolls');
+      expect(message.payload).not.toHaveProperty('modifier');
+    }
     expect(
       messages.findIndex((message) => message.type === 'RollEvent'),
     ).toBeLessThan(

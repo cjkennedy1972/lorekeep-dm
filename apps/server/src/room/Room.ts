@@ -5107,8 +5107,16 @@ export class Room {
             for (const [viewer, connection] of this.connections) {
               const controlled = this.controlledBy(viewer);
               const actorId = String(event.entityId ?? '');
+              const targetId = String(event.targetId ?? '');
+              const target = roomGameState(this.state)?.entities.find(
+                (entity) => entity.id === targetId,
+              );
               const revealAttack =
                 event.kind !== 'attack' || controlled.has(actorId);
+              const revealDamage =
+                event.kind !== 'damage' ||
+                (target?.team === 'party' &&
+                  (controlled.has(actorId) || controlled.has(targetId)));
               connection.send({
                 seq: this.seq,
                 type: 'RollEvent',
@@ -5116,7 +5124,7 @@ export class Room {
                   event,
                   !!actorId && !controlled.has(actorId),
                   revealAttack,
-                  controlled.has(actorId),
+                  revealDamage,
                 ),
               } as ServerMessage);
             }
@@ -5933,27 +5941,34 @@ export class Room {
           seq: this.seq,
           type: 'CombatEvents',
           payload: {
-            events: visible.map((event) =>
-              toWireEvent(
+            events: visible.map((event) => {
+              const target = state.entities.find(
+                (entity) => entity.id === event.targetId,
+              );
+              const actor = state.entities.find(
+                (entity) => entity.id === event.entityId,
+              );
+              const revealDamage =
+                event.type !== 'RollEvent' ||
+                event.kind !== 'damage' ||
+                (target?.team === 'party' &&
+                  (controlled.has(String(event.entityId)) ||
+                    (actor?.kind === 'monster' &&
+                      controlled.has(String(event.targetId)))));
+              return toWireEvent(
                 event,
                 pcIds.has(String(event.entityId)) &&
                   !controlled.has(String(event.entityId)),
                 event.type !== 'RollEvent' ||
                   event.kind !== 'attack' ||
                   controlled.has(String(event.entityId)),
-                event.type !== 'RollEvent' ||
-                  event.kind !== 'damage' ||
-                  controlled.has(String(event.entityId)) ||
-                  (state.entities.find((entity) => entity.id === event.entityId)
-                    ?.kind === 'monster' &&
-                    typeof event.targetId === 'string' &&
-                    controlled.has(String(event.targetId))),
+                revealDamage,
                 event.type === 'RollEvent' &&
                   event.kind === 'damage' &&
                   typeof event.targetId === 'string' &&
                   !hidden.has(String(event.targetId)),
-              ),
-            ),
+              );
+            }),
           },
         } as ServerMessage);
     }

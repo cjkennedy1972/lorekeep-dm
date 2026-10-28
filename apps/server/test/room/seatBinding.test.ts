@@ -947,6 +947,57 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(otherEvents[2]).not.toHaveProperty('modifier');
   });
 
+  it('redacts damage-roll totals against monsters from both combat viewers', async () => {
+    const { f, entA } = await twoSeatCombat();
+    const state = f.room.state.gameState as { combatRoom: unknown };
+    const inbox = {
+      [f.accountA]: [] as Record<string, unknown>[],
+      [f.accountB]: [] as Record<string, unknown>[],
+    };
+    for (const account of [f.accountA, f.accountB])
+      await f.room.subscribe(account, {
+        send: (message: Record<string, unknown>) =>
+          void inbox[account]!.push(message),
+      });
+    for (const messages of Object.values(inbox)) messages.length = 0;
+
+    (
+      f.room as unknown as { announceCombat(...args: unknown[]): void }
+    ).announceCombat(
+      state.combatRoom,
+      [
+        {
+          type: 'RollEvent',
+          entityId: entA,
+          kind: 'damage',
+          attackId: 'greatsword',
+          targetId: 'goblin',
+          breakdown: {
+            expression: '1d8+3',
+            dice: [{ sides: 8, value: 5, kept: true }],
+            modifiers: [{ label: 'damage', value: 3 }],
+            total: 8,
+          },
+          publicDamage: 8,
+        },
+      ],
+      f.accountA,
+    );
+
+    for (const account of [f.accountA, f.accountB]) {
+      const messages = inbox[account]!.filter(
+        (message) => message.type === 'CombatEvents',
+      );
+      const event = (
+        messages[0]!.payload as { events: Record<string, unknown>[] }
+      ).events[0]!;
+      expect(event).toMatchObject({ actorId: entA, targetId: 'goblin' });
+      expect(event).not.toHaveProperty('total');
+      expect(event).not.toHaveProperty('rolls');
+      expect(event).not.toHaveProperty('modifier');
+    }
+  });
+
   it('strips engine-only seed and engineReactions from every viewer, keeping them server-side', async () => {
     const { f, seen } = await twoSeatCombat();
     for (const account of [f.accountA, f.accountB]) {
