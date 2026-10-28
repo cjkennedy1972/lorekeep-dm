@@ -283,10 +283,10 @@ describe('createInputGate', () => {
   });
 
   it('fails closed when the session boundary union cannot be loaded', async () => {
-    const queries: string[] = [];
+    const queries: { sql: string; params: unknown[] }[] = [];
     const db: InputGateDb = {
-      async query(sql: string) {
-        queries.push(sql);
+      async query(sql: string, params: unknown[] = []) {
+        queries.push({ sql, params });
         if (sql.includes('SELECT content_tier'))
           return {
             rows: [
@@ -309,18 +309,23 @@ describe('createInputGate', () => {
     const { log } = recordingLog();
     const gate = createInputGate({ db, moderator, log });
 
-    expect(
-      await gate.check({
+    await expect(
+      gate.checkDetailed({
         text: innocent,
         surface: 'player-action',
         accountId: 'a1',
         sessionId: 'session-1',
       }),
-    ).toBe('block');
+    ).resolves.toMatchObject({
+      decision: 'block',
+      source: 'failclosed',
+      attributable: false,
+    });
     expect(calls).toHaveLength(0);
     expect(
-      queries.some((sql) => sql.includes('INSERT INTO moderation_log')),
-    ).toBe(true);
+      queries.find((query) => query.sql.includes('INSERT INTO moderation_log'))
+        ?.params,
+    ).toEqual(expect.arrayContaining(['failclosed', 'boundaries']));
   });
 
   it('hard floor blocks before the judge is called and logs the row', async () => {
@@ -376,6 +381,20 @@ describe('createInputGate', () => {
         'hard-floor',
       ]),
     );
+  });
+
+  it('reports a real judge outage as a fail-closed detailed block', async () => {
+    const { db } = fakeDb();
+    const { moderator } = stubModerator(() => failClosedVerdict(3));
+    const gate = createInputGate({ db, moderator, log: recordingLog().log });
+
+    await expect(
+      gate.checkDetailed({ text: innocent, surface: 'player-action' }),
+    ).resolves.toMatchObject({
+      decision: 'block',
+      source: 'failclosed',
+      attributable: false,
+    });
   });
 
   it('never stores the submitted text in the log row', async () => {

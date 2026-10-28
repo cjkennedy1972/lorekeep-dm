@@ -52,6 +52,8 @@ export type InputDecision = 'allow' | 'block' | 'limited' | 'busy';
 /** Never throws. */
 export interface InputGate {
   check(input: InputCheck): Promise<InputDecision>;
+  /** Same decision as check, plus the source: `failclosed` means the block came from an unavailable judge or input store, not the content. */
+  checkDetailed(input: InputCheck): Promise<ChatInputResult>;
   checkChat?(input: InputCheck): Promise<ChatInputResult>;
   logChatRejection?(input: ChatRejectionLog): Promise<string | undefined>;
   logChatFailure?(input: ChatRejectionLog): Promise<string | undefined>;
@@ -215,7 +217,7 @@ export function createInputGate({
           input,
           'other',
           'failclosed',
-          'tier',
+          'boundaries',
         );
         return {
           decision: 'block',
@@ -289,6 +291,9 @@ export function createInputGate({
   return {
     async check(input) {
       return (await evaluate(input)).decision;
+    },
+    checkDetailed(input) {
+      return evaluate(input);
     },
     checkChat(input) {
       return evaluate({ ...input, surface: 'chat' });

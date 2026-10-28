@@ -1,3 +1,13 @@
-import type { InputGate } from '../../src/safety/inputGate.js';
+import type { ChatInputResult, InputGate } from '../../src/safety/inputGate.js';
 
-export const allowInputGate: InputGate = { check: async () => 'allow' };
+const allowResult: ChatInputResult = {
+  decision: 'allow',
+  source: 'judge',
+  category: 'none',
+  attributable: true,
+};
+
+export const allowInputGate: InputGate = {
+  check: async () => 'allow',
+  checkDetailed: async () => allowResult,
+};

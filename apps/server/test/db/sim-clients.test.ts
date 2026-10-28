@@ -50,6 +50,13 @@ function holdGate(heldText: string) {
       }
       return base.check(input);
     },
+    checkDetailed: async (input) => {
+      if (input.text === heldText) {
+        reached();
+        await open;
+      }
+      return base.checkDetailed(input);
+    },
   };
   return { gate, atGate, release };
 }

@@ -27,6 +27,7 @@ import {
   turnFailureNotice,
 } from '../features/narration/logState.js';
 import { ActionInput } from '../features/input/ActionInput.js';
+import { useDockHeight } from '../features/input/useDockHeight.js';
 import { ClarificationReply } from '../features/input/ClarificationReply.js';
 import { pendingInputFor } from '../features/input/pendingInput.js';
 import { RoundPanel } from '../features/round/RoundPanel.js';
@@ -493,6 +494,8 @@ export function Game() {
   }, [reactionNotice?.reactionId, reactionNotice?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
+  const dockRef = useRef<HTMLDivElement>(null);
+  useDockHeight(dockRef);
   const pendingActionRef = useRef<PendingAction | null>(null);
   const updatePendingAction = (
     update: (current: PendingAction | null) => PendingAction | null,
@@ -974,10 +977,10 @@ export function Game() {
         <ConnectionStatus status={live.status} />
         <Link to={`/rooms/${id}`}>Back to lobby</Link>
       </header>
-      {live.status === 'connected' && live.error && (
+      {(live.status === 'reconnecting' || live.status === 'closed') && (
         <p role="alert">
-          The game server is unavailable. Your game is safe; retry your action
-          when reconnected.
+          The connection to the table dropped. Your game is safe. Actions can be
+          sent again once it reconnects.
         </p>
       )}
       <p role="status" aria-live="polite">
@@ -1138,7 +1141,7 @@ export function Game() {
             />
           )}
         </div>
-        <div className="game-area game-area--dock">
+        <div className="game-area game-area--dock" ref={dockRef}>
           <ActionInput
             onSubmit={submitAction}
             pending={Boolean(inputPending)}
