@@ -32,13 +32,15 @@ it('serves the recorded combat stack for browser e2e', async () => {
   // Explicit test-only opt-in for the solo restart/recovery browser flow.
   process.env.SOLO_OWNER_RESUME_RECOVERY_ENABLED = 'true';
   process.env.LLM_FIXTURE_MODE = 'strict';
+  // Exercise the authored encounter path instead of the legacy freeform fixture.
+  process.env.LOREKEEP_ADR_038_STORY_COMBAT = 'true';
   const db = new Pool({ connectionString: url });
   const runner = new ProductionSoloTurnRunner(
     db,
     undefined,
     'strict',
     'unused.ndjson',
-    scriptedDm(),
+    scriptedDm([], 'encounter-e2-lookouts'),
   );
   const rooms = new RoomRegistry(
     new Persistence(db),
@@ -91,6 +93,7 @@ it('serves the recorded combat stack for browser e2e', async () => {
   await room.persistGameState({
     ...preCombatGame(party),
     characters: { [accountId]: party },
+    sceneId: 'scene-warren-gallery',
   });
   mkdirSync(dirname(stateFile), { recursive: true });
   writeFileSync(

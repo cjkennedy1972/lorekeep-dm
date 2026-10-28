@@ -38,6 +38,7 @@ import {
   toWireEvent,
   trackerMessage,
   projectCombatForViewer,
+  combatOpeningSummary,
   hiddenEntityIds as hiddenIdsOf,
   reactionMessage,
   reactionOpenMessage,
@@ -4710,6 +4711,7 @@ export class Room {
     const audience = new Set(this.connections.values());
     let matureAudience: ReadonlySet<Connection> | undefined;
     let liveCompletion: unknown;
+    let moderationHeld = false;
     let committedCompletion = false;
     const turnAbort = new AbortController();
     this.turnAbort = turnAbort;
@@ -4747,7 +4749,11 @@ export class Room {
           } else if (type === 'NarrationCompleted') {
             // The committed completion below carries the persisted seq; this copy only covers turns that commit none.
             liveCompletion = event;
+            moderationHeld ||=
+              (event as { moderationHeld?: boolean }).moderationHeld === true;
           } else if (type === 'NarrationChunk') {
+            moderationHeld ||=
+              (event as { moderationHeld?: boolean }).moderationHeld === true;
             const message = {
               seq: this.seq,
               type,
@@ -5201,7 +5207,11 @@ export class Room {
           const reportableNarration = {
             seq: narrationEvent.seq,
             type: 'NarrationCompleted',
-            payload: { turnId: id, text: result.narration },
+            payload: {
+              turnId: id,
+              text: result.narration,
+              ...(moderationHeld ? { moderationHeld: true } : {}),
+            },
           } as ServerMessage;
           if (matureAudience)
             this.deliverMature(reportableNarration, matureAudience);
@@ -5225,8 +5235,26 @@ export class Room {
         if (narrationEvent && !clarification)
           await this.deliverSpotlightPrompt();
         const room = roomGameState(nextState);
-        if (room && combatEvents.length)
+        if (room && combatEvents.length) {
           this.announceCombat(room, combatEvents, accountId);
+          if (
+            moderationHeld &&
+            combatEvents.some((event) => event.type === 'CombatStarted') &&
+            !room.ended
+          ) {
+            for (const [viewer, connection] of this.connections) {
+              connection.send({
+                seq: this.seq,
+                type: 'NarrationChunk',
+                payload: {
+                  turnId: actionId,
+                  text: combatOpeningSummary(room, this.controlledBy(viewer)),
+                  index: 1,
+                },
+              } as ServerMessage);
+            }
+          }
+        }
       }
       if (liveCompletion && !committedCompletion) {
         const message = {

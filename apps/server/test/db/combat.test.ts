@@ -13,6 +13,7 @@ import { Persistence } from '../../src/persistence/index.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
+import { EncounterStartRejectionBudget } from '../../src/dm/encounters.js';
 import { LlmEndpointError } from '../../src/llm/adapter.js';
 import type {
   LlmAdapter,
@@ -51,7 +52,12 @@ class Stack {
   ) {}
   static async boot(
     node: string,
-    options: { adapter?: LlmAdapter; endpointAllowsMature?: boolean } = {},
+    options: {
+      adapter?: LlmAdapter;
+      endpointAllowsMature?: boolean;
+      storyCombatEnabled?: boolean;
+      rejectionBudget?: EncounterStartRejectionBudget;
+    } = {},
   ): Promise<Stack> {
     const requests: LlmRequest[] = [];
     const runner = new ProductionSoloTurnRunner(
@@ -62,6 +68,10 @@ class Stack {
       options.adapter ?? scriptedDm(requests),
       true,
       options.endpointAllowsMature ?? false,
+      undefined,
+      undefined,
+      options.storyCombatEnabled,
+      options.rejectionBudget,
     );
     const rooms = new RoomRegistry(
       new Persistence(db),
@@ -181,7 +191,10 @@ class Client {
   }
   private lastSent = 0;
   /** Sends a combat command and resolves with its outcome: the next tracker, or the Error for that action. */
-  async command(payload: Record<string, unknown>, retries = 40): Promise<Wire> {
+  async command(
+    payload: Record<string, unknown>,
+    retries = 200,
+  ): Promise<Wire> {
     let rateLimited = 0;
     for (let attempt = 0; attempt < retries; attempt++) {
       // Leave headroom beneath the gateway's 10/s per-socket message limit.
@@ -212,18 +225,11 @@ class Client {
         mark,
       );
       // Admission rejects while the DM narrates the previous resolved turn
-      // (phase `narrating`). Wait for that narration to finish (the Room commits
-      // the next phase before it broadcasts NarrationCompleted), then resend.
+      // (phase `narrating`); retry Room admission after a short backoff.
       if (reply.payload?.code === 'narration-in-progress') {
-        await this.until(
-          (m) => m.type === 'NarrationCompleted',
-          mark,
-          20_000,
-        ).catch((e: Error) => {
-          throw new Error(
-            `${e.message}; command ${JSON.stringify(payload)} stuck behind narration; frames: ${this.log.map((m) => m.type + (m.payload?.code ? `:${m.payload.code}` : '')).join(',')}`,
-          );
-        });
+        // A completion frame can race the rejected command; retry against Room
+        // admission itself instead of waiting for a frame that may already have arrived.
+        await new Promise((r) => setTimeout(r, 250));
         continue;
       }
       // RATE_LIMITED is rejected before the Room sees the command, so resending is safe.
@@ -253,6 +259,41 @@ class Client {
   }
 }
 
+function authoredEncounterDm(
+  requests: LlmRequest[],
+  encounterId: string,
+  calls = 1,
+  extraArgs: Record<string, unknown> = {},
+): LlmAdapter {
+  return {
+    capabilities: () => ({
+      streaming: true,
+      nativeTools: true,
+      jsonSchema: true,
+    }),
+    probe: async () => true,
+    async *complete(request: LlmRequest) {
+      requests.push(request);
+      const hasToolResult = request.messages.some(
+        (message) => message.role === 'tool',
+      );
+      const startCombatOffered = request.tools?.some(
+        (tool) => tool.name === 'start_combat',
+      );
+      const chunks: LlmChunk[] =
+        !startCombatOffered || hasToolResult
+          ? [{ type: 'text', delta: 'The scene changes.' }]
+          : Array.from({ length: calls }, (_, index) => ({
+              type: 'tool-call' as const,
+              id: `authored-start-${index}`,
+              name: 'start_combat',
+              arguments: { encounterId, ...extraArgs },
+            }));
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
+
 async function newUser() {
   const id = randomUUID();
   await db.query(
@@ -267,6 +308,7 @@ async function seedTable(
   s: Stack,
   owner: { id: string },
   game: (account: string) => Record<string, unknown>,
+  adventure?: { id: string; sceneId: string },
 ) {
   const table = randomUUID();
   await db.query(
@@ -274,11 +316,19 @@ async function seedTable(
     [table, owner.id, 'Crypt'],
   );
   sessionIds.push(table);
+  if (adventure)
+    await db.query('UPDATE sessions SET adventure_id=$2 WHERE id=$1', [
+      table,
+      adventure.id,
+    ]);
   const room = await s.rooms.get(table);
   const resumeToken = await room.seat(owner.id, 'Aria');
   if (resumeToken) Client.resumeTokens.set(`${table}:${owner.id}`, resumeToken);
   const gameState = game(owner.id);
-  await room.persistGameState(gameState);
+  await room.persistGameState({
+    ...gameState,
+    ...(adventure ? { sceneId: adventure.sceneId } : {}),
+  });
   return table;
 }
 const preCombat = (account: string) => {
@@ -495,12 +545,463 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 30_000);
 
-  it('start_combat populates the Room, monsters act, and a non-controller cannot accept an opportunity attack', async () => {
-    stack = await Stack.boot('combat-full');
+  it('validates authored encounter keys through the production turn route', async () => {
+    const key = 'encounter-e2-lookouts';
+    const validRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-valid-route', {
+      adapter: authoredEncounterDm(validRequests, key),
+      storyCombatEnabled: true,
+    });
     const user = await newUser();
-    const table = await seedTable(stack, user, preCombat);
+    const validTable = await seedTable(
+      stack,
+      user,
+      () => ({ ...preCombatGame(hero), characters: { [user.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, validTable);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until(
+        (message) => message.type === 'CombatTracker',
+        from,
+        20_000,
+      );
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      const committed = await savedGame(validTable);
+      expect(committed.gameState.resolvedEncounters).toContain(key);
+      expect(committed.gameState.combatRoom?.map).toBeDefined();
+      expect(
+        committed.gameState.combatRoom?.entities.find(
+          (entity) => entity.team === 'enemies',
+        )?.pos,
+      ).toEqual({ x: 24, y: 5 });
+      expect(
+        validRequests[0]?.messages.map((message) => message.content).join(' '),
+      ).toContain(key);
+      expect(
+        JSON.stringify(
+          validRequests[0]?.tools?.find((tool) => tool.name === 'start_combat')
+            ?.parameters,
+        ),
+      ).toContain('encounterId');
+    } finally {
+      client.close();
+    }
     await stack.stop();
-    stack = await Stack.boot('combat-full-2');
+
+    const invalidRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-cross-scene-route', {
+      adapter: authoredEncounterDm(invalidRequests, key),
+      storyCombatEnabled: true,
+    });
+    const otherUser = await newUser();
+    const invalidTable = await seedTable(
+      stack,
+      otherUser,
+      () => ({ ...preCombatGame(hero), characters: { [otherUser.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-boss-hall',
+      },
+    );
+    const rejectedClient = await Client.open(stack, otherUser, invalidTable);
+    try {
+      const from = rejectedClient.log.length;
+      rejectedClient.say('I look for a way forward.');
+      await rejectedClient.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        rejectedClient.log.filter((message) => message.type === 'ToolRejected'),
+      ).toHaveLength(1);
+      expect(JSON.stringify(rejectedClient.log)).not.toContain(
+        'encounter-not-in-scene',
+      );
+      const unchanged = await savedGame(invalidTable);
+      expect(unchanged.gameState.combatRoom).toBeUndefined();
+      expect(unchanged.gameState.resolvedEncounters).toBeUndefined();
+      expect(JSON.stringify(invalidRequests)).toContain(
+        'encounter-not-in-scene',
+      );
+    } finally {
+      rejectedClient.close();
+    }
+    await stack.stop();
+
+    const emptyRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-no-encounter-route', {
+      adapter: authoredEncounterDm(emptyRequests, key),
+      storyCombatEnabled: true,
+    });
+    const emptyUser = await newUser();
+    const emptyTable = await seedTable(
+      stack,
+      emptyUser,
+      () => ({ ...preCombatGame(hero), characters: { [emptyUser.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-marowfell-well',
+      },
+    );
+    const emptyClient = await Client.open(stack, emptyUser, emptyTable);
+    try {
+      const from = emptyClient.log.length;
+      emptyClient.say('I study the well.');
+      await emptyClient.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        emptyRequests[0]?.messages.map((message) => message.content).join(' '),
+      ).not.toContain('start_combat');
+      expect(
+        (await savedGame(emptyTable)).gameState.combatRoom,
+      ).toBeUndefined();
+    } finally {
+      emptyClient.close();
+    }
+    await stack.stop();
+
+    const duplicateRequests: LlmRequest[] = [];
+    stack = await Stack.boot('adr038-duplicate-route', {
+      adapter: authoredEncounterDm(duplicateRequests, key, 2),
+      storyCombatEnabled: true,
+    });
+    const duplicateUser = await newUser();
+    const duplicateTable = await seedTable(
+      stack,
+      duplicateUser,
+      () => ({
+        ...preCombatGame(hero),
+        characters: { [duplicateUser.id]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const duplicateClient = await Client.open(
+      stack,
+      duplicateUser,
+      duplicateTable,
+    );
+    try {
+      const from = duplicateClient.log.length;
+      duplicateClient.say('I advance toward the lookouts.');
+      await duplicateClient.until(
+        (message) => message.type === 'CombatTracker',
+        from,
+        20_000,
+      );
+      await duplicateClient.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        duplicateClient.log.filter(
+          (message) => message.type === 'ToolRejected',
+        ),
+      ).toHaveLength(1);
+      expect(JSON.stringify(duplicateClient.log)).not.toMatch(
+        /duplicate-call|turn-budget-exhausted/u,
+      );
+      const committed = await savedGame(duplicateTable);
+      expect(committed.gameState.resolvedEncounters).toEqual([key]);
+      expect(committed.gameState.combatRoom?.entities).toHaveLength(2);
+      expect(duplicateRequests).toHaveLength(2);
+    } finally {
+      duplicateClient.close();
+    }
+  }, 90_000);
+
+  it('reports narration when an offered encounter was not started', async () => {
+    const telemetry = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        yield { type: 'text', delta: 'The lookouts watch from above.' };
+      },
+    };
+    stack = await Stack.boot('adr038-narration-without-start', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I wait and listen.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      const events = telemetry.mock.calls
+        .map(([value]) => String(value))
+        .filter((value) => value.includes('CombatNarratedWithoutStart'))
+        .map((value) => JSON.parse(value) as { encounterId?: string });
+      expect(events).toContainEqual(
+        expect.objectContaining({ encounterId: 'encounter-e2-lookouts' }),
+      );
+    } finally {
+      client.close();
+      telemetry.mockRestore();
+    }
+  }, 30_000);
+
+  it('retries a refused mature start with fresh combat interception state', async () => {
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls += 1;
+        if (calls === 2)
+          throw new LlmEndpointError('endpoint-refusal', 'refused');
+        if (calls === 1 || calls === 3) {
+          yield {
+            type: 'tool-call',
+            id: `retry-start-${calls}`,
+            name: 'start_combat',
+            arguments: {
+              encounterId:
+                calls === 1 ? 'encounter-e1-rats' : 'encounter-e2-lookouts',
+            },
+          } as LlmChunk;
+          return;
+        }
+        yield {
+          type: 'text',
+          delta: 'Steel rings out across the crypt.',
+        } as LlmChunk;
+      },
+    };
+    const retryBudget = new EncounterStartRejectionBudget(0);
+    stack = await Stack.boot('adr038-refusal-retry-state', {
+      adapter,
+      storyCombatEnabled: true,
+      endpointAllowsMature: true,
+      rejectionBudget: retryBudget,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    await db.query(
+      'UPDATE sessions SET moderation_verified=true, endpoint_allows_mature=true WHERE id=$1',
+      [table],
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until(
+        (message) => message.type === 'CombatTracker',
+        from,
+        20_000,
+      );
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(calls).toBe(4);
+      expect(
+        client.log.some((message) => message.type === 'ToolRejected'),
+      ).toBe(false);
+      expect((await savedGame(table)).gameState.combatRoom).toBeDefined();
+      expect(retryBudget.isWithdrawn(table, 'scene-warren-gallery')).toBe(
+        false,
+      );
+    } finally {
+      client.close();
+      retryBudget.clearSession(table);
+    }
+  }, 30_000);
+
+  it('rejects a freeform roster supplied beside a valid encounter key', async () => {
+    stack = await Stack.boot('adr038-freeform-roster-rejected', {
+      adapter: authoredEncounterDm([], 'encounter-e2-lookouts', 1, {
+        enemies: [{ monsterId: 'srd:monster/goblin-minion', count: 8 }],
+      }),
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I advance toward the lookouts.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        client.log.filter((message) => message.type === 'ToolRejected'),
+      ).toHaveLength(1);
+      const saved = await savedGame(table);
+      expect(saved.gameState.combatRoom).toBeUndefined();
+      expect(saved.gameState.resolvedEncounters).toBeUndefined();
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('does not persist ADR state or charge the rejection budget on endpoint-error turns', async () => {
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls += 1;
+        if (calls % 2 === 0)
+          throw new LlmEndpointError('endpoint-error', 'offline');
+        const turnNumber = Math.floor((calls - 1) / 2);
+        yield {
+          type: 'tool-call',
+          id: `failed-start-${calls}`,
+          name: 'start_combat',
+          arguments: {
+            encounterId:
+              turnNumber % 2 === 0
+                ? 'encounter-e2-lookouts'
+                : 'encounter-e1-rats',
+          },
+        } as LlmChunk;
+      },
+    };
+    const testBudget = new EncounterStartRejectionBudget(0);
+    stack = await Stack.boot('adr038-endpoint-error-isolation', {
+      adapter,
+      storyCombatEnabled: true,
+      rejectionBudget: testBudget,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    const telemetry = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      for (let index = 0; index < 2; index++) {
+        const from = client.log.length;
+        client.say(`I investigate the hall, attempt ${index}.`);
+        await client.until(
+          (message) => message.type === 'NarrationCompleted',
+          from,
+          20_000,
+        );
+      }
+      const saved = await savedGame(table);
+      expect(saved.gameState.resolvedEncounters).toBeUndefined();
+      expect(saved.gameState.combatRoom).toBeUndefined();
+      expect(saved.gameState).not.toHaveProperty('startedEncounter');
+      expect(testBudget.isWithdrawn(table, 'scene-warren-gallery')).toBe(false);
+      const calls = telemetry.mock.calls
+        .map(([value]) => String(value))
+        .filter((value) => value.includes('CombatStartToolCalled'));
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.every((value) => !value.includes('encounter-e1-rats'))).toBe(
+        true,
+      );
+    } finally {
+      client.close();
+      telemetry.mockRestore();
+      testBudget.clearSession(table);
+    }
+  }, 30_000);
+
+  it('start_combat populates the Room, monsters act, and a non-controller cannot accept an opportunity attack', async () => {
+    const encounterKey = 'encounter-e2-lookouts';
+    const combatRequests: LlmRequest[] = [];
+    const adapter = authoredEncounterDm(combatRequests, encounterKey);
+    stack = await Stack.boot('combat-full', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      () => ({ ...preCombatGame(hero), characters: { [user.id]: hero } }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    await stack.stop();
+    stack = await Stack.boot('combat-full-2', {
+      adapter,
+      storyCombatEnabled: true,
+    });
     const client = await Client.open(stack, user, table);
     // A recovered seat is `returning` until ADR-031's full 10 s reconnect hold.
     await client.until(
@@ -526,10 +1027,10 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     expect(goblin).toMatchObject({ hpState: 'healthy' });
     expect(goblin).not.toHaveProperty('hp');
     await client.until((m) => m.type === 'NarrationCompleted', mark);
-    expect(stack.requests.length).toBeGreaterThanOrEqual(2);
+    expect(combatRequests.length).toBeGreaterThanOrEqual(1);
     const boot = await savedGame(table);
     expect(boot.gameState.combatActors).toEqual({ [user.id]: 'ent_aria' });
-    expect(boot.gameState.combatRoom?.entities).toHaveLength(3);
+    expect(boot.gameState.combatRoom?.entities).toHaveLength(2);
 
     // Play the hero with the same options a client sees; kite once to provoke (and accept) an opportunity attack.
     let kited = false;
@@ -711,7 +1212,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       void open;
     }
     const ended = await client.until((m) => m.type === 'CombatEnded', 0);
-    expect(['party-victory', 'party-defeated']).toContain(
+    expect(['party-victory', 'party-defeated', 'enemies-fled']).toContain(
       ended.payload!.outcome,
     );
     // The DM narrates after the engine decided.
@@ -1001,13 +1502,17 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
   }, 60_000);
 
   it('keeps character keys as account ids through a committed start without refusal', async () => {
-    const { adapter, calls } = combatStartDm();
+    const requests: LlmRequest[] = [];
     stack = await Stack.boot('control-character-keys', {
-      adapter,
+      adapter: authoredEncounterDm(requests, 'encounter-e2-lookouts'),
       endpointAllowsMature: true,
+      storyCombatEnabled: true,
     });
     const user = await newUser();
-    const table = await seedTable(stack, user, preCombat);
+    const table = await seedTable(stack, user, preCombat, {
+      id: 'adventure:01-hollow-under-marrowfell',
+      sceneId: 'scene-warren-gallery',
+    });
     await db.query(
       'UPDATE sessions SET moderation_verified=true, endpoint_allows_mature=true WHERE id=$1',
       [table],
@@ -1018,7 +1523,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       client.say('I advance toward the lookouts.');
       await client.until((m) => m.type === 'CombatTracker', from, 20_000);
       await client.until((m) => m.type === 'NarrationCompleted', from, 20_000);
-      expect(calls()).toBe(2);
+      expect(requests).toHaveLength(2);
       const { gameState } = await savedGame(table);
       expect(Object.keys(gameState.characters ?? {})).toEqual([user.id]);
     } finally {

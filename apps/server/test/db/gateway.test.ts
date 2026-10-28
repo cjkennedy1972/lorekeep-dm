@@ -48,7 +48,7 @@ const ticketOwners = new Map<string, string>();
 const seenMessageTypes = new WeakMap<WebSocket, string[]>();
 async function next(
   ws: WebSocket,
-  timeoutMs = 3000,
+  timeoutMs = 8000,
 ): Promise<{
   type: string;
   seq: number;

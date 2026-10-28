@@ -25,6 +25,10 @@ export const AdventureEncounterSchema = z.object({
   mapId: z.string().min(1),
   partySpawnMarkerId: z.string().min(1),
   enemySpawnMarkerId: z.string().min(1),
+  repeatable: z.boolean().default(false),
+  startTrigger: z
+    .enum(['hostile-action', 'scene-entry'])
+    .default('hostile-action'),
   rewards: z.array(AdventureRewardSchema).default([]),
   questHooks: z.array(AdventureQuestHookSchema).default([]),
 });

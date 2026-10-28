@@ -3,6 +3,7 @@ import {
   DMToolArgsSchema,
   DMToolCallSchema,
   DMToolErrorCodeSchema,
+  StartCombatEncounterArgsSchema,
   type DMToolErrorCode,
   type DMToolName,
   type DMTurnEvent,
@@ -224,6 +225,12 @@ function toolSchemas(input: TurnInput): LlmTool[] {
     if (name === 'ask_clarification' && !canAskClarification(input)) return [];
     if (input.prompt.readOnlyTools && !READ_ONLY_TOOLS.includes(name))
       return [];
+    if (
+      name === 'start_combat' &&
+      (input.prompt.activeMode === 'combat' ||
+        !input.prompt.offeredEncounterKeys?.length)
+    )
+      return [];
     return [
       {
         name,
@@ -231,12 +238,19 @@ function toolSchemas(input: TurnInput): LlmTool[] {
           input.toolDescriptions?.[name] ?? `Validated ${name} action.`,
         // Native tool calling needs real JSON schemas; empty parameters made models emit {} args.
         parameters: (input.toolSchemas?.[name] ??
-          zodSchema(
-            DMToolArgsSchema[name as keyof typeof DMToolArgsSchema],
-          )) as Record<string, unknown>,
+          zodSchema(toolArgsSchema(input, name))) as Record<string, unknown>,
       },
     ];
   });
+}
+function toolArgsSchema(input: TurnInput, name: string) {
+  if (
+    name === 'start_combat' &&
+    input.prompt.activeMode !== 'combat' &&
+    input.prompt.offeredEncounterKeys?.length
+  )
+    return StartCombatEncounterArgsSchema;
+  return DMToolArgsSchema[name as keyof typeof DMToolArgsSchema];
 }
 function canAskClarification(input: TurnInput): boolean {
   return (
@@ -248,6 +262,7 @@ function canAskClarification(input: TurnInput): boolean {
 function safeArgs(
   name: string,
   args: unknown,
+  input: TurnInput,
 ):
   | { success: true; value: unknown }
   | { success: false; hint: string; error: DMToolErrorCode } {
@@ -257,7 +272,7 @@ function safeArgs(
       error: 'unknown-tool',
       hint: 'Use a tool from the supplied tool list.',
     };
-  const schema = DMToolArgsSchema[name as DMToolName];
+  const schema = toolArgsSchema(input, name);
   const parsed = schema.safeParse(args);
   if (!parsed.success)
     return {
@@ -554,7 +569,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       });
       // Any prose co-emitted with calls is intentionally discarded.
       for (const call of calls) {
-        const validated = safeArgs(call.name, call.arguments);
+        const validated = safeArgs(call.name, call.arguments, input);
         const callSite = `${call.name}:${callHash(call.name, validated.success ? validated.value : call.arguments)}`;
         const attempt = (attempts.get(callSite) ?? 0) + 1;
         const reject = (
@@ -676,10 +691,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
           break;
         }
         if (
-          input.prompt.activeMode !== 'combat' &&
-          COMBAT_ONLY_TOOLS.includes(call.name)
+          (input.prompt.activeMode !== 'combat' &&
+            COMBAT_ONLY_TOOLS.includes(call.name)) ||
+          (input.prompt.activeMode === 'combat' && call.name === 'start_combat')
         ) {
-          reject('unknown-tool', 'This tool is unavailable outside combat.');
+          reject(
+            'unknown-tool',
+            'This tool is unavailable in the current mode.',
+          );
           retries++;
           if (retries >= MAX_RETRIES_PER_TURN) {
             makeFallback('budget-exhausted');
@@ -811,12 +830,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         turnId: input.turnId,
         text: gatedQuestion.text,
         index: 0,
+        ...(gatedQuestion.unavailable ? { moderationHeld: true } : {}),
       });
       emit({
         type: 'NarrationCompleted',
         turnId: input.turnId,
         text: gatedQuestion.text,
         words: words(gatedQuestion.text),
+        ...(gatedQuestion.unavailable ? { moderationHeld: true } : {}),
       });
     }
     return {
@@ -861,7 +882,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
   console.info(
     JSON.stringify({
       event: 'dm_turn_observability',
-      sessionId: input.sessionId ?? null,
+      sessionIdHash: input.sessionId
+        ? createHash('sha256').update(input.sessionId).digest('hex')
+        : null,
       turnId: input.turnId,
       toolsOffered: toolSchemas(input).map((tool) => tool.name),
       toolCalls: toolObservations,
@@ -937,6 +960,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       turnId: input.turnId,
       text: finalText,
       index: index++,
+      ...(gateOutcome === 'redirected' && gateHadUnavailableVerdict
+        ? { moderationHeld: true }
+        : {}),
     });
   }
   finalCount = words(finalText);
@@ -945,6 +971,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     turnId: input.turnId,
     text: finalText,
     words: finalCount,
+    ...(gateOutcome === 'redirected' && gateHadUnavailableVerdict
+      ? { moderationHeld: true }
+      : {}),
     ...(fallback ? { fallback } : {}),
   });
   const inSeq = input.eventSeqStart ?? 0;

@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import { DMToolArgsSchema, DMToolCallSchema } from '@game/schema';
+import {
+  DMToolArgsSchema,
+  DMToolCallSchema,
+  StartCombatEncounterArgsSchema,
+} from '@game/schema';
 import { z } from 'zod';
 import { projectState, quoteData, stableJson } from './projection.js';
 
@@ -48,6 +52,14 @@ export interface BuildPromptInput {
   readOnlyTools?: boolean;
   /** Optional versioned JSON schemas for schema-registry integrations. */
   toolSchemas?: Readonly<Record<string, unknown>>;
+  /** Authored encounter keys eligible to start in this exploration scene. */
+  offeredEncounterKeys?: readonly string[];
+  /** Authored, one-line scene hooks and trigger policy for offered encounters. */
+  offeredEncounters?: readonly {
+    key: string;
+    hook: string;
+    startTrigger: 'hostile-action' | 'scene-entry';
+  }[];
 }
 export interface PromptResult {
   blocks: [string, string, string, string];
@@ -111,14 +123,23 @@ function makeStatic(input: BuildPromptInput): string {
     .map((tool) => tool.shape.name.value)
     .filter((name) => {
       if (input.readOnlyTools) return READ_ONLY_TOOLS.includes(name);
+      if (name === 'start_combat')
+        return (
+          input.activeMode !== 'combat' &&
+          Boolean(input.offeredEncounterKeys?.length)
+        );
       if (input.activeMode === 'combat') return true;
-      return ![...COMBAT_ONLY_TOOLS, 'start_combat'].includes(name);
+      return !COMBAT_ONLY_TOOLS.includes(name);
     });
   const schemas = modeTools.map((name) => ({
     name,
     schema:
-      input.toolSchemas?.[name] ??
-      zodSchema(DMToolArgsSchema[name as keyof typeof DMToolArgsSchema]),
+      name === 'start_combat' &&
+      input.activeMode !== 'combat' &&
+      input.offeredEncounterKeys?.length
+        ? zodSchema(StartCombatEncounterArgsSchema)
+        : (input.toolSchemas?.[name] ??
+          zodSchema(DMToolArgsSchema[name as keyof typeof DMToolArgsSchema])),
   }));
   return [
     STATIC_PERSONA,
@@ -127,9 +148,7 @@ function makeStatic(input: BuildPromptInput): string {
     RULES_CHEATSHEET,
   ].join('\n\n');
 }
-export function zodSchema(
-  schema: (typeof DMToolArgsSchema)[keyof typeof DMToolArgsSchema],
-): unknown {
+export function zodSchema(schema: z.ZodType): unknown {
   return sortSchemaKeys(z.toJSONSchema(schema));
 }
 
@@ -233,6 +252,25 @@ function makeDynamic(
       : '',
     `THIS ROUND\n${stableJson((input.turn.roundInputs ?? []).map((item) => quoteData('INPUT', stableJson(item))))}`,
     `CURRENT PLAYER\n${quoteData('PLAYER', input.turn.playerText)}`,
+    input.activeMode !== 'combat' &&
+    !input.readOnlyTools &&
+    (input.offeredEncounters?.length || input.offeredEncounterKeys?.length)
+      ? [
+          'Encounters you may start from this scene:',
+          ...(
+            input.offeredEncounters ??
+            (input.offeredEncounterKeys ?? []).map((key) => ({
+              key,
+              hook: input.session.currentScene?.title ?? 'Current scene',
+              startTrigger: 'hostile-action' as const,
+            }))
+          ).map(
+            ({ key, hook, startTrigger }) =>
+              `${key} — ${hook}; ${startTrigger === 'scene-entry' ? 'starts on scene entry: call start_combat on your first turn in this scene' : "call only if the player's accepted action is hostile"}`,
+          ),
+          'Never narrate a combat resolution without a successful start_combat call. Do not mention tools, ids, or rules text to the player.',
+        ].join('\n')
+      : '',
   ]
     .filter(Boolean)
     .join('\n\n');

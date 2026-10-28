@@ -105,7 +105,7 @@
     },
     {
       "id": "encounter-e2-lookouts",
-      "monsterIds": ["monster:goblin-warrior"],
+      "monsterIds": ["monster:goblin-lookout"],
       "mapId": "adv01-warrens",
       "partySpawnMarkerId": "mk_e2_party",
       "enemySpawnMarkerId": "mk_e2_enemy"

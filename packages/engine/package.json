@@ -28,6 +28,7 @@
     "@types/node": "26.0.0"
   },
   "dependencies": {
-    "@game/schema": "workspace:*"
+    "@game/schema": "workspace:*",
+    "zod": "4.1.12"
   }
 }

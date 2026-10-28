@@ -1,4 +1,9 @@
-import { AdventureSchema, type DMTurnEvent } from '@game/schema';
+import { createHash } from 'node:crypto';
+import {
+  AdventureSchema,
+  StartCombatEncounterArgsSchema,
+  type DMTurnEvent,
+} from '@game/schema';
 import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { concealedEntities } from './eventVisibility.js';
@@ -63,6 +68,12 @@ import {
 import type { LlmAdapter } from '../llm/adapter.js';
 import type { RoomCombatState } from './combatTypes.js';
 import {
+  encounterStartRejectionBudget,
+  encounterKeysForTurn,
+  offeredEncounters,
+  resolveEncounter,
+} from '../dm/encounters.js';
+import {
   consumeOptionHandle,
   roomTurnKey,
   runCombatMapTool,
@@ -72,6 +83,21 @@ import {
   type SoloTurnRequest,
   type SoloTurnRunner,
 } from './dmTurn.js';
+
+function combatStartTelemetry(
+  event: string,
+  fields: Record<string, unknown>,
+): void {
+  console.info(JSON.stringify({ event, ...fields }));
+}
+function telemetryEncounterId(value: string, offered: ReadonlySet<string>) {
+  return offered.has(value)
+    ? { encounterId: value }
+    : { encounterIdHash: createHash('sha256').update(value).digest('hex') };
+}
+function telemetrySessionId(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
 
 type GameState = {
   characters?: Record<string, ToolExecutorState['actors'][string]>;
@@ -87,8 +113,10 @@ type GameState = {
   lastPlayerText?: string;
   world?: WorldRegistry;
   combatRoom?: RoomCombatState;
+  resolvedEncounters?: string[];
 };
 type CombatOutput = {
+  map?: unknown;
   entities?: { id: string; hp: number }[];
   combat?: unknown;
   xp?: Record<string, number>;
@@ -115,6 +143,7 @@ export function mergeCombatOutput<T extends object>(
       ),
     },
     ...(name === 'start_combat' ? { combatSeed: out.rng } : {}),
+    ...(name === 'start_combat' && out.map ? { map: out.map } : {}),
   };
 }
 /** Live combatant whose turn it is; not persisted. Null outside combat or once combat ended. */
@@ -242,6 +271,13 @@ function refusalWatch(adapter: LlmAdapter, onRefusal: () => void): LlmAdapter {
   };
 }
 
+/** ADR-038 stays disabled by default until the rollout flag is explicitly enabled. */
+export function storyCombatFlagEnabled(
+  value = process.env.LOREKEEP_ADR_038_STORY_COMBAT,
+): boolean {
+  return value === 'true';
+}
+
 export class ProductionSoloTurnRunner implements SoloTurnRunner {
   private readonly catalog = loadCatalog();
   private readonly egress = createEndpointEgress();
@@ -259,6 +295,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     private readonly endpointAllowsMature = false,
     private readonly moderatorOverride?: Moderator,
     private readonly leaveJudgeOverride?: LeaveJudge,
+    private readonly storyCombatEnabled = storyCombatFlagEnabled(),
+    private readonly rejectionBudget = encounterStartRejectionBudget,
   ) {}
 
   async run(
@@ -314,7 +352,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           );
     if (!catalog) throw new Error('Pinned catalog version unavailable');
     const state = asRecord(request.state) as GameState;
+    const initialCombatRoom = state.combatRoom;
     const initialSceneId = state.sceneId;
+    this.rejectionBudget.enterScene(request.sessionId, initialSceneId);
     let transitionedSceneId: string | undefined;
     let adventureCompleted: boolean | undefined;
     const adventure =
@@ -324,6 +364,64 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const currentScene = adventure?.ok
       ? adventure.adventure.scenes.find((scene) => scene.id === initialSceneId)
       : undefined;
+    const resolvedSet = new Set(
+      Array.isArray(state.resolvedEncounters)
+        ? state.resolvedEncounters.filter(
+            (value): value is string => typeof value === 'string',
+          )
+        : [],
+    );
+    const pendingEncounterRejectionReasons = new Set<string>();
+    // Tool and combat state is isolated per output-gate attempt.
+    let attemptState: {
+      startedEncounter?: string;
+      startCombatCalled: boolean;
+      liveRoom?: RoomCombatState;
+      pendingRoom?: RoomCombatState;
+    } = { startCombatCalled: false, liveRoom: initialCombatRoom };
+    const storyCombatEnabled = this.storyCombatEnabled;
+    const sessionId = request.sessionId;
+    const budgetWithdrawn =
+      this.storyCombatEnabled &&
+      !!initialSceneId &&
+      this.rejectionBudget.isWithdrawn(request.sessionId, initialSceneId);
+    const eligibleEncounterKeys =
+      adventure?.ok && initialSceneId
+        ? offeredEncounters(adventure.adventure, initialSceneId, resolvedSet)
+        : [];
+    const offeredEncounterKeys = encounterKeysForTurn(
+      this.storyCombatEnabled,
+      eligibleEncounterKeys,
+      budgetWithdrawn,
+    );
+    for (const encounterId of offeredEncounterKeys)
+      combatStartTelemetry('CombatStartToolOffered', {
+        sessionIdHash: telemetrySessionId(sessionId),
+        activeMode: 'exploration',
+        sceneId: initialSceneId,
+        ...telemetryEncounterId(encounterId, new Set(eligibleEncounterKeys)),
+      });
+    const offeredEncounterPrompt =
+      adventure?.ok && initialSceneId
+        ? offeredEncounterKeys.flatMap((key) => {
+            const encounter = adventure.adventure.encounters.find(
+              (item) => item.id === key,
+            );
+            if (!encounter) return [];
+            return [
+              {
+                key,
+                hook:
+                  currentScene?.text
+                    .split(/(?<=[.!?])\s+/u)[0]
+                    ?.slice(0, 240) ??
+                  currentScene?.title ??
+                  'Current scene',
+                startTrigger: encounter.startTrigger,
+              },
+            ];
+          })
+        : [];
     const nextScenes = currentScene
       ? currentScene.nextSceneIds.flatMap((id) => {
           const scene = adventure!.ok
@@ -522,8 +620,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const turnStartEngineState = cloneEngineState(engineState);
     // Authoritative Room combat state for map tools; tracks every commit within this DM turn.
     const turnStartRoom = state.combatRoom;
-    let liveRoom = turnStartRoom;
-    let pendingRoom: RoomCombatState | undefined;
     let spentHandle: string | undefined;
     const isHost = table.rows[0].owner_account_id === request.accountId;
     const otherSeatIds = Object.entries(actors)
@@ -558,7 +654,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         // A map suggestion may already have staged position/option handles for
         // this call. Apply cast resource changes to that latest room rather than
         // letting the staged snapshot mask them at the commit point.
-        const combatRoom = pendingRoom ?? (previous as GameState).combatRoom;
+        const combatRoom =
+          attemptState.pendingRoom ?? (previous as GameState).combatRoom;
         const updatedCombatRoom =
           combatRoom &&
           (nextEngine.resources ||
@@ -622,12 +719,20 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         const committedRoom =
           spent && afterCast
             ? consumeOptionHandle(afterCast, spent)
-            : (updatedCombatRoom ?? pendingRoom);
-        pendingRoom = undefined;
-        liveRoom = committedRoom;
+            : (updatedCombatRoom ?? attemptState.pendingRoom);
+        attemptState.pendingRoom = undefined;
+        attemptState.liveRoom = committedRoom;
         return {
           ...(previous as GameState),
           gameEngine: withoutCatalog(nextEngine),
+          ...(attemptState.startedEncounter
+            ? {
+                resolvedEncounters: [
+                  ...resolvedSet,
+                  attemptState.startedEncounter,
+                ],
+              }
+            : {}),
           ...(committedRoom ? { combatRoom: committedRoom } : {}),
           characters: Object.fromEntries(
             Object.entries((previous as GameState).characters ?? actors).map(
@@ -663,6 +768,139 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             value: { state: current, events: [event], rng: seed },
           };
         }
+        let engineCall: unknown = call;
+        let encounterMap: unknown;
+        if (request.name === 'start_combat') {
+          const rawEncounterId = (
+            request.args as { encounterId?: unknown } | undefined
+          )?.encounterId;
+          const encounterTelemetryId =
+            typeof rawEncounterId === 'string'
+              ? rawEncounterId
+              : JSON.stringify(request.args ?? {});
+          combatStartTelemetry('CombatStartToolCalled', {
+            sessionIdHash: telemetrySessionId(sessionId),
+            activeMode: 'exploration',
+            sceneId: initialSceneId,
+            ...telemetryEncounterId(
+              encounterTelemetryId,
+              new Set(offeredEncounterKeys),
+            ),
+          });
+          const rejectEncounterStart = (rejectionCode: string) => {
+            pendingEncounterRejectionReasons.add(rejectionCode);
+            combatStartTelemetry('CombatStartRejected', {
+              sessionIdHash: telemetrySessionId(sessionId),
+              activeMode: 'exploration',
+              ...(initialSceneId ? { sceneId: initialSceneId } : {}),
+              ...telemetryEncounterId(
+                encounterTelemetryId,
+                new Set(offeredEncounterKeys),
+              ),
+              rejectionCode,
+            });
+          };
+          if (!storyCombatEnabled)
+            return {
+              ok: false,
+              error: 'unknown-tool',
+              hint: 'Authored combat starts are unavailable.',
+              events: [],
+            };
+          if (attemptState.startCombatCalled) {
+            rejectEncounterStart('duplicate-call');
+            return {
+              ok: false,
+              error: 'turn-budget-exhausted',
+              hint: 'Combat has already been considered this turn; narrate the established outcome.',
+              events: [],
+            };
+          }
+          attemptState.startCombatCalled = true;
+          if (attemptState.liveRoom && !attemptState.liveRoom.ended) {
+            rejectEncounterStart('active-combat');
+            return {
+              ok: false,
+              error: 'illegal-transition',
+              hint: 'An encounter is already active.',
+              events: [],
+            };
+          }
+          const asKey = StartCombatEncounterArgsSchema.safeParse(request.args);
+          if (!asKey.success) {
+            rejectEncounterStart('invalid-encounter-key');
+            return {
+              ok: false,
+              error: 'schema-violation',
+              hint: 'Use an offered authored encounter key.',
+              events: [],
+            };
+          }
+          if (asKey.success) {
+            if (attemptState.startedEncounter) {
+              rejectEncounterStart('duplicate-call');
+              return {
+                ok: false,
+                error: 'turn-budget-exhausted',
+                hint: 'Combat has already started this turn; narrate it.',
+                events: [],
+              };
+            }
+            const resolved =
+              adventure?.ok && initialSceneId
+                ? resolveEncounter(
+                    adventure.adventure,
+                    initialSceneId,
+                    asKey.data.encounterId,
+                    resolvedSet,
+                    new Set(
+                      attemptState.startedEncounter
+                        ? [attemptState.startedEncounter]
+                        : [],
+                    ),
+                  )
+                : ({ ok: false, code: 'unknown-encounter' } as const);
+            if (!resolved.ok) {
+              rejectEncounterStart(resolved.code);
+              return {
+                ok: false,
+                error:
+                  resolved.code === 'ENCOUNTER_ALREADY_USED'
+                    ? 'illegal-transition'
+                    : 'unknown-entity',
+                hint: `${resolved.code}: choose one of the offered encounter keys.`,
+                events: [],
+              };
+            }
+            encounterMap = adventure!.ok
+              ? adventure!.adventure.maps.find(
+                  (map) => map.mapId === resolved.mapId,
+                )
+              : undefined;
+            if (!encounterMap) {
+              rejectEncounterStart('encounter-roster-invalid');
+              return {
+                ok: false,
+                error: 'no-spawn-space',
+                hint: 'The encounter map is unavailable.',
+                events: [],
+              };
+            }
+            engineCall = {
+              name: 'start_combat',
+              args: {
+                enemies: resolved.enemies.map(
+                  ({ monsterId, count, spawnRef }) => ({
+                    monsterId,
+                    count,
+                    spawnRef,
+                  }),
+                ),
+                ambushSide: resolved.ambushSide,
+              },
+            };
+          }
+        }
         const serializedArgs = JSON.stringify(request.args ?? {});
         if (otherSeatIds.some((id) => serializedArgs.includes(id)))
           return {
@@ -686,16 +924,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         if (
           (request.name === 'move_to' ||
             request.name === 'suggest_area_target') &&
-          liveRoom &&
-          !liveRoom.ended
+          attemptState.liveRoom &&
+          !attemptState.liveRoom.ended
         ) {
           const out = runCombatMapTool(
-            liveRoom,
+            attemptState.liveRoom,
             { name: request.name, args: request.args },
             { catalog: current.catalog, actors: current.actors },
           );
           if (!out.result.ok) return { ...out.result, events: [] };
-          pendingRoom = out.room;
+          attemptState.pendingRoom = out.room;
           const mapValue = out.result.value as {
             events?: unknown[];
             options?: { optionId: string; affected: unknown[] }[];
@@ -727,21 +965,41 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             ? {
                 ...current,
                 spellMap: combatSpellMap(state.combatRoom, spellCasterId),
-                turnId: roomTurnKey(liveRoom ?? state.combatRoom),
+                turnId: roomTurnKey(attemptState.liveRoom ?? state.combatRoom),
                 options: Object.fromEntries(
-                  Object.entries(liveRoom?.optionHandles ?? {}).map(
-                    ([optionId, handle]) => [optionId, { optionId, ...handle }],
-                  ),
+                  Object.entries(
+                    attemptState.liveRoom?.optionHandles ?? {},
+                  ).map(([optionId, handle]) => [
+                    optionId,
+                    { optionId, ...handle },
+                  ]),
                 ),
               }
             : current;
-        const result = worldExecute
+        const rawResult = worldExecute
           ? worldExecute(current.world, request.args)
           : execute(
-              { ...spellState, turnActorId: liveTurnActorId(state) },
-              call,
+              {
+                ...spellState,
+                ...(encounterMap ? { map: encounterMap } : {}),
+                turnActorId: liveTurnActorId(state),
+              } as never,
+              engineCall as never,
               seed,
             );
+        // The encounter map rides on the start_combat output so mergeCombatOutput persists it.
+        const result =
+          encounterMap && rawResult.ok
+            ? {
+                ...rawResult,
+                value: { ...(rawResult.value as object), map: encounterMap },
+              }
+            : rawResult;
+        if (!rawResult.ok) attemptState.startedEncounter = undefined;
+        else if (request.name === 'start_combat' && encounterMap)
+          attemptState.startedEncounter = (
+            request.args as { encounterId: string }
+          ).encounterId;
         if (!result.ok) return { ...result, events: [] };
         // An area handle is single-use (ADR-022 §2.2): spend it on the cast that used it.
         const castTarget = (
@@ -749,7 +1007,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         ).target;
         if (
           request.name === 'cast_spell' &&
-          liveRoom &&
+          attemptState.liveRoom &&
           castTarget?.kind === 'option' &&
           castTarget.ref
         )
@@ -891,12 +1149,12 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       closeSceneExecutor.reset();
       context.state = structuredClone(preTurnState);
       context.engineState = cloneEngineState(turnStartEngineState);
-      liveRoom = turnStartRoom;
-      pendingRoom = undefined;
       spentHandle = undefined;
       attemptEvents.length = 0;
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
+      attemptState = { startCombatCalled: false, liveRoom: turnStartRoom };
+      pendingEncounterRejectionReasons.clear();
       refused = false;
       const narration: DMTurnEvent[] = [];
       const result = await runTurn({
@@ -954,6 +1212,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
             (state as { combatRoom?: unknown }).combatRoom
               ? 'combat'
               : 'exploration',
+          offeredEncounterKeys,
+          offeredEncounters: offeredEncounterPrompt,
           turn: {
             state: {
               characters: Object.values(actors).map((actor) =>
@@ -1009,6 +1269,20 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       settled = await attempt(attemptTier);
     }
     const { result, narration } = settled;
+    if (
+      offeredEncounterKeys.length > 0 &&
+      result.narration.trim() &&
+      !attemptState.startedEncounter
+    )
+      combatStartTelemetry('CombatNarratedWithoutStart', {
+        sessionIdHash: telemetrySessionId(request.sessionId),
+        activeMode: 'exploration',
+        ...(initialSceneId ? { sceneId: initialSceneId } : {}),
+        ...telemetryEncounterId(
+          offeredEncounterKeys[0]!,
+          new Set(eligibleEncounterKeys),
+        ),
+      });
     const hiddenNow = concealedEntities({
       concealed: [
         ...concealedEntities(state),
@@ -1019,6 +1293,22 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     for (const event of narration) onEvent(event);
     // A failed attempt's tool, scene, and registry effects are discarded; only its narration reaches the client.
     const failed = result.fallback === 'endpoint-error';
+    if (!failed && initialSceneId)
+      for (const reason of pendingEncounterRejectionReasons) {
+        const budget = this.rejectionBudget.record(
+          sessionId,
+          initialSceneId,
+          request.actionId,
+          reason,
+        );
+        combatStartTelemetry('CombatStartRejectionBudgetUpdated', {
+          sessionIdHash: telemetrySessionId(sessionId),
+          sceneId: initialSceneId,
+          rejectionCode: reason,
+          rejectionCount: budget.count,
+          withdrawn: budget.withdrawn,
+        });
+      }
     for (const event of attemptEvents) {
       const type = String((event as { type?: string }).type);
       if (!failed || type === 'TurnFallback') onEvent(event);
