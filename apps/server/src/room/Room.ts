@@ -2494,6 +2494,16 @@ export class Room {
           this.state.gameState,
         ),
       } as typeof restoredState;
+      // Recaps are derived from committed narration and may include the turn
+      // being reverted. Drop both the text and its provenance before snapshotting.
+      const restoredGameState = {
+        ...(restoredState.gameState as Record<string, unknown>),
+      };
+      delete restoredGameState.recap;
+      restoredState = {
+        ...restoredState,
+        gameState: restoredGameState,
+      } as typeof restoredState;
       const actionIds = new Set(restored.actionIds);
       for (const event of plan.retained)
         if (event.type === 'ActionAccepted')
