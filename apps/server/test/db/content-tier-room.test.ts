@@ -180,7 +180,7 @@ describe('mature narration through Room and Persistence', () => {
     let lookups = 0;
     store.matureEligibleAccounts = async (ids) => {
       lookups += 1;
-      if (lookups === 1)
+      if (lookups === 2)
         await db.query('UPDATE accounts SET mature_opt_out=true WHERE id=$1', [
           owner,
         ]);
@@ -237,7 +237,7 @@ describe('mature narration through Room and Persistence', () => {
     expect(wire).not.toContain('inspect-the-sconce');
   });
 
-  it('does not resend the last mature narration to an opted-out seat that reconnects after the turn', async () => {
+  it('replays standard narration but not another seat’s action to an opted-out reconnecting seat', async () => {
     const owner = await account(false);
     const optedOut = await account(true);
     const sessionId = await session(owner);
@@ -253,7 +253,8 @@ describe('mature narration through Room and Persistence', () => {
 
     const wire = JSON.stringify(reconnect.sent);
     expect(wire).toContain('StateSync');
-    expect(wire).not.toContain('The torch gutters');
+    expect(wire).toContain('The torch gutters');
+    expect(wire).toContain('\"tier\":\"standard\"');
     expect(wire).not.toContain('inspect-the-sconce');
   });
 
