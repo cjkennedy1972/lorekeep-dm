@@ -159,4 +159,23 @@ test('restored history does not show the new-narration jump control while scroll
   expect(await screen.findByText('An old scene.')).toBeInTheDocument();
   expect(list.scrollTop).toBe(3_000);
   expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
+
+  list.scrollTop = 0;
+  view.rerender(
+    <NarrationLog
+      historyRestoreKey={2}
+      messages={[
+        {
+          seq: 1,
+          type: 'NarrationHistory',
+          payload: {
+            turns: [
+              { turnId: 'restored', text: 'An old scene.', tier: 'standard' },
+            ],
+          },
+        } as ServerMessage,
+      ]}
+    />,
+  );
+  expect(list.scrollTop).toBe(3_000);
 });

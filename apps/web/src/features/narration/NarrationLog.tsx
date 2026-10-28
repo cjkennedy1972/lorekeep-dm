@@ -20,6 +20,8 @@ type Props = {
   /** Shown in place of an empty log, before the first narration arrives. */
   opening?: { title: string; body: ReactNode };
   openingReady?: boolean;
+  /** Incremented for every server history restore, including an identical reconnect replay. */
+  historyRestoreKey?: number;
 };
 
 function rollEvent(payload: RollPayload) {
@@ -41,6 +43,7 @@ export function NarrationLog({
   onReport,
   opening,
   openingReady = true,
+  historyRestoreKey = 0,
 }: Props) {
   const [state, dispatch] = useReducer(
     (current: typeof initialNarrationLog, message: ServerMessage) =>
@@ -205,6 +208,14 @@ export function NarrationLog({
       });
     }
   }, [state]);
+
+  useEffect(() => {
+    if (historyRestoreKey === 0) return;
+    const node = listRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+    setLatest(false);
+  }, [historyRestoreKey]);
 
   useEffect(() => {
     const node = listRef.current;

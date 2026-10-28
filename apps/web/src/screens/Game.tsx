@@ -153,6 +153,7 @@ export function Game() {
   const [resumeLoading, setResumeLoading] = useState(false);
   const [openingStateSynced, setOpeningStateSynced] = useState(false);
   const [openingHistorySynced, setOpeningHistorySynced] = useState(false);
+  const [historyRestoreCount, setHistoryRestoreCount] = useState(0);
   const [openingSyncTimedOut, setOpeningSyncTimedOut] = useState(false);
   useEffect(() => {
     setOpeningStateSynced(false);
@@ -1030,6 +1031,7 @@ export function Game() {
           <NarrationLog
             messages={messages}
             openingReady={openingReady}
+            historyRestoreKey={historyRestoreCount}
             onReport={async (messageRef, category, reason) => {
               const result = await api(`/api/rooms/${id}/reports`, {
                 messageRef,
