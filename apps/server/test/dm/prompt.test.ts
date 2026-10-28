@@ -78,10 +78,10 @@ describe('DM prompt builder', () => {
       encounterId: expect.any(Object),
     });
     expect(available.blocks[2]).toContain(
-      "encounter-e2-lookouts — Lookouts wait.; call only if the player's accepted action is hostile",
+      "encounter-e2-lookouts — Lookouts wait.; call start_combat before narration only when the player's accepted action is hostile: an attack, charge, attempt to harm/capture/threaten an enemy, or other initiation of violence; do not call for non-hostile actions",
     );
     expect(available.blocks[2]).toContain(
-      'Never narrate a combat resolution without a successful start_combat call. Do not mention tools, ids, or rules text to the player.',
+      "If the player's accepted action is an attack, charge, attempt to harm/capture/threaten an enemy, or otherwise initiates violence, call start_combat for this offered encounter (exact offered encounterId) before narrating any attack, damage, defeat, or other combat outcome. For non-hostile actions, do not call start_combat. Scene-entry encounters start on your first turn in the scene regardless of player action. Never narrate combat outcomes unless start_combat succeeds. Do not mention tools, ids, or rules text to the player.",
     );
     expect(available.blocks[2]).not.toMatch(/monster:|srd:monster\//);
     expect(available.blocks[2]).not.toContain('monsterIds');
