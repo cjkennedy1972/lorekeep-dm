@@ -155,14 +155,9 @@ describe('rewind last resolved turn', () => {
       };
 
     const sent: ServerMessage[] = [];
-    const reconnecting = room.join(
-      owner,
-      recorder(sent),
-      'Owner',
-      false,
-      -1,
-      { requireExistingSeat: true },
-    );
+    const reconnecting = room.join(owner, recorder(sent), 'Owner', false, -1, {
+      requireExistingSeat: true,
+    });
     await started;
     const rewind = room.rewindLastTurn(owner);
     releaseHistory();
