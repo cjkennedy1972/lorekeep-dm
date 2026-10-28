@@ -80,7 +80,7 @@ async function account() {
   const id = randomUUID();
   await db.query(
     `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at)
-     VALUES($1,$2,'x','Probe','active',true,now(),'v1',now())`,
+     VALUES($1,$2,'x','Late Join Test','active',true,now(),'v1',now())`,
     [id, `${id}@example.test`],
   );
   return id;
@@ -98,12 +98,12 @@ async function solo() {
   const ownerChar = await character(owner, 0x41);
   const sessionId = randomUUID();
   await db.query(
-    "INSERT INTO sessions(id,owner_account_id,name,status,mode,character_id,character) VALUES($1,$2,'probe','active','solo',$3,$4::jsonb)",
+    "INSERT INTO sessions(id,owner_account_id,name,status,mode,character_id,character) VALUES($1,$2,'Late Join Test','active','solo',$3,$4::jsonb)",
     [sessionId, owner, ownerChar.character.id, ownerChar.character],
   );
   const lease = {
     sessionId,
-    nodeId: 'pr395-probe',
+    nodeId: 'late-join-test',
     epoch: 1,
     expiresAt: new Date(Date.now() + 600_000),
   };
