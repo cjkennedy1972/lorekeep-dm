@@ -32,6 +32,41 @@ const event = () => ({
 });
 
 describe('persistence', () => {
+  it('fences stale writeTurn heads without conflicting on sequential multi-event writes', async () =>
+    fixture(async (pool, id) => {
+      const persistence = new Persistence(pool);
+      const first = await persistence.writeTurn(
+        id,
+        [event()],
+        { turn: 1 },
+        undefined,
+        [],
+        0,
+      );
+      expect(first.events.map((row) => row.seq)).toEqual([1]);
+      const next = await persistence.writeTurn(
+        id,
+        [event(), event()],
+        { turn: 2 },
+        undefined,
+        [],
+        1,
+      );
+      expect(next.events.map((row) => row.seq)).toEqual([2, 3]);
+      await expect(
+        persistence.writeTurn(
+          id,
+          [event()],
+          { turn: 'stale' },
+          undefined,
+          [],
+          1,
+        ),
+      ).rejects.toThrow(/log changed/);
+      const latest = await persistence.loadLatest(id);
+      expect(latest.snapshot?.seq).toBe(3);
+      expect(latest.events).toEqual([]);
+    }));
   it('serializes racing writers without gaps or duplicates', async () =>
     fixture(async (pool, id) => {
       const persistence = new Persistence(pool);

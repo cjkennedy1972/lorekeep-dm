@@ -233,6 +233,8 @@ export class SeatCharacterRepository {
       accountId: string;
       characterId: string;
       expectedRevision: number;
+      pendingSeatJoin?: boolean;
+      allowSolo?: boolean;
     },
   ) {
     try {
@@ -241,7 +243,7 @@ export class SeatCharacterRepository {
         [input.sessionId],
       );
       if (!session.rowCount) throw new SeatCharacterError('NOT_FOUND');
-      if (session.rows[0]!.mode !== 'party')
+      if (session.rows[0]!.mode !== 'party' && !input.allowSolo)
         throw new SeatCharacterError('SOLO_SESSION');
       if (session.rows[0]!.status !== 'active')
         throw new SeatCharacterError('SESSION_INACTIVE');
@@ -255,8 +257,14 @@ export class SeatCharacterRepository {
         `SELECT 1 FROM events j WHERE j.session_id=$1 AND j.type='SeatJoined'
           AND j.payload->>'seatId'=$2 AND j.payload->>'accountId'=$3
           AND NOT EXISTS (SELECT 1 FROM events r WHERE r.session_id=j.session_id AND r.type='SeatRevoked'
-            AND r.payload->>'seatId'=$2 AND r.seq>j.seq) LIMIT 1`,
-        [input.sessionId, input.seatId, input.accountId],
+            AND r.payload->>'seatId'=$2 AND r.seq>j.seq)
+          UNION ALL SELECT 1 WHERE $4::boolean LIMIT 1`,
+        [
+          input.sessionId,
+          input.seatId,
+          input.accountId,
+          input.pendingSeatJoin ?? false,
+        ],
       );
       if (!member.rowCount) throw new SeatCharacterError('NOT_SEATED');
       const source = await client.query<{
