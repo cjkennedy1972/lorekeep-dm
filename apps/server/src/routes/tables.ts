@@ -430,6 +430,7 @@ export function registerTableRoutes(
         hidden: concealedEntities(room?.state?.gameState),
         db,
         sessionId: request.params.id,
+        accountId,
         previousSnapshotRecap: prior,
         adapter,
       });

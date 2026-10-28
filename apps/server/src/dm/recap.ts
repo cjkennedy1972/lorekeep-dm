@@ -5,6 +5,7 @@ import { boundSummary, hiddenMatcher, type HiddenEntity } from './summarize.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
 import { REVERTED_TURN_EXCLUSION } from '../persistence/rewind.js';
+import { currentMemberEventsSql } from '../room/membership.js';
 
 export const MAX_RECAP_WORDS = 150;
 export const MAX_RECAP_CHARS = 1_200;
@@ -207,9 +208,8 @@ export async function loadPlayerNarrationHistoryRows(input: {
               ORDER BY a.seq DESC LIMIT 1) AS action_text
        FROM events e
       WHERE e.session_id=$1 AND e.type='NarrationCompleted'
-        AND e.seq >= COALESCE((SELECT MIN(j.seq) FROM events j
-                                WHERE j.session_id=e.session_id AND j.type='SeatJoined'
-                                  AND j.payload->>'accountId'=$2), 0)
+        AND e.seq >= (SELECT MIN(j.seq) FROM (${currentMemberEventsSql('$1')}) j
+                               WHERE j.payload->>'accountId'=$2)
         AND ${REVERTED_TURN_EXCLUSION}
         AND NULLIF(e.payload->>'narration','') IS NOT NULL
         AND e.payload->>'tier' IN ('family','standard','mature')
@@ -238,6 +238,7 @@ export async function loadPlayerNarrationHistoryRows(input: {
 export async function buildPlayerVisibleRecap(input: {
   db: Pick<Pool, 'query'>;
   sessionId: string;
+  accountId?: string;
   previousSnapshotRecap?: RecapInput['previousSnapshotRecap'];
   changed?: boolean;
   adapter?: LlmAdapter;
@@ -249,6 +250,7 @@ export async function buildPlayerVisibleRecap(input: {
     rows = await loadPlayerNarrationHistoryRows({
       db: input.db,
       sessionId: input.sessionId,
+      accountId: input.accountId ?? '',
       limit: 32,
     });
   } catch {

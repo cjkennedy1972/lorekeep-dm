@@ -732,6 +732,7 @@ export function registerSessionRoutes(
         const result = await buildLateJoinRecap({
           db,
           sessionId,
+          accountId,
           moderator: recapModerator,
           tier: settings.contentTier,
           tableLines: [
