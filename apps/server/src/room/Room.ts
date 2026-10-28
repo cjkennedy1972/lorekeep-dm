@@ -6389,7 +6389,6 @@ export class Room {
             state: this.clientState(accountId),
           },
         });
-        void this.sendNarrationHistory(accountId, connection);
       }
       return;
     }

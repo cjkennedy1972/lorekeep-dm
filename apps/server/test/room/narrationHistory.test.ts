@@ -70,6 +70,22 @@ function recorder() {
 }
 
 describe('narration history sync', () => {
+  it('does not resend history to an existing seat when another seat joins', async () => {
+    const room = setup(false, randomUUID());
+    const seatA = randomUUID();
+    const connectionA = recorder();
+    await joinSeated(room, seatA, connectionA, 'A');
+    const initialHistoryCount = connectionA.sent.filter(
+      (message) => message.type === 'NarrationHistory',
+    ).length;
+
+    await joinSeated(room, randomUUID(), recorder(), 'B');
+
+    expect(
+      connectionA.sent.filter((message) => message.type === 'NarrationHistory'),
+    ).toHaveLength(initialHistoryCount);
+  });
+
   it('sends bounded committed viewer history on reconnect and withholds mature narration when ineligible', async () => {
     const accountId = randomUUID();
     const room = setup(false, accountId);
