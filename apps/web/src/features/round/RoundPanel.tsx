@@ -109,9 +109,15 @@ export function RoundPanel({
   const submittedSeats = new Set(round?.submissions.map((s) => s.seatId));
   const eligible = round?.eligibleSeatIds ?? [];
   const submittedCount = eligible.filter((id) => submittedSeats.has(id)).length;
-  const summary = round
-    ? `${submittedCount} of ${eligible.length} submitted.`
-    : 'No round is open.';
+  // A table with one eligible seat is a solo game: there is no one else to wait for.
+  const solo = eligible.length === 1;
+  const summary = !round
+    ? 'No round is open.'
+    : solo
+      ? submittedCount
+        ? 'Your action is in.'
+        : 'Your turn.'
+      : `${submittedCount} of ${eligible.length} submitted.`;
   const closing =
     round?.closeReason && round.status !== 'open'
       ? CLOSE_REASON[round.closeReason]
@@ -181,7 +187,7 @@ export function RoundPanel({
         </p>
       )}
       {round && left === null && <p className="round-timer">No time limit.</p>}
-      {round && (
+      {round && !solo && (
         <>
           <h3 id="round-submitted-heading">Submitted</h3>
           <ul aria-labelledby="round-submitted-heading" className="round-seats">
