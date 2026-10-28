@@ -2,6 +2,7 @@ import type { CharacterInput } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/room-tools';
 import { describe, expect, it } from 'vitest';
 import { attacksFor } from '../../src/room/combatBootstrap.js';
+import { quickBuild } from '@game/rules-engine';
 
 const catalog = loadCatalog();
 const place = { pos: { x: 0, y: 0 }, size: 1, hp: 10, maxHp: 10, ac: 10 };
@@ -67,4 +68,34 @@ describe('saving throw bonuses on combat entities', () => {
     expect(saves?.dex).toBeUndefined();
     expect(abilities?.dex).toBe(10);
   });
+});
+
+describe('starting-gear combat attacks', () => {
+  it.each([
+    ['class:cleric', 'equipment:mace', 'Mace', '1d6-1', 'bludgeoning'],
+    ['class:fighter', 'equipment:longsword', 'Longsword', '1d8+2', 'slashing'],
+  ])(
+    '%s offers its starting weapon attack',
+    (classId, itemId, name, damage, damageType) => {
+      const character = quickBuild(catalog, classId, 0x28, 1).character;
+      const weaponCharacter = {
+        ...character,
+        equipment: [{ itemId, qty: 1, equipped: true }],
+      };
+      const { attacks } = attacksFor(
+        { id: weaponCharacter.id, team: 'party', speed: 30, ...place },
+        weaponCharacter,
+        {},
+        catalog,
+      );
+      expect(attacks).toContainEqual(
+        expect.objectContaining({
+          id: itemId,
+          name,
+          damage,
+          damageType,
+        }),
+      );
+    },
+  );
 });
