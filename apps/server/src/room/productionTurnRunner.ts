@@ -1274,6 +1274,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       settled = await attempt(attemptTier);
     }
     const { result, narration } = settled;
+    // The first tier announcement preserves requested-tier delivery gating. Re-announce
+    // the settled attempt's validated tier so committed narration is classified correctly.
+    onEvent({ type: 'NarrationTier', tier: attemptTier });
     if (
       offeredEncounterKeys.length > 0 &&
       result.narration.trim() &&

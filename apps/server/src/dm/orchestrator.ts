@@ -841,6 +841,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
         turnId: input.turnId,
         text: gatedQuestion.text,
         words: words(gatedQuestion.text),
+        tier: input.outputTier,
         ...(gatedQuestion.unavailable ? { moderationHeld: true } : {}),
       });
     }
@@ -975,6 +976,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     turnId: input.turnId,
     text: finalText,
     words: finalCount,
+    tier: input.outputTier,
     ...(gateOutcome === 'redirected' && gateHadUnavailableVerdict
       ? { moderationHeld: true }
       : {}),
