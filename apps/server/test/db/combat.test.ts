@@ -323,6 +323,41 @@ function authoredEncounterDm(
   };
 }
 
+function combatIntentRetryDm(
+  firstTool: { name: string; arguments: Record<string, unknown> },
+  requests: LlmRequest[],
+  firstNarration: string,
+): LlmAdapter {
+  let calls = 0;
+  return {
+    capabilities: () => ({
+      streaming: true,
+      nativeTools: true,
+      jsonSchema: true,
+    }),
+    probe: async () => true,
+    async *complete(request: LlmRequest) {
+      requests.push(request);
+      calls++;
+      if (calls === 1) {
+        yield {
+          type: 'tool-call',
+          id: `combat-intent-${calls}`,
+          name: firstTool.name,
+          arguments: firstTool.arguments,
+        } as LlmChunk;
+      } else if (calls === 2) {
+        yield { type: 'text', delta: firstNarration };
+      } else {
+        yield {
+          type: 'text',
+          delta: 'The encounter is now properly resolved.',
+        };
+      }
+    },
+  };
+}
+
 async function newUser() {
   const id = randomUUID();
   await db.query(
@@ -805,6 +840,373 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     } finally {
       client.close();
       telemetry.mockRestore();
+    }
+  }, 30_000);
+
+  it('makes one model call for an ordinary turn with an offered encounter and next scene', async () => {
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls++;
+        yield { type: 'text', delta: 'The lookouts watch from above.' };
+      },
+    };
+    stack = await Stack.boot('ordinary-turn-no-combat-retry', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I wait and listen.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(calls).toBe(1);
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('retries exactly once after a rejected hostile attack intent', async () => {
+    const requests: LlmRequest[] = [];
+    const adapter = combatIntentRetryDm(
+      {
+        name: 'attack',
+        arguments: {
+          attackerId: 'ent_aria',
+          targetId: 'ent_goblin-minion_1',
+          attackId: 'srd:weapon/longsword',
+        },
+      },
+      requests,
+      'The first attempt narrates before combat starts.',
+    );
+    stack = await Stack.boot('combat-intent-retry-once', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I attack the lookouts.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        requests.some((request) =>
+          request.messages.some(
+            (message) =>
+              message.role === 'tool' &&
+              message.content?.includes('"error":"unknown-tool"'),
+          ),
+        ),
+      ).toBe(true);
+      expect(requests).toHaveLength(3);
+      expect(
+        requests.filter((request) =>
+          request.messages.some((message) =>
+            message.content?.includes(
+              'SERVER CONTROL — one bounded structured retry',
+            ),
+          ),
+        ),
+      ).toHaveLength(1);
+      const retryPrompt =
+        requests[2]?.messages.map((message) => message.content).join(' ') ?? '';
+      expect(retryPrompt).toContain('For a hostile-action encounter');
+      expect(retryPrompt).not.toContain('call close_scene');
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('does not take a combat retry after a mature refusal already retried at standard', async () => {
+    const requests: LlmRequest[] = [];
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete(request: LlmRequest) {
+        requests.push(request);
+        calls++;
+        if (calls === 1 || calls === 3) {
+          yield {
+            type: 'tool-call',
+            id: `attack-${calls}`,
+            name: 'attack',
+            arguments: {
+              attackerId: 'ent_aria',
+              targetId: 'ent_goblin-minion_1',
+              attackId: 'srd:weapon/longsword',
+            },
+          } as LlmChunk;
+        } else if (calls === 2) {
+          throw new LlmEndpointError('endpoint-refusal', 'refused');
+        } else yield { type: 'text', delta: 'The lookouts remain ahead.' };
+      },
+    };
+    stack = await Stack.boot('combat-retry-blocked-after-tier-fallback', {
+      adapter,
+      storyCombatEnabled: true,
+      endpointAllowsMature: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    await db.query(
+      "UPDATE sessions SET content_tier='mature', moderation_verified=true, endpoint_allows_mature=true WHERE id=$1",
+      [table],
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I attack the lookouts.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(calls).toBe(4);
+      expect(JSON.stringify(requests)).not.toContain(
+        'SERVER CONTROL — one bounded structured retry',
+      );
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('does not retry after any start_combat attempt in the same production attempt', async () => {
+    const requests: LlmRequest[] = [];
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete(request: LlmRequest) {
+        requests.push(request);
+        calls++;
+        if (calls === 1) {
+          yield {
+            type: 'tool-call',
+            id: 'intent-attack',
+            name: 'attack',
+            arguments: {
+              attackerId: 'ent_aria',
+              targetId: 'ent_goblin-minion_1',
+              attackId: 'srd:weapon/longsword',
+            },
+          } as LlmChunk;
+          yield {
+            type: 'tool-call',
+            id: 'attempted-start',
+            name: 'start_combat',
+            arguments: {
+              encounterId: 'encounter-not-offered',
+            },
+          } as LlmChunk;
+        } else yield { type: 'text', delta: 'The lookouts remain ahead.' };
+      },
+    };
+    stack = await Stack.boot('combat-retry-blocked-after-start-attempt', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I attack the lookouts.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(requests).toHaveLength(2);
+      expect(JSON.stringify(requests)).not.toContain(
+        'SERVER CONTROL — one bounded structured retry',
+      );
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('does not retry after the server refuses a start_combat call', async () => {
+    const requests: LlmRequest[] = [];
+    const adapter = combatIntentRetryDm(
+      {
+        name: 'start_combat',
+        arguments: { encounterId: 'encounter-not-offered' },
+      },
+      requests,
+      'The lookouts remain ahead.',
+    );
+    stack = await Stack.boot('combat-start-refused-no-retry', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I approach the lookouts.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(
+        client.log
+          .slice(from)
+          .some((message) => message.type === 'ToolRejected'),
+      ).toBe(true);
+      expect(requests).toHaveLength(2);
+      expect(JSON.stringify(requests)).not.toContain(
+        'For a hostile-action encounter',
+      );
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('discards narration from the failed first combat-intent attempt', async () => {
+    const requests: LlmRequest[] = [];
+    const adapter = combatIntentRetryDm(
+      {
+        name: 'attack',
+        arguments: {
+          attackerId: 'ent_aria',
+          targetId: 'missing-target',
+          attackId: 'srd:weapon/longsword',
+        },
+      },
+      requests,
+      'FIRST_ATTEMPT_OUTPUT_MUST_NOT_ESCAPE',
+    );
+    stack = await Stack.boot('combat-retry-discards-first-output', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I attack the lookouts.');
+      const completed = await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(String(completed.payload?.text ?? '')).toContain(
+        'The encounter is now properly resolved.',
+      );
+      expect(JSON.stringify(client.log.slice(from))).not.toContain(
+        'FIRST_ATTEMPT_OUTPUT_MUST_NOT_ESCAPE',
+      );
+      expect(
+        client.log
+          .slice(from)
+          .some((message) => message.type === 'ToolRejected'),
+      ).toBe(false);
+      const retryControl =
+        requests[2]?.messages.find((message) =>
+          message.content.includes(
+            'SERVER CONTROL — one bounded structured retry',
+          ),
+        )?.content ?? '';
+      expect(retryControl).toContain('For a hostile-action encounter');
+      expect(retryControl).not.toContain('I attack the lookouts.');
+    } finally {
+      client.close();
     }
   }, 30_000);
 

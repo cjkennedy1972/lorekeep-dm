@@ -145,6 +145,8 @@ export interface TurnInput {
   outputTableLines?: readonly string[];
   allowClarification?: boolean;
   clarificationAsked?: boolean;
+  /** Server-authored structured control for one isolated retry; never includes player text. */
+  retryNudge?: string;
 }
 export interface TurnResult {
   narration: string;
@@ -156,6 +158,8 @@ export interface TurnResult {
   /** True when no usable upstream response was received (transport failure or server error). */
   endpointRetryable?: boolean;
   clarification?: { actionId: string; question: string };
+  /** Tool names requested by the model, including rejected calls; used as structured intent signals. */
+  toolIntentNames?: readonly string[];
 }
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -462,7 +466,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       trimsApplied: prompt.trimsApplied,
     });
   const messages: LlmMessage[] = [
-    { role: 'system', content: prompt.blocks[0] + '\n\n' + prompt.blocks[1] },
+    {
+      role: 'system',
+      content:
+        prompt.blocks[0] +
+        '\n\n' +
+        prompt.blocks[1] +
+        (input.retryNudge ? `\n\n${input.retryNudge}` : ''),
+    },
     {
       role: 'user',
       content:
@@ -1006,5 +1017,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     usage: { in: totalIn, out: totalOut, ...(cacheRead ? { cacheRead } : {}) },
     ...(fallback ? { fallback } : {}),
     ...(endpointFailed ? { endpointRetryable } : {}),
+    toolIntentNames: toolObservations.map(({ name }) => name),
   };
 }

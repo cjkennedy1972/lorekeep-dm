@@ -61,6 +61,10 @@ import {
 } from '../llm/matureEndpoint.js';
 import { createEndpointJudge } from '../safety/inputGate.js';
 import { MODERATION_SECTIONS } from '../safety/moderationRubric.generated.js';
+import {
+  shouldRetryCombatStart,
+  structuredCombatRetryNudge,
+} from '../dm/combatRetry.js';
 import type { Moderator } from '../safety/moderator.js';
 import {
   fixtureModeFromEnvironment,
@@ -1180,7 +1184,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const attemptEvents: DMTurnEvent[] = [];
     let refused = false;
     const preTurnState = structuredClone(state);
-    const attempt = async (attemptTier: ContentTier) => {
+    const attempt = async (attemptTier: ContentTier, retryNudge?: string) => {
       closeSceneExecutor.reset();
       context.state = structuredClone(preTurnState);
       context.engineState = cloneEngineState(turnStartEngineState);
@@ -1189,6 +1193,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
       attemptState = { startCombatCalled: false, liveRoom: turnStartRoom };
+      // Rejection evidence belongs to the committed attempt only; discarded-attempt
+      // reasons must not consume the encounter's persistent rejection budget.
       pendingEncounterRejectionReasons.clear();
       refused = false;
       const narration: DMTurnEvent[] = [];
@@ -1292,6 +1298,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         outputModerator,
         outputTier: attemptTier,
         outputTableLines: tableLines,
+        ...(retryNudge ? { retryNudge } : {}),
         emit: (event) => {
           const value = event as Record<string, unknown>;
           if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
@@ -1305,12 +1312,39 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     };
     let attemptTier = tier;
     let settled = await attempt(attemptTier);
+    let attemptCount = 1;
     if (settled.refused && attemptTier !== 'standard') {
       attemptEvents.length = 0;
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
       attemptTier = 'standard';
+      attemptCount++;
       settled = await attempt(attemptTier);
+    }
+    if (
+      shouldRetryCombatStart({
+        hasEligibleEncounter: offeredEncounterKeys.length > 0,
+        // Structured model intent from the combat action tools is the hostile signal;
+        // ordinary narration and merely offered encounter keys never trigger a retry.
+        hostileEngagementSignal:
+          offeredEncounterKeys.length > 0 &&
+          (settled.result.toolIntentNames ?? []).some((name) =>
+            ['attack', 'cast_spell', 'apply_condition'].includes(name),
+          ),
+        startToolAttempted: attemptState.startCombatCalled,
+        sceneClosed: emittedSceneEvents.length > 0,
+        alreadyRetried: attemptCount > 1,
+        outputRefused: settled.refused,
+      })
+    ) {
+      attemptCount++;
+      const retryNudge = structuredCombatRetryNudge(
+        offeredEncounterKeys,
+        offeredEncounterPrompt
+          .filter((encounter) => encounter.startTrigger === 'scene-entry')
+          .map((encounter) => encounter.key),
+      );
+      if (retryNudge) settled = await attempt(attemptTier, retryNudge);
     }
     const { result, narration } = settled;
     // The first tier announcement preserves requested-tier delivery gating. Re-announce
