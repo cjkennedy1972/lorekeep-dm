@@ -408,6 +408,26 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
   areaFixture.room = areaRoom;
   areaFixture.base = JSON.stringify(areaGame);
 
+  // The late-join table: a solo host with a bound sheet, so a late joiner is admitted while the host plays alone. Its own table keeps the round specs' seating unchanged.
+  const lateHost = await seedAccount('Late Host');
+  const lateJoiner = await seedAccount('Late Joiner');
+  await seats.saveOwnedCharacter(lateJoiner.id, {
+    ...quickBuild(catalog, undefined, sheetSeed++, 1).character,
+    id: randomUUID(),
+  } as CharacterInput);
+  const lateJoin = await openTable('Late join table', lateHost, []);
+  const lateRoom = await rooms.get(lateJoin.table);
+  const lateCharacters: Record<string, CharacterInput> = {};
+  lateCharacters[lateHost.id] = await bindSheet(lateRoom, lateHost);
+  const lateGame = preCombatGame(hero);
+  await lateRoom.persistGameState({
+    ...lateGame,
+    characters: lateCharacters,
+    // A story round has no battlemap. With one, admission takes the tactical spawn
+    // path, which skips silently without a sceneId and never persists LateJoinAdmitted.
+    gameEngine: { ...lateGame.gameEngine, map: undefined },
+  });
+
   mkdirSync(dirname(stateFile), { recursive: true });
   writeFileSync(
     stateFile,
@@ -436,6 +456,12 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
           token: combatScout.token,
           entityId: combatEntity(combatScout),
         },
+      },
+      lateJoin: {
+        table: lateJoin.table,
+        invite: lateJoin.invite,
+        host: { accountId: lateHost.id, token: lateHost.token },
+        joiner: { accountId: lateJoiner.id, token: lateJoiner.token },
       },
       area: {
         table: area.table,
