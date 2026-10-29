@@ -34,7 +34,7 @@ const latestState = (conn: Connection) =>
     | {
         state: {
           paused?: boolean;
-          seats: { seatId: string; accountId: string }[];
+          seats: { seatId: string; accountId?: string; isSelf?: boolean }[];
         };
       }
     | undefined;
@@ -52,8 +52,8 @@ test('X-card and pause/resume controls behave in one recorded room session', asy
       h.waitFor((m) => m.type === 'StateSync'),
       g.waitFor((m) => m.type === 'StateSync'),
     ]);
-    const seats = latestState(h)!.state.seats;
-    const flaggerSeatId = seats.find((s) => s.accountId === guest.id)!.seatId;
+    const guestState = latestState(g)!;
+    const flaggerSeatId = guestState.state.seats.find((s) => s.isSelf)!.seatId;
 
     // X-card: anonymous broadcast, seat kept only in the abuse log.
     const hBefore = maxSeq(h.messages);

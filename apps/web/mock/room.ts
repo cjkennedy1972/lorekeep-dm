@@ -101,9 +101,18 @@ export class Room {
   }
 
   /** StateSync payload: the round rides beside the state, as the server sends it (clientSyncPayload). */
-  syncPayload() {
+  syncPayload(viewerAccountId: string) {
     const { round, ...rawState } = this.state();
-    const state = ClientRoomStateSchema.parse(rawState);
+    const state = ClientRoomStateSchema.parse({
+      ...rawState,
+      seats: rawState.seats.map((seat) => {
+        const { accountId, ...clientSeat } = seat;
+        const isSelf = accountId === viewerAccountId;
+        return isSelf
+          ? { ...clientSeat, accountId, isSelf }
+          : { ...clientSeat, isSelf };
+      }),
+    });
     const boundSeatIds = [...this.bound.keys()].map((id) =>
       SeatIdSchema.parse(id),
     );
@@ -338,12 +347,15 @@ export class Room {
   }
 
   private broadcastState() {
-    const msg: ServerMessage = {
-      seq: ++this.seq,
-      type: 'StateSync',
-      payload: this.syncPayload(),
-    };
-    for (const set of this.conns.values()) for (const send of set) send(msg);
+    const seq = ++this.seq;
+    for (const [accountId, set] of this.conns) {
+      const msg: ServerMessage = {
+        seq,
+        type: 'StateSync',
+        payload: this.syncPayload(accountId),
+      };
+      for (const send of set) send(msg);
+    }
   }
 
   /** Seats the account (max 6), sends StateSync to it, broadcasts presence. Returns leave(). */
@@ -360,14 +372,14 @@ export class Room {
     set.add(send);
     this.conns.set(account.id, set);
     this.setPresence(seat, 'connected');
-    const sync: ServerMessage = {
-      seq: ++this.seq,
-      type: 'StateSync',
-      payload: this.syncPayload(),
-    };
     // The protocol has no seat-added message: a new seat is announced by re-syncing everyone.
-    if (fresh) for (const c of this.conns.values()) for (const s of c) s(sync);
-    else send(sync);
+    if (fresh) this.broadcastState();
+    else
+      send({
+        seq: ++this.seq,
+        type: 'StateSync',
+        payload: this.syncPayload(account.id),
+      });
     this.sendSeatPrivateRoundSync(account.id);
     return () => {
       set.delete(send);
@@ -388,12 +400,7 @@ export class Room {
   /** Pauses the table and broadcasts the updated state to every connected seat. */
   setPaused(paused: boolean) {
     this.paused = paused;
-    const msg: ServerMessage = {
-      seq: ++this.seq,
-      type: 'StateSync',
-      payload: this.syncPayload(),
-    };
-    for (const set of this.conns.values()) for (const send of set) send(msg);
+    this.broadcastState();
   }
 
   /** Removes a deleted account's seat. */
