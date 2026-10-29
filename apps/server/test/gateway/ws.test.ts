@@ -74,6 +74,17 @@ describe('gateway envelope', () => {
     expect(consumeMessageToken(bucket, 1100)).toBe(false);
   });
 
+  it('allows a bounded sync burst without enlarging the action flood budget', () => {
+    const syncBucket = { tokens: 40, updatedAt: 1000 };
+    const actionBucket = { tokens: 20, updatedAt: 1000 };
+    for (let index = 0; index < 32; index++)
+      expect(consumeMessageToken(syncBucket, 1000, 40)).toBe(true);
+    expect(consumeMessageToken(syncBucket, 1000, 40)).toBe(true);
+    for (let index = 0; index < 20; index++)
+      expect(consumeMessageToken(actionBucket, 1000)).toBe(true);
+    expect(consumeMessageToken(actionBucket, 1000)).toBe(false);
+  });
+
   it('replaces an in-memory socket only after the caller validates the seat token', () => {
     const registry = new ConnectionRegistry({
       query: async () => ({ rows: [] }),

@@ -78,6 +78,7 @@ const safeCloseReason = (reason: Buffer) =>
     .replace(/\b(?:Bearer\s+)?[A-Za-z0-9_-]{32,}\b/g, '[REDACTED]');
 const CHAT_REJECTION = 'That message could not be sent. Try again.';
 const MESSAGE_BUCKET_CAPACITY = 20;
+const SYNC_MESSAGE_BUCKET_CAPACITY = 40;
 const MESSAGE_REFILL_PER_SECOND = 10;
 function bindFailureCode(error: unknown): string {
   if (error instanceof RoomSeatRequiredError) return 'NOT_SEATED';
@@ -127,9 +128,10 @@ async function currentSeatId(
 export function consumeMessageToken(
   bucket: { tokens: number; updatedAt: number },
   now = Date.now(),
+  capacity = MESSAGE_BUCKET_CAPACITY,
 ): boolean {
   bucket.tokens = Math.min(
-    MESSAGE_BUCKET_CAPACITY,
+    capacity,
     bucket.tokens +
       (Math.max(0, now - bucket.updatedAt) * MESSAGE_REFILL_PER_SECOND) / 1000,
   );
@@ -785,6 +787,13 @@ export function installGateway(
           tokens: MESSAGE_BUCKET_CAPACITY,
           updatedAt: Date.now(),
         };
+        // Each accepted round mutation can trigger a client Resync and its
+        // follow-up ChatHistoryRequest. Keep those protocol reads bounded,
+        // but don't charge them against the player's action-flood budget.
+        const syncMessageBucket = {
+          tokens: SYNC_MESSAGE_BUCKET_CAPACITY,
+          updatedAt: Date.now(),
+        };
         const dispatch = (data: import('ws').RawData) => {
           let envelope: unknown;
           try {
@@ -883,8 +892,20 @@ export function installGateway(
             : editAction.success
               ? editAction.data.actionId
               : undefined;
+          // Sync reads have their own larger budget because an accepted round
+          // mutation causes a Resync + ChatHistoryRequest pair.
+          const isSyncRequest =
+            typeof envelope === 'object' &&
+            envelope !== null &&
+            ['Resync', 'ChatHistoryRequest'].includes(
+              String((envelope as { type?: unknown }).type),
+            );
+          const bucket = isSyncRequest ? syncMessageBucket : messageBucket;
+          const capacity = isSyncRequest
+            ? SYNC_MESSAGE_BUCKET_CAPACITY
+            : MESSAGE_BUCKET_CAPACITY;
           // Rate-limit before queueing: a flood must not grow the promise chain.
-          if (!consumeMessageToken(messageBucket)) {
+          if (!consumeMessageToken(bucket, Date.now(), capacity)) {
             if (ws.readyState === WebSocket.OPEN)
               send({
                 seq: room.seq,

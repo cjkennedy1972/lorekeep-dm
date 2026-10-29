@@ -10,6 +10,7 @@ const stateFile = process.env.LIVE_STATE_FILE!;
 const apiPort = Number(process.env.LIVE_API_PORT ?? 8799);
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const bootFile = `${stateFile}.boot`;
+const serverPidFile = `${stateFile}.server-pid`;
 const adventureId = 'adventure:01-hollow-under-marrowfell';
 const sceneIds = [
   'scene-marowfell-well',
@@ -50,6 +51,7 @@ async function startServer() {
       'run',
       '-c',
       'apps/server/test/live/vitest.adventure.live.config.ts',
+      '--maxWorkers=1',
     ],
     {
       cwd: root,
@@ -93,19 +95,47 @@ async function startServer() {
 
 async function stopServer() {
   const child = server;
-  if (!child || child.exitCode !== null) return;
-  await new Promise<void>((resolveExit, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('Adventure server did not stop on SIGTERM')),
-      15_000,
-    );
-    child.once('exit', () => {
-      clearTimeout(timer);
-      resolveExit();
-    });
-    if (child.pid) process.kill(-child.pid, 'SIGTERM');
-  });
+  if (!child) return;
+  const serverPid = existsSync(serverPidFile)
+    ? Number(readFileSync(serverPidFile, 'utf8'))
+    : undefined;
+  const validServerPid = serverPid && Number.isInteger(serverPid);
+  if (validServerPid) {
+    try {
+      process.kill(serverPid, 'SIGTERM');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+  }
+  const gracefulDeadline = Date.now() + 3_000;
+  while (validServerPid && Date.now() < gracefulDeadline) {
+    try {
+      process.kill(serverPid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') break;
+      throw error;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  if (validServerPid) {
+    try {
+      process.kill(serverPid, 'SIGKILL');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+  }
+  child.kill('SIGTERM');
+  const deadline = Date.now() + 12_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      server = undefined;
+      return;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  child.kill('SIGKILL');
   server = undefined;
+  throw new Error('Adventure server process did not stop on SIGTERM');
 }
 
 async function authenticate(browser: Browser, token: string) {
@@ -284,5 +314,6 @@ test('keyboard-only Adventure #1 starts through the solo flow, restarts mid-scen
     rmSync(stateFile, { force: true });
     rmSync(`${stateFile}.ndjson`, { force: true });
     rmSync(bootFile, { force: true });
+    rmSync(serverPidFile, { force: true });
   }
 });
