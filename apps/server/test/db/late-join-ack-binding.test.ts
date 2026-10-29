@@ -687,37 +687,167 @@ describe('late-join snapshot acknowledgement and binding', () => {
         ).toBe(false);
       } else {
         expect(await modeOf(f.sessionId)).toBe('party');
-        expect(enforced).toBe(true);
         expect(bindings.some((binding) => binding.accountId === f.owner)).toBe(
           true,
         );
+        expect(bindings.some((binding) => binding.accountId === joiner)).toBe(
+          true,
+        );
         if (failReconciliation) {
-          expect(bindings.some((binding) => binding.accountId === joiner)).toBe(
-            true,
-          );
+          expect(enforced).toBe(false);
+          expect(
+            (room as unknown as { soloPartyConversionPending: boolean })
+              .soloPartyConversionPending,
+          ).toBe(true);
           expect(room.seatCharacters.has(seat.seatId)).toBe(false);
-          expect(
-            room.state.seats.some(
-              (candidate) =>
-                candidate.accountId === joiner &&
-                candidate.presence !== 'revoked',
-            ),
-          ).toBe(true);
         } else {
-          expect(bindings.some((binding) => binding.accountId === joiner)).toBe(
-            true,
-          );
+          expect(enforced).toBe(true);
           expect(room.seatCharacters.has(seat.seatId)).toBe(true);
-          expect(
-            room.state.seats.some(
-              (candidate) =>
-                candidate.accountId === joiner &&
-                candidate.presence !== 'revoked',
-            ),
-          ).toBe(true);
         }
+        expect(
+          room.state.seats.some(
+            (candidate) =>
+              candidate.accountId === joiner &&
+              candidate.presence !== 'revoked',
+          ),
+        ).toBe(true);
       }
       await room.drain();
+    },
+  );
+
+  it.each([
+    ['transaction rolled back', false],
+    ['transaction committed but was unread', true],
+  ] as const)(
+    'retries solo conversion after ambiguous outcome and failed reconciliation: %s',
+    async (_label, commitBeforeThrow) => {
+      const f = await solo();
+      const room = await open(f);
+      await room.seat(f.owner, 'Owner');
+      await room.persistGameState({ sceneId: 'conversion-retry' });
+      const joiner = await account();
+      const jc = await character(joiner, 0x64);
+      const req = await room.requestLateJoin(
+        joiner,
+        jc.character.id,
+        jc.revision,
+        randomUUID(),
+        'Joiner',
+      );
+      await room.approveLateJoin(f.owner, randomUUID(), req);
+      await room.submitAction(
+        f.owner,
+        randomUUID(),
+        'close the scene',
+        'Owner',
+      );
+      expect(
+        await waitFor(() =>
+          room.state.seats.some((candidate) => candidate.accountId === joiner),
+        ),
+      ).toBe(true);
+      const seat = room.state.seats.find(
+        (candidate) => candidate.accountId === joiner,
+      )!;
+      const connection = conn();
+      await room.subscribe(joiner, connection, -1);
+      const sync = connection.msgs.find(
+        (message) => (message as { type?: string }).type === 'StateSync',
+      ) as { seq: number };
+      await room.acknowledgeLateJoinSnapshot(joiner, seat.seatId, sync.seq);
+
+      const originalWriteTurn = store.writeTurn.bind(store);
+      const originalLoadMode = store.loadSessionMode.bind(store);
+      const originalLoadBindings =
+        store.loadActiveSeatCharacterBindings.bind(store);
+      let failConversionOnce = true;
+      let failedReads = 0;
+      store.writeTurn = async (...args) => {
+        const conversionBind =
+          args[8]?.kind === 'bind' && args[9] === 'solo-to-party';
+        if (!conversionBind || !failConversionOnce)
+          return originalWriteTurn(...args);
+        failConversionOnce = false;
+        if (commitBeforeThrow) await originalWriteTurn(...args);
+        throw new Error('injected ambiguous conversion failure');
+      };
+      store.loadSessionMode = async (sessionId) => {
+        if (failedReads < 2) {
+          failedReads++;
+          throw new Error('injected reconciliation read failure');
+        }
+        return originalLoadMode(sessionId);
+      };
+      store.loadActiveSeatCharacterBindings = async (sessionId) => {
+        if (failedReads < 2) {
+          failedReads++;
+          throw new Error('injected reconciliation read failure');
+        }
+        return originalLoadBindings(sessionId);
+      };
+
+      const admit = (
+        room as unknown as {
+          admitApprovedLateJoins(): Promise<void>;
+        }
+      ).admitApprovedLateJoins.bind(room);
+      try {
+        await admit();
+        expect(
+          (room as unknown as { bindingEnforced: boolean }).bindingEnforced,
+        ).toBe(false);
+        expect(
+          (room as unknown as { soloPartyConversionPending: boolean })
+            .soloPartyConversionPending,
+        ).toBe(true);
+        expect(
+          room.state.seats.some(
+            (candidate) =>
+              candidate.seatId === seat.seatId &&
+              candidate.presence !== 'revoked',
+          ),
+        ).toBe(true);
+        expect(
+          connection.msgs.some(
+            (message) =>
+              (message as { payload?: { code?: string } }).payload?.code ===
+              'LATE_JOIN_ADMISSION_RETRY',
+          ),
+        ).toBe(true);
+
+        await admit();
+        expect(await modeOf(f.sessionId)).toBe('party');
+        expect(
+          (room as unknown as { bindingEnforced: boolean }).bindingEnforced,
+        ).toBe(true);
+        expect(room.seatCharacters.has(seat.seatId)).toBe(true);
+        expect(
+          room.state.seats.some(
+            (candidate) =>
+              candidate.seatId === seat.seatId &&
+              candidate.presence !== 'revoked',
+          ),
+        ).toBe(true);
+        expect(
+          (await originalLoadBindings(f.sessionId)).some(
+            (binding) => binding.accountId === joiner,
+          ),
+        ).toBe(true);
+        const boundSnapshots = await db.query<{ seq: string }>(
+          `SELECT s.seq::text AS seq FROM snapshots s
+           JOIN events e ON e.session_id=s.session_id AND e.seq=s.seq
+           WHERE s.session_id=$1 AND e.type='SeatCharacterBound'
+             AND e.payload->>'seatId'=$2`,
+          [f.sessionId, seat.seatId],
+        );
+        expect(boundSnapshots.rows).toHaveLength(1);
+      } finally {
+        store.writeTurn = originalWriteTurn;
+        store.loadSessionMode = originalLoadMode;
+        store.loadActiveSeatCharacterBindings = originalLoadBindings;
+        await room.drain();
+      }
     },
   );
 

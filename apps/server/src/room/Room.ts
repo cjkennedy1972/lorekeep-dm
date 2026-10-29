@@ -4088,16 +4088,27 @@ export class Room {
               conversionCommitted =
                 this.bindingEnforced && this.seatBindings.has(seat.seatId);
             } catch {
-              // Unknown DB truth must never make gameplay unenforced.
+              // Preserve the pre-conversion state until durable mode and
+              // bindings can be read. A later admission attempt retries the
+              // idempotent conversion and reconciles again if it already
+              // committed.
               conversionStateKnown = false;
-              this.bindingEnforced = true;
-              this.soloPartyConversionPending = false;
             }
           }
           if (conversionCommitted) {
             // Continue normal spawn/admission from the reloaded durable state.
           } else if (!conversionStateKnown) {
-            // Fail closed and leave the pending seat for host retry/recovery.
+            // Keep the pending seat eligible for retry; do not turn an
+            // unread transaction outcome into an in-memory party session.
+            this.connections.get(request.accountId)?.send({
+              seq: this.seq,
+              type: 'Error',
+              payload: {
+                code: 'LATE_JOIN_ADMISSION_RETRY',
+                message:
+                  'The table could not confirm the join yet. Please retry shortly.',
+              },
+            });
             continue;
           } else {
             // Revoke only when a successful read proves the transaction did
