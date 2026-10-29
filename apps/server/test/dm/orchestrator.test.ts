@@ -139,6 +139,23 @@ const moderationHoldingNotice =
   'The narrator pauses while the scene is checked. Try again shortly.';
 
 describe('DM orchestrator', () => {
+  it('places a server-authored retry control in the system message', async () => {
+    const h = setup([[{ type: 'text', delta: 'The scene holds.' }]]);
+    const nudge = 'SERVER CONTROL: resolve or advance the authored scene.';
+    h.input.retryNudge = nudge;
+    h.input.prompt.offeredEncounterKeys = ['encounter-e1-lookouts'];
+
+    await runTurn(h.input);
+
+    expect(h.requests[0]?.messages[0]?.role).toBe('system');
+    expect(h.requests[0]?.messages[0]?.content).toContain(nudge);
+    expect(h.requests[0]?.messages[0]?.content).not.toContain(
+      h.input.prompt.turn.playerText,
+    );
+    expect(
+      h.requests[0]?.tools?.some((tool) => tool.name === 'start_combat'),
+    ).toBe(true);
+  });
   it('uses an authored X-card redirect without calling the model or tools', async () => {
     const execute = vi.fn(() => ({
       ok: true,

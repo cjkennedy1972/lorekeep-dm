@@ -61,6 +61,10 @@ import {
 } from '../llm/matureEndpoint.js';
 import { createEndpointJudge } from '../safety/inputGate.js';
 import { MODERATION_SECTIONS } from '../safety/moderationRubric.generated.js';
+import {
+  shouldRetryCombatStart,
+  structuredCombatRetryNudge,
+} from '../dm/combatRetry.js';
 import type { Moderator } from '../safety/moderator.js';
 import {
   fixtureModeFromEnvironment,
@@ -1180,7 +1184,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     const attemptEvents: DMTurnEvent[] = [];
     let refused = false;
     const preTurnState = structuredClone(state);
-    const attempt = async (attemptTier: ContentTier) => {
+    const attempt = async (attemptTier: ContentTier, retryNudge?: string) => {
       closeSceneExecutor.reset();
       context.state = structuredClone(preTurnState);
       context.engineState = cloneEngineState(turnStartEngineState);
@@ -1292,6 +1296,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
         outputModerator,
         outputTier: attemptTier,
         outputTableLines: tableLines,
+        ...(retryNudge ? { retryNudge } : {}),
         emit: (event) => {
           const value = event as Record<string, unknown>;
           if (value.type === 'SceneClosed') emittedSceneEvents.push(value);
@@ -1305,12 +1310,36 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
     };
     let attemptTier = tier;
     let settled = await attempt(attemptTier);
+    let attemptCount = 1;
     if (settled.refused && attemptTier !== 'standard') {
       attemptEvents.length = 0;
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
       attemptTier = 'standard';
+      attemptCount++;
       settled = await attempt(attemptTier);
+    }
+    if (
+      shouldRetryCombatStart({
+        hasEligibleEncounter: offeredEncounterKeys.length > 0,
+        hasEligibleNextScene: nextScenes.length > 0,
+        startToolAttempted: attemptState.startCombatCalled,
+        sceneClosed: emittedSceneEvents.length > 0,
+        alreadyRetried: attemptCount > 1,
+        outputRefused: settled.refused,
+      })
+    ) {
+      attemptCount++;
+      settled = await attempt(
+        attemptTier,
+        structuredCombatRetryNudge(
+          offeredEncounterKeys,
+          nextScenes.map((scene) => scene.id),
+          offeredEncounterPrompt
+            .filter((encounter) => encounter.startTrigger === 'scene-entry')
+            .map((encounter) => encounter.key),
+        ),
+      );
     }
     const { result, narration } = settled;
     // The first tier announcement preserves requested-tier delivery gating. Re-announce

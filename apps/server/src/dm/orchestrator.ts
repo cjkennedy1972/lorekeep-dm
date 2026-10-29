@@ -145,6 +145,8 @@ export interface TurnInput {
   outputTableLines?: readonly string[];
   allowClarification?: boolean;
   clarificationAsked?: boolean;
+  /** Server-authored structured control for one isolated retry; never includes player text. */
+  retryNudge?: string;
 }
 export interface TurnResult {
   narration: string;
@@ -462,7 +464,14 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
       trimsApplied: prompt.trimsApplied,
     });
   const messages: LlmMessage[] = [
-    { role: 'system', content: prompt.blocks[0] + '\n\n' + prompt.blocks[1] },
+    {
+      role: 'system',
+      content:
+        prompt.blocks[0] +
+        '\n\n' +
+        prompt.blocks[1] +
+        (input.retryNudge ? `\n\n${input.retryNudge}` : ''),
+    },
     {
       role: 'user',
       content:
