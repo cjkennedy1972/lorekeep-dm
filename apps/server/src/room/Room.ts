@@ -4059,13 +4059,20 @@ export class Room {
             this.bindingEnforced = true;
           }
         } catch (error) {
-          if (!(error instanceof SeatCharacterError)) throw error;
+          // Any unexpected conversion failure must fail closed: revoke the
+          // unbound joiner and keep the session solo rather than strand state.
+          if (!(error instanceof SeatCharacterError) && !convertsSession)
+            throw error;
+          const bindingError =
+            error instanceof SeatCharacterError
+              ? error
+              : new SeatCharacterError('INVALID_CHARACTER');
           await this.persist(
             'SeatRevoked',
             {
               seatId: seat.seatId,
               accountId: seat.accountId,
-              cause: error.code,
+              cause: bindingError.code,
             },
             undefined,
             [],
@@ -4075,7 +4082,7 @@ export class Room {
                 type: 'LateJoinExpired',
                 payload: {
                   requestId: request.requestId,
-                  reason: error.code,
+                  reason: bindingError.code,
                 },
               },
             ],
@@ -4084,8 +4091,8 @@ export class Room {
             seq: this.seq,
             type: 'Error',
             payload: {
-              code: error.code,
-              message: `Late-join character binding failed (${error.code}).`,
+              code: bindingError.code,
+              message: `Late-join character binding failed (${bindingError.code}).`,
             },
           });
           if (convertsSession) {

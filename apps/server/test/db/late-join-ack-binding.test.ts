@@ -1,5 +1,5 @@
 // Late-join admission, snapshot acknowledgement, and character-binding lifecycle on real Postgres.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { quickBuild } from '@game/rules-engine';
@@ -52,6 +52,17 @@ const setScene = (room: Room) =>
 const db = new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
 afterAll(async () => db.end());
 const catalog = loadCatalog();
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
 const store = new Persistence(db);
 const repo = new SeatCharacterRepository(db);
 
@@ -354,11 +365,22 @@ describe('late-join snapshot acknowledgement and binding', () => {
     'approves, acknowledges, binds, spawns, and enables an approved joiner (source edited: %s)',
     async (editSource) => {
       const f = await solo();
+      let squatter: string | undefined;
       if (editSource) {
         await repo.saveOwnedCharacter(
           f.owner,
           { ...f.ownerChar.character, name: 'Edited after session start' },
           f.ownerChar.revision,
+        );
+        // Simulate a legacy ID squat after the immutable session snapshot was
+        // created. Conversion must bind the snapshot, not this account row.
+        squatter = await account();
+        await db.query('DELETE FROM account_characters WHERE id=$1', [
+          f.ownerChar.character.id,
+        ]);
+        await db.query(
+          'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3::jsonb)',
+          [f.ownerChar.character.id, squatter, f.ownerChar.character],
         );
       }
       const room = await open(f);
@@ -450,9 +472,34 @@ describe('late-join snapshot acknowledgement and binding', () => {
       const ownerBinding = bindings.find(
         (binding) => binding.accountId === f.owner,
       )!;
-      expect(ownerBinding.characterSnapshot).toEqual(
-        characterRulesInput(f.ownerChar.character),
+      const ownerBindingRow = (
+        await db.query<{
+          character_id: string;
+          character_revision: number | null;
+          character_snapshot_hash: string | null;
+          character_snapshot: Record<string, unknown>;
+        }>(
+          `SELECT character_id,character_revision,character_snapshot_hash,character_snapshot
+           FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2 AND binding_status='active'`,
+          [f.sessionId, ownerBinding.seatId],
+        )
+      ).rows[0]!;
+      expect(ownerBindingRow.character_id).not.toBe(f.ownerChar.character.id);
+      expect(ownerBindingRow.character_revision).toBeNull();
+      expect(ownerBindingRow.character_snapshot_hash).toBe(
+        createHash('sha256')
+          .update(stableJson(ownerBinding.characterSnapshot))
+          .digest('hex'),
       );
+      expect(ownerBindingRow.character_snapshot).toEqual(
+        ownerBinding.characterSnapshot,
+      );
+      expect(ownerBinding.characterSnapshot).toEqual({
+        ...characterRulesInput(f.ownerChar.character),
+        id: ownerBindingRow.character_id,
+      });
+      if (squatter)
+        await db.query('DELETE FROM accounts WHERE id=$1', [squatter]);
       const spawn = ev.find((event) => event.type === 'LateJoinSpawned')!;
       const spawnedEntityId = (spawn.payload as { entityId: string }).entityId;
       const gameState = room.state.gameState as
@@ -535,9 +582,10 @@ describe('late-join snapshot acknowledgement and binding', () => {
       const persistedOwnerBinding = (
         await store.loadActiveSeatCharacterBindings(f.sessionId)
       ).find((binding) => binding.accountId === f.owner)!;
-      expect(persistedOwnerBinding.characterSnapshot).toEqual(
-        characterRulesInput(f.ownerChar.character),
-      );
+      expect(persistedOwnerBinding.characterSnapshot).toEqual({
+        ...characterRulesInput(f.ownerChar.character),
+        id: ownerBindingRow.character_id,
+      });
       await restarted.drain();
     },
     60_000,

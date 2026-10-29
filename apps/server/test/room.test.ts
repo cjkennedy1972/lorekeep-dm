@@ -1511,8 +1511,9 @@ describe('room actor', () => {
       ).toBe(true);
     });
 
-    it('contains a failed fire-and-forget combat-boundary admission and leaves it pending', async () => {
-      const { store, events, setCharacterSnapshot } = fixture();
+    it('revokes the seat after an unexpected solo-conversion binding failure', async () => {
+      const { store, events, setCharacterSnapshot, sessionConvertedToParty } =
+        fixture();
       const host = randomUUID();
       const requester = randomUUID();
       const character = quickBuild(loadCatalog(), undefined, 0x39, 1).character;
@@ -1641,54 +1642,38 @@ describe('room actor', () => {
           [{ type: 'TurnStarted', round: 2 }],
           host,
         );
-        await vi.waitFor(() => expect(logged).toHaveBeenCalledTimes(2));
-        const rejection = logged.mock.calls[0]?.[1];
-        expect(rejection).toBeInstanceOf(Error);
-        expect(rejection).toMatchObject({
-          message: 'simulated admission storage failure',
-        });
-        expect(logged.mock.calls[1]).toEqual([
-          `Late-join admission failed for ${id}`,
-          rejection,
-        ]);
+        await vi.waitFor(() =>
+          expect(
+            events
+              .slice(eventCountBeforeAttempt)
+              .some((event) => event.type === 'SeatRevoked'),
+          ).toBe(true),
+        );
         await new Promise((resolve) => setTimeout(resolve, 0));
 
+        expect(logged).not.toHaveBeenCalled();
         expect(unhandled).toEqual([]);
         expect(messages).toContainEqual(
           expect.objectContaining({
             type: 'Error',
-            payload: expect.objectContaining({
-              code: 'LATE_JOIN_ADMISSION_FAILED',
-            }),
+            payload: expect.objectContaining({ code: 'INVALID_CHARACTER' }),
           }),
         );
         expect(
           room.state.lateJoinRequests?.some(
             (request) => request.requestId === requestId && request.approved,
           ),
-        ).toBe(true);
+        ).toBe(false);
         expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
         expect(
-          room.state.seats.filter((seat) => seat.accountId === requester),
-        ).toEqual([
-          expect.objectContaining({
-            seatId: pendingSeat.seatId,
-            presence: 'returning',
-          }),
-        ]);
-        const forbiddenAdmissionEvents = [
-          'SeatJoined',
-          'SeatCharacterBound',
-          'LateJoinSpawned',
-          'LateJoinAdmitted',
-        ];
-        for (const type of forbiddenAdmissionEvents) {
-          expect(
-            events
-              .slice(eventCountBeforeAttempt)
-              .some((event) => event.type === type),
-          ).toBe(false);
-        }
+          room.state.seats.some((seat) => seat.accountId === requester),
+        ).toBe(false);
+        expect(
+          events
+            .slice(eventCountBeforeAttempt)
+            .some((event) => event.type === 'LateJoinExpired'),
+        ).toBe(true);
+        expect(sessionConvertedToParty()).toBe(false);
         await expect(
           room.submitAction(requester, randomUUID(), 'Take a turn'),
         ).rejects.toThrow();
