@@ -987,6 +987,14 @@ export function Game() {
       <p role="status" aria-live="polite">
         {error}
       </p>
+      {isHost && seatClaims.length > 0 && (
+        <p role="status" aria-live="polite" className="claim-toast">
+          {seatClaims.length === 1
+            ? `${seatClaims[0]?.displayName ?? 'A player'} is waiting to confirm a device.`
+            : `${seatClaims.length} players are waiting to confirm a device.`}{' '}
+          Open Host tools to approve or deny.
+        </p>
+      )}
       <section aria-label="Safety controls" className="game-safety-controls">
         <h2>Safety controls</h2>
         <p
@@ -1484,7 +1492,11 @@ export function Game() {
             />
           )}
           {isHost && (
-            <Drawer id="host" title="Host tools">
+            <Drawer
+              id="host"
+              title="Host tools"
+              badge={seatClaims.length || undefined}
+            >
               <HostControls
                 round={room.round}
                 roundDurationMs={room.roundDurationMs ?? null}

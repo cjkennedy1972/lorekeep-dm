@@ -10,10 +10,17 @@ export type ConnectionStatus =
 /** Why this seat lost the table: the host removed it, or the host ended the table. */
 export type Removal = 'kicked' | 'ended';
 
+/** This socket's device claim with the host: pending until the host decides or the claim times out. */
+export type DeviceClaimState =
+  | { status: 'pending'; expiresAt: number }
+  | { status: 'expired' | 'denied' };
+
 export interface RoomSnapshot extends RoomView {
   status: ConnectionStatus;
   /** Last schema/server error, for display; never throws. */
   error: string | null;
+  /** Set from SeatClaimPending until SeatAuthenticated; a closed claim stays visible so the player can ask again. */
+  deviceClaim: DeviceClaimState | null;
   /** Set when the server closes this socket for a host action; the client then stops reconnecting and sending. */
   removed: Removal | null;
   /** Set when the server reports this account has no seat; the client stops and waits for a manual rejoin. */
@@ -53,6 +60,7 @@ const initial: RoomSnapshot = {
   removed: null,
   unseated: false,
   mySeatId: null,
+  deviceClaim: null,
 };
 
 export function createRoomClient(opts: RoomClientOptions) {
@@ -146,6 +154,7 @@ export function createRoomClient(opts: RoomClientOptions) {
         status: 'connected',
         error: null,
         mySeatId: authenticatedSeatId ?? null,
+        deviceClaim: null,
       });
       return;
     }
@@ -153,7 +162,16 @@ export function createRoomClient(opts: RoomClientOptions) {
       pendingClaimId = String(msg.payload.claimId ?? '');
       // The host decides when to approve, so a pending claim is not a stalled handshake.
       clearTimeout(authWatchdog);
+      const expiresInMs = Number(msg.payload.expiresInMs);
       set({
+        deviceClaim: {
+          status: 'pending',
+          expiresAt:
+            Date.now() +
+            (Number.isFinite(expiresInMs) && expiresInMs > 0
+              ? expiresInMs
+              : 60_000),
+        },
         error:
           'A host must approve this device to reconnect. If you are the sole host and have no saved seat token, recovery on a fresh device is currently unavailable; reconnect from the browser or device that has the saved token.',
       });
@@ -174,6 +192,9 @@ export function createRoomClient(opts: RoomClientOptions) {
       }
       set({
         status: 'closed',
+        deviceClaim: {
+          status: msg.type === 'SeatClaimExpired' ? 'expired' : 'denied',
+        },
         error: 'The host did not approve this device claim.',
       });
       socket?.close();
@@ -307,7 +328,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       stopped = false;
       generation++;
       attempt = 0;
-      set({ status: 'connecting', unseated: false });
+      set({ status: 'connecting', unseated: false, deviceClaim: null });
       void connect(generation);
     },
     stop() {
