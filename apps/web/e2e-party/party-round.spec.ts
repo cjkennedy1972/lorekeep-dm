@@ -372,14 +372,22 @@ test.describe.serial('party round and host panels (real server)', () => {
         .getByRole('textbox', { name: 'Message' })
         .fill('can anyone hear me');
       await guestView.page.getByRole('button', { name: 'Send chat' }).click();
+      // Match the rejection to this send by actionId. An earlier Error (for example a
+      // RATE_LIMITED for a sync request that was still queued) is not this chat's answer.
+      const sent = guestView.sent.find(
+        (frame) =>
+          frame.type === 'ChatSend' &&
+          frame.payload?.text === 'can anyone hear me',
+      );
+      const isRejectionForSend = (frame: { type: string; payload?: unknown }) =>
+        frame.type === 'Error' &&
+        (frame.payload as { actionId?: string })?.actionId === sent?.actionId;
       await expect
-        .poll(() => guestView.frames.some((frame) => frame.type === 'Error'), {
+        .poll(() => guestView.frames.some(isRejectionForSend), {
           timeout: 30_000,
         })
         .toBe(true);
-      const rejection = guestView.frames.find(
-        (frame) => frame.type === 'Error',
-      );
+      const rejection = guestView.frames.find(isRejectionForSend);
       expect(rejection?.payload?.code).toBe('CHAT_REJECTED');
       expect(
         guestView.frames.some(
