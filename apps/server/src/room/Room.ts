@@ -6396,7 +6396,7 @@ export class Room {
       });
       if (visible.length)
         connection.send(
-          this.projectAccountReferences(
+          this.projectMessageForViewer(
             {
               seq: this.seq,
               type: 'CombatEvents',
@@ -7227,10 +7227,7 @@ export class Room {
     });
   }
 
-  private projectAccountReferences(
-    value: unknown,
-    viewerAccountId: string,
-  ): unknown {
+  projectMessageForViewer(value: unknown, viewerAccountId: string): unknown {
     const seats = [...this.state.seats, ...(this.state.revokedSeats ?? [])];
     const seatByAccount = new Map<string, string>(
       seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
@@ -7283,7 +7280,7 @@ export class Room {
             }
           : message;
       connection.send(
-        this.projectAccountReferences(personalized, accountId) as ServerMessage,
+        this.projectMessageForViewer(personalized, accountId) as ServerMessage,
       );
     }
   }

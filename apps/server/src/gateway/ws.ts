@@ -669,7 +669,13 @@ export function installGateway(
               ws.close(1013, 'Slow consumer');
               return;
             }
-            ws.send(JSON.stringify(message));
+            const projected = room
+              ? (room.projectMessageForViewer(
+                  message,
+                  identity.accountId,
+                ) as ServerMessage)
+              : message;
+            ws.send(JSON.stringify(projected));
           }
         };
         const send = connection.send;
