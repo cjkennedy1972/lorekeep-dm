@@ -165,6 +165,188 @@ async function waitFor(pred: () => boolean | Promise<boolean>, ms = 3000) {
 }
 
 describe('late-join snapshot acknowledgement and binding', () => {
+  it('admits an acknowledged mapless story joiner at the next committed scene boundary', async () => {
+    const f = await solo();
+    const room = await open(f);
+    await room.seat(f.owner, 'Owner');
+    await room.persistGameState({ sceneId: 'story-without-map' });
+
+    const joiner = await account();
+    const jc = await character(joiner, 0x5a);
+    const req = await room.requestLateJoin(
+      joiner,
+      jc.character.id,
+      jc.revision,
+      randomUUID(),
+      'Joiner',
+    );
+    await room.approveLateJoin(f.owner, randomUUID(), req);
+    expect(room.state.seats.some((seat) => seat.accountId === joiner)).toBe(
+      false,
+    );
+
+    await room.submitAction(f.owner, randomUUID(), 'close the story scene');
+    expect(
+      await waitFor(() =>
+        room.state.seats.some((seat) => seat.accountId === joiner),
+      ),
+    ).toBe(true);
+    const seat = room.state.seats.find(
+      (candidate) => candidate.accountId === joiner,
+    )!;
+    expect(room.seatCharacters.has(seat.seatId)).toBe(false);
+    await expect(
+      room.submitAction(joiner, randomUUID(), 'act before snapshot ack'),
+    ).rejects.toThrow();
+
+    const connection = conn();
+    await room.subscribe(joiner, connection, -1);
+    const sync = connection.msgs.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as { seq: number } | undefined;
+    expect(sync).toBeDefined();
+    await room.acknowledgeLateJoinSnapshot(joiner, seat.seatId, sync!.seq - 1);
+    await (
+      room as unknown as { admitApprovedLateJoins(): Promise<void> }
+    ).admitApprovedLateJoins();
+    expect(
+      (await rows(f.sessionId)).some(
+        (event) => event.type === 'LateJoinAdmitted',
+      ),
+    ).toBe(false);
+    await room.acknowledgeLateJoinSnapshot(joiner, seat.seatId, sync!.seq);
+    expect(room.seatCharacters.has(seat.seatId)).toBe(false);
+
+    await room.submitAction(
+      f.owner,
+      randomUUID(),
+      'close the next story scene',
+    );
+    expect(
+      await waitFor(async () =>
+        (await rows(f.sessionId)).some(
+          (event) => event.type === 'LateJoinAdmitted',
+        ),
+      ),
+    ).toBe(true);
+    const ev = await rows(f.sessionId);
+    const types = ev.map((event) => event.type);
+    expect(types).toContain('SeatCharacterBound');
+    expect(types).toContain('LateJoinAdmitted');
+    expect(types).not.toContain('LateJoinSpawned');
+    expect(types.indexOf('SeatCharacterBound')).toBeLessThan(
+      types.indexOf('LateJoinAdmitted'),
+    );
+    expect(
+      (await store.loadActiveSeatCharacterBindings(f.sessionId)).some(
+        (binding) => binding.accountId === joiner,
+      ),
+    ).toBe(true);
+    await expect(
+      room.submitAction(joiner, randomUUID(), 'act after admission', 'Joiner'),
+    ).resolves.toBe(true);
+    await room.drain();
+  }, 60_000);
+  it.each(['leave', 'kick', 'cancel', 'deny'] as const)(
+    'atomically terminates an acknowledged joiner before a later story boundary when they %s',
+    async (departure) => {
+      const f = await solo();
+      const room = await open(f);
+      await room.seat(f.owner, 'Owner');
+      await room.persistGameState({ sceneId: 'story-without-map' });
+      const joiner = await account();
+      const jc = await character(joiner, 0x5b);
+      const req = await room.requestLateJoin(
+        joiner,
+        jc.character.id,
+        jc.revision,
+        randomUUID(),
+        'Joiner',
+      );
+      await room.approveLateJoin(f.owner, randomUUID(), req);
+      await room.submitAction(
+        f.owner,
+        randomUUID(),
+        'close the first story scene',
+      );
+      expect(
+        await waitFor(() =>
+          room.state.seats.some((seat) => seat.accountId === joiner),
+        ),
+      ).toBe(true);
+      const seat = room.state.seats.find(
+        (candidate) => candidate.accountId === joiner,
+      )!;
+      const connection = conn();
+      await room.subscribe(joiner, connection, -1);
+      const sync = connection.msgs.find(
+        (message) => (message as { type?: string }).type === 'StateSync',
+      ) as { seq: number } | undefined;
+      expect(sync).toBeDefined();
+      await room.acknowledgeLateJoinSnapshot(joiner, seat.seatId, sync!.seq);
+
+      if (departure === 'leave') await room.leave(joiner);
+      else if (departure === 'kick')
+        await room.kickSeat(f.owner, randomUUID(), seat.seatId);
+      else if (departure === 'cancel')
+        await room.cancelLateJoin(joiner, randomUUID(), req);
+      else await room.denyLateJoin(f.owner, randomUUID(), req);
+      await room.submitAction(
+        f.owner,
+        randomUUID(),
+        'close the next story scene',
+      );
+      const ev = await rows(f.sessionId);
+      const terminalType =
+        departure === 'deny' ? 'LateJoinDenied' : 'LateJoinCancelled';
+      expect(
+        ev.some(
+          (event) =>
+            event.type === terminalType && event.payload.requestId === req,
+        ),
+      ).toBe(true);
+      expect(
+        ev.some(
+          (event) =>
+            event.type === 'LateJoinAdmitted' &&
+            event.payload.requestId === req,
+        ),
+      ).toBe(false);
+      expect(
+        room.state.seats.some((candidate) => candidate.accountId === joiner),
+      ).toBe(false);
+      const replayed = await open(f);
+      expect(
+        replayed.state.lateJoinRequests?.some(
+          (request) => request.requestId === req,
+        ),
+      ).toBe(false);
+      const cancellation = ev.find(
+        (event) =>
+          event.type === terminalType && event.payload.requestId === req,
+      )!;
+      const revocation = ev.find(
+        (event) =>
+          event.type === 'SeatRevoked' && event.payload.accountId === joiner,
+      )!;
+      expect(cancellation.turnId).toBe(revocation.turnId);
+      await (
+        replayed as unknown as {
+          admitApprovedLateJoinsPending(): Promise<void>;
+        }
+      ).admitApprovedLateJoinsPending();
+      const afterRestart = await rows(f.sessionId);
+      expect(
+        afterRestart.filter(
+          (event) =>
+            event.type === 'SeatJoined' && event.payload.accountId === joiner,
+        ),
+      ).toHaveLength(1);
+      await room.drain();
+      await replayed.drain();
+    },
+  );
+
   it('approves, acknowledges, binds, spawns, and enables an approved joiner', async () => {
     const f = await solo();
     const room = await open(f);

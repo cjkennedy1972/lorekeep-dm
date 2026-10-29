@@ -1706,8 +1706,11 @@ describe('party character binding WebSocket authorization', () => {
     const f = await fixture();
     try {
       await bind(f.owner, f.room, f.owned.id, f.revision);
-      await nextOfType(f.guest, 'SeatCharacterBound');
+      await nextOfType(f.owner, 'SeatCharacterBoundPrivate');
 
+      // The guest's broadcast is not part of this assertion. Waiting for it here
+      // made the test sensitive to websocket scheduling under the full DB suite.
+      // The owner's private confirmation establishes that the binding committed.
       const actionId = await bind(f.guest, f.room, f.owned.id, f.revision);
       await expect(nextOfType(f.guest, 'Error')).resolves.toMatchObject({
         payload: {

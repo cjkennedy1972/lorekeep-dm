@@ -644,8 +644,14 @@ export function installGateway(
         };
         const connection = {
           send: (message: ServerMessage) => {
-            if (message.type === 'StateSync')
+            if (message.type === 'StateSync') {
               requiredSnapshotSeq = Math.max(requiredSnapshotSeq, message.seq);
+              room?.recordLateJoinSnapshot(
+                identity.accountId,
+                seatId,
+                message.seq,
+              );
+            }
             if (
               message.type === 'ChatMessage' ||
               message.type === 'ChatHistory'
