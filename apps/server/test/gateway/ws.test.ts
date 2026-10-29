@@ -9,7 +9,11 @@ import {
   EndTableSchema,
   ConfigureRoundTimerSchema,
 } from '@game/schema';
-import { consumeMessageToken } from '../../src/gateway/ws.js';
+import {
+  consumeMessageToken,
+  createGatewayMessageAdmission,
+  queueSyncRequest,
+} from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 describe('gateway envelope', () => {
   it('accepts the Prism host-control command names and rejects out-of-range timers', () => {
@@ -72,6 +76,76 @@ describe('gateway envelope', () => {
     expect(consumeMessageToken(bucket, 1000)).toBe(false);
     expect(consumeMessageToken(bucket, 1100)).toBe(true);
     expect(consumeMessageToken(bucket, 1100)).toBe(false);
+  });
+
+  it('allows a bounded sync burst without enlarging the action flood budget', () => {
+    const syncBucket = { tokens: 40, updatedAt: 1000 };
+    const actionBucket = { tokens: 20, updatedAt: 1000 };
+    for (let index = 0; index < 40; index++)
+      expect(consumeMessageToken(syncBucket, 1000, 40)).toBe(true);
+    expect(consumeMessageToken(syncBucket, 1000, 40)).toBe(false);
+    for (let index = 0; index < 20; index++)
+      expect(consumeMessageToken(actionBucket, 1000)).toBe(true);
+    expect(consumeMessageToken(actionBucket, 1000)).toBe(false);
+  });
+
+  it('dispatch admission preserves action tokens and bounds concurrent sync reads', () => {
+    const admission = createGatewayMessageAdmission();
+    for (let index = 0; index < 40; index++) {
+      expect(admission.admit('Resync', 1000)).toBe(true);
+      admission.complete('Resync');
+    }
+    expect(admission.admit('Resync', 1000)).toBe(false);
+    expect(admission.admit('Resync', 1100)).toBe(false);
+    expect(admission.admit('Resync', 1500)).toBe(true);
+    admission.complete('Resync');
+    for (let index = 0; index < 20; index++)
+      expect(admission.admit('PlayerAction', 1500)).toBe(true);
+    expect(admission.admit('PlayerAction', 1500)).toBe(false);
+
+    const concurrent = createGatewayMessageAdmission();
+    expect(concurrent.admit('Resync', 1000)).toBe(true);
+    expect(concurrent.admit('Resync', 1000)).toBe(false);
+    expect(concurrent.admit('ChatHistoryRequest', 1000)).toBe(true);
+    expect(concurrent.admit('ChatHistoryRequest', 1000)).toBe(false);
+    concurrent.complete('Resync');
+    expect(concurrent.admit('Resync', 1000)).toBe(true);
+  });
+
+  it('expires a sync request admitted behind a hung dispatch and releases its slot', async () => {
+    vi.useFakeTimers();
+    try {
+      const admission = createGatewayMessageAdmission();
+      const close = vi.fn();
+      let releasePriorStep!: () => void;
+      const priorStep = new Promise<void>((resolve) => {
+        releasePriorStep = resolve;
+      });
+      const dispatch = vi.fn();
+      const release = vi.fn(() => admission.complete('ChatHistoryRequest'));
+      expect(admission.admit('ChatHistoryRequest', 1000)).toBe(true);
+      const queuedChain = queueSyncRequest(
+        priorStep,
+        dispatch,
+        () => close(1011, 'Sync request deadline exceeded'),
+        release,
+        10,
+      ).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(10);
+      await queuedChain;
+      expect(close).toHaveBeenCalledWith(
+        1011,
+        'Sync request deadline exceeded',
+      );
+      expect(admission.admit('ChatHistoryRequest', 1000)).toBe(true);
+      expect(release).toHaveBeenCalledOnce();
+      releasePriorStep();
+      await Promise.resolve();
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('replaces an in-memory socket only after the caller validates the seat token', () => {

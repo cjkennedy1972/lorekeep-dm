@@ -117,6 +117,7 @@ it('serves the restartable Adventure #1 scripted server', async () => {
   const app = createApp(db, { inputGate: allowInputGate, rooms, connections });
   installGateway(app, db, rooms, connections, 300);
   await app.listen({ host: '127.0.0.1', port });
+  writeFileSync(`${stateFile}.server-pid`, String(process.pid));
   const bootToken = process.env.LIVE_BOOT_TOKEN;
   if (!bootToken) throw new Error('LIVE_BOOT_TOKEN required');
   writeFileSync(`${stateFile}.boot`, bootToken);

@@ -1,0 +1,9 @@
+$ pnpm --filter @game/web exec playwright test -c playwright.adventure.config.ts e2e-adventure/adventure-resume.spec.ts --workers=1
+
+Running 1 test using 1 worker
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:212:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.1s)
+
+  1 passed (10.9s)
+
+Exit status: 0

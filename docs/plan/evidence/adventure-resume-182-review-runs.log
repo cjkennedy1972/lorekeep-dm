@@ -1,0 +1,135 @@
+RUN 01 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.8s)
+RUN 01 EXIT 0
+RUN 02 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.1s)
+
+  1 passed (10.9s)
+RUN 02 EXIT 0
+RUN 03 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.8s)
+RUN 03 EXIT 0
+RUN 04 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.7s)
+RUN 04 EXIT 0
+RUN 05 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.1s)
+
+  1 passed (10.9s)
+RUN 05 EXIT 0
+RUN 06 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.8s)
+RUN 06 EXIT 0
+RUN 07 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.7s)
+RUN 07 EXIT 0
+RUN 08 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.2s)
+
+  1 passed (11.0s)
+RUN 08 EXIT 0
+RUN 09 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.8s)
+RUN 09 EXIT 0
+RUN 10 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.2s)
+
+  1 passed (10.9s)
+RUN 10 EXIT 0
+RUN 11 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.7s)
+RUN 11 EXIT 0
+RUN 12 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.8s)
+RUN 12 EXIT 0
+RUN 13 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.1s)
+
+  1 passed (10.9s)
+RUN 13 EXIT 0
+RUN 14 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.0s)
+
+  1 passed (10.8s)
+RUN 14 EXIT 0
+RUN 15 START
+
+Running 1 test using 1 worker
+
+
+  ✓  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:231:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (10.2s)
+
+  1 passed (10.9s)
+RUN 15 EXIT 0

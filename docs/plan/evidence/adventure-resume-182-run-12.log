@@ -1,0 +1,53 @@
+$ pnpm --filter @game/web exec playwright test -c playwright.adventure.config.ts e2e-adventure/adventure-resume.spec.ts --workers=1
+
+Running 1 test using 1 worker
+
+  ✘  1 [chromium] › e2e-adventure/adventure-resume.spec.ts:187:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes (3.0s)
+
+
+  1) [chromium] › e2e-adventure/adventure-resume.spec.ts:187:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes 
+
+    Error: Adventure server exited early (1):
+
+     RUN  v3.2.4 /Users/ckennedy/.openclaw/workspace/lorekeep-dm-adventure-resume/apps/server
+
+     ❯ test/live/serve.adventure.live.ts (1 test | 1 failed) 32ms
+       × serves the restartable Adventure #1 scripted server 32ms
+         → listen EADDRINUSE: address already in use 127.0.0.1:8799
+
+    ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+     FAIL  test/live/serve.adventure.live.ts > serves the restartable Adventure #1 scripted server
+    Error: listen EADDRINUSE: address already in use 127.0.0.1:8799
+    ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+     Test Files  1 failed (1)
+          Tests  1 failed (1)
+       Start at  15:02:30
+       Duration  718ms (transform 295ms, setup 0ms, collect 551ms, tests 32ms, environment 0ms, prepare 21ms)
+
+
+        at    Start at  15:2:30
+        at startServer (/Users/ckennedy/.openclaw/workspace/lorekeep-dm-adventure-resume/apps/web/e2e-adventure/adventure-resume.spec.ts:74:13)
+        at /Users/ckennedy/.openclaw/workspace/lorekeep-dm-adventure-resume/apps/web/e2e-adventure/adventure-resume.spec.ts:236:5
+
+    Error Context: test-results/adventure/adventure-resume-keyboard--27524-scene-resumes-and-completes-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/adventure/adventure-resume-keyboard--27524-scene-resumes-and-completes-chromium/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/adventure/adventure-resume-keyboard--27524-scene-resumes-and-completes-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e-adventure/adventure-resume.spec.ts:187:1 › keyboard-only Adventure #1 starts through the solo flow, restarts mid-scene, resumes, and completes 
+Error: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+
+  × "pnpm recursive exec" failed in /Users/ckennedy/.openclaw/workspace/
+  │ lorekeep-dm-adventure-resume/apps/web
+
+
+Exit status: 1
