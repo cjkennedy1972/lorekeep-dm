@@ -469,3 +469,15 @@ fieldset > label:has(input[type='radio']:focus-visible) {
   width: 100%;
   max-width: 28rem;
 }
+
+/* Host-facing toast for a joiner waiting on a device claim; the text is the cue, so it has no motion. */
+.claim-toast {
+  border-inline-start: 4px solid var(--accent);
+  padding-inline-start: 0.75rem;
+}
+
+/* A disabled Enter game control keeps its look but reads as unavailable, with the reason beside it. */
+button.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

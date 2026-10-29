@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Seat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
+import { askAgainWaitMs } from '../features/party/askAgain';
 import { canOfferPicker } from '../features/party/bindCharacter';
 import {
   CharacterBinding,
   type BindServerError,
 } from '../features/party/CharacterBinding';
+import { ClaimStatus } from '../features/party/ClaimStatus';
 import { ConnectionStatus } from '../room/ConnectionStatus';
 import { useRoom } from '../room/useRoom';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
@@ -94,6 +96,18 @@ export function Lobby() {
     setTierCap(room?.tierCap ?? null);
   }, [room?.id, room?.tierCap]);
 
+  // Ask-again times are kept in a ref so the limiter mirror survives re-renders without re-running the effect.
+  const askTimes = useRef<number[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  const askWaitMs = askAgainWaitMs(askTimes.current, now);
+  const ticking = live.deviceClaim?.status === 'pending' || askWaitMs > 0;
+  useEffect(() => {
+    if (!ticking) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+
   if (missing) return <p role="alert">That table could not be found.</p>;
   if (!room) return <p role="status">Loading the lobby…</p>;
 
@@ -123,6 +137,13 @@ export function Lobby() {
       setTierNote('Table setting saved.');
     } else setTierNote(r.message);
   }
+  function askAgain() {
+    const at = Date.now();
+    if (askAgainWaitMs(askTimes.current, at) > 0) return;
+    askTimes.current = [...askTimes.current, at];
+    setNow(at);
+    live.rejoin();
+  }
   async function regenerate() {
     const r = await api<{ room: RoomInfo }>(`/api/rooms/${id}/invite`, {});
     if (r.ok) {
@@ -136,10 +157,35 @@ export function Lobby() {
       <h1>{room.name}</h1>
       <ConnectionStatus status={live.status} />
       <p>
-        <Link className="button" to={`/rooms/${id}/game`}>
-          Enter game
-        </Link>
+        {mineBound ? (
+          <Link className="button" to={`/rooms/${id}/game`}>
+            Enter game
+          </Link>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="button"
+              disabled
+              aria-describedby="enter-game-hint"
+            >
+              Enter game
+            </button>{' '}
+            <span id="enter-game-hint">
+              Available once your character is bound and you are seated.
+            </span>
+          </>
+        )}
       </p>
+      <ClaimStatus
+        mySeatId={live.mySeatId}
+        bound={mineBound}
+        inPlay={live.room?.gameState != null}
+        deviceClaim={live.deviceClaim}
+        now={now}
+        askWaitSeconds={Math.ceil(askWaitMs / 1000)}
+        onAskAgain={askAgain}
+      />
       <h2 id="seats-heading">Players ({seats.length} of 6)</h2>
       <ul aria-labelledby="seats-heading" className="seats">
         {seats.map((s) => {
