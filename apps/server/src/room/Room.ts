@@ -1760,10 +1760,22 @@ export class Room {
     void lateJoinRequestCharacterIds;
     void lateJoinActionOwners;
     void openClarifications;
+    const spotlightActivity = Object.fromEntries(
+      Object.entries(this.state.spotlightActivity ?? []).flatMap(
+        ([accountId, turn]) => {
+          const seat = [
+            ...this.state.seats,
+            ...(this.state.revokedSeats ?? []),
+          ].find((candidate) => candidate.accountId === accountId);
+          return seat ? [[seat.seatId, turn]] : [];
+        },
+      ),
+    );
     const clientVisibleState: import('@game/schema').ClientRoomState = {
       ...visibleRoomState,
       seats,
       revokedSeats,
+      spotlightActivity,
     };
     const isHostViewer = this.state.seats.some(
       (seat) => seat.accountId === viewerAccountId && seat.isHost,
@@ -6383,63 +6395,70 @@ export class Room {
         return shown ? [shown] : [];
       });
       if (visible.length)
-        connection.send({
-          seq: this.seq,
-          type: 'CombatEvents',
-          payload: {
-            events: visible.flatMap((event) => {
-              if (
-                event.type === 'HpChanged' &&
-                typeof event.entityId === 'string'
-              ) {
-                const entity = state.entities.find(
-                  (candidate) => candidate.id === event.entityId,
-                );
-                if (!entity && !controlled.has(event.entityId)) return [];
-                if (
-                  entity &&
-                  entity.team !== 'party' &&
-                  !controlled.has(entity.id)
-                ) {
-                  const hp =
-                    typeof event.to === 'number' ? event.to : entity.hp;
-                  const hpState =
-                    hp <= 0
-                      ? 'down'
-                      : hp / Math.max(1, entity.maxHp) > 0.5
-                        ? 'healthy'
-                        : 'wounded';
-                  return [{ type: 'HpChanged', entityId: entity.id, hpState }];
-                }
-              }
-              const target = state.entities.find(
-                (entity) => entity.id === event.targetId,
-              );
-              const revealDamage =
-                event.type !== 'RollEvent' ||
-                event.kind !== 'damage' ||
-                (target?.team === 'party' &&
-                  controlled.has(String(event.entityId))) ||
-                (target?.team !== 'party' &&
-                  controlled.has(String(event.targetId)));
-              return [
-                toWireEvent(
-                  event,
-                  pcIds.has(String(event.entityId)) &&
-                    !controlled.has(String(event.entityId)),
-                  event.type !== 'RollEvent' ||
-                    event.kind !== 'attack' ||
-                    controlled.has(String(event.entityId)),
-                  revealDamage,
-                  event.type === 'RollEvent' &&
-                    event.kind === 'damage' &&
-                    typeof event.targetId === 'string' &&
-                    (target?.team === 'party') === true,
-                ),
-              ];
-            }),
-          },
-        } as ServerMessage);
+        connection.send(
+          this.projectAccountReferences(
+            {
+              seq: this.seq,
+              type: 'CombatEvents',
+              payload: {
+                events: visible.flatMap((event) => {
+                  if (
+                    event.type === 'HpChanged' &&
+                    typeof event.entityId === 'string'
+                  ) {
+                    const entity = state.entities.find(
+                      (candidate) => candidate.id === event.entityId,
+                    );
+                    if (!entity && !controlled.has(event.entityId)) return [];
+                    if (
+                      entity &&
+                      entity.team !== 'party' &&
+                      !controlled.has(entity.id)
+                    ) {
+                      const hp =
+                        typeof event.to === 'number' ? event.to : entity.hp;
+                      const hpState =
+                        hp <= 0
+                          ? 'down'
+                          : hp / Math.max(1, entity.maxHp) > 0.5
+                            ? 'healthy'
+                            : 'wounded';
+                      return [
+                        { type: 'HpChanged', entityId: entity.id, hpState },
+                      ];
+                    }
+                  }
+                  const target = state.entities.find(
+                    (entity) => entity.id === event.targetId,
+                  );
+                  const revealDamage =
+                    event.type !== 'RollEvent' ||
+                    event.kind !== 'damage' ||
+                    (target?.team === 'party' &&
+                      controlled.has(String(event.entityId))) ||
+                    (target?.team !== 'party' &&
+                      controlled.has(String(event.targetId)));
+                  return [
+                    toWireEvent(
+                      event,
+                      pcIds.has(String(event.entityId)) &&
+                        !controlled.has(String(event.entityId)),
+                      event.type !== 'RollEvent' ||
+                        event.kind !== 'attack' ||
+                        controlled.has(String(event.entityId)),
+                      revealDamage,
+                      event.type === 'RollEvent' &&
+                        event.kind === 'damage' &&
+                        typeof event.targetId === 'string' &&
+                        (target?.team === 'party') === true,
+                    ),
+                  ];
+                }),
+              },
+            } as ServerMessage,
+            viewer,
+          ) as ServerMessage,
+        );
     }
     const ended = events.find((event) => event.type === 'CombatEnded');
     if (ended) {
@@ -7208,21 +7227,65 @@ export class Room {
     });
   }
 
-  private broadcast(message: ServerMessage): void {
-    if (message.type === 'StateSync') {
-      for (const [accountId, connection] of this.connections) {
-        connection.send({
-          ...message,
-          payload: {
-            ...this.clientSyncPayload(),
-            state: this.clientState(accountId),
-          },
-        });
+  private projectAccountReferences(
+    value: unknown,
+    viewerAccountId: string,
+  ): unknown {
+    const seats = [...this.state.seats, ...(this.state.revokedSeats ?? [])];
+    const seatByAccount = new Map<string, string>(
+      seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
+    );
+    const project = (current: unknown): unknown => {
+      if (Array.isArray(current)) return current.map(project);
+      if (!current || typeof current !== 'object') return current;
+      const result: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(current)) {
+        if (/accountIds$/.test(key) && Array.isArray(item)) {
+          const prefix = key.slice(0, -'accountIds'.length);
+          result[`${prefix}SeatIds`] = item.flatMap((accountId) => {
+            if (typeof accountId !== 'string') return [];
+            const seatId = seatByAccount.get(accountId);
+            return seatId ? [seatId] : [];
+          });
+          continue;
+        }
+        if (/accountId$/.test(key) && typeof item === 'string') {
+          const seatId = seatByAccount.get(item);
+          const prefix = key.slice(0, -'AccountId'.length);
+          const seatKey = prefix ? `${prefix}SeatId` : 'seatId';
+          const selfKey = prefix ? `${prefix}IsSelf` : 'isSelf';
+          if (item === viewerAccountId) {
+            result[key] = item;
+            result[selfKey] = true;
+          } else if (seatId) {
+            result[seatKey] = seatId;
+            result[selfKey] = false;
+          }
+          continue;
+        }
+        result[key] = project(item);
       }
-      return;
+      return result;
+    };
+    return project(value);
+  }
+
+  private broadcast(message: ServerMessage): void {
+    for (const [accountId, connection] of this.connections) {
+      const personalized =
+        message.type === 'StateSync'
+          ? {
+              ...message,
+              payload: {
+                ...this.clientSyncPayload(),
+                state: this.clientState(accountId),
+              },
+            }
+          : message;
+      connection.send(
+        this.projectAccountReferences(personalized, accountId) as ServerMessage,
+      );
     }
-    for (const connection of this.connections.values())
-      connection.send(message);
   }
 
   private async deliverSpotlightPrompt(): Promise<void> {
