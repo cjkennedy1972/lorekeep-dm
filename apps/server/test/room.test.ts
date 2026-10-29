@@ -1582,6 +1582,7 @@ describe('room actor', () => {
       const pendingSeat = room.state.seats.find(
         (seat) => seat.accountId === requester,
       )!;
+      room.recordLateJoinSnapshot(requester, pendingSeat.seatId, room.seq);
       await room.acknowledgeLateJoinSnapshot(
         requester,
         pendingSeat.seatId,

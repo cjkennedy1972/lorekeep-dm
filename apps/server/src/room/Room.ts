@@ -1154,6 +1154,7 @@ export class Room {
     let released: { seatId: string; reason: string } | undefined;
     let revokedAccountId: string | undefined;
     if (type === 'SeatRevoked') {
+      // SeatRevoked must release its binding atomically, overriding caller input.
       const revoked = payload as {
         seatId?: unknown;
         accountId?: unknown;
