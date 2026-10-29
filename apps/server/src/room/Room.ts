@@ -1726,7 +1726,8 @@ export class Room {
     viewerAccountId?: string,
   ): import('@game/schema').ClientRoomState {
     const seats = this.state.seats.map((seat) => {
-      const clientSeat = { ...seat };
+      const { accountId, matureOptOut, ...clientSeat } = seat;
+      void matureOptOut;
       if (
         clientSeat.chatMutedUntil != null &&
         clientSeat.chatMutedUntil <= Date.now()
@@ -1734,13 +1735,18 @@ export class Room {
         clientSeat.chatMuted = false;
         clientSeat.chatMutedUntil = undefined;
       }
-      delete clientSeat.matureOptOut;
-      return clientSeat;
+      const isSelf = accountId === viewerAccountId;
+      return isSelf
+        ? { ...clientSeat, accountId, isSelf }
+        : { ...clientSeat, isSelf };
     });
     const revokedSeats = (this.state.revokedSeats ?? []).map((seat) => {
-      const clientSeat = { ...seat };
-      delete clientSeat.matureOptOut;
-      return clientSeat;
+      const { accountId, matureOptOut, ...clientSeat } = seat;
+      void matureOptOut;
+      const isSelf = accountId === viewerAccountId;
+      return isSelf
+        ? { ...clientSeat, accountId, isSelf }
+        : { ...clientSeat, isSelf };
     });
     const {
       lateJoinRequests,
@@ -1756,6 +1762,7 @@ export class Room {
     void openClarifications;
     const clientVisibleState: import('@game/schema').ClientRoomState = {
       ...visibleRoomState,
+      seats,
       revokedSeats,
     };
     const isHostViewer = this.state.seats.some(

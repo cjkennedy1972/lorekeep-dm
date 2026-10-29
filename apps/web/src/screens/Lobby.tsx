@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Seat } from '@game/schema';
+import type { ClientSeat } from '@game/schema';
 import { api, http, type RoomInfo } from '../api';
 import { canOfferPicker } from '../features/party/bindCharacter';
 import {
@@ -11,7 +11,7 @@ import { ConnectionStatus } from '../room/ConnectionStatus';
 import { useRoom } from '../room/useRoom';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
-const PRESENCE: Record<Seat['presence'], string> = {
+const PRESENCE: Record<ClientSeat['presence'], string> = {
   connected: 'connected',
   returning: 'returning',
   disconnected: 'disconnected',
@@ -23,8 +23,8 @@ const PRESENCE: Record<Seat['presence'], string> = {
 };
 
 /** Polite announcements for presence changes and arrivals/departures. */
-function usePresenceAnnouncement(seats: Seat[]) {
-  const prev = useRef<Map<string, Seat> | null>(null);
+function usePresenceAnnouncement(seats: ClientSeat[]) {
+  const prev = useRef<Map<string, ClientSeat> | null>(null);
   const [message, setMessage] = useState('');
   useEffect(() => {
     const last = prev.current;

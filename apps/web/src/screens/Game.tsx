@@ -767,7 +767,7 @@ export function Game() {
     : { width: 0, height: 0 };
 
   // Host status comes from the shared seat flag, so only the real host sees enabled host controls.
-  const selfSeat = room?.seats?.find((seat) => seat.accountId === account?.id);
+  const selfSeat = room?.seats?.find((seat) => seat.isSelf);
   const isHost = selfSeat?.isHost === true;
   const activeEntity = entities.find((item) => item.id === active);
   const selfCharacterId = account ? characters[account.id]?.id : undefined;

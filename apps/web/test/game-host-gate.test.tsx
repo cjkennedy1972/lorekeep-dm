@@ -50,6 +50,7 @@ const map: Battlemap = {
 const seat = (seatId: string, accountId: string, isHost: boolean) => ({
   seatId,
   accountId,
+  isSelf: seatId === 'seat-self',
   displayName: seatId === 'seat-self' ? 'Cy' : 'Round Guest',
   isHost,
   chatMuted: false,

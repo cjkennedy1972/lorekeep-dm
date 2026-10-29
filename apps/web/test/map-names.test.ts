@@ -31,10 +31,10 @@ describe('entity display names', () => {
         { id: 'ent_boss', kind: 'monster', name: 'Skarn the Pale' },
       ],
       seats: [
-        { seatId: 's1', accountId: 'a1', displayName: 'Chris' },
-        { seatId: 's2', accountId: 'a2', displayName: 'Dana' },
+        { seatId: 's1', displayName: 'Chris' },
+        { seatId: 's2', displayName: 'Dana' },
       ],
-      characters: { a1: { id: 'c1', name: 'Aria' } },
+      characters: { s1: { id: 'c1', name: 'Aria' } },
     });
     expect(namer('ent_seat_s1')).toBe('Aria');
     expect(namer('ent_seat_s2')).toBe('Dana');
