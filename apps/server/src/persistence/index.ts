@@ -470,25 +470,28 @@ export class Persistence {
           if (seatId) {
             ownerBoundSeatId = seatId;
             ownerBoundAccountId = legacy.owner_account_id;
+            // Legacy session data is authoritative. Never reuse the client-owned
+            // character ID here: it may have been squatted after session creation.
+            const snapshotCharacterId = randomUUID();
+            const snapshotCharacter = {
+              ...legacy.character,
+              id: snapshotCharacterId,
+            };
             await client.query(
               `INSERT INTO account_characters(id,account_id,character)
-               VALUES($1,$2,$3::jsonb) ON CONFLICT(id) DO NOTHING`,
-              [legacy.character_id, legacy.owner_account_id, legacy.character],
+               VALUES($1,$2,$3::jsonb)`,
+              [snapshotCharacterId, legacy.owner_account_id, snapshotCharacter],
             );
-            const ownerCharacter = await client.query<{ revision: number }>(
-              'SELECT revision FROM account_characters WHERE id=$1 AND account_id=$2',
-              [legacy.character_id, legacy.owner_account_id],
-            );
-            if (ownerCharacter.rowCount !== 1)
-              throw new Error('Legacy owner character could not be retained');
             ownerBinding = await new SeatCharacterRepository(
               this.pool,
             ).bindWithClient(client, {
               sessionId,
               seatId,
               accountId: legacy.owner_account_id,
-              characterId: legacy.character_id,
-              expectedRevision: ownerCharacter.rows[0]!.revision,
+              characterId: snapshotCharacterId,
+              expectedRevision: 1,
+              snapshotCharacter,
+              snapshotRevision: null,
             });
           }
         }

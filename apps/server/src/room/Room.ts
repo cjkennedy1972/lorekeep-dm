@@ -1479,6 +1479,25 @@ export class Room {
     for (const id of recovered.actionIds) this.actionIds.add(id);
   }
 
+  /** Reconcile ambiguous solo conversion writes against the durable session truth. */
+  private async reloadSessionBindingState(): Promise<void> {
+    if (
+      !this.store.loadSessionMode ||
+      !this.store.loadActiveSeatCharacterBindings
+    )
+      throw new Error('Session binding state cannot be reloaded');
+    const [mode, bindings] = await Promise.all([
+      this.store.loadSessionMode(this.sessionId),
+      this.store.loadActiveSeatCharacterBindings(this.sessionId),
+    ]);
+    await this.reloadCommittedHead();
+    this.seatBindings.clear();
+    for (const binding of bindings)
+      this.seatBindings.set(binding.seatId, binding);
+    this.bindingEnforced = mode === 'party';
+    this.soloPartyConversionPending = false;
+  }
+
   subscribe(
     accountId: string,
     connection: Connection,
@@ -4059,51 +4078,88 @@ export class Room {
             this.bindingEnforced = true;
           }
         } catch (error) {
-          if (!(error instanceof SeatCharacterError)) throw error;
-          await this.persist(
-            'SeatRevoked',
-            {
-              seatId: seat.seatId,
-              accountId: seat.accountId,
-              cause: error.code,
-            },
-            undefined,
-            [],
-            undefined,
-            [
-              {
-                type: 'LateJoinExpired',
-                payload: {
-                  requestId: request.requestId,
-                  reason: error.code,
-                },
-              },
-            ],
-          );
-          this.broadcast({
-            seq: this.seq,
-            type: 'Error',
-            payload: {
-              code: error.code,
-              message: `Late-join character binding failed (${error.code}).`,
-            },
-          });
+          // A write error can arrive after COMMIT. Reconcile durable mode,
+          // bindings, and events before deciding whether admission failed.
+          let conversionCommitted = false;
+          let conversionStateKnown = true;
           if (convertsSession) {
-            this.soloPartyConversionPending = false;
-            this.bindingEnforced = false;
+            try {
+              await this.reloadSessionBindingState();
+              conversionCommitted =
+                this.bindingEnforced && this.seatBindings.has(seat.seatId);
+            } catch {
+              // Preserve the pre-conversion state until durable mode and
+              // bindings can be read. A later admission attempt retries the
+              // idempotent conversion and reconciles again if it already
+              // committed.
+              conversionStateKnown = false;
+            }
           }
-          this.lateJoinAuthTokenHashes.delete(request.requestId);
-          this.lateJoinSnapshotAcks.delete(request.requestId);
-          this.lateJoinSnapshotSeqs.delete(request.requestId);
-          const pendingResume = this.pendingSeatResumeTokens.get(
-            request.accountId,
-          );
-          if (pendingResume) clearTimeout(pendingResume.expiryTimer);
-          this.pendingSeatResumeTokens.delete(request.accountId);
-          const timer = this.lateJoinExpiryTimers.get(request.requestId);
-          if (timer) clearTimeout(timer);
-          this.lateJoinExpiryTimers.delete(request.requestId);
-          continue;
+          if (conversionCommitted) {
+            // Continue normal spawn/admission from the reloaded durable state.
+          } else if (!conversionStateKnown) {
+            // Keep the pending seat eligible for retry; do not turn an
+            // unread transaction outcome into an in-memory party session.
+            this.connections.get(request.accountId)?.send({
+              seq: this.seq,
+              type: 'Error',
+              payload: {
+                code: 'LATE_JOIN_ADMISSION_RETRY',
+                message:
+                  'The table could not confirm the join yet. Please retry shortly.',
+              },
+            });
+            continue;
+          } else {
+            // Revoke only when a successful read proves the transaction did
+            // not commit (or for ordinary, non-conversion bind failures).
+            if (!(error instanceof SeatCharacterError) && !convertsSession)
+              throw error;
+            const bindingError =
+              error instanceof SeatCharacterError
+                ? error
+                : new SeatCharacterError('INVALID_CHARACTER');
+            await this.persist(
+              'SeatRevoked',
+              {
+                seatId: seat.seatId,
+                accountId: seat.accountId,
+                cause: bindingError.code,
+              },
+              undefined,
+              [],
+              undefined,
+              [
+                {
+                  type: 'LateJoinExpired',
+                  payload: {
+                    requestId: request.requestId,
+                    reason: bindingError.code,
+                  },
+                },
+              ],
+            );
+            this.connections.get(request.accountId)?.send({
+              seq: this.seq,
+              type: 'Error',
+              payload: {
+                code: 'ACTION_REJECTED',
+                message: 'Character could not be bound.',
+              },
+            });
+            this.lateJoinAuthTokenHashes.delete(request.requestId);
+            this.lateJoinSnapshotAcks.delete(request.requestId);
+            this.lateJoinSnapshotSeqs.delete(request.requestId);
+            const pendingResume = this.pendingSeatResumeTokens.get(
+              request.accountId,
+            );
+            if (pendingResume) clearTimeout(pendingResume.expiryTimer);
+            this.pendingSeatResumeTokens.delete(request.accountId);
+            const timer = this.lateJoinExpiryTimers.get(request.requestId);
+            if (timer) clearTimeout(timer);
+            this.lateJoinExpiryTimers.delete(request.requestId);
+            continue;
+          }
         }
       }
       const binding = this.seatBindings.get(seat.seatId);

@@ -49,6 +49,26 @@ async function fixture() {
 }
 
 describe('party seat-character persistence', () => {
+  it('rejects a client-chosen ID owned by another account with a neutral error', async () => {
+    const f = await fixture();
+    const attacker = randomUUID();
+    await db.query(
+      `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at)
+       VALUES($1,$2,'x','Attacker','active',true,now(),'v1',now())`,
+      [attacker, `${attacker}@example.test`],
+    );
+    try {
+      await expect(
+        f.repo.saveOwnedCharacter(attacker, f.character),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    } finally {
+      await db.query('SELECT purge_session($1)', [f.sessionId]);
+      await db.query('DELETE FROM accounts WHERE id=ANY($1)', [
+        [f.accountId, attacker],
+      ]);
+    }
+  });
+
   it('admits a new late-join seat before acknowledgment and binds it in a later transaction on real Postgres', async () => {
     const f = await fixture();
     const ownerCharacter = {
@@ -721,7 +741,7 @@ describe('party seat-character persistence', () => {
       ).rejects.toMatchObject({ code: 'NOT_OWNER' });
       await expect(
         f.repo.saveOwnedCharacter(stranger, f.character),
-      ).rejects.toMatchObject({ code: 'NOT_OWNER' });
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     } finally {
       await db.query('SELECT purge_session($1)', [f.sessionId]);
       await db.query('DELETE FROM accounts WHERE id=ANY($1)', [
