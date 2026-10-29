@@ -8,13 +8,15 @@ describe('structured combat retry control', () => {
   const base = {
     hasEligibleEncounter: true,
     hasEligibleNextScene: false,
+    hostileEngagementSignal: true,
+    sceneProgressionRetryEnabled: false,
     startToolAttempted: false,
     sceneClosed: false,
     alreadyRetried: false,
     outputRefused: false,
   };
 
-  it('retries an eligible encounter once, but not after a start attempt or scene close', () => {
+  it('retries an eligible hostile encounter once, but not after a start attempt or close', () => {
     expect(shouldRetryCombatStart(base)).toBe(true);
     expect(shouldRetryCombatStart({ ...base, startToolAttempted: true })).toBe(
       false,
@@ -26,22 +28,30 @@ describe('structured combat retry control', () => {
       false,
     );
     expect(shouldRetryCombatStart({ ...base, sceneClosed: true })).toBe(false);
+  });
+
+  it('does not retry just because an encounter is offered', () => {
     expect(
-      shouldRetryCombatStart({ ...base, hasEligibleEncounter: false }),
+      shouldRetryCombatStart({ ...base, hostileEngagementSignal: false }),
     ).toBe(false);
   });
 
-  it('also retries eligible scene progression when no encounter is offered', () => {
+  it('keeps scene progression disabled unless explicitly enabled', () => {
+    const sceneOnly = {
+      ...base,
+      hasEligibleEncounter: false,
+      hasEligibleNextScene: true,
+    };
+    expect(shouldRetryCombatStart(sceneOnly)).toBe(false);
     expect(
       shouldRetryCombatStart({
-        ...base,
-        hasEligibleEncounter: false,
-        hasEligibleNextScene: true,
+        ...sceneOnly,
+        sceneProgressionRetryEnabled: true,
       }),
     ).toBe(true);
   });
 
-  it('contains only eligible server keys and a fixed instruction, never player text', () => {
+  it('contains only eligible server keys and fixed instructions', () => {
     const nudge = structuredCombatRetryNudge(
       ['encounter-e1-lookouts', 'bad id'],
       ['scene-next', 'raw player value'],

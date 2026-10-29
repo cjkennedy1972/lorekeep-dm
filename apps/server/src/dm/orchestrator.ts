@@ -158,6 +158,8 @@ export interface TurnResult {
   /** True when no usable upstream response was received (transport failure or server error). */
   endpointRetryable?: boolean;
   clarification?: { actionId: string; question: string };
+  /** Tool names requested by the model, including rejected calls; used as structured intent signals. */
+  toolIntentNames?: readonly string[];
 }
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -1015,5 +1017,6 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     usage: { in: totalIn, out: totalOut, ...(cacheRead ? { cacheRead } : {}) },
     ...(fallback ? { fallback } : {}),
     ...(endpointFailed ? { endpointRetryable } : {}),
+    toolIntentNames: toolObservations.map(({ name }) => name),
   };
 }

@@ -1323,6 +1323,15 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       shouldRetryCombatStart({
         hasEligibleEncounter: offeredEncounterKeys.length > 0,
         hasEligibleNextScene: nextScenes.length > 0,
+        // Structured model intent from the combat action tools is the hostile signal;
+        // ordinary narration and merely offered encounter keys never trigger a retry.
+        hostileEngagementSignal:
+          offeredEncounterKeys.length > 0 &&
+          (settled.result.toolIntentNames ?? []).some((name) =>
+            ['attack', 'cast_spell', 'apply_condition'].includes(name),
+          ),
+        sceneProgressionRetryEnabled:
+          process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED === 'true',
         startToolAttempted: attemptState.startCombatCalled,
         sceneClosed: emittedSceneEvents.length > 0,
         alreadyRetried: attemptCount > 1,
@@ -1330,16 +1339,16 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       })
     ) {
       attemptCount++;
-      settled = await attempt(
-        attemptTier,
-        structuredCombatRetryNudge(
-          offeredEncounterKeys,
-          nextScenes.map((scene) => scene.id),
-          offeredEncounterPrompt
-            .filter((encounter) => encounter.startTrigger === 'scene-entry')
-            .map((encounter) => encounter.key),
-        ),
+      const retryNudge = structuredCombatRetryNudge(
+        offeredEncounterKeys,
+        process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED === 'true'
+          ? nextScenes.map((scene) => scene.id)
+          : [],
+        offeredEncounterPrompt
+          .filter((encounter) => encounter.startTrigger === 'scene-entry')
+          .map((encounter) => encounter.key),
       );
+      if (retryNudge) settled = await attempt(attemptTier, retryNudge);
     }
     const { result, narration } = settled;
     // The first tier announcement preserves requested-tier delivery gating. Re-announce

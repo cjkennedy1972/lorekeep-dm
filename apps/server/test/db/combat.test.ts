@@ -808,6 +808,52 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 30_000);
 
+  it('does not make a second model call for an ordinary turn with an offered encounter', async () => {
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        calls++;
+        yield { type: 'text', delta: 'The lookouts watch from above.' };
+      },
+    };
+    stack = await Stack.boot('ordinary-turn-no-combat-retry', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I wait and listen.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(calls).toBe(1);
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
   it.each([
     ['encounter-e2-lookouts', 'scene-warren-gallery', { x: 3, y: 5 }],
     ['encounter-e3-skarrik', 'scene-boss-hall', { x: 22, y: 20 }],

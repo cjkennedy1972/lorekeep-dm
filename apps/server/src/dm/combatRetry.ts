@@ -7,6 +7,7 @@ export function structuredCombatRetryNudge(
   const ids = eligibleEncounterIds.filter((id) =>
     /^[a-z0-9:_-]{1,64}$/.test(id),
   );
+  if (ids.length === 0 && nextSceneIds.length === 0) return '';
   const next = nextSceneIds.filter((id) => /^[a-z0-9:_-]{1,64}$/.test(id));
   const entries = sceneEntryEncounterIds.filter((id) => ids.includes(id));
   const hostile = ids.filter((id) => !entries.includes(id));
@@ -46,13 +47,16 @@ export function structuredCombatRetryNudge(
 export function shouldRetryCombatStart(input: {
   hasEligibleEncounter: boolean;
   hasEligibleNextScene: boolean;
+  hostileEngagementSignal: boolean;
+  sceneProgressionRetryEnabled: boolean;
   startToolAttempted: boolean;
   sceneClosed: boolean;
   alreadyRetried: boolean;
   outputRefused: boolean;
 }): boolean {
   return (
-    (input.hasEligibleEncounter || input.hasEligibleNextScene) &&
+    ((input.hasEligibleEncounter && input.hostileEngagementSignal) ||
+      (input.sceneProgressionRetryEnabled && input.hasEligibleNextScene)) &&
     !(input.hasEligibleEncounter && input.startToolAttempted) &&
     !input.sceneClosed &&
     !input.alreadyRetried &&
