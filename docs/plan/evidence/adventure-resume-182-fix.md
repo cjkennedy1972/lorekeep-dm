@@ -108,3 +108,12 @@ Run 11 was interrupted during fixture lifecycle validation and left port 8799 oc
 | 16 | PASS | 1 passed (10.9s); no fixture process or listener remained; see adventure-resume-182-run-16.log. |
 
 Final checks: gateway WebSocket test file passed (7 tests); server typecheck passed; ESLint and Prettier checks passed for all changed TypeScript files; git diff --check passed.
+
+## Sentinel/Bastion review revision
+
+- Added independent per-socket admission for sync reads: a 40-message burst, 2/sec refill, and at most one in-flight `Resync` plus one in-flight `ChatHistoryRequest`. Saturation and bucket exhaustion return `RATE_LIMITED`; sync work does not consume the action bucket.
+- `ws.test.ts` now proves the 41st sync admission is rejected, 40 sequential Resyncs preserve all 20 action admissions, concurrent duplicate Resync is rejected while ChatHistoryRequest has a separate slot, and refill matches 2/sec. Mutation check: disabling the in-flight guard made the concurrent-admission regression fail at the expected assertion.
+- Adventure fixture cleanup now validates PID > 1 and a live Vitest command before signaling; nested cleanup still stops the fixture, closes the DB pool, and removes generated state when Playwright has already closed the context.
+- Clean sequential Adventure-resume streak: **15/15 passed** against a fresh dedicated Postgres database. Full output: `adventure-resume-182-review-runs.log`.
+- Clean Docker verification (Node 22, pnpm 12.9.1, frozen install): gateway tests **29/29**, server typecheck, ESLint, and Prettier passed. `git diff --check` passed in the worktree.
+- ChatSend and StateSyncAck remain unchanged; follow-up left to the separate card.

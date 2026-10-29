@@ -80,6 +80,7 @@ const CHAT_REJECTION = 'That message could not be sent. Try again.';
 const MESSAGE_BUCKET_CAPACITY = 20;
 const SYNC_MESSAGE_BUCKET_CAPACITY = 40;
 const MESSAGE_REFILL_PER_SECOND = 10;
+const SYNC_MESSAGE_REFILL_PER_SECOND = 2;
 function bindFailureCode(error: unknown): string {
   if (error instanceof RoomSeatRequiredError) return 'NOT_SEATED';
   if (!(error instanceof SeatCharacterError)) return 'ACTION_REJECTED';
@@ -129,16 +130,52 @@ export function consumeMessageToken(
   bucket: { tokens: number; updatedAt: number },
   now = Date.now(),
   capacity = MESSAGE_BUCKET_CAPACITY,
+  refillPerSecond = MESSAGE_REFILL_PER_SECOND,
 ): boolean {
   bucket.tokens = Math.min(
     capacity,
     bucket.tokens +
-      (Math.max(0, now - bucket.updatedAt) * MESSAGE_REFILL_PER_SECOND) / 1000,
+      (Math.max(0, now - bucket.updatedAt) * refillPerSecond) / 1000,
   );
   bucket.updatedAt = now;
   if (bucket.tokens < 1) return false;
   bucket.tokens -= 1;
   return true;
+}
+type SyncMessageType = 'Resync' | 'ChatHistoryRequest';
+export function createGatewayMessageAdmission() {
+  const actionBucket = {
+    tokens: MESSAGE_BUCKET_CAPACITY,
+    updatedAt: Date.now(),
+  };
+  const syncBucket = {
+    tokens: SYNC_MESSAGE_BUCKET_CAPACITY,
+    updatedAt: Date.now(),
+  };
+  const pendingSync = new Set<SyncMessageType>();
+  return {
+    admit(type: string, now = Date.now()): boolean {
+      const isSync = type === 'Resync' || type === 'ChatHistoryRequest';
+      const syncType = isSync ? (type as SyncMessageType) : undefined;
+      if (syncType && pendingSync.has(syncType)) return false;
+      const allowed = isSync
+        ? consumeMessageToken(
+            syncBucket,
+            now,
+            SYNC_MESSAGE_BUCKET_CAPACITY,
+            SYNC_MESSAGE_REFILL_PER_SECOND,
+          )
+        : consumeMessageToken(actionBucket, now);
+      if (allowed && syncType) pendingSync.add(syncType);
+      return allowed;
+    },
+    complete(type: SyncMessageType) {
+      pendingSync.delete(type);
+    },
+    consumeAction(now = Date.now()) {
+      return consumeMessageToken(actionBucket, now);
+    },
+  };
 }
 /** Sent when the input judge or its inputs are down; the client keeps the action so the sender can retry. */
 const STORYTELLER_UNAVAILABLE =
@@ -783,17 +820,7 @@ export function installGateway(
           if (timer) clearTimeout(timer);
           chatDeadlineTimers.delete(receipt);
         };
-        const messageBucket = {
-          tokens: MESSAGE_BUCKET_CAPACITY,
-          updatedAt: Date.now(),
-        };
-        // Each accepted round mutation can trigger a client Resync and its
-        // follow-up ChatHistoryRequest. Keep those protocol reads bounded,
-        // but don't charge them against the player's action-flood budget.
-        const syncMessageBucket = {
-          tokens: SYNC_MESSAGE_BUCKET_CAPACITY,
-          updatedAt: Date.now(),
-        };
+        const messageAdmission = createGatewayMessageAdmission();
         const dispatch = (data: import('ws').RawData) => {
           let envelope: unknown;
           try {
@@ -900,12 +927,13 @@ export function installGateway(
             ['Resync', 'ChatHistoryRequest'].includes(
               String((envelope as { type?: unknown }).type),
             );
-          const bucket = isSyncRequest ? syncMessageBucket : messageBucket;
-          const capacity = isSyncRequest
-            ? SYNC_MESSAGE_BUCKET_CAPACITY
-            : MESSAGE_BUCKET_CAPACITY;
-          // Rate-limit before queueing: a flood must not grow the promise chain.
-          if (!consumeMessageToken(bucket, Date.now(), capacity)) {
+          const messageType =
+            typeof envelope === 'object' && envelope !== null
+              ? String((envelope as { type?: unknown }).type)
+              : '';
+          // Admission is synchronous and precedes queueing, so floods cannot
+          // grow the chain or overlap mailbox/DB work for a given sync read.
+          if (!messageAdmission.admit(messageType)) {
             if (ws.readyState === WebSocket.OPEN)
               send({
                 seq: room.seq,
@@ -964,6 +992,10 @@ export function installGateway(
             })
             .catch(() => {
               room.completeActionReceipt(actionReceiptSeq);
+            })
+            .finally(() => {
+              if (isSyncRequest)
+                messageAdmission.complete(messageType as SyncMessageType);
             });
         };
         const writeChatGateLog = async (
@@ -1372,10 +1404,9 @@ export function installGateway(
               );
           }
           if (msg.type === 'Resync') {
-            void room
+            return room
               .subscribe(identity.accountId, connection, -1)
               .catch(() => ws.close(1011));
-            return;
           }
           if (msg.type === 'CombatCommand') {
             const action = CombatCommandSchema.safeParse(msg);
@@ -1391,10 +1422,9 @@ export function installGateway(
               });
               return;
             }
-            // Combat commands bypass the PlayerAction/EditAction queue below,
-            // but still share its per-socket flood budget. Reject before they
-            // can enqueue unbounded work in the Room mailbox.
-            if (!consumeMessageToken(messageBucket)) {
+            // Combat commands also charge at handler admission, preserving the
+            // existing tighter mailbox limit before they reach the Room actor.
+            if (!messageAdmission.consumeAction()) {
               send({
                 seq: room.seq,
                 type: 'Error',

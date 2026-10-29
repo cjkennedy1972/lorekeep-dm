@@ -9,7 +9,10 @@ import {
   EndTableSchema,
   ConfigureRoundTimerSchema,
 } from '@game/schema';
-import { consumeMessageToken } from '../../src/gateway/ws.js';
+import {
+  consumeMessageToken,
+  createGatewayMessageAdmission,
+} from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 describe('gateway envelope', () => {
   it('accepts the Prism host-control command names and rejects out-of-range timers', () => {
@@ -77,12 +80,34 @@ describe('gateway envelope', () => {
   it('allows a bounded sync burst without enlarging the action flood budget', () => {
     const syncBucket = { tokens: 40, updatedAt: 1000 };
     const actionBucket = { tokens: 20, updatedAt: 1000 };
-    for (let index = 0; index < 32; index++)
+    for (let index = 0; index < 40; index++)
       expect(consumeMessageToken(syncBucket, 1000, 40)).toBe(true);
-    expect(consumeMessageToken(syncBucket, 1000, 40)).toBe(true);
+    expect(consumeMessageToken(syncBucket, 1000, 40)).toBe(false);
     for (let index = 0; index < 20; index++)
       expect(consumeMessageToken(actionBucket, 1000)).toBe(true);
     expect(consumeMessageToken(actionBucket, 1000)).toBe(false);
+  });
+
+  it('dispatch admission preserves action tokens and bounds concurrent sync reads', () => {
+    const admission = createGatewayMessageAdmission();
+    for (let index = 0; index < 40; index++) {
+      expect(admission.admit('Resync', 1000)).toBe(true);
+      admission.complete('Resync');
+    }
+    expect(admission.admit('Resync', 1000)).toBe(false);
+    expect(admission.admit('Resync', 1100)).toBe(false);
+    expect(admission.admit('Resync', 1500)).toBe(true);
+    admission.complete('Resync');
+    for (let index = 0; index < 20; index++)
+      expect(admission.admit('PlayerAction', 1500)).toBe(true);
+    expect(admission.admit('PlayerAction', 1500)).toBe(false);
+
+    const concurrent = createGatewayMessageAdmission();
+    expect(concurrent.admit('Resync', 1000)).toBe(true);
+    expect(concurrent.admit('Resync', 1000)).toBe(false);
+    expect(concurrent.admit('ChatHistoryRequest', 1000)).toBe(true);
+    concurrent.complete('Resync');
+    expect(concurrent.admit('Resync', 1000)).toBe(true);
   });
 
   it('replaces an in-memory socket only after the caller validates the seat token', () => {

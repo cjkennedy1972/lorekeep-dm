@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -99,7 +99,26 @@ async function stopServer() {
   const serverPid = existsSync(serverPidFile)
     ? Number(readFileSync(serverPidFile, 'utf8'))
     : undefined;
-  const validServerPid = serverPid && Number.isInteger(serverPid);
+  const isExpectedServer = () => {
+    if (!serverPid || !Number.isInteger(serverPid) || serverPid <= 1)
+      return false;
+    try {
+      process.kill(serverPid, 0);
+      const command = execFileSync('ps', [
+        '-p',
+        String(serverPid),
+        '-o',
+        'command=',
+      ])
+        .toString()
+        .trim();
+      return command.includes('vitest');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+      throw error;
+    }
+  };
+  const validServerPid = isExpectedServer();
   if (validServerPid) {
     try {
       process.kill(serverPid, 'SIGTERM');
@@ -117,7 +136,7 @@ async function stopServer() {
     }
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
-  if (validServerPid) {
+  if (validServerPid && isExpectedServer()) {
     try {
       process.kill(serverPid, 'SIGKILL');
     } catch (error) {
@@ -297,23 +316,40 @@ test('keyboard-only Adventure #1 starts through the solo flow, restarts mid-scen
     });
     // There is no adventure-completion UI state yet; completion is asserted from the persisted room snapshot.
   } finally {
-    await context?.close();
-    await stopServer();
-    if (pool) {
-      if (existsSync(stateFile)) {
-        const seed = JSON.parse(readFileSync(stateFile, 'utf8')) as Seed;
-        await purgeOwnedSessions(seed.accountId);
-        await pool.query('DELETE FROM auth_sessions WHERE account_id=$1', [
-          seed.accountId,
-        ]);
-        await pool.query('DELETE FROM accounts WHERE id=$1', [seed.accountId]);
+    try {
+      await context?.close();
+    } finally {
+      try {
+        await stopServer();
+      } finally {
+        try {
+          if (pool) {
+            try {
+              if (existsSync(stateFile)) {
+                const seed = JSON.parse(
+                  readFileSync(stateFile, 'utf8'),
+                ) as Seed;
+                await purgeOwnedSessions(seed.accountId);
+                await pool.query(
+                  'DELETE FROM auth_sessions WHERE account_id=$1',
+                  [seed.accountId],
+                );
+                await pool.query('DELETE FROM accounts WHERE id=$1', [
+                  seed.accountId,
+                ]);
+              }
+            } finally {
+              await pool.end();
+              pool = undefined;
+            }
+          }
+        } finally {
+          rmSync(stateFile, { force: true });
+          rmSync(`${stateFile}.ndjson`, { force: true });
+          rmSync(bootFile, { force: true });
+          rmSync(serverPidFile, { force: true });
+        }
       }
-      await pool.end();
-      pool = undefined;
     }
-    rmSync(stateFile, { force: true });
-    rmSync(`${stateFile}.ndjson`, { force: true });
-    rmSync(bootFile, { force: true });
-    rmSync(serverPidFile, { force: true });
   }
 });
