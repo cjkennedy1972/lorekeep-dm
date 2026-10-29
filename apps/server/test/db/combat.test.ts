@@ -2035,28 +2035,34 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       };
     });
     const client = await Client.open(stack, user, table);
-    const mark = client.log.length;
-    for (let i = 0; i < 200; i++)
-      client.ws.send(
-        JSON.stringify({
-          type: 'CombatCommand',
-          actionId: randomUUID(),
-          lastSeq: 0,
-          payload: { command: 'options' },
-        }),
+    try {
+      // Round-trip first: the server must have consumed the StateSyncAck before
+      // the flood starts, or frames land in the pre-ack buffer and close the socket.
+      await client.command({ command: 'options' });
+      const mark = client.log.length;
+      for (let i = 0; i < 200; i++)
+        client.ws.send(
+          JSON.stringify({
+            type: 'CombatCommand',
+            actionId: randomUUID(),
+            lastSeq: 0,
+            payload: { command: 'options' },
+          }),
+        );
+      await vi.waitFor(
+        () =>
+          expect(
+            client.log
+              .slice(mark)
+              .filter(
+                (m) => m.type === 'Error' && m.payload?.code === 'RATE_LIMITED',
+              ).length,
+          ).toBeGreaterThanOrEqual(150),
+        { timeout: 2000 },
       );
-    await vi.waitFor(
-      () =>
-        expect(
-          client.log
-            .slice(mark)
-            .filter(
-              (m) => m.type === 'Error' && m.payload?.code === 'RATE_LIMITED',
-            ).length,
-        ).toBeGreaterThanOrEqual(150),
-      { timeout: 2000 },
-    );
-    client.close();
+    } finally {
+      client.close();
+    }
   }, 20_000);
 
   it('keeps character keys as account ids when a refused mature start is retried', async () => {
