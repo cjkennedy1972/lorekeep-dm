@@ -288,6 +288,11 @@ describe('late-join snapshot acknowledgement and binding', () => {
           room.state.seats.some((seat) => seat.accountId === joiner),
         ),
       ).toBe(true);
+      expect(
+        await waitFor(() =>
+          room.state.seats.some((candidate) => candidate.accountId === joiner),
+        ),
+      ).toBe(true);
       const seat = room.state.seats.find(
         (candidate) => candidate.accountId === joiner,
       )!;
@@ -618,6 +623,11 @@ describe('late-join snapshot acknowledgement and binding', () => {
         'close the scene',
         'Owner',
       );
+      expect(
+        await waitFor(() =>
+          room.state.seats.some((candidate) => candidate.accountId === joiner),
+        ),
+      ).toBe(true);
       const seat = room.state.seats.find(
         (candidate) => candidate.accountId === joiner,
       )!;
@@ -642,19 +652,19 @@ describe('late-join snapshot acknowledgement and binding', () => {
       if (failReconciliation) {
         let failReads = true;
         store.loadSessionMode = async (sessionId) => {
-          if (failReads)
+          if (failReads) {
+            failReads = false;
             throw new Error('injected reconciliation read failure');
+          }
           return originalLoadMode(sessionId);
         };
         store.loadActiveSeatCharacterBindings = async (sessionId) => {
-          if (failReads)
+          if (failReads) {
+            failReads = false;
             throw new Error('injected reconciliation read failure');
+          }
           return originalLoadBindings(sessionId);
         };
-        // Restore reads once the bind call has begun, without affecting setup.
-        setTimeout(() => {
-          failReads = false;
-        }, 500);
       }
       try {
         await (
@@ -685,6 +695,7 @@ describe('late-join snapshot acknowledgement and binding', () => {
           expect(bindings.some((binding) => binding.accountId === joiner)).toBe(
             true,
           );
+          expect(room.seatCharacters.has(seat.seatId)).toBe(false);
           expect(
             room.state.seats.some(
               (candidate) =>
@@ -696,6 +707,7 @@ describe('late-join snapshot acknowledgement and binding', () => {
           expect(bindings.some((binding) => binding.accountId === joiner)).toBe(
             true,
           );
+          expect(room.seatCharacters.has(seat.seatId)).toBe(true);
           expect(
             room.state.seats.some(
               (candidate) =>
