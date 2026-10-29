@@ -10,6 +10,7 @@ describe('structured combat retry control', () => {
     hasEligibleNextScene: false,
     hostileEngagementSignal: true,
     sceneProgressionRetryEnabled: false,
+    sceneProgressionSignal: false,
     startToolAttempted: false,
     sceneClosed: false,
     alreadyRetried: false,
@@ -47,8 +48,15 @@ describe('structured combat retry control', () => {
       shouldRetryCombatStart({
         ...sceneOnly,
         sceneProgressionRetryEnabled: true,
+        sceneProgressionSignal: true,
       }),
     ).toBe(true);
+  });
+
+  it('omits scene-close instructions when no next scenes are offered', () => {
+    expect(structuredCombatRetryNudge(['encounter-e1-lookouts'])).not.toContain(
+      'close_scene',
+    );
   });
 
   it('contains only eligible server keys and fixed instructions', () => {

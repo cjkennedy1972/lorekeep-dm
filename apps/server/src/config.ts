@@ -89,3 +89,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     );
   return result.data;
 }
+
+/** Parse the scene retry rollout flag without requiring unrelated server settings. */
+export function sceneProgressionRetryEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return schema.pick({ DM_SCENE_PROGRESSION_RETRY_ENABLED: true }).parse(env)
+    .DM_SCENE_PROGRESSION_RETRY_ENABLED;
+}

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { sceneProgressionRetryEnabled } from '../config.js';
 import {
   AdventureSchema,
   StartCombatEncounterArgsSchema,
@@ -1193,6 +1194,8 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       emittedSceneEvents.length = 0;
       registryEvents.length = 0;
       attemptState = { startCombatCalled: false, liveRoom: turnStartRoom };
+      // Rejection evidence belongs to the committed attempt only; discarded-attempt
+      // reasons must not consume the encounter's persistent rejection budget.
       pendingEncounterRejectionReasons.clear();
       refused = false;
       const narration: DMTurnEvent[] = [];
@@ -1319,6 +1322,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       attemptCount++;
       settled = await attempt(attemptTier);
     }
+    const sceneRetryEnabled = sceneProgressionRetryEnabled();
     if (
       shouldRetryCombatStart({
         hasEligibleEncounter: offeredEncounterKeys.length > 0,
@@ -1330,8 +1334,10 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           (settled.result.toolIntentNames ?? []).some((name) =>
             ['attack', 'cast_spell', 'apply_condition'].includes(name),
           ),
-        sceneProgressionRetryEnabled:
-          process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED === 'true',
+        sceneProgressionRetryEnabled: sceneRetryEnabled,
+        sceneProgressionSignal: (settled.result.toolIntentNames ?? []).includes(
+          'close_scene',
+        ),
         startToolAttempted: attemptState.startCombatCalled,
         sceneClosed: emittedSceneEvents.length > 0,
         alreadyRetried: attemptCount > 1,
@@ -1341,9 +1347,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       attemptCount++;
       const retryNudge = structuredCombatRetryNudge(
         offeredEncounterKeys,
-        process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED === 'true'
-          ? nextScenes.map((scene) => scene.id)
-          : [],
+        sceneRetryEnabled ? nextScenes.map((scene) => scene.id) : [],
         offeredEncounterPrompt
           .filter((encounter) => encounter.startTrigger === 'scene-entry')
           .map((encounter) => encounter.key),

@@ -26,9 +26,7 @@ export function structuredCombatRetryNudge(
       ? [
           'If the authored scene objective is met or the party has left, call close_scene and use an eligible nextSceneId when appropriate.',
         ]
-      : [
-          'If the authored scene objective is met or the party has left, call close_scene.',
-        ]),
+      : []),
     'Otherwise make no state-changing call and narrate a non-combat outcome.',
     'Never claim combat began unless start_combat succeeds.',
   ];
@@ -49,6 +47,7 @@ export function shouldRetryCombatStart(input: {
   hasEligibleNextScene: boolean;
   hostileEngagementSignal: boolean;
   sceneProgressionRetryEnabled: boolean;
+  sceneProgressionSignal: boolean;
   startToolAttempted: boolean;
   sceneClosed: boolean;
   alreadyRetried: boolean;
@@ -56,7 +55,9 @@ export function shouldRetryCombatStart(input: {
 }): boolean {
   return (
     ((input.hasEligibleEncounter && input.hostileEngagementSignal) ||
-      (input.sceneProgressionRetryEnabled && input.hasEligibleNextScene)) &&
+      (input.sceneProgressionRetryEnabled &&
+        input.hasEligibleNextScene &&
+        input.sceneProgressionSignal)) &&
     !(input.hasEligibleEncounter && input.startToolAttempted) &&
     !input.sceneClosed &&
     !input.alreadyRetried &&

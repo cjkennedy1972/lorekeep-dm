@@ -843,7 +843,9 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 30_000);
 
-  it('does not make a second model call for an ordinary turn with an offered encounter', async () => {
+  it('does not make a second model call for an ordinary turn with an offered encounter, even when scene retry is enabled', async () => {
+    const previousFlag = process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED;
+    process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED = 'true';
     let calls = 0;
     const adapter: LlmAdapter = {
       capabilities: () => ({
@@ -886,6 +888,9 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       expect(calls).toBe(1);
     } finally {
       client.close();
+      if (previousFlag === undefined)
+        delete process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED;
+      else process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED = previousFlag;
     }
   }, 30_000);
 
@@ -930,9 +935,149 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         20_000,
       );
       expect(requests).toHaveLength(3);
-      expect(
-        requests[2]?.messages.map((message) => message.content).join(' '),
-      ).toContain('For a hostile-action encounter');
+      const retryPrompt =
+        requests[2]?.messages.map((message) => message.content).join(' ') ?? '';
+      expect(retryPrompt).toContain('For a hostile-action encounter');
+      expect(retryPrompt).not.toContain('call close_scene');
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('does not take a combat retry after a mature refusal already retried at standard', async () => {
+    const requests: LlmRequest[] = [];
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete(request: LlmRequest) {
+        requests.push(request);
+        calls++;
+        if (calls === 1 || calls === 3) {
+          yield {
+            type: 'tool-call',
+            id: `attack-${calls}`,
+            name: 'attack',
+            arguments: {
+              attackerId: 'ent_aria',
+              targetId: 'ent_goblin-minion_1',
+              attackId: 'srd:weapon/longsword',
+            },
+          } as LlmChunk;
+        } else if (calls === 2) {
+          throw new LlmEndpointError('endpoint-refusal', 'refused');
+        } else yield { type: 'text', delta: 'The lookouts remain ahead.' };
+      },
+    };
+    stack = await Stack.boot('combat-retry-blocked-after-tier-fallback', {
+      adapter,
+      storyCombatEnabled: true,
+      endpointAllowsMature: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    await db.query(
+      "UPDATE sessions SET content_tier='mature', moderation_verified=true, endpoint_allows_mature=true WHERE id=$1",
+      [table],
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I attack the lookouts.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(calls).toBe(4);
+      expect(JSON.stringify(requests)).not.toContain(
+        'SERVER CONTROL — one bounded structured retry',
+      );
+    } finally {
+      client.close();
+    }
+  }, 30_000);
+
+  it('does not retry after any start_combat attempt in the same production attempt', async () => {
+    const requests: LlmRequest[] = [];
+    let calls = 0;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete(request: LlmRequest) {
+        requests.push(request);
+        calls++;
+        if (calls === 1) {
+          yield {
+            type: 'tool-call',
+            id: 'intent-attack',
+            name: 'attack',
+            arguments: {
+              attackerId: 'ent_aria',
+              targetId: 'ent_goblin-minion_1',
+              attackId: 'srd:weapon/longsword',
+            },
+          } as LlmChunk;
+          yield {
+            type: 'tool-call',
+            id: 'attempted-start',
+            name: 'start_combat',
+            arguments: {
+              encounterId: 'encounter-not-offered',
+            },
+          } as LlmChunk;
+        } else yield { type: 'text', delta: 'The lookouts remain ahead.' };
+      },
+    };
+    stack = await Stack.boot('combat-retry-blocked-after-start-attempt', {
+      adapter,
+      storyCombatEnabled: true,
+    });
+    const user = await newUser();
+    const table = await seedTable(
+      stack,
+      user,
+      (account) => ({
+        ...preCombatGame(hero),
+        characters: { [account]: hero },
+      }),
+      {
+        id: 'adventure:01-hollow-under-marrowfell',
+        sceneId: 'scene-warren-gallery',
+      },
+    );
+    const client = await Client.open(stack, user, table);
+    try {
+      const from = client.log.length;
+      client.say('I attack the lookouts.');
+      await client.until(
+        (message) => message.type === 'NarrationCompleted',
+        from,
+        20_000,
+      );
+      expect(requests).toHaveLength(2);
+      expect(JSON.stringify(requests)).not.toContain(
+        'SERVER CONTROL — one bounded structured retry',
+      );
     } finally {
       client.close();
     }
@@ -995,7 +1140,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         name: 'attack',
         arguments: {
           attackerId: 'ent_aria',
-          targetId: 'ent_goblin-minion_1',
+          targetId: 'missing-target',
           attackId: 'srd:weapon/longsword',
         },
       },
@@ -1034,6 +1179,19 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       expect(JSON.stringify(client.log.slice(from))).not.toContain(
         'FIRST_ATTEMPT_OUTPUT_MUST_NOT_ESCAPE',
       );
+      expect(
+        client.log
+          .slice(from)
+          .some((message) => message.type === 'ToolRejected'),
+      ).toBe(false);
+      const retryControl =
+        requests[2]?.messages.find((message) =>
+          message.content.includes(
+            'SERVER CONTROL — one bounded structured retry',
+          ),
+        )?.content ?? '';
+      expect(retryControl).toContain('For a hostile-action encounter');
+      expect(retryControl).not.toContain('I attack the lookouts.');
     } finally {
       client.close();
     }

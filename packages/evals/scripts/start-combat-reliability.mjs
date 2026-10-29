@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { chmodSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 
 const baseUrl = process.env.LLM_BASE_URL;
 const model = process.env.LLM_MODEL ?? 'qwen3.8-35b-a3b-distill-q4';
@@ -273,7 +273,6 @@ const record = {
 };
 const output = JSON.stringify(record, null, 2) + '\n';
 if (process.env.EVAL_OUT) {
-  writeFileSync(process.env.EVAL_OUT, output);
-  chmodSync(process.env.EVAL_OUT, 0o600);
+  writeFileSync(process.env.EVAL_OUT, output, { mode: 0o600 });
 }
 process.stdout.write(output);
