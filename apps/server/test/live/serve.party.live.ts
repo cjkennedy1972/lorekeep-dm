@@ -537,7 +537,10 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
       lateJoin: {
         table: lateJoinSeed.table.table,
         invite: lateJoinSeed.table.invite,
-        host: { accountId: lateJoinSeed.host.id, token: lateJoinSeed.host.token },
+        host: {
+          accountId: lateJoinSeed.host.id,
+          token: lateJoinSeed.host.token,
+        },
         joiner: {
           accountId: lateJoinSeed.joiner.id,
           token: lateJoinSeed.joiner.token,

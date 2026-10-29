@@ -70,16 +70,21 @@ async function openAs(
   }, drawers);
   const page = await context.newPage();
   const frames: ServerFrame[] = [];
-  const sent: { type: string; actionId?: string; payload?: { text?: string } }[] =
-    [];
-  const parseInto = <T>(list: T[]) => (event: { payload: string | Buffer }) => {
-    if (typeof event.payload !== 'string') return;
-    try {
-      list.push(JSON.parse(event.payload) as T);
-    } catch {
-      // Non-JSON frames are not protocol messages; skip them.
-    }
-  };
+  const sent: {
+    type: string;
+    actionId?: string;
+    payload?: { text?: string };
+  }[] = [];
+  const parseInto =
+    <T>(list: T[]) =>
+    (event: { payload: string | Buffer }) => {
+      if (typeof event.payload !== 'string') return;
+      try {
+        list.push(JSON.parse(event.payload) as T);
+      } catch {
+        // Non-JSON frames are not protocol messages; skip them.
+      }
+    };
   page.on('websocket', (socket) => {
     socket.on('framereceived', parseInto(frames));
     socket.on('framesent', parseInto(sent));

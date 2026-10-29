@@ -54,12 +54,8 @@ export async function openMember(
   table: string,
   viewport?: { width: number; height: number },
 ): Promise<View> {
-  const context = await browser.newContext(
-    viewport ? { viewport } : undefined,
-  );
-  await context.addCookies([
-    { name: 'sid', value: member.token, url: origin },
-  ]);
+  const context = await browser.newContext(viewport ? { viewport } : undefined);
+  await context.addCookies([{ name: 'sid', value: member.token, url: origin }]);
   await mintSeatResume(context, origin, table, member);
   const page = await context.newPage();
   const frames: unknown[] = [];
