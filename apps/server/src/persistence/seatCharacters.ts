@@ -7,6 +7,18 @@ import { validateCharacter } from '@game/rules-engine';
 const catalog = loadCatalog();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 /** Immutable rules input; expended resources and mutable combat state are session-owned. */
 export function characterRulesInput(character: Character) {
   return {
@@ -157,10 +169,12 @@ export class SeatCharacterRepository {
           character.id,
         ]);
         if (!prior.rows[0]) throw new SeatCharacterError('NOT_FOUND');
-        if (prior.rows[0].account_id !== accountId)
-          throw new SeatCharacterError('NOT_OWNER');
+        // Creation IDs are client-supplied, so foreign and unknown collisions
+        // must be indistinguishable to avoid an existence oracle.
         if (expectedRevision === undefined)
           throw new SeatCharacterError('NOT_FOUND');
+        if (prior.rows[0].account_id !== accountId)
+          throw new SeatCharacterError('NOT_OWNER');
         throw new SeatCharacterError('STALE_REVISION');
       }
       await client.query('COMMIT');
@@ -209,6 +223,7 @@ export class SeatCharacterRepository {
     accountId: string;
     characterId: string;
     expectedRevision: number;
+    snapshotCharacter?: unknown;
   }) {
     const client = await this.db.connect();
     try {
@@ -235,6 +250,9 @@ export class SeatCharacterRepository {
       expectedRevision: number;
       pendingSeatJoin?: boolean;
       allowSolo?: boolean;
+      /** Authoritative immutable session sheet for legacy owner conversion. */
+      snapshotCharacter?: unknown;
+      snapshotRevision?: null;
     },
   ) {
     try {
@@ -281,28 +299,32 @@ export class SeatCharacterRepository {
         throw new SeatCharacterError('NOT_OWNER');
       if (row.revision !== input.expectedRevision)
         throw new SeatCharacterError('STALE_REVISION');
-      const parsed = CharacterSchema.safeParse(row.character);
+      const parsed = CharacterSchema.safeParse(
+        input.snapshotCharacter ?? row.character,
+      );
       if (!parsed.success || validateCharacter(parsed.data, catalog).length)
         throw new SeatCharacterError('INVALID_CHARACTER');
       const sheet = characterRulesInput(parsed.data);
       const snapshotHash = createHash('sha256')
-        .update(JSON.stringify(sheet))
+        .update(stableJson(sheet))
         .digest('hex');
       const inserted = await client.query(
-        `INSERT INTO session_seat_characters(session_id,seat_id,account_id,character_id,character_revision,character_snapshot)
-         VALUES($1,$2,$3,$4,$5,$6::jsonb) RETURNING id`,
+        `INSERT INTO session_seat_characters(session_id,seat_id,account_id,character_id,character_revision,character_snapshot,character_snapshot_hash)
+         VALUES($1,$2,$3,$4,$5,$6::jsonb,$7) RETURNING id`,
         [
           input.sessionId,
           input.seatId,
           input.accountId,
           input.characterId,
-          row.revision,
+          input.snapshotRevision === null ? null : row.revision,
           JSON.stringify(sheet),
+          snapshotHash,
         ],
       );
       return {
         bindingId: inserted.rows[0]!.id as string,
-        characterRevision: row.revision,
+        characterRevision:
+          input.snapshotRevision === null ? null : row.revision,
         snapshotHash,
         characterSnapshot: sheet,
       };

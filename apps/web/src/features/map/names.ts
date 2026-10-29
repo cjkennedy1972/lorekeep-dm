@@ -1,6 +1,6 @@
 /** Display names for combat entities, built only from state the client already holds. */
 
-type SeatLike = { seatId: string; accountId: string; displayName: string };
+type SeatLike = { seatId: string; displayName: string };
 type CharacterLike = { id?: string; name?: string };
 type EntityLike = { id: string; name?: string; kind?: string };
 
@@ -65,7 +65,7 @@ export function createEntityNamer(input: {
       );
       names.set(
         entity.id,
-        (seat && characters[seat.accountId]?.name) ||
+        (seat && characters[seat.seatId]?.name) ||
           seat?.displayName ||
           `Party member ${partyIndex}`,
       );

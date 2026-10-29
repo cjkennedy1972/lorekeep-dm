@@ -436,25 +436,44 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
   areaFixture.room = areaRoom;
   areaFixture.base = JSON.stringify(areaGame);
 
-  // The late-join table: a solo host with a bound sheet, so a late joiner is admitted while the host plays alone. Its own table keeps the round specs' seating unchanged.
-  const lateHost = await seedAccount('Late Host');
-  const lateJoiner = await seedAccount('Late Joiner');
-  await seats.saveOwnedCharacter(lateJoiner.id, {
-    ...quickBuild(catalog, undefined, sheetSeed++, 1).character,
-    id: randomUUID(),
-  } as CharacterInput);
-  const lateJoin = await openTable('Late join table', lateHost, []);
-  const lateRoom = await rooms.get(lateJoin.table);
-  const lateCharacters: Record<string, CharacterInput> = {};
-  lateCharacters[lateHost.id] = await bindSheet(lateRoom, lateHost);
-  const lateGame = preCombatGame(hero);
-  await lateRoom.persistGameState({
-    ...lateGame,
-    characters: lateCharacters,
-    // A story round has no battlemap. With one, admission takes the tactical spawn
-    // path, which skips silently without a sceneId and never persists LateJoinAdmitted.
-    gameEngine: { ...lateGame.gameEngine, map: undefined },
-  });
+  // The late-join tables: a solo host with a bound sheet, so a late joiner is admitted while the host plays alone.
+  // Each late-join spec gets its own table and joiner. A spec that requests, approves, and seats its joiner would
+  // otherwise leave the next spec's joiner already seated, and that spec's join would return 200 instead of 409.
+  const seedLateJoinTable = async (
+    tableName: string,
+    hostName: string,
+    joinerName: string,
+  ) => {
+    const host = await seedAccount(hostName);
+    const joiner = await seedAccount(joinerName);
+    await seats.saveOwnedCharacter(joiner.id, {
+      ...quickBuild(catalog, undefined, sheetSeed++, 1).character,
+      id: randomUUID(),
+    } as CharacterInput);
+    const table = await openTable(tableName, host, []);
+    const room = await rooms.get(table.table);
+    const characters: Record<string, CharacterInput> = {};
+    characters[host.id] = await bindSheet(room, host);
+    const game = preCombatGame(hero);
+    await room.persistGameState({
+      ...game,
+      characters,
+      // A story round has no battlemap. With one, admission takes the tactical spawn
+      // path, which skips silently without a sceneId and never persists LateJoinAdmitted.
+      gameEngine: { ...game.gameEngine, map: undefined },
+    });
+    return { table, host, joiner };
+  };
+  const lateJoinSeed = await seedLateJoinTable(
+    'Late join table',
+    'Late Host',
+    'Late Joiner',
+  );
+  const lateJoinStagesSeed = await seedLateJoinTable(
+    'Late join stages table',
+    'Late Stages Host',
+    'Late Stages Joiner',
+  );
 
   // The end-table table: ending it is destructive, so it gets its own table. Specs that
   // share the round table would otherwise see it closed by whichever spec runs first.
@@ -516,10 +535,28 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
         },
       },
       lateJoin: {
-        table: lateJoin.table,
-        invite: lateJoin.invite,
-        host: { accountId: lateHost.id, token: lateHost.token },
-        joiner: { accountId: lateJoiner.id, token: lateJoiner.token },
+        table: lateJoinSeed.table.table,
+        invite: lateJoinSeed.table.invite,
+        host: {
+          accountId: lateJoinSeed.host.id,
+          token: lateJoinSeed.host.token,
+        },
+        joiner: {
+          accountId: lateJoinSeed.joiner.id,
+          token: lateJoinSeed.joiner.token,
+        },
+      },
+      lateJoinStages: {
+        table: lateJoinStagesSeed.table.table,
+        invite: lateJoinStagesSeed.table.invite,
+        host: {
+          accountId: lateJoinStagesSeed.host.id,
+          token: lateJoinStagesSeed.host.token,
+        },
+        joiner: {
+          accountId: lateJoinStagesSeed.joiner.id,
+          token: lateJoinStagesSeed.joiner.token,
+        },
       },
       turnTimerTable: {
         table: timerTable.table,

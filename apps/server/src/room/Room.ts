@@ -1479,6 +1479,25 @@ export class Room {
     for (const id of recovered.actionIds) this.actionIds.add(id);
   }
 
+  /** Reconcile ambiguous solo conversion writes against the durable session truth. */
+  private async reloadSessionBindingState(): Promise<void> {
+    if (
+      !this.store.loadSessionMode ||
+      !this.store.loadActiveSeatCharacterBindings
+    )
+      throw new Error('Session binding state cannot be reloaded');
+    const [mode, bindings] = await Promise.all([
+      this.store.loadSessionMode(this.sessionId),
+      this.store.loadActiveSeatCharacterBindings(this.sessionId),
+    ]);
+    await this.reloadCommittedHead();
+    this.seatBindings.clear();
+    for (const binding of bindings)
+      this.seatBindings.set(binding.seatId, binding);
+    this.bindingEnforced = mode === 'party';
+    this.soloPartyConversionPending = false;
+  }
+
   subscribe(
     accountId: string,
     connection: Connection,
@@ -1726,7 +1745,8 @@ export class Room {
     viewerAccountId?: string,
   ): import('@game/schema').ClientRoomState {
     const seats = this.state.seats.map((seat) => {
-      const clientSeat = { ...seat };
+      const { accountId, matureOptOut, ...clientSeat } = seat;
+      void matureOptOut;
       if (
         clientSeat.chatMutedUntil != null &&
         clientSeat.chatMutedUntil <= Date.now()
@@ -1734,13 +1754,18 @@ export class Room {
         clientSeat.chatMuted = false;
         clientSeat.chatMutedUntil = undefined;
       }
-      delete clientSeat.matureOptOut;
-      return clientSeat;
+      const isSelf = accountId === viewerAccountId;
+      return isSelf
+        ? { ...clientSeat, accountId, isSelf }
+        : { ...clientSeat, isSelf };
     });
     const revokedSeats = (this.state.revokedSeats ?? []).map((seat) => {
-      const clientSeat = { ...seat };
-      delete clientSeat.matureOptOut;
-      return clientSeat;
+      const { accountId, matureOptOut, ...clientSeat } = seat;
+      void matureOptOut;
+      const isSelf = accountId === viewerAccountId;
+      return isSelf
+        ? { ...clientSeat, accountId, isSelf }
+        : { ...clientSeat, isSelf };
     });
     const {
       lateJoinRequests,
@@ -1754,9 +1779,22 @@ export class Room {
     void lateJoinRequestCharacterIds;
     void lateJoinActionOwners;
     void openClarifications;
+    const spotlightActivity = Object.fromEntries(
+      Object.entries(this.state.spotlightActivity ?? []).flatMap(
+        ([accountId, turn]) => {
+          const seat = [
+            ...this.state.seats,
+            ...(this.state.revokedSeats ?? []),
+          ].find((candidate) => candidate.accountId === accountId);
+          return seat ? [[seat.seatId, turn]] : [];
+        },
+      ),
+    );
     const clientVisibleState: import('@game/schema').ClientRoomState = {
       ...visibleRoomState,
+      seats,
       revokedSeats,
+      spotlightActivity,
     };
     const isHostViewer = this.state.seats.some(
       (seat) => seat.accountId === viewerAccountId && seat.isHost,
@@ -4040,51 +4078,88 @@ export class Room {
             this.bindingEnforced = true;
           }
         } catch (error) {
-          if (!(error instanceof SeatCharacterError)) throw error;
-          await this.persist(
-            'SeatRevoked',
-            {
-              seatId: seat.seatId,
-              accountId: seat.accountId,
-              cause: error.code,
-            },
-            undefined,
-            [],
-            undefined,
-            [
-              {
-                type: 'LateJoinExpired',
-                payload: {
-                  requestId: request.requestId,
-                  reason: error.code,
-                },
-              },
-            ],
-          );
-          this.broadcast({
-            seq: this.seq,
-            type: 'Error',
-            payload: {
-              code: error.code,
-              message: `Late-join character binding failed (${error.code}).`,
-            },
-          });
+          // A write error can arrive after COMMIT. Reconcile durable mode,
+          // bindings, and events before deciding whether admission failed.
+          let conversionCommitted = false;
+          let conversionStateKnown = true;
           if (convertsSession) {
-            this.soloPartyConversionPending = false;
-            this.bindingEnforced = false;
+            try {
+              await this.reloadSessionBindingState();
+              conversionCommitted =
+                this.bindingEnforced && this.seatBindings.has(seat.seatId);
+            } catch {
+              // Preserve the pre-conversion state until durable mode and
+              // bindings can be read. A later admission attempt retries the
+              // idempotent conversion and reconciles again if it already
+              // committed.
+              conversionStateKnown = false;
+            }
           }
-          this.lateJoinAuthTokenHashes.delete(request.requestId);
-          this.lateJoinSnapshotAcks.delete(request.requestId);
-          this.lateJoinSnapshotSeqs.delete(request.requestId);
-          const pendingResume = this.pendingSeatResumeTokens.get(
-            request.accountId,
-          );
-          if (pendingResume) clearTimeout(pendingResume.expiryTimer);
-          this.pendingSeatResumeTokens.delete(request.accountId);
-          const timer = this.lateJoinExpiryTimers.get(request.requestId);
-          if (timer) clearTimeout(timer);
-          this.lateJoinExpiryTimers.delete(request.requestId);
-          continue;
+          if (conversionCommitted) {
+            // Continue normal spawn/admission from the reloaded durable state.
+          } else if (!conversionStateKnown) {
+            // Keep the pending seat eligible for retry; do not turn an
+            // unread transaction outcome into an in-memory party session.
+            this.connections.get(request.accountId)?.send({
+              seq: this.seq,
+              type: 'Error',
+              payload: {
+                code: 'LATE_JOIN_ADMISSION_RETRY',
+                message:
+                  'The table could not confirm the join yet. Please retry shortly.',
+              },
+            });
+            continue;
+          } else {
+            // Revoke only when a successful read proves the transaction did
+            // not commit (or for ordinary, non-conversion bind failures).
+            if (!(error instanceof SeatCharacterError) && !convertsSession)
+              throw error;
+            const bindingError =
+              error instanceof SeatCharacterError
+                ? error
+                : new SeatCharacterError('INVALID_CHARACTER');
+            await this.persist(
+              'SeatRevoked',
+              {
+                seatId: seat.seatId,
+                accountId: seat.accountId,
+                cause: bindingError.code,
+              },
+              undefined,
+              [],
+              undefined,
+              [
+                {
+                  type: 'LateJoinExpired',
+                  payload: {
+                    requestId: request.requestId,
+                    reason: bindingError.code,
+                  },
+                },
+              ],
+            );
+            this.connections.get(request.accountId)?.send({
+              seq: this.seq,
+              type: 'Error',
+              payload: {
+                code: 'ACTION_REJECTED',
+                message: 'Character could not be bound.',
+              },
+            });
+            this.lateJoinAuthTokenHashes.delete(request.requestId);
+            this.lateJoinSnapshotAcks.delete(request.requestId);
+            this.lateJoinSnapshotSeqs.delete(request.requestId);
+            const pendingResume = this.pendingSeatResumeTokens.get(
+              request.accountId,
+            );
+            if (pendingResume) clearTimeout(pendingResume.expiryTimer);
+            this.pendingSeatResumeTokens.delete(request.accountId);
+            const timer = this.lateJoinExpiryTimers.get(request.requestId);
+            if (timer) clearTimeout(timer);
+            this.lateJoinExpiryTimers.delete(request.requestId);
+            continue;
+          }
         }
       }
       const binding = this.seatBindings.get(seat.seatId);
@@ -6376,63 +6451,70 @@ export class Room {
         return shown ? [shown] : [];
       });
       if (visible.length)
-        connection.send({
-          seq: this.seq,
-          type: 'CombatEvents',
-          payload: {
-            events: visible.flatMap((event) => {
-              if (
-                event.type === 'HpChanged' &&
-                typeof event.entityId === 'string'
-              ) {
-                const entity = state.entities.find(
-                  (candidate) => candidate.id === event.entityId,
-                );
-                if (!entity && !controlled.has(event.entityId)) return [];
-                if (
-                  entity &&
-                  entity.team !== 'party' &&
-                  !controlled.has(entity.id)
-                ) {
-                  const hp =
-                    typeof event.to === 'number' ? event.to : entity.hp;
-                  const hpState =
-                    hp <= 0
-                      ? 'down'
-                      : hp / Math.max(1, entity.maxHp) > 0.5
-                        ? 'healthy'
-                        : 'wounded';
-                  return [{ type: 'HpChanged', entityId: entity.id, hpState }];
-                }
-              }
-              const target = state.entities.find(
-                (entity) => entity.id === event.targetId,
-              );
-              const revealDamage =
-                event.type !== 'RollEvent' ||
-                event.kind !== 'damage' ||
-                (target?.team === 'party' &&
-                  controlled.has(String(event.entityId))) ||
-                (target?.team !== 'party' &&
-                  controlled.has(String(event.targetId)));
-              return [
-                toWireEvent(
-                  event,
-                  pcIds.has(String(event.entityId)) &&
-                    !controlled.has(String(event.entityId)),
-                  event.type !== 'RollEvent' ||
-                    event.kind !== 'attack' ||
-                    controlled.has(String(event.entityId)),
-                  revealDamage,
-                  event.type === 'RollEvent' &&
-                    event.kind === 'damage' &&
-                    typeof event.targetId === 'string' &&
-                    (target?.team === 'party') === true,
-                ),
-              ];
-            }),
-          },
-        } as ServerMessage);
+        connection.send(
+          this.projectMessageForViewer(
+            {
+              seq: this.seq,
+              type: 'CombatEvents',
+              payload: {
+                events: visible.flatMap((event) => {
+                  if (
+                    event.type === 'HpChanged' &&
+                    typeof event.entityId === 'string'
+                  ) {
+                    const entity = state.entities.find(
+                      (candidate) => candidate.id === event.entityId,
+                    );
+                    if (!entity && !controlled.has(event.entityId)) return [];
+                    if (
+                      entity &&
+                      entity.team !== 'party' &&
+                      !controlled.has(entity.id)
+                    ) {
+                      const hp =
+                        typeof event.to === 'number' ? event.to : entity.hp;
+                      const hpState =
+                        hp <= 0
+                          ? 'down'
+                          : hp / Math.max(1, entity.maxHp) > 0.5
+                            ? 'healthy'
+                            : 'wounded';
+                      return [
+                        { type: 'HpChanged', entityId: entity.id, hpState },
+                      ];
+                    }
+                  }
+                  const target = state.entities.find(
+                    (entity) => entity.id === event.targetId,
+                  );
+                  const revealDamage =
+                    event.type !== 'RollEvent' ||
+                    event.kind !== 'damage' ||
+                    (target?.team === 'party' &&
+                      controlled.has(String(event.entityId))) ||
+                    (target?.team !== 'party' &&
+                      controlled.has(String(event.targetId)));
+                  return [
+                    toWireEvent(
+                      event,
+                      pcIds.has(String(event.entityId)) &&
+                        !controlled.has(String(event.entityId)),
+                      event.type !== 'RollEvent' ||
+                        event.kind !== 'attack' ||
+                        controlled.has(String(event.entityId)),
+                      revealDamage,
+                      event.type === 'RollEvent' &&
+                        event.kind === 'damage' &&
+                        typeof event.targetId === 'string' &&
+                        (target?.team === 'party') === true,
+                    ),
+                  ];
+                }),
+              },
+            } as ServerMessage,
+            viewer,
+          ) as ServerMessage,
+        );
     }
     const ended = events.find((event) => event.type === 'CombatEnded');
     if (ended) {
@@ -7201,21 +7283,62 @@ export class Room {
     });
   }
 
-  private broadcast(message: ServerMessage): void {
-    if (message.type === 'StateSync') {
-      for (const [accountId, connection] of this.connections) {
-        connection.send({
-          ...message,
-          payload: {
-            ...this.clientSyncPayload(),
-            state: this.clientState(accountId),
-          },
-        });
+  projectMessageForViewer(value: unknown, viewerAccountId: string): unknown {
+    const seats = [...this.state.seats, ...(this.state.revokedSeats ?? [])];
+    const seatByAccount = new Map<string, string>(
+      seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
+    );
+    const project = (current: unknown): unknown => {
+      if (Array.isArray(current)) return current.map(project);
+      if (!current || typeof current !== 'object') return current;
+      const result: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(current)) {
+        if (/accountIds$/.test(key) && Array.isArray(item)) {
+          const prefix = key.slice(0, -'accountIds'.length);
+          result[`${prefix}SeatIds`] = item.flatMap((accountId) => {
+            if (typeof accountId !== 'string') return [];
+            const seatId = seatByAccount.get(accountId);
+            return seatId ? [seatId] : [];
+          });
+          continue;
+        }
+        if (/accountId$/.test(key) && typeof item === 'string') {
+          const seatId = seatByAccount.get(item);
+          const prefix = key.slice(0, -'AccountId'.length);
+          const seatKey = prefix ? `${prefix}SeatId` : 'seatId';
+          const selfKey = prefix ? `${prefix}IsSelf` : 'isSelf';
+          if (item === viewerAccountId) {
+            result[key] = item;
+            result[selfKey] = true;
+          } else if (seatId) {
+            result[seatKey] = seatId;
+            result[selfKey] = false;
+          }
+          continue;
+        }
+        result[key] = project(item);
       }
-      return;
+      return result;
+    };
+    return project(value);
+  }
+
+  private broadcast(message: ServerMessage): void {
+    for (const [accountId, connection] of this.connections) {
+      const personalized =
+        message.type === 'StateSync'
+          ? {
+              ...message,
+              payload: {
+                ...this.clientSyncPayload(),
+                state: this.clientState(accountId),
+              },
+            }
+          : message;
+      connection.send(
+        this.projectMessageForViewer(personalized, accountId) as ServerMessage,
+      );
     }
-    for (const connection of this.connections.values())
-      connection.send(message);
   }
 
   private async deliverSpotlightPrompt(): Promise<void> {

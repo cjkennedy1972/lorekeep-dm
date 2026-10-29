@@ -46,6 +46,7 @@ const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
 const resumeTokens = new Map<string, string>();
 const ticketOwners = new Map<string, string>();
 const seenMessageTypes = new WeakMap<WebSocket, string[]>();
+const receivedFrames = new WeakMap<WebSocket, string[]>();
 async function next(
   ws: WebSocket,
   timeoutMs = 8000,
@@ -70,11 +71,12 @@ async function next(
     clearTimeout(timer);
   }
 }
-async function nextOfType(ws: WebSocket, type: string) {
+async function nextOfType(ws: WebSocket, type: string, timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
   for (;;) {
     let message;
     try {
-      message = await next(ws);
+      message = await next(ws, Math.max(1, deadline - Date.now()));
     } catch (error) {
       throw new Error(
         `waiting for ${type}: ${String(error)}; received ${seenMessageTypes.get(ws)?.join(', ') ?? 'no frames'}`,
@@ -140,7 +142,9 @@ function connect(
   );
   inboxes.set(ws, on(ws, 'message'));
   seenMessageTypes.set(ws, []);
+  receivedFrames.set(ws, []);
   ws.on('message', (raw) => {
+    receivedFrames.get(ws)!.push(String(raw));
     const message = JSON.parse(String(raw)) as {
       type?: string;
       seq?: number;
@@ -1088,6 +1092,51 @@ describe('one-time gateway', () => {
     );
     await closeSocket(first);
   }, 20_000);
+
+  it('never sends another seat account ID in shared snapshot, presence, or claim frames', async () => {
+    let host: WebSocket | undefined;
+    let guest: WebSocket | undefined;
+    let claimant: WebSocket | undefined;
+    try {
+      host = connect(await ticket(tokens[0]));
+      await nextOfType(host, 'StateSync');
+      guest = connect(await ticket(tokens[1]));
+      await nextOfType(guest, 'StateSync');
+
+      const room = await rooms.get(sessionId);
+      const guestSeatId = room.state.seats.find(
+        (seat) => seat.accountId === accounts[1],
+      )!.seatId;
+      const hostSnapshot = (receivedFrames.get(host) ?? []).find(
+        (frame) => JSON.parse(frame).type === 'StateSync',
+      );
+      expect(hostSnapshot).toBeDefined();
+      expect(hostSnapshot).not.toContain(accounts[1]);
+
+      await closeSocket(guest);
+      await waitForReleasedSocket(guestSeatId);
+      await nextOfType(host, 'PresenceChanged', 15_000);
+
+      claimant = connect(await ticket(tokens[1]), 'lost-token');
+      await nextOfType(claimant, 'SeatClaimPending');
+      const claimRequest = await nextOfType(host, 'SeatClaimRequested');
+      expect(claimRequest.payload.seatId).toBe(guestSeatId);
+      const frames = receivedFrames.get(host) ?? [];
+      expect(
+        frames.some((frame) => JSON.parse(frame).type === 'PresenceChanged'),
+      ).toBe(true);
+      expect(
+        frames.some((frame) => JSON.parse(frame).type === 'SeatClaimRequested'),
+      ).toBe(true);
+      expect(frames.join('\n')).not.toContain(accounts[1]);
+    } finally {
+      await Promise.all(
+        [claimant, guest, host]
+          .filter((ws): ws is WebSocket => ws !== undefined)
+          .map((ws) => closeSocket(ws)),
+      );
+    }
+  }, 30_000);
 
   it('rejects every host command from a seated non-host socket', async () => {
     const room = await rooms.get(sessionId);

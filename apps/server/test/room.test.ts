@@ -60,6 +60,12 @@ function fixture() {
         events: events.filter((event) => event.seq > (snapshot?.seq ?? 0)),
       };
     },
+    async loadSessionMode() {
+      return sessionConvertedToParty ? 'party' : 'solo';
+    },
+    async loadActiveSeatCharacterBindings() {
+      return [];
+    },
     async writeTurn(
       _sessionId,
       inputs,
@@ -789,6 +795,36 @@ describe('room actor', () => {
       ).toHaveLength(3);
     });
 
+    it('projects account identifiers only to the seat owner', async () => {
+      const { store } = fixture();
+      const owner = randomUUID();
+      const other = randomUUID();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(owner, 'Owner');
+      await room.seat(other, 'Other');
+
+      const ownerView = room.clientState(owner);
+      const otherView = room.clientState(other);
+      expect(
+        ownerView.seats.find((seat) => seat.displayName === 'Owner'),
+      ).toMatchObject({
+        accountId: owner,
+        isSelf: true,
+      });
+      expect(
+        otherView.seats.find((seat) => seat.displayName === 'Owner'),
+      ).not.toHaveProperty('accountId');
+      expect(
+        otherView.seats.find((seat) => seat.displayName === 'Owner'),
+      ).toMatchObject({ isSelf: false });
+      expect(
+        otherView.seats.find((seat) => seat.displayName === 'Other'),
+      ).toMatchObject({
+        accountId: other,
+        isSelf: true,
+      });
+    });
+
     it('validates the selected character before persisting and exposes only its public card to the host', async () => {
       const { store, events } = fixture();
       const host = randomUUID();
@@ -1481,8 +1517,9 @@ describe('room actor', () => {
       ).toBe(true);
     });
 
-    it('contains a failed fire-and-forget combat-boundary admission and leaves it pending', async () => {
-      const { store, events, setCharacterSnapshot } = fixture();
+    it('revokes the seat after an unexpected solo-conversion binding failure', async () => {
+      const { store, events, setCharacterSnapshot, sessionConvertedToParty } =
+        fixture();
       const host = randomUUID();
       const requester = randomUUID();
       const character = quickBuild(loadCatalog(), undefined, 0x39, 1).character;
@@ -1589,9 +1626,15 @@ describe('room actor', () => {
         room.seq,
       );
       const messages: Record<string, unknown>[] = [];
+      const requesterMessages: Record<string, unknown>[] = [];
       await room.subscribe(host, {
         send(message: Record<string, unknown>) {
           messages.push(message);
+        },
+      });
+      await room.subscribe(requester, {
+        send(message: Record<string, unknown>) {
+          requesterMessages.push(message);
         },
       });
 
@@ -1611,54 +1654,41 @@ describe('room actor', () => {
           [{ type: 'TurnStarted', round: 2 }],
           host,
         );
-        await vi.waitFor(() => expect(logged).toHaveBeenCalledTimes(2));
-        const rejection = logged.mock.calls[0]?.[1];
-        expect(rejection).toBeInstanceOf(Error);
-        expect(rejection).toMatchObject({
-          message: 'simulated admission storage failure',
-        });
-        expect(logged.mock.calls[1]).toEqual([
-          `Late-join admission failed for ${id}`,
-          rejection,
-        ]);
+        await vi.waitFor(() =>
+          expect(
+            events
+              .slice(eventCountBeforeAttempt)
+              .some((event) => event.type === 'SeatRevoked'),
+          ).toBe(true),
+        );
         await new Promise((resolve) => setTimeout(resolve, 0));
 
+        expect(logged).not.toHaveBeenCalled();
         expect(unhandled).toEqual([]);
-        expect(messages).toContainEqual(
+        expect(messages).not.toContainEqual(
+          expect.objectContaining({ type: 'Error' }),
+        );
+        expect(requesterMessages).toContainEqual(
           expect.objectContaining({
             type: 'Error',
-            payload: expect.objectContaining({
-              code: 'LATE_JOIN_ADMISSION_FAILED',
-            }),
+            payload: expect.objectContaining({ code: 'ACTION_REJECTED' }),
           }),
         );
         expect(
           room.state.lateJoinRequests?.some(
             (request) => request.requestId === requestId && request.approved,
           ),
-        ).toBe(true);
+        ).toBe(false);
         expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
         expect(
-          room.state.seats.filter((seat) => seat.accountId === requester),
-        ).toEqual([
-          expect.objectContaining({
-            seatId: pendingSeat.seatId,
-            presence: 'returning',
-          }),
-        ]);
-        const forbiddenAdmissionEvents = [
-          'SeatJoined',
-          'SeatCharacterBound',
-          'LateJoinSpawned',
-          'LateJoinAdmitted',
-        ];
-        for (const type of forbiddenAdmissionEvents) {
-          expect(
-            events
-              .slice(eventCountBeforeAttempt)
-              .some((event) => event.type === type),
-          ).toBe(false);
-        }
+          room.state.seats.some((seat) => seat.accountId === requester),
+        ).toBe(false);
+        expect(
+          events
+            .slice(eventCountBeforeAttempt)
+            .some((event) => event.type === 'LateJoinExpired'),
+        ).toBe(true);
+        expect(sessionConvertedToParty()).toBe(false);
         await expect(
           room.submitAction(requester, randomUUID(), 'Take a turn'),
         ).rejects.toThrow();
