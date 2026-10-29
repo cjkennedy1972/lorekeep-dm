@@ -82,14 +82,29 @@ const SYNC_MESSAGE_BUCKET_CAPACITY = 40;
 const MESSAGE_REFILL_PER_SECOND = 10;
 const SYNC_MESSAGE_REFILL_PER_SECOND = 2;
 const SYNC_REQUEST_DEADLINE_MS = 10_000;
-export function withSyncRequestDeadline<T>(
-  operation: Promise<T>,
+/**
+ * Queue one sync request behind the socket's current dispatch chain while
+ * starting its deadline immediately. If it expires while queued, its callback
+ * is skipped if/when the preceding work eventually settles.
+ */
+export function queueSyncRequest<T>(
+  chain: Promise<unknown>,
+  operation: () => Promise<T> | T,
   onDeadline: () => void,
+  onSettle: () => void,
   deadlineMs = SYNC_REQUEST_DEADLINE_MS,
-): Promise<T> {
+): Promise<T | undefined> {
+  let active = true;
+  let released = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const release = () => {
+    if (released) return;
+    released = true;
+    onSettle();
+  };
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
+      active = false;
       try {
         onDeadline();
       } catch {
@@ -99,8 +114,11 @@ export function withSyncRequestDeadline<T>(
     }, deadlineMs);
     timer.unref?.();
   });
-  return Promise.race([operation, deadline]).finally(() => {
+  const queued = chain.then(() => (active ? operation() : undefined));
+  return Promise.race([queued, deadline]).finally(() => {
+    active = false;
     if (timer) clearTimeout(timer);
+    release();
   });
 }
 function bindFailureCode(error: unknown): string {
@@ -1006,25 +1024,27 @@ export function installGateway(
                 identity.accountId,
               )
             : undefined;
-          chain = chain
-            .then(() => connections.sweepIfStale().catch(() => {}))
-            .then(() => {
-              if (ws.readyState === WebSocket.OPEN)
-                return isSyncRequest
-                  ? withSyncRequestDeadline(
-                      Promise.resolve(
-                        handle(data, undefined, actionReceiptSeq),
-                      ),
-                      () => ws.close(1011, 'Sync request deadline exceeded'),
-                    )
-                  : handle(data, undefined, actionReceiptSeq);
-            })
-            .catch(() => {
+          const operation = () =>
+            connections
+              .sweepIfStale()
+              .catch(() => {})
+              .then(() => {
+                if (ws.readyState === WebSocket.OPEN)
+                  return handle(data, undefined, actionReceiptSeq);
+              });
+          chain = isSyncRequest
+            ? queueSyncRequest(
+                chain,
+                operation,
+                () => ws.close(1011, 'Sync request deadline exceeded'),
+                () => messageAdmission.complete(messageType as SyncMessageType),
+              )
+            : chain.then(operation).catch(() => {
+                room.completeActionReceipt(actionReceiptSeq);
+              });
+          if (isSyncRequest)
+            chain = chain.catch(() => {
               room.completeActionReceipt(actionReceiptSeq);
-            })
-            .finally(() => {
-              if (isSyncRequest)
-                messageAdmission.complete(messageType as SyncMessageType);
             });
         };
         const writeChatGateLog = async (

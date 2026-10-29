@@ -12,7 +12,7 @@ import {
 import {
   consumeMessageToken,
   createGatewayMessageAdmission,
-  withSyncRequestDeadline,
+  queueSyncRequest,
 } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 describe('gateway envelope', () => {
@@ -112,33 +112,37 @@ describe('gateway envelope', () => {
     expect(concurrent.admit('Resync', 1000)).toBe(true);
   });
 
-  it('closes a socket and releases sync admission when a request never settles', async () => {
+  it('expires a sync request admitted behind a hung dispatch and releases its slot', async () => {
     vi.useFakeTimers();
     try {
       const admission = createGatewayMessageAdmission();
       const close = vi.fn();
-      let resolveOperation!: () => void;
-      const operation = new Promise<void>((resolve) => {
-        resolveOperation = resolve;
+      let releasePriorStep!: () => void;
+      const priorStep = new Promise<void>((resolve) => {
+        releasePriorStep = resolve;
       });
+      const dispatch = vi.fn();
+      const release = vi.fn(() => admission.complete('ChatHistoryRequest'));
       expect(admission.admit('ChatHistoryRequest', 1000)).toBe(true);
-      const dispatched = withSyncRequestDeadline(
-        operation,
+      const queuedChain = queueSyncRequest(
+        priorStep,
+        dispatch,
         () => close(1011, 'Sync request deadline exceeded'),
+        release,
         10,
-      )
-        .catch(() => undefined)
-        .finally(() => admission.complete('ChatHistoryRequest'));
+      ).catch(() => undefined);
       await vi.advanceTimersByTimeAsync(10);
-      await dispatched;
+      await queuedChain;
       expect(close).toHaveBeenCalledWith(
         1011,
         'Sync request deadline exceeded',
       );
       expect(admission.admit('ChatHistoryRequest', 1000)).toBe(true);
-      admission.complete('ChatHistoryRequest');
-      resolveOperation();
+      expect(release).toHaveBeenCalledOnce();
+      releasePriorStep();
       await Promise.resolve();
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }
