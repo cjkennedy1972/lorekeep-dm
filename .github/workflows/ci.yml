@@ -67,6 +67,7 @@ jobs:
   # `test` job does not run. Opt-in for review; runs the same suite that passes locally 10/10.
   party-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: mirror.gcr.io/library/postgres:16 # Docker Official Image via Google mirror
@@ -94,6 +95,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @game/schema build
+      - run: pnpm --filter @game/rules-engine build
       - run: pnpm --filter @game/server migrate:up
       - run: pnpm --filter @game/web exec playwright install --with-deps chromium
       - run: pnpm --filter @game/web exec playwright test -c playwright.party.config.ts
