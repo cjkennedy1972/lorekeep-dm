@@ -175,8 +175,6 @@ export class SeatCharacterRepository {
           throw new SeatCharacterError('NOT_FOUND');
         if (prior.rows[0].account_id !== accountId)
           throw new SeatCharacterError('NOT_OWNER');
-        if (expectedRevision === undefined)
-          throw new SeatCharacterError('NOT_FOUND');
         throw new SeatCharacterError('STALE_REVISION');
       }
       await client.query('COMMIT');

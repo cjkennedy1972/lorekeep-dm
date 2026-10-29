@@ -591,6 +591,124 @@ describe('late-join snapshot acknowledgement and binding', () => {
     60_000,
   );
 
+  it.each([
+    ['before commit', false, false],
+    ['after commit', true, false],
+    ['after commit when reconciliation reads fail', true, true],
+  ] as const)(
+    'keeps room enforcement consistent after an ambiguous conversion failure %s',
+    async (_label, commitBeforeThrow, failReconciliation) => {
+      const f = await solo();
+      const room = await open(f);
+      await room.seat(f.owner, 'Owner');
+      await room.persistGameState({ sceneId: 'ambiguous-conversion' });
+      const joiner = await account();
+      const jc = await character(joiner, 0x63);
+      const req = await room.requestLateJoin(
+        joiner,
+        jc.character.id,
+        jc.revision,
+        randomUUID(),
+        'Joiner',
+      );
+      await room.approveLateJoin(f.owner, randomUUID(), req);
+      await room.submitAction(
+        f.owner,
+        randomUUID(),
+        'close the scene',
+        'Owner',
+      );
+      const seat = room.state.seats.find(
+        (candidate) => candidate.accountId === joiner,
+      )!;
+      const connection = conn();
+      await room.subscribe(joiner, connection, -1);
+      const sync = connection.msgs.find(
+        (message) => (message as { type?: string }).type === 'StateSync',
+      ) as { seq: number };
+      await room.acknowledgeLateJoinSnapshot(joiner, seat.seatId, sync.seq);
+
+      const originalWriteTurn = store.writeTurn.bind(store);
+      const originalLoadMode = store.loadSessionMode.bind(store);
+      const originalLoadBindings =
+        store.loadActiveSeatCharacterBindings.bind(store);
+      store.writeTurn = async (...args) => {
+        const isConversionBind =
+          args[8]?.kind === 'bind' && args[9] === 'solo-to-party';
+        if (!isConversionBind) return originalWriteTurn(...args);
+        if (commitBeforeThrow) await originalWriteTurn(...args);
+        throw new Error('injected ambiguous conversion failure');
+      };
+      if (failReconciliation) {
+        let failReads = true;
+        store.loadSessionMode = async (sessionId) => {
+          if (failReads)
+            throw new Error('injected reconciliation read failure');
+          return originalLoadMode(sessionId);
+        };
+        store.loadActiveSeatCharacterBindings = async (sessionId) => {
+          if (failReads)
+            throw new Error('injected reconciliation read failure');
+          return originalLoadBindings(sessionId);
+        };
+        // Restore reads once the bind call has begun, without affecting setup.
+        setTimeout(() => {
+          failReads = false;
+        }, 500);
+      }
+      try {
+        await (
+          room as unknown as { admitApprovedLateJoins(): Promise<void> }
+        ).admitApprovedLateJoins();
+      } finally {
+        store.writeTurn = originalWriteTurn;
+        store.loadSessionMode = originalLoadMode;
+        store.loadActiveSeatCharacterBindings = originalLoadBindings;
+      }
+
+      const bindings = await originalLoadBindings(f.sessionId);
+      const enforced = (room as unknown as { bindingEnforced: boolean })
+        .bindingEnforced;
+      if (!commitBeforeThrow) {
+        expect(await modeOf(f.sessionId)).toBe('solo');
+        expect(enforced).toBe(false);
+        expect(
+          room.state.seats.some((candidate) => candidate.accountId === joiner),
+        ).toBe(false);
+      } else {
+        expect(await modeOf(f.sessionId)).toBe('party');
+        expect(enforced).toBe(true);
+        expect(bindings.some((binding) => binding.accountId === f.owner)).toBe(
+          true,
+        );
+        if (failReconciliation) {
+          expect(bindings.some((binding) => binding.accountId === joiner)).toBe(
+            true,
+          );
+          expect(
+            room.state.seats.some(
+              (candidate) =>
+                candidate.accountId === joiner &&
+                candidate.presence !== 'revoked',
+            ),
+          ).toBe(true);
+        } else {
+          expect(bindings.some((binding) => binding.accountId === joiner)).toBe(
+            true,
+          );
+          expect(
+            room.state.seats.some(
+              (candidate) =>
+                candidate.accountId === joiner &&
+                candidate.presence !== 'revoked',
+            ),
+          ).toBe(true);
+        }
+      }
+      await room.drain();
+    },
+  );
+
   it('refuses explicit binding while a session remains solo', async () => {
     const f = await solo();
     const room = await open(f);

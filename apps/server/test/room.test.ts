@@ -60,6 +60,12 @@ function fixture() {
         events: events.filter((event) => event.seq > (snapshot?.seq ?? 0)),
       };
     },
+    async loadSessionMode() {
+      return sessionConvertedToParty ? 'party' : 'solo';
+    },
+    async loadActiveSeatCharacterBindings() {
+      return [];
+    },
     async writeTurn(
       _sessionId,
       inputs,
@@ -1620,9 +1626,15 @@ describe('room actor', () => {
         room.seq,
       );
       const messages: Record<string, unknown>[] = [];
+      const requesterMessages: Record<string, unknown>[] = [];
       await room.subscribe(host, {
         send(message: Record<string, unknown>) {
           messages.push(message);
+        },
+      });
+      await room.subscribe(requester, {
+        send(message: Record<string, unknown>) {
+          requesterMessages.push(message);
         },
       });
 
@@ -1653,10 +1665,13 @@ describe('room actor', () => {
 
         expect(logged).not.toHaveBeenCalled();
         expect(unhandled).toEqual([]);
-        expect(messages).toContainEqual(
+        expect(messages).not.toContainEqual(
+          expect.objectContaining({ type: 'Error' }),
+        );
+        expect(requesterMessages).toContainEqual(
           expect.objectContaining({
             type: 'Error',
-            payload: expect.objectContaining({ code: 'INVALID_CHARACTER' }),
+            payload: expect.objectContaining({ code: 'ACTION_REJECTED' }),
           }),
         );
         expect(
