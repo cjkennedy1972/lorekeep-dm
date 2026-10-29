@@ -46,6 +46,7 @@ const inboxes = new WeakMap<WebSocket, AsyncIterator<unknown[]>>();
 const resumeTokens = new Map<string, string>();
 const ticketOwners = new Map<string, string>();
 const seenMessageTypes = new WeakMap<WebSocket, string[]>();
+const receivedFrames = new WeakMap<WebSocket, string[]>();
 async function next(
   ws: WebSocket,
   timeoutMs = 8000,
@@ -140,7 +141,9 @@ function connect(
   );
   inboxes.set(ws, on(ws, 'message'));
   seenMessageTypes.set(ws, []);
+  receivedFrames.set(ws, []);
   ws.on('message', (raw) => {
+    receivedFrames.get(ws)!.push(String(raw));
     const message = JSON.parse(String(raw)) as {
       type?: string;
       seq?: number;
@@ -1087,6 +1090,45 @@ describe('one-time gateway', () => {
       )!.seatId,
     );
     await closeSocket(first);
+  }, 20_000);
+
+  it('never sends another seat account ID in shared snapshot, presence, or claim frames', async () => {
+    const host = connect(await ticket(tokens[0]));
+    await nextOfType(host, 'StateSync');
+    const guest = connect(await ticket(tokens[1]));
+    await nextOfType(guest, 'StateSync');
+
+    const room = await rooms.get(sessionId);
+    const guestSeatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[1],
+    )!.seatId;
+    const hostSnapshot = (receivedFrames.get(host) ?? []).find(
+      (frame) => JSON.parse(frame).type === 'StateSync',
+    );
+    expect(hostSnapshot).toBeDefined();
+    expect(hostSnapshot).not.toContain(accounts[1]);
+
+    await closeSocket(guest);
+    await waitForReleasedSocket(guestSeatId);
+    await nextOfType(host, 'PresenceChanged');
+
+    const claimant = connect(await ticket(tokens[1]), 'lost-token');
+    await nextOfType(claimant, 'SeatClaimPending');
+    const claimRequest = await nextOfType(host, 'SeatClaimRequested');
+    expect(claimRequest.payload.seatId).toBe(guestSeatId);
+    const frames = receivedFrames.get(host) ?? [];
+    expect(
+      frames.some((frame) => JSON.parse(frame).type === 'PresenceChanged'),
+    ).toBe(true);
+    expect(
+      frames.some((frame) => JSON.parse(frame).type === 'SeatClaimRequested'),
+    ).toBe(true);
+    expect(frames.join('\n')).not.toContain(accounts[1]);
+
+    await Promise.all([closeSocket(claimant), closeSocket(host)]);
+    await waitForReleasedSocket(
+      room.state.seats.find((seat) => seat.accountId === accounts[0])!.seatId,
+    );
   }, 20_000);
 
   it('rejects every host command from a seated non-host socket', async () => {
