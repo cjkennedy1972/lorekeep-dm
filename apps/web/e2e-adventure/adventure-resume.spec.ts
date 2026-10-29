@@ -113,9 +113,10 @@ async function stopServer() {
         .toString()
         .trim();
       return command.includes('vitest');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
-      throw error;
+    } catch {
+      // A process that exited between the liveness probe and `ps` is not the
+      // expected server; cleanup must never target a replacement process.
+      return false;
     }
   };
   const validServerPid = isExpectedServer();

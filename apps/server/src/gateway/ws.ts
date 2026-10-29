@@ -81,6 +81,28 @@ const MESSAGE_BUCKET_CAPACITY = 20;
 const SYNC_MESSAGE_BUCKET_CAPACITY = 40;
 const MESSAGE_REFILL_PER_SECOND = 10;
 const SYNC_MESSAGE_REFILL_PER_SECOND = 2;
+const SYNC_REQUEST_DEADLINE_MS = 10_000;
+export function withSyncRequestDeadline<T>(
+  operation: Promise<T>,
+  onDeadline: () => void,
+  deadlineMs = SYNC_REQUEST_DEADLINE_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      try {
+        onDeadline();
+      } catch {
+        // Closing a socket may race with teardown; the deadline still settles.
+      }
+      reject(new Error('Sync request deadline exceeded'));
+    }, deadlineMs);
+    timer.unref?.();
+  });
+  return Promise.race([operation, deadline]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
 function bindFailureCode(error: unknown): string {
   if (error instanceof RoomSeatRequiredError) return 'NOT_SEATED';
   if (!(error instanceof SeatCharacterError)) return 'ACTION_REJECTED';
@@ -988,7 +1010,14 @@ export function installGateway(
             .then(() => connections.sweepIfStale().catch(() => {}))
             .then(() => {
               if (ws.readyState === WebSocket.OPEN)
-                return handle(data, undefined, actionReceiptSeq);
+                return isSyncRequest
+                  ? withSyncRequestDeadline(
+                      Promise.resolve(
+                        handle(data, undefined, actionReceiptSeq),
+                      ),
+                      () => ws.close(1011, 'Sync request deadline exceeded'),
+                    )
+                  : handle(data, undefined, actionReceiptSeq);
             })
             .catch(() => {
               room.completeActionReceipt(actionReceiptSeq);

@@ -12,6 +12,7 @@ import {
 import {
   consumeMessageToken,
   createGatewayMessageAdmission,
+  withSyncRequestDeadline,
 } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 describe('gateway envelope', () => {
@@ -106,8 +107,41 @@ describe('gateway envelope', () => {
     expect(concurrent.admit('Resync', 1000)).toBe(true);
     expect(concurrent.admit('Resync', 1000)).toBe(false);
     expect(concurrent.admit('ChatHistoryRequest', 1000)).toBe(true);
+    expect(concurrent.admit('ChatHistoryRequest', 1000)).toBe(false);
     concurrent.complete('Resync');
     expect(concurrent.admit('Resync', 1000)).toBe(true);
+  });
+
+  it('closes a socket and releases sync admission when a request never settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const admission = createGatewayMessageAdmission();
+      const close = vi.fn();
+      let resolveOperation!: () => void;
+      const operation = new Promise<void>((resolve) => {
+        resolveOperation = resolve;
+      });
+      expect(admission.admit('ChatHistoryRequest', 1000)).toBe(true);
+      const dispatched = withSyncRequestDeadline(
+        operation,
+        () => close(1011, 'Sync request deadline exceeded'),
+        10,
+      )
+        .catch(() => undefined)
+        .finally(() => admission.complete('ChatHistoryRequest'));
+      await vi.advanceTimersByTimeAsync(10);
+      await dispatched;
+      expect(close).toHaveBeenCalledWith(
+        1011,
+        'Sync request deadline exceeded',
+      );
+      expect(admission.admit('ChatHistoryRequest', 1000)).toBe(true);
+      admission.complete('ChatHistoryRequest');
+      resolveOperation();
+      await Promise.resolve();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('replaces an in-memory socket only after the caller validates the seat token', () => {
