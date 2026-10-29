@@ -1548,8 +1548,13 @@ describe('party character binding WebSocket authorization', () => {
         await nextOfType(f.owner, 'SeatCharacterBoundPrivate'),
       ).toMatchObject({ payload: { seatId: ownerSeatId } });
       await bind(f.owner, f.room, f.owned.id, f.revision, actionId);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(seenMessageTypes.get(f.owner)).not.toContain('Error');
+      // Barrier instead of a sleep: the gateway handles one socket's frames in order,
+      // so the first Error after the retry must be this rejected barrier action.
+      // A retry that wrongly errors arrives first and fails the actionId match.
+      const barrier = await bind(f.owner, f.room, randomUUID(), f.revision);
+      expect(await nextOfType(f.owner, 'Error')).toMatchObject({
+        payload: { actionId: barrier },
+      });
       expect(
         (
           await db.query(

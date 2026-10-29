@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
+import { mintSeatResume } from './seat-resume';
 import {
   expect,
   test,
@@ -10,7 +11,12 @@ import {
 
 // Real server + Postgres (see apps/server/test/live/serve.party.live.ts). Host and guest share one table.
 type Account = { accountId: string; token: string };
-type PartyState = { table: string; host: Account; guest: Account };
+type PartyState = {
+  table: string;
+  host: Account;
+  guest: Account;
+  turnTimerTable: { table: string; host: Account; guest: Account };
+};
 type ServerFrame = {
   type: string;
   payload?: { durationMs?: number | null; timeoutAction?: string };
@@ -24,6 +30,7 @@ async function openAs(browser: Browser, account: Account, table: string) {
   await context.addCookies([
     { name: 'sid', value: account.token, url: origin },
   ]);
+  await mintSeatResume(context, origin, table, account);
   // The turn timer lives in the host tools drawer, which starts collapsed and remembers being opened.
   await context.addInitScript(() => {
     localStorage.setItem('lorekeep.drawer.host', 'open');
@@ -57,7 +64,8 @@ test.describe.serial('host turn timer control (real server)', () => {
   test('host sets the turn timer from the keyboard and the server confirms it', async ({
     browser,
   }) => {
-    const { table, host } = state();
+    const { turnTimerTable } = state();
+    const { table, host } = turnTimerTable;
     const view = await openAs(browser, host, table);
     try {
       const { page } = view;
@@ -97,7 +105,8 @@ test.describe.serial('host turn timer control (real server)', () => {
   test('a guest at the table does not see the turn timer control', async ({
     browser,
   }) => {
-    const { table, guest } = state();
+    const { turnTimerTable } = state();
+    const { table, guest } = turnTimerTable;
     const view = await openAs(browser, guest, table);
     try {
       await expect(

@@ -3,6 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 // Party browser e2e against the real server (Room + Postgres + scripted DM, no network).
 // Needs DATABASE_URL (migrated). Run: pnpm --filter @game/web exec playwright test -c playwright.party.config.ts
+if (!process.env.DATABASE_URL)
+  throw new Error(
+    'DATABASE_URL is required: point it at a migrated local Postgres (127.0.0.1 or localhost; the seeder refuses other hosts).',
+  );
 const stateFile = resolve('test-results/party-live-state.json');
 const apiPort = Number(process.env.LIVE_API_PORT ?? 8800);
 const webPort = Number(process.env.LIVE_WEB_PORT ?? 5176);
