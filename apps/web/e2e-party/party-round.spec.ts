@@ -70,22 +70,26 @@ async function openAs(
   }, drawers);
   const page = await context.newPage();
   const frames: ServerFrame[] = [];
-  page.on('websocket', (socket) =>
-    socket.on('framereceived', (event) => {
-      if (typeof event.payload !== 'string') return;
-      try {
-        frames.push(JSON.parse(event.payload) as ServerFrame);
-      } catch {
-        // Non-JSON frames are not protocol messages; skip them.
-      }
-    }),
-  );
+  const sent: { type: string; actionId?: string; payload?: { text?: string } }[] =
+    [];
+  const parseInto = <T>(list: T[]) => (event: { payload: string | Buffer }) => {
+    if (typeof event.payload !== 'string') return;
+    try {
+      list.push(JSON.parse(event.payload) as T);
+    } catch {
+      // Non-JSON frames are not protocol messages; skip them.
+    }
+  };
+  page.on('websocket', (socket) => {
+    socket.on('framereceived', parseInto(frames));
+    socket.on('framesent', parseInto(sent));
+  });
   await page.goto(path);
   if (new URL(path, origin).pathname.endsWith('/game'))
     await expect(
       page.getByRole('status').filter({ hasText: 'Connected to the room.' }),
     ).toBeVisible({ timeout: 30_000 });
-  return { accountId: account.accountId, context, page, frames };
+  return { accountId: account.accountId, context, page, frames, sent };
 }
 
 async function tabTo(page: Page, name: string) {
@@ -374,14 +378,16 @@ test.describe.serial('party round and host panels (real server)', () => {
       await guestView.page.getByRole('button', { name: 'Send chat' }).click();
       // Match the rejection to this send by actionId. An earlier Error (for example a
       // RATE_LIMITED for a sync request that was still queued) is not this chat's answer.
-      const sent = guestView.sent.find(
+      const sentChat = guestView.sent.find(
         (frame) =>
           frame.type === 'ChatSend' &&
           frame.payload?.text === 'can anyone hear me',
       );
-      const isRejectionForSend = (frame: { type: string; payload?: unknown }) =>
+      expect(sentChat?.actionId).toBeDefined();
+      const isRejectionForSend = (frame: ServerFrame) =>
         frame.type === 'Error' &&
-        (frame.payload as { actionId?: string })?.actionId === sent?.actionId;
+        (frame.payload as { actionId?: string })?.actionId ===
+          sentChat?.actionId;
       await expect
         .poll(() => guestView.frames.some(isRejectionForSend), {
           timeout: 30_000,
