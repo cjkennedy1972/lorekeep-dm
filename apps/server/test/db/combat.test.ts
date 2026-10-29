@@ -843,9 +843,7 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 30_000);
 
-  it('does not make a second model call for an ordinary turn with an offered encounter, even when scene retry is enabled', async () => {
-    const previousFlag = process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED;
-    process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED = 'true';
+  it('makes one model call for an ordinary turn with an offered encounter and next scene', async () => {
     let calls = 0;
     const adapter: LlmAdapter = {
       capabilities: () => ({
@@ -888,13 +886,10 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       expect(calls).toBe(1);
     } finally {
       client.close();
-      if (previousFlag === undefined)
-        delete process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED;
-      else process.env.DM_SCENE_PROGRESSION_RETRY_ENABLED = previousFlag;
     }
   }, 30_000);
 
-  it('retries exactly once after a failed hostile combat intent', async () => {
+  it('retries exactly once after a rejected hostile attack intent', async () => {
     const requests: LlmRequest[] = [];
     const adapter = combatIntentRetryDm(
       {
@@ -934,7 +929,25 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
         from,
         20_000,
       );
+      expect(
+        requests.some((request) =>
+          request.messages.some(
+            (message) =>
+              message.role === 'tool' &&
+              message.content?.includes('"error":"unknown-tool"'),
+          ),
+        ),
+      ).toBe(true);
       expect(requests).toHaveLength(3);
+      expect(
+        requests.filter((request) =>
+          request.messages.some((message) =>
+            message.content?.includes(
+              'SERVER CONTROL — one bounded structured retry',
+            ),
+          ),
+        ),
+      ).toHaveLength(1);
       const retryPrompt =
         requests[2]?.messages.map((message) => message.content).join(' ') ?? '';
       expect(retryPrompt).toContain('For a hostile-action encounter');

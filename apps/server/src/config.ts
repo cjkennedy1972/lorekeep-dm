@@ -35,11 +35,6 @@ const schema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
   /** Trust X-Forwarded-For/Proto from the reverse proxy: true, a hop count, or trusted proxy CIDRs. */
   TRUST_PROXY: z.string().default('false').transform(parseTrustProxy),
-  /** Enable one structured scene-progression retry; keep off until negative-control evidence exists. */
-  DM_SCENE_PROGRESSION_RETRY_ENABLED: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((v) => v === 'true'),
   /** Allow WS_ALLOWED_ORIGINS to bypass same-origin checks when creating WebSocket tickets. */
   WS_TICKET_ORIGIN_BYPASS_ENABLED: z
     .enum(['true', 'false'])
@@ -88,12 +83,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       `Invalid server environment: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   return result.data;
-}
-
-/** Parse the scene retry rollout flag without requiring unrelated server settings. */
-export function sceneProgressionRetryEnabled(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return schema.pick({ DM_SCENE_PROGRESSION_RETRY_ENABLED: true }).parse(env)
-    .DM_SCENE_PROGRESSION_RETRY_ENABLED;
 }

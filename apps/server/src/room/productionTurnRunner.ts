@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { sceneProgressionRetryEnabled } from '../config.js';
 import {
   AdventureSchema,
   StartCombatEncounterArgsSchema,
@@ -1322,11 +1321,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       attemptCount++;
       settled = await attempt(attemptTier);
     }
-    const sceneRetryEnabled = sceneProgressionRetryEnabled();
     if (
       shouldRetryCombatStart({
         hasEligibleEncounter: offeredEncounterKeys.length > 0,
-        hasEligibleNextScene: nextScenes.length > 0,
         // Structured model intent from the combat action tools is the hostile signal;
         // ordinary narration and merely offered encounter keys never trigger a retry.
         hostileEngagementSignal:
@@ -1334,10 +1331,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           (settled.result.toolIntentNames ?? []).some((name) =>
             ['attack', 'cast_spell', 'apply_condition'].includes(name),
           ),
-        sceneProgressionRetryEnabled: sceneRetryEnabled,
-        sceneProgressionSignal: (settled.result.toolIntentNames ?? []).includes(
-          'close_scene',
-        ),
         startToolAttempted: attemptState.startCombatCalled,
         sceneClosed: emittedSceneEvents.length > 0,
         alreadyRetried: attemptCount > 1,
@@ -1347,7 +1340,6 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       attemptCount++;
       const retryNudge = structuredCombatRetryNudge(
         offeredEncounterKeys,
-        sceneRetryEnabled ? nextScenes.map((scene) => scene.id) : [],
         offeredEncounterPrompt
           .filter((encounter) => encounter.startTrigger === 'scene-entry')
           .map((encounter) => encounter.key),

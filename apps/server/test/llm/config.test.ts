@@ -1,6 +1,5 @@
 import { createHash, createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { sceneProgressionRetryEnabled } from '../../src/config.js';
 import {
   decryptEndpointKey,
   encryptEndpointKey,
@@ -58,21 +57,5 @@ describe('endpoint encryption environment policy', () => {
     expect(() => decryptEndpointKey(legacy)).toThrow(
       'Endpoint credential unavailable',
     );
-  });
-});
-
-describe('scene progression retry environment setting', () => {
-  it('uses the parsed boolean flag and rejects non-lowercase true values', () => {
-    expect(sceneProgressionRetryEnabled({})).toBe(false);
-    expect(
-      sceneProgressionRetryEnabled({
-        DM_SCENE_PROGRESSION_RETRY_ENABLED: 'true',
-      }),
-    ).toBe(true);
-    expect(() =>
-      sceneProgressionRetryEnabled({
-        DM_SCENE_PROGRESSION_RETRY_ENABLED: 'TRUE',
-      }),
-    ).toThrow();
   });
 });

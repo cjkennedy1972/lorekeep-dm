@@ -64,5 +64,3 @@ pnpm --filter @game/e2e exec vitest run m2-scenarios
 ```
 
 To point a local server at a model, see [the operator guide](operator-guide.md): endpoint slots are saved through `/api/operator/endpoints/:slot`, plain-HTTP or loopback model hosts need `LLM_ALLOW_LOCAL_HOSTS`, and `LLM_FIXTURE_MODE` (`strict`, `lenient`, `record`) selects recorded-LLM replay. Set `OPERATOR_EMAILS` to your account email to use the operator routes. Never commit a real API key or a recorded fixture you have not reviewed.
-
-`DM_SCENE_PROGRESSION_RETRY_ENABLED` defaults to `false`; keep it disabled until a negative-control measurement supports enabling the scene-progression retry.
