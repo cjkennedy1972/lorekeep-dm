@@ -19,6 +19,7 @@ const state: ClientRoomState = {
       accountId: AccountIdSchema.parse('00000000-0000-4000-8000-0000000000a1'),
       displayName: 'Sam',
       presence: 'online',
+      isSelf: true,
       matureOptOut: false,
     },
   ],

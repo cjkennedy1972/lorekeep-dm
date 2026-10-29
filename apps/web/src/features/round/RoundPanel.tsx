@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RoundSnapshot, Seat } from '@game/schema';
+import type { RoundSnapshot, ClientSeat } from '@game/schema';
 import './round.css';
 
 type Round = RoundSnapshot;
@@ -60,7 +60,7 @@ const CLOSE_REASON: Record<NonNullable<Round['closeReason']>, string> = {
 
 type Props = {
   round: Round | undefined;
-  seats: Seat[];
+  seats: ClientSeat[];
   /** Wire actionId of this player's latest PlayerAction, from the send that created it. */
   myActionId?: string;
   /** This player's own action text; the public round snapshot omits it. */

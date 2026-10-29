@@ -183,14 +183,24 @@ export const LateJoinHostRequestSchema = z
   })
   .strict();
 export type LateJoinHostRequest = z.infer<typeof LateJoinHostRequestSchema>;
+export const ClientSeatSchema = SeatSchema.extend({
+  // Account identity is visible only to the owner of this seat.
+  accountId: AccountIdSchema.optional(),
+  isSelf: z.boolean().optional(),
+});
 export const ClientRoomStateSchema = RoomStateSchema.omit({
   openClarifications: true,
+  seats: true,
+  revokedSeats: true,
 }).extend({
+  seats: z.array(ClientSeatSchema).max(6),
+  revokedSeats: z.array(ClientSeatSchema).optional(),
   lateJoinRequests: z.array(LateJoinHostRequestSchema).optional(),
 });
 export type ClientRoomState = z.infer<typeof ClientRoomStateSchema>;
 export type Presence = z.infer<typeof PresenceSchema>;
 export type Seat = z.infer<typeof SeatSchema>;
+export type ClientSeat = z.infer<typeof ClientSeatSchema>;
 export type RoomState = z.infer<typeof RoomStateSchema>;
 export type RestVoteState = z.infer<typeof RestVoteSchema>;
 export type RestVoteResult = z.infer<typeof RestVoteResultSchema>;

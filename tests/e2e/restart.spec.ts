@@ -37,18 +37,39 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
     const sync = await recovered.waitFor((m) => m.type === 'StateSync', 3_000);
     // A normal restart return is not a displacement, so it adds no takeover event.
     expect(sync.seq).toBe(Number(expected.seq));
-    const clientSeat = (seat: Record<string, unknown>) =>
-      Object.fromEntries(
-        Object.entries(seat).filter(([key]) => key !== 'matureOptOut'),
-      );
+    const persistedState = expected.state as Record<string, unknown>;
+    const persistedSeats = (
+      persistedState.seats as Record<string, unknown>[]
+    ).map((seat) => {
+      const accountId = seat.accountId;
+      const visible = { ...seat };
+      delete visible.accountId;
+      delete visible.matureOptOut;
+      return { ...visible, accountId, isSelf: true };
+    });
+    const persistedSeatIds = new Map(
+      (persistedState.seats as Record<string, unknown>[]).map((seat) => [
+        String(seat.accountId),
+        String(seat.seatId),
+      ]),
+    );
     const expectedState = Object.fromEntries(
-      Object.entries(expected.state as Record<string, unknown>)
+      Object.entries(persistedState)
         .filter(([key]) => key !== 'actionIds')
         .map(([key, value]) => [
           key,
-          key === 'seats' && Array.isArray(value)
-            ? value.map(clientSeat)
-            : value,
+          key === 'seats'
+            ? persistedSeats
+            : key === 'spotlightActivity' && value && typeof value === 'object'
+              ? Object.fromEntries(
+                  Object.entries(value as Record<string, unknown>).flatMap(
+                    ([accountId, turn]) => {
+                      const seatId = persistedSeatIds.get(accountId);
+                      return seatId ? [[seatId, turn]] : [];
+                    },
+                  ),
+                )
+              : value,
         ]),
     );
     const syncState = (sync.payload as { state: { seats?: unknown[] } }).state;

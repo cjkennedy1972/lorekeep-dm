@@ -789,6 +789,36 @@ describe('room actor', () => {
       ).toHaveLength(3);
     });
 
+    it('projects account identifiers only to the seat owner', async () => {
+      const { store } = fixture();
+      const owner = randomUUID();
+      const other = randomUUID();
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(owner, 'Owner');
+      await room.seat(other, 'Other');
+
+      const ownerView = room.clientState(owner);
+      const otherView = room.clientState(other);
+      expect(
+        ownerView.seats.find((seat) => seat.displayName === 'Owner'),
+      ).toMatchObject({
+        accountId: owner,
+        isSelf: true,
+      });
+      expect(
+        otherView.seats.find((seat) => seat.displayName === 'Owner'),
+      ).not.toHaveProperty('accountId');
+      expect(
+        otherView.seats.find((seat) => seat.displayName === 'Owner'),
+      ).toMatchObject({ isSelf: false });
+      expect(
+        otherView.seats.find((seat) => seat.displayName === 'Other'),
+      ).toMatchObject({
+        accountId: other,
+        isSelf: true,
+      });
+    });
+
     it('validates the selected character before persisting and exposes only its public card to the host', async () => {
       const { store, events } = fixture();
       const host = randomUUID();

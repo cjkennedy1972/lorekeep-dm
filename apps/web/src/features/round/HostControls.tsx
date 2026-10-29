@@ -3,7 +3,7 @@ import type {
   LateJoinHostRequest,
   RoomState,
   RoundSnapshot,
-  Seat,
+  ClientSeat,
 } from '@game/schema';
 import type { RoomSend } from './RoundPanel';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -31,15 +31,15 @@ type Props = {
   paused?: boolean;
   pauseCause?: 'host' | 'no-connected-seats';
   send: RoomSend;
-  seats?: Seat[];
+  seats?: ClientSeat[];
   /** The host's own seat, excluded from kick and transfer. */
   selfSeatId?: string;
   lateJoinRequests?: LateJoinHostRequest[];
 };
 
 type Confirming =
-  | { kind: 'kick'; seat: Seat }
-  | { kind: 'transfer'; seat: Seat }
+  | { kind: 'kick'; seat: ClientSeat }
+  | { kind: 'transfer'; seat: ClientSeat }
   | { kind: 'end' }
   | null;
 
