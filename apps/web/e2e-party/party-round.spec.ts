@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
+import { mintSeatResume } from './seat-resume';
 import {
   expect,
   test,
@@ -55,10 +56,12 @@ async function openAs(
   const context = await browser.newContext(
     savedStorage ? { storageState: savedStorage } : undefined,
   );
-  if (!savedStorage)
+  if (!savedStorage) {
     await context.addCookies([
       { name: 'sid', value: account.token, url: origin },
     ]);
+    await mintSeatResume(context, origin, table, account);
+  }
   // Host tools and party chat are collapsed drawers that remember being opened; most specs drive them.
   await context.addInitScript((open) => {
     for (const id of ['host', 'chat'])
@@ -565,10 +568,11 @@ test.describe.serial('party round and host panels (real server)', () => {
   test('host ends the table and every seated player sees it ended', async ({
     browser,
   }) => {
-    const { table, guest, host } = state();
+    // Its own table: ending it closes the room for everyone in it.
+    const { table, host, guest } = state().endTable;
     const path = `/rooms/${table}/game`;
-    const hostView = await openAs(browser, guest, table, path);
-    const seatedView = await openAs(browser, host, table, path);
+    const hostView = await openAs(browser, host, table, path);
+    const seatedView = await openAs(browser, guest, table, path);
     try {
       for (const view of [hostView, seatedView])
         await expect(

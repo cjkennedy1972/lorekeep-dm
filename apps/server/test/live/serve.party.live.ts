@@ -17,6 +17,7 @@ import { loadCatalog } from '@game/rules-engine/catalog-node';
 import type { CharacterInput } from '@game/rules-engine';
 import { createApp } from '../../src/app.js';
 import { createSession } from '../../src/accounts/sessions.js';
+import { hashToken } from '../../src/accounts/signup.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { Persistence } from '../../src/persistence/index.js';
@@ -132,6 +133,33 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
   // limiter behavior covered by gateway.test.ts, and isolate each browser scenario.
   app.post('/api/test/reset-auth-attempts', async () => {
     connections.resetAuthAttemptHistory();
+    return { ok: true };
+  });
+  // Test-only: mints a fresh one-time seat resume token for a seated account. Room hands the
+  // first tokenless socket a pending token that expires 30 s after SeatJoined; the fixture seats
+  // every table at boot, so a spec opening later must mint its own. Mirrors the SeatJoined path.
+  app.post('/api/test/mint-seat-resume', async (request, reply) => {
+    const { table, accountId, token } = request.body as {
+      table: string;
+      accountId: string;
+      token: string;
+    };
+    const room = await rooms.get(table);
+    if (!room.state.seats.some((seat) => seat.accountId === accountId))
+      return reply.code(404).send({ error: 'account is not seated' });
+    const resumeToken = await new Persistence(db).createSeatResumeToken(
+      table,
+      seatIdOf(room, accountId),
+    );
+    (
+      room as unknown as {
+        setPendingSeatResumeToken(
+          accountId: string,
+          token: string,
+          authTokenHash: string,
+        ): void;
+      }
+    ).setPendingSeatResumeToken(accountId, resumeToken, hashToken(token));
     return { ok: true };
   });
   installGateway(app, db, rooms, connections, 300);
@@ -428,6 +456,36 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
     gameEngine: { ...lateGame.gameEngine, map: undefined },
   });
 
+  // The end-table table: ending it is destructive, so it gets its own table. Specs that
+  // share the round table would otherwise see it closed by whichever spec runs first.
+  const endHost = await seedAccount('End Host');
+  const endGuest = await seedAccount('End Guest');
+  const endTable = await openTable('Party end table', endHost, [endGuest]);
+  const endRoom = await rooms.get(endTable.table);
+  const endCharacters: Record<string, CharacterInput> = {};
+  for (const member of [endHost, endGuest])
+    endCharacters[member.id] = await bindSheet(endRoom, member);
+  await endRoom.persistGameState({
+    ...preCombatGame(hero),
+    characters: endCharacters,
+  });
+
+  // The turn-timer table: the spec changes the timer, which other specs' round state would hide
+  // the control behind. Its own host and table keep it independent of spec order.
+  const timerHost = await seedAccount('Timer Host');
+  const timerGuest = await seedAccount('Timer Guest');
+  const timerTable = await openTable('Party turn timer table', timerHost, [
+    timerGuest,
+  ]);
+  const timerRoom = await rooms.get(timerTable.table);
+  const timerCharacters: Record<string, CharacterInput> = {};
+  for (const member of [timerHost, timerGuest])
+    timerCharacters[member.id] = await bindSheet(timerRoom, member);
+  await timerRoom.persistGameState({
+    ...preCombatGame(hero),
+    characters: timerCharacters,
+  });
+
   mkdirSync(dirname(stateFile), { recursive: true });
   writeFileSync(
     stateFile,
@@ -462,6 +520,17 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
         invite: lateJoin.invite,
         host: { accountId: lateHost.id, token: lateHost.token },
         joiner: { accountId: lateJoiner.id, token: lateJoiner.token },
+      },
+      turnTimerTable: {
+        table: timerTable.table,
+        host: { accountId: timerHost.id, token: timerHost.token },
+        guest: { accountId: timerGuest.id, token: timerGuest.token },
+      },
+      endTable: {
+        table: endTable.table,
+        invite: endTable.invite,
+        host: { accountId: endHost.id, token: endHost.token },
+        guest: { accountId: endGuest.id, token: endGuest.token },
       },
       area: {
         table: area.table,
