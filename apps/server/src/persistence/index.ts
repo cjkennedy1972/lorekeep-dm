@@ -489,6 +489,7 @@ export class Persistence {
               accountId: legacy.owner_account_id,
               characterId: legacy.character_id,
               expectedRevision: ownerCharacter.rows[0]!.revision,
+              snapshotCharacter: legacy.character,
             });
           }
         }

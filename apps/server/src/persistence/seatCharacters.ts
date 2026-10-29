@@ -209,6 +209,7 @@ export class SeatCharacterRepository {
     accountId: string;
     characterId: string;
     expectedRevision: number;
+    snapshotCharacter?: unknown;
   }) {
     const client = await this.db.connect();
     try {
@@ -235,6 +236,8 @@ export class SeatCharacterRepository {
       expectedRevision: number;
       pendingSeatJoin?: boolean;
       allowSolo?: boolean;
+      /** Authoritative immutable session sheet for legacy owner conversion. */
+      snapshotCharacter?: unknown;
     },
   ) {
     try {
@@ -281,7 +284,9 @@ export class SeatCharacterRepository {
         throw new SeatCharacterError('NOT_OWNER');
       if (row.revision !== input.expectedRevision)
         throw new SeatCharacterError('STALE_REVISION');
-      const parsed = CharacterSchema.safeParse(row.character);
+      const parsed = CharacterSchema.safeParse(
+        input.snapshotCharacter ?? row.character,
+      );
       if (!parsed.success || validateCharacter(parsed.data, catalog).length)
         throw new SeatCharacterError('INVALID_CHARACTER');
       const sheet = characterRulesInput(parsed.data);
