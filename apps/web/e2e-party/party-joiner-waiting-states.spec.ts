@@ -13,7 +13,7 @@ import {
 // the seat is bound. Runs at 390px so the layout is checked on a phone-width viewport.
 type Account = { accountId: string; token: string };
 type LateJoinState = {
-  lateJoin: {
+  lateJoinStages: {
     table: string;
     invite: string;
     host: Account;
@@ -84,8 +84,8 @@ test.describe.serial('late joiner waiting states (real server, 390px)', () => {
   test('the joiner sees each waiting stage in order; Enter game unlocks only after binding', async ({
     browser,
   }) => {
-    const { lateJoin } = state();
-    const { table, invite, host, joiner } = lateJoin;
+    const { lateJoinStages } = state();
+    const { table, invite, host, joiner } = lateJoinStages;
     const hostView = await openAs(browser, host, `/rooms/${table}/game`);
     const joinerView = await openAs(browser, joiner, `/join/${invite}`);
     const hostPage = hostView.page;

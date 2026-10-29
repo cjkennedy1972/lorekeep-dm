@@ -6,6 +6,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import { mintSeatResume } from './seat-resume';
 
 // Shared by the party combat specs. The state file is written by apps/server/test/live/serve.party.live.ts.
 export type Member = { accountId: string; token: string; entityId: string };
@@ -36,7 +37,6 @@ export type View = {
   frames: unknown[];
   sent: unknown[];
 };
-type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
 export const readState = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as CombatState;
@@ -46,25 +46,17 @@ export const SYNC_BUDGET_MS = 1000;
 
 // A seat's resume token lives in the browser's localStorage. A fresh context that carries only the sid
 // cookie is a new device, so the server asks the host to approve the claim and the room never loads.
-// Keep each account's storageState between opens, as party-round.spec.ts does, so each reconnect resumes
-// its seat. Module-level so every combat spec in the same server boot shares the saved seats.
-const storageByAccount = new Map<string, StorageState>();
-
+// Each open mints a fresh one-time token for its seat. Replaying a saved storageState instead reuses a
+// token the server has already rotated, which lands on the same host-approval wait.
 export async function openMember(
   browser: Browser,
   member: Member,
   table: string,
   viewport?: { width: number; height: number },
 ): Promise<View> {
-  const saved = storageByAccount.get(member.accountId);
-  const context = await browser.newContext({
-    ...(viewport ? { viewport } : {}),
-    ...(saved ? { storageState: saved } : {}),
-  });
-  if (!saved)
-    await context.addCookies([
-      { name: 'sid', value: member.token, url: origin },
-    ]);
+  const context = await browser.newContext(viewport ? { viewport } : undefined);
+  await context.addCookies([{ name: 'sid', value: member.token, url: origin }]);
+  await mintSeatResume(context, origin, table, member);
   const page = await context.newPage();
   const frames: unknown[] = [];
   const sent: unknown[] = [];
@@ -85,12 +77,8 @@ export async function openMember(
   return { member, context, page, frames, sent };
 }
 
-/** Saves the seat's storage (resume token, sid cookie) before closing, so the next open resumes the seat. */
+/** Closes the member's context and lets the server release the seat claim before the next open. */
 export async function closeMember(view: View) {
-  storageByAccount.set(
-    view.member.accountId,
-    await view.context.storageState(),
-  );
   await view.context.close();
   // Let the server-side close handler release the seat claim before the next reconnect.
   await new Promise((resolve) => setTimeout(resolve, 100));
