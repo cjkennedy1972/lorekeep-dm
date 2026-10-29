@@ -6,6 +6,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import { mintSeatResume } from './seat-resume';
 
 // Real server + Postgres (see apps/server/test/live/serve.party.live.ts, the late-join table).
 // A solo host plays; a late joiner requests a seat, the host approves and resolves the round,
@@ -29,11 +30,18 @@ const origin = `http://localhost:${process.env.LIVE_WEB_PORT ?? 5176}`;
 const shotDir =
   process.env.LATE_JOIN_SHOT_DIR ?? 'test-results/late-join-steps';
 
-async function openAs(browser: Browser, account: Account, path: string) {
+async function openAs(
+  browser: Browser,
+  account: Account,
+  table: string,
+  path: string,
+) {
   const context = await browser.newContext();
   await context.addCookies([
     { name: 'sid', value: account.token, url: origin },
   ]);
+  // The host is seated at server boot; its resume token expires 30 s later, so mint it now.
+  await mintSeatResume(context, origin, table, account);
   // Host tools and the chat are collapsed drawers; the host needs Host tools open.
   await context.addInitScript(() => {
     localStorage.setItem('lorekeep.drawer.host', 'open');
@@ -52,6 +60,10 @@ async function openAs(browser: Browser, account: Account, path: string) {
     }),
   );
   await page.goto(path);
+  if (new URL(path, origin).pathname.endsWith('/game'))
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Connected to the room.' }),
+    ).toBeVisible({ timeout: 30_000 });
   return { accountId: account.accountId, context, page, frames };
 }
 
@@ -97,8 +109,8 @@ test.describe.serial('late joiner enters the game (real server)', () => {
   }) => {
     const { lateJoin } = state();
     const { table, invite, host, joiner } = lateJoin;
-    const hostView = await openAs(browser, host, `/rooms/${table}/game`);
-    const joinerView = await openAs(browser, joiner, `/join/${invite}`);
+    const hostView = await openAs(browser, host, table, `/rooms/${table}/game`);
+    const joinerView = await openAs(browser, joiner, table, `/join/${invite}`);
     const hostPage = hostView.page;
     const joinerPage = joinerView.page;
     try {
