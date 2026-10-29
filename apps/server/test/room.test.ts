@@ -1481,6 +1481,193 @@ describe('room actor', () => {
       ).toBe(true);
     });
 
+    it('contains a failed fire-and-forget combat-boundary admission and leaves it pending', async () => {
+      const { store, events, setCharacterSnapshot } = fixture();
+      const host = randomUUID();
+      const requester = randomUUID();
+      const character = quickBuild(loadCatalog(), undefined, 0x39, 1).character;
+      setCharacterSnapshot(character);
+      store.validateLateJoinCharacter = async () => ({
+        name: character.name,
+        classId: 'fighter',
+        level: 1,
+      });
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const writeTurn = store.writeTurn.bind(store);
+      let failNextBindingWrite = true;
+      store.writeTurn = async (...args) => {
+        if (failNextBindingWrite && args[8]?.kind === 'bind') {
+          failNextBindingWrite = false;
+          throw new Error('simulated admission storage failure');
+        }
+        return writeTurn(...args);
+      };
+      const map: Battlemap = {
+        mapId: 'admission-failure-map',
+        w: 3,
+        h: 2,
+        palette: [
+          {
+            terrainId: 'floor',
+            moveCost: 1,
+            blocksMove: false,
+            blocksSight: false,
+            cover: 'none',
+            elevation: 0,
+          },
+        ],
+        cells: rleEncode(Array(6).fill(0)),
+        edges: [],
+        features: [],
+        markers: [],
+        zones: [
+          { zoneId: 'player-entry', kind: 'spawn', cells: [{ x: 1, y: 0 }] },
+        ],
+        diagonalRule: '5ft',
+      };
+      const hostEntity = {
+        id: 'host-entity',
+        name: 'Host hero',
+        kind: 'character',
+        team: 'party',
+        pos: { x: 0, y: 0 },
+        size: 1,
+        hp: 10,
+        maxHp: 10,
+        speed: 30,
+      };
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.persistGameState({
+        sceneId: 'scene-combat',
+        combatActors: { [host]: hostEntity.id },
+        gameEngine: { map, entities: [hostEntity] },
+        combatRoom: {
+          map,
+          entities: [hostEntity],
+          combat: {
+            round: 1,
+            activeEntityId: hostEntity.id,
+            initiative: [{ entityId: hostEntity.id, total: 20 }],
+            resources: {
+              [hostEntity.id]: {
+                action: true,
+                bonusAction: true,
+                reaction: true,
+                movementRemaining: 30,
+              },
+            },
+          },
+          seed: 1,
+        },
+      });
+      const requestId = await room.requestLateJoin(
+        requester,
+        randomUUID(),
+        1,
+        randomUUID(),
+      );
+      await room.approveLateJoin(host, randomUUID(), requestId);
+      const internals = room as unknown as {
+        enqueue<T>(work: () => Promise<T>): Promise<T>;
+        admitApprovedLateJoins(): Promise<void>;
+        announceCombat(
+          state: never,
+          events: Record<string, unknown>[],
+          accountId?: string,
+        ): void;
+      };
+      // Establish the authorized seat; binding waits for snapshot acknowledgement.
+      await internals.enqueue(() => internals.admitApprovedLateJoins());
+      const pendingSeat = room.state.seats.find(
+        (seat) => seat.accountId === requester,
+      )!;
+      await room.acknowledgeLateJoinSnapshot(
+        requester,
+        pendingSeat.seatId,
+        room.seq,
+      );
+      const messages: Record<string, unknown>[] = [];
+      await room.subscribe(host, {
+        send(message: Record<string, unknown>) {
+          messages.push(message);
+        },
+      });
+
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown) => unhandled.push(reason);
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        const eventCountBeforeAttempt = events.length;
+        const combat = (
+          room.state.gameState as {
+            combatRoom: import('../src/room/combatTypes.js').RoomCombatState;
+          }
+        ).combatRoom;
+        internals.announceCombat(
+          { ...combat, combat: { ...combat.combat, round: 2 } } as never,
+          [{ type: 'TurnStarted', round: 2 }],
+          host,
+        );
+        await vi.waitFor(() => expect(logged).toHaveBeenCalledTimes(2));
+        const rejection = logged.mock.calls[0]?.[1];
+        expect(rejection).toBeInstanceOf(Error);
+        expect(rejection).toMatchObject({
+          message: 'simulated admission storage failure',
+        });
+        expect(logged.mock.calls[1]).toEqual([
+          `Late-join admission failed for ${id}`,
+          rejection,
+        ]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(unhandled).toEqual([]);
+        expect(messages).toContainEqual(
+          expect.objectContaining({
+            type: 'Error',
+            payload: expect.objectContaining({
+              code: 'LATE_JOIN_ADMISSION_FAILED',
+            }),
+          }),
+        );
+        expect(
+          room.state.lateJoinRequests?.some(
+            (request) => request.requestId === requestId && request.approved,
+          ),
+        ).toBe(true);
+        expect(room.seatCharacters.has(pendingSeat.seatId)).toBe(false);
+        expect(
+          room.state.seats.filter((seat) => seat.accountId === requester),
+        ).toEqual([
+          expect.objectContaining({
+            seatId: pendingSeat.seatId,
+            presence: 'returning',
+          }),
+        ]);
+        const forbiddenAdmissionEvents = [
+          'SeatJoined',
+          'SeatCharacterBound',
+          'LateJoinSpawned',
+          'LateJoinAdmitted',
+        ];
+        for (const type of forbiddenAdmissionEvents) {
+          expect(
+            events
+              .slice(eventCountBeforeAttempt)
+              .some((event) => event.type === type),
+          ).toBe(false);
+        }
+        await expect(
+          room.submitAction(requester, randomUUID(), 'Take a turn'),
+        ).rejects.toThrow();
+        await room.seat(randomUUID(), 'Another player');
+      } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+        logged.mockRestore();
+      }
+    });
+
     it('expires an approved late join that reaches admission after its deadline', async () => {
       const { store, events } = fixture();
       const host = randomUUID();
