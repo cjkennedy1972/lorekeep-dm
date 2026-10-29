@@ -63,6 +63,47 @@ jobs:
           path: '**/test-results/**/trace.zip'
           if-no-files-found: ignore
 
+  # Party browser e2e: real server (Room + Postgres + scripted DM) on the party config, which the
+  # `test` job does not run. Opt-in for review; runs the same suite that passes locally 10/10.
+  party-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:16 # Docker Official Image via Google mirror
+        env:
+          POSTGRES_DB: lorekeep
+          POSTGRES_USER: lorekeep
+          POSTGRES_PASSWORD: lorekeep
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lorekeep -d lorekeep"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://lorekeep:lorekeep@localhost:5432/lorekeep
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @game/schema build
+      - run: pnpm --filter @game/server migrate:up
+      - run: pnpm --filter @game/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @game/web exec playwright test -c playwright.party.config.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces-party
+          path: '**/test-results/**/trace.zip'
+          if-no-files-found: ignore
+
   browsers:
     runs-on: ubuntu-latest
     timeout-minutes: 20
