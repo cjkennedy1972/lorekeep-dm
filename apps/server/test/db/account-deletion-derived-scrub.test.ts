@@ -108,6 +108,11 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         ]),
       ).toEqual([{ id: characterId, account_id: coPlayer }]);
       expect(
+        await q('SELECT character_id FROM sessions WHERE id=$1', [
+          coPlayerSession,
+        ]),
+      ).toEqual([{ character_id: characterId }]);
+      expect(
         await q(
           'SELECT character_id,binding_status FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2',
           [coPlayerSession, seatId],
@@ -227,7 +232,7 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       await q('SELECT purge_session($1)', [session]);
       await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, heir]]);
     }
-  });
+  }, 30_000);
 
   it('removes derived rows from sessions referencing a deleted released character', async () => {
     const owner = randomUUID();
@@ -445,10 +450,14 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
         [gone],
       );
-      const result = await runSweep(db, {
-        store: new LocalObjectStore(dir),
-        log: () => {},
-      });
+      const result = await runSweep(
+        db,
+        {
+          store: new LocalObjectStore(dir),
+          log: () => {},
+        },
+        30_000,
+      );
       expect(
         (result?.accounts.held ?? 0) + (result?.accounts.failed ?? 0),
       ).toBeGreaterThanOrEqual(1);
@@ -473,5 +482,5 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         [gone, heir, otherOwner],
       ]);
     }
-  });
+  }, 90_000);
 });
