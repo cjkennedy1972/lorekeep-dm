@@ -8,6 +8,7 @@ import {
 import type { GridPos } from '@game/schema';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
+import { nameFromCatalogId } from './names.js';
 
 type Props = {
   store?: typeof gameStore;
@@ -24,7 +25,7 @@ type Props = {
   onReactionChoice?: (reactionId: string, choice: 'take' | 'decline') => void;
   /** Remaining server window for the prompt; shown as text so the deadline is not conveyed by motion or color. */
   reactionRemainingMs?: number;
-  /** Human name for an entity id; defaults to the id itself. */
+  /** Human name for an entity id; defaults to a label derived from the catalog id, never the raw id. */
   nameOf?: (entityId: string) => string;
   /** Map surface; receives pickCell so a pointer click enters the same move preview as the keyboard, and the keyboard cursor so the canvas can draw it. */
   children?:
@@ -47,7 +48,7 @@ export function MapKeyboard({
   reactionPrompt,
   onReactionChoice,
   reactionRemainingMs,
-  nameOf = (entityId) => entityId,
+  nameOf = nameFromCatalogId,
   children,
 }: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
@@ -146,7 +147,9 @@ export function MapKeyboard({
     if (entity) {
       setCursor({ ...entity.pos });
       setMoving(false);
-      announce(`${id} selected at ${entity.pos.x + 1}, ${entity.pos.y + 1}.`);
+      announce(
+        `${nameOf(id)} selected at ${entity.pos.x + 1}, ${entity.pos.y + 1}.`,
+      );
     }
   };
   const cycle = (direction: number) => {
@@ -159,7 +162,7 @@ export function MapKeyboard({
       setCursor({ ...entity.pos });
       setMoving(false);
       announce(
-        `${next.id} selected at ${entity.pos.x + 1}, ${entity.pos.y + 1}.`,
+        `${nameOf(next.id)} selected at ${entity.pos.x + 1}, ${entity.pos.y + 1}.`,
       );
     }
   };
@@ -238,7 +241,7 @@ export function MapKeyboard({
     setReaction(first ?? null);
     if (first)
       announce(
-        `Opportunity attack from ${first.hostileId}. Choose accept or decline.`,
+        `Opportunity attack from ${nameOf(first.hostileId)}. Choose accept or decline.`,
       );
     else
       announce(
@@ -283,7 +286,7 @@ export function MapKeyboard({
     setReaction(next ?? null);
     announce(
       next
-        ? `Opportunity attack from ${next.hostileId}.`
+        ? `Opportunity attack from ${nameOf(next.hostileId)}.`
         : `Reaction ${choice === 'take' ? 'accepted' : 'declined'}.`,
     );
   };

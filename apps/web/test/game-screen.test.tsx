@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { Profiler } from 'react';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -1264,6 +1264,90 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     expect(screen.getByRole('alert')).toHaveTextContent(
       'That attack could not be made. Try another target or action.',
     );
+  });
+
+  it('a late rejection for the newest attack, after the 5 s send window, keeps neutral copy and never shows server wording', () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+      push('CombatOptions', {
+        actions: [
+          {
+            kind: 'attack',
+            optionId: 'a1',
+            targetId: 'ent_goblin',
+            attackId: 'staff',
+          },
+        ],
+      });
+      hoisted.send.mockReturnValueOnce('atk-late');
+      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      act(() => {
+        vi.advanceTimersByTime(6_000);
+      });
+      push('Error', {
+        code: 'COMMAND_REJECTED',
+        message: 'That target is not a legal attack.',
+        actionId: 'atk-late',
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'That attack could not be made. Try another target or action.',
+      );
+      expect(
+        screen.queryByText('That target is not a legal attack.'),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a late rejection for an attack superseded after the 5 s window is swallowed, not sent to the header', () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+      push('CombatOptions', {
+        actions: [
+          {
+            kind: 'attack',
+            optionId: 'a1',
+            targetId: 'ent_goblin',
+            attackId: 'staff',
+          },
+        ],
+      });
+      hoisted.send.mockReturnValueOnce('atk-old');
+      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      act(() => {
+        vi.advanceTimersByTime(6_000);
+      });
+      hoisted.send.mockReturnValueOnce('atk-new');
+      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      push('Error', {
+        code: 'COMMAND_REJECTED',
+        message: 'That target is not a legal attack.',
+        actionId: 'atk-old',
+      });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('That target is not a legal attack.'),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a rejection for a command that was never an attack still reaches the page header', () => {
+    mount();
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'That move is blocked by a wall.',
+      actionId: 'move-1',
+    });
+    expect(
+      screen.getByText('That move is blocked by a wall.'),
+    ).toBeInTheDocument();
   });
 
   it('combat log, tracker and tokens never print a UUID entity id, even when the entity is unnamed', () => {

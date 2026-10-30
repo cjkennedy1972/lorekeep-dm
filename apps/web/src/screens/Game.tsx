@@ -138,6 +138,9 @@ export function Game() {
   );
   // The actionId of the newest attack this seat sent. An older attack's rejection is stale and is ignored.
   const latestAttackAction = useRef<string | null>(null);
+  // Every attack actionId this seat sent, kept for the life of the screen rather than on the 5 s retry
+  // timer, so a late rejection can never fall through to the generic header error.
+  const attackActionIds = useRef(new Set<string>());
   const { id = '' } = useParams();
   const { account } = useAuth();
   const [resume, setResume] = useState<{
@@ -427,11 +430,10 @@ export function Game() {
           return;
         }
         // The server uses COMMAND_REJECTED for several attack failures and sends no cause, so the copy stays neutral.
-        // Only the newest attack may explain itself; a late rejection for an earlier attack is dropped quietly.
-        const rejected = combatRetries.current.get(actionId)?.command;
+        // Only the newest attack may explain itself; any other attack's rejection, however late, is swallowed.
         if (
           payload.code === 'COMMAND_REJECTED' &&
-          rejected?.command === 'attack'
+          attackActionIds.current.has(actionId)
         ) {
           combatRetries.current.delete(actionId);
           if (actionId === latestAttackAction.current)
@@ -639,6 +641,11 @@ export function Game() {
 
   const send = (command: Record<string, unknown>) => {
     const actionId = live.send('CombatCommand', command);
+    if (command.command === 'attack') {
+      latestAttackAction.current =
+        typeof actionId === 'string' ? actionId : null;
+      if (typeof actionId === 'string') attackActionIds.current.add(actionId);
+    }
     if (typeof actionId === 'string') {
       const pending = { command, attempts: 0 };
       combatRetries.current.set(actionId, pending);
@@ -1364,13 +1371,11 @@ export function Game() {
                       type="button"
                       onClick={() => {
                         setAttackFeedback(null);
-                        const actionId = send({
+                        send({
                           command: 'attack',
                           targetId: String(item.targetId),
                           attackId: String(item.attackId),
                         });
-                        latestAttackAction.current =
-                          typeof actionId === 'string' ? actionId : null;
                       }}
                     >
                       {weapon
