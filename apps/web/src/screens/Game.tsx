@@ -30,7 +30,7 @@ import { ActionInput } from '../features/input/ActionInput.js';
 import { useDockHeight } from '../features/input/useDockHeight.js';
 import { ClarificationReply } from '../features/input/ClarificationReply.js';
 import { pendingInputFor } from '../features/input/pendingInput.js';
-import { RoundPanel } from '../features/round/RoundPanel.js';
+import { RoundPanel, isOwnSubmission } from '../features/round/RoundPanel.js';
 import { HostControls } from '../features/round/HostControls.js';
 import { TurnTimerControl } from '../features/round/TurnTimerControl.js';
 import { Sheet } from '../features/character/Sheet.js';
@@ -1161,6 +1161,14 @@ export function Game() {
             pending={Boolean(inputPending)}
             pendingText={inputPending?.text}
             pendingSince={inputPending?.submittedAt}
+            queuedForNextRound={
+              Boolean(inputPending) &&
+              Boolean(
+                room?.round?.queuedSubmissions.some((item) =>
+                  isOwnSubmission(item, live.privateRoundSubmission?.actionId),
+                ),
+              )
+            }
             onEditPending={() => {
               if (!inputPending) return;
               setActionDraft(inputPending.text);
@@ -1485,6 +1493,7 @@ export function Game() {
               closeAnnouncement={live.roundCloseAnnouncement}
               seats={room.seats}
               myActionId={live.privateRoundSubmission?.actionId}
+              selfSeatId={selfSeat?.seatId}
               myText={
                 room.roundsEnabled
                   ? live.privateRoundSubmission?.text

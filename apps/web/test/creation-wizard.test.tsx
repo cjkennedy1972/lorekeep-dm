@@ -158,3 +158,31 @@ test('the hero panel shows the chosen species after Continue', async () => {
   expect(speciesValue).toHaveTextContent('Human');
   expect(speciesValue).not.toHaveTextContent('Not chosen');
 });
+
+test('typing over the default Hero name replaces it instead of appending', async () => {
+  gameStore.setCharacter(null);
+  const user = userEvent.setup();
+  render(<CreationWizard />);
+  await user.click(screen.getByRole('radio', { name: /Fighter/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Soldier/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Human/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Standard array/ }));
+  await step(user);
+  const choices = screen.getAllByRole('checkbox');
+  await user.click(choices[0]!);
+  await user.click(choices[1]!);
+  await step(user);
+  await user.click(
+    within(
+      screen.getByRole('group', { name: 'Choose starting equipment' }),
+    ).getAllByRole('radio')[0]!,
+  );
+  await step(user);
+  const name = screen.getByLabelText('Character name') as HTMLInputElement;
+  expect(name.value).toBe('Hero 1');
+  await user.type(name, 'Mira');
+  expect(name.value).toBe('Mira');
+});

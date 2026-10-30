@@ -95,3 +95,8 @@
 .action-input > .action-input__quick {
   order: -1;
 }
+
+/* Queued notice sits inside the sticky dock; keep it readable without shrinking the pending line. */
+.action-input__queued {
+  font-style: italic;
+}

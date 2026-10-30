@@ -34,6 +34,11 @@ type Picks = {
   name: string;
   personality: string;
 };
+/** Placeholder name that a player can overwrite; it is a real value, so the name check passes without typing. */
+export function defaultHeroName(n = 1) {
+  return `Hero ${n}`;
+}
+
 const initial: Picks = {
   classId: '',
   backgroundId: '',
@@ -41,7 +46,7 @@ const initial: Picks = {
   method: 'standard-array',
   skills: [],
   equipment: '',
-  name: '',
+  name: defaultHeroName(),
   personality: '',
 };
 
@@ -368,6 +373,8 @@ export function CreationWizard({ onSave }: Props) {
                   id="hero-name"
                   value={picks.name}
                   onChange={(event) => update({ name: event.target.value })}
+                  // The default name is a placeholder: focusing selects it so the first keystroke replaces it.
+                  onFocus={(event) => event.currentTarget.select()}
                   autoComplete="off"
                 />
               </label>

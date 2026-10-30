@@ -65,6 +65,8 @@ type Props = {
   myActionId?: string;
   /** This player's own action text; the public round snapshot omits it. */
   myText?: string;
+  /** The viewer's own seat id. Solo wording addresses only the viewer whose seat is the one eligible seat. */
+  selfSeatId?: string;
   connected: boolean;
   send: RoomSend;
   /** Called with the new text once an edit is sent, so the own-action text stays current. */
@@ -82,6 +84,7 @@ export function RoundPanel({
   seats,
   myActionId,
   myText,
+  selfSeatId,
   connected,
   send,
   onEdited,
@@ -111,12 +114,19 @@ export function RoundPanel({
   const submittedCount = eligible.filter((id) => submittedSeats.has(id)).length;
   // A table with one eligible seat is a solo game: there is no one else to wait for.
   const solo = eligible.length === 1;
+  // "Your turn." is for the viewer whose seat is the eligible one; anyone else only sees that the player is up.
+  const viewerIsSoloSeat =
+    solo && selfSeatId !== undefined && eligible[0] === selfSeatId;
   const summary = !round
     ? 'No round is open.'
     : solo
-      ? submittedCount
-        ? 'Your action is in.'
-        : 'Your turn.'
+      ? viewerIsSoloSeat
+        ? submittedCount
+          ? 'Your action is in.'
+          : 'Your turn.'
+        : submittedCount
+          ? 'The only player has submitted.'
+          : 'Waiting for the only player.'
       : `${submittedCount} of ${eligible.length} submitted.`;
   const closing =
     round?.closeReason && round.status !== 'open'
