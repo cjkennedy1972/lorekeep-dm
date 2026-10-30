@@ -1161,7 +1161,7 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     ).toHaveLength(2);
   });
 
-  it('a rejected attack explains the likely causes beside the attack buttons, and the next attack clears it', async () => {
+  it('a rejected attack gets neutral copy beside the attack buttons, and the next attack clears it', async () => {
     const user = userEvent.setup();
     mount();
     push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
@@ -1185,7 +1185,7 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     const feedback = screen.getByRole('alert');
     expect(feedback).toHaveClass('combat-attack-feedback');
     expect(feedback).toHaveTextContent(
-      'That attack is not legal from here. Check range, cover and reach, or choose another target.',
+      'That attack could not be made. Try another target or action.',
     );
     expect(
       screen.queryByText('That target is not a legal attack.'),
@@ -1193,6 +1193,108 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     hoisted.send.mockReturnValueOnce('atk-2');
     await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('gives every attack rejection the same neutral copy, whatever the server wording, and never blames range, cover or reach', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    const serverWording = [
+      'That target is not a legal attack.',
+      'That attack is not currently available.',
+    ];
+    for (const [index, message] of serverWording.entries()) {
+      const actionId = `atk-generic-${index}`;
+      hoisted.send.mockReturnValueOnce(actionId);
+      await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      push('Error', { code: 'COMMAND_REJECTED', message, actionId });
+      const feedback = screen.getByRole('alert');
+      expect(feedback).toHaveTextContent(
+        'That attack could not be made. Try another target or action.',
+      );
+      expect(feedback.textContent).not.toMatch(/range|cover|reach/i);
+      expect(screen.queryByText(message)).not.toBeInTheDocument();
+    }
+  });
+
+  it('ignores a rejection for an earlier attack that arrives after a newer attack was sent', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    hoisted.send.mockReturnValueOnce('atk-old');
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    hoisted.send.mockReturnValueOnce('atk-new');
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    // The first attack's rejection lands late: it must not show against the second attack.
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'That target is not a legal attack.',
+      actionId: 'atk-old',
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('That target is not a legal attack.'),
+    ).not.toBeInTheDocument();
+    // The newest attack's own rejection still explains itself.
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'That target is not a legal attack.',
+      actionId: 'atk-new',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'That attack could not be made. Try another target or action.',
+    );
+  });
+
+  it('combat log, tracker and tokens never print a UUID entity id, even when the entity is unnamed', () => {
+    const uuid = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
+    const uuidMonster = {
+      id: `ent_${uuid}`,
+      kind: 'monster',
+      team: 'enemies',
+      pos: { x: 6, y: 2 },
+      size: 1,
+      hp: 9,
+      hpState: 'healthy',
+    };
+    mount();
+    push('CombatTracker', {
+      ...tracker([HERO_ID, uuidMonster.id]),
+      entities: [...entities, uuidMonster],
+      resources: { ...resources, [uuidMonster.id]: resources.ent_goblin },
+    });
+    push('CombatEvents', {
+      events: [
+        { type: 'HpChanged', entityId: uuidMonster.id, delta: -3, hp: 6 },
+      ],
+    });
+    const fragment = uuid.slice(0, 8);
+    const labels = Array.from(document.querySelectorAll('[aria-label]')).map(
+      (el) => el.getAttribute('aria-label') ?? '',
+    );
+    expect(document.body.textContent).not.toContain(fragment);
+    expect(labels.join(' ')).not.toContain(fragment);
+    expect(document.body.textContent).toContain('Combatant');
   });
 
   it('refetches options after the seat moves, so Attack appears once the target is in reach', () => {

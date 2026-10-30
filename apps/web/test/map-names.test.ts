@@ -13,6 +13,31 @@ describe('entity display names', () => {
     expect(nameFromCatalogId('ent_7')).toBe('Creature');
   });
 
+  it('never turns a UUID or hex record id into a label, so no screen prints it', () => {
+    const uuid = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
+    expect(nameFromCatalogId(`ent_${uuid}`)).toBe('Combatant');
+    expect(nameFromCatalogId(`ent_${uuid}_2`)).toBe('Combatant');
+    expect(nameFromCatalogId('ent_3f2a9c1e7b4d')).toBe('Combatant');
+    // Ordinary monster ids that happen to use hex letters keep their names.
+    expect(nameFromCatalogId('ent_bad-cafe')).toBe('Bad Cafe');
+    expect(nameFromCatalogId('ent_goblin-minion_1')).toBe('Goblin Minion');
+  });
+
+  it('labels UUID combatants by visible order, so twins still stay apart', () => {
+    const namer = createEntityNamer({
+      entities: [
+        { id: 'ent_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b', kind: 'monster' },
+        { id: 'ent_0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', kind: 'monster' },
+      ],
+    });
+    expect(namer('ent_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b')).toBe(
+      'Combatant 1',
+    );
+    expect(namer('ent_0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e')).toBe(
+      'Combatant 2',
+    );
+  });
+
   it('makes two-letter initials and keeps numbered twins apart', () => {
     expect(initialsOf('Aria')).toBe('A');
     expect(initialsOf('Mira Stone')).toBe('MS');

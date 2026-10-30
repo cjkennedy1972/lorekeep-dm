@@ -5,16 +5,21 @@ type CharacterLike = { id?: string; name?: string };
 type EntityLike = { id: string; name?: string; kind?: string };
 
 const SEAT_PREFIX = 'ent_seat_';
+// Record ids are not names. A UUID (optionally with a twin suffix) or a bare hex run must never be shown.
+const RECORD_ID =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[_-]\d+)?|[0-9a-f]{8,})$/i;
 const titleCase = (word: string) =>
   word ? word[0]!.toUpperCase() + word.slice(1) : word;
 
 /**
  * "ent_goblin-minion_1" becomes "Goblin Minion". The trailing id number is dropped, so a lone entity
  * never shows it and twins are numbered by the namer in visible order instead.
+ * An id that is a UUID or hex record id reads as "Combatant", so no screen ever prints it.
  */
 export function nameFromCatalogId(id: string): string {
-  const stem = id
-    .replace(/^ent_/, '')
+  const raw = id.replace(/^ent_/, '');
+  if (RECORD_ID.test(raw)) return 'Combatant';
+  const stem = raw
     .replace(/[_-]?\d+$/, '')
     .replace(/[_-]+/g, ' ')
     .trim();

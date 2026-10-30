@@ -136,6 +136,8 @@ export function Game() {
   const combatRetries = useRef(
     new Map<string, { command: Record<string, unknown>; attempts: number }>(),
   );
+  // The actionId of the newest attack this seat sent. An older attack's rejection is stale and is ignored.
+  const latestAttackAction = useRef<string | null>(null);
   const { id = '' } = useParams();
   const { account } = useAuth();
   const [resume, setResume] = useState<{
@@ -424,16 +426,18 @@ export function Game() {
           }
           return;
         }
-        // The server's rejection is a generic "not a legal attack" with no range, so the copy lists the likely causes.
+        // The server uses COMMAND_REJECTED for several attack failures and sends no cause, so the copy stays neutral.
+        // Only the newest attack may explain itself; a late rejection for an earlier attack is dropped quietly.
         const rejected = combatRetries.current.get(actionId)?.command;
         if (
           payload.code === 'COMMAND_REJECTED' &&
           rejected?.command === 'attack'
         ) {
           combatRetries.current.delete(actionId);
-          setAttackFeedback(
-            'That attack is not legal from here. Check range, cover and reach, or choose another target.',
-          );
+          if (actionId === latestAttackAction.current)
+            setAttackFeedback(
+              'That attack could not be made. Try another target or action.',
+            );
           return;
         }
         setError(String(payload.message ?? 'The command failed.'));
@@ -1360,11 +1364,13 @@ export function Game() {
                       type="button"
                       onClick={() => {
                         setAttackFeedback(null);
-                        send({
+                        const actionId = send({
                           command: 'attack',
                           targetId: String(item.targetId),
                           attackId: String(item.attackId),
                         });
+                        latestAttackAction.current =
+                          typeof actionId === 'string' ? actionId : null;
                       }}
                     >
                       {weapon
