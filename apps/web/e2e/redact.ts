@@ -8,7 +8,8 @@ const INVITE_PATH =
 const SECRET_QUERY = /([?&](?:ticket|token|invite)=)[^&#\s'"`]+/gi;
 const RETURN_TO = /([?&]returnTo=)([^&#\s'"`]+)/gi;
 // A standalone 22-character base64url run (an invite code's shape). A run inside a longer token, such
-// as a UUID room id, is not a whole match and is left alone.
+// as a UUID room id, is not a whole match and is left alone. A run glued to other token characters
+// (room_<code>) is not matched; the invite-bearing paths and queries above cover those sinks.
 const BARE_TOKEN = /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{22}(?![A-Za-z0-9_-])/g;
 
 /** Replaces invite codes, secret query values and bare invite-shaped tokens inside any text. */
@@ -28,8 +29,21 @@ function hasUrl(text: string): boolean {
 
 // Copies an error with its prototype (so Playwright's TimeoutError still matches instanceof), name,
 // stack and cause. Message and stack are redacted; a cause that carries a URL is dropped.
+function redactValue(value: unknown, depth: number): unknown {
+  return value instanceof Error && depth < 3
+    ? redactError(value, depth + 1)
+    : redactInviteUrls(String(value));
+}
+
 function redactError(error: Error, depth = 0): Error {
-  const redacted = new Error(redactInviteUrls(error.message));
+  const message = redactInviteUrls(error.message);
+  const errors = (error as AggregateError).errors;
+  const redacted = Array.isArray(errors)
+    ? new AggregateError(
+        errors.map((item) => redactValue(item, depth)),
+        message,
+      )
+    : new Error(message);
   Object.setPrototypeOf(redacted, Object.getPrototypeOf(error));
   redacted.name = error.name;
   if (error.stack) redacted.stack = redactInviteUrls(error.stack);
