@@ -439,6 +439,37 @@ describe('Room combat command seam', () => {
     expect(latestSnapshot()).toBeDefined();
   });
 
+  it('uniformly rejects an attack when Room has no active combat', async () => {
+    const { room } = setup();
+    const owner = randomUUID();
+    const sent: { type: string; payload?: Record<string, unknown> }[] = [];
+    await joinSeated(room, owner, {
+      send: (message) => sent.push(message as never),
+    });
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    await room.submitCombatCommand(owner, randomUUID(), {
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
+    });
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'Error',
+        payload: expect.objectContaining({
+          code: 'COMMAND_REJECTED',
+          message: 'That attack is not currently available.',
+        }),
+      }),
+    );
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: 'combat_attack_rejected',
+        reason: 'combat_inactive',
+      }),
+    );
+    log.mockRestore();
+  });
+
   it('continues rejecting commands while combat narration is genuinely in flight', async () => {
     const { room, events } = setup();
     const owner = randomUUID();
