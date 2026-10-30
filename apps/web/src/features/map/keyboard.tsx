@@ -246,10 +246,12 @@ export function MapKeyboard({
       );
     setMoving(false);
   };
+  // Keyed on the id, not the object: `reaction` is rebuilt every render, so depending on it refocuses Accept on each countdown tick.
+  const reactionId = reaction?.reactionId;
   useEffect(() => {
-    if (reaction)
+    if (reactionId)
       dialogRef?.querySelector<HTMLButtonElement>('button')?.focus();
-  }, [reaction, dialogRef]);
+  }, [reactionId, dialogRef]);
   const resolve = (choice: 'take' | 'decline') => {
     if (!reaction) return;
     if (reactionPrompt) {
