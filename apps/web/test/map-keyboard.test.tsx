@@ -342,10 +342,13 @@ describe('reaction prompt keyboard focus', () => {
       await user.keyboard('{Tab}');
       const decline = screen.getByRole('button', { name: 'Decline' });
       expect(decline).toHaveFocus();
-      act(() => {
-        vi.advanceTimersByTime(300);
-      });
-      expect(decline).toHaveFocus();
+      // One act() per 100 ms tick so each countdown render commits separately; a single act() could batch them.
+      for (let tick = 1; tick <= 4; tick++) {
+        act(() => {
+          vi.advanceTimersByTime(100);
+        });
+        expect(decline, `focus after countdown tick ${tick}`).toHaveFocus();
+      }
       await user.keyboard('{Enter}');
       expect(onReactionChoice).toHaveBeenCalledTimes(1);
       expect(onReactionChoice).toHaveBeenCalledWith('r1', 'decline');
