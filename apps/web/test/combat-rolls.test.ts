@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   rollCardText,
   summarizeCombatRolls,
+  weaponName,
   type CombatantFacts,
   type RollCard,
 } from '../src/features/narration/combatRolls.js';
@@ -150,7 +151,7 @@ describe('summarizeCombatRolls: monster attacks', () => {
       hpChanged('ent_thorin', 20, 15),
     ]);
     const text = rollCardText(card, nameOf);
-    expect(text).toBe('Goblin hits Thorin with Claw. Thorin shrugs it off.');
+    expect(text).toBe('Goblin hits Thorin with Claw. Thorin is still healthy.');
     expect(text).not.toMatch(/\d/);
     expect(text).not.toContain('attack roll');
   });
@@ -208,7 +209,7 @@ describe('summarizeCombatRolls: other seats’ attacks', () => {
 });
 
 describe('summarizeCombatRolls: every hit on another seat’s PC gets a coarse status', () => {
-  it('says the PC shrugs the hit off when it is still healthy, with no numbers', () => {
+  it('says the PC is still healthy after a hit, with no numbers', () => {
     const card = one([
       concealedAttack(15, 'ent_bran'),
       concealedDamage(4, 'ent_bran'),
@@ -217,7 +218,7 @@ describe('summarizeCombatRolls: every hit on another seat’s PC gets a coarse s
     expect(card.hit).toBe(true);
     expect(card.steady).toBe(true);
     const text = rollCardText(card, nameOf);
-    expect(text).toBe('Bran hits Thorin. Thorin shrugs it off.');
+    expect(text).toBe('Bran hits Thorin. Thorin is still healthy.');
     expect(text).not.toMatch(/\d/);
   });
 
@@ -327,5 +328,35 @@ describe('summarizeCombatRolls: batch shape', () => {
       viewer,
     );
     expect(cards).toHaveLength(1);
+  });
+});
+
+describe('weaponName', () => {
+  it('humanizes a catalog attack id', () => {
+    expect(weaponName('equipment:longsword')).toBe('Longsword');
+    expect(weaponName('equipment:light-crossbow')).toBe('Light Crossbow');
+  });
+
+  it('drops an item UUID instead of printing its fragments as a weapon name', () => {
+    expect(
+      weaponName('equipment:823b31cc-e671-4ae2-b45e-46e7a0b26c50'),
+    ).toBeUndefined();
+    expect(weaponName('823b31cc-e671-4ae2-b45e-46e7a0b26c50')).toBeUndefined();
+  });
+
+  it('keeps the readable words around an embedded UUID', () => {
+    expect(
+      weaponName('equipment:823b31cc-e671-4ae2-b45e-46e7a0b26c50-staff'),
+    ).toBe('Staff');
+  });
+
+  it('keeps the card sentence free of a UUID fragment', () => {
+    const itemId = 'equipment:823b31cc-e671-4ae2-b45e-46e7a0b26c50';
+    const card = one([
+      roll('ent_goblin', `attack ${itemId}`, 14, { modifier: 4 }),
+      roll('ent_goblin', `damage ${itemId}`, 5),
+      hpChanged('ent_aria', 20, 15),
+    ]);
+    expect(rollCardText(card, nameOf)).not.toMatch(/[0-9a-f]{8}-/i);
   });
 });
