@@ -715,6 +715,61 @@ describe('room actor', () => {
     }
   });
 
+  it('does not auto-approve a late-join authorization issued to another account', async () => {
+    const { store, events } = fixture();
+    const host = randomUUID();
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+    store.isTableHost = async (_sessionId, accountId) => accountId === host;
+    const room = new Room(store, lease, await store.loadLatest(id));
+    await room.seat(host, 'Host');
+    await room.seat(accountB, 'Account B');
+    const seat = room.state.seats.find(
+      (candidate) => candidate.accountId === accountB,
+    )!;
+    const authTokenHash = 'same-session-hash';
+    const requestId = randomUUID();
+    const internals = room as unknown as {
+      lateJoinClaimAuthorizations: Map<
+        string,
+        {
+          requestId: string;
+          accountId: string;
+          seatId: string;
+          authTokenHash: string;
+          expiresAt: number;
+        }
+      >;
+      seatClaims: Map<string, unknown>;
+    };
+    internals.lateJoinClaimAuthorizations.set(seat.seatId, {
+      requestId,
+      accountId: accountA,
+      seatId: seat.seatId,
+      authTokenHash,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    try {
+      const claimId = randomUUID();
+      const decision = room.requestSeatResumeClaim(
+        accountB,
+        claimId,
+        authTokenHash,
+      );
+      await vi.waitFor(() =>
+        expect(internals.seatClaims.has(claimId)).toBe(true),
+      );
+      expect(events.map((event) => event.type)).not.toContain(
+        'SeatClaimAutoApproved',
+      );
+      await room.approveSeatResumeClaim(host, randomUUID(), claimId);
+      await expect(decision).resolves.toBe(true);
+    } finally {
+      await room.drain();
+    }
+  });
+
   it('requires host approval for a lost-token claim and expires it after 60 seconds', async () => {
     const { store } = fixture();
     const host = randomUUID();
