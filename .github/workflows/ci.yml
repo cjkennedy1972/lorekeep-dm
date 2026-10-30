@@ -70,6 +70,9 @@ jobs:
           printf 'must exclude\n' > "$base/nested/trace.zip"
           printf 'must exclude\n' > "$base/error-context.md"
           printf '{"sid":"dummy"}\n' > "$base/probe-live-state.json"
+          printf '{"sid":"dummy"}\n' > "$base/live-state.json"
+          printf 'dummy screenshot\n' > "$base/nested/loose-screenshot.png"
+          printf 'dummy video\n' > "$base/nested/loose-video.webm"
           printf 'dummy screenshot\n' > "$base/screenshots/probe.png"
           printf 'dummy screenshot\n' > "$base/screenshot/probe.png"
           printf 'dummy video\n' > "$base/videos/probe.webm"
@@ -83,11 +86,19 @@ jobs:
             !**/test-results/**/trace.zip
             !**/trace.zip
             !**/error-context.md
-            !**/*-live-state.json
+            !**/*live-state.json
             !**/screenshots/**
             !**/screenshot/**
             !**/videos/**
             !**/video/**
+            !**/*.png
+            !**/*.jpg
+            !**/*.jpeg
+            !**/*.webp
+            !**/*.gif
+            !**/*.mp4
+            !**/*.webm
+            !**/*.mov
           if-no-files-found: ignore
           retention-days: 7
 
@@ -210,6 +221,9 @@ jobs:
           printf 'must exclude\n' > "$base/nested/trace.zip"
           printf 'must exclude\n' > "$base/error-context.md"
           printf '{"sid":"dummy"}\n' > "$base/probe-live-state.json"
+          printf '{"sid":"dummy"}\n' > "$base/live-state.json"
+          printf 'dummy screenshot\n' > "$base/nested/loose-screenshot.png"
+          printf 'dummy video\n' > "$base/nested/loose-video.webm"
           printf 'dummy screenshot\n' > "$base/screenshots/probe.png"
           printf 'dummy screenshot\n' > "$base/screenshot/probe.png"
           printf 'dummy video\n' > "$base/videos/probe.webm"
@@ -223,11 +237,19 @@ jobs:
             !**/test-results/**/trace.zip
             !**/trace.zip
             !**/error-context.md
-            !**/*-live-state.json
+            !**/*live-state.json
             !**/screenshots/**
             !**/screenshot/**
             !**/videos/**
             !**/video/**
+            !**/*.png
+            !**/*.jpg
+            !**/*.jpeg
+            !**/*.webp
+            !**/*.gif
+            !**/*.mp4
+            !**/*.webm
+            !**/*.mov
           if-no-files-found: ignore
           retention-days: 7
 
