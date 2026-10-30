@@ -63,6 +63,65 @@ jobs:
           path: '**/test-results/**/trace.zip'
           if-no-files-found: ignore
 
+  # Party browser e2e: real server (Room + Postgres + scripted DM) on the party config, which the
+  # `test` job does not run. Opt-in for review; runs the same suite that passes locally 10/10.
+  party-e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:16 # Docker Official Image via Google mirror
+        env:
+          POSTGRES_DB: lorekeep
+          POSTGRES_USER: lorekeep
+          POSTGRES_PASSWORD: lorekeep
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lorekeep -d lorekeep"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://lorekeep:lorekeep@localhost:5432/lorekeep
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @game/schema build
+      - run: pnpm --filter @game/rules-engine build
+      - run: pnpm --filter @game/server migrate:up
+      - run: pnpm --filter @game/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @game/web exec playwright test -c playwright.party.config.ts
+        env:
+          # Shared-runner wall clock includes browser, Vite proxy and runner jitter; locally the budget stays 1000 ms, and the measured value is always logged.
+          PARTY_SYNC_BUDGET_MS: 1500
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-debug-party-${{ github.run_attempt }}
+          path: |
+            apps/web/test-results/**
+            !apps/web/test-results/**/trace.zip
+            !**/trace.zip
+            !**/error-context.md
+            !apps/web/test-results/**/party-live-state.json
+            !apps/web/test-results/**/late-join-steps/**
+            !apps/web/test-results/**/joiner-waiting-states/**
+          if-no-files-found: ignore
+          # Exclude trace.zip, error-context.md, party-live-state.json, and step screenshots because they can contain sensitive values; retain other debug artifacts for 7 days.
+          retention-days: 7
+
   browsers:
     runs-on: ubuntu-latest
     timeout-minutes: 20
