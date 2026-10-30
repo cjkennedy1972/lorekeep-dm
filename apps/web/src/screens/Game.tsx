@@ -1452,7 +1452,7 @@ export function Game() {
             store={gameStore}
             loading={!room?.gameState}
             loadFailed={sheetLoadFailed}
-            onRetry={live.removed ? undefined : () => live.rejoin()}
+            onRetry={live.removed ? undefined : () => live.retry()}
             emptyAction={
               <Link className="sheet-empty__link" to={`/rooms/${id}`}>
                 Build or choose a character

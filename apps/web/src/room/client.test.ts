@@ -375,3 +375,71 @@ test('a ticket request that never settles is retried after the auth timeout', as
   expect(client.getSnapshot().status).not.toBe('connected');
   client.stop();
 });
+
+test('retry starts a new connection attempt from a live client without state', async () => {
+  const { made, WebSocketImpl } = silentSockets();
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: ticketFetch().fetchImpl,
+    WebSocketImpl,
+    baseDelayMs: 60_000,
+    authTimeoutMs: 40,
+  });
+  client.start();
+  // The first socket never authenticates; the watchdog schedules a reconnect
+  // 60s out, which would never fire within this test.
+  await vi.waitFor(() =>
+    expect(client.getSnapshot().status).toBe('reconnecting'),
+  );
+  expect(made).toHaveLength(1);
+
+  client.retry();
+
+  await vi.waitFor(() => expect(made).toHaveLength(2), { timeout: 2000 });
+  expect(made[0]!.closed).toBe(true);
+  client.stop();
+});
+
+test('retry on a connected client reconnects and re-requests state', async () => {
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+    baseDelayMs: 60_000,
+  });
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().room).not.toBeNull());
+  const before = sockets.length;
+  const stale = sockets.at(-1)!;
+
+  client.retry();
+
+  await vi.waitFor(() => {
+    expect(sockets.length).toBeGreaterThan(before);
+    expect(client.getSnapshot().status).toBe('connected');
+  });
+  expect(sockets.at(-1)).not.toBe(stale);
+  expect(stale.readyState).toBe(WebSocket.CLOSED);
+  client.stop();
+});
+
+test('retry is a no-op after a host removal', async () => {
+  const client = createRoomClient({
+    baseUrl: base,
+    fetchImpl: await cookieFetch(),
+    WebSocketImpl: WSImpl,
+    baseDelayMs: 10,
+  });
+  client.start();
+  await vi.waitFor(() => expect(client.getSnapshot().status).toBe('connected'));
+  sockets.at(-1)!.emit('close', 1008, Buffer.from('Seat revoked by the host'));
+  await vi.waitFor(() => expect(client.getSnapshot().removed).toBe('kicked'));
+  const opened = sockets.length;
+
+  client.retry();
+
+  await new Promise((r) => setTimeout(r, 60));
+  expect(sockets.length).toBe(opened);
+  expect(client.getSnapshot().status).toBe('closed');
+  client.stop();
+});

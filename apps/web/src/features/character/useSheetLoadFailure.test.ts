@@ -91,3 +91,18 @@ test('clears a failure when the connection starts again and state is still pendi
 
   expect(result.current).toBe(false);
 });
+
+test('unmounting clears the pending stall timer', () => {
+  const before = vi.getTimerCount();
+  const { unmount } = renderHook(() =>
+    useSheetLoadFailure({
+      hasCharacterState: false,
+      connectionStatus: 'connected',
+    }),
+  );
+  expect(vi.getTimerCount()).toBe(before + 1);
+
+  unmount();
+
+  expect(vi.getTimerCount()).toBe(before);
+});
