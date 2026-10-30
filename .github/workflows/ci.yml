@@ -102,9 +102,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-debug-party
-          path: apps/web/test-results/
+          name: playwright-debug-party-${{ github.run_attempt }}
+          path: apps/web/test-results/**
           if-no-files-found: ignore
+          # Traces can contain cookies or tokens; keep debugging artifacts only briefly.
+          retention-days: 7
 
   browsers:
     runs-on: ubuntu-latest
