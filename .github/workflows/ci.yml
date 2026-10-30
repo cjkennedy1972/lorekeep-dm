@@ -116,10 +116,8 @@ jobs:
             !**/trace.zip
             !**/error-context.md
             !apps/web/test-results/**/party-live-state.json
-            !apps/web/test-results/**/late-join-steps/**
-            !apps/web/test-results/**/joiner-waiting-states/**
           if-no-files-found: ignore
-          # Exclude trace.zip, error-context.md, party-live-state.json, and step screenshots because they can contain sensitive values; retain other debug artifacts for 7 days.
+          # Exclude traces, Playwright error context, and fixture state because they can contain sensitive values; retain other debug artifacts for 7 days.
           retention-days: 7
 
   browsers:
