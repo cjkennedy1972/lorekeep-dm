@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { mintSeatResume } from './seat-resume';
+import { redactInviteUrls, safeUrl } from './redact';
 
 // Real server + Postgres (see apps/server/test/live/serve.party.live.ts, the late-join table).
 // A solo host plays; a late joiner requests a seat, the host approves and resolves the round,
@@ -59,7 +60,9 @@ async function openAs(
       }
     }),
   );
-  await page.goto(path);
+  await page.goto(path).catch((error: unknown) => {
+    throw new Error(redactInviteUrls(String(error)));
+  });
   if (new URL(path, origin).pathname.endsWith('/game'))
     await expect(
       page.getByRole('status').filter({ hasText: 'Connected to the room.' }),
@@ -79,12 +82,12 @@ async function step(
   name: string,
   run: () => Promise<void>,
 ) {
-  console.log(`[late-join] START ${who}: ${name} url=${page.url()}`);
+  console.log(`[late-join] START ${who}: ${name} url=${safeUrl(page.url())}`);
   try {
     await run();
-    console.log(`[late-join] OK    ${who}: ${name} url=${page.url()}`);
+    console.log(`[late-join] OK    ${who}: ${name} url=${safeUrl(page.url())}`);
   } catch (error) {
-    console.log(`[late-join] FAIL  ${who}: ${name} url=${page.url()}`);
+    console.log(`[late-join] FAIL  ${who}: ${name} url=${safeUrl(page.url())}`);
     throw error;
   } finally {
     const file = `${shotDir}/${who}-${name.replace(/\W+/g, '-')}.png`;
@@ -186,9 +189,9 @@ test.describe.serial('late joiner enters the game (real server)', () => {
         'Your character is bound. Your seat is ready to play.',
       );
       await step('joiner', joinerPage, '8-lobby', async () => {
-        await expect(joinerPage).toHaveURL(new RegExp(`/rooms/${table}$`), {
-          timeout: 60_000,
-        });
+        await expect
+          .poll(() => safeUrl(joinerPage.url()), { timeout: 60_000 })
+          .toMatch(new RegExp(`/rooms/${table}$`));
       });
       // The joiner's snapshot ack is recorded after the round that admitted the seat, so admission
       // (and the bind gate) waits for the next round boundary: the host resolves again.
@@ -214,17 +217,17 @@ test.describe.serial('late joiner enters the game (real server)', () => {
             // Show what the joiner sees instead of the bound status.
             const received = joinerView.frames.map((frame) => frame.type);
             console.log(
-              `[late-join] joiner frames=${JSON.stringify(received.slice(-40))}`,
+              `[late-join] joiner frames=${redactInviteUrls(JSON.stringify(received.slice(-40)))}`,
             );
             console.log(
-              `[late-join] joiner errors=${JSON.stringify(joinerView.frames.filter((frame) => frame.type === 'Error').map((frame) => frame.payload))}`,
+              `[late-join] joiner errors=${redactInviteUrls(JSON.stringify(joinerView.frames.filter((frame) => frame.type === 'Error').map((frame) => frame.payload)))}`,
             );
             const alerts = await joinerPage.getByRole('alert').allInnerTexts();
             const statuses = await joinerPage
               .getByRole('status')
               .allInnerTexts();
             console.log(
-              `[late-join] bind alerts=${JSON.stringify(alerts)} statuses=${JSON.stringify(statuses)}`,
+              `[late-join] bind alerts=${redactInviteUrls(JSON.stringify(alerts))} statuses=${redactInviteUrls(JSON.stringify(statuses))}`,
             );
             throw error;
           });
@@ -237,7 +240,9 @@ test.describe.serial('late joiner enters the game (real server)', () => {
           `[late-join] enter-game tag=${await enterLink.evaluate((el) => el.tagName)}`,
         );
         await enterLink.click();
-        await expect(joinerPage).toHaveURL(new RegExp(`/rooms/${table}/game$`));
+        await expect
+          .poll(() => safeUrl(joinerPage.url()))
+          .toMatch(new RegExp(`/rooms/${table}/game$`));
       });
 
       // 6. In the next round the joiner's action input renders and the action is accepted.
