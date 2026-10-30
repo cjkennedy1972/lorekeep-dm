@@ -8,6 +8,8 @@ export interface SheetProps {
   store?: GameStore;
   /** Shown under the empty state, e.g. a link to build or choose a character. */
   emptyAction?: ReactNode;
+  /** True while the room state that supplies the character is still loading. */
+  loading?: boolean;
 }
 
 const abilityNames = {
@@ -41,6 +43,7 @@ export function Sheet({
   character: suppliedCharacter,
   store = gameStore,
   emptyAction,
+  loading = false,
 }: SheetProps) {
   const state = useSyncExternalStore(
     store.subscribe,
@@ -54,8 +57,17 @@ export function Sheet({
     return (
       <section aria-labelledby="sheet-title" className="sheet-empty">
         <h1 id="sheet-title">Character sheet</h1>
-        <p>No character selected.</p>
-        {emptyAction}
+        {loading ? (
+          <p role="status" className="loading">
+            <span className="spinner" aria-hidden="true" />
+            Loading your character…
+          </p>
+        ) : (
+          <>
+            <p>No character selected.</p>
+            {emptyAction}
+          </>
+        )}
       </section>
     );
 

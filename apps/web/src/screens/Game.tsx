@@ -1445,6 +1445,7 @@ export function Game() {
         >
           <Sheet
             store={gameStore}
+            loading={!room?.gameState}
             emptyAction={
               <Link className="sheet-empty__link" to={`/rooms/${id}`}>
                 Build or choose a character
