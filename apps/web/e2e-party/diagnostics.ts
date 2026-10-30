@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Page, TestInfo } from '@playwright/test';
+import { redactInviteUrls, safeUrl } from './redact';
 
 // Failure evidence for the party specs. Every helper here only observes: no assertion, timeout, or
 // socket behaviour changes. Nothing recorded is a credential: frames keep only their type and seq, the
@@ -108,7 +109,7 @@ function redactSecrets(text: string, secrets: string[]): string {
  * 20 characters covers the 22-char resume tokens and invite codes; ids in free text are over-redacted too.
  */
 function scrub(text: string, secrets: string[]): string {
-  return redactSecrets(text, secrets).replace(
+  return redactInviteUrls(redactSecrets(text, secrets)).replace(
     /[A-Za-z0-9_-]{20,}/g,
     '[redacted:opaque]',
   );
@@ -155,7 +156,7 @@ async function gather(view: SeatView): Promise<Evidence> {
     secretsKnown: false,
   };
   try {
-    evidence.url = new URL(page.url()).pathname; // path only: the query string can carry a ticket
+    evidence.url = safeUrl(page.url()); // path only; invite codes and query secrets redacted
   } catch {
     evidence.url = '(unavailable)';
   }

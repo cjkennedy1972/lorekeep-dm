@@ -7,6 +7,7 @@ import {
   startSeatTrace,
 } from './diagnostics';
 import { labelFor, stateTokens } from './combat-helpers';
+import { redactInviteUrls } from './redact';
 import {
   expect,
   test,
@@ -98,7 +99,9 @@ async function openAs(
     socket.on('framereceived', parseInto(frames));
     socket.on('framesent', parseInto(sent));
   });
-  await page.goto(path);
+  await page.goto(path).catch((error: unknown) => {
+    throw new Error(redactInviteUrls(String(error)));
+  });
   if (new URL(path, origin).pathname.endsWith('/game'))
     try {
       await expect(
@@ -113,7 +116,10 @@ async function openAs(
           stateTokens(),
         );
       } catch (attachError) {
-        console.error('party diagnostics could not be attached:', attachError);
+        console.error(
+          'party diagnostics could not be attached:',
+          redactInviteUrls(String(attachError)),
+        );
       }
       throw error;
     }
