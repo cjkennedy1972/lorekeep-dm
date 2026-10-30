@@ -7346,6 +7346,11 @@ export class Room {
       (seat) =>
         (seat.presence === 'connected' || seat.presence === 'returning') &&
         this.connections.has(seat.accountId) &&
+        ![...this.controlledBy(seat.accountId)].some((id) =>
+          roomGameState(this.state)?.entities?.some(
+            (entity) => entity.id === id && entity.hp <= 0,
+          ),
+        ) &&
         (this.state.spotlightTurn ?? 0) -
           (this.state.spotlightActivity?.[seat.accountId] ??
             this.state.spotlightTurn ??

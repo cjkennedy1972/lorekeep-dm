@@ -71,6 +71,57 @@ const result = {
 };
 
 describe('Room solo DM turn lifecycle', () => {
+  it('skips a downed seat in spotlight rotation', async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const runner: SoloTurnRunner = {
+      async run() {
+        await gate;
+        return result as never;
+      },
+    };
+    const { room } = setup(runner);
+    const downed = randomUUID();
+    const standing = randomUUID();
+    const downMessages: Record<string, unknown>[] = [];
+    const standingMessages: Record<string, unknown>[] = [];
+    await joinSeated(room, downed, {
+      send: (message) => downMessages.push(message as Record<string, unknown>),
+    });
+    await joinSeated(room, standing, {
+      send: (message) =>
+        standingMessages.push(message as Record<string, unknown>),
+    });
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: {
+          [downed]: { id: 'down-pc' },
+          [standing]: { id: 'standing-pc' },
+        },
+        combatRoom: {
+          entities: [
+            { id: 'down-pc', hp: 0 },
+            { id: 'standing-pc', hp: 10 },
+          ],
+        },
+      } as never,
+    };
+    expect(
+      await room.submitAction(standing, randomUUID(), 'I look around.'),
+    ).toBe(true);
+    finish();
+    await room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      downMessages.some((message) => message.type === 'SpotlightPrompt'),
+    ).toBe(false);
+    expect(
+      standingMessages.some((message) => message.type === 'SpotlightPrompt'),
+    ).toBe(true);
+  });
   it('does not queue away autopilot when a DM turn ends before the away PC turn starts', async () => {
     const { state: combat, game } = bootstrapped();
     const runner: SoloTurnRunner = {
