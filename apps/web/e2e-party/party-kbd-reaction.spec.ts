@@ -5,6 +5,7 @@ import {
   type Browser,
 } from '@playwright/test';
 import {
+  awaitTrackers,
   closeMember,
   displayNameOf,
   openMember,
@@ -58,10 +59,7 @@ async function openReactionTable(browser: Browser, views: View[]) {
   const { reaction } = readState();
   for (const member of [reaction.host, reaction.guest, reaction.scout])
     views.push(await openMember(browser, member, reaction.table));
-  for (const { page } of views)
-    await expect(
-      page.getByRole('list', { name: 'Initiative tracker' }),
-    ).toBeVisible({ timeout: 30_000 });
+  await awaitTrackers(views);
 }
 
 async function stageWindow(request: APIRequestContext, member: Member) {

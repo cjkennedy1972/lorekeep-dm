@@ -10,7 +10,7 @@ export async function mintSeatResume(
   origin: string,
   table: string,
   account: { accountId: string; token: string },
-) {
+): Promise<number> {
   const response = await context.request.post(
     `${origin}/api/test/mint-seat-resume`,
     {
@@ -22,7 +22,8 @@ export async function mintSeatResume(
     },
   );
   // An unseated account (a late joiner awaiting admission) has no seat to mint a token for.
-  if (response.status() === 404) return;
+  if (response.status() === 404) return 404;
   if (!response.ok())
     throw new Error(`mint-seat-resume failed: ${response.status()}`);
+  return response.status();
 }

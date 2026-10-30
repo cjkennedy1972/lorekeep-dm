@@ -3,9 +3,9 @@ import {
   closeMember,
   openMember,
   readState,
-  SYNC_BUDGET_MS,
   type View,
 } from './combat-helpers.js';
+import { expectSyncWithinBudget, SYNC_BUDGET_MS } from './sync-budget.js';
 
 // Real server + Postgres + scripted DM (see apps/server/test/live/serve.party.live.ts).
 // The combat table's three members each sit in their own browser. Every move goes through the real
@@ -93,20 +93,19 @@ test('three browsers: keyboard-only party move and cancel, synced to every seat 
     await active!.page.keyboard.press('Enter');
 
     // Every browser, including the mover, must show the token at the target within the budget.
-    await Promise.all(
-      views.map(({ page }) =>
-        page
-          .locator(
-            `ul[aria-label="Combat tokens"] li[data-active="true"][data-x="${target.x}"][data-y="${target.y}"]`,
-          )
-          .waitFor({ state: 'visible', timeout: SYNC_BUDGET_MS }),
+    await expectSyncWithinBudget(
+      `party move sync to ${views.length} browsers`,
+      t0,
+      Promise.all(
+        views.map(({ page }) =>
+          page
+            .locator(
+              `ul[aria-label="Combat tokens"] li[data-active="true"][data-x="${target.x}"][data-y="${target.y}"]`,
+            )
+            .waitFor({ state: 'visible', timeout: SYNC_BUDGET_MS }),
+        ),
       ),
     );
-    const elapsed = Date.now() - t0;
-    console.log(
-      `party move sync: ${elapsed} ms to all ${views.length} browsers`,
-    );
-    expect(elapsed).toBeLessThanOrEqual(SYNC_BUDGET_MS);
 
     await expect(map).toHaveAttribute('data-moving', 'false');
     // Confirmation is not a turn end: the moved seat stays the active combatant.
