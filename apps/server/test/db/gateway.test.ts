@@ -1167,6 +1167,8 @@ describe('one-time gateway', () => {
   });
 
   it('requires live host approval for a lost-token claim and rotates on grant', async () => {
+    const room = await rooms.get(sessionId);
+    const claimRequestSpy = vi.spyOn(room, 'requestSeatResumeClaim');
     const host = connect(await ticket(tokens[0]));
     await nextOfType(host, 'StateSync');
     const bootstrap = connect(await ticket(tokens[1]));
@@ -1184,7 +1186,6 @@ describe('one-time gateway', () => {
     const claimId = pending.payload.claimId!;
     expect(await consumeTicket(db, grantTicket, sessionId)).toBeUndefined();
     await nextOfType(host, 'SeatClaimRequested');
-    const room = await rooms.get(sessionId);
     host.send(
       JSON.stringify({
         actionId: randomUUID(),
@@ -1194,6 +1195,12 @@ describe('one-time gateway', () => {
       }),
     );
     await nextOfType(claimant, 'SeatAuthenticated');
+    expect(claimRequestSpy).toHaveBeenCalledWith(
+      accounts[1],
+      claimId,
+      hashToken(tokens[1]),
+    );
+    claimRequestSpy.mockRestore();
     expect(resumeTokens.get(tokens[1])).not.toBe(previous);
     await Promise.all([closeSocket(claimant), closeSocket(host)]);
     await Promise.all([
