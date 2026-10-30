@@ -23,6 +23,44 @@ describe('entity display names', () => {
     expect(nameFromCatalogId('ent_goblin-minion_1')).toBe('Goblin Minion');
   });
 
+  it('strips an embedded UUID from a catalog id and keeps the readable word', () => {
+    const uuid = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
+    expect(nameFromCatalogId(`ent_seat_${uuid}`)).toBe('Seat');
+    expect(nameFromCatalogId(`ent_goblin_${uuid}`)).toBe('Goblin');
+    expect(nameFromCatalogId(`ent_goblin-minion_${uuid}_2`)).toBe(
+      'Goblin Minion',
+    );
+    expect(nameFromCatalogId('ent_goblin')).toBe('Goblin');
+  });
+
+  it('handles uppercase UUIDs and uppercase hex runs the same way', () => {
+    const uuid = '3F2A9C1E-7B4D-4E8A-9F10-2C5D6E7F8A9B';
+    expect(nameFromCatalogId(`ent_${uuid}`)).toBe('Combatant');
+    expect(nameFromCatalogId(`ent_seat_${uuid}`)).toBe('Seat');
+    expect(nameFromCatalogId('ent_seat_3F2A9C1E7B4D')).toBe('Seat');
+  });
+
+  it('numbers twins whose embedded UUIDs differ, without showing any fragment', () => {
+    const namer = createEntityNamer({
+      entities: [
+        {
+          id: 'ent_goblin_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b',
+          kind: 'monster',
+        },
+        {
+          id: 'ent_goblin_0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e',
+          kind: 'monster',
+        },
+      ],
+    });
+    expect(namer('ent_goblin_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b')).toBe(
+      'Goblin 1',
+    );
+    expect(namer('ent_goblin_0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e')).toBe(
+      'Goblin 2',
+    );
+  });
+
   it('labels UUID combatants by visible order, so twins still stay apart', () => {
     const namer = createEntityNamer({
       entities: [

@@ -21,6 +21,10 @@ import { TurnBanner } from '../features/game/TurnBanner.js';
 import { Describe } from '../features/map/Describe.js';
 import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
 import { CombatEndCard } from '../features/combat/CombatEndCard.js';
+import {
+  attackRecordFor,
+  retainAttackRecord,
+} from '../features/combat/attackRecord.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
 import {
   isTurnFailure,
@@ -136,12 +140,11 @@ export function Game() {
   const combatRetries = useRef(
     new Map<string, { command: Record<string, unknown>; attempts: number }>(),
   );
-  // The actionId of the newest attack this seat sent. An older attack's rejection is stale and is ignored.
-  const latestAttackAction = useRef<string | null>(null);
-  // Every attack actionId this seat sent, kept for the life of the screen rather than on the 5 s retry
-  // timer, so a late rejection can never fall through to the generic header error.
-  const attackActionIds = useRef(new Set<string>());
   const { id = '' } = useParams();
+  // The attack actionIds this seat sent in this game, kept page-wide (see attackRecord.ts) rather than on
+  // the 5 s retry timer or this component, so a late rejection still lands on its attack after a remount.
+  const attacks = attackRecordFor(id);
+  useEffect(() => retainAttackRecord(id), [id]);
   const { account } = useAuth();
   const [resume, setResume] = useState<{
     recap: string;
@@ -431,12 +434,9 @@ export function Game() {
         }
         // The server uses COMMAND_REJECTED for several attack failures and sends no cause, so the copy stays neutral.
         // Only the newest attack may explain itself; any other attack's rejection, however late, is swallowed.
-        if (
-          payload.code === 'COMMAND_REJECTED' &&
-          attackActionIds.current.has(actionId)
-        ) {
+        if (payload.code === 'COMMAND_REJECTED' && attacks.sent.has(actionId)) {
           combatRetries.current.delete(actionId);
-          if (actionId === latestAttackAction.current)
+          if (actionId === attacks.latest)
             setAttackFeedback(
               'That attack could not be made. Try another target or action.',
             );
@@ -642,9 +642,8 @@ export function Game() {
   const send = (command: Record<string, unknown>) => {
     const actionId = live.send('CombatCommand', command);
     if (command.command === 'attack') {
-      latestAttackAction.current =
-        typeof actionId === 'string' ? actionId : null;
-      if (typeof actionId === 'string') attackActionIds.current.add(actionId);
+      attacks.latest = typeof actionId === 'string' ? actionId : null;
+      if (typeof actionId === 'string') attacks.sent.add(actionId);
     }
     if (typeof actionId === 'string') {
       const pending = { command, attempts: 0 };

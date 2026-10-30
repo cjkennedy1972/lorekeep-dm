@@ -5,6 +5,7 @@ import {
 } from '@game/rules-engine';
 import { useEffect, useMemo, useState } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
+import { nameFromCatalogId } from './names.js';
 
 type Props = {
   store?: typeof gameStore;
@@ -17,7 +18,7 @@ type Props = {
 export function Describe({
   store = gameStore,
   viewerId,
-  nameOf = (entityId) => entityId,
+  nameOf = nameFromCatalogId,
 }: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
   const [verbosity, setVerbosity] = useState<DescribeVerbosity>('standard');

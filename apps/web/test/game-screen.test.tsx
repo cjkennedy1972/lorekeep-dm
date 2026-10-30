@@ -1266,6 +1266,107 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     );
   });
 
+  it('a late rejection after a remount still explains the newest attack, and never falls through to the header error', async () => {
+    const user = userEvent.setup();
+    const first = mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    hoisted.send.mockReturnValueOnce('atk-remount');
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    first.unmount();
+    mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'That target is not a legal attack.',
+      actionId: 'atk-remount',
+    });
+    expect(
+      screen.queryByText('That target is not a legal attack.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'That attack could not be made. Try another target or action.',
+    );
+  });
+
+  it('after a remount, a late rejection for an older attack stays silent', async () => {
+    const user = userEvent.setup();
+    const first = mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    hoisted.send.mockReturnValueOnce('atk-before');
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    hoisted.send.mockReturnValueOnce('atk-after');
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    first.unmount();
+    mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'That target is not a legal attack.',
+      actionId: 'atk-before',
+    });
+    expect(
+      screen.queryByText('That target is not a legal attack.'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('leaving the game forgets its attacks, so a fresh visit does not swallow an old rejection', () => {
+    vi.useFakeTimers();
+    try {
+      const first = mount();
+      push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+      push('CombatOptions', {
+        actions: [
+          {
+            kind: 'attack',
+            optionId: 'a1',
+            targetId: 'ent_goblin',
+            attackId: 'staff',
+          },
+        ],
+      });
+      hoisted.send.mockReturnValueOnce('atk-left');
+      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      first.unmount();
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      mount();
+      push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+      push('Error', {
+        code: 'COMMAND_REJECTED',
+        message: 'That target is not a legal attack.',
+        actionId: 'atk-left',
+      });
+      // Nothing remembers the old attack, so the rejection reaches the header error as before.
+      expect(
+        screen.getByText('That target is not a legal attack.'),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a late rejection for the newest attack, after the 5 s send window, keeps neutral copy and never shows server wording', () => {
     vi.useFakeTimers();
     try {
