@@ -60,8 +60,22 @@ jobs:
       - run: pnpm --filter @game/web exec playwright test -c playwright.live.config.ts
       # Full Adventure #1 solo lifecycle including browser close and server restart.
       - run: pnpm --filter @game/web exec playwright test -c playwright.adventure.config.ts
+      - name: TEMP artifact exclusion proof fixtures
+        if: always()
+        run: |
+          base="apps/web/test-results/exclusion-proof-${{ github.job }}"
+          mkdir -p "$base/nested" "$base/screenshots" "$base/screenshot" "$base/videos" "$base/video"
+          printf 'allowed diagnostic\n' > "$base/keep.txt"
+          printf 'must exclude\n' > "$base/trace.zip"
+          printf 'must exclude\n' > "$base/nested/trace.zip"
+          printf 'must exclude\n' > "$base/error-context.md"
+          printf '{"sid":"dummy"}\n' > "$base/probe-live-state.json"
+          printf 'dummy screenshot\n' > "$base/screenshots/probe.png"
+          printf 'dummy screenshot\n' > "$base/screenshot/probe.png"
+          printf 'dummy video\n' > "$base/videos/probe.webm"
+          printf 'dummy video\n' > "$base/video/probe.webm"
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: playwright-debug-test-${{ github.run_attempt }}
           path: |
@@ -186,8 +200,22 @@ jobs:
             echo "Playwright browser download failed or timed out; retrying once"
           done
       - run: pnpm --filter @game/web exec playwright test --project=firefox --project=webkit
+      - name: TEMP artifact exclusion proof fixtures
+        if: always()
+        run: |
+          base="apps/web/test-results/exclusion-proof-${{ github.job }}"
+          mkdir -p "$base/nested" "$base/screenshots" "$base/screenshot" "$base/videos" "$base/video"
+          printf 'allowed diagnostic\n' > "$base/keep.txt"
+          printf 'must exclude\n' > "$base/trace.zip"
+          printf 'must exclude\n' > "$base/nested/trace.zip"
+          printf 'must exclude\n' > "$base/error-context.md"
+          printf '{"sid":"dummy"}\n' > "$base/probe-live-state.json"
+          printf 'dummy screenshot\n' > "$base/screenshots/probe.png"
+          printf 'dummy screenshot\n' > "$base/screenshot/probe.png"
+          printf 'dummy video\n' > "$base/videos/probe.webm"
+          printf 'dummy video\n' > "$base/video/probe.webm"
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: playwright-debug-browsers-${{ github.run_attempt }}
           path: |
