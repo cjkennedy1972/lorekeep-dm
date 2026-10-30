@@ -1693,6 +1693,129 @@ describe('one-time gateway', () => {
   }, 30_000);
 });
 
+describe('converted solo character privacy over real sockets', () => {
+  it('re-keys the owner character and never emits the owner account ID after conversion', async () => {
+    const id = randomUUID();
+    let owner: WebSocket | undefined;
+    let guest: WebSocket | undefined;
+    let resumedOwner: WebSocket | undefined;
+    const priorGuestToken = resumeTokens.get(tokens[1]!);
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'solo')",
+      [id, accounts[0]],
+    );
+    const room = await rooms.get(id);
+    const initialToken = await room.seat(
+      accounts[0]!,
+      'Conversion owner',
+      false,
+      hashToken(tokens[0]!),
+    );
+    if (!initialToken) throw new Error('conversion owner has no resume token');
+    resumeTokens.set(tokens[0]!, initialToken);
+    const repo = new SeatCharacterRepository(db);
+    const ownerCharacter = {
+      ...quickBuild(loadCatalog(), undefined, 0x51, 1).character,
+      id: randomUUID(),
+      inventory: [{ itemId: 'item:healing-potion', quantity: 2 }],
+    };
+    const guestCharacter = {
+      ...quickBuild(loadCatalog(), undefined, 0x52, 1).character,
+      id: randomUUID(),
+    };
+    await repo.saveOwnedCharacter(accounts[0]!, ownerCharacter);
+    await db.query(
+      'UPDATE sessions SET character_id=$2, character=$3::jsonb WHERE id=$1',
+      [id, ownerCharacter.id, ownerCharacter],
+    );
+    const guestRevision = await repo.saveOwnedCharacter(
+      accounts[1]!,
+      guestCharacter,
+    );
+    await room.persistGameState({
+      characters: { [accounts[0]!]: ownerCharacter },
+    });
+
+    try {
+      owner = connect(await ticket(tokens[0]!, id));
+      await nextOfType(owner, 'StateSync');
+      const requestId = await room.requestLateJoin(
+        accounts[1]!,
+        guestCharacter.id,
+        guestRevision,
+        randomUUID(),
+        'Conversion guest',
+      );
+      await room.approveLateJoin(accounts[0]!, randomUUID(), requestId);
+      await (
+        room as unknown as { admitApprovedLateJoins(): Promise<void> }
+      ).admitApprovedLateJoins();
+      const guestSeat = room.state.seats.find(
+        (seat) => seat.accountId === accounts[1],
+      )!;
+      const guestResumeToken = randomUUID();
+      await db.query(
+        'UPDATE seat_resume_tokens SET token_hash=$3 WHERE session_id=$1 AND seat_id=$2',
+        [id, guestSeat.seatId, hashToken(guestResumeToken)],
+      );
+      resumeTokens.set(tokens[1]!, guestResumeToken);
+      guest = connect(await ticket(tokens[1]!, id));
+      const guestSync = await nextOfType(guest, 'StateSync');
+      await room.acknowledgeLateJoinSnapshot(
+        accounts[1]!,
+        guestSeat.seatId,
+        guestSync.seq,
+      );
+      await (
+        room as unknown as { admitApprovedLateJoins(): Promise<void> }
+      ).admitApprovedLateJoins();
+
+      const ownerSeat = room.state.seats.find(
+        (seat) => seat.accountId === accounts[0],
+      )!;
+      expect(room.state.gameState).toMatchObject({
+        characters: {
+          [ownerSeat.seatId]: expect.objectContaining({
+            id: ownerCharacter.id,
+          }),
+        },
+      });
+      const ownerFrames = receivedFrames.get(owner) ?? [];
+      const guestFrames = receivedFrames.get(guest) ?? [];
+      const postConversionOwnerFrames = ownerFrames.slice(1);
+      expect(postConversionOwnerFrames.join('\n')).not.toContain(accounts[0]);
+      expect(guestFrames.join('\n')).not.toContain(accounts[0]);
+
+      await closeSocket(owner);
+      owner = undefined;
+      resumedOwner = connect(await ticket(tokens[0]!, id));
+      const resumedSync = await nextOfType(resumedOwner, 'StateSync');
+      const resumedJson = JSON.stringify(resumedSync);
+      expect(resumedJson).not.toContain(accounts[0]);
+      expect(resumedSync.payload.state.gameState).toMatchObject({
+        characters: {
+          [ownerSeat.seatId]: expect.objectContaining({
+            id: ownerCharacter.id,
+            hp: ownerCharacter.hp,
+            inventory: ownerCharacter.inventory,
+          }),
+        },
+      });
+    } finally {
+      await Promise.all(
+        [owner, guest, resumedOwner]
+          .filter((ws): ws is WebSocket => Boolean(ws))
+          .map((ws) => closeSocket(ws)),
+      );
+      const roomSeats = room.state.seats;
+      for (const seat of roomSeats)
+        await waitForReleasedSocket(seat.seatId, id);
+      if (priorGuestToken) resumeTokens.set(tokens[1]!, priorGuestToken);
+      else resumeTokens.delete(tokens[1]!);
+    }
+  }, 30_000);
+});
+
 describe('party character binding WebSocket authorization', () => {
   async function fixture() {
     const id = randomUUID();
