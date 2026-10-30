@@ -3,7 +3,15 @@ import { randomUUID, createHash } from 'node:crypto';
 import { on } from 'node:events';
 import { Pool } from 'pg';
 import WebSocket from 'ws';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
@@ -12,6 +20,7 @@ import {
   issueTicket,
   soloOwnerRecoveryTicket,
 } from '../../src/gateway/tickets.js';
+import * as resumeTokenModule from '../../src/gateway/resumeTokens.js';
 import {
   authorizeSeatSocket,
   releaseSeatSocket,
@@ -27,7 +36,11 @@ import { quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
-const app = createApp(db, { inputGate: allowInputGate });
+const capturedLogs: string[] = [];
+const app = createApp(db, {
+  inputGate: allowInputGate,
+  loggerStream: { write: (chunk) => capturedLogs.push(chunk.toString()) },
+});
 const rooms = new RoomRegistry(
   new Persistence(db),
   new SessionLease(db),
@@ -210,7 +223,10 @@ beforeAll(async () => {
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   base = address;
 });
-beforeEach(() => connections.resetAuthAttemptHistory());
+beforeEach(() => {
+  connections.resetAuthAttemptHistory();
+  vi.restoreAllMocks();
+});
 afterAll(async () => {
   await rooms.drain();
   await app.close();
@@ -265,6 +281,174 @@ describe('pending first-token handoff', () => {
         Date.now() + 30_001,
       ),
     ).toBeUndefined();
+  });
+
+  it('logs and closes when authorization throws after claiming the pending token', async () => {
+    const { id } = await pendingSeat();
+    const spy = vi.spyOn(resumeTokenModule, 'authorizeSeatSocket');
+    spy.mockRejectedValueOnce(new Error('injected authorization failure'));
+    const before = capturedLogs.length;
+    const socket = connect(await ticket(tokens[0]!, id), null);
+    const closeResult = new Promise<{ code: number; reason: string }>(
+      (resolve) =>
+        socket.once('close', (code, reason) =>
+          resolve({ code, reason: reason.toString() }),
+        ),
+    );
+    expect(await closeResult).toEqual({
+      code: 1008,
+      reason: 'Policy violation',
+    });
+    const entries = capturedLogs.slice(before).map((line) => JSON.parse(line));
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        event: 'seat.socket.refused',
+        reason: 'authorization-error',
+        step: 'authorization',
+        sessionId: id,
+        pendingTokenClaimed: true,
+        closeCode: null,
+      }),
+    );
+    expect(
+      entries.find((entry) => entry.event === 'seat.socket.refused'),
+    ).not.toHaveProperty('socketId');
+    spy.mockRestore();
+  });
+
+  it('preserves the outer close when token delivery completion throws after authentication', async () => {
+    const { id, room } = await pendingSeat();
+    const completion = vi
+      .spyOn(room, 'completeSeatResumeTokenDelivery')
+      .mockImplementation(() => {
+        throw new Error('injected delivery completion failure');
+      });
+    const before = capturedLogs.length;
+    const socket = connect(await ticket(tokens[0]!, id), null);
+    const closePromise = new Promise<{ code: number; reason: string }>(
+      (resolve) =>
+        socket.once('close', (code, reason) =>
+          resolve({ code, reason: reason.toString() }),
+        ),
+    );
+    expect((await nextOfType(socket, 'SeatAuthenticated')).type).toBe(
+      'SeatAuthenticated',
+    );
+    const closeResult = await closePromise;
+    expect(closeResult).toEqual({ code: 1008, reason: 'Policy violation' });
+    const event = capturedLogs
+      .slice(before)
+      .map((line) => JSON.parse(line))
+      .find((line) => line.event === 'seat.socket.refused');
+    expect(event).toMatchObject({
+      event: 'seat.socket.refused',
+      reason: 'post-claim-error',
+      step: 'delivery-completion',
+      sessionId: id,
+      pendingTokenClaimed: true,
+      closeCode: null,
+    });
+    completion.mockRestore();
+  });
+
+  it('logs not-seated refusal after a pending-token claim', async () => {
+    const { id, room } = await pendingSeat();
+    const seats = room.state.seats;
+    room.state = {
+      ...room.state,
+      seats: seats.filter((seat) => seat.accountId !== accounts[0]),
+    };
+    const spy = vi.spyOn(resumeTokenModule, 'authorizeSeatSocket');
+    spy.mockResolvedValueOnce({ status: 'invalid-token' });
+    const before = capturedLogs.length;
+    const socket = connect(await ticket(tokens[0]!, id), null);
+    expect(await closed(socket)).toBe(1008);
+    const entry = capturedLogs
+      .slice(before)
+      .map((line) => JSON.parse(line))
+      .find((line) => line.event === 'seat.socket.refused');
+    expect(entry).toMatchObject({
+      event: 'seat.socket.refused',
+      reason: 'not-seated',
+      sessionId: id,
+      pendingTokenClaimed: true,
+      closeCode: 1008,
+    });
+    spy.mockRestore();
+  });
+
+  it('logs reservation-unavailable after closing and releasing the authorized socket', async () => {
+    const { id, room } = await pendingSeat();
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    const blocker = { readyState: 0 } as WebSocket;
+    const seatKey = `${id}:${seatId}`;
+    expect(connections.reserveSeat(seatKey, blocker)).toMatchObject({
+      reserved: true,
+    });
+    const before = capturedLogs.length;
+    const socket = connect(await ticket(tokens[0]!, id), null);
+    expect(await closed(socket)).toBe(1008);
+    connections.remove(blocker);
+    const entry = await (async () => {
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const match = capturedLogs
+          .slice(before)
+          .map((line) => JSON.parse(line))
+          .find((line) => line.event === 'seat.socket.refused');
+        if (match) return match;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return undefined;
+    })();
+    expect(entry).toMatchObject({
+      event: 'seat.socket.refused',
+      reason: 'reservation-unavailable',
+      sessionId: id,
+      pendingTokenClaimed: true,
+      closeCode: 1008,
+    });
+  });
+
+  it('logs an active-socket refusal after claiming the pending token', async () => {
+    const { id, room } = await pendingSeat();
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    await db.query(
+      `UPDATE seat_resume_tokens SET active_socket_id=$3,heartbeat_at=now()
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId, randomUUID()],
+    );
+    const before = capturedLogs.length;
+    const socket = connect(await ticket(tokens[0]!, id), null);
+    const closeCode = await closed(socket);
+    expect(closeCode).toBe(1008);
+    const log = await (async () => {
+      for (let i = 0; i < 50; i++) {
+        const match = capturedLogs
+          .slice(before)
+          .map((line) => JSON.parse(line))
+          .find((entry) => entry.event === 'seat.socket.refused');
+        if (match) return match;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('seat.socket.refused was not logged');
+    })();
+    expect(log).toMatchObject({
+      event: 'seat.socket.refused',
+      reason: 'authorization-active-socket',
+      seatId,
+      sessionId: id,
+      pendingTokenClaimed: true,
+      closeCode: 1008,
+    });
+    expect(log).toHaveProperty('socketAgeMs');
+    await db.query(
+      'UPDATE seat_resume_tokens SET active_socket_id=NULL,heartbeat_at=NULL WHERE session_id=$1 AND seat_id=$2',
+      [id, seatId],
+    );
   });
 });
 
@@ -1615,7 +1799,7 @@ describe('party character binding WebSocket authorization', () => {
     } finally {
       await shutdown(f);
     }
-  });
+  }, 15_000); // Includes two DB-backed WS handshakes and their StateSync frames.
 
   it('rejects revoked, foreign-owned, unknown, stale, and gameplay actions from unbound seats with non-disclosing errors', async () => {
     const f = await fixture();

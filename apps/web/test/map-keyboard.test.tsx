@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Battlemap } from '@game/schema';
 import { MapKeyboard } from '../src/features/map/keyboard.js';
@@ -309,6 +310,51 @@ describe('reaction prompt keyboard focus', () => {
     await user.keyboard('{Shift>}{Tab}{/Shift}');
     expect(decline).toHaveFocus();
     expect(onReactionChoice).not.toHaveBeenCalled();
+  });
+
+  it('keeps Decline focused across countdown ticks so Enter declines', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const store = setup();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const onReactionChoice = vi.fn();
+      // Mirrors Game.tsx: a 100 ms countdown re-renders the keyboard with the same reactionPrompt object.
+      function Countdown() {
+        const [remaining, setRemaining] = useState(15_000);
+        useEffect(() => {
+          const timer = window.setInterval(
+            () => setRemaining((ms) => Math.max(0, ms - 100)),
+            100,
+          );
+          return () => window.clearInterval(timer);
+        }, []);
+        return (
+          <MapKeyboard
+            store={store}
+            reactionPrompt={prompt}
+            onReactionChoice={onReactionChoice}
+            reactionRemainingMs={remaining}
+          />
+        );
+      }
+      render(<Countdown />);
+      expect(screen.getByRole('button', { name: 'Accept' })).toHaveFocus();
+      await user.keyboard('{Tab}');
+      const decline = screen.getByRole('button', { name: 'Decline' });
+      expect(decline).toHaveFocus();
+      // One act() per 100 ms tick so each countdown render commits separately; a single act() could batch them.
+      for (let tick = 1; tick <= 4; tick++) {
+        act(() => {
+          vi.advanceTimersByTime(100);
+        });
+        expect(decline, `focus after countdown tick ${tick}`).toHaveFocus();
+      }
+      await user.keyboard('{Enter}');
+      expect(onReactionChoice).toHaveBeenCalledTimes(1);
+      expect(onReactionChoice).toHaveBeenCalledWith('r1', 'decline');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('Escape declines through the existing take|decline wire', async () => {
