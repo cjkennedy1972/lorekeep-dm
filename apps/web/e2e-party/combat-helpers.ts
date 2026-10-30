@@ -53,13 +53,14 @@ export type View = {
 export const readState = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as CombatState;
 
-// Every token in the state file. Used to scrub failure attachments.
+// Every token and invite code in the state file. Used to scrub failure attachments.
 export function stateTokens(): string[] {
   const tokens: string[] = [];
   const walk = (node: unknown) => {
     if (typeof node !== 'object' || node === null) return;
     for (const [key, value] of Object.entries(node))
-      if (key === 'token' && typeof value === 'string') tokens.push(value);
+      if ((key === 'token' || key === 'invite') && typeof value === 'string')
+        tokens.push(value);
       else walk(value);
   };
   walk(readState());

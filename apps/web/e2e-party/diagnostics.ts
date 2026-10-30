@@ -104,10 +104,13 @@ function redactSecrets(text: string, secrets: string[]): string {
   return out;
 }
 
-/** Free text (snapshot, body text, error, close reason) also loses anything that looks like an opaque token. */
+/**
+ * Free text (snapshot, body text, error, close reason) also loses anything that looks like an opaque token.
+ * 20 characters covers the 22-char resume tokens and invite codes; ids in free text are over-redacted too.
+ */
 function scrub(text: string, secrets: string[]): string {
   return redactSecrets(text, secrets).replace(
-    /[A-Za-z0-9_-]{32,}/g,
+    /[A-Za-z0-9_-]{20,}/g,
     '[redacted:opaque]',
   );
 }
@@ -136,6 +139,8 @@ type Evidence = {
   text: string;
   sockets: TraceEvent[];
   localSecrets: string[];
+  /** False when the page's storage could not be read, so its page text cannot be scrubbed. */
+  secretsKnown: boolean;
 };
 
 async function gather(view: SeatView): Promise<Evidence> {
@@ -148,6 +153,7 @@ async function gather(view: SeatView): Promise<Evidence> {
     text: '',
     sockets: [],
     localSecrets: [],
+    secretsKnown: false,
   };
   try {
     evidence.url = new URL(page.url()).pathname; // path only: the query string can carry a ticket
@@ -183,6 +189,7 @@ async function gather(view: SeatView): Promise<Evidence> {
   } catch {
     // Page closed or navigated away: no page-side socket events.
   }
+  // Read while the page is open: this is the only place the resume tokens in storage are known.
   try {
     evidence.localSecrets = await page.evaluate(() => {
       const values: string[] = [];
@@ -193,8 +200,9 @@ async function gather(view: SeatView): Promise<Evidence> {
       }
       return values;
     });
+    evidence.secretsKnown = true;
   } catch {
-    // No storage access: the scrub still covers the state-file tokens.
+    // Page closed: its text is withheld below rather than attached unscrubbed.
   }
   return evidence;
 }
@@ -254,8 +262,12 @@ export async function attachSeatDiagnostics(
         {
           summary,
           timeline,
-          snapshot: scrub(e.snapshot, secrets),
-          bodyText: scrub(e.text, secrets),
+          snapshot: e.secretsKnown
+            ? scrub(e.snapshot, secrets)
+            : '(withheld: page storage unreadable, cannot scrub)',
+          bodyText: e.secretsKnown
+            ? scrub(e.text, secrets)
+            : '(withheld: page storage unreadable, cannot scrub)',
         },
         null,
         1,

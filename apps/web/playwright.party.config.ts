@@ -17,6 +17,8 @@ export default defineConfig({
   workers: 1,
   use: {
     baseURL: `http://localhost:${webPort}`,
+    // Traces hold request headers (session cookies), the ws-ticket response, and page state. They are
+    // not scrubbed: keep them local, and never upload them as a CI artifact.
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
