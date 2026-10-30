@@ -715,6 +715,61 @@ describe('room actor', () => {
     }
   });
 
+  it('does not auto-approve a late-join authorization issued to another account', async () => {
+    const { store, events } = fixture();
+    const host = randomUUID();
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+    store.isTableHost = async (_sessionId, accountId) => accountId === host;
+    const room = new Room(store, lease, await store.loadLatest(id));
+    await room.seat(host, 'Host');
+    await room.seat(accountB, 'Account B');
+    const seat = room.state.seats.find(
+      (candidate) => candidate.accountId === accountB,
+    )!;
+    const authTokenHash = 'same-session-hash';
+    const requestId = randomUUID();
+    const internals = room as unknown as {
+      lateJoinClaimAuthorizations: Map<
+        string,
+        {
+          requestId: string;
+          accountId: string;
+          seatId: string;
+          authTokenHash: string;
+          expiresAt: number;
+        }
+      >;
+      seatClaims: Map<string, unknown>;
+    };
+    internals.lateJoinClaimAuthorizations.set(seat.seatId, {
+      requestId,
+      accountId: accountA,
+      seatId: seat.seatId,
+      authTokenHash,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    try {
+      const claimId = randomUUID();
+      const decision = room.requestSeatResumeClaim(
+        accountB,
+        claimId,
+        authTokenHash,
+      );
+      await vi.waitFor(() =>
+        expect(internals.seatClaims.has(claimId)).toBe(true),
+      );
+      expect(events.map((event) => event.type)).not.toContain(
+        'SeatClaimAutoApproved',
+      );
+      await room.approveSeatResumeClaim(host, randomUUID(), claimId);
+      await expect(decision).resolves.toBe(true);
+    } finally {
+      await room.drain();
+    }
+  });
+
   it('requires host approval for a lost-token claim and expires it after 60 seconds', async () => {
     const { store } = fixture();
     const host = randomUUID();
@@ -1987,11 +2042,15 @@ describe('room actor', () => {
         gameEngine: { map, entities: [] },
       });
       const requester = randomUUID();
+      const requestAuthHash = 'late-join-authorizing-session';
       const requestId = await room.requestLateJoin(
         requester,
         randomUUID(),
         1,
         randomUUID(),
+        'Player',
+        false,
+        requestAuthHash,
       );
       expect(
         room.state.seats.some((seat) => seat.accountId === requester),
@@ -2066,6 +2125,58 @@ describe('room actor', () => {
           (entity) => entity.id === spawned.payload.entityId,
         ),
       ).toBe(true);
+
+      const wrongSessionClaimId = randomUUID();
+      const wrongSessionClaim = room.requestSeatResumeClaim(
+        requester,
+        wrongSessionClaimId,
+        'different-authenticated-session',
+      );
+      await room.cancelSeatResumeClaim(wrongSessionClaimId);
+      await expect(wrongSessionClaim).resolves.toBe(false);
+
+      const wrongAccountClaimId = randomUUID();
+      const wrongAccountClaim = room.requestSeatResumeClaim(
+        host,
+        wrongAccountClaimId,
+        requestAuthHash,
+      );
+      await room.cancelSeatResumeClaim(wrongAccountClaimId);
+      await expect(wrongAccountClaim).resolves.toBe(false);
+
+      await expect(
+        room.requestSeatResumeClaim(requester, randomUUID(), requestAuthHash),
+      ).resolves.toBe(true);
+      expect(events.map((event) => event.type)).toContain(
+        'SeatClaimAutoApproved',
+      );
+
+      const replayClaimId = randomUUID();
+      const replayClaim = room.requestSeatResumeClaim(
+        requester,
+        replayClaimId,
+        requestAuthHash,
+      );
+      await room.cancelSeatResumeClaim(replayClaimId);
+      await expect(replayClaim).resolves.toBe(false);
+
+      const actualNow = Date.now();
+      const dateNow = vi
+        .spyOn(Date, 'now')
+        .mockReturnValue(actualNow + 10 * 60_000 + 1);
+      const expiredClaimId = randomUUID();
+      const expiredClaim = room.requestSeatResumeClaim(
+        requester,
+        expiredClaimId,
+        requestAuthHash,
+      );
+      await room.cancelSeatResumeClaim(expiredClaimId);
+      await expect(expiredClaim).resolves.toBe(false);
+      expect(
+        events.filter((event) => event.type === 'SeatClaimAutoApproved'),
+      ).toHaveLength(1);
+      dateNow.mockRestore();
+      await room.drain();
     });
 
     it('keeps an approved join pending without a legal spawn and releases its binding when declined', async () => {

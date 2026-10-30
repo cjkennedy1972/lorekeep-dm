@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   RoomStateSchema,
   TurnRevertedSchema,
@@ -355,6 +355,14 @@ interface PendingSeatClaim {
   expiresAt: number;
   timer: ReturnType<typeof setTimeout>;
   decide: (approved: boolean) => void;
+}
+
+interface LateJoinClaimAuthorization {
+  requestId: string;
+  accountId: string;
+  seatId: string;
+  authTokenHash: string;
+  expiresAt: number;
 }
 
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
@@ -748,6 +756,11 @@ export class Room {
     }
   >();
   private readonly lateJoinAuthTokenHashes = new Map<string, string>();
+  /** One first-device claim, restricted to the session that requested late join. */
+  private readonly lateJoinClaimAuthorizations = new Map<
+    string,
+    LateJoinClaimAuthorization
+  >();
   /** In-memory snapshot acknowledgements; reconnect must acknowledge again after Room recovery. */
   private readonly lateJoinSnapshotAcks = new Set<string>();
   private readonly lateJoinSnapshotSeqs = new Map<string, Set<number>>();
@@ -1052,6 +1065,9 @@ export class Room {
     if (timer) clearTimeout(timer);
     this.lateJoinExpiryTimers.delete(requestId);
     this.lateJoinAuthTokenHashes.delete(requestId);
+    for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
+      if (authorization.requestId === requestId)
+        this.lateJoinClaimAuthorizations.delete(seatId);
     this.lateJoinSnapshotAcks.delete(requestId);
     this.lateJoinSnapshotSeqs.delete(requestId);
     const pendingResume = this.pendingSeatResumeTokens.get(request.accountId);
@@ -1100,6 +1116,9 @@ export class Room {
     accountId?: string,
   ): void {
     this.lateJoinAuthTokenHashes.delete(requestId);
+    for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
+      if (authorization.requestId === requestId)
+        this.lateJoinClaimAuthorizations.delete(seatId);
     this.lateJoinSnapshotAcks.delete(requestId);
     this.lateJoinSnapshotSeqs.delete(requestId);
     this.revokedLateJoinRequests.delete(requestId);
@@ -1286,6 +1305,11 @@ export class Room {
     if (stored.ownerBinding)
       this.seatBindings.set(stored.ownerBinding.seatId, stored.ownerBinding);
     if (released) this.seatBindings.delete(released.seatId);
+    if (type === 'SeatRevoked') {
+      const seatId = (payload as { seatId?: unknown }).seatId;
+      if (typeof seatId === 'string')
+        this.lateJoinClaimAuthorizations.delete(seatId);
+    }
     for (const actionId of [...committedActionIds, ...additionalActionIds])
       this.actionIds.add(actionId);
     return committed;
@@ -2218,6 +2242,11 @@ export class Room {
     if (pending.authTokenHash !== authTokenHash) return undefined;
     clearTimeout(pending.expiryTimer);
     this.pendingSeatResumeTokens.delete(accountId);
+    // The first-delivery token is the admission proof; after it is consumed,
+    // the separate late-join claim authorization is no longer needed.
+    for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
+      if (authorization.accountId === accountId)
+        this.lateJoinClaimAuthorizations.delete(seatId);
     return pending.token;
   }
 
@@ -3635,7 +3664,11 @@ export class Room {
     });
   }
 
-  requestSeatResumeClaim(accountId: string, claimId: string): Promise<boolean> {
+  requestSeatResumeClaim(
+    accountId: string,
+    claimId: string,
+    authTokenHash?: string,
+  ): Promise<boolean> {
     return this.enqueue(async () => {
       const seat = this.state.seats.find(
         (candidate) => candidate.accountId === accountId,
@@ -3652,6 +3685,30 @@ export class Room {
         )
       )
         throw new Error('A seat claim is already pending');
+      const lateJoinAuthorization = this.lateJoinClaimAuthorizations.get(
+        seat.seatId,
+      );
+      if (
+        lateJoinAuthorization &&
+        lateJoinAuthorization.accountId === accountId &&
+        lateJoinAuthorization.seatId === seat.seatId &&
+        authTokenHash !== undefined &&
+        Buffer.byteLength(lateJoinAuthorization.authTokenHash) ===
+          Buffer.byteLength(authTokenHash) &&
+        timingSafeEqual(
+          Buffer.from(lateJoinAuthorization.authTokenHash),
+          Buffer.from(authTokenHash),
+        ) &&
+        lateJoinAuthorization.expiresAt > Date.now()
+      ) {
+        this.lateJoinClaimAuthorizations.delete(seat.seatId);
+        await this.persist('SeatClaimAutoApproved', {
+          requestId: lateJoinAuthorization.requestId,
+          seatId: seat.seatId,
+          claimId,
+        });
+        return { result: Promise.resolve(true) };
+      }
       let decide!: (approved: boolean) => void;
       const result = new Promise<boolean>((resolve) => {
         decide = resolve;
@@ -4055,6 +4112,14 @@ export class Room {
             resumeToken,
             authTokenHash,
           );
+        if (authTokenHash)
+          this.lateJoinClaimAuthorizations.set(seat.seatId, {
+            requestId: request.requestId,
+            accountId: request.accountId,
+            seatId: seat.seatId,
+            authTokenHash,
+            expiresAt: request.expiresAt,
+          });
       }
       if (!seat) continue;
       if (!this.lateJoinSnapshotAcks.has(request.requestId)) continue;
@@ -7342,16 +7407,29 @@ export class Room {
   }
 
   private async deliverSpotlightPrompt(): Promise<void> {
-    const eligible = this.state.seats.filter(
-      (seat) =>
+    const entities = roomGameState(this.state)?.entities ?? [];
+    const characters = (
+      this.state.gameState as
+        | { characters?: Record<string, { id?: unknown }> }
+        | undefined
+    )?.characters;
+    const eligible = this.state.seats.filter((seat) => {
+      const characterId =
+        characters?.[seat.seatId]?.id ?? characters?.[seat.accountId]?.id;
+      const characterIsDown =
+        typeof characterId === 'string' &&
+        entities.some((entity) => entity.id === characterId && entity.hp <= 0);
+      return (
         (seat.presence === 'connected' || seat.presence === 'returning') &&
         this.connections.has(seat.accountId) &&
+        !characterIsDown &&
         (this.state.spotlightTurn ?? 0) -
           (this.state.spotlightActivity?.[seat.accountId] ??
             this.state.spotlightTurn ??
             0) <=
-          10,
-    );
+          10
+      );
+    });
     if (eligible.length === 0) return;
     const cursor = this.state.spotlightCursor ?? 0;
     const target = eligible[cursor % eligible.length]!;

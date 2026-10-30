@@ -179,6 +179,73 @@ async function waitFor(pred: () => boolean | Promise<boolean>, ms = 3000) {
 }
 
 describe('late-join snapshot acknowledgement and binding', () => {
+  it('does not auto-approve a valid seat authorization presented by another seat owner', async () => {
+    const f = await solo();
+    const room = await open(f);
+    await room.seat(f.owner, 'Owner');
+    await room.persistGameState({ sceneId: 'story-without-map' });
+
+    const joiner = await account();
+    const jc = await character(joiner, 0x59);
+    const requestAuthHash = createHash('sha256')
+      .update('account-binding-cookie-session')
+      .digest('hex');
+    const req = await room.requestLateJoin(
+      joiner,
+      jc.character.id,
+      jc.revision,
+      randomUUID(),
+      'Joiner',
+      false,
+      requestAuthHash,
+    );
+    await room.approveLateJoin(f.owner, randomUUID(), req);
+    await room.submitAction(f.owner, randomUUID(), 'close the first scene');
+    expect(
+      await waitFor(() =>
+        room.state.seats.some((seat) => seat.accountId === joiner),
+      ),
+    ).toBe(true);
+
+    const joinerSeat = room.state.seats.find(
+      (seat) => seat.accountId === joiner,
+    )!;
+    const connection = conn();
+    await room.subscribe(joiner, connection, -1);
+    const sync = connection.msgs.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as { seq: number } | undefined;
+    expect(sync).toBeDefined();
+    await room.acknowledgeLateJoinSnapshot(
+      joiner,
+      joinerSeat.seatId,
+      sync!.seq,
+    );
+    await room.submitAction(f.owner, randomUUID(), 'close the next scene');
+    expect(
+      await waitFor(async () =>
+        (await rows(f.sessionId)).some(
+          (event) => event.type === 'LateJoinAdmitted',
+        ),
+      ),
+    ).toBe(true);
+
+    // The already-seated owner presents the joiner's valid authorization.
+    // A different seat owner must use the normal approval flow, not inherit
+    // the joiner's one-time auto-approval.
+    const claimId = randomUUID();
+    const claim = room.requestSeatResumeClaim(
+      f.owner,
+      claimId,
+      requestAuthHash,
+    );
+    await room.cancelSeatResumeClaim(claimId);
+    await expect(claim).resolves.toBe(false);
+    expect((await rows(f.sessionId)).map((event) => event.type)).not.toContain(
+      'SeatClaimAutoApproved',
+    );
+    await room.drain();
+  }, 60_000);
   it('admits an acknowledged mapless story joiner at the next committed scene boundary', async () => {
     const f = await solo();
     const room = await open(f);
@@ -187,12 +254,17 @@ describe('late-join snapshot acknowledgement and binding', () => {
 
     const joiner = await account();
     const jc = await character(joiner, 0x5a);
+    const requestAuthHash = createHash('sha256')
+      .update('late-join-cookie-session')
+      .digest('hex');
     const req = await room.requestLateJoin(
       joiner,
       jc.character.id,
       jc.revision,
       randomUUID(),
       'Joiner',
+      false,
+      requestAuthHash,
     );
     await room.approveLateJoin(f.owner, randomUUID(), req);
     expect(room.state.seats.some((seat) => seat.accountId === joiner)).toBe(
@@ -259,6 +331,41 @@ describe('late-join snapshot acknowledgement and binding', () => {
     await expect(
       room.submitAction(joiner, randomUUID(), 'act after admission', 'Joiner'),
     ).resolves.toBe(true);
+    await room.disconnect(joiner);
+
+    const differentSessionClaimId = randomUUID();
+    const differentSessionClaim = room.requestSeatResumeClaim(
+      joiner,
+      differentSessionClaimId,
+      createHash('sha256').update('different-session').digest('hex'),
+    );
+    await room.cancelSeatResumeClaim(differentSessionClaimId);
+    await expect(differentSessionClaim).resolves.toBe(false);
+    expect((await rows(f.sessionId)).map((event) => event.type)).not.toContain(
+      'SeatClaimAutoApproved',
+    );
+
+    const claimId = randomUUID();
+    await expect(
+      room.requestSeatResumeClaim(joiner, claimId, requestAuthHash),
+    ).resolves.toBe(true);
+    const autoApproval = (await rows(f.sessionId)).find(
+      (event) => event.type === 'SeatClaimAutoApproved',
+    );
+    expect(autoApproval?.payload).toEqual({
+      requestId: req,
+      seatId: seat.seatId,
+      claimId,
+    });
+
+    const replayClaimId = randomUUID();
+    const replayClaim = room.requestSeatResumeClaim(
+      joiner,
+      replayClaimId,
+      requestAuthHash,
+    );
+    await room.cancelSeatResumeClaim(replayClaimId);
+    await expect(replayClaim).resolves.toBe(false);
     await room.drain();
   }, 60_000);
   it.each(['leave', 'kick', 'cancel', 'deny'] as const)(
