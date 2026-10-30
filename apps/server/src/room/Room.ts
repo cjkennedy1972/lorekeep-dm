@@ -7415,7 +7415,8 @@ export class Room {
     });
   }
 
-  projectMessageForViewer(value: unknown, _viewerAccountId: string): unknown {
+  projectMessageForViewer(value: unknown, viewerAccountId: string): unknown {
+    void viewerAccountId;
     const seats = [...this.state.seats, ...(this.state.revokedSeats ?? [])];
     const seatByAccount = new Map<string, string>(
       seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
