@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type BrowserContext } from '@playwright/test';
-import { rethrowRedacted } from './redact';
+import { redactInviteUrls, rethrowRedacted } from './redact';
 
 const API = 'http://localhost:8787';
 
@@ -23,7 +23,7 @@ async function signedIn(context: BrowserContext, name: string) {
       birthdate: '1990-01-01',
     },
   });
-  expect(response.ok(), await response.text()).toBe(true);
+  expect(response.ok(), redactInviteUrls(await response.text())).toBe(true);
 }
 
 test('keyboard X-card is anonymous and pause is visible to every seat', async ({
