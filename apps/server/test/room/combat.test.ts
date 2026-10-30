@@ -407,26 +407,67 @@ describe('Room combat command seam', () => {
     internals.activeTurn = settling;
 
     const actionId = randomUUID();
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
     await room.submitCombatCommand(owner, actionId, {
-      command: 'move',
-      destination: { x: 3, y: 1 },
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
     });
     expect(sent).toContainEqual(
       expect.objectContaining({
         type: 'Error',
         payload: expect.objectContaining({
           code: 'narration-in-progress',
+          message: 'That attack is not currently available.',
           actionId,
         }),
       }),
     );
     expect(events).toHaveLength(eventsBeforeCommand);
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: 'combat_attack_rejected',
+        reason: 'narration_in_progress',
+      }),
+    );
+    log.mockRestore();
 
     // The turn's continuation can now enqueue/commit through the mailbox.
     settle();
     internals.turnInFlight = false;
     await room.drain();
     expect(latestSnapshot()).toBeDefined();
+  });
+
+  it('uniformly rejects an attack when Room has no active combat', async () => {
+    const { room } = setup();
+    const owner = randomUUID();
+    const sent: { type: string; payload?: Record<string, unknown> }[] = [];
+    await joinSeated(room, owner, {
+      send: (message) => sent.push(message as never),
+    });
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    await room.submitCombatCommand(owner, randomUUID(), {
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
+    });
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: 'Error',
+        payload: expect.objectContaining({
+          code: 'COMMAND_REJECTED',
+          message: 'That attack is not currently available.',
+        }),
+      }),
+    );
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: 'combat_attack_rejected',
+        reason: 'combat_inactive',
+      }),
+    );
+    log.mockRestore();
   });
 
   it('continues rejecting commands while combat narration is genuinely in flight', async () => {
@@ -524,6 +565,109 @@ describe('Room combat command seam', () => {
     });
     expect(illegal).toMatchObject({ code: 'COMMAND_REJECTED' });
     expect(combat.combat.resources.ent_hero?.action).toBe(true);
+  });
+
+  it('uses one rejection message for every unavailable or illegal attack', () => {
+    const runtime = createCombatRuntime();
+    const command = {
+      command: 'attack' as const,
+      targetId: 'ent_goblin',
+      attackId: 'sword',
+    };
+    const cases: Array<[string, RoomCombatState, typeof command]> = [
+      ['missing target', combat, { ...command, targetId: 'missing' }],
+      [
+        'dead target',
+        {
+          ...combat,
+          entities: combat.entities.map((e) =>
+            e.id === 'ent_goblin' ? { ...e, hp: 0 } : e,
+          ),
+        },
+        command,
+      ],
+      [
+        'fled target',
+        {
+          ...combat,
+          entities: combat.entities.map((e) =>
+            e.id === 'ent_goblin' ? { ...e, fled: true } : e,
+          ),
+        },
+        command,
+      ],
+      ['missing weapon', combat, { ...command, attackId: 'missing' }],
+      [
+        'missing action',
+        {
+          ...combat,
+          combat: {
+            ...combat.combat,
+            resources: {
+              ...combat.combat.resources,
+              ent_hero: { ...combat.combat.resources.ent_hero!, action: false },
+            },
+          },
+        },
+        command,
+      ],
+      ['out of reach', combat, command],
+    ];
+    const results = cases.map((attackCase) =>
+      runtime.execute(attackCase[1], 'ent_hero', attackCase[2]),
+    );
+    expect(
+      results.map((result) => ('code' in result ? result.message : null)),
+    ).toEqual(cases.map(() => 'That attack is not currently available.'));
+    expect(
+      results.map((result) =>
+        'code' in result ? result.attackRejectReason : null,
+      ),
+    ).toEqual([
+      'target_unavailable',
+      'target_dead',
+      'target_fled',
+      'weapon_missing',
+      'action_unavailable',
+      'illegal_range_or_line_of_sight',
+    ]);
+  });
+
+  it('treats a hidden target id as nonexistent to a viewer who does not control it', () => {
+    const runtime = createCombatRuntime();
+    const hidden: RoomCombatState = {
+      ...combat,
+      entities: combat.entities.map((entity) =>
+        entity.id === 'ent_goblin'
+          ? { ...entity, hidden: true, pos: { x: 2, y: 1 }, ac: 10 }
+          : entity,
+      ),
+    };
+    const result = runtime.execute(hidden, 'ent_hero', {
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
+    });
+    expect(result).toMatchObject({
+      code: 'COMMAND_REJECTED',
+      message: 'That attack is not currently available.',
+    });
+    if ('code' in result) {
+      expect(result).not.toHaveProperty('events');
+      expect(result.attackRejectReason).toBe('target_unavailable');
+    }
+    expect(hidden.combat.resources.ent_hero?.action).toBe(true);
+    const controlled = runtime.execute(
+      hidden,
+      'ent_hero',
+      {
+        command: 'attack',
+        targetId: 'ent_goblin',
+        attackId: 'sword',
+      },
+      { controlledEntityIds: new Set(['ent_goblin']) },
+    );
+    expect(controlled).not.toMatchObject({ code: 'COMMAND_REJECTED' });
   });
 
   it('keeps the active token first and hides exact enemy HP in the tracker', () => {

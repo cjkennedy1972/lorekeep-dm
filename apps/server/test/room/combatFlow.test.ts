@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   combatTracker,
   combatOpeningSummary,
+  projectCombatForViewer,
   REACTION_TIMEOUT_MS,
   type RoomCombatState,
 } from '../../src/room/combat.js';
@@ -542,6 +543,223 @@ describe('player commands', () => {
         { character: hero, now: NOW },
       ),
     ).toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+});
+
+describe('hidden spell targets and options', () => {
+  const fireBoltCaster = {
+    ...hero,
+    spellsKnown: ['spell:fire-bolt'],
+    spellsPrepared: ['spell:fire-bolt', 'spell:fireball'],
+    slots: { ...hero.slots, '3': { max: 1, used: 0 } },
+  };
+
+  it('normalizes combat-ended and not-your-turn attack admissions', () => {
+    const { runtime, state } = engaged();
+    const attack = {
+      command: 'attack' as const,
+      targetId: 'missing',
+      attackId: 'staff',
+    };
+    expect(
+      runtime.execute(
+        { ...state, ended: { outcome: 'victory' } },
+        'ent_aria',
+        attack,
+      ),
+    ).toMatchObject({
+      code: 'COMMAND_REJECTED',
+      message: 'That attack is not currently available.',
+      attackRejectReason: 'combat_ended',
+    });
+    expect(runtime.execute(state, 'ent_goblin-minion_1', attack)).toMatchObject(
+      {
+        code: 'not-your-turn',
+        message: 'That attack is not currently available.',
+        attackRejectReason: 'not_your_turn',
+      },
+    );
+  });
+
+  it('treats hidden, dead, fled, and nonexistent entity targets alike', () => {
+    const { runtime, state } = engaged();
+    const hidden = placed(state, { 'ent_goblin-minion_1': { x: 3, y: 2 } });
+    hidden.entities = hidden.entities.map((entity) =>
+      entity.id === 'ent_goblin-minion_1'
+        ? { ...entity, hidden: true }
+        : entity,
+    );
+    const dead = {
+      ...state,
+      entities: state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1' ? { ...entity, hp: 0 } : entity,
+      ),
+    };
+    const fled = {
+      ...state,
+      entities: state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, fled: true }
+          : entity,
+      ),
+    };
+    const command = (ref: string) => ({
+      command: 'cast' as const,
+      spellId: 'spell:fire-bolt',
+      slotLevel: 0,
+      target: { kind: 'entity' as const, ref },
+    });
+    const results = [
+      runtime.execute(hidden, 'ent_aria', command('ent_goblin-minion_1'), {
+        character: fireBoltCaster,
+      }),
+      runtime.execute(state, 'ent_aria', command('missing'), {
+        character: fireBoltCaster,
+      }),
+      runtime.execute(dead, 'ent_aria', command('ent_goblin-minion_1'), {
+        character: fireBoltCaster,
+      }),
+      runtime.execute(fled, 'ent_aria', command('ent_goblin-minion_1'), {
+        character: fireBoltCaster,
+      }),
+    ];
+    expect(
+      results.map((result) => ('code' in result ? result.message : null)),
+    ).toEqual(Array(4).fill('That target is not on the map.'));
+    expect(
+      runtime.execute(hidden, 'ent_aria', command('ent_goblin-minion_1'), {
+        character: fireBoltCaster,
+        controlledEntityIds: new Set(['ent_goblin-minion_1']),
+      }),
+    ).not.toMatchObject({ code: 'COMMAND_REJECTED' });
+  });
+
+  it('omits hidden ids and anchors from options, matching the removed-entity payload', () => {
+    const { runtime, state } = engaged();
+    const hidden = placed(state, { 'ent_goblin-minion_1': { x: 3, y: 2 } });
+    hidden.entities = hidden.entities.map((entity) =>
+      entity.id === 'ent_goblin-minion_1'
+        ? { ...entity, hidden: true }
+        : entity,
+    );
+    const context = { character: fireBoltCaster };
+    const hiddenOptions = ok(
+      runtime.execute(hidden, 'ent_aria', { command: 'options' }, context),
+    );
+    const payload = hiddenOptions.messages![0]!.payload;
+    const removedOptions = ok(
+      runtime.execute(
+        {
+          ...hidden,
+          entities: hidden.entities.filter(
+            (entity) => entity.id !== 'ent_goblin-minion_1',
+          ),
+        },
+        'ent_aria',
+        { command: 'options' },
+        context,
+      ),
+    );
+    expect(payload).toEqual(removedOptions.messages![0]!.payload);
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain('ent_goblin-minion_1');
+    expect(
+      (payload.areas as { anchor: { x: number; y: number } }[]).some(
+        (area) => area.anchor.x === 3 && area.anchor.y === 2,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps the acting seat's area-spell events and state identical when hidden fills an empty cell", () => {
+    const { runtime, state } = engaged();
+    const hiddenId = 'ent_goblin-minion_1';
+    const hidden = placed(state, {
+      ent_aria: { x: 7, y: 2 },
+      [hiddenId]: { x: 8, y: 2 },
+      'ent_goblin-minion_2': { x: 12, y: 16 },
+    });
+    hidden.entities = hidden.entities.map((entity) =>
+      entity.id === hiddenId ? { ...entity, hidden: true } : entity,
+    );
+    const empty = {
+      ...hidden,
+      entities: hidden.entities.map((entity) =>
+        entity.id === hiddenId ? { ...entity, pos: { x: 2, y: 12 } } : entity,
+      ),
+    };
+    const castAt = (combat: RoomCombatState) =>
+      ok(
+        runtime.execute(
+          combat,
+          'ent_aria',
+          {
+            command: 'cast',
+            spellId: 'spell:fireball',
+            slotLevel: 3,
+            target: { kind: 'anchor', ref: '7,2' },
+          },
+          { character: fireBoltCaster },
+        ),
+      );
+    const hiddenCast = castAt(hidden);
+    const emptyCast = castAt(empty);
+    const hiddenIds = new Set([hiddenId]);
+    const visible = (events: readonly Record<string, unknown>[]) =>
+      events
+        .map((event) =>
+          projectEventForViewer(event, hiddenIds, new Set(['ent_aria'])),
+        )
+        .filter((event) => event !== null);
+
+    expect(
+      hiddenCast.events.some(
+        (event) => event.type === 'HpChanged' && event.entityId === hiddenId,
+      ),
+    ).toBe(true);
+    expect(visible(hiddenCast.events)).toEqual(visible(emptyCast.events));
+    expect(
+      projectCombatForViewer(hiddenCast.state, new Set(['ent_aria'])),
+    ).toEqual(projectCombatForViewer(emptyCast.state, new Set(['ent_aria'])));
+  });
+
+  it('rejects area aim on a hidden cell like an empty cell or nonexistent option', () => {
+    const { runtime, state } = engaged();
+    const hidden = placed(state, { 'ent_goblin-minion_1': { x: 3, y: 2 } });
+    hidden.entities = hidden.entities.map((entity) =>
+      entity.id === 'ent_goblin-minion_1'
+        ? { ...entity, hidden: true }
+        : entity,
+    );
+    const context = { character: fireBoltCaster };
+    const castAt = (
+      combat: RoomCombatState,
+      target: { kind: 'anchor' | 'option'; ref: string },
+    ) =>
+      runtime.execute(
+        combat,
+        'ent_aria',
+        {
+          command: 'cast',
+          spellId: 'spell:fireball',
+          slotLevel: 3,
+          target,
+        },
+        context,
+      );
+    const hiddenAim = castAt(hidden, { kind: 'anchor', ref: '3,2' });
+    const emptyAim = castAt(state, { kind: 'anchor', ref: '3,2' });
+    const nonexistentOption = castAt(hidden, {
+      kind: 'option',
+      ref: 'area:missing',
+    });
+    expect(hiddenAim).toMatchObject({ code: 'COMMAND_REJECTED' });
+    expect(emptyAim).toMatchObject({ code: 'COMMAND_REJECTED' });
+    expect('code' in hiddenAim && hiddenAim.message).toBe(
+      'code' in emptyAim ? emptyAim.message : undefined,
+    );
+    expect('code' in nonexistentOption && nonexistentOption.message).toBe(
+      'code' in hiddenAim ? hiddenAim.message : undefined,
+    );
   });
 });
 
