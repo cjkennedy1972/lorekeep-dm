@@ -743,6 +743,32 @@ export class RoomSeatRequiredError extends Error {
   }
 }
 
+const CLIENT_ROOM_STATE_KEYS = new Set([
+  'sessionId',
+  'phase',
+  'round',
+  'restVote',
+  'restVoteCount',
+  'restVoteLastClosedAt',
+  'lastRestVoteResult',
+  'lastRestVoteResultTurnId',
+  'roundsEnabled',
+  'roundDurationMs',
+  'turnTimerMs',
+  'turnTimeoutAction',
+  'closedRoundSubmissions',
+  'gameState',
+  'xCard',
+  'paused',
+  'pauseCause',
+  'spotlightTurn',
+  'spotlightCursor',
+  'presenceEventAt',
+  'presenceEventType',
+  'spotlightActivity',
+  'ended',
+]);
+
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
@@ -1796,12 +1822,17 @@ export class Room {
       lateJoinRequestCharacterIds,
       lateJoinActionOwners,
       openClarifications,
-      ...visibleRoomState
+      ...remainingRoomState
     } = this.state;
     void lateJoinRequestResults;
     void lateJoinRequestCharacterIds;
     void lateJoinActionOwners;
     void openClarifications;
+    const visibleRoomState = Object.fromEntries(
+      Object.entries(remainingRoomState).filter(([key]) =>
+        CLIENT_ROOM_STATE_KEYS.has(key),
+      ),
+    );
     const spotlightActivity = Object.fromEntries(
       Object.entries(this.state.spotlightActivity ?? []).flatMap(
         ([accountId, turn]) => {
@@ -1815,6 +1846,8 @@ export class Room {
     );
     const clientVisibleState: import('@game/schema').ClientRoomState = {
       ...visibleRoomState,
+      sessionId: this.state.sessionId,
+      phase: this.state.phase,
       seats,
       revokedSeats,
       spotlightActivity,
@@ -7356,7 +7389,7 @@ export class Room {
       if (!current || typeof current !== 'object') return current;
       const result: Record<string, unknown> = {};
       for (const [key, item] of Object.entries(current)) {
-        if (/accountIds$/.test(key) && Array.isArray(item)) {
+        if (/accountIds$/i.test(key) && Array.isArray(item)) {
           const prefix = key.slice(0, -'accountIds'.length);
           result[`${prefix}SeatIds`] = item.flatMap((accountId) => {
             if (typeof accountId !== 'string') return [];
@@ -7365,7 +7398,7 @@ export class Room {
           });
           continue;
         }
-        if (/accountId$/.test(key) && typeof item === 'string') {
+        if (/accountId$/i.test(key) && typeof item === 'string') {
           const seatId = seatByAccount.get(item);
           const prefix = key.slice(0, -'AccountId'.length);
           const seatKey = prefix ? `${prefix}SeatId` : 'seatId';

@@ -154,6 +154,35 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it('projects mixed-case account-id suffix fields to seat ids', () => {
+    const f = party();
+    const projected = f.room.projectMessageForViewer(
+      {
+        actorAccountId: f.accountB,
+        fromAccountId: f.accountA,
+        memberAccountIds: [f.accountA, f.accountB],
+      },
+      f.accountA,
+    );
+    expect(projected).toEqual({
+      actorSeatId: f.seatB,
+      actorIsSelf: false,
+      fromAccountId: f.accountA,
+      fromIsSelf: true,
+      memberSeatIds: [f.seatA, f.seatB],
+    });
+    expect(JSON.stringify(projected)).not.toContain(f.accountB);
+  });
+
+  it('drops unknown top-level fields from client room state', () => {
+    const f = party();
+    (f.room.state as unknown as Record<string, unknown>).futureAccountId =
+      f.accountB;
+    const clientState = f.room.clientState(f.accountA);
+    expect(clientState).not.toHaveProperty('futureAccountId');
+    expect(JSON.stringify(clientState)).not.toContain(f.accountB);
+  });
+
   it('keeps the solo owner able to submit an action while a late join awaits binding', async () => {
     const f = party({
       partyMode: false,
