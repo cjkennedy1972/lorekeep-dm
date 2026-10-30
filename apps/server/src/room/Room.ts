@@ -162,9 +162,14 @@ function clientGameState(
       continue;
     }
     const characters: Record<string, unknown> = {};
+    const visibleSeatIds = new Set(bindings?.keys() ?? []);
+    // Before binding enforcement, legacy solo account keys are accepted only for the owner.
+    if (!bindings && allowLegacyAccountKey && viewerAccountId)
+      visibleSeatIds.add(viewerAccountId);
     for (const [seatId, character] of Object.entries(
       source.characters as Record<string, unknown>,
     )) {
+      if (!visibleSeatIds.has(seatId)) continue;
       if (
         isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
       ) {
@@ -1294,6 +1299,19 @@ export class Room {
         ...additionalActionIds,
       ]),
     ];
+    if (sessionModeTransition === 'solo-to-party') {
+      const ownerSeat = this.state.seats.find((seat) => seat.isHost) ?? this.state.seats[0];
+      const game = state.gameState as { characters?: Record<string, unknown> } | undefined;
+      if (ownerSeat && game?.characters) {
+        const characters = { ...game.characters };
+        const ownerCharacter = characters[String(ownerSeat.accountId)];
+        if (ownerCharacter !== undefined) {
+          delete characters[String(ownerSeat.accountId)];
+          characters[String(ownerSeat.seatId)] = ownerCharacter;
+          state = { ...state, gameState: { ...game, characters } };
+        }
+      }
+    }
     const stored = await this.writeTurn(
       this.sessionId,
       inputs,
@@ -7385,31 +7403,26 @@ export class Room {
       seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
     );
     const project = (current: unknown): unknown => {
+      if (typeof current === 'string') return seatByAccount.get(current) ?? current;
       if (Array.isArray(current)) return current.map(project);
       if (!current || typeof current !== 'object') return current;
       const result: Record<string, unknown> = {};
       for (const [key, item] of Object.entries(current)) {
-        if (/accountIds$/i.test(key) && Array.isArray(item)) {
-          const prefix = key.slice(0, -'accountIds'.length);
-          result[`${prefix}SeatIds`] = item.flatMap((accountId) => {
-            if (typeof accountId !== 'string') return [];
-            const seatId = seatByAccount.get(accountId);
-            return seatId ? [seatId] : [];
-          });
+        const accountKeySeat = seatByAccount.get(key);
+        const accountNamed = /account/i.test(key) || /ownerRef/i.test(key);
+        if (accountKeySeat) {
+          result[accountKeySeat] = item && typeof item === 'object' ? project(item) : item;
           continue;
         }
-        if (/accountId$/i.test(key) && typeof item === 'string') {
-          const seatId = seatByAccount.get(item);
-          const prefix = key.slice(0, -'AccountId'.length);
-          const seatKey = prefix ? `${prefix}SeatId` : 'seatId';
-          const selfKey = prefix ? `${prefix}IsSelf` : 'isSelf';
-          if (item === viewerAccountId) {
-            result[key] = item;
-            result[selfKey] = true;
-          } else if (seatId) {
-            result[seatKey] = seatId;
-            result[selfKey] = false;
+        if (accountNamed) {
+          if (typeof item === 'string') {
+            const seatId = seatByAccount.get(item);
+            if (seatId) result[key.replace(/accountId/i, 'seatId').replace(/accountIds/i, 'seatIds')] = seatId;
+          } else if (Array.isArray(item)) {
+            const values = item.flatMap((entry) => typeof entry === 'string' && seatByAccount.has(entry) ? [seatByAccount.get(entry)!] : []);
+            if (values.length) result[key.replace(/accountIds?/i, 'seatIds')] = values;
           }
+          // Account-named fields with object/number/null values fail closed.
           continue;
         }
         result[key] = project(item);
