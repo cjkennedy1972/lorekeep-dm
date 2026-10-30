@@ -129,7 +129,7 @@ jobs:
           # Shared-runner wall clock includes browser, Vite proxy and runner jitter; locally the budget stays 1000 ms, and the measured value is always logged.
           PARTY_SYNC_BUDGET_MS: 1500
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: playwright-debug-party-${{ github.run_attempt }}
           path: |
