@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   closeMember,
   openAreaTable,
-  SYNC_BUDGET_MS,
   tokenTable,
   type View,
 } from './combat-helpers.js';
+import { expectSyncWithinBudget, SYNC_BUDGET_MS } from './sync-budget.js';
 
 // Pointer equivalents of the keyboard move on the real server (see serve.party.live.ts, the area table).
 // Every destination is a single click on the map canvas: no drag, no keyboard. Confirm and Cancel are the
@@ -115,20 +115,19 @@ test.describe('party pointer equivalents for move', () => {
         const target = destination!;
         const t0 = Date.now();
         await page.getByRole('button', { name: 'Confirm move' }).click();
-        await Promise.all(
-          views.map(({ page: p }) =>
-            p
-              .locator(
-                `ul[aria-label="Combat tokens"] li[data-active="true"][data-x="${target.x}"][data-y="${target.y}"]`,
-              )
-              .waitFor({ state: 'visible', timeout: SYNC_BUDGET_MS }),
+        await expectSyncWithinBudget(
+          `party pointer move sync to ${views.length} browsers`,
+          t0,
+          Promise.all(
+            views.map(({ page: p }) =>
+              p
+                .locator(
+                  `ul[aria-label="Combat tokens"] li[data-active="true"][data-x="${target.x}"][data-y="${target.y}"]`,
+                )
+                .waitFor({ state: 'visible', timeout: SYNC_BUDGET_MS }),
+            ),
           ),
         );
-        const elapsed = Date.now() - t0;
-        console.log(
-          `party pointer move sync: ${elapsed} ms to all ${views.length} browsers`,
-        );
-        expect(elapsed).toBeLessThanOrEqual(SYNC_BUDGET_MS);
         await expect
           .poll(() => movesSent(caster!.sent).length)
           .toBeGreaterThan(0);

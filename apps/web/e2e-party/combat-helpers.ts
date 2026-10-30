@@ -41,8 +41,6 @@ export type View = {
 export const readState = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as CombatState;
 export const origin = `http://localhost:${process.env.LIVE_WEB_PORT ?? 5176}`;
-// The sync budget from the party acceptance criteria: a move must reach every other browser within 1 s.
-export const SYNC_BUDGET_MS = 1000;
 
 // A seat's resume token lives in the browser's localStorage. A fresh context that carries only the sid
 // cookie is a new device, so the server asks the host to approve the claim and the room never loads.

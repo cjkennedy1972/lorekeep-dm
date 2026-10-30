@@ -11,11 +11,15 @@ import {
   displayNameOf,
   openMember,
   readState,
-  SYNC_BUDGET_MS,
   tabTo,
   tokenTable,
   type View,
 } from './combat-helpers.js';
+import {
+  expectSyncWithinBudget,
+  PRODUCT_SYNC_MS,
+  SYNC_BUDGET_MS,
+} from './sync-budget.js';
 
 // Keyboard-only party combat on the real server (see serve.party.live.ts). No mouse and no locator clicks
 // for gameplay. All steps share one connected session. Seats are closed with closeMember, which keeps each
@@ -143,7 +147,7 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
         .poll(
           () =>
             attackerRolls(active.frames.slice(framesBefore), activeId).length,
-          { timeout: SYNC_BUDGET_MS * 5 },
+          { timeout: PRODUCT_SYNC_MS * 5 },
         )
         .toBeGreaterThan(0);
     });
@@ -172,20 +176,19 @@ test('party keyboard-only combat: focus, move (cancel and confirm), list and des
       // Timing starts at the keypress that sends the move and stops when each browser shows the token there.
       const t0 = Date.now();
       await page.keyboard.press('Enter');
-      await Promise.all(
-        views.map(({ page: p }) =>
-          p
-            .locator(
-              `ul[aria-label="Combat tokens"] li[data-active="true"][data-x="${target.x}"][data-y="${target.y}"]`,
-            )
-            .waitFor({ state: 'visible', timeout: SYNC_BUDGET_MS }),
+      await expectSyncWithinBudget(
+        `party keyboard move sync to ${views.length} browsers`,
+        t0,
+        Promise.all(
+          views.map(({ page: p }) =>
+            p
+              .locator(
+                `ul[aria-label="Combat tokens"] li[data-active="true"][data-x="${target.x}"][data-y="${target.y}"]`,
+              )
+              .waitFor({ state: 'visible', timeout: SYNC_BUDGET_MS }),
+          ),
         ),
       );
-      const elapsed = Date.now() - t0;
-      console.log(
-        `party keyboard move sync: ${elapsed} ms to all ${views.length} browsers`,
-      );
-      expect(elapsed).toBeLessThanOrEqual(SYNC_BUDGET_MS);
       await expect(map).toHaveAttribute('data-moving', 'false');
       // Confirming a move does not end the turn.
       for (const { page: p } of others)
