@@ -636,6 +636,7 @@ export function installGateway(
               const approved = await room.requestSeatResumeClaim(
                 identity.accountId,
                 pendingClaimId,
+                identity.authTokenHash,
               );
               if (!approved) throw new Error('seat claim denied or expired');
               authorization = await authorizeSeatSocket(
