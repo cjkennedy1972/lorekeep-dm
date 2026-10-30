@@ -1966,7 +1966,7 @@ export class Room {
       this.state.gameState,
       viewerAccountId,
       this.seatBindings,
-      !this.bindingEnforced && !this.soloPartyConversionPending,
+      !this.bindingEnforced,
     );
     const combatRoom = gameState.combatRoom as RoomCombatState | undefined;
     if (combatRoom)
@@ -2059,7 +2059,7 @@ export class Room {
         ?.characters,
       accountId,
       this.seatBindings,
-      !this.bindingEnforced && !this.soloPartyConversionPending,
+      !this.bindingEnforced,
     );
     for (const entity of roomGameState(this.state)?.entities ?? [])
       if (this.entityControllerAccountId(entity.id) === accountId)
@@ -7466,6 +7466,7 @@ export class Room {
     const seatByAccount = new Map<string, string>(
       seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
     );
+    const knownSeatIds = new Set(seats.map((seat) => String(seat.seatId)));
     const project = (current: unknown, parentKey?: string): unknown => {
       if (typeof current === 'string')
         return seatByAccount.get(current) ?? current;
@@ -7478,7 +7479,9 @@ export class Room {
         const accountNamed = /account/i.test(key) || /ownerRef/i.test(key);
         if (accountKeySeat) {
           const projectedKey =
-            parentKey === 'characters' && key === viewerAccountId
+            !this.bindingEnforced &&
+            parentKey === 'characters' &&
+            key === viewerAccountId
               ? key
               : accountKeySeat;
           result[projectedKey] =
@@ -7512,6 +7515,12 @@ export class Room {
               ] = values;
           }
           // Account-named fields with object/number/null values fail closed.
+          continue;
+        }
+        if (parentKey === 'characters') {
+          // Character maps are keyed only by known seats after transport projection.
+          // Unknown/account-shaped keys must not pass through as raw identifiers.
+          if (knownSeatIds.has(key)) result[key] = project(item, key);
           continue;
         }
         result[key] = project(item, key);

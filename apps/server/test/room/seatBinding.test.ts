@@ -246,6 +246,34 @@ describe('ADR-035 party seat gating', () => {
         expect(characters[f.seatB]).not.toHaveProperty('privateNotes');
     },
   );
+  it('keys owner character entries by seat ID in enforced party mode', () => {
+    const f = party({ bindA: true, partyMode: true });
+    const projected = f.room.projectMessageForViewer(
+      { characters: { [f.accountA]: { id: 'hero-a' } } },
+      f.accountA,
+    ) as { characters: Record<string, unknown> };
+    expect(projected.characters).toEqual({ [f.seatA]: { id: 'hero-a' } });
+    expect(JSON.stringify(projected)).not.toContain(f.accountA);
+  });
+
+  it('preserves the legacy solo owner account-keyed character message shape', () => {
+    const f = party({ bindA: false, bindB: false, partyMode: false });
+    const projected = f.room.projectMessageForViewer(
+      {
+        characters: { [f.accountA]: { id: 'hero-a' } },
+        seats: [{ accountId: f.accountA, seatId: f.seatA, isSelf: true }],
+      },
+      f.accountA,
+    ) as {
+      characters: Record<string, unknown>;
+      seats: Array<Record<string, unknown>>;
+    };
+    expect(projected.characters).toEqual({ [f.accountA]: { id: 'hero-a' } });
+    // accountId is intentionally renamed, but the in-repo client contract
+    // still receives the owner's isSelf marker.
+    expect(projected.seats[0]).toEqual({ seatId: f.seatA, isSelf: true });
+  });
+
   it('projects mixed-case account-id suffix fields to seat ids', () => {
     const f = party();
     const projected = f.room.projectMessageForViewer(
@@ -273,7 +301,12 @@ describe('ADR-035 party seat gating', () => {
       memberAccountIds: f.accountB,
       accountIdList: f.accountB,
       ownerRef: { accountId: f.accountB },
+      characters: {
+        [f.seatB]: { id: 'known-seat' },
+        [randomUUID()]: { id: 'unmapped-account-shaped-key' },
+      },
       [f.accountB]: { visible: true },
+      [randomUUID()]: { visible: true },
       [f.seatB]: { visible: true },
       seatId: f.seatA,
     };
@@ -281,11 +314,13 @@ describe('ADR-035 party seat gating', () => {
     expect(JSON.stringify(projected)).not.toContain(f.accountB);
     expect(projected).toMatchObject({
       [f.seatB]: { visible: true },
+      characters: { [f.seatB]: { id: 'known-seat' } },
       seatId: f.seatA,
     });
     expect(projected).not.toHaveProperty('accountId');
     expect(projected).not.toHaveProperty('nested.accountId');
     expect(projected).not.toHaveProperty('ownerRef');
+    expect(Object.keys(projected.characters as object)).toEqual([f.seatB]);
   });
 
   it('projects legacy account-keyed character state under the owner account after rewind', () => {
@@ -310,6 +345,39 @@ describe('ADR-035 party seat gating', () => {
     const clientState = f.room.clientState(f.accountA);
     expect(clientState).not.toHaveProperty('futureAccountId');
     expect(JSON.stringify(clientState)).not.toContain(f.accountB);
+  });
+
+  it('broadcasts the solo owner sheet while conversion is pending without bindings', () => {
+    const f = party({ bindA: false, bindB: false, partyMode: false });
+    const privateSheet = { id: 'owner-sheet', name: 'Owner sheet' };
+    f.room.state.gameState = { characters: { [f.accountA]: privateSheet } };
+    (
+      f.room as unknown as { soloPartyConversionPending: boolean }
+    ).soloPartyConversionPending = true;
+    const connection = {
+      msgs: [] as unknown[],
+      send(message: unknown) {
+        this.msgs.push(message);
+      },
+      close() {},
+    };
+    (
+      f.room as unknown as { connections: Map<string, typeof connection> }
+    ).connections.set(f.accountA, connection);
+    const state = f.room.clientState(f.accountA);
+    (f.room as unknown as { broadcast(message: unknown): void }).broadcast({
+      seq: 1,
+      type: 'StateSync',
+      payload: { state },
+    });
+    const sync = connection.msgs[0] as {
+      payload: {
+        state: { gameState: { characters: Record<string, unknown> } };
+      };
+    };
+    expect(sync.payload.state.gameState.characters[f.accountA]).toEqual(
+      privateSheet,
+    );
   });
 
   it('keeps the solo owner able to submit an action while a late join awaits binding', async () => {
