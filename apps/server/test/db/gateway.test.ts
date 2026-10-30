@@ -1769,6 +1769,8 @@ describe('converted solo character privacy over real sockets', () => {
       await (
         room as unknown as { admitApprovedLateJoins(): Promise<void> }
       ).admitApprovedLateJoins();
+      const ownerFrameCountAfterConversion =
+        receivedFrames.get(owner)?.length ?? 0;
 
       const ownerSeat = room.state.seats.find(
         (seat) => seat.accountId === accounts[0],
@@ -1782,9 +1784,21 @@ describe('converted solo character privacy over real sockets', () => {
       });
       const ownerFrames = receivedFrames.get(owner) ?? [];
       const guestFrames = receivedFrames.get(guest) ?? [];
-      const postConversionOwnerFrames = ownerFrames.slice(1);
-      expect(postConversionOwnerFrames.length).toBeGreaterThan(0);
+      const postConversionOwnerFrames = ownerFrames.slice(
+        ownerFrameCountAfterConversion,
+      );
       expect(postConversionOwnerFrames.join('\n')).not.toContain(accounts[0]);
+      const ownerProjection = (
+        room as unknown as {
+          clientSyncPayload(viewerAccountId: string): {
+            state: { gameState?: { characters?: Record<string, unknown> } };
+          };
+        }
+      ).clientSyncPayload(accounts[0]!);
+      expect(ownerProjection.state.gameState?.characters).toHaveProperty(
+        ownerSeat.seatId,
+      );
+      expect(JSON.stringify(ownerProjection)).not.toContain(accounts[0]);
       expect(guestFrames.join('\n')).not.toContain(accounts[0]);
 
       await Promise.all([closeSocket(owner), closeSocket(guest)]);

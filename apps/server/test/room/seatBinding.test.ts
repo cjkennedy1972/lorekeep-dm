@@ -154,6 +154,98 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it.each([
+    {
+      name: 'unconverted solo',
+      setup: () => party({ partyMode: false, bindA: false, bindB: false }),
+      viewer: 'owner' as const,
+      shape: 'legacy-account' as const,
+    },
+    {
+      name: 'converted solo',
+      setup: () => party({ partyMode: true, bindA: true, bindB: false }),
+      viewer: 'owner' as const,
+      shape: 'seat' as const,
+    },
+    {
+      name: 'party-from-start',
+      setup: () => party({ partyMode: true, bindA: true, bindB: true }),
+      viewer: 'owner' as const,
+      shape: 'party' as const,
+    },
+    {
+      name: 'spectator',
+      setup: () => party({ partyMode: true, bindA: true, bindB: true }),
+      viewer: 'spectator' as const,
+      shape: 'party' as const,
+    },
+  ])(
+    'projects visible characters for $name viewers',
+    ({ setup, viewer, shape }) => {
+      const f = setup();
+      const heroA = {
+        id: 'hero-a',
+        name: 'Aster',
+        hp: { current: 8, max: 20 },
+        privateNotes: 'A private backstory',
+      };
+      const heroB = {
+        id: 'hero-b',
+        name: 'Bryn',
+        hp: { current: 6, max: 18 },
+        privateNotes: 'B private backstory',
+      };
+      f.room.state.gameState = {
+        characters:
+          shape === 'legacy-account'
+            ? { [f.accountA]: heroA }
+            : shape === 'seat'
+              ? { [f.seatA]: heroA }
+              : { [f.seatA]: heroA, [f.seatB]: heroB },
+      };
+      const viewerId = viewer === 'owner' ? f.accountA : randomUUID();
+      const characters = (
+        f.room.clientState(viewerId).gameState as {
+          characters: Record<string, Record<string, unknown>>;
+        }
+      ).characters;
+
+      if (viewer === 'owner') {
+        const ownKey = shape === 'legacy-account' ? f.accountA : f.seatA;
+        expect(characters[ownKey]).toEqual(heroA);
+        if (shape === 'legacy-account')
+          expect(characters).not.toHaveProperty(f.seatA);
+        else expect(characters).not.toHaveProperty(f.accountA);
+        expect(JSON.stringify(characters)).not.toContain(f.accountB);
+        if (shape === 'party') {
+          expect(characters[f.seatB]).toEqual({
+            id: heroB.id,
+            name: heroB.name,
+            hp: { current: 6, max: 18 },
+          });
+        }
+      } else {
+        expect(characters).toEqual({
+          [f.seatA]: {
+            id: heroA.id,
+            name: heroA.name,
+            hp: { current: 8, max: 20 },
+          },
+          [f.seatB]: {
+            id: heroB.id,
+            name: heroB.name,
+            hp: { current: 6, max: 18 },
+          },
+        });
+        expect(JSON.stringify(characters)).not.toContain(f.accountA);
+        expect(JSON.stringify(characters)).not.toContain(f.accountB);
+      }
+      if (viewer === 'spectator')
+        expect(JSON.stringify(characters)).not.toContain('privateNotes');
+      else if (shape === 'party')
+        expect(characters[f.seatB]).not.toHaveProperty('privateNotes');
+    },
+  );
   it('projects mixed-case account-id suffix fields to seat ids', () => {
     const f = party();
     const projected = f.room.projectMessageForViewer(
@@ -207,8 +299,8 @@ describe('ADR-035 party seat gating', () => {
     const projected = f.room.clientState(f.accountA).gameState as {
       characters: Record<string, unknown>;
     };
-    expect(projected.characters).toEqual({ [f.accountA]: character });
-    expect(JSON.stringify(projected)).toContain(f.accountA);
+    expect(projected.characters).toEqual({ [f.seatA]: character });
+    expect(JSON.stringify(projected)).not.toContain(f.accountA);
   });
 
   it('drops unknown top-level fields from client room state', () => {
@@ -582,8 +674,8 @@ describe('ADR-035 party seat gating', () => {
       hp: { current: 8, max: 20 },
     });
     expect(other.characters[f.seatA]).not.toHaveProperty('privateNotes');
-    expect(own.characters[f.accountA]).toEqual(privateSheet);
-    expect(own.characters).not.toHaveProperty(f.seatA);
+    expect(own.characters[f.seatA]).toEqual(privateSheet);
+    expect(own.characters).not.toHaveProperty(f.accountA);
 
     const solo = party({ bindA: false, partyMode: false });
     solo.room.state.gameState = {

@@ -93,12 +93,104 @@ function isSeatOwner(
   return (
     viewerAccountId !== undefined &&
     (bindings?.get(seatId)?.accountId === viewerAccountId ||
-      [...(bindings?.values() ?? [])].some(
-        (binding) =>
-          binding.accountId === seatId && binding.accountId === viewerAccountId,
-      ) ||
       (allowLegacyAccountKey && seatId === viewerAccountId))
   );
+}
+
+interface ProjectedCharacters {
+  byKey: Record<string, unknown>;
+  controlledEntityIds: Set<string>;
+}
+
+function projectCharactersForViewer(
+  characters: unknown,
+  viewerAccountId: string | undefined,
+  bindings: ReadonlyMap<string, PrivateSeatCharacterBinding> | undefined,
+  allowLegacyAccountKey: boolean,
+): ProjectedCharacters {
+  if (
+    !characters ||
+    typeof characters !== 'object' ||
+    Array.isArray(characters)
+  )
+    return { byKey: {}, controlledEntityIds: new Set() };
+
+  const visibleSeatIds = new Set(bindings?.keys() ?? []);
+  const seatByAccount = new Map(
+    [...(bindings?.entries() ?? [])].map(([seatId, binding]) => [
+      binding.accountId,
+      seatId,
+    ]),
+  );
+  // Before binding enforcement, legacy solo account keys are accepted only for the owner.
+  if (
+    (!bindings || bindings.size === 0) &&
+    allowLegacyAccountKey &&
+    viewerAccountId
+  )
+    visibleSeatIds.add(viewerAccountId);
+
+  const projected: Record<string, unknown> = {};
+  const controlledIds = new Set<string>();
+  for (const [sourceKey, character] of Object.entries(
+    characters as Record<string, unknown>,
+  )) {
+    const seatId = seatByAccount.get(sourceKey) ?? sourceKey;
+    if (!visibleSeatIds.has(seatId)) continue;
+    const owned = isSeatOwner(
+      seatId,
+      viewerAccountId,
+      bindings,
+      allowLegacyAccountKey,
+    );
+    // Legacy solo clients index their sheet by account ID. Once binding is
+    // enforced, both the owner and peers use the stable seat ID, so no account
+    // ID is emitted in party snapshots.
+    const keepsLegacyAccountKey =
+      allowLegacyAccountKey && (!bindings || bindings.size === 0);
+    const outputKey =
+      owned && keepsLegacyAccountKey ? (viewerAccountId ?? seatId) : seatId;
+    // A rewind can restore both account- and seat-keyed values. Prefer the
+    // canonical seat-keyed value regardless of the viewer-specific output key.
+    if (sourceKey !== seatId && Object.hasOwn(projected, outputKey)) continue;
+    if (owned) {
+      projected[outputKey] = character;
+      const id = (character as { id?: unknown } | null)?.id;
+      if (typeof id === 'string') controlledIds.add(id);
+      continue;
+    }
+    if (
+      !character ||
+      typeof character !== 'object' ||
+      Array.isArray(character)
+    ) {
+      projected[outputKey] = character;
+      continue;
+    }
+    const card = character as Record<string, unknown>;
+    const publicFields = ['id', 'name', 'speciesId', 'classId', 'level'];
+    projected[outputKey] = {
+      ...Object.fromEntries(
+        publicFields
+          .filter((field) => field in card)
+          .map((field) => [field, card[field]]),
+      ),
+      ...(card.hp &&
+      typeof card.hp === 'object' &&
+      !Array.isArray(card.hp) &&
+      'current' in card.hp
+        ? {
+            hp: {
+              current: (card.hp as { current: unknown }).current,
+              ...('max' in (card.hp as Record<string, unknown>)
+                ? { max: (card.hp as Record<string, unknown>).max }
+                : {}),
+            },
+          }
+        : {}),
+    };
+  }
+  return { byKey: projected, controlledEntityIds: controlledIds };
 }
 
 /** Combat entity ids the viewer controls: the characters of the seats it owns. */
@@ -108,17 +200,12 @@ function controlledEntityIds(
   bindings: ReadonlyMap<string, PrivateSeatCharacterBinding> | undefined,
   allowLegacyAccountKey: boolean,
 ): Set<string> {
-  const ids = new Set<string>();
-  if (!characters || typeof characters !== 'object') return ids;
-  for (const [seatId, character] of Object.entries(characters)) {
-    const id = (character as { id?: unknown } | null)?.id;
-    if (
-      typeof id === 'string' &&
-      isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
-    )
-      ids.add(id);
-  }
-  return ids;
+  return projectCharactersForViewer(
+    characters,
+    viewerAccountId,
+    bindings,
+    allowLegacyAccountKey,
+  ).controlledEntityIds;
 }
 
 function clientGameState(
@@ -165,75 +252,12 @@ function clientGameState(
       result[key] = source[key];
       continue;
     }
-    const characters: Record<string, unknown> = {};
-    const visibleSeatIds = new Set(bindings?.keys() ?? []);
-    const seatByAccount = new Map(
-      [...(bindings?.entries() ?? [])].map(([seatId, binding]) => [
-        binding.accountId,
-        seatId,
-      ]),
-    );
-    // Before binding enforcement, legacy solo account keys are accepted only for the owner.
-    if (
-      (!bindings || bindings.size === 0) &&
-      allowLegacyAccountKey &&
-      viewerAccountId
-    )
-      visibleSeatIds.add(viewerAccountId);
-    for (const [sourceKey, character] of Object.entries(
-      source.characters as Record<string, unknown>,
-    )) {
-      const seatId = seatByAccount.get(sourceKey) ?? sourceKey;
-      if (!visibleSeatIds.has(seatId)) continue;
-      const isOwner = isSeatOwner(
-        seatId,
-        viewerAccountId,
-        bindings,
-        allowLegacyAccountKey,
-      );
-      const projectedKey = isOwner ? (viewerAccountId ?? seatId) : seatId;
-      // A rewind can restore both account- and seat-keyed values. Prefer the
-      // canonical seat-keyed value regardless of the viewer-specific output key.
-      if (sourceKey !== seatId && Object.hasOwn(characters, projectedKey))
-        continue;
-      if (isOwner) {
-        // The web sheet is selected by account ID. Keep the owner key private
-        // to this viewer even when the stored character was seat-keyed.
-        characters[viewerAccountId ?? seatId] = character;
-        continue;
-      }
-      if (
-        !character ||
-        typeof character !== 'object' ||
-        Array.isArray(character)
-      ) {
-        characters[seatId] = character;
-        continue;
-      }
-      const card = character as Record<string, unknown>;
-      const publicFields = ['id', 'name', 'speciesId', 'classId', 'level'];
-      characters[seatId] = {
-        ...Object.fromEntries(
-          publicFields
-            .filter((field) => field in card)
-            .map((field) => [field, card[field]]),
-        ),
-        ...(card.hp &&
-        typeof card.hp === 'object' &&
-        !Array.isArray(card.hp) &&
-        'current' in card.hp
-          ? {
-              hp: {
-                current: (card.hp as { current: unknown }).current,
-                ...('max' in (card.hp as Record<string, unknown>)
-                  ? { max: (card.hp as Record<string, unknown>).max }
-                  : {}),
-              },
-            }
-          : {}),
-      };
-    }
-    result[key] = characters;
+    result[key] = projectCharactersForViewer(
+      source.characters,
+      viewerAccountId,
+      bindings,
+      allowLegacyAccountKey,
+    ).byKey;
   }
   if (source.checkpoint && typeof source.checkpoint === 'object')
     result.checkpoint = clientGameState(
@@ -1851,7 +1875,7 @@ export class Room {
         clientSeat.chatMutedUntil = undefined;
       }
       const isSelf = accountId === viewerAccountId;
-      return isSelf
+      return isSelf && !this.bindingEnforced
         ? { ...clientSeat, accountId, isSelf }
         : { ...clientSeat, isSelf };
     });
@@ -1859,7 +1883,7 @@ export class Room {
       const { accountId, matureOptOut, ...clientSeat } = seat;
       void matureOptOut;
       const isSelf = accountId === viewerAccountId;
-      return isSelf
+      return isSelf && !this.bindingEnforced
         ? { ...clientSeat, accountId, isSelf }
         : { ...clientSeat, isSelf };
     });
@@ -1943,7 +1967,7 @@ export class Room {
       this.state.gameState,
       viewerAccountId,
       this.seatBindings,
-      !this.bindingEnforced,
+      !this.bindingEnforced && !this.soloPartyConversionPending,
     );
     const combatRoom = gameState.combatRoom as RoomCombatState | undefined;
     if (combatRoom)
@@ -2036,7 +2060,7 @@ export class Room {
         ?.characters,
       accountId,
       this.seatBindings,
-      !this.bindingEnforced,
+      !this.bindingEnforced && !this.soloPartyConversionPending,
     );
     for (const entity of roomGameState(this.state)?.entities ?? [])
       if (this.entityControllerAccountId(entity.id) === accountId)
