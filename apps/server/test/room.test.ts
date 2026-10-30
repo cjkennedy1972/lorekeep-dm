@@ -880,6 +880,46 @@ describe('room actor', () => {
       });
     });
 
+    it('projects every client frame per viewer while preserving host-only state', async () => {
+      const { store } = fixture();
+      const host = randomUUID();
+      const guest = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.seat(guest, 'Guest');
+      const hostFrames: unknown[] = [];
+      const guestFrames: unknown[] = [];
+      const serialized = (frames: unknown[]) => JSON.stringify(frames);
+      await room.subscribe(host, { send: (frame) => hostFrames.push(frame) });
+      await room.subscribe(guest, { send: (frame) => guestFrames.push(frame) });
+      const requester = randomUUID();
+      await room.requestLateJoin(requester, randomUUID(), 1, randomUUID());
+      expect(serialized(hostFrames)).not.toContain(requester);
+      expect(serialized(guestFrames)).not.toContain(requester);
+
+      expect(serialized(hostFrames)).toContain(host);
+      expect(serialized(hostFrames)).not.toContain(guest);
+      expect(serialized(guestFrames)).toContain(guest);
+      expect(serialized(guestFrames)).not.toContain(host);
+      expect(room.clientState(host).lateJoinRequests).toHaveLength(1);
+      expect(room.clientState(guest)).not.toHaveProperty('lateJoinRequests');
+
+      const syncPayload = (
+        room as unknown as {
+          clientSyncPayload(viewerAccountId: string): {
+            state: { seats: Array<{ accountId?: string }> };
+          };
+        }
+      ).clientSyncPayload(host);
+      expect(
+        syncPayload.state.seats.find((seat) => seat.accountId === host),
+      ).toBeDefined();
+      expect(
+        syncPayload.state.seats.some((seat) => seat.accountId === guest),
+      ).toBe(false);
+    });
+
     it('validates the selected character before persisting and exposes only its public card to the host', async () => {
       const { store, events } = fixture();
       const host = randomUUID();
