@@ -148,6 +148,52 @@ describe('gateway envelope', () => {
     }
   });
 
+  it('does not revoke a socket added while the session query is in flight', async () => {
+    let resolveQuery!: (result: { rows: { token_hash: string }[] }) => void;
+    const query = vi.fn(
+      () =>
+        new Promise<{ rows: { token_hash: string }[] }>((resolve) => {
+          resolveQuery = resolve;
+        }),
+    );
+    const registry = new ConnectionRegistry({ query } as never);
+    const existing = { readyState: 1, close: vi.fn() } as unknown as WebSocket;
+    expect(registry.reserveSeat('session:existing', existing).reserved).toBe(
+      true,
+    );
+    registry.add(existing, 'existing-hash', 'session:existing');
+
+    const sweeping = registry.sweep();
+    const connecting = {
+      readyState: 1,
+      close: vi.fn(),
+    } as unknown as WebSocket;
+    expect(
+      registry.reserveSeat('session:connecting', connecting).reserved,
+    ).toBe(true);
+    registry.add(connecting, 'new-hash', 'session:connecting');
+    resolveQuery({ rows: [{ token_hash: 'existing-hash' }] });
+    await sweeping;
+
+    expect(connecting.close).not.toHaveBeenCalled();
+    expect(registry.size).toBe(2);
+  });
+
+  it('revokes a snapshotted socket whose session is invalid', async () => {
+    const registry = new ConnectionRegistry({
+      query: async () => ({ rows: [] }),
+    } as never);
+    const socket = { readyState: 1, close: vi.fn() } as unknown as WebSocket;
+    expect(registry.reserveSeat('session:revoked', socket).reserved).toBe(true);
+    registry.add(socket, 'revoked-hash', 'session:revoked');
+
+    await registry.sweep();
+
+    expect(socket.close).toHaveBeenCalledOnce();
+    expect(socket.close).toHaveBeenCalledWith(4401, 'session revoked');
+    expect(registry.size).toBe(0);
+  });
+
   it('replaces an in-memory socket only after the caller validates the seat token', () => {
     const registry = new ConnectionRegistry({
       query: async () => ({ rows: [] }),
