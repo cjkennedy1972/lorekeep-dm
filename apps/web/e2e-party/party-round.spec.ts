@@ -2,6 +2,12 @@ import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
 import { mintSeatResume } from './seat-resume';
 import {
+  attachSeatDiagnostics,
+  SOCKET_HOOK,
+  startSeatTrace,
+} from './diagnostics';
+import { labelFor, stateTokens } from './combat-helpers';
+import {
   expect,
   test,
   type Browser,
@@ -56,12 +62,14 @@ async function openAs(
   const context = await browser.newContext(
     savedStorage ? { storageState: savedStorage } : undefined,
   );
+  let mintStatus = -1; // -1: replayed storage, no mint
   if (!savedStorage) {
     await context.addCookies([
       { name: 'sid', value: account.token, url: origin },
     ]);
-    await mintSeatResume(context, origin, table, account);
+    mintStatus = await mintSeatResume(context, origin, table, account);
   }
+  await context.addInitScript(SOCKET_HOOK);
   // Host tools and party chat are collapsed drawers that remember being opened; most specs drive them.
   await context.addInitScript((open) => {
     for (const id of ['host', 'chat'])
@@ -69,6 +77,7 @@ async function openAs(
       else localStorage.removeItem(`lorekeep.drawer.${id}`);
   }, drawers);
   const page = await context.newPage();
+  const trace = startSeatTrace(page);
   const frames: ServerFrame[] = [];
   const sent: {
     type: string;
@@ -91,9 +100,23 @@ async function openAs(
   });
   await page.goto(path);
   if (new URL(path, origin).pathname.endsWith('/game'))
-    await expect(
-      page.getByRole('status').filter({ hasText: 'Connected to the room.' }),
-    ).toBeVisible({ timeout: 30_000 });
+    try {
+      await expect(
+        page.getByRole('status').filter({ hasText: 'Connected to the room.' }),
+      ).toBeVisible({ timeout: 30_000 });
+    } catch (error) {
+      try {
+        await attachSeatDiagnostics(
+          test.info(),
+          [{ label: labelFor(account), entityId: '', mintStatus, page, trace }],
+          error,
+          stateTokens(),
+        );
+      } catch (attachError) {
+        console.error('party diagnostics could not be attached:', attachError);
+      }
+      throw error;
+    }
   return { accountId: account.accountId, context, page, frames, sent };
 }
 

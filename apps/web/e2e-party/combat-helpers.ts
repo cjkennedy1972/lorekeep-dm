@@ -1,11 +1,19 @@
 import { readFileSync } from 'node:fs';
 import {
   expect,
+  test,
   type APIRequestContext,
   type Browser,
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import {
+  attachSeatDiagnostics,
+  SOCKET_HOOK,
+  startSeatTrace,
+  type SeatView,
+  type TraceEvent,
+} from './diagnostics';
 import { mintSeatResume } from './seat-resume';
 
 // Shared by the party combat specs. The state file is written by apps/server/test/live/serve.party.live.ts.
@@ -36,10 +44,41 @@ export type View = {
   page: Page;
   frames: unknown[];
   sent: unknown[];
+  /** The role the seat plays in its table, e.g. `combat.host`. Used in failure attachments only. */
+  label: string;
+  mintStatus: number;
+  trace: TraceEvent[];
 };
 
 export const readState = () =>
   JSON.parse(readFileSync(process.env.LIVE_STATE_FILE!, 'utf8')) as CombatState;
+
+// Every token in the state file. Used to scrub failure attachments.
+export function stateTokens(): string[] {
+  const tokens: string[] = [];
+  const walk = (node: unknown) => {
+    if (typeof node !== 'object' || node === null) return;
+    for (const [key, value] of Object.entries(node))
+      if (key === 'token' && typeof value === 'string') tokens.push(value);
+      else walk(value);
+  };
+  walk(readState());
+  return tokens;
+}
+
+/** `combat.host` for a seat in the state file; `unknown-seat` if the member is not listed there. */
+export function labelFor(member: { accountId: string }): string {
+  for (const [table, group] of Object.entries(readState()))
+    if (typeof group === 'object' && group !== null)
+      for (const [role, seat] of Object.entries(group))
+        if (
+          typeof seat === 'object' &&
+          seat !== null &&
+          (seat as Member).accountId === member.accountId
+        )
+          return `${table}.${role}`;
+  return 'unknown-seat';
+}
 export const origin = `http://localhost:${process.env.LIVE_WEB_PORT ?? 5176}`;
 // The sync budget from the party acceptance criteria: a move must reach every other browser within 1 s.
 export const SYNC_BUDGET_MS = 1000;
@@ -56,8 +95,10 @@ export async function openMember(
 ): Promise<View> {
   const context = await browser.newContext(viewport ? { viewport } : undefined);
   await context.addCookies([{ name: 'sid', value: member.token, url: origin }]);
-  await mintSeatResume(context, origin, table, member);
+  await context.addInitScript(SOCKET_HOOK);
+  const mintStatus = await mintSeatResume(context, origin, table, member);
   const page = await context.newPage();
+  const trace = startSeatTrace(page);
   const frames: unknown[] = [];
   const sent: unknown[] = [];
   const parseInto =
@@ -74,7 +115,16 @@ export async function openMember(
     socket.on('framesent', parseInto(sent));
   });
   await page.goto(`${origin}/rooms/${table}/game`);
-  return { member, context, page, frames, sent };
+  return {
+    member,
+    context,
+    page,
+    frames,
+    sent,
+    label: labelFor(member),
+    mintStatus,
+    trace,
+  };
 }
 
 /** Closes the member's context and lets the server release the seat claim before the next open. */
@@ -129,6 +179,48 @@ export async function tabTo(page: Page, name: string, maxTabs = 120) {
 }
 
 /**
+ * Waits for every seat's Initiative tracker. On a timeout it attaches the evidence for all the views, then
+ * rethrows the original error. The wait and its 30 s timeout are unchanged.
+ */
+export async function awaitTrackers(views: View[]) {
+  for (const view of views) {
+    try {
+      await expect(
+        view.page.getByRole('list', { name: 'Initiative tracker' }),
+      ).toBeVisible({ timeout: 30_000 });
+    } catch (error) {
+      await attachFailure(views, error);
+      throw error;
+    }
+  }
+}
+
+/** Attaches the failure evidence for the given seats to the running test. */
+export async function attachFailure(views: View[], error: unknown) {
+  try {
+    await attachSeatDiagnostics(
+      test.info(),
+      views.map(seatOf),
+      error,
+      stateTokens(),
+    );
+  } catch (attachError) {
+    // Evidence is best effort, and the caller still rethrows the original error. Say so in the run log.
+    console.error('party diagnostics could not be attached:', attachError);
+  }
+}
+
+function seatOf(view: View): SeatView {
+  return {
+    label: view.label,
+    entityId: view.member.entityId,
+    mintStatus: view.mintStatus,
+    page: view.page,
+    trace: view.trace,
+  };
+}
+
+/**
  * Restores the area table's pristine board (a caster PC acting first, a goblin two cells away), then opens its
  * three seats. Every opened seat is pushed to `views` as it opens, so the caller's finally closes them all.
  */
@@ -142,10 +234,7 @@ export async function openAreaTable(
   const { area } = readState();
   for (const member of [area.caster, area.guest, area.scout])
     views.push(await openMember(browser, member, area.table));
-  for (const { page } of views)
-    await expect(
-      page.getByRole('list', { name: 'Initiative tracker' }),
-    ).toBeVisible({ timeout: 30_000 });
+  await awaitTrackers(views);
   return views;
 }
 
