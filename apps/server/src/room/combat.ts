@@ -268,9 +268,15 @@ export function combatTracker(
   };
 }
 
-const reject = (message: string): CombatCommandError => ({
+const ATTACK_REJECTED = 'That attack is not currently available.';
+
+const reject = (
+  message: string,
+  attackRejectReason?: CombatCommandError['attackRejectReason'],
+): CombatCommandError => ({
   code: 'COMMAND_REJECTED',
   message,
+  ...(attackRejectReason ? { attackRejectReason } : {}),
 });
 
 const rejectAdmission = (
@@ -445,20 +451,20 @@ export function createCombatRuntime(
       if (command.command === 'attack') {
         const attacker = state.entities.find((item) => item.id === actorId);
         const target = state.entities.find(
-          (item) => item.id === command.targetId,
+          (item) =>
+            item.id === command.targetId &&
+            (!item.hidden || ctx?.controlledEntityIds?.has(item.id)),
         );
         const weapon = attacker?.attacks?.find(
           (item) => item.id === command.attackId,
         );
-        if (
-          !attacker ||
-          !target ||
-          !weapon ||
-          !resource?.action ||
-          target.hp <= 0 ||
-          target.fled
-        )
-          return reject('That attack is not currently available.');
+        if (!attacker) return reject(ATTACK_REJECTED, 'attacker_missing');
+        if (!target) return reject(ATTACK_REJECTED, 'target_missing_or_hidden');
+        if (!weapon) return reject(ATTACK_REJECTED, 'weapon_missing');
+        if (!resource?.action)
+          return reject(ATTACK_REJECTED, 'action_unavailable');
+        if (target.hp <= 0) return reject(ATTACK_REJECTED, 'target_dead');
+        if (target.fled) return reject(ATTACK_REJECTED, 'target_fled');
         const result = attack({
           attackerId: actorId,
           targetId: target.id,
@@ -485,7 +491,7 @@ export function createCombatRuntime(
           },
         });
         if ('error' in result)
-          return reject('That target is not a legal attack.');
+          return reject(ATTACK_REJECTED, 'illegal_range_or_line_of_sight');
         const resolvedEvents = result.events.map((event) => {
           if (event.type !== 'RollEvent') return event;
           if (event.kind === 'attack')

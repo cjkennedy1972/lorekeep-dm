@@ -6352,8 +6352,16 @@ export class Room {
           ? ({ ...bound!.characterSnapshot, id: actorId } as never)
           : gameState?.characters?.[accountId],
         now: Date.now(),
+        controlledEntityIds: this.controlledBy(accountId),
       });
       if ('code' in result) {
+        if (command.command === 'attack' && result.attackRejectReason)
+          console.info(
+            JSON.stringify({
+              event: 'combat_attack_rejected',
+              reason: result.attackRejectReason,
+            }),
+          );
         this.sendError(accountId, result.code, result.message, actionId);
         return true;
       }

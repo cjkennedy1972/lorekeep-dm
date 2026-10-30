@@ -133,10 +133,21 @@ export type CombatCommandError = {
     | 'reaction-window-open'
     | 'narration-in-progress';
   message: string;
+  /** Internal-only classification; Room never serializes this to clients. */
+  attackRejectReason?:
+    | 'attacker_missing'
+    | 'target_missing_or_hidden'
+    | 'weapon_missing'
+    | 'action_unavailable'
+    | 'target_dead'
+    | 'target_fled'
+    | 'illegal_range_or_line_of_sight';
 };
 export type CombatContext = {
   character?: CharacterInput;
   now?: number;
+  /** Entities controlled by the commanding viewer; hidden targets are otherwise nonexistent. */
+  controlledEntityIds?: ReadonlySet<string>;
 };
 
 /** The id a reaction prompt carries on the wire and in events. */
