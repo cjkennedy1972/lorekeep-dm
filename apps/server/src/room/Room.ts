@@ -93,6 +93,10 @@ function isSeatOwner(
   return (
     viewerAccountId !== undefined &&
     (bindings?.get(seatId)?.accountId === viewerAccountId ||
+      [...(bindings?.values() ?? [])].some(
+        (binding) =>
+          binding.accountId === seatId && binding.accountId === viewerAccountId,
+      ) ||
       (allowLegacyAccountKey && seatId === viewerAccountId))
   );
 }
@@ -181,13 +185,21 @@ function clientGameState(
     )) {
       const seatId = seatByAccount.get(sourceKey) ?? sourceKey;
       if (!visibleSeatIds.has(seatId)) continue;
-      // A rewind can restore an older account-keyed checkpoint; prefer an
-      // already-present seat-keyed value if both representations exist.
-      if (sourceKey !== seatId && Object.hasOwn(characters, seatId)) continue;
-      if (
-        isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
-      ) {
-        characters[seatId] = character;
+      const isOwner = isSeatOwner(
+        seatId,
+        viewerAccountId,
+        bindings,
+        allowLegacyAccountKey,
+      );
+      const projectedKey = isOwner ? (viewerAccountId ?? seatId) : seatId;
+      // A rewind can restore both account- and seat-keyed values. Prefer the
+      // canonical seat-keyed value regardless of the viewer-specific output key.
+      if (sourceKey !== seatId && Object.hasOwn(characters, projectedKey))
+        continue;
+      if (isOwner) {
+        // The web sheet is selected by account ID. Keep the owner key private
+        // to this viewer even when the stored character was seat-keyed.
+        characters[viewerAccountId ?? seatId] = character;
         continue;
       }
       if (
@@ -7431,18 +7443,23 @@ export class Room {
     const seatByAccount = new Map<string, string>(
       seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
     );
-    const project = (current: unknown): unknown => {
+    const project = (current: unknown, parentKey?: string): unknown => {
       if (typeof current === 'string')
         return seatByAccount.get(current) ?? current;
-      if (Array.isArray(current)) return current.map(project);
+      if (Array.isArray(current))
+        return current.map((item) => project(item, parentKey));
       if (!current || typeof current !== 'object') return current;
       const result: Record<string, unknown> = {};
       for (const [key, item] of Object.entries(current)) {
         const accountKeySeat = seatByAccount.get(key);
         const accountNamed = /account/i.test(key) || /ownerRef/i.test(key);
         if (accountKeySeat) {
-          result[accountKeySeat] =
-            item && typeof item === 'object' ? project(item) : item;
+          const projectedKey =
+            parentKey === 'characters' && key === viewerAccountId
+              ? key
+              : accountKeySeat;
+          result[projectedKey] =
+            item && typeof item === 'object' ? project(item, key) : item;
           continue;
         }
         if (accountNamed) {
@@ -7474,7 +7491,7 @@ export class Room {
           // Account-named fields with object/number/null values fail closed.
           continue;
         }
-        result[key] = project(item);
+        result[key] = project(item, key);
       }
       return result;
     };
