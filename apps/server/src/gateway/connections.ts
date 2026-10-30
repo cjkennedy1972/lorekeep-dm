@@ -156,10 +156,9 @@ export class ConnectionRegistry {
   }
   async sweep(): Promise<void> {
     this.lastSweep = Date.now();
+    const snapshot = [...this.sockets.entries()];
     const hashes = [
-      ...new Set(
-        [...this.sockets.values()].map((value) => value.authTokenHash),
-      ),
+      ...new Set(snapshot.map(([, value]) => value.authTokenHash)),
     ];
     if (!hashes.length) return;
     const valid = new Set(
@@ -172,8 +171,11 @@ export class ConnectionRegistry {
         )
       ).rows.map((r) => r.token_hash),
     );
-    for (const [ws, details] of this.sockets)
-      if (!valid.has(details.authTokenHash)) {
+    for (const [ws, details] of snapshot)
+      if (
+        this.sockets.get(ws) === details &&
+        !valid.has(details.authTokenHash)
+      ) {
         this.remove(ws);
         ws.close(REVOKED_CODE, 'session revoked');
       }
