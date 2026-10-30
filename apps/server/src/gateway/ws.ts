@@ -269,7 +269,6 @@ export function installGateway(
         app.log.info(
           {
             event: 'ws_ticket_outcome',
-            requestId: request.id,
             sessionIdHash: diagnosticHash(request.body?.sessionId),
             statusCode: reply.statusCode,
             outcome:
@@ -342,6 +341,7 @@ export function installGateway(
       return;
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
+      const socketOpenedAt = Date.now();
       let authPhase = 'upgraded';
       let diagnosticSessionHash = diagnosticHash(
         new URL(request.url ?? '/', 'http://localhost').searchParams.get(
@@ -554,6 +554,33 @@ export function installGateway(
               identity.accountId,
               identity.authTokenHash,
             );
+        const pendingTokenClaimed = firstDeliveryToken !== undefined;
+        type SeatSocketRefusalReason =
+          | 'not-seated'
+          | 'authorization-active-socket'
+          | 'authorization-invalid-token'
+          | 'reservation-unavailable'
+          | 'sweep-closed-socket'
+          | 'resume-token-commit-failed'
+          | 'seat-authenticated-send-failed';
+        const logSeatSocketRefusal = (
+          reason: SeatSocketRefusalReason,
+          closeCode: number,
+        ) => {
+          app.log.warn(
+            {
+              event: 'seat.socket.refused',
+              socketId,
+              reason,
+              seatId,
+              sessionId: identity.sessionId,
+              pendingTokenClaimed,
+              closeCode,
+              socketAgeMs: Math.max(0, Date.now() - socketOpenedAt),
+            },
+            'Seat socket refused after pending-token claim',
+          );
+        };
         let authorization = await authorizeSeatSocket(
           db,
           identity.sessionId,
@@ -570,6 +597,7 @@ export function installGateway(
               (seat) => seat.accountId === identity.accountId,
             )
           ) {
+            logSeatSocketRefusal('not-seated', 1008);
             ws.off('message', resumeFrameHandler);
             ws.close(1008, 'Player is not seated at this table');
             return;
@@ -622,6 +650,12 @@ export function installGateway(
             },
             'WebSocket seat resume rejected',
           );
+          logSeatSocketRefusal(
+            authorization.status === 'active-socket'
+              ? 'authorization-active-socket'
+              : 'authorization-invalid-token',
+            1008,
+          );
           ws.off('message', resumeFrameHandler);
           ws.close(1008, 'Seat authentication failed');
           return;
@@ -639,6 +673,7 @@ export function installGateway(
         // holder has proved the current seat token or received host approval.
         const reservation = connections.reserveSeat(seatKey, ws, true);
         if (!reservation.reserved) {
+          logSeatSocketRefusal('reservation-unavailable', 1008);
           await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
           ws.off('message', resumeFrameHandler);
           reject();
@@ -652,7 +687,10 @@ export function installGateway(
           identity.accountId,
         );
         await connections.sweep();
-        if (ws.readyState !== WebSocket.OPEN) return;
+        if (ws.readyState !== WebSocket.OPEN) {
+          logSeatSocketRefusal('sweep-closed-socket', 4401);
+          return;
+        }
         if (reservation.takenOver || authorization.soloOwnerRecovery)
           await room.recordSeatTakenOver(seatId);
         if (authorization.soloOwnerRecovery)
@@ -674,6 +712,7 @@ export function installGateway(
           tokenCommitted = false;
         }
         if (!tokenCommitted) {
+          logSeatSocketRefusal('resume-token-commit-failed', 1011);
           ws.close(1011, 'Authentication state changed; retry');
           return;
         }
@@ -689,6 +728,7 @@ export function installGateway(
           );
         });
         if (!authenticatedFrameSent) {
+          logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
           ws.close(1011, 'Authentication response could not be sent');
           return;
         }

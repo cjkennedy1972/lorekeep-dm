@@ -27,7 +27,11 @@ import { quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
-const app = createApp(db, { inputGate: allowInputGate });
+const capturedLogs: string[] = [];
+const app = createApp(db, {
+  inputGate: allowInputGate,
+  loggerStream: { write: (chunk) => capturedLogs.push(chunk.toString()) },
+});
 const rooms = new RoomRegistry(
   new Persistence(db),
   new SessionLease(db),
@@ -265,6 +269,46 @@ describe('pending first-token handoff', () => {
         Date.now() + 30_001,
       ),
     ).toBeUndefined();
+  });
+
+  it('logs an active-socket refusal after claiming the pending token', async () => {
+    const { id, room } = await pendingSeat();
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    await db.query(
+      `UPDATE seat_resume_tokens SET active_socket_id=$3,heartbeat_at=now()
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId, randomUUID()],
+    );
+    const before = capturedLogs.length;
+    const socket = connect(await ticket(tokens[0]!, id), null);
+    const closeCode = await closed(socket);
+    expect(closeCode).toBe(1008);
+    const log = await (async () => {
+      for (let i = 0; i < 50; i++) {
+        const match = capturedLogs
+          .slice(before)
+          .map((line) => JSON.parse(line))
+          .find((entry) => entry.event === 'seat.socket.refused');
+        if (match) return match;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('seat.socket.refused was not logged');
+    })();
+    expect(log).toMatchObject({
+      event: 'seat.socket.refused',
+      reason: 'authorization-active-socket',
+      seatId,
+      sessionId: id,
+      pendingTokenClaimed: true,
+      closeCode: 1008,
+    });
+    expect(log).toHaveProperty('socketAgeMs');
+    await db.query(
+      'UPDATE seat_resume_tokens SET active_socket_id=NULL,heartbeat_at=NULL WHERE session_id=$1 AND seat_id=$2',
+      [id, seatId],
+    );
   });
 });
 
