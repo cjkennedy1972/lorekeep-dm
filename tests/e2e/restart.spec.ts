@@ -41,11 +41,11 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
     const persistedSeats = (
       persistedState.seats as Record<string, unknown>[]
     ).map((seat) => {
-      const accountId = seat.accountId;
       const visible = { ...seat };
       delete visible.accountId;
       delete visible.matureOptOut;
-      return { ...visible, accountId, isSelf: true };
+      // Account IDs are internal identity data and are intentionally omitted from client state.
+      return { ...visible, isSelf: true };
     });
     const persistedSeatIds = new Map(
       (persistedState.seats as Record<string, unknown>[]).map((seat) => [
