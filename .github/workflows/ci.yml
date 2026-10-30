@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: mirror.gcr.io/library/postgres:16 # Docker Official Image via Google mirror; Docker Hub and public.ecr.aws rate-limit runner pulls
@@ -27,6 +29,8 @@ jobs:
       DATABASE_URL: postgres://lorekeep:lorekeep@localhost:5432/lorekeep
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 12.9.1
@@ -59,9 +63,27 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-traces
-          path: '**/test-results/**/trace.zip'
+          name: playwright-debug-test-${{ github.run_attempt }}
+          path: |
+            **/test-results/**
+            !**/test-results/**/trace.zip
+            !**/trace.zip
+            !**/error-context.md
+            !**/*live-state.json
+            !**/screenshots/**
+            !**/screenshot/**
+            !**/videos/**
+            !**/video/**
+            !**/*.png
+            !**/*.jpg
+            !**/*.jpeg
+            !**/*.webp
+            !**/*.gif
+            !**/*.mp4
+            !**/*.webm
+            !**/*.mov
           if-no-files-found: ignore
+          retention-days: 7
 
   # Party browser e2e: real server (Room + Postgres + scripted DM) on the party config, which the
   # `test` job does not run. Opt-in for review; runs the same suite that passes locally 10/10.
@@ -107,7 +129,7 @@ jobs:
           # Shared-runner wall clock includes browser, Vite proxy and runner jitter; locally the budget stays 1000 ms, and the measured value is always logged.
           PARTY_SYNC_BUDGET_MS: 1500
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: playwright-debug-party-${{ github.run_attempt }}
           path: |
@@ -124,9 +146,13 @@ jobs:
 
   browsers:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 12.9.1
@@ -171,17 +197,39 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-traces-browsers
-          path: '**/test-results/**/trace.zip'
+          name: playwright-debug-browsers-${{ github.run_attempt }}
+          path: |
+            **/test-results/**
+            !**/test-results/**/trace.zip
+            !**/trace.zip
+            !**/error-context.md
+            !**/*live-state.json
+            !**/screenshots/**
+            !**/screenshot/**
+            !**/videos/**
+            !**/video/**
+            !**/*.png
+            !**/*.jpg
+            !**/*.jpeg
+            !**/*.webp
+            !**/*.gif
+            !**/*.mp4
+            !**/*.webm
+            !**/*.mov
           if-no-files-found: ignore
+          retention-days: 7
 
   llm-recorded:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 15
     env:
       LLM_FIXTURE_MODE: strict # replay committed fixtures only; no endpoint, no secrets
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 12.9.1
@@ -197,9 +245,13 @@ jobs:
 
   catalog-reconcile:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 12.9.1
@@ -212,9 +264,13 @@ jobs:
 
   assets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -223,9 +279,13 @@ jobs:
 
   moderation-rubric:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -233,9 +293,13 @@ jobs:
 
   redteam-recorded:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 12.9.1
