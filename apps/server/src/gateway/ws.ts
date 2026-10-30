@@ -269,6 +269,7 @@ export function installGateway(
         app.log.info(
           {
             event: 'ws_ticket_outcome',
+            requestId: request.id,
             sessionIdHash: diagnosticHash(request.body?.sessionId),
             statusCode: reply.statusCode,
             outcome:
@@ -557,6 +558,7 @@ export function installGateway(
         const pendingTokenClaimed = firstDeliveryToken !== undefined;
         type SeatSocketRefusalReason =
           | 'not-seated'
+          | 'authorization-error'
           | 'authorization-active-socket'
           | 'authorization-invalid-token'
           | 'reservation-unavailable'
@@ -565,177 +567,195 @@ export function installGateway(
           | 'seat-authenticated-send-failed';
         const logSeatSocketRefusal = (
           reason: SeatSocketRefusalReason,
-          closeCode: number,
+          closeCode: number | null,
         ) => {
-          app.log.warn(
-            {
-              event: 'seat.socket.refused',
-              socketId,
-              reason,
-              seatId,
-              sessionId: identity.sessionId,
-              pendingTokenClaimed,
-              closeCode,
-              socketAgeMs: Math.max(0, Date.now() - socketOpenedAt),
-            },
-            'Seat socket refused after pending-token claim',
-          );
-        };
-        let authorization = await authorizeSeatSocket(
-          db,
-          identity.sessionId,
-          seatId,
-          socketId,
-          presentedToken ?? firstDeliveryToken,
-          false,
-          identity.accountId,
-          soloOwnerRecoveryEnabled && cookieMatchesTicket,
-        );
-        if (authorization.status === 'invalid-token') {
-          if (
-            !room.state.seats.some(
-              (seat) => seat.accountId === identity.accountId,
-            )
-          ) {
-            logSeatSocketRefusal('not-seated', 1008);
-            ws.off('message', resumeFrameHandler);
-            ws.close(1008, 'Player is not seated at this table');
-            return;
-          }
-          pendingClaimId = randomUUID();
-          ws.send(
-            JSON.stringify({
-              seq: room.seq,
-              type: 'SeatClaimPending',
-              payload: { claimId: pendingClaimId, expiresInMs: 60_000 },
-            }),
-          );
           try {
-            const approved = await room.requestSeatResumeClaim(
-              identity.accountId,
-              pendingClaimId,
-            );
-            if (!approved) throw new Error('seat claim denied or expired');
-            authorization = await authorizeSeatSocket(
-              db,
-              identity.sessionId,
-              seatId,
-              socketId,
-              presentedToken,
-              true,
-              identity.accountId,
+            app.log.warn(
+              {
+                event: 'seat.socket.refused',
+                reason,
+                seatId,
+                sessionId: identity.sessionId,
+                pendingTokenClaimed,
+                closeCode,
+                socketAgeMs: Math.max(0, Date.now() - socketOpenedAt),
+              },
+              'Seat socket refused after pending-token claim',
             );
           } catch {
-            ws.off('message', resumeFrameHandler);
-            if (ws.readyState === WebSocket.OPEN)
-              ws.send(
-                JSON.stringify({
-                  seq: room.seq,
-                  type: 'SeatClaimDenied',
-                  payload: { claimId: pendingClaimId },
-                }),
-              );
-            ws.close(1008, 'Seat claim refused');
-            return;
+            // Diagnostics must never interfere with socket cleanup.
           }
-          pendingClaimId = undefined;
-        }
-        if (authorization.status !== 'authorized') {
-          authPhase = `resume-${authorization.status}`;
-          app.log.info(
-            {
-              event: 'ws_resume_outcome',
-              sessionIdHash: diagnosticHash(identity.sessionId),
-              outcome: authorization.status,
-            },
-            'WebSocket seat resume rejected',
-          );
-          logSeatSocketRefusal(
-            authorization.status === 'active-socket'
-              ? 'authorization-active-socket'
-              : 'authorization-invalid-token',
-            1008,
-          );
-          ws.off('message', resumeFrameHandler);
-          ws.close(1008, 'Seat authentication failed');
-          return;
-        }
-        authPhase = 'resume-authorized';
-        app.log.info(
-          {
-            event: 'ws_resume_outcome',
-            sessionIdHash: diagnosticHash(identity.sessionId),
-            outcome: 'authorized',
-          },
-          'WebSocket seat resume authorized',
-        );
-        // Do not evict/reserve an existing in-memory socket until the ticket
-        // holder has proved the current seat token or received host approval.
-        const reservation = connections.reserveSeat(seatKey, ws, true);
-        if (!reservation.reserved) {
-          logSeatSocketRefusal('reservation-unavailable', 1008);
-          await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
-          ws.off('message', resumeFrameHandler);
-          reject();
-          return;
-        }
-        seatAuthorized = true;
-        connections.add(
-          ws,
-          identity.authTokenHash,
-          seatKey,
-          identity.accountId,
-        );
-        await connections.sweep();
-        if (ws.readyState !== WebSocket.OPEN) {
-          logSeatSocketRefusal('sweep-closed-socket', 4401);
-          return;
-        }
-        if (reservation.takenOver || authorization.soloOwnerRecovery)
-          await room.recordSeatTakenOver(seatId);
-        if (authorization.soloOwnerRecovery)
-          connections.notifyAccount(identity.accountId, {
-            seq: room.seq,
-            type: 'SeatTakenOver',
-            payload: { seatId, at: Date.now() },
-          });
-        let tokenCommitted = false;
+        };
         try {
-          tokenCommitted = await commitSeatResumeToken(
+          let authorization = await authorizeSeatSocket(
             db,
             identity.sessionId,
             seatId,
             socketId,
-            authorization.resumeToken,
+            presentedToken ?? firstDeliveryToken,
+            false,
+            identity.accountId,
+            soloOwnerRecoveryEnabled && cookieMatchesTicket,
+          );
+          if (authorization.status === 'invalid-token') {
+            if (
+              !room.state.seats.some(
+                (seat) => seat.accountId === identity.accountId,
+              )
+            ) {
+              ws.off('message', resumeFrameHandler);
+              ws.close(1008, 'Player is not seated at this table');
+              logSeatSocketRefusal('not-seated', 1008);
+              return;
+            }
+            pendingClaimId = randomUUID();
+            ws.send(
+              JSON.stringify({
+                seq: room.seq,
+                type: 'SeatClaimPending',
+                payload: { claimId: pendingClaimId, expiresInMs: 60_000 },
+              }),
+            );
+            try {
+              const approved = await room.requestSeatResumeClaim(
+                identity.accountId,
+                pendingClaimId,
+              );
+              if (!approved) throw new Error('seat claim denied or expired');
+              authorization = await authorizeSeatSocket(
+                db,
+                identity.sessionId,
+                seatId,
+                socketId,
+                presentedToken,
+                true,
+                identity.accountId,
+              );
+            } catch {
+              ws.off('message', resumeFrameHandler);
+              if (ws.readyState === WebSocket.OPEN)
+                ws.send(
+                  JSON.stringify({
+                    seq: room.seq,
+                    type: 'SeatClaimDenied',
+                    payload: { claimId: pendingClaimId },
+                  }),
+                );
+              ws.close(1008, 'Seat claim refused');
+              logSeatSocketRefusal('authorization-error', 1008);
+              return;
+            }
+            pendingClaimId = undefined;
+          }
+          if (authorization.status !== 'authorized') {
+            authPhase = `resume-${authorization.status}`;
+            app.log.info(
+              {
+                event: 'ws_resume_outcome',
+                sessionIdHash: diagnosticHash(identity.sessionId),
+                outcome: authorization.status,
+              },
+              'WebSocket seat resume rejected',
+            );
+            ws.off('message', resumeFrameHandler);
+            ws.close(1008, 'Seat authentication failed');
+            logSeatSocketRefusal(
+              authorization.status === 'active-socket'
+                ? 'authorization-active-socket'
+                : 'authorization-invalid-token',
+              1008,
+            );
+            return;
+          }
+          authPhase = 'resume-authorized';
+          app.log.info(
+            {
+              event: 'ws_resume_outcome',
+              sessionIdHash: diagnosticHash(identity.sessionId),
+              outcome: 'authorized',
+            },
+            'WebSocket seat resume authorized',
+          );
+          // Do not evict/reserve an existing in-memory socket until the ticket
+          // holder has proved the current seat token or received host approval.
+          const reservation = connections.reserveSeat(seatKey, ws, true);
+          if (!reservation.reserved) {
+            ws.close(1008, 'Policy violation');
+            await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
+            ws.off('message', resumeFrameHandler);
+            logSeatSocketRefusal('reservation-unavailable', 1008);
+            return;
+          }
+          seatAuthorized = true;
+          connections.add(
+            ws,
+            identity.authTokenHash,
+            seatKey,
+            identity.accountId,
+          );
+          await connections.sweep();
+          if (ws.readyState !== WebSocket.OPEN) {
+            logSeatSocketRefusal('sweep-closed-socket', null);
+            return;
+          }
+          if (reservation.takenOver || authorization.soloOwnerRecovery)
+            await room.recordSeatTakenOver(seatId);
+          if (authorization.soloOwnerRecovery)
+            connections.notifyAccount(identity.accountId, {
+              seq: room.seq,
+              type: 'SeatTakenOver',
+              payload: { seatId, at: Date.now() },
+            });
+          let tokenCommitted = false;
+          try {
+            tokenCommitted = await commitSeatResumeToken(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+              authorization.resumeToken,
+            );
+          } catch {
+            tokenCommitted = false;
+          }
+          if (!tokenCommitted) {
+            ws.close(1011, 'Authentication state changed; retry');
+            logSeatSocketRefusal('resume-token-commit-failed', 1011);
+            return;
+          }
+          const authenticatedFrameSent = await new Promise<boolean>(
+            (resolve) => {
+              if (ws.readyState !== WebSocket.OPEN) return resolve(false);
+              ws.send(
+                JSON.stringify({
+                  seq: room.seq,
+                  type: 'SeatAuthenticated',
+                  payload: { seatId, resumeToken: authorization.resumeToken },
+                }),
+                (error) => resolve(!error),
+              );
+            },
+          );
+          if (!authenticatedFrameSent) {
+            ws.close(1011, 'Authentication response could not be sent');
+            logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
+            return;
+          }
+          room.completeSeatResumeTokenDelivery(
+            identity.accountId,
+            identity.authTokenHash,
           );
         } catch {
-          tokenCommitted = false;
-        }
-        if (!tokenCommitted) {
-          logSeatSocketRefusal('resume-token-commit-failed', 1011);
-          ws.close(1011, 'Authentication state changed; retry');
+          ws.off('message', resumeFrameHandler);
+          ws.close(1008, 'Seat authentication failed');
+          try {
+            await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
+          } catch {
+            // The close listener also attempts to release an owned reservation.
+          }
+          logSeatSocketRefusal('authorization-error', 1008);
           return;
         }
-        const authenticatedFrameSent = await new Promise<boolean>((resolve) => {
-          if (ws.readyState !== WebSocket.OPEN) return resolve(false);
-          ws.send(
-            JSON.stringify({
-              seq: room.seq,
-              type: 'SeatAuthenticated',
-              payload: { seatId, resumeToken: authorization.resumeToken },
-            }),
-            (error) => resolve(!error),
-          );
-        });
-        if (!authenticatedFrameSent) {
-          logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
-          ws.close(1011, 'Authentication response could not be sent');
-          return;
-        }
-        room.completeSeatResumeTokenDelivery(
-          identity.accountId,
-          identity.authTokenHash,
-        );
         if (ws.readyState !== WebSocket.OPEN) return;
         let chatDeliveryChain: Promise<unknown> = Promise.resolve();
         const queueChatDelivery = (
