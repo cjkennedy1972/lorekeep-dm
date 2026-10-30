@@ -254,6 +254,11 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
   const cookie = (token: string) => ({ cookie: `sid=${token}` });
   type Seated = { id: string; token: string };
 
+  // Failure messages must not carry an invite: a response body may echo the invite path or a bare code.
+  const redactBody = (body: string) =>
+    body
+      .replace(/\/api\/invites\/[^/?#\s'"`]+/g, '/api/invites/[REDACTED]')
+      .replace(/[A-Za-z0-9_-]{22}/g, '[REDACTED]');
   // The owner creates the table the way the Lobby does, mints its invite, and the joiners seat
   // through the real invite-join route.
   const openTable = async (name: string, owner: Seated, joiners: Seated[]) => {
@@ -274,7 +279,9 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
       headers: cookie(owner.token),
     });
     if (invited.statusCode !== 200)
-      throw new Error(`invite failed: ${invited.statusCode} ${invited.body}`);
+      throw new Error(
+        `invite failed: ${invited.statusCode} ${redactBody(invited.body)}`,
+      );
     const invite = (invited.json() as { room: { code: string } }).room.code;
     for (const seated of joiners) {
       const joined = await app.inject({
@@ -287,7 +294,9 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
         payload: {},
       });
       if (joined.statusCode !== 200)
-        throw new Error(`join failed: ${joined.statusCode} ${joined.body}`);
+        throw new Error(
+          `join failed: ${joined.statusCode} ${redactBody(joined.body)}`,
+        );
     }
     return { table, invite };
   };

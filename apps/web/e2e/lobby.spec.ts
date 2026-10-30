@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type BrowserContext } from '@playwright/test';
+import { rethrowRedacted, safeUrl } from './redact';
 
 const API = 'http://localhost:8787';
 
@@ -76,15 +77,20 @@ test('keyboard-only: create a table, copy the invite, two players see each other
     page.getByText('Invite link copied to clipboard.'),
   ).toBeVisible();
   const link = await page.evaluate(() => navigator.clipboard.readText());
-  expect(link).toMatch(/\/join\/[A-Za-z0-9_-]{22}$/);
+  // Only the boolean is printed: a failure message must not echo the clipboard value (the invite URL).
+  expect(
+    /\/join\/[A-Za-z0-9_-]{22}$/.test(link),
+    'clipboard holds an invite link',
+  ).toBe(true);
 
   // Second browser profile: logged out first, then redirected back after sign-in.
   const guest = await browser.newContext();
   const tab = await guest.newPage();
-  await tab.goto(link);
-  await expect(tab).toHaveURL(/\/login$/); // login screen arrives with M0-24; redirect is what matters here
+  await tab.goto(link).catch(rethrowRedacted);
+  // login screen arrives with M0-24; redirect is what matters here. Polls the redacted pathname, not the raw URL.
+  await expect.poll(() => safeUrl(tab.url())).toMatch(/\/login$/);
   await signedIn(guest, 'Nia');
-  await tab.goto(link);
+  await tab.goto(link).catch(rethrowRedacted);
   await tab.getByRole('button', { name: 'Join table' }).click();
   await tab.getByRole('heading', { name: 'Keyboard Keep' }).waitFor();
 
@@ -106,17 +112,22 @@ test('navigation to a new lobby clears the plaintext invite from history.state',
   await page.goto(`/rooms/${id}`);
   await page.getByRole('heading', { name: 'History Hall' }).waitFor();
 
-  const invite = (await page.getByLabel('Invite link').inputValue()).split(
-    '/join/',
-  )[1];
-  expect(invite).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  const invite =
+    (await page.getByLabel('Invite link').inputValue()).split('/join/')[1] ??
+    '';
+  // Failure messages print only booleans here, never the invite or the navigation state that may hold it.
+  expect(
+    /^[A-Za-z0-9_-]{22}$/.test(invite),
+    'invite has the 22-character shape',
+  ).toBe(true);
   // No navigation state carries the invite any more (solo creation opens the Game screen).
   await expect
-    .poll(() => page.evaluate(() => history.state?.usr ?? null))
-    .toBeNull();
+    .poll(() => page.evaluate(() => history.state?.usr != null))
+    .toBe(false);
   expect(
-    JSON.stringify(await page.evaluate(() => history.state)),
-  ).not.toContain(invite);
+    JSON.stringify(await page.evaluate(() => history.state)).includes(invite),
+    'history.state must not carry the invite',
+  ).toBe(false);
   await host.close();
 });
 

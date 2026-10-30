@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { rethrowRedacted, safeUrl } from './redact';
 
 const stamp = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 const BIRTH = '01011990'; // typed into the mm/dd/yyyy segments of the date input
@@ -100,8 +101,8 @@ test('login: same error for unknown email and wrong password; keyboard login ret
 
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  await page.goto(url);
-  await expect(page).toHaveURL(/\/login$/);
+  await page.goto(url).catch(rethrowRedacted);
+  await expect.poll(() => safeUrl(page.url())).toMatch(/\/login$/);
 
   const attempt = async (e: string, pw: string) => {
     await page.getByLabel('Email').fill(e);
@@ -125,7 +126,7 @@ test('login: same error for unknown email and wrong password; keyboard login ret
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: 'Join table' }).click();
   await page.getByRole('heading', { name: 'Return Trip' }).waitFor();
-  expect(new URL(page.url()).pathname).toMatch(/^\/rooms\//);
+  expect(safeUrl(page.url())).toMatch(/^\/rooms\//);
 });
 
 test('verify and reset pages work end to end', async ({ page }) => {

@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { rethrowRedacted } from './redact';
 
 const screens = [
   {
@@ -101,7 +102,7 @@ test('axe: no critical or serious violations on join-time content opt-out', asyn
       room: { code: string };
     };
     const page = await guest.newPage();
-    await page.goto(`/join/${room.code}`);
+    await page.goto(`/join/${room.code}`).catch(rethrowRedacted);
     await page.getByRole('button', { name: 'Join table' }).waitFor();
     const { violations } = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

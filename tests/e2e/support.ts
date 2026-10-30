@@ -274,7 +274,7 @@ export async function joinRoom(url: string, code: string, account: Account) {
   });
   if (!response.ok)
     throw new Error(
-      `Join room failed: ${response.status} ${await response.text()}`,
+      `Join room failed: ${response.status} ${(await response.text()).replace(/[A-Za-z0-9_-]{22}/g, '[REDACTED]')}`,
     );
 }
 

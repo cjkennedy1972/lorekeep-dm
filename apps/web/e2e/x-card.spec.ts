@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type BrowserContext } from '@playwright/test';
+import { redactInviteUrls, rethrowRedacted } from './redact';
 
 const API = 'http://localhost:8787';
 
@@ -22,7 +23,7 @@ async function signedIn(context: BrowserContext, name: string) {
       birthdate: '1990-01-01',
     },
   });
-  expect(response.ok(), await response.text()).toBe(true);
+  expect(response.ok(), redactInviteUrls(await response.text())).toBe(true);
 }
 
 test('keyboard X-card is anonymous and pause is visible to every seat', async ({
@@ -41,10 +42,10 @@ test('keyboard X-card is anonymous and pause is visible to every seat', async ({
     guestPage.on('websocket', (socket) =>
       socket.on('framesent', (frame) => guestBroadcasts.push(frame.payload)),
     );
-    await hostPage.goto(`/join/${room.room.code}`);
+    await hostPage.goto(`/join/${room.room.code}`).catch(rethrowRedacted);
     await hostPage.getByRole('button', { name: 'Join table' }).click();
     await hostPage.getByRole('heading', { name: 'Safety flow' }).waitFor();
-    await guestPage.goto(`/join/${room.room.code}`);
+    await guestPage.goto(`/join/${room.room.code}`).catch(rethrowRedacted);
     await guestPage.getByRole('button', { name: 'Join table' }).click();
     await guestPage.getByRole('heading', { name: 'Safety flow' }).waitFor();
 
