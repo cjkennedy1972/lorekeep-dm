@@ -187,12 +187,17 @@ describe('late-join snapshot acknowledgement and binding', () => {
 
     const joiner = await account();
     const jc = await character(joiner, 0x5a);
+    const requestAuthHash = createHash('sha256')
+      .update('late-join-cookie-session')
+      .digest('hex');
     const req = await room.requestLateJoin(
       joiner,
       jc.character.id,
       jc.revision,
       randomUUID(),
       'Joiner',
+      false,
+      requestAuthHash,
     );
     await room.approveLateJoin(f.owner, randomUUID(), req);
     expect(room.state.seats.some((seat) => seat.accountId === joiner)).toBe(
@@ -259,6 +264,41 @@ describe('late-join snapshot acknowledgement and binding', () => {
     await expect(
       room.submitAction(joiner, randomUUID(), 'act after admission', 'Joiner'),
     ).resolves.toBe(true);
+    await room.disconnect(joiner);
+
+    const differentSessionClaimId = randomUUID();
+    const differentSessionClaim = room.requestSeatResumeClaim(
+      joiner,
+      differentSessionClaimId,
+      createHash('sha256').update('different-session').digest('hex'),
+    );
+    await room.cancelSeatResumeClaim(differentSessionClaimId);
+    await expect(differentSessionClaim).resolves.toBe(false);
+    expect((await rows(f.sessionId)).map((event) => event.type)).not.toContain(
+      'SeatClaimAutoApproved',
+    );
+
+    const claimId = randomUUID();
+    await expect(
+      room.requestSeatResumeClaim(joiner, claimId, requestAuthHash),
+    ).resolves.toBe(true);
+    const autoApproval = (await rows(f.sessionId)).find(
+      (event) => event.type === 'SeatClaimAutoApproved',
+    );
+    expect(autoApproval?.payload).toEqual({
+      requestId: req,
+      seatId: seat.seatId,
+      claimId,
+    });
+
+    const replayClaimId = randomUUID();
+    const replayClaim = room.requestSeatResumeClaim(
+      joiner,
+      replayClaimId,
+      requestAuthHash,
+    );
+    await room.cancelSeatResumeClaim(replayClaimId);
+    await expect(replayClaim).resolves.toBe(false);
     await room.drain();
   }, 60_000);
   it.each(['leave', 'kick', 'cancel', 'deny'] as const)(

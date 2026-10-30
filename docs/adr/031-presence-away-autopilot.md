@@ -172,3 +172,14 @@ Routine within delegation, flagged because they set behavior:
 - Reconnect at 25 s: the seat is `returning` at 30 s, keeps control, and does not become `away` (§2.2, §2.5).
 - Presence events are visible to all seats by design (the spec drop-out and spotlight rules need it); timestamps remain after account deletion with the seat identity scrubbed (§2.9). A deliberate away gives only a Dodge and declined reactions, which is intended and harmless under spec A7 (§5.2).
 - Run by the author before push: `pnpm exec prettier --check` and the stale-sentence sweep. The output is not attached, so the reviewers have not verified that claim.
+
+## Amendment: late-join first-device claim (Atlas decision, 2026-10-29)
+
+The host-approval rule in §3.5–§3.6 has one narrow exception for the first device claim of a newly admitted late joiner. The Room may auto-approve that claim only when all of the following hold:
+
+1. The late-join request was host-approved and admitted as a specific account and seat.
+2. The claim arrives before that request's existing TTL expires.
+3. The claim's authenticated cookie/ticket session hash exactly matches the session hash recorded when that account made the late-join request.
+4. No prior claim has consumed this exception for the seat.
+
+Consumption is serialized and single-use. Persist `SeatClaimAutoApproved{requestId, seatId, claimId}` as an audit event; never persist the authentication-session hash. A different account or seat, a different authenticated session/device, an expired request, or any subsequent claim continues through §3.6 and requires host approval. This exception does not change resume-token checks for normal reconnects, solo-owner recovery, healthy-socket protection, or any other recovery path. If the in-memory authorization is unavailable (including after Room recovery), fail closed to the existing host-approval path.

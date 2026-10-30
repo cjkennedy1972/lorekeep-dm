@@ -357,6 +357,14 @@ interface PendingSeatClaim {
   decide: (approved: boolean) => void;
 }
 
+interface LateJoinClaimAuthorization {
+  requestId: string;
+  accountId: string;
+  seatId: string;
+  authTokenHash: string;
+  expiresAt: number;
+}
+
 export const CLARIFICATION_TIMEOUT_MS = 10 * 60_000;
 
 /** Default party turn timer (ADR-033 §5.1); solo tables default to off. */
@@ -748,6 +756,11 @@ export class Room {
     }
   >();
   private readonly lateJoinAuthTokenHashes = new Map<string, string>();
+  /** One first-device claim, restricted to the session that requested late join. */
+  private readonly lateJoinClaimAuthorizations = new Map<
+    string,
+    LateJoinClaimAuthorization
+  >();
   /** In-memory snapshot acknowledgements; reconnect must acknowledge again after Room recovery. */
   private readonly lateJoinSnapshotAcks = new Set<string>();
   private readonly lateJoinSnapshotSeqs = new Map<string, Set<number>>();
@@ -1052,6 +1065,9 @@ export class Room {
     if (timer) clearTimeout(timer);
     this.lateJoinExpiryTimers.delete(requestId);
     this.lateJoinAuthTokenHashes.delete(requestId);
+    for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
+      if (authorization.requestId === requestId)
+        this.lateJoinClaimAuthorizations.delete(seatId);
     this.lateJoinSnapshotAcks.delete(requestId);
     this.lateJoinSnapshotSeqs.delete(requestId);
     const pendingResume = this.pendingSeatResumeTokens.get(request.accountId);
@@ -1100,6 +1116,9 @@ export class Room {
     accountId?: string,
   ): void {
     this.lateJoinAuthTokenHashes.delete(requestId);
+    for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
+      if (authorization.requestId === requestId)
+        this.lateJoinClaimAuthorizations.delete(seatId);
     this.lateJoinSnapshotAcks.delete(requestId);
     this.lateJoinSnapshotSeqs.delete(requestId);
     this.revokedLateJoinRequests.delete(requestId);
@@ -1286,6 +1305,11 @@ export class Room {
     if (stored.ownerBinding)
       this.seatBindings.set(stored.ownerBinding.seatId, stored.ownerBinding);
     if (released) this.seatBindings.delete(released.seatId);
+    if (type === 'SeatRevoked') {
+      const seatId = (payload as { seatId?: unknown }).seatId;
+      if (typeof seatId === 'string')
+        this.lateJoinClaimAuthorizations.delete(seatId);
+    }
     for (const actionId of [...committedActionIds, ...additionalActionIds])
       this.actionIds.add(actionId);
     return committed;
@@ -3635,7 +3659,11 @@ export class Room {
     });
   }
 
-  requestSeatResumeClaim(accountId: string, claimId: string): Promise<boolean> {
+  requestSeatResumeClaim(
+    accountId: string,
+    claimId: string,
+    authTokenHash?: string,
+  ): Promise<boolean> {
     return this.enqueue(async () => {
       const seat = this.state.seats.find(
         (candidate) => candidate.accountId === accountId,
@@ -3652,6 +3680,24 @@ export class Room {
         )
       )
         throw new Error('A seat claim is already pending');
+      const lateJoinAuthorization = this.lateJoinClaimAuthorizations.get(
+        seat.seatId,
+      );
+      if (
+        lateJoinAuthorization &&
+        lateJoinAuthorization.accountId === accountId &&
+        lateJoinAuthorization.seatId === seat.seatId &&
+        lateJoinAuthorization.authTokenHash === authTokenHash &&
+        lateJoinAuthorization.expiresAt > Date.now()
+      ) {
+        this.lateJoinClaimAuthorizations.delete(seat.seatId);
+        await this.persist('SeatClaimAutoApproved', {
+          requestId: lateJoinAuthorization.requestId,
+          seatId: seat.seatId,
+          claimId,
+        });
+        return { result: Promise.resolve(true) };
+      }
       let decide!: (approved: boolean) => void;
       const result = new Promise<boolean>((resolve) => {
         decide = resolve;
@@ -4055,6 +4101,14 @@ export class Room {
             resumeToken,
             authTokenHash,
           );
+        if (authTokenHash)
+          this.lateJoinClaimAuthorizations.set(seat.seatId, {
+            requestId: request.requestId,
+            accountId: request.accountId,
+            seatId: seat.seatId,
+            authTokenHash,
+            expiresAt: request.expiresAt,
+          });
       }
       if (!seat) continue;
       if (!this.lateJoinSnapshotAcks.has(request.requestId)) continue;
