@@ -6,6 +6,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import { redactInviteUrls, safeUrl } from './redact';
 
 // Real server + Postgres (see apps/server/test/live/serve.party.live.ts, the late-join table).
 // Same flow as party-late-join-enter.spec.ts, asserting what the late joiner sees at each stage:
@@ -41,7 +42,9 @@ async function openAs(browser: Browser, account: Account, path: string) {
     localStorage.removeItem('lorekeep.drawer.chat');
   });
   const page = await context.newPage();
-  await page.goto(path);
+  await page.goto(path).catch((error: unknown) => {
+    throw new Error(redactInviteUrls(String(error)));
+  });
   return { accountId: account.accountId, context, page };
 }
 
@@ -57,12 +60,16 @@ async function step(
   name: string,
   run: () => Promise<void>,
 ) {
-  console.log(`[joiner-states] START ${who}: ${name} url=${page.url()}`);
+  console.log(
+    `[joiner-states] START ${who}: ${name} url=${safeUrl(page.url())}`,
+  );
   try {
     await run();
     console.log(`[joiner-states] OK    ${who}: ${name}`);
   } catch (error) {
-    console.log(`[joiner-states] FAIL  ${who}: ${name} url=${page.url()}`);
+    console.log(
+      `[joiner-states] FAIL  ${who}: ${name} url=${safeUrl(page.url())}`,
+    );
     throw error;
   } finally {
     const file = `${shotDir}/${who}-${name.replace(/\W+/g, '-')}.png`;
@@ -133,9 +140,9 @@ test.describe.serial('late joiner waiting states (real server, 390px)', () => {
       // Stage 2: the joiner retries and lands in the lobby, where Enter game is a disabled button.
       await step('joiner', joinerPage, '3-lobby-enter-locked', async () => {
         await joinerPage.getByRole('button', { name: 'Join table' }).click();
-        await expect(joinerPage).toHaveURL(new RegExp(`/rooms/${table}$`), {
-          timeout: 60_000,
-        });
+        await expect
+          .poll(() => safeUrl(joinerPage.url()), { timeout: 60_000 })
+          .toMatch(new RegExp(`/rooms/${table}$`));
         await expect(enterButton).toBeDisabled();
         await expect(enterLink).toHaveCount(0);
         await expect(
@@ -212,7 +219,9 @@ test.describe.serial('late joiner waiting states (real server, 390px)', () => {
 
       await step('joiner', joinerPage, '9-enter-game', async () => {
         await enterLink.click();
-        await expect(joinerPage).toHaveURL(new RegExp(`/rooms/${table}/game$`));
+        await expect
+          .poll(() => safeUrl(joinerPage.url()))
+          .toMatch(new RegExp(`/rooms/${table}/game$`));
       });
     } finally {
       await Promise.all([closeAs(hostView), closeAs(joinerView)]);

@@ -15,6 +15,7 @@ import {
   type TraceEvent,
 } from './diagnostics';
 import { mintSeatResume } from './seat-resume';
+import { redactInviteUrls } from './redact';
 
 // Shared by the party combat specs. The state file is written by apps/server/test/live/serve.party.live.ts.
 export type Member = { accountId: string; token: string; entityId: string };
@@ -205,7 +206,10 @@ export async function attachFailure(views: View[], error: unknown) {
     );
   } catch (attachError) {
     // Evidence is best effort, and the caller still rethrows the original error. Say so in the run log.
-    console.error('party diagnostics could not be attached:', attachError);
+    console.error(
+      'party diagnostics could not be attached:',
+      redactInviteUrls(String(attachError)),
+    );
   }
 }
 
