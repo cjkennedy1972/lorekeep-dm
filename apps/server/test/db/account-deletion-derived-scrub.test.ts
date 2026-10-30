@@ -141,6 +141,74 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, coPlayer]]);
     }
   }, 30_000);
+  it('scrubs an owned unbound character referenced by a legacy bare characterId', async () => {
+    const gone = randomUUID();
+    const roomOwner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    await account(gone);
+    await account(roomOwner);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, gone, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id,character_id) VALUES($1,$2,$3,$4,$5)',
+        [
+          session,
+          roomOwner,
+          'Legacy reference',
+          'adventure:01-hollow-under-marrowfell',
+          characterId,
+        ],
+      );
+      await q(
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'LegacyAction',$3)",
+        [
+          session,
+          randomUUID(),
+          { accountId: gone, characterId, action: 'old event' },
+        ],
+      );
+      await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [session, 'legacy-scene', 'Legacy character memory.'],
+      );
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [gone],
+      );
+      const result = await runSweep(db, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+      });
+      expect(result?.accounts.deleted).toBeGreaterThanOrEqual(1);
+      expect(
+        await q('SELECT character_id FROM sessions WHERE id=$1', [session]),
+      ).toEqual([{ character_id: null }]);
+      expect(
+        await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT payload FROM events WHERE session_id=$1', [session]),
+      ).toEqual([
+        {
+          payload: expect.not.objectContaining({
+            accountId: gone,
+            characterId,
+          }),
+        },
+      ]);
+    } finally {
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, roomOwner]]);
+    }
+  }, 30_000);
+
   it('removes derived rows that may contain the deleted character name or quoted player text', async () => {
     const gone = randomUUID();
     const heir = randomUUID();
@@ -462,14 +530,10 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
         [gone],
       );
-      const result = await runSweep(
-        db,
-        {
-          store: new LocalObjectStore(dir),
-          log: () => {},
-        },
-        30_000,
-      );
+      const result = await runSweep(db, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+      });
       expect(
         (result?.accounts.held ?? 0) + (result?.accounts.failed ?? 0),
       ).toBeGreaterThanOrEqual(1);
