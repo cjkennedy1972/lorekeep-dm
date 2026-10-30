@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RegistryMemory } from '../../src/dm/memory.js';
+import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { runSweep } from '../../src/retention/sweeper.js';
 
@@ -34,8 +35,8 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('account deletion leaves DM-authored derived memory unscrubbed (ADR-017 known limit)', () => {
-  it('completes deletion with derived rows still naming the character, including facts differing only by case', async () => {
+describe('account deletion scrubs DM-authored derived memory', () => {
+  it('removes derived rows that may contain the deleted character name or quoted player text', async () => {
     const gone = randomUUID();
     const heir = randomUUID();
     const session = randomUUID();
@@ -121,30 +122,268 @@ describe('account deletion leaves DM-authored derived memory unscrubbed (ADR-017
       ).toEqual([{ owner_account_id: heir }]);
 
       expect(
-        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+        await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM registry_entries WHERE session_id=$1', [
           session,
         ]),
-      ).toEqual([{ summary: SUMMARY }]);
-      const [entry] = await q(
-        "SELECT payload->>'role' AS role, payload::text AS payload, search_document FROM registry_entries WHERE session_id=$1",
-        [session],
-      );
-      expect(entry.role).toBe('Brann pays in gold');
-      expect(entry.search_document).toContain('Brann pays in gold');
+      ).toHaveLength(0);
       expect(
         await q(
-          'SELECT fact, length(fact) AS len FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id WHERE e.session_id=$1 ORDER BY f.id',
+          'SELECT 1 FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id WHERE e.session_id=$1',
           [session],
         ),
-      ).toEqual([
-        { fact: 'Brann said yes to the guard', len: 27 },
-        { fact: FACT_160, len: 160 },
-        { fact: 'Brann is brave.', len: 15 },
-        { fact: 'brann is brave.', len: 15 },
-      ]);
+      ).toHaveLength(0);
     } finally {
       await q('SELECT purge_session($1)', [session]);
       await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, heir]]);
+    }
+  });
+
+  it('removes derived rows from sessions referencing a deleted released character', async () => {
+    const owner = randomUUID();
+    const session = randomUUID();
+    const otherSession = randomUUID();
+    const otherOwner = randomUUID();
+    const characterId = randomUUID();
+    const seatId = randomUUID();
+    await account(owner);
+    await account(otherOwner);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, owner, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          session,
+          owner,
+          'Character scrub',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      await q(
+        `INSERT INTO session_seat_characters
+          (session_id,seat_id,account_id,character_id,character_revision,character_snapshot,binding_status,unbound_at)
+         VALUES($1,$2,$3,$4,1,$5,'released',now())`,
+        [
+          session,
+          seatId,
+          owner,
+          characterId,
+          { id: characterId, name: CHAR_NAME },
+        ],
+      );
+      await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [session, 'scene-quoted', `The player said: “I am ${CHAR_NAME}.”`],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          otherSession,
+          otherOwner,
+          'Unrelated session',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [otherSession, 'unrelated-scene', 'Other account memory remains.'],
+      );
+      await q(
+        `INSERT INTO session_lease(session_id,node_id,expires_at,epoch)
+         VALUES($1,'old-room',now() - interval '1 second',7)`,
+        [session],
+      );
+      const entry = await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document)
+         VALUES($1,'npc','npc_guard',1,'Guard Captain',$2,$3) RETURNING id`,
+        [session, { role: `${CHAR_NAME} said yes` }, `${CHAR_NAME} said yes`],
+      );
+      await q('INSERT INTO registry_facts(entry_id,fact) VALUES($1,$2)', [
+        entry[0].id,
+        `${CHAR_NAME} said yes to the guard`,
+      ]);
+
+      expect(
+        await new SeatCharacterRepository(db).deleteOwnedCharacter(
+          owner,
+          characterId,
+        ),
+      ).toBe(true);
+      expect(
+        await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM registry_entries WHERE session_id=$1', [
+          session,
+        ]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(0);
+      expect(
+        await q(
+          'SELECT node_id,epoch,expires_at <= clock_timestamp() AS expired FROM session_lease WHERE session_id=$1',
+          [session],
+        ),
+      ).toEqual([{ node_id: '', epoch: '8', expired: true }]);
+      expect(
+        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+          otherSession,
+        ]),
+      ).toEqual([{ summary: 'Other account memory remains.' }]);
+    } finally {
+      await q('SELECT purge_session($1)', [session]);
+      await q('SELECT purge_session($1)', [otherSession]);
+      await q('DELETE FROM accounts WHERE id = ANY($1)', [[owner, otherOwner]]);
+    }
+  });
+
+  it('skips a legal-held session when deleting a reusable character', async () => {
+    const owner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    const seatId = randomUUID();
+    await account(owner);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, owner, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          session,
+          owner,
+          'Held character session',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      await q(
+        `INSERT INTO session_seat_characters
+          (session_id,seat_id,account_id,character_id,character_revision,character_snapshot,binding_status,unbound_at)
+         VALUES($1,$2,$3,$4,1,$5,'released',now())`,
+        [
+          session,
+          seatId,
+          owner,
+          characterId,
+          { id: characterId, name: CHAR_NAME },
+        ],
+      );
+      await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [session, 'held-character-scene', 'Held memory stays.'],
+      );
+      await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
+        session,
+      ]);
+      let failure: unknown;
+      try {
+        await new SeatCharacterRepository(db).deleteOwnedCharacter(
+          owner,
+          characterId,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({ code: 'SESSION_HELD' });
+      expect(
+        await q('SELECT id FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(1);
+      expect(
+        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+          session,
+        ]),
+      ).toEqual([{ summary: 'Held memory stays.' }]);
+      expect(
+        await q('SELECT node_id FROM session_lease WHERE session_id=$1', [
+          session,
+        ]),
+      ).toHaveLength(0);
+    } finally {
+      await q('DELETE FROM legal_holds WHERE item_id=$1', [session]);
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id=$1', [owner]);
+    }
+  });
+
+  it('skips a legal-held character-referenced session before scrubbing account deletion', async () => {
+    const gone = randomUUID();
+    const heir = randomUUID();
+    const otherOwner = randomUUID();
+    const ownedSession = randomUUID();
+    const heldSession = randomUUID();
+    const characterId = `char_${randomUUID().slice(0, 8)}`;
+    await account(gone);
+    await account(heir);
+    await account(otherOwner);
+    try {
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id,character_id) VALUES($1,$2,$3,$4,$5),($6,$7,$8,$4,$5)',
+        [
+          ownedSession,
+          gone,
+          'Owned',
+          'adventure:01-hollow-under-marrowfell',
+          characterId,
+          heldSession,
+          otherOwner,
+          'Character reference',
+        ],
+      );
+      await q(
+        `INSERT INTO events(session_id,seq,turn_id,type,payload)
+         VALUES($1,1,$2,'SeatJoined',$3),($1,2,$2,'SeatJoined',$4)`,
+        [
+          ownedSession,
+          randomUUID(),
+          { seatId: randomUUID(), accountId: gone, displayName: 'Gone' },
+          { seatId: randomUUID(), accountId: heir, displayName: 'Heir' },
+        ],
+      );
+      await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [heldSession, 'held-scene', 'Retain while held.'],
+      );
+      await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
+        heldSession,
+      ]);
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [gone],
+      );
+      const result = await runSweep(db, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+      });
+      expect(
+        (result?.accounts.held ?? 0) + (result?.accounts.failed ?? 0),
+      ).toBeGreaterThanOrEqual(1);
+      expect(
+        await q('SELECT status FROM accounts WHERE id=$1', [gone]),
+      ).toEqual([{ status: 'deleting' }]);
+      expect(
+        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+          heldSession,
+        ]),
+      ).toEqual([{ summary: 'Retain while held.' }]);
+      expect(
+        await q('SELECT node_id FROM session_lease WHERE session_id=$1', [
+          heldSession,
+        ]),
+      ).toHaveLength(0);
+    } finally {
+      await q('DELETE FROM legal_holds WHERE item_id=$1', [heldSession]);
+      await q('SELECT purge_session($1)', [ownedSession]);
+      await q('SELECT purge_session($1)', [heldSession]);
+      await q('DELETE FROM accounts WHERE id = ANY($1)', [
+        [gone, heir, otherOwner],
+      ]);
     }
   });
 });

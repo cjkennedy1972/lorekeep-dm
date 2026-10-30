@@ -53,7 +53,9 @@ export class SeatCharacterError extends Error {
       | 'ALREADY_BOUND'
       | 'ACCOUNT_INACTIVE'
       | 'SESSION_INACTIVE'
-      | 'CHARACTER_BOUND',
+      | 'CHARACTER_BOUND'
+      | 'SESSION_HELD'
+      | 'SESSION_BUSY',
   ) {
     super(code);
     this.name = 'SeatCharacterError';
@@ -197,6 +199,63 @@ export class SeatCharacterRepository {
       );
       if (account.rows[0]?.status !== 'active')
         throw new SeatCharacterError('ACCOUNT_INACTIVE');
+      const ownedCharacter = await client.query(
+        'SELECT id FROM account_characters WHERE id=$1 AND account_id=$2 FOR UPDATE',
+        [characterId, accountId],
+      );
+      if (!ownedCharacter.rowCount) {
+        await client.query('COMMIT');
+        return false;
+      }
+      // Preserve replayable session mechanics, but derived DM memory is an
+      // unprovenanced cache: clear it from every session that referenced this
+      // character so names or quoted player text cannot survive source deletion.
+      const referencedSessions = await client.query<{ session_id: string }>(
+        `SELECT s.id AS session_id FROM sessions s
+         WHERE s.character_id=$1
+         UNION
+         SELECT b.session_id FROM session_seat_characters b
+         WHERE b.character_id=$1::uuid`,
+        [characterId],
+      );
+      const sessionIds = referencedSessions.rows
+        .map(({ session_id }) => session_id)
+        .sort();
+      for (const sessionId of sessionIds) {
+        const held = await client.query(
+          "SELECT 1 FROM legal_holds WHERE kind='session' AND item_id=$1",
+          [sessionId],
+        );
+        if (held.rowCount) throw new SeatCharacterError('SESSION_HELD');
+        await client.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE', [
+          sessionId,
+        ]);
+        const fence = await client.query(
+          `INSERT INTO session_lease(session_id,node_id,expires_at,epoch)
+           VALUES ($1,'retention:characterDeletion',clock_timestamp() + interval '5 minutes',1)
+           ON CONFLICT (session_id) DO UPDATE SET
+             node_id=EXCLUDED.node_id, expires_at=EXCLUDED.expires_at,
+             epoch=session_lease.epoch + 1
+           WHERE session_lease.expires_at <= clock_timestamp()
+           RETURNING epoch`,
+          [sessionId],
+        );
+        if (!fence.rowCount) throw new SeatCharacterError('SESSION_BUSY');
+      }
+      if (sessionIds.length) {
+        await client.query(
+          'DELETE FROM scene_summaries WHERE session_id = ANY($1::uuid[])',
+          [sessionIds],
+        );
+        await client.query(
+          'DELETE FROM registry_entries WHERE session_id = ANY($1::uuid[])',
+          [sessionIds],
+        );
+        await client.query(
+          "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1::uuid[]) AND node_id='retention:characterDeletion'",
+          [sessionIds],
+        );
+      }
       const deleted = await client.query(
         'DELETE FROM account_characters WHERE id=$1 AND account_id=$2',
         [characterId, accountId],
