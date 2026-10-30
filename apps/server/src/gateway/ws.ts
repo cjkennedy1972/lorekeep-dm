@@ -564,16 +564,29 @@ export function installGateway(
           | 'reservation-unavailable'
           | 'sweep-closed-socket'
           | 'resume-token-commit-failed'
-          | 'seat-authenticated-send-failed';
+          | 'seat-authenticated-send-failed'
+          | 'post-claim-error';
+        type SeatSocketStep =
+          | 'authorization'
+          | 'reservation'
+          | 'sweep'
+          | 'takeover'
+          | 'token-commit'
+          | 'frame-delivery'
+          | 'delivery-completion';
+        let refusalLogged = false;
         const logSeatSocketRefusal = (
           reason: SeatSocketRefusalReason,
           closeCode: number | null,
+          step?: SeatSocketStep,
         ) => {
+          refusalLogged = true;
           try {
             app.log.warn(
               {
                 event: 'seat.socket.refused',
                 reason,
+                ...(step ? { step } : {}),
                 seatId,
                 sessionId: identity.sessionId,
                 pendingTokenClaimed,
@@ -586,7 +599,9 @@ export function installGateway(
             // Diagnostics must never interfere with socket cleanup.
           }
         };
+        let step: SeatSocketStep = 'authorization';
         try {
+          step = 'authorization';
           let authorization = await authorizeSeatSocket(
             db,
             identity.sessionId,
@@ -617,6 +632,7 @@ export function installGateway(
               }),
             );
             try {
+              step = 'authorization';
               const approved = await room.requestSeatResumeClaim(
                 identity.accountId,
                 pendingClaimId,
@@ -678,6 +694,7 @@ export function installGateway(
           );
           // Do not evict/reserve an existing in-memory socket until the ticket
           // holder has proved the current seat token or received host approval.
+          step = 'reservation';
           const reservation = connections.reserveSeat(seatKey, ws, true);
           if (!reservation.reserved) {
             ws.close(1008, 'Policy violation');
@@ -693,13 +710,16 @@ export function installGateway(
             seatKey,
             identity.accountId,
           );
+          step = 'sweep';
           await connections.sweep();
           if (ws.readyState !== WebSocket.OPEN) {
             logSeatSocketRefusal('sweep-closed-socket', null);
             return;
           }
-          if (reservation.takenOver || authorization.soloOwnerRecovery)
+          if (reservation.takenOver || authorization.soloOwnerRecovery) {
+            step = 'takeover';
             await room.recordSeatTakenOver(seatId);
+          }
           if (authorization.soloOwnerRecovery)
             connections.notifyAccount(identity.accountId, {
               seq: room.seq,
@@ -708,6 +728,7 @@ export function installGateway(
             });
           let tokenCommitted = false;
           try {
+            step = 'token-commit';
             tokenCommitted = await commitSeatResumeToken(
               db,
               identity.sessionId,
@@ -723,6 +744,7 @@ export function installGateway(
             logSeatSocketRefusal('resume-token-commit-failed', 1011);
             return;
           }
+          step = 'frame-delivery';
           const authenticatedFrameSent = await new Promise<boolean>(
             (resolve) => {
               if (ws.readyState !== WebSocket.OPEN) return resolve(false);
@@ -741,20 +763,22 @@ export function installGateway(
             logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
             return;
           }
+          step = 'delivery-completion';
           room.completeSeatResumeTokenDelivery(
             identity.accountId,
             identity.authTokenHash,
           );
-        } catch {
-          ws.off('message', resumeFrameHandler);
-          ws.close(1008, 'Seat authentication failed');
-          try {
-            await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
-          } catch {
-            // The close listener also attempts to release an owned reservation.
+        } catch (error) {
+          if (!refusalLogged) {
+            logSeatSocketRefusal(
+              step === 'authorization'
+                ? 'authorization-error'
+                : 'post-claim-error',
+              null,
+              step,
+            );
           }
-          logSeatSocketRefusal('authorization-error', 1008);
-          return;
+          throw error;
         }
         if (ws.readyState !== WebSocket.OPEN) return;
         let chatDeliveryChain: Promise<unknown> = Promise.resolve();

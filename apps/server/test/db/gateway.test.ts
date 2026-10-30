@@ -289,21 +289,66 @@ describe('pending first-token handoff', () => {
     spy.mockRejectedValueOnce(new Error('injected authorization failure'));
     const before = capturedLogs.length;
     const socket = connect(await ticket(tokens[0]!, id), null);
-    expect(await closed(socket)).toBe(1008);
+    const closeResult = new Promise<{ code: number; reason: string }>(
+      (resolve) =>
+        socket.once('close', (code, reason) =>
+          resolve({ code, reason: reason.toString() }),
+        ),
+    );
+    expect(await closeResult).toEqual({
+      code: 1008,
+      reason: 'Policy violation',
+    });
     const entries = capturedLogs.slice(before).map((line) => JSON.parse(line));
     expect(entries).toContainEqual(
       expect.objectContaining({
         event: 'seat.socket.refused',
         reason: 'authorization-error',
+        step: 'authorization',
         sessionId: id,
         pendingTokenClaimed: true,
-        closeCode: 1008,
+        closeCode: null,
       }),
     );
     expect(
       entries.find((entry) => entry.event === 'seat.socket.refused'),
     ).not.toHaveProperty('socketId');
     spy.mockRestore();
+  });
+
+  it('preserves the outer close when token delivery completion throws after authentication', async () => {
+    const { id, room } = await pendingSeat();
+    const completion = vi
+      .spyOn(room, 'completeSeatResumeTokenDelivery')
+      .mockImplementation(() => {
+        throw new Error('injected delivery completion failure');
+      });
+    const before = capturedLogs.length;
+    const socket = connect(await ticket(tokens[0]!, id), null);
+    const closePromise = new Promise<{ code: number; reason: string }>(
+      (resolve) =>
+        socket.once('close', (code, reason) =>
+          resolve({ code, reason: reason.toString() }),
+        ),
+    );
+    expect((await nextOfType(socket, 'SeatAuthenticated')).type).toBe(
+      'SeatAuthenticated',
+    );
+    const closeResult = await closePromise;
+    expect(closeResult).toEqual({ code: 1008, reason: 'Policy violation' });
+    const event = capturedLogs
+      .slice(before)
+      .map((line) => JSON.parse(line))
+      .find((line) => line.event === 'seat.socket.refused');
+    expect(event).toMatchObject({
+      event: 'seat.socket.refused',
+      reason: 'post-claim-error',
+      step: 'delivery-completion',
+      sessionId: id,
+      pendingTokenClaimed: true,
+      closeCode: null,
+    });
+    completion.mockRestore();
   });
 
   it('logs not-seated refusal after a pending-token claim', async () => {
