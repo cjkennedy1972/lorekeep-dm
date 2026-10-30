@@ -180,6 +180,13 @@ async function deleteAccount(
     )
   ).rows;
   const charIds = new Set<string>();
+  // Capture owned sheets before redactAccount deletes them. Legacy event payloads may
+  // mention the character id without a seat-binding row or another account reference.
+  const ownedCharacters = await client.query<{ id: string }>(
+    'SELECT id FROM account_characters WHERE account_id=$1',
+    [accountId],
+  );
+  for (const { id } of ownedCharacters.rows) charIds.add(id);
   const deletedSeatIds = new Set<string>();
   for (const { id, character_id } of owned) {
     await fenceSession(ctx, client, fenced, id);
@@ -578,7 +585,6 @@ function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
   }
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'characterId' && typeof child === 'string') out.add(child);
     const id = (child as { id?: unknown } | null)?.id;
     if (key === accountId && typeof id === 'string') out.add(id);
     collectCharIds(child, accountId, out);

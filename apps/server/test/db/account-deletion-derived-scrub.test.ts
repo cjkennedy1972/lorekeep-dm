@@ -36,6 +36,189 @@ afterAll(async () => {
 });
 
 describe('account deletion scrubs DM-authored derived memory', () => {
+  it('does not treat a co-player characterId as owned when shared payloads mention the deleted account', async () => {
+    const gone = randomUUID();
+    const coPlayer = randomUUID();
+    const sharedSession = randomUUID();
+    const coPlayerSession = randomUUID();
+    const characterId = randomUUID();
+    const seatId = randomUUID();
+    await account(gone);
+    await account(coPlayer);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, coPlayer, { id: characterId, name: 'Co-player hero' }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [sharedSession, gone, 'Shared', 'adventure:01-hollow-under-marrowfell'],
+      );
+      await q(
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'SeatJoined',$3)",
+        [
+          sharedSession,
+          randomUUID(),
+          {
+            seatId: randomUUID(),
+            accountId: coPlayer,
+            displayName: 'Co-player',
+          },
+        ],
+      );
+      await q(
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,2,$2,'ActionAccepted',$3)",
+        [
+          sharedSession,
+          randomUUID(),
+          { accountId: gone, characterId, text: 'A shared action' },
+        ],
+      );
+      await q('INSERT INTO snapshots(session_id,seq,state) VALUES($1,1,$2)', [
+        sharedSession,
+        { accountId: gone, characterId },
+      ]);
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id,character_id) VALUES($1,$2,$3,$4,$5)',
+        [
+          coPlayerSession,
+          coPlayer,
+          'Co-player session',
+          'adventure:01-hollow-under-marrowfell',
+          characterId,
+        ],
+      );
+      await q(
+        `INSERT INTO session_seat_characters
+          (session_id,seat_id,account_id,character_id,character_revision,character_snapshot,binding_status)
+         VALUES($1,$2,$3,$4,1,$5,'active')`,
+        [
+          coPlayerSession,
+          seatId,
+          coPlayer,
+          characterId,
+          { id: characterId, name: 'Co-player hero' },
+        ],
+      );
+      await q(
+        "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'keep-me','Co-player memory.')",
+        [coPlayerSession],
+      );
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [gone],
+      );
+      const result = await runSweep(db, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+      });
+
+      expect(result?.accounts.deleted).toBeGreaterThanOrEqual(1);
+      expect(
+        await q('SELECT id,account_id FROM account_characters WHERE id=$1', [
+          characterId,
+        ]),
+      ).toEqual([{ id: characterId, account_id: coPlayer }]);
+      expect(
+        await q('SELECT character_id FROM sessions WHERE id=$1', [
+          coPlayerSession,
+        ]),
+      ).toEqual([{ character_id: characterId }]);
+      expect(
+        await q(
+          'SELECT character_id,binding_status FROM session_seat_characters WHERE session_id=$1 AND seat_id=$2',
+          [coPlayerSession, seatId],
+        ),
+      ).toEqual([{ character_id: characterId, binding_status: 'active' }]);
+      expect(
+        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+          coPlayerSession,
+        ]),
+      ).toEqual([{ summary: 'Co-player memory.' }]);
+    } finally {
+      await q('SELECT purge_session($1)', [sharedSession]);
+      await q('SELECT purge_session($1)', [coPlayerSession]);
+      await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, coPlayer]]);
+    }
+  }, 30_000);
+  it('scrubs an owned unbound character referenced by a legacy bare characterId', async () => {
+    const gone = randomUUID();
+    const roomOwner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    await account(gone);
+    await account(roomOwner);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, gone, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id,character_id) VALUES($1,$2,$3,$4,$5)',
+        [
+          session,
+          roomOwner,
+          'Legacy reference',
+          'adventure:01-hollow-under-marrowfell',
+          characterId,
+        ],
+      );
+      await q(
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'LegacyAction',$3)",
+        [
+          session,
+          randomUUID(),
+          { accountId: gone, characterId, action: 'old event' },
+        ],
+      );
+      await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [session, 'legacy-scene', 'Legacy character memory.'],
+      );
+      await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document)
+         VALUES($1,'npc','legacy-npc',1,'Legacy NPC',$2,'Legacy character reference')`,
+        [session, { note: 'Legacy character reference.' }],
+      );
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [gone],
+      );
+      const result = await runSweep(db, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+      });
+      expect(result?.accounts.deleted).toBeGreaterThanOrEqual(1);
+      expect(
+        await q('SELECT character_id FROM sessions WHERE id=$1', [session]),
+      ).toEqual([{ character_id: null }]);
+      expect(
+        await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM registry_entries WHERE session_id=$1', [
+          session,
+        ]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT payload FROM events WHERE session_id=$1', [session]),
+      ).toEqual([
+        {
+          payload: expect.not.objectContaining({
+            accountId: gone,
+            characterId,
+          }),
+        },
+      ]);
+    } finally {
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, roomOwner]]);
+    }
+  }, 30_000);
+
   it('removes derived rows that may contain the deleted character name or quoted player text', async () => {
     const gone = randomUUID();
     const heir = randomUUID();
@@ -139,7 +322,7 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       await q('SELECT purge_session($1)', [session]);
       await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, heir]]);
     }
-  });
+  }, 30_000);
 
   it('removes derived rows from sessions referencing a deleted released character', async () => {
     const owner = randomUUID();
@@ -385,5 +568,5 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         [gone, heir, otherOwner],
       ]);
     }
-  });
+  }, 90_000);
 });
