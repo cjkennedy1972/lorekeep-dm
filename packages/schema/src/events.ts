@@ -130,6 +130,10 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     reason: z.enum(['complete', 'blocked', 'incapacitated', 'timed-out']),
   }).strict(),
   ev('OpportunityTriggered', { moverId: entityId, attackerId: entityId }),
+  ev('EntityRevealed', {
+    entityId,
+    cause: z.enum(['bump', 'attack', 'opportunity']),
+  }).strict(),
   ev('AreaResolved', { cells: z.array(pos), affected: z.array(entityId) }),
   ev('HpChanged', { entityId, delta: z.int(), hp: z.int() }),
   ev('ConditionApplied', {

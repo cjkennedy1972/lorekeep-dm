@@ -1,4 +1,4 @@
-import type { ServerMessage } from '@game/schema';
+import type { GridPos, ServerMessage } from '@game/schema';
 import type { CombatCommand } from '@game/schema';
 import type { RoomState } from '@game/schema';
 import {
@@ -571,9 +571,17 @@ export function createCombatRuntime(
           }
           return event;
         });
+        const revealed = attacker.hidden
+          ? [{ type: 'EntityRevealed', entityId: attacker.id, cause: 'attack' }]
+          : [];
         const hit = withHp(
           {
             ...state,
+            entities: attacker.hidden
+              ? state.entities.map((item) =>
+                  item.id === attacker.id ? { ...item, hidden: false } : item,
+                )
+              : state.entities,
             seed: result.rng,
             combat: {
               ...state.combat,
@@ -589,6 +597,7 @@ export function createCombatRuntime(
         return {
           state: closing.state,
           events: [
+            ...revealed,
             ...resolvedEvents,
             ...hit.events,
             { type: 'ActionSpent', entityId: actorId },
@@ -626,7 +635,52 @@ export function createCombatRuntime(
         const entity = state.entities.find((item) => item.id === actorId);
         if (!entity) return reject('That actor is not on the map.');
         const mv = movementState(state, actorId);
-        const route = path(mv, actorId, command.destination);
+        let route = path(mv, actorId, command.destination);
+        let bumpAttempt = false;
+        const hiddenOccupant = state.entities.find(
+          (other) =>
+            other.id !== actorId &&
+            other.hidden &&
+            other.team !== entity.team &&
+            command.destination.x < other.pos.x + other.size &&
+            command.destination.x + entity.size > other.pos.x &&
+            command.destination.y < other.pos.y + other.size &&
+            command.destination.y + entity.size > other.pos.y,
+        );
+        if (hiddenOccupant) {
+          const adjacent: GridPos[] = [];
+          for (
+            let y = hiddenOccupant.pos.y - 1;
+            y <= hiddenOccupant.pos.y + hiddenOccupant.size;
+            y++
+          )
+            for (
+              let x = hiddenOccupant.pos.x - 1;
+              x <= hiddenOccupant.pos.x + hiddenOccupant.size;
+              x++
+            ) {
+              if (x < 0 || y < 0 || x >= state.map.w || y >= state.map.h)
+                continue;
+              const candidate = path(mv, actorId, { x, y });
+              if ('path' in candidate) adjacent.push({ x, y });
+            }
+          const choices = adjacent
+            .map((pos) => path(mv, actorId, pos))
+            .filter((item) => 'path' in item);
+          choices.sort(
+            (a, b) =>
+              ('cost' in a ? a.cost : Infinity) -
+              ('cost' in b ? b.cost : Infinity),
+          );
+          const approach = choices[0];
+          if (approach && 'path' in approach) {
+            route = {
+              path: [...approach.path, command.destination],
+              cost: approach.cost,
+            };
+            bumpAttempt = true;
+          }
+        }
         if ('error' in route)
           return reject('That destination is not reachable.');
         const moved = moveAlong(mv, actorId, route.path, 'normal');
@@ -643,25 +697,40 @@ export function createCombatRuntime(
           string,
           unknown
         >[];
-        const events: Record<string, unknown>[] = moved.pending.length
-          ? [
-              { type: 'MoveStarted', entityId: actorId, path: route.path },
-              ...engineEvents,
-            ]
-          : [
-              { type: 'MoveStarted', entityId: actorId, path: route.path },
-              {
-                type: 'EntityMoved',
-                entityId: actorId,
-                path: route.path,
-                cost: route.cost,
-              },
-              {
-                type: 'MoveEnded',
-                entityId: actorId,
-                reason: moved.movementEnd ?? 'complete',
-              },
-            ];
+        const movementRevealed = moved.events.some(
+          (event) => event.type === 'EntityRevealed',
+        );
+        const events: Record<string, unknown>[] =
+          moved.pending.length || bumpAttempt || movementRevealed
+            ? [
+                { type: 'MoveStarted', entityId: actorId, path: route.path },
+                ...engineEvents,
+                ...(!moved.pending.length
+                  ? [
+                      {
+                        type: 'MoveEnded',
+                        entityId: actorId,
+                        reason:
+                          moved.movementEnd ??
+                          (bumpAttempt ? 'blocked' : 'complete'),
+                      },
+                    ]
+                  : []),
+              ]
+            : [
+                { type: 'MoveStarted', entityId: actorId, path: route.path },
+                {
+                  type: 'EntityMoved',
+                  entityId: actorId,
+                  path: route.path,
+                  cost: route.cost,
+                },
+                {
+                  type: 'MoveEnded',
+                  entityId: actorId,
+                  reason: moved.movementEnd ?? 'complete',
+                },
+              ];
         return { state: next, events };
       }
       return reject(

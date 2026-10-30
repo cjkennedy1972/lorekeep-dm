@@ -120,6 +120,68 @@ describe('combat turn resource refresh', () => {
     );
   });
 
+  it('reveals a hidden occupied destination and stops the mover on the last free cell', () => {
+    const hiddenCombat: RoomCombatState = {
+      ...combat,
+      entities: combat.entities.map((entity) =>
+        entity.id === 'ent_goblin'
+          ? { ...entity, pos: { x: 3, y: 1 }, hidden: true }
+          : entity,
+      ),
+    };
+    const result = createCombatRuntime().execute(hiddenCombat, 'ent_hero', {
+      command: 'move',
+      destination: { x: 3, y: 1 },
+    });
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(
+      result.state.entities.find((entity) => entity.id === 'ent_hero')?.pos,
+    ).toEqual({ x: 2, y: 0 });
+    expect(
+      result.state.entities.find((entity) => entity.id === 'ent_goblin')
+        ?.hidden,
+    ).toBe(false);
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'ent_goblin',
+      cause: 'bump',
+    });
+    expect(result.events).toContainEqual({
+      type: 'MovementSpent',
+      entityId: 'ent_hero',
+      feet: 5,
+    });
+  });
+
+  it('reveals a hidden attacker with cause attack', () => {
+    const hiddenAttacker: RoomCombatState = {
+      ...combat,
+      entities: combat.entities.map((entity) =>
+        entity.id === 'ent_hero'
+          ? { ...entity, hidden: true }
+          : entity.id === 'ent_goblin'
+            ? { ...entity, pos: { x: 2, y: 1 } }
+            : entity,
+      ),
+    };
+    const result = createCombatRuntime().execute(hiddenAttacker, 'ent_hero', {
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
+    });
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(
+      result.state.entities.find((entity) => entity.id === 'ent_hero')?.hidden,
+    ).toBe(false);
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'ent_hero',
+      cause: 'attack',
+    });
+  });
+
   it('applies defensive Dodge through the combat command seam', () => {
     const result = createCombatRuntime().execute(combat, 'ent_hero', {
       command: 'dodge',

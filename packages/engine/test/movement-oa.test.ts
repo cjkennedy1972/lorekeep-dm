@@ -58,6 +58,64 @@ const route = [
 ];
 
 describe('movement and opportunity attacks', () => {
+  test('bumping a hidden hostile reveals it and stops on the last free cell', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+      { ...s.entities[1]!, pos: { x: 3, y: 0 }, hidden: true },
+    ];
+    const result = moveAlong(s, 'mover', [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+    ]);
+    expect('ok' in result).toBe(true);
+    if (!('ok' in result)) return;
+    expect(result.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+      x: 2,
+      y: 0,
+    });
+    expect(result.state.entities.find((e) => e.id === 'orc')?.hidden).toBe(
+      false,
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'orc',
+      cause: 'bump',
+    });
+    expect(
+      result.events
+        .filter((e) => e.type === 'MovementSpent')
+        .reduce((n, e) => n + e.feet, 0),
+    ).toBe(10);
+  });
+
+  test('a hidden reactor is revealed when its opportunity attack is taken', () => {
+    const s = state();
+    s.entities = s.entities.map((e) =>
+      e.id === 'orc' ? { ...e, hidden: true } : e,
+    );
+    const paused = moveAlong(s, 'mover', route);
+    if (!('ok' in paused)) throw new Error('expected reaction pause');
+    const result = resolveReaction(
+      paused.state,
+      paused.pending[0]!.reactionId,
+      'take',
+    );
+    expect('ok' in result).toBe(true);
+    if (!('ok' in result)) return;
+    expect(result.state.entities.find((e) => e.id === 'orc')?.hidden).toBe(
+      false,
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'orc',
+      cause: 'opportunity',
+    });
+    expect(result.state.pendingReactions).toEqual({});
+  });
+
   test('hostile leaving reach pauses once and decline resumes to the same destination/cost', () => {
     const initial = state();
     expect(threatenedBy(initial.entities[0]!, initial.entities)).toHaveLength(

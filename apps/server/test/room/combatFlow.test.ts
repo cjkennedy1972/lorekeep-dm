@@ -1275,6 +1275,37 @@ describe('monster turns', () => {
     );
   });
 
+  it('reveals a hidden monster when its scripted turn attacks', () => {
+    const { runtime, state } = engaged();
+    const staged = {
+      ...state,
+      seed: 42,
+      entities: state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, pos: { x: 8, y: 2 }, hidden: true }
+          : entity,
+      ),
+    };
+    const result = ok(
+      runtime.execute(
+        staged,
+        'ent_aria',
+        { command: 'end-turn' },
+        { now: NOW },
+      ),
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'ent_goblin-minion_1',
+      cause: 'attack',
+    });
+    expect(
+      result.state.entities.find(
+        (entity) => entity.id === 'ent_goblin-minion_1',
+      )?.hidden,
+    ).toBe(false);
+  });
+
   it('resolves a live goblin turn with its catalog dagger damage type', () => {
     const { runtime, state } = engaged();
     const staged = {
@@ -2411,17 +2442,18 @@ describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
         table.events.filter((event) => event.type === 'RollEvent'),
       ),
     ).toContain('ent_goblin-minion_1');
-    // ...the mover sees the move but nothing that names the hidden reactor.
+    // The initial trigger stays concealed; once the reactor attacks, reveal is public.
     expect(eventTypes(table.messages)).toContain('EntityMoved');
     expect(eventTypes(table.messages)).not.toEqual(
       expect.arrayContaining(['OpportunityTriggered']),
     );
     expect(eventTypes(table.messages)).not.toContain('ReactionAvailable');
-    expect(eventTypes(table.messages)).not.toContain('ReactionResolved');
+    expect(eventTypes(table.messages)).toContain('EntityRevealed');
+    expect(eventTypes(table.messages)).toContain('ReactionResolved');
     expect(
       table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
     ).toEqual([]);
-    expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(false);
+    expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(true);
   });
 });
 

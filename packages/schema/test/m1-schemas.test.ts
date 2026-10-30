@@ -323,6 +323,7 @@ function label(e: EngineEvent): string {
     case 'MoveStarted':
     case 'MoveEnded':
     case 'OpportunityTriggered':
+    case 'EntityRevealed':
     case 'AreaResolved':
     case 'HpChanged':
     case 'ConditionApplied':
