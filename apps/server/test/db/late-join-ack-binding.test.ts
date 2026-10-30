@@ -230,25 +230,12 @@ describe('late-join snapshot acknowledgement and binding', () => {
       ),
     ).toBe(true);
 
-    // Model a distinct authenticated account that now owns the target seat.
-    // The authorization itself remains the valid one minted for the joiner.
-    const otherAccount = await account();
-    const admittedSeat = room.state.seats.find(
-      (seat) => seat.accountId === joiner,
-    )!;
-    admittedSeat.accountId = otherAccount;
-    expect(
-      room.state.seats.find((seat) => seat.accountId === otherAccount),
-    ).toBeDefined();
-    expect(admittedSeat.presence).not.toBe('revoked');
-    expect(
-      (
-        room as unknown as { connections: Map<string, unknown> }
-      ).connections.has(otherAccount),
-    ).toBe(false);
+    // The already-seated owner presents the joiner's valid authorization.
+    // A different seat owner must use the normal approval flow, not inherit
+    // the joiner's one-time auto-approval.
     const claimId = randomUUID();
     const claim = room.requestSeatResumeClaim(
-      otherAccount,
+      f.owner,
       claimId,
       requestAuthHash,
     );
