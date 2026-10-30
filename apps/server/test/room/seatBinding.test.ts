@@ -196,6 +196,21 @@ describe('ADR-035 party seat gating', () => {
     expect(projected).not.toHaveProperty('ownerRef');
   });
 
+  it('projects legacy account-keyed character state under its bound seat after rewind', () => {
+    const f = party();
+    const character = {
+      id: randomUUID(),
+      hp: { current: 7 },
+      inventory: ['potion'],
+    };
+    f.room.state.gameState = { characters: { [f.accountA]: character } };
+    const projected = f.room.clientState(f.accountA).gameState as {
+      characters: Record<string, unknown>;
+    };
+    expect(projected.characters).toEqual({ [f.seatA]: character });
+    expect(JSON.stringify(projected)).not.toContain(f.accountA);
+  });
+
   it('drops unknown top-level fields from client room state', () => {
     const f = party();
     (f.room.state as unknown as Record<string, unknown>).futureAccountId =

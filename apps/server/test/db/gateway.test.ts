@@ -1783,11 +1783,22 @@ describe('converted solo character privacy over real sockets', () => {
       const ownerFrames = receivedFrames.get(owner) ?? [];
       const guestFrames = receivedFrames.get(guest) ?? [];
       const postConversionOwnerFrames = ownerFrames.slice(1);
+      expect(postConversionOwnerFrames.length).toBeGreaterThan(0);
       expect(postConversionOwnerFrames.join('\n')).not.toContain(accounts[0]);
       expect(guestFrames.join('\n')).not.toContain(accounts[0]);
 
-      await closeSocket(owner);
+      await Promise.all([closeSocket(owner), closeSocket(guest)]);
       owner = undefined;
+      guest = undefined;
+      await rooms.evictSession(id);
+      const recoveredRoom = await rooms.get(id);
+      expect(recoveredRoom.state.gameState).toMatchObject({
+        characters: {
+          [ownerSeat.seatId]: expect.objectContaining({
+            id: ownerCharacter.id,
+          }),
+        },
+      });
       resumedOwner = connect(await ticket(tokens[0]!, id));
       const resumedSync = await nextOfType(resumedOwner, 'StateSync');
       const resumedJson = JSON.stringify(resumedSync);

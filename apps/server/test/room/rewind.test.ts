@@ -205,6 +205,62 @@ describe('rewind last resolved turn', () => {
     expect(findRewindTarget(events)?.turnId).toBe('turn-1');
   });
 
+  it('projects a rewound legacy checkpoint under the owner seat in a converted room', async () => {
+    const { room, host: owner } = setup();
+    await joinSeated(room, owner, recorder(), 'Owner');
+    const seat = room.state.seats.find((item) => item.accountId === owner)!;
+    const character = {
+      id: 'ent_owner',
+      hp: { current: 6, max: 12, temp: 0 },
+      inventory: [{ itemId: 'item:potion', quantity: 1 }],
+    };
+    (
+      room as unknown as {
+        seatBindings: Map<
+          string,
+          {
+            seatId: string;
+            accountId: string;
+            characterSnapshot: Record<string, unknown>;
+          }
+        >;
+      }
+    ).seatBindings.set(seat.seatId, {
+      seatId: seat.seatId,
+      accountId: owner,
+      characterSnapshot: character,
+    });
+    (room as unknown as { bindingEnforced: boolean }).bindingEnforced = true;
+    const store = (room as unknown as { store: RoomStore }).store;
+    store.loadRewindPlan = async () => ({
+      turnId: 'converted-turn',
+      rewindUsed: false,
+      before: {
+        snapshot: {
+          sessionId,
+          seq: 0,
+          createdAt: new Date(),
+          state: {
+            ...room.state,
+            gameState: { characters: { [owner]: character } },
+          },
+        },
+        events: [],
+      },
+      retained: [],
+      headSeq: room.seq,
+      droppedTurnIds: [],
+    });
+
+    await room.rewindLastTurn(owner);
+
+    const projected = room.clientState(owner).gameState as {
+      characters: Record<string, unknown>;
+    };
+    expect(projected.characters).toEqual({ [seat.seatId]: character });
+    expect(JSON.stringify(projected)).not.toContain(owner);
+  });
+
   it('keeps a seat joined after the reverted turn began', async () => {
     const { room, host: owner } = setup();
     const guest = randomUUID();

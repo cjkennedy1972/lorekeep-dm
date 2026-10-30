@@ -163,6 +163,12 @@ function clientGameState(
     }
     const characters: Record<string, unknown> = {};
     const visibleSeatIds = new Set(bindings?.keys() ?? []);
+    const seatByAccount = new Map(
+      [...(bindings?.entries() ?? [])].map(([seatId, binding]) => [
+        binding.accountId,
+        seatId,
+      ]),
+    );
     // Before binding enforcement, legacy solo account keys are accepted only for the owner.
     if (
       (!bindings || bindings.size === 0) &&
@@ -170,10 +176,14 @@ function clientGameState(
       viewerAccountId
     )
       visibleSeatIds.add(viewerAccountId);
-    for (const [seatId, character] of Object.entries(
+    for (const [sourceKey, character] of Object.entries(
       source.characters as Record<string, unknown>,
     )) {
+      const seatId = seatByAccount.get(sourceKey) ?? sourceKey;
       if (!visibleSeatIds.has(seatId)) continue;
+      // A rewind can restore an older account-keyed checkpoint; prefer an
+      // already-present seat-keyed value if both representations exist.
+      if (sourceKey !== seatId && Object.hasOwn(characters, seatId)) continue;
       if (
         isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
       ) {
