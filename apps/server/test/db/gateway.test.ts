@@ -1615,7 +1615,7 @@ describe('party character binding WebSocket authorization', () => {
     } finally {
       await shutdown(f);
     }
-  });
+  }, 15_000); // Includes two DB-backed WS handshakes and their StateSync frames.
 
   it('rejects revoked, foreign-owned, unknown, stale, and gameplay actions from unbound seats with non-disclosing errors', async () => {
     const f = await fixture();
