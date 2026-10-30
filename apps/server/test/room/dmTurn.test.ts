@@ -71,6 +71,279 @@ const result = {
 };
 
 describe('Room solo DM turn lifecycle', () => {
+  it('skips a downed seat in spotlight rotation', async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const runner: SoloTurnRunner = {
+      async run() {
+        await gate;
+        return result as never;
+      },
+    };
+    const { room } = setup(runner);
+    const downed = randomUUID();
+    const standing = randomUUID();
+    const downMessages: Record<string, unknown>[] = [];
+    const standingMessages: Record<string, unknown>[] = [];
+    await joinSeated(room, downed, {
+      send: (message) => downMessages.push(message as Record<string, unknown>),
+    });
+    await joinSeated(room, standing, {
+      send: (message) =>
+        standingMessages.push(message as Record<string, unknown>),
+    });
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: {
+          [downed]: { id: 'down-pc' },
+          [standing]: { id: 'standing-pc' },
+        },
+        combatActors: { [standing]: 'standing-companion' },
+        combatRoom: {
+          entities: [
+            { id: 'down-pc', hp: 0 },
+            { id: 'standing-pc', hp: 10 },
+            { id: 'standing-companion', hp: 0 },
+          ],
+        },
+      } as never,
+    };
+    expect(
+      await room.submitAction(standing, randomUUID(), 'I look around.'),
+    ).toBe(true);
+    finish();
+    await room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      downMessages.some((message) => message.type === 'SpotlightPrompt'),
+    ).toBe(false);
+    expect(
+      standingMessages.some((message) => message.type === 'SpotlightPrompt'),
+    ).toBe(true);
+  });
+  it('uses seatId-keyed party characters to skip a downed PC', async () => {
+    const { room } = setup({
+      async run() {
+        return result as never;
+      },
+    });
+    const downed = randomUUID();
+    const living = randomUUID();
+    const downMessages: Record<string, unknown>[] = [];
+    const livingMessages: Record<string, unknown>[] = [];
+    await joinSeated(room, downed, {
+      send: (message) => downMessages.push(message as Record<string, unknown>),
+    });
+    await joinSeated(room, living, {
+      send: (message) =>
+        livingMessages.push(message as Record<string, unknown>),
+    });
+    const downSeat = room.state.seats.find(
+      (seat) => seat.accountId === downed,
+    )!;
+    const livingSeat = room.state.seats.find(
+      (seat) => seat.accountId === living,
+    )!;
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: {
+          [downSeat.seatId]: { id: 'down-pc' },
+          [livingSeat.seatId]: { id: 'living-pc' },
+        },
+        combatRoom: {
+          entities: [
+            { id: 'down-pc', hp: 0 },
+            { id: 'living-pc', hp: 12 },
+          ],
+        },
+      } as never,
+    };
+    await room.submitAction(living, randomUUID(), 'I look around.');
+    await room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      downMessages.some((message) => message.type === 'SpotlightPrompt'),
+    ).toBe(false);
+    expect(
+      livingMessages.some((message) => message.type === 'SpotlightPrompt'),
+    ).toBe(true);
+  });
+
+  it('prompts a living PC when their party companion is downed', async () => {
+    const { room } = setup({
+      async run() {
+        return result as never;
+      },
+    });
+    const accountId = randomUUID();
+    const messages: Record<string, unknown>[] = [];
+    await joinSeated(room, accountId, {
+      send: (message) => messages.push(message as Record<string, unknown>),
+    });
+    const seat = room.state.seats.find(
+      (candidate) => candidate.accountId === accountId,
+    )!;
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: { [seat.seatId]: { id: 'living-pc' } },
+        combatRoom: {
+          entities: [
+            { id: 'living-pc', hp: 12 },
+            { id: 'down-companion', hp: 0 },
+          ],
+        },
+      } as never,
+    };
+    await room.submitAction(
+      accountId,
+      randomUUID(),
+      'I check on my companion.',
+    );
+    await room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(messages.some((message) => message.type === 'SpotlightPrompt')).toBe(
+      true,
+    );
+  });
+
+  it('does not prompt or throw when all seatId-keyed party PCs are downed', async () => {
+    const { room, events } = setup({
+      async run() {
+        return result as never;
+      },
+    });
+    const accounts = [randomUUID(), randomUUID()];
+    const messages: Record<string, unknown>[] = [];
+    for (const accountId of accounts)
+      await joinSeated(room, accountId, {
+        send: (message) => messages.push(message as Record<string, unknown>),
+      });
+    const partyCharacters = Object.fromEntries(
+      room.state.seats.map((seat, index) => [
+        seat.seatId,
+        { id: `down-pc-${index}` },
+      ]),
+    );
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: partyCharacters,
+        combatRoom: {
+          entities: Object.values(partyCharacters).map((character) => ({
+            id: character.id,
+            hp: 0,
+          })),
+        },
+      } as never,
+    };
+    await expect(
+      room.submitAction(accounts[0]!, randomUUID(), 'I try to stand.'),
+    ).resolves.toBe(true);
+    await room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(messages.some((message) => message.type === 'SpotlightPrompt')).toBe(
+      false,
+    );
+    expect(events.some((event) => event.type === 'SpotlightPrompted')).toBe(
+      false,
+    );
+  });
+
+  it('cycles prompts across eligible party seats after skipping a downed seat', async () => {
+    const { room } = setup({
+      async run() {
+        return result as never;
+      },
+    });
+    const accounts = [randomUUID(), randomUUID(), randomUUID()];
+    const messages = new Map(
+      accounts.map((accountId) => [accountId, [] as Record<string, unknown>[]]),
+    );
+    for (const accountId of accounts)
+      await joinSeated(room, accountId, {
+        send: (message) =>
+          messages.get(accountId)!.push(message as Record<string, unknown>),
+      });
+    const seats = room.state.seats;
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: Object.fromEntries(
+          seats.map((seat, index) => [seat.seatId, { id: `pc-${index}` }]),
+        ),
+        combatRoom: {
+          entities: seats.map((_, index) => ({
+            id: `pc-${index}`,
+            hp: index === 0 ? 0 : 12,
+          })),
+        },
+      } as never,
+    };
+    const deliverPrompt = (
+      room as unknown as {
+        deliverSpotlightPrompt(): Promise<void>;
+      }
+    ).deliverSpotlightPrompt.bind(room);
+    for (let turn = 0; turn < 3; turn++) await deliverPrompt();
+    const promptCounts = accounts.map(
+      (accountId) =>
+        messages
+          .get(accountId)!
+          .filter((message) => message.type === 'SpotlightPrompt').length,
+    );
+    expect(promptCounts).toEqual([0, 2, 1]);
+    expect(room.state.spotlightCursor).toBe(3);
+  });
+
+  it('does not prompt when every connected seat character is downed', async () => {
+    const runner: SoloTurnRunner = {
+      async run() {
+        return result as never;
+      },
+    };
+    const { room, events } = setup(runner);
+    const first = randomUUID();
+    const second = randomUUID();
+    const messages: Record<string, unknown>[] = [];
+    await joinSeated(room, first, {
+      send: (message) => messages.push(message as Record<string, unknown>),
+    });
+    await joinSeated(room, second, {
+      send: (message) => messages.push(message as Record<string, unknown>),
+    });
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: {
+          [first]: { id: 'first-pc' },
+          [second]: { id: 'second-pc' },
+        },
+        combatRoom: {
+          entities: [
+            { id: 'first-pc', hp: 0 },
+            { id: 'second-pc', hp: 0 },
+          ],
+        },
+      } as never,
+    };
+    expect(
+      await room.submitAction(first, randomUUID(), 'I try to stand.'),
+    ).toBe(true);
+    await room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(messages.some((message) => message.type === 'SpotlightPrompt')).toBe(
+      false,
+    );
+    expect(events.some((event) => event.type === 'SpotlightPrompted')).toBe(
+      false,
+    );
+  });
+
   it('does not queue away autopilot when a DM turn ends before the away PC turn starts', async () => {
     const { state: combat, game } = bootstrapped();
     const runner: SoloTurnRunner = {

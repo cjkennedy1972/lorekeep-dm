@@ -7407,16 +7407,29 @@ export class Room {
   }
 
   private async deliverSpotlightPrompt(): Promise<void> {
-    const eligible = this.state.seats.filter(
-      (seat) =>
+    const entities = roomGameState(this.state)?.entities ?? [];
+    const characters = (
+      this.state.gameState as
+        | { characters?: Record<string, { id?: unknown }> }
+        | undefined
+    )?.characters;
+    const eligible = this.state.seats.filter((seat) => {
+      const characterId =
+        characters?.[seat.seatId]?.id ?? characters?.[seat.accountId]?.id;
+      const characterIsDown =
+        typeof characterId === 'string' &&
+        entities.some((entity) => entity.id === characterId && entity.hp <= 0);
+      return (
         (seat.presence === 'connected' || seat.presence === 'returning') &&
         this.connections.has(seat.accountId) &&
+        !characterIsDown &&
         (this.state.spotlightTurn ?? 0) -
           (this.state.spotlightActivity?.[seat.accountId] ??
             this.state.spotlightTurn ??
             0) <=
-          10,
-    );
+          10
+      );
+    });
     if (eligible.length === 0) return;
     const cursor = this.state.spotlightCursor ?? 0;
     const target = eligible[cursor % eligible.length]!;
