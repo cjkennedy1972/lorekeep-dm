@@ -57,9 +57,13 @@ function rollKind(label: unknown): {
   };
 }
 
+const UUID_IN_ID =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Humanizes the last segment of an attack id. An item UUID is not a name, so it is dropped rather than printed as words. */
 export function weaponName(attackId: string | undefined): string | undefined {
   if (!attackId) return undefined;
-  const slug = attackId.split(':').pop() ?? attackId;
+  const slug = (attackId.split(':').pop() ?? attackId).replace(UUID_IN_ID, '');
   const words = slug
     .split(/[-_\s]+/)
     .filter(Boolean)
@@ -211,7 +215,7 @@ export function rollCardText(
       : card.wound
         ? ` ${target} is ${card.wound}.`
         : card.steady
-          ? ` ${target} shrugs it off.`
+          ? ` ${target} is still healthy.`
           : '';
   return `${attacker} hits ${target}${weapon}${damage}.${roll}${hp}${state}`
     .replace(/\s+/g, ' ')

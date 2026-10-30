@@ -22,6 +22,22 @@ const character = {
   ],
 } as unknown as Character;
 
+test('shows a loading status, not an empty state, while the character is loading', () => {
+  render(<Sheet character={null} loading />);
+
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Loading your character',
+  );
+  expect(screen.queryByText('No character selected.')).toBeNull();
+});
+
+test('shows the empty state once loading has finished without a character', () => {
+  render(<Sheet character={null} loading={false} />);
+
+  expect(screen.getByText('No character selected.')).toBeTruthy();
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
 test('inventory shows catalog item names with their apostrophes', () => {
   render(<Sheet character={character} />);
 
