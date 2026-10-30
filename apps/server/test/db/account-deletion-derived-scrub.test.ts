@@ -55,7 +55,19 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         [sharedSession, gone, 'Shared', 'adventure:01-hollow-under-marrowfell'],
       );
       await q(
-        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'ActionAccepted',$3)",
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$2,'SeatJoined',$3)",
+        [
+          sharedSession,
+          randomUUID(),
+          {
+            seatId: randomUUID(),
+            accountId: coPlayer,
+            displayName: 'Co-player',
+          },
+        ],
+      );
+      await q(
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,2,$2,'ActionAccepted',$3)",
         [
           sharedSession,
           randomUUID(),
