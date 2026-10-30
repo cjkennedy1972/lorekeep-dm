@@ -50,7 +50,7 @@ async function coSeatAccounts(
  * held deletion never kicks connected sockets. deleteAccount still checks in its transaction,
  * which covers holds placed after this pass.
  */
-// ponytail: sessions reached only via a character id (not the account id) are checked in-transaction, after the drain.
+// Sessions reached only through a character id are fenced and checked for holds in the deletion transaction before derived rows are scrubbed.
 async function heldBeforeDrain(ctx: JobContext, accountId: string) {
   if (await skipIfHeld(ctx, 'accountDeletion', 'account', accountId))
     return true;
@@ -352,7 +352,10 @@ async function deleteAccount(
         [[...charIds]],
       )
     : { rows: [] as { id: string }[] };
-  for (const { id } of charReferencedSessions.rows) derivedSessionIds.add(id);
+  for (const { id } of charReferencedSessions.rows) {
+    await fenceSession(ctx, client, fenced, id);
+    derivedSessionIds.add(id);
+  }
   if (derivedSessionIds.size) {
     const sessionIds = [...derivedSessionIds];
     await client.query(
