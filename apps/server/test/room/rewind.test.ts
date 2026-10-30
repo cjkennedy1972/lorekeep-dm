@@ -205,7 +205,7 @@ describe('rewind last resolved turn', () => {
     expect(findRewindTarget(events)?.turnId).toBe('turn-1');
   });
 
-  it('projects a rewound legacy checkpoint under the owner account in a converted room', async () => {
+  it('projects a rewound legacy checkpoint under the owner seat in a converted room', async () => {
     const { room, host: owner } = setup();
     await joinSeated(room, owner, recorder(), 'Owner');
     const seat = room.state.seats.find((item) => item.accountId === owner)!;
@@ -257,8 +257,8 @@ describe('rewind last resolved turn', () => {
     const projected = room.clientState(owner).gameState as {
       characters: Record<string, unknown>;
     };
-    expect(projected.characters).toEqual({ [owner]: character });
-    expect(JSON.stringify(projected)).toContain(owner);
+    expect(projected.characters).toEqual({ [seat.seatId]: character });
+    expect(JSON.stringify(projected)).not.toContain(owner);
   });
 
   it('keeps a seat joined after the reverted turn began', async () => {

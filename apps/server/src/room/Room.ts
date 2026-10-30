@@ -146,8 +146,7 @@ function projectCharactersForViewer(
     // Legacy solo clients index their sheet by account ID. Once binding is
     // enforced, both the owner and peers use the stable seat ID, so no account
     // ID is emitted in party snapshots.
-    const keepsLegacyAccountKey =
-      allowLegacyAccountKey && (!bindings || bindings.size === 0);
+    const keepsLegacyAccountKey = allowLegacyAccountKey;
     const outputKey =
       owned && keepsLegacyAccountKey ? (viewerAccountId ?? seatId) : seatId;
     // A rewind can restore both account- and seat-keyed values. Prefer the
