@@ -578,7 +578,6 @@ function collectCharIds(value: unknown, accountId: string, out: Set<string>) {
   }
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'characterId' && typeof child === 'string') out.add(child);
     const id = (child as { id?: unknown } | null)?.id;
     if (key === accountId && typeof id === 'string') out.add(id);
     collectCharIds(child, accountId, out);
