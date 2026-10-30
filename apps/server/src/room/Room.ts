@@ -1559,8 +1559,7 @@ export class Room {
           seq: this.seq,
           type: 'StateSync',
           payload: {
-            ...this.clientSyncPayload(),
-            state: this.clientState(accountId),
+            ...this.clientSyncPayload(accountId),
           },
         });
       }
@@ -1898,7 +1897,7 @@ export class Room {
     return view;
   }
 
-  private clientSyncPayload(): StateSync['payload'] {
+  private clientSyncPayload(viewerAccountId?: string): StateSync['payload'] {
     const round = this.state.round;
     const boundSeatIds = this.state.seats
       .filter(
@@ -1906,7 +1905,7 @@ export class Room {
       )
       .map((seat) => seat.seatId);
     return {
-      state: this.clientState(),
+      state: this.clientState(viewerAccountId),
       ...(boundSeatIds.length > 0 ? { boundSeatIds } : {}),
       ...(round
         ? {
@@ -2149,8 +2148,7 @@ export class Room {
           seq: this.seq,
           type: 'StateSync',
           payload: {
-            ...this.clientSyncPayload(),
-            state: this.clientState(accountId),
+            ...this.clientSyncPayload(accountId),
           },
         });
       }
@@ -7395,8 +7393,7 @@ export class Room {
           ? {
               ...message,
               payload: {
-                ...this.clientSyncPayload(),
-                state: this.clientState(accountId),
+                ...this.clientSyncPayload(accountId),
               },
             }
           : message;
