@@ -166,12 +166,34 @@ describe('ADR-035 party seat gating', () => {
     );
     expect(projected).toEqual({
       actorSeatId: f.seatB,
-      actorIsSelf: false,
-      fromAccountId: f.accountA,
-      fromIsSelf: true,
+      fromSeatId: f.seatA,
       memberSeatIds: [f.seatA, f.seatB],
     });
+    expect(JSON.stringify(projected)).not.toContain(f.accountA);
     expect(JSON.stringify(projected)).not.toContain(f.accountB);
+  });
+
+  it('fails closed for account-shaped projection fields and keys', () => {
+    const f = party();
+    const payload = {
+      accountId: [f.accountB],
+      nested: { accountId: { value: f.accountB } },
+      memberAccountIds: f.accountB,
+      accountIdList: f.accountB,
+      ownerRef: { accountId: f.accountB },
+      [f.accountB]: { visible: true },
+      [f.seatB]: { visible: true },
+      seatId: f.seatA,
+    };
+    const projected = f.room.projectMessageForViewer(payload, f.accountA);
+    expect(JSON.stringify(projected)).not.toContain(f.accountB);
+    expect(projected).toMatchObject({
+      [f.seatB]: { visible: true },
+      seatId: f.seatA,
+    });
+    expect(projected).not.toHaveProperty('accountId');
+    expect(projected).not.toHaveProperty('nested.accountId');
+    expect(projected).not.toHaveProperty('ownerRef');
   });
 
   it('drops unknown top-level fields from client room state', () => {

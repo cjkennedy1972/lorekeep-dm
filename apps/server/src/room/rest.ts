@@ -20,6 +20,7 @@ export function resolveSoloRest(
   hitDiceToSpend = 1,
   interruptionChance = 0,
   rng: RngState = randomInt(0x1_0000_0000),
+  seatId?: string,
 ): RestResolution {
   if (
     !Number.isFinite(interruptionChance) ||
@@ -31,8 +32,12 @@ export function resolveSoloRest(
     string,
     CharacterInput
   >;
-  const character = characters[accountId];
-  if (!character) throw new Error('Character is not configured for this seat');
+  const characterKey = Object.hasOwn(characters, accountId)
+    ? accountId
+    : seatId;
+  const character = characterKey ? characters[characterKey] : undefined;
+  if (!character || !characterKey)
+    throw new Error('Character is not configured for this seat');
   const result = callForRest(character, kind, catalog, rng, hitDiceToSpend);
   if (!result.ok) throw new Error(result.hint);
   const interrupted =
@@ -47,7 +52,7 @@ export function resolveSoloRest(
   return {
     gameState: {
       ...gameState,
-      characters: { ...characters, [accountId]: nextCharacter },
+      characters: { ...characters, [characterKey]: nextCharacter },
       gameEngine:
         gameState.gameEngine && typeof gameState.gameEngine === 'object'
           ? {

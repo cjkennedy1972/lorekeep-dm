@@ -65,6 +65,25 @@ describe('Room solo rest and death flow', () => {
     expect(afterLong.hitDiceSpent).toBe(1);
   });
 
+  it('reads and updates seat-keyed converted characters', () => {
+    const result = resolveSoloRest(
+      { characters: { seat: hero } },
+      'account',
+      'short',
+      catalog,
+      1,
+      0,
+      1234,
+      'seat',
+    );
+    const characters = result.gameState.characters as Record<
+      string,
+      CharacterInput
+    >;
+    expect(characters.seat.hp.current).toBeGreaterThan(1);
+    expect(characters).not.toHaveProperty('account');
+  });
+
   it('can interrupt a rest without applying recovery', () => {
     const interrupted = resolveSoloRest(
       game(),
