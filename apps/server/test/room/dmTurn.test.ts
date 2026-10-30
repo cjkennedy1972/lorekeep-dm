@@ -1328,7 +1328,7 @@ describe('Room commit safety', () => {
       },
     });
     const visible = {
-      characters: { player: { name: 'Hero' } },
+      characters: { [combatAccount]: { name: 'Hero' } },
       combatRoom: { entities: [], map: { w: 1, h: 1, cells: [] } },
     };
     await room.persistGameState({
@@ -1346,7 +1346,7 @@ describe('Room commit safety', () => {
       madeUpFutureKey: 'secret future prose',
     });
     await room.saveCheckpoint();
-    const clientGameState = room.clientState().gameState as Record<
+    const clientGameState = room.clientState(combatAccount).gameState as Record<
       string,
       unknown
     >;
