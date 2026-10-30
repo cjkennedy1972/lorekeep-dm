@@ -507,7 +507,7 @@ export function createCombatRuntime(
           (item) => item.id === command.attackId,
         );
         if (!attacker) return reject(ATTACK_REJECTED, 'attacker_missing');
-        if (!target) return reject(ATTACK_REJECTED, 'target_missing_or_hidden');
+        if (!target) return reject(ATTACK_REJECTED, 'target_unavailable');
         if (!weapon) return reject(ATTACK_REJECTED, 'weapon_missing');
         if (!resource?.action)
           return reject(ATTACK_REJECTED, 'action_unavailable');

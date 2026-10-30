@@ -624,7 +624,7 @@ describe('Room combat command seam', () => {
         'code' in result ? result.attackRejectReason : null,
       ),
     ).toEqual([
-      'target_missing_or_hidden',
+      'target_unavailable',
       'target_dead',
       'target_fled',
       'weapon_missing',
@@ -654,7 +654,7 @@ describe('Room combat command seam', () => {
     });
     if ('code' in result) {
       expect(result).not.toHaveProperty('events');
-      expect(result.attackRejectReason).toBe('target_missing_or_hidden');
+      expect(result.attackRejectReason).toBe('target_unavailable');
     }
     expect(hidden.combat.resources.ent_hero?.action).toBe(true);
     const controlled = runtime.execute(

@@ -136,7 +136,7 @@ export type CombatCommandError = {
   /** Internal-only classification; Room never serializes this to clients. */
   attackRejectReason?:
     | 'attacker_missing'
-    | 'target_missing_or_hidden'
+    | 'target_unavailable'
     | 'weapon_missing'
     | 'action_unavailable'
     | 'target_dead'

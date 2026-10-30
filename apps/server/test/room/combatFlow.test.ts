@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   combatTracker,
   combatOpeningSummary,
+  projectCombatForViewer,
   REACTION_TIMEOUT_MS,
   type RoomCombatState,
 } from '../../src/room/combat.js';
@@ -667,6 +668,58 @@ describe('hidden spell targets and options', () => {
         (area) => area.anchor.x === 3 && area.anchor.y === 2,
       ),
     ).toBe(false);
+  });
+
+  it("keeps the acting seat's area-spell events and state identical when hidden fills an empty cell", () => {
+    const { runtime, state } = engaged();
+    const hiddenId = 'ent_goblin-minion_1';
+    const hidden = placed(state, {
+      ent_aria: { x: 7, y: 2 },
+      [hiddenId]: { x: 8, y: 2 },
+      'ent_goblin-minion_2': { x: 12, y: 16 },
+    });
+    hidden.entities = hidden.entities.map((entity) =>
+      entity.id === hiddenId ? { ...entity, hidden: true } : entity,
+    );
+    const empty = {
+      ...hidden,
+      entities: hidden.entities.map((entity) =>
+        entity.id === hiddenId ? { ...entity, pos: { x: 2, y: 12 } } : entity,
+      ),
+    };
+    const castAt = (combat: RoomCombatState) =>
+      ok(
+        runtime.execute(
+          combat,
+          'ent_aria',
+          {
+            command: 'cast',
+            spellId: 'spell:fireball',
+            slotLevel: 3,
+            target: { kind: 'anchor', ref: '7,2' },
+          },
+          { character: fireBoltCaster },
+        ),
+      );
+    const hiddenCast = castAt(hidden);
+    const emptyCast = castAt(empty);
+    const hiddenIds = new Set([hiddenId]);
+    const visible = (events: readonly Record<string, unknown>[]) =>
+      events
+        .map((event) =>
+          projectEventForViewer(event, hiddenIds, new Set(['ent_aria'])),
+        )
+        .filter((event) => event !== null);
+
+    expect(
+      hiddenCast.events.some(
+        (event) => event.type === 'HpChanged' && event.entityId === hiddenId,
+      ),
+    ).toBe(true);
+    expect(visible(hiddenCast.events)).toEqual(visible(emptyCast.events));
+    expect(
+      projectCombatForViewer(hiddenCast.state, new Set(['ent_aria'])),
+    ).toEqual(projectCombatForViewer(emptyCast.state, new Set(['ent_aria'])));
   });
 
   it('rejects area aim on a hidden cell like an empty cell or nonexistent option', () => {
