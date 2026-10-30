@@ -35,6 +35,8 @@ const map: Battlemap = {
   zones: [],
   diagonalRule: '5ft',
 };
+// These fixtures use bare ids; the ordering and prose checks compare ids, so they opt out of naming.
+const rawNames = (id: string) => id;
 function setup() {
   const store = createGameStore();
   store.setBattlemap(map);
@@ -74,7 +76,7 @@ function setup() {
 describe('battlefield description and token list', () => {
   it('renders exactly the engine description for the selected verbosity', () => {
     const store = setup();
-    render(<Describe store={store} />);
+    render(<Describe store={store} nameOf={rawNames} />);
     fireEvent.click(
       screen.getByRole('button', { name: /Describe battlefield/ }),
     );
@@ -93,7 +95,7 @@ describe('battlefield description and token list', () => {
 
   it('announces once on a turn change, and does not repeat when movement changes', () => {
     const store = setup();
-    render(<Describe store={store} />);
+    render(<Describe store={store} nameOf={rawNames} />);
     const live = screen.getByRole('status');
     expect(live).toHaveTextContent('30 feet movement remaining');
     act(() =>
@@ -108,7 +110,7 @@ describe('battlefield description and token list', () => {
 
   it('lists every token and feature and toggles distance ordering', () => {
     const store = setup();
-    render(<TokenTable store={store} />);
+    render(<TokenTable store={store} nameOf={rawNames} />);
     const table = screen.getByRole('table');
     expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(
@@ -159,7 +161,7 @@ describe('battlefield description and token list', () => {
         speed: 30,
       },
     ] as Parameters<typeof store.setMapEntities>[0]);
-    render(<TokenTable store={store} ownEntityId="hero" />);
+    render(<TokenTable store={store} nameOf={rawNames} ownEntityId="hero" />);
     const table = screen.getByRole('table');
     const row = (name: RegExp) =>
       within(table).getByRole('row', { name }).textContent ?? '';
@@ -175,10 +177,51 @@ describe('battlefield description and token list', () => {
     const store = setup();
     const { container } = render(
       <>
-        <Describe store={store} />
-        <TokenTable store={store} />
+        <Describe store={store} nameOf={rawNames} />
+        <TokenTable store={store} nameOf={rawNames} />
       </>,
     );
     expect((await axe(container)).violations).toEqual([]);
+  });
+});
+
+describe('default names never print an id fragment', () => {
+  it('TokenTable and Describe fall back to a readable name for embedded-UUID ids', () => {
+    const store = createGameStore();
+    store.setBattlemap(map);
+    store.setMapEntities([
+      {
+        id: 'ent_goblin_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b',
+        kind: 'monster',
+        pos: { x: 4, y: 2 },
+        size: 1,
+        hp: 7,
+        team: 'foes',
+        speed: 30,
+      },
+    ]);
+    store.applyEvent({
+      type: 'CombatStarted',
+      combatants: [
+        {
+          id: 'ent_goblin_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b',
+          initiativeModifier: 1,
+          speed: 30,
+        },
+      ],
+    });
+    store.applyEvent({
+      type: 'InitiativeRolled',
+      entityId: 'ent_goblin_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b',
+      total: 10,
+    });
+    store.applyEvent({
+      type: 'TurnStarted',
+      entityId: 'ent_goblin_3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b',
+      round: 1,
+    });
+    const { container } = render(<TokenTable store={store} />);
+    expect(screen.getByRole('table')).toHaveTextContent('Goblin');
+    expect(container.textContent).not.toContain('3f2a9c1e');
   });
 });

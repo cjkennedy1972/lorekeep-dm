@@ -1,6 +1,7 @@
 import { distance, type Placed } from '@game/rules-engine';
 import { useEffect, useMemo, useState } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
+import { nameFromCatalogId } from './names.js';
 import './token-table.css';
 
 type Props = {
@@ -31,7 +32,7 @@ export function TokenTable({
   store = gameStore,
   viewerId,
   ownEntityId,
-  nameOf = (entityId) => entityId,
+  nameOf = nameFromCatalogId,
 }: Props) {
   const [state, setState] = useState<GameState>(() => store.getState());
   const [ascending, setAscending] = useState(true);

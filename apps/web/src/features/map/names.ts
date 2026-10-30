@@ -5,21 +5,34 @@ type CharacterLike = { id?: string; name?: string };
 type EntityLike = { id: string; name?: string; kind?: string };
 
 const SEAT_PREFIX = 'ent_seat_';
+// Record ids are not names. A UUID anywhere in an id, or a hex run of 8+ characters, is dropped.
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const isRecordToken = (token: string) => /^[0-9a-f]{8,}$/i.test(token);
 const titleCase = (word: string) =>
   word ? word[0]!.toUpperCase() + word.slice(1) : word;
 
 /**
  * "ent_goblin-minion_1" becomes "Goblin Minion". The trailing id number is dropped, so a lone entity
  * never shows it and twins are numbered by the namer in visible order instead.
+ * Record ids are dropped wherever they sit: "ent_seat_<uuid>" reads "Seat". An id with no readable word
+ * left reads "Combatant" when it carried a record id, and "Creature" otherwise, so no screen prints a fragment.
  */
 export function nameFromCatalogId(id: string): string {
-  const stem = id
-    .replace(/^ent_/, '')
-    .replace(/[_-]?\d+$/, '')
-    .replace(/[_-]+/g, ' ')
-    .trim();
-  const words = stem.split(/\s+/).filter(Boolean).map(titleCase).join(' ');
-  return words || 'Creature';
+  const raw = id.replace(/^ent_/, '');
+  const withoutUuid = raw.replace(UUID, '_');
+  const tokens = withoutUuid.split(/[_-]+/).filter(Boolean);
+  const readable = tokens.filter((token) => !isRecordToken(token));
+  const words = readable
+    .join(' ')
+    .replace(/\s?\d+$/, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(titleCase)
+    .join(' ');
+  if (words) return words;
+  return withoutUuid !== raw || readable.length !== tokens.length
+    ? 'Combatant'
+    : 'Creature';
 }
 
 /** Two letters at most; a trailing number keeps twins apart ("Goblin Minion 2" is "G2"). */

@@ -21,6 +21,10 @@ import { TurnBanner } from '../features/game/TurnBanner.js';
 import { Describe } from '../features/map/Describe.js';
 import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
 import { CombatEndCard } from '../features/combat/CombatEndCard.js';
+import {
+  attackRecordFor,
+  retainAttackRecord,
+} from '../features/combat/attackRecord.js';
 import { NarrationLog } from '../features/narration/NarrationLog.js';
 import {
   isTurnFailure,
@@ -137,6 +141,10 @@ export function Game() {
     new Map<string, { command: Record<string, unknown>; attempts: number }>(),
   );
   const { id = '' } = useParams();
+  // The attack actionIds this seat sent in this game, kept page-wide (see attackRecord.ts) rather than on
+  // the 5 s retry timer or this component, so a late rejection still lands on its attack after a remount.
+  const attacks = attackRecordFor(id);
+  useEffect(() => retainAttackRecord(id), [id]);
   const { account } = useAuth();
   const [resume, setResume] = useState<{
     recap: string;
@@ -270,6 +278,7 @@ export function Game() {
           );
       }
       if (message.type === 'CombatEvents') {
+        setAttackFeedback(null);
         const events = asRecord(message.payload).events;
         if (Array.isArray(events))
           for (const raw of events) {
@@ -423,6 +432,16 @@ export function Game() {
           }
           return;
         }
+        // The server uses COMMAND_REJECTED for several attack failures and sends no cause, so the copy stays neutral.
+        // Only the newest attack may explain itself; any other attack's rejection, however late, is swallowed.
+        if (payload.code === 'COMMAND_REJECTED' && attacks.sent.has(actionId)) {
+          combatRetries.current.delete(actionId);
+          if (actionId === attacks.latest)
+            setAttackFeedback(
+              'That attack could not be made. Try another target or action.',
+            );
+          return;
+        }
         setError(String(payload.message ?? 'The command failed.'));
         updatePendingAction((current) =>
           current && (!actionId || current.id === actionId) ? null : current,
@@ -495,6 +514,8 @@ export function Game() {
   }, [reactionNotice?.reactionId, reactionNotice?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
+  // A rejected attack is explained beside the attack buttons, not in the page header.
+  const [attackFeedback, setAttackFeedback] = useState<string | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   useDockHeight(dockRef);
   const pendingActionRef = useRef<PendingAction | null>(null);
@@ -620,6 +641,10 @@ export function Game() {
 
   const send = (command: Record<string, unknown>) => {
     const actionId = live.send('CombatCommand', command);
+    if (command.command === 'attack') {
+      attacks.latest = typeof actionId === 'string' ? actionId : null;
+      if (typeof actionId === 'string') attacks.sent.add(actionId);
+    }
     if (typeof actionId === 'string') {
       const pending = { command, attempts: 0 };
       combatRetries.current.set(actionId, pending);
@@ -1324,6 +1349,11 @@ export function Game() {
                   </button>
                 );
               })}
+              {attackFeedback && (
+                <p role="alert" className="combat-attack-feedback">
+                  {attackFeedback}
+                </p>
+              )}
               {nonMoveActions.map((value, index) => {
                 const item = asRecord(value);
                 if (item.kind === 'attack') {
@@ -1338,13 +1368,14 @@ export function Game() {
                     <button
                       key={String(item.optionId ?? index)}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setAttackFeedback(null);
                         send({
                           command: 'attack',
                           targetId: String(item.targetId),
                           attackId: String(item.attackId),
-                        })
-                      }
+                        });
+                      }}
                     >
                       {weapon
                         ? `Attack ${targetName} with ${weapon}`

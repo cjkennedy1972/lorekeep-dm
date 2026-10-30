@@ -35,6 +35,27 @@ describe('map token draw commands', () => {
     ]);
   });
 
+  it('labels an entity with no presentation name from its catalog id, never the raw id', () => {
+    const uuid = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
+    const commands = createTokenDrawCommands({
+      ...combat,
+      entities: [
+        ...combat.entities,
+        {
+          id: `ent_${uuid}`,
+          kind: 'monster',
+          pos: { x: 5, y: 2 },
+          size: 1,
+          hp: 4,
+        },
+      ],
+    });
+    const [, , goblin, unnamed] = commands;
+    expect(goblin?.name).toBe('Goblin');
+    expect(unnamed?.name).toBe('Combatant');
+    expect(unnamed?.name).not.toContain(uuid.slice(0, 8));
+  });
+
   it('shows bloodied enemies at half HP and never their exact numbers', () => {
     const [hero, ogre, goblin] = createTokenDrawCommands(combat, {
       hero: { maxHp: 12 },

@@ -126,7 +126,7 @@ describe('map keyboard movement', () => {
     expect(
       store.getState().mapEntities.find((item) => item.id === 'hero')?.pos,
     ).toEqual({ x: 0, y: 2 });
-    expect(screen.getByText(/Selected: hero/)).toBeInTheDocument();
+    expect(screen.getByText(/Selected: Hero/)).toBeInTheDocument();
   });
 
   it('selects nothing and does not jump to initiative[0] when the active entity is hidden (null)', async () => {
@@ -146,7 +146,7 @@ describe('map keyboard movement', () => {
     screen.getByRole('application', { name: 'Battle map' }).focus();
     await user.keyboard('{Enter}{ArrowRight}{Enter}');
     expect(onMove).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Selected: hero/)).toBeNull();
+    expect(screen.queryByText(/Selected: Hero/)).toBeNull();
   });
 
   it('announces running cost on each keypress and rejects an illegal destination without moving', async () => {
@@ -371,5 +371,66 @@ describe('reaction prompt keyboard focus', () => {
     screen.getByRole('button', { name: 'Accept' }).focus();
     await user.keyboard('{Escape}');
     expect(onReactionChoice).toHaveBeenCalledWith('r1', 'decline');
+  });
+});
+
+describe('map announcements name entities, never raw ids', () => {
+  it('announces selection, cycling and opportunity attacks by name, with no ent_ id or UUID', async () => {
+    const heroId = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
+    const store = createGameStore();
+    store.setBattlemap(map);
+    store.setMapEntities([
+      {
+        id: heroId,
+        kind: 'character',
+        pos: { x: 1, y: 2 },
+        size: 1,
+        hp: 12,
+        team: 'heroes',
+        speed: 30,
+      },
+      {
+        id: 'ent_goblin',
+        kind: 'monster',
+        pos: { x: 0, y: 2 },
+        size: 1,
+        hp: 7,
+        team: 'foes',
+        speed: 30,
+      },
+    ]);
+    store.applyEvent({
+      type: 'CombatStarted',
+      combatants: [
+        { id: heroId, initiativeModifier: 2, speed: 30 },
+        { id: 'ent_goblin', initiativeModifier: 1, speed: 30 },
+      ],
+    });
+    store.applyEvent({ type: 'InitiativeRolled', entityId: heroId, total: 15 });
+    store.applyEvent({
+      type: 'InitiativeRolled',
+      entityId: 'ent_goblin',
+      total: 10,
+    });
+    store.applyEvent({ type: 'TurnStarted', entityId: heroId, round: 1 });
+    const user = userEvent.setup();
+    render(<MapKeyboard store={store} />);
+    const live = () => screen.getByRole('status').textContent ?? '';
+    const rawId = /ent_|[0-9a-f]{8}-[0-9a-f]{4}-/i;
+
+    screen.getByRole('application', { name: 'Battle map' }).focus();
+    await user.keyboard('y');
+    expect(live()).toBe('Combatant selected at 2, 3.');
+
+    await user.keyboard(']');
+    expect(live()).toMatch(/^Goblin selected at 1, 3\.$/);
+
+    await user.keyboard('{Enter}{ArrowRight}{Enter}');
+    expect(live()).toBe(
+      'Opportunity attack from Goblin. Choose accept or decline.',
+    );
+
+    for (const text of [live(), document.body.textContent ?? ''])
+      expect(text).not.toMatch(rawId);
   });
 });

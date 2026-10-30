@@ -31,6 +31,40 @@ test('a player can report a narration with category and optional reason', async 
   ).toBeInTheDocument();
 });
 
+test('an unnamed combatant is shown as Combatant, never by its raw entity UUID', () => {
+  const uuid = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
+  render(
+    <NarrationLog
+      messages={[
+        {
+          seq: 21,
+          type: 'CombatEvents',
+          payload: {
+            events: [
+              {
+                type: 'RollEvent',
+                kind: 'save',
+                entityId: `ent_${uuid}`,
+                dc: 10,
+                success: true,
+                total: 12,
+              },
+            ],
+          },
+        } as ServerMessage,
+      ]}
+    />,
+  );
+
+  expect(
+    screen.getAllByText(/Combatant: Constitution save 12 vs DC 10/).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.queryByText(new RegExp(uuid.slice(0, 8))),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText(/3f2a9c1e 7b4d/)).not.toBeInTheDocument();
+});
+
 test('ToolRejected with the wire payload is not rendered as narration', () => {
   render(
     <NarrationLog

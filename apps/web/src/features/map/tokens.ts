@@ -1,4 +1,5 @@
 import type { CombatState } from '@game/schema';
+import { nameFromCatalogId } from './names.js';
 
 /** A stable, accessible marker for a team; distinct teams never depend on color. */
 export interface TeamMarker {
@@ -141,7 +142,7 @@ export function createTokenDrawCommands(
     return {
       type: 'token',
       entityId: entity.id,
-      name: details.name ?? entity.id,
+      name: details.name ?? nameFromCatalogId(entity.id),
       x: entity.pos.x,
       y: entity.pos.y,
       footprint: entity.size,
