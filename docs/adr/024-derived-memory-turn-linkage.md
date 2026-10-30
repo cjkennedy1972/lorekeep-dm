@@ -11,6 +11,8 @@ Constraints: rewind must stay atomic with the `TurnReverted` append; derived row
 
 **Decision.**
 
+Cross-reference: ADR-039 additionally requires character-reference write/read gates, hold-aware legacy handling, and preserving these `turn_id` rewind semantics; it does not make token mappings turn-scoped.
+
 1. Add a nullable `source_turn_id uuid` column to both `scene_summaries` and `registry_entries`. The type matches `events.turn_id` (the `::text` cast in `REVERTED_TURN_EXCLUSION` implies uuid; confirm against the events DDL before merging).
 2. Set `source_turn_id` at write time to the DM turn that produced the row. For `scene_summaries`, that is the turn whose `NarrationCompleted` closed the scene. For `registry_entries`, it is the turn of the registry event (tool or scene-close) that produced the version. Writes that have no turn (for example, a manual or seed write) store NULL.
 3. Add a partial index on `(session_id, source_turn_id) WHERE source_turn_id IS NOT NULL` on each table. Rewind filters on this column.
