@@ -27,7 +27,6 @@ export type SeatView = {
 
 const MAX_TRACE = 400;
 const MAX_TEXT = 4096;
-const MAX_REASON = 120;
 const MAX_ERROR = 2000;
 
 /**
@@ -44,7 +43,7 @@ export const SOCKET_HOOK = `(() => {
     const socket = count++;
     ws.addEventListener('open', () => log.push({ t: Date.now(), socket, ev: 'open' }));
     ws.addEventListener('close', (event) =>
-      log.push({ t: Date.now(), socket, ev: 'close', code: event.code, reason: String(event.reason).slice(0, ${MAX_REASON}) }),
+      log.push({ t: Date.now(), socket, ev: 'close', code: event.code, reason: String(event.reason) }),
     );
     return ws;
   }
@@ -168,16 +167,14 @@ async function gather(view: SeatView): Promise<Evidence> {
     // The page may already be closed; the other evidence still gets attached.
   }
   try {
-    evidence.snapshot = (
-      await page.locator('body').ariaSnapshot({ timeout: 5_000 })
-    ).slice(0, MAX_TEXT);
+    evidence.snapshot = await page
+      .locator('body')
+      .ariaSnapshot({ timeout: 5_000 });
   } catch (error) {
-    evidence.snapshot = `(aria snapshot unavailable: ${String(error).slice(0, 200)})`;
+    evidence.snapshot = `(aria snapshot unavailable: ${String(error)})`;
   }
   try {
-    evidence.text = (
-      await page.evaluate(() => document.body?.innerText ?? '')
-    ).slice(0, MAX_TEXT);
+    evidence.text = await page.evaluate(() => document.body?.innerText ?? '');
   } catch {
     evidence.text = '(body text unavailable)';
   }
@@ -227,7 +224,7 @@ export async function attachSeatDiagnostics(
   await attachFile(
     info,
     'party-diagnostics-error.txt',
-    scrub(message.slice(0, MAX_ERROR), secrets),
+    scrub(message, secrets).slice(0, MAX_ERROR),
     'text/plain',
   );
 
@@ -263,10 +260,10 @@ export async function attachSeatDiagnostics(
           summary,
           timeline,
           snapshot: e.secretsKnown
-            ? scrub(e.snapshot, secrets)
+            ? scrub(e.snapshot, secrets).slice(0, MAX_TEXT)
             : '(withheld: page storage unreadable, cannot scrub)',
           bodyText: e.secretsKnown
-            ? scrub(e.text, secrets)
+            ? scrub(e.text, secrets).slice(0, MAX_TEXT)
             : '(withheld: page storage unreadable, cannot scrub)',
         },
         null,
