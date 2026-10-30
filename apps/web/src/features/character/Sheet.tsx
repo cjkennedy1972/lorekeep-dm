@@ -10,6 +10,10 @@ export interface SheetProps {
   emptyAction?: ReactNode;
   /** True while the room state that supplies the character is still loading. */
   loading?: boolean;
+  /** True when the room state never arrived; shown in place of the loading status. */
+  loadFailed?: boolean;
+  /** Offered with loadFailed so the player can try reconnecting. */
+  onRetry?: () => void;
 }
 
 const abilityNames = {
@@ -44,6 +48,8 @@ export function Sheet({
   store = gameStore,
   emptyAction,
   loading = false,
+  loadFailed = false,
+  onRetry,
 }: SheetProps) {
   const state = useSyncExternalStore(
     store.subscribe,
@@ -57,7 +63,16 @@ export function Sheet({
     return (
       <section aria-labelledby="sheet-title" className="sheet-empty">
         <h1 id="sheet-title">Character sheet</h1>
-        {loading ? (
+        {loadFailed ? (
+          <>
+            <p role="alert">Your character hasn’t made it to the table yet.</p>
+            {onRetry && (
+              <button type="button" onClick={onRetry}>
+                Try again
+              </button>
+            )}
+          </>
+        ) : loading ? (
           <p role="status" className="loading">
             <span className="spinner" aria-hidden="true" />
             Loading your character…

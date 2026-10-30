@@ -316,6 +316,45 @@ export function createRoomClient(opts: RoomClientOptions) {
     }
   }
 
+  const start = () => {
+    if (!stopped) return;
+    stopped = false;
+    generation++;
+    attempt = 0;
+    set({ status: 'connecting', unseated: false, deviceClaim: null });
+    void connect(generation);
+  };
+
+  const stop = () => {
+    stopped = true;
+    generation++;
+    clearTimeout(timer);
+    clearTimeout(authWatchdog);
+    const s = socket;
+    socket = undefined;
+    s?.close();
+    set({ status: 'closed' });
+  };
+
+  /**
+   * Starts a fresh connection attempt even when the client is already active
+   * (a reconnect is pending, or the socket is up but state never arrived).
+   * A host-removed seat is final, so this is a no-op there.
+   */
+  const retry = () => {
+    if (snap.removed) return;
+    if (stopped) return start();
+    clearTimeout(timer);
+    generation++;
+    attempt = 0;
+    // Detach the current socket first so its close event is ignored as superseded.
+    const current = socket;
+    socket = undefined;
+    current?.close();
+    set({ status: 'connecting', deviceClaim: null });
+    void connect(generation);
+  };
+
   return {
     subscribe(l: () => void) {
       listeners.add(l);
@@ -323,24 +362,9 @@ export function createRoomClient(opts: RoomClientOptions) {
     },
     getSnapshot: () => snap,
     send,
-    start() {
-      if (!stopped) return;
-      stopped = false;
-      generation++;
-      attempt = 0;
-      set({ status: 'connecting', unseated: false, deviceClaim: null });
-      void connect(generation);
-    },
-    stop() {
-      stopped = true;
-      generation++;
-      clearTimeout(timer);
-      clearTimeout(authWatchdog);
-      const s = socket;
-      socket = undefined;
-      s?.close();
-      set({ status: 'closed' });
-    },
+    start,
+    stop,
+    retry,
   };
 }
 export type RoomClient = ReturnType<typeof createRoomClient>;
