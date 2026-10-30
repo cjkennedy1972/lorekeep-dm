@@ -7349,7 +7349,8 @@ export class Room {
         | undefined
     )?.characters;
     const eligible = this.state.seats.filter((seat) => {
-      const characterId = characters?.[seat.accountId]?.id;
+      const characterId =
+        characters?.[seat.seatId]?.id ?? characters?.[seat.accountId]?.id;
       const characterIsDown =
         typeof characterId === 'string' &&
         entities.some((entity) => entity.id === characterId && entity.hp <= 0);
