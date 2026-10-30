@@ -176,6 +176,11 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         [session, 'legacy-scene', 'Legacy character memory.'],
       );
       await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document)
+         VALUES($1,'npc','legacy-npc',1,'Legacy NPC',$2,'Legacy character reference')`,
+        [session, { note: 'Legacy character reference.' }],
+      );
+      await q(
         "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
         [gone],
       );
@@ -189,6 +194,11 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       ).toEqual([{ character_id: null }]);
       expect(
         await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM registry_entries WHERE session_id=$1', [
+          session,
+        ]),
       ).toHaveLength(0);
       expect(
         await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
