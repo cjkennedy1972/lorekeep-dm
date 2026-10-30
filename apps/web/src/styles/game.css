@@ -403,6 +403,11 @@
   margin: 0;
   color: var(--fg-muted);
 }
+.combat-attack-feedback {
+  margin: 0;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
 
 /* Sidebar */
 .game-area--side > section,

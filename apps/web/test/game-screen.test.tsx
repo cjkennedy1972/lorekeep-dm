@@ -1161,6 +1161,40 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     ).toHaveLength(2);
   });
 
+  it('a rejected attack explains the likely causes beside the attack buttons, and the next attack clears it', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    hoisted.send.mockReturnValueOnce('atk-1');
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'That target is not a legal attack.',
+      actionId: 'atk-1',
+    });
+    const feedback = screen.getByRole('alert');
+    expect(feedback).toHaveClass('combat-attack-feedback');
+    expect(feedback).toHaveTextContent(
+      'That attack is not legal from here. Check range, cover and reach, or choose another target.',
+    );
+    expect(
+      screen.queryByText('That target is not a legal attack.'),
+    ).not.toBeInTheDocument();
+    hoisted.send.mockReturnValueOnce('atk-2');
+    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('refetches options after the seat moves, so Attack appears once the target is in reach', () => {
     mount();
     push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));

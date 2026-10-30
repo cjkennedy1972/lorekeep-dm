@@ -270,6 +270,7 @@ export function Game() {
           );
       }
       if (message.type === 'CombatEvents') {
+        setAttackFeedback(null);
         const events = asRecord(message.payload).events;
         if (Array.isArray(events))
           for (const raw of events) {
@@ -423,6 +424,18 @@ export function Game() {
           }
           return;
         }
+        // The server's rejection is a generic "not a legal attack" with no range, so the copy lists the likely causes.
+        const rejected = combatRetries.current.get(actionId)?.command;
+        if (
+          payload.code === 'COMMAND_REJECTED' &&
+          rejected?.command === 'attack'
+        ) {
+          combatRetries.current.delete(actionId);
+          setAttackFeedback(
+            'That attack is not legal from here. Check range, cover and reach, or choose another target.',
+          );
+          return;
+        }
         setError(String(payload.message ?? 'The command failed.'));
         updatePendingAction((current) =>
           current && (!actionId || current.id === actionId) ? null : current,
@@ -495,6 +508,8 @@ export function Game() {
   }, [reactionNotice?.reactionId, reactionNotice?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
+  // A rejected attack is explained beside the attack buttons, not in the page header.
+  const [attackFeedback, setAttackFeedback] = useState<string | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   useDockHeight(dockRef);
   const pendingActionRef = useRef<PendingAction | null>(null);
@@ -1324,6 +1339,11 @@ export function Game() {
                   </button>
                 );
               })}
+              {attackFeedback && (
+                <p role="alert" className="combat-attack-feedback">
+                  {attackFeedback}
+                </p>
+              )}
               {nonMoveActions.map((value, index) => {
                 const item = asRecord(value);
                 if (item.kind === 'attack') {
@@ -1338,13 +1358,14 @@ export function Game() {
                     <button
                       key={String(item.optionId ?? index)}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setAttackFeedback(null);
                         send({
                           command: 'attack',
                           targetId: String(item.targetId),
                           attackId: String(item.attackId),
-                        })
-                      }
+                        });
+                      }}
                     >
                       {weapon
                         ? `Attack ${targetName} with ${weapon}`

@@ -94,11 +94,10 @@ export function NarrationLog({
   const announcedRolls = useRef(new Set<string>());
   const announcedCombatEvents = useRef(new Set<string>());
   const announcedCombatBatches = useRef(new Set<number>());
+  // An unnamed combatant reads as "Combatant"; its entity id is never printed, since ids can be UUIDs.
   const nameOfActor = (actorId: string) =>
     combatantNames[actorId] ??
-    (actorId.startsWith('ent_')
-      ? actorId.slice(4).replaceAll('-', ' ')
-      : 'Player');
+    (actorId.startsWith('ent_') ? 'Combatant' : 'Player');
 
   const reportAction = (message: ServerMessage) => {
     if (!onReport) return null;
@@ -193,9 +192,7 @@ export function NarrationLog({
         const actorId = String(event.entityId ?? event.actorId ?? 'Unknown');
         const name =
           combatantNames[actorId] ??
-          (actorId.startsWith('ent_')
-            ? actorId.slice(4).replaceAll('-', ' ')
-            : 'Player');
+          (actorId.startsWith('ent_') ? 'Combatant' : 'Player');
         if (
           event.type === 'RollEvent' &&
           event.kind === 'save' &&
@@ -510,9 +507,7 @@ export function NarrationLog({
                 );
                 const name =
                   combatantNames[actorId] ??
-                  (actorId.startsWith('ent_')
-                    ? actorId.slice(4).replaceAll('-', ' ')
-                    : 'Player');
+                  (actorId.startsWith('ent_') ? 'Combatant' : 'Player');
                 if (
                   event.type === 'RollEvent' &&
                   event.kind === 'save' &&
