@@ -103,6 +103,9 @@ jobs:
       - run: pnpm --filter @game/server migrate:up
       - run: pnpm --filter @game/web exec playwright install --with-deps chromium
       - run: pnpm --filter @game/web exec playwright test -c playwright.party.config.ts
+        env:
+          # Shared-runner wall clock includes browser, Vite proxy and runner jitter; locally the budget stays 1000 ms, and the measured value is always logged.
+          PARTY_SYNC_BUDGET_MS: 1500
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -111,8 +114,10 @@ jobs:
             apps/web/test-results/**
             !apps/web/test-results/**/trace.zip
             !**/trace.zip
+            !**/error-context.md
+            !apps/web/test-results/**/party-live-state.json
           if-no-files-found: ignore
-          # Exclude traces because they can contain cookies and ticket responses; retain other debug artifacts for 7 days.
+          # Exclude traces, Playwright error context, and fixture state because they can contain sensitive values; retain other debug artifacts for 7 days.
           retention-days: 7
 
   browsers:
