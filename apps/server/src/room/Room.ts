@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   RoomStateSchema,
   TurnRevertedSchema,
@@ -2242,6 +2242,11 @@ export class Room {
     if (pending.authTokenHash !== authTokenHash) return undefined;
     clearTimeout(pending.expiryTimer);
     this.pendingSeatResumeTokens.delete(accountId);
+    // The first-delivery token is the admission proof; after it is consumed,
+    // the separate late-join claim authorization is no longer needed.
+    for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
+      if (authorization.accountId === accountId)
+        this.lateJoinClaimAuthorizations.delete(seatId);
     return pending.token;
   }
 
@@ -3687,7 +3692,13 @@ export class Room {
         lateJoinAuthorization &&
         lateJoinAuthorization.accountId === accountId &&
         lateJoinAuthorization.seatId === seat.seatId &&
-        lateJoinAuthorization.authTokenHash === authTokenHash &&
+        authTokenHash !== undefined &&
+        Buffer.byteLength(lateJoinAuthorization.authTokenHash) ===
+          Buffer.byteLength(authTokenHash) &&
+        timingSafeEqual(
+          Buffer.from(lateJoinAuthorization.authTokenHash),
+          Buffer.from(authTokenHash),
+        ) &&
         lateJoinAuthorization.expiresAt > Date.now()
       ) {
         this.lateJoinClaimAuthorizations.delete(seat.seatId);

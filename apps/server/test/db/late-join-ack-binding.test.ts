@@ -179,6 +179,86 @@ async function waitFor(pred: () => boolean | Promise<boolean>, ms = 3000) {
 }
 
 describe('late-join snapshot acknowledgement and binding', () => {
+  it('does not auto-approve a valid seat authorization presented by another seat owner', async () => {
+    const f = await solo();
+    const room = await open(f);
+    await room.seat(f.owner, 'Owner');
+    await room.persistGameState({ sceneId: 'story-without-map' });
+
+    const joiner = await account();
+    const jc = await character(joiner, 0x59);
+    const requestAuthHash = createHash('sha256')
+      .update('account-binding-cookie-session')
+      .digest('hex');
+    const req = await room.requestLateJoin(
+      joiner,
+      jc.character.id,
+      jc.revision,
+      randomUUID(),
+      'Joiner',
+      false,
+      requestAuthHash,
+    );
+    await room.approveLateJoin(f.owner, randomUUID(), req);
+    await room.submitAction(f.owner, randomUUID(), 'close the first scene');
+    expect(
+      await waitFor(() =>
+        room.state.seats.some((seat) => seat.accountId === joiner),
+      ),
+    ).toBe(true);
+
+    const joinerSeat = room.state.seats.find(
+      (seat) => seat.accountId === joiner,
+    )!;
+    const connection = conn();
+    await room.subscribe(joiner, connection, -1);
+    const sync = connection.msgs.find(
+      (message) => (message as { type?: string }).type === 'StateSync',
+    ) as { seq: number } | undefined;
+    expect(sync).toBeDefined();
+    await room.acknowledgeLateJoinSnapshot(
+      joiner,
+      joinerSeat.seatId,
+      sync!.seq,
+    );
+    await room.submitAction(f.owner, randomUUID(), 'close the next scene');
+    expect(
+      await waitFor(async () =>
+        (await rows(f.sessionId)).some(
+          (event) => event.type === 'LateJoinAdmitted',
+        ),
+      ),
+    ).toBe(true);
+
+    // Model a distinct authenticated account that now owns the target seat.
+    // The authorization itself remains the valid one minted for the joiner.
+    const otherAccount = await account();
+    const admittedSeat = room.state.seats.find(
+      (seat) => seat.accountId === joiner,
+    )!;
+    admittedSeat.accountId = otherAccount;
+    expect(
+      room.state.seats.find((seat) => seat.accountId === otherAccount),
+    ).toBeDefined();
+    expect(admittedSeat.presence).not.toBe('revoked');
+    expect(
+      (
+        room as unknown as { connections: Map<string, unknown> }
+      ).connections.has(otherAccount),
+    ).toBe(false);
+    const claimId = randomUUID();
+    const claim = room.requestSeatResumeClaim(
+      otherAccount,
+      claimId,
+      requestAuthHash,
+    );
+    await room.cancelSeatResumeClaim(claimId);
+    await expect(claim).resolves.toBe(false);
+    expect((await rows(f.sessionId)).map((event) => event.type)).not.toContain(
+      'SeatClaimAutoApproved',
+    );
+    await room.drain();
+  }, 60_000);
   it('admits an acknowledged mapless story joiner at the next committed scene boundary', async () => {
     const f = await solo();
     const room = await open(f);
