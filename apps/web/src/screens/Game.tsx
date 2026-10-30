@@ -34,6 +34,7 @@ import { RoundPanel } from '../features/round/RoundPanel.js';
 import { HostControls } from '../features/round/HostControls.js';
 import { TurnTimerControl } from '../features/round/TurnTimerControl.js';
 import { Sheet } from '../features/character/Sheet.js';
+import { useSheetLoadFailure } from '../features/character/useSheetLoadFailure.js';
 import { ConnectionStatus } from '../room/ConnectionStatus.js';
 import { useRoom } from '../room/useRoom.js';
 import { api, http } from '../api.js';
@@ -513,6 +514,10 @@ export function Game() {
     question: string;
   } | null>(null);
   const room = live.room;
+  const sheetLoadFailed = useSheetLoadFailure({
+    hasCharacterState: Boolean(room?.gameState),
+    connectionStatus: live.status,
+  });
   // Reloading mid-turn loses local pending state; the server's private submission restores it.
   const seededAt = useMemo(
     () => Date.now(),
@@ -1446,6 +1451,8 @@ export function Game() {
           <Sheet
             store={gameStore}
             loading={!room?.gameState}
+            loadFailed={sheetLoadFailed}
+            onRetry={live.removed ? undefined : () => live.rejoin()}
             emptyAction={
               <Link className="sheet-empty__link" to={`/rooms/${id}`}>
                 Build or choose a character
