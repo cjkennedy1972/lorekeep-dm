@@ -407,20 +407,30 @@ describe('Room combat command seam', () => {
     internals.activeTurn = settling;
 
     const actionId = randomUUID();
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
     await room.submitCombatCommand(owner, actionId, {
-      command: 'move',
-      destination: { x: 3, y: 1 },
+      command: 'attack',
+      targetId: 'ent_goblin',
+      attackId: 'sword',
     });
     expect(sent).toContainEqual(
       expect.objectContaining({
         type: 'Error',
         payload: expect.objectContaining({
           code: 'narration-in-progress',
+          message: 'That attack is not currently available.',
           actionId,
         }),
       }),
     );
     expect(events).toHaveLength(eventsBeforeCommand);
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: 'combat_attack_rejected',
+        reason: 'narration_in_progress',
+      }),
+    );
+    log.mockRestore();
 
     // The turn's continuation can now enqueue/commit through the mailbox.
     settle();

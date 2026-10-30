@@ -141,7 +141,13 @@ export type CombatCommandError = {
     | 'action_unavailable'
     | 'target_dead'
     | 'target_fled'
-    | 'illegal_range_or_line_of_sight';
+    | 'illegal_range_or_line_of_sight'
+    | 'combat_ended'
+    | 'not_your_turn'
+    | 'narration_in_progress'
+    | 'move_in_progress'
+    | 'reaction_window_open'
+    | 'combat_inactive';
 };
 export type CombatContext = {
   character?: CharacterInput;

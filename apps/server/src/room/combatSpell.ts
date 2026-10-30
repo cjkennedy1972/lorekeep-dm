@@ -29,6 +29,11 @@ const DIRECTIONS: GridPos[] = [
   { x: -1, y: -1 },
 ];
 const catalogSpellId = (id: string) => id.replace(/^srd:spell\//, 'spell:');
+const visibleTarget = (
+  entity: { hidden?: boolean; id: string },
+  controlledEntityIds?: ReadonlySet<string>,
+): boolean => !entity.hidden || controlledEntityIds?.has(entity.id) === true;
+
 const reject = (message: string): CombatCommandError => ({
   code: 'COMMAND_REJECTED',
   message,
@@ -48,11 +53,14 @@ export function areaOptions(
   casterId: string,
   spellId: string,
   catalog: Catalog,
+  controlledEntityIds?: ReadonlySet<string>,
 ): AreaOption[] {
   const caster = state.entities.find((e) => e.id === casterId);
   const spell = catalog.get('spell', catalogSpellId(spellId));
   const template = spell?.template;
   if (!caster || !spell || !template) return [];
+  const visible = (entity: (typeof state.entities)[number]) =>
+    !entity.hidden || controlledEntityIds?.has(entity.id) === true;
   const shape = template.shape as AreaShape;
   const spec = {
     shape,
@@ -69,7 +77,7 @@ export function areaOptions(
   } else {
     const reach = spell.range?.kind === 'feet' ? spell.range.feet : Infinity;
     for (const entity of state.entities) {
-      if (entity.hp <= 0 || entity.fled) continue;
+      if (!visible(entity) || entity.hp <= 0 || entity.fled) continue;
       if (distance(caster, entity, state.map.diagonalRule) > reach) continue;
       if (!hasLineOfSight(state.map, caster, entity)) continue;
       aims.push({
@@ -82,7 +90,7 @@ export function areaOptions(
     }
   }
   const placed = state.entities
-    .filter((e) => e.hp > 0 && !e.fled)
+    .filter((e) => visible(e) && e.hp > 0 && !e.fled)
     .map((e) => ({ id: e.id, pos: e.pos, size: e.size }));
   return aims.map(({ anchor, direction }) => {
     const cells = areaCells(state.map, spec, anchor, direction);
@@ -116,6 +124,7 @@ export function castCommand(
   command: CastCommand,
   character: CharacterInput | undefined,
   catalog: Catalog,
+  controlledEntityIds?: ReadonlySet<string>,
 ): CombatTransition | CombatCommandError {
   const caster = state.entities.find((e) => e.id === actorId);
   const resources = state.combat.resources[actorId];
@@ -141,19 +150,31 @@ export function castCommand(
   const target = command.target;
   const targetEntity =
     target.kind === 'entity'
-      ? state.entities.find((e) => e.id === target.ref)
+      ? state.entities.find(
+          (e) =>
+            e.id === target.ref &&
+            visibleTarget(e, controlledEntityIds) &&
+            e.hp > 0 &&
+            !e.fled,
+        )
       : target.kind === 'self'
         ? caster
         : undefined;
   let aim: { anchor: GridPos; direction: GridPos } | undefined;
   if (target.kind === 'option' || target.kind === 'anchor') {
-    const options = areaOptions(state, actorId, spellId, catalog);
+    const options = areaOptions(
+      state,
+      actorId,
+      spellId,
+      catalog,
+      controlledEntityIds,
+    );
     const picked = options.find((option) =>
       target.kind === 'option'
         ? option.optionId === target.ref
         : `${option.anchor.x},${option.anchor.y}` === target.ref,
     );
-    if (!picked) return reject('That is not a legal way to aim this spell.');
+    if (!picked) return reject('That target is not on the map.');
     aim = picked;
   } else if (!targetEntity) return reject('That target is not on the map.');
   const sheet = (e: (typeof state.entities)[number]) => ({
@@ -186,7 +207,7 @@ export function castCommand(
       map: state.map,
       caster: { pos: caster.pos, size: caster.size },
       entities: state.entities
-        .filter((e) => e.hp > 0)
+        .filter((e) => e.hp > 0 && !e.fled)
         .map((e) => ({ id: e.id, pos: e.pos, size: e.size })),
       targets: state.entities.map(sheet),
       ...(aim ? { anchor: aim.anchor, direction: aim.direction } : {}),

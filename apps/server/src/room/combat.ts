@@ -268,7 +268,32 @@ export function combatTracker(
   };
 }
 
-const ATTACK_REJECTED = 'That attack is not currently available.';
+export const ATTACK_REJECTED = 'That attack is not currently available.';
+
+const attackAdmissionReject = (
+  result: CombatCommandError,
+  reason: NonNullable<CombatCommandError['attackRejectReason']>,
+): CombatCommandError => ({
+  ...result,
+  message: ATTACK_REJECTED,
+  attackRejectReason: reason,
+});
+
+const attackAdmissionReason = (
+  code: CombatCommandError['code'],
+): NonNullable<CombatCommandError['attackRejectReason']> => {
+  switch (code) {
+    case 'narration-in-progress':
+      return 'narration_in_progress';
+    case 'move-in-progress':
+      return 'move_in_progress';
+    case 'reaction-window-open':
+      return 'reaction_window_open';
+    case 'not-your-turn':
+    case 'COMMAND_REJECTED':
+      return 'not_your_turn';
+  }
+};
 
 const reject = (
   message: string,
@@ -345,7 +370,10 @@ export function createCombatRuntime(
     ctx?: CombatContext,
   ) => ({
     map: state.map,
-    entities: state.entities.filter((item) => !item.fled),
+    entities: state.entities.filter(
+      (item) =>
+        !item.fled && (!item.hidden || ctx?.controlledEntityIds?.has(item.id)),
+    ),
     resources: Object.fromEntries(
       Object.entries(state.combat.resources).map(([id, r]) => [
         id,
@@ -405,9 +433,17 @@ export function createCombatRuntime(
     decline: declineReaction,
     execute(state, actorId, command, ctx) {
       const now = ctx?.now ?? Date.now();
-      if (state.ended) return reject('Combat is over.');
+      if (state.ended) {
+        const error = reject('Combat is over.');
+        return command.command === 'attack'
+          ? attackAdmissionReject(error, 'combat_ended')
+          : error;
+      }
       const denied = admissionError(state, actorId, command);
-      if (denied) return denied;
+      if (denied)
+        return command.command === 'attack'
+          ? attackAdmissionReject(denied, attackAdmissionReason(denied.code))
+          : denied;
       if (command.command === 'reaction')
         return answerReaction(
           state,
@@ -418,14 +454,25 @@ export function createCombatRuntime(
         );
       const active =
         state.combat.activeEntityId ?? state.combat.initiative[0]?.entityId;
-      if (actorId !== active) return rejectAdmission('not-your-turn');
+      if (actorId !== active) {
+        const error = rejectAdmission('not-your-turn');
+        return command.command === 'attack'
+          ? attackAdmissionReject(error, attackAdmissionReason(error.code))
+          : error;
+      }
       if (command.command === 'options') {
         const preview = runtime.preview(state, actorId, ctx) as Record<
           string,
           unknown
         >;
         const areas = (ctx?.character?.spellsPrepared ?? []).flatMap((id) =>
-          areaOptions(state, actorId, id, catalog).map((option) => ({
+          areaOptions(
+            state,
+            actorId,
+            id,
+            catalog,
+            ctx?.controlledEntityIds,
+          ).map((option) => ({
             spellId: id,
             ...option,
           })),
@@ -443,6 +490,7 @@ export function createCombatRuntime(
           command,
           ctx?.character,
           catalog,
+          ctx?.controlledEntityIds,
         );
         if ('code' in cast) return cast;
         return cast;

@@ -36,6 +36,7 @@ import {
 } from './dmTurn.js';
 import type { CombatCommand } from '@game/schema';
 import {
+  ATTACK_REJECTED,
   createCombatRuntime,
   roomGameState,
   toWireEvent,
@@ -6291,10 +6292,19 @@ export class Room {
       // lets the caller resubmit after the worker commits and releases it.
       const current = roomGameState(this.state);
       if (this.turnInFlight && current?.phase !== 'narrating') {
+        if (command.command === 'attack')
+          console.info(
+            JSON.stringify({
+              event: 'combat_attack_rejected',
+              reason: 'narration_in_progress',
+            }),
+          );
         this.sendError(
           accountId,
           'narration-in-progress',
-          'The DM is finishing this turn; try again in a moment.',
+          command.command === 'attack'
+            ? ATTACK_REJECTED
+            : 'The DM is finishing this turn; try again in a moment.',
           actionId,
         );
         return true;
@@ -6327,10 +6337,19 @@ export class Room {
         (actsAsBoundSeat &&
           !current.entities.some((entity) => entity.id === actorId))
       ) {
+        if (command.command === 'attack')
+          console.info(
+            JSON.stringify({
+              event: 'combat_attack_rejected',
+              reason: 'combat_inactive',
+            }),
+          );
         this.sendError(
           accountId,
           'COMMAND_REJECTED',
-          'Combat is not active for this player.',
+          command.command === 'attack'
+            ? ATTACK_REJECTED
+            : 'Combat is not active for this player.',
           actionId,
         );
         return true;
@@ -6368,10 +6387,19 @@ export class Room {
       // Ask the combat admission table first. Its authorization-first result is
       // stable even while an asynchronous narration is in flight.
       if (this.turnInFlight) {
+        if (command.command === 'attack')
+          console.info(
+            JSON.stringify({
+              event: 'combat_attack_rejected',
+              reason: 'narration_in_progress',
+            }),
+          );
         this.sendError(
           accountId,
           'narration-in-progress',
-          'The DM is still narrating; try again in a moment.',
+          command.command === 'attack'
+            ? ATTACK_REJECTED
+            : 'The DM is still narrating; try again in a moment.',
           actionId,
         );
         return true;
