@@ -101,10 +101,12 @@ describe('Room solo DM turn lifecycle', () => {
           [downed]: { id: 'down-pc' },
           [standing]: { id: 'standing-pc' },
         },
+        combatActors: { [standing]: 'standing-companion' },
         combatRoom: {
           entities: [
             { id: 'down-pc', hp: 0 },
             { id: 'standing-pc', hp: 10 },
+            { id: 'standing-companion', hp: 0 },
           ],
         },
       } as never,
@@ -122,6 +124,50 @@ describe('Room solo DM turn lifecycle', () => {
       standingMessages.some((message) => message.type === 'SpotlightPrompt'),
     ).toBe(true);
   });
+  it('does not prompt when every connected seat character is downed', async () => {
+    const runner: SoloTurnRunner = {
+      async run() {
+        return result as never;
+      },
+    };
+    const { room, events } = setup(runner);
+    const first = randomUUID();
+    const second = randomUUID();
+    const messages: Record<string, unknown>[] = [];
+    await joinSeated(room, first, {
+      send: (message) => messages.push(message as Record<string, unknown>),
+    });
+    await joinSeated(room, second, {
+      send: (message) => messages.push(message as Record<string, unknown>),
+    });
+    room.state = {
+      ...room.state,
+      gameState: {
+        characters: {
+          [first]: { id: 'first-pc' },
+          [second]: { id: 'second-pc' },
+        },
+        combatRoom: {
+          entities: [
+            { id: 'first-pc', hp: 0 },
+            { id: 'second-pc', hp: 0 },
+          ],
+        },
+      } as never,
+    };
+    expect(
+      await room.submitAction(first, randomUUID(), 'I try to stand.'),
+    ).toBe(true);
+    await room.drain();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(messages.some((message) => message.type === 'SpotlightPrompt')).toBe(
+      false,
+    );
+    expect(events.some((event) => event.type === 'SpotlightPrompted')).toBe(
+      false,
+    );
+  });
+
   it('does not queue away autopilot when a DM turn ends before the away PC turn starts', async () => {
     const { state: combat, game } = bootstrapped();
     const runner: SoloTurnRunner = {
