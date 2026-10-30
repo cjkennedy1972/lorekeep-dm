@@ -103,13 +103,6 @@ jobs:
       - run: pnpm --filter @game/server migrate:up
       - run: pnpm --filter @game/web exec playwright install --with-deps chromium
       - run: pnpm --filter @game/web exec playwright test -c playwright.party.config.ts
-      # TEMPORARY exclusion proof: removed after verifying the uploaded artifact.
-      - name: Create dummy trace for artifact exclusion proof
-        if: always()
-        run: |
-          mkdir -p apps/web/test-results/exclusion-proof
-          printf dummy > apps/web/test-results/exclusion-proof/trace.zip
-          printf retained > apps/web/test-results/exclusion-proof/diagnostic.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
