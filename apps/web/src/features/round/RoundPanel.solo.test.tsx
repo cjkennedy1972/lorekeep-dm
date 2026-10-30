@@ -42,7 +42,13 @@ const submission = {
 describe('RoundPanel in a solo game', () => {
   it('does not show multiplayer counts or a waiting roster to the only seat', () => {
     render(
-      <RoundPanel round={round()} seats={[seat]} connected send={vi.fn()} />,
+      <RoundPanel
+        round={round()}
+        seats={[seat]}
+        selfSeatId="seat-a"
+        connected
+        send={vi.fn()}
+      />,
     );
 
     expect(screen.getAllByText('Your turn.').length).toBeGreaterThan(0);
@@ -53,11 +59,46 @@ describe('RoundPanel in a solo game', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('does not tell a viewer without the solo seat that it is their turn', () => {
+    render(
+      <RoundPanel
+        round={round()}
+        seats={[seat]}
+        selfSeatId="seat-spectator"
+        connected
+        send={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('Your turn.')).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText('Waiting for the only player.').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('does not tell a viewer without the solo seat that their action is in', () => {
+    render(
+      <RoundPanel
+        round={round({ submissions: [submission] })}
+        seats={[seat]}
+        selfSeatId="seat-spectator"
+        connected
+        send={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('Your action is in.')).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText('The only player has submitted.').length,
+    ).toBeGreaterThan(0);
+  });
+
   it('confirms the action is in once the only seat has submitted', () => {
     render(
       <RoundPanel
         round={round({ submissions: [submission] })}
         seats={[seat]}
+        selfSeatId="seat-a"
         myActionId={MY_ACTION}
         myText="I search the cellar."
         connected
@@ -76,6 +117,7 @@ describe('RoundPanel in a solo game', () => {
           eligibleSeatIds: ['seat-a', 'seat-b'] as Round['eligibleSeatIds'],
         })}
         seats={[seat]}
+        selfSeatId="seat-a"
         connected
         send={vi.fn()}
       />,

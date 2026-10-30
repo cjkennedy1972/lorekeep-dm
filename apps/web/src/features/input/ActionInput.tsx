@@ -15,6 +15,8 @@ type Props = {
   pending?: boolean;
   pendingText?: string;
   pendingSince?: number;
+  /** The pending action is queued for the next round; the notice sits in the sticky dock so it stays above the fold. */
+  queuedForNextRound?: boolean;
   onEditPending?: () => void;
   initialText?: string;
   onDraftChange?: (text: string) => void;
@@ -29,6 +31,7 @@ export function ActionInput({
   pending = false,
   pendingText,
   pendingSince,
+  queuedForNextRound = false,
   onEditPending,
   initialText = '',
   onDraftChange,
@@ -67,6 +70,11 @@ export function ActionInput({
           <span>
             {pendingText ? `Queued: ${pendingText}` : 'The DM is thinking…'}
           </span>
+          {queuedForNextRound && (
+            <span className="action-input__queued">
+              Queued for the next round.
+            </span>
+          )}
           {pendingSince !== undefined && (
             <span aria-live="off">Waiting {elapsedSeconds}s</span>
           )}
