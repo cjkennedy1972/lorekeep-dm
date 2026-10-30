@@ -197,6 +197,42 @@ export class SeatCharacterRepository {
       );
       if (account.rows[0]?.status !== 'active')
         throw new SeatCharacterError('ACCOUNT_INACTIVE');
+      const ownedCharacter = await client.query(
+        'SELECT id FROM account_characters WHERE id=$1 AND account_id=$2 FOR UPDATE',
+        [characterId, accountId],
+      );
+      if (!ownedCharacter.rowCount) {
+        await client.query('COMMIT');
+        return false;
+      }
+      // Preserve replayable session mechanics, but derived DM memory is an
+      // unprovenanced cache: clear it from every session that referenced this
+      // character so names or quoted player text cannot survive source deletion.
+      const referencedSessions = await client.query<{ session_id: string }>(
+        `SELECT s.id AS session_id FROM sessions s
+         WHERE s.character_id=$1
+         UNION
+         SELECT b.session_id FROM session_seat_characters b
+         WHERE b.character_id=$1::uuid`,
+        [characterId],
+      );
+      const sessionIds = referencedSessions.rows.map(
+        ({ session_id }) => session_id,
+      );
+      if (sessionIds.length) {
+        await client.query(
+          'SELECT id FROM sessions WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+          [sessionIds],
+        );
+        await client.query(
+          'DELETE FROM scene_summaries WHERE session_id = ANY($1::uuid[])',
+          [sessionIds],
+        );
+        await client.query(
+          'DELETE FROM registry_entries WHERE session_id = ANY($1::uuid[])',
+          [sessionIds],
+        );
+      }
       const deleted = await client.query(
         'DELETE FROM account_characters WHERE id=$1 AND account_id=$2',
         [characterId, accountId],

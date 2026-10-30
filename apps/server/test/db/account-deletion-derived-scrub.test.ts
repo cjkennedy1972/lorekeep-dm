@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RegistryMemory } from '../../src/dm/memory.js';
+import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { runSweep } from '../../src/retention/sweeper.js';
 
@@ -34,8 +35,8 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('account deletion leaves DM-authored derived memory unscrubbed (ADR-017 known limit)', () => {
-  it('completes deletion with derived rows still naming the character, including facts differing only by case', async () => {
+describe('account deletion scrubs DM-authored derived memory', () => {
+  it('removes derived rows that may contain the deleted character name or quoted player text', async () => {
     const gone = randomUUID();
     const heir = randomUUID();
     const session = randomUUID();
@@ -121,30 +122,91 @@ describe('account deletion leaves DM-authored derived memory unscrubbed (ADR-017
       ).toEqual([{ owner_account_id: heir }]);
 
       expect(
-        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+        await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM registry_entries WHERE session_id=$1', [
           session,
         ]),
-      ).toEqual([{ summary: SUMMARY }]);
-      const [entry] = await q(
-        "SELECT payload->>'role' AS role, payload::text AS payload, search_document FROM registry_entries WHERE session_id=$1",
-        [session],
-      );
-      expect(entry.role).toBe('Brann pays in gold');
-      expect(entry.search_document).toContain('Brann pays in gold');
+      ).toHaveLength(0);
       expect(
         await q(
-          'SELECT fact, length(fact) AS len FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id WHERE e.session_id=$1 ORDER BY f.id',
+          'SELECT 1 FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id WHERE e.session_id=$1',
           [session],
         ),
-      ).toEqual([
-        { fact: 'Brann said yes to the guard', len: 27 },
-        { fact: FACT_160, len: 160 },
-        { fact: 'Brann is brave.', len: 15 },
-        { fact: 'brann is brave.', len: 15 },
-      ]);
+      ).toHaveLength(0);
     } finally {
       await q('SELECT purge_session($1)', [session]);
       await q('DELETE FROM accounts WHERE id = ANY($1)', [[gone, heir]]);
+    }
+  });
+
+  it('removes derived rows from sessions referencing a deleted released character', async () => {
+    const owner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    const seatId = randomUUID();
+    await account(owner);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, owner, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          session,
+          owner,
+          'Character scrub',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      await q(
+        `INSERT INTO session_seat_characters
+          (session_id,seat_id,account_id,character_id,character_revision,character_snapshot,binding_status,unbound_at)
+         VALUES($1,$2,$3,$4,1,$5,'released',now())`,
+        [
+          session,
+          seatId,
+          owner,
+          characterId,
+          { id: characterId, name: CHAR_NAME },
+        ],
+      );
+      await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [session, 'scene-quoted', `The player said: “I am ${CHAR_NAME}.”`],
+      );
+      const entry = await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document)
+         VALUES($1,'npc','npc_guard',1,'Guard Captain',$2,$3) RETURNING id`,
+        [session, { role: `${CHAR_NAME} said yes` }, `${CHAR_NAME} said yes`],
+      );
+      await q('INSERT INTO registry_facts(entry_id,fact) VALUES($1,$2)', [
+        entry[0].id,
+        `${CHAR_NAME} said yes to the guard`,
+      ]);
+
+      expect(
+        await new SeatCharacterRepository(db).deleteOwnedCharacter(
+          owner,
+          characterId,
+        ),
+      ).toBe(true);
+      expect(
+        await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM registry_entries WHERE session_id=$1', [
+          session,
+        ]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(0);
+    } finally {
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id=$1', [owner]);
     }
   });
 });

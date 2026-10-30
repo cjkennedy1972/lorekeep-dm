@@ -337,6 +337,34 @@ async function deleteAccount(
     seatIdsBySession.set(session_id, sessionSeats);
   }
 
+  // Derived DM memory is regenerable but has no author/character provenance. Drop it
+  // for every room the deleted account owned, bound to, or occupied rather than trying
+  // to guess which summaries and facts paraphrase that player's text.
+  const derivedSessionIds = new Set<string>([
+    ...owned.map(({ id }) => id),
+    ...boundRows.map(({ session_id }) => session_id),
+    ...seatRows.rows.map(({ session_id }) => session_id),
+    ...touched,
+  ]);
+  const charReferencedSessions = charIds.size
+    ? await client.query<{ id: string }>(
+        'SELECT id FROM sessions WHERE character_id = ANY($1::text[])',
+        [[...charIds]],
+      )
+    : { rows: [] as { id: string }[] };
+  for (const { id } of charReferencedSessions.rows) derivedSessionIds.add(id);
+  if (derivedSessionIds.size) {
+    const sessionIds = [...derivedSessionIds];
+    await client.query(
+      'DELETE FROM scene_summaries WHERE session_id = ANY($1::uuid[])',
+      [sessionIds],
+    );
+    await client.query(
+      'DELETE FROM registry_entries WHERE session_id = ANY($1::uuid[])',
+      [sessionIds],
+    );
+  }
+
   const affectedVotes = new Set<string>();
   const deletedBallotVotes = new Set<string>();
   for (const row of eventRows) {

@@ -96,6 +96,8 @@ The windows below are what the code enforces. ADR-017 is the design target; the 
 
 The sweeper runs every hour by default (`SWEEP_INTERVAL_MS`, `apps/server/src/config.ts:33`). `0` disables it. A sweep that has not completed within 26 hours is reported as stale by the readiness endpoint (`apps/server/src/retention/sweeper.ts:10`).
 
+Derived DM memory is regenerable and has no author/character provenance. Account deletion removes all scene summaries and registry entries/facts for sessions the account owned, occupied, or character-bound; deleting a reusable character removes derived memory for sessions that reference it. This preserves canonical gameplay state but can discard unrelated summaries/facts in those sessions. It avoids unsafe name or substring replacement; a reference-based memory model remains future work.
+
 Deleting an account sets its status to `deleting`. The account-deletion job (`runAccountDeletions`, `apps/server/src/retention/jobs/accountDeletion.ts:549`) then runs on each sweep. PII is removed, solo sessions are deleted, and shared sessions are redacted rather than purged. The job is not timed. A live `session_lease` on any affected session (taken with a 5-minute TTL in `fenceSession`) or a legal hold makes the attempt fail closed as `HELD`. The account stays `deleting` and is retried on a later sweep. No code enforces ADR-017's target that PII is hard-deleted within 30 days of the request.
 
 ADR-017 also sets rolling 30-day Postgres backups, so full erasure from backups lags deletion by at most 30 days. This repository does not configure backups; the operator's backup setup must enforce that window.
