@@ -5,6 +5,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import { redactInviteUrls, rethrowRedacted } from './redact';
 
 export const API = 'http://localhost:8787';
 
@@ -26,7 +27,7 @@ export async function signedIn(context: BrowserContext, name: string) {
       birthdate: '1990-01-01',
     },
   });
-  expect(response.ok(), await response.text()).toBe(true);
+  expect(response.ok(), redactInviteUrls(await response.text())).toBe(true);
 }
 
 export async function openTable(host: BrowserContext, name: string) {
@@ -40,7 +41,7 @@ export async function openTable(host: BrowserContext, name: string) {
 
 /** Joins the table by invite code, then opens its game screen and waits for the socket. */
 export async function enterGame(page: Page, room: TestRoom, title: string) {
-  await page.goto(`/join/${room.code}`);
+  await page.goto(`/join/${room.code}`).catch(rethrowRedacted);
   await page.getByRole('button', { name: 'Join table' }).click();
   await page.getByRole('heading', { name: title }).waitFor();
   await expect(page.getByText('Connected to the room.')).toBeVisible();
@@ -84,7 +85,7 @@ export async function script(
     `${API}/api/test/tables/${room.id}/round`,
     { data: body },
   );
-  expect(response.ok(), await response.text()).toBe(true);
+  expect(response.ok(), redactInviteUrls(await response.text())).toBe(true);
 }
 
 /** A host and one guest seated at a fresh table, both on the game screen. */

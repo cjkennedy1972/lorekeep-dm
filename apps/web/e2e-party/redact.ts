@@ -1,14 +1,19 @@
-// Invite codes travel in /join/<code> and must never reach the CI log, traces, or reports. Tickets and
-// tokens travel in query strings. Use these wherever a URL or an error that may contain one is printed.
+// Invite codes travel in /join/<code> and /api/invites/<code>/join, and tickets and tokens travel in
+// query strings. Use these wherever a URL, or an error that may contain one, is printed.
 
-const INVITE_PATH = /\/join\/[^/?#\s'"`]+/g;
+const INVITE_PATH = /(\/(?:join|api\/invites)\/)[^/?#\s'"`]+/g;
 const SECRET_QUERY = /([?&](?:ticket|token|invite)=)[^&#\s'"`]+/gi;
 
 /** Replaces invite codes and secret query values inside any text (error messages, call logs, JSON). */
 export function redactInviteUrls(text: string): string {
   return text
-    .replace(INVITE_PATH, '/join/[REDACTED]')
+    .replace(INVITE_PATH, '$1[REDACTED]')
     .replace(SECRET_QUERY, '$1[REDACTED]');
+}
+
+/** Rethrows a Playwright error (goto, expect) with invite codes removed, for use in `.catch`. */
+export function rethrowRedacted(error: unknown): never {
+  throw new Error(redactInviteUrls(String(error)));
 }
 
 /**

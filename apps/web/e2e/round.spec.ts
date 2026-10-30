@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type BrowserContext } from '@playwright/test';
+import { redactInviteUrls, rethrowRedacted } from './redact';
 
 const API = 'http://localhost:8787';
 
@@ -17,7 +18,7 @@ async function signedIn(context: BrowserContext, name: string) {
       birthdate: '1990-01-01',
     },
   });
-  expect(response.ok(), await response.text()).toBe(true);
+  expect(response.ok(), redactInviteUrls(await response.text())).toBe(true);
 }
 
 async function openTable(
@@ -48,7 +49,7 @@ test('keyboard round flow: submit, edit and withdraw an action; every seat sees 
     const hostPage = await host.newPage();
     const guestPage = await guest.newPage();
     for (const page of [hostPage, guestPage]) {
-      await page.goto(`/join/${room.code}`);
+      await page.goto(`/join/${room.code}`).catch(rethrowRedacted);
       await page.getByRole('button', { name: 'Join table' }).click();
       await page.getByRole('heading', { name: 'Round flow' }).waitFor();
     }
@@ -101,14 +102,14 @@ test('host controls validate the round timer, save it, and pass axe', async ({
     const room = await openTable(host, guest, 'Timer table');
 
     const hostPage = await host.newPage();
-    await hostPage.goto(`/join/${room.code}`);
+    await hostPage.goto(`/join/${room.code}`).catch(rethrowRedacted);
     await hostPage.getByRole('button', { name: 'Join table' }).click();
     await hostPage.getByRole('heading', { name: 'Timer table' }).waitFor();
     await hostPage.goto(`/rooms/${room.id}/game`);
     await expect(hostPage.getByText('Connected')).toBeVisible();
 
     const guestPage = await guest.newPage();
-    await guestPage.goto(`/join/${room.code}`);
+    await guestPage.goto(`/join/${room.code}`).catch(rethrowRedacted);
     await guestPage.getByRole('button', { name: 'Join table' }).click();
     await guestPage.getByRole('heading', { name: 'Timer table' }).waitFor();
 
