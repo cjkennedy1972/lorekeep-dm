@@ -7,6 +7,7 @@ import {
 } from '@playwright/test';
 import {
   activeCombatantId,
+  awaitTrackers,
   closeMember,
   displayNameOf,
   openMember,
@@ -49,10 +50,7 @@ async function openCombatTable(browser: Browser, request: APIRequestContext) {
   const views: View[] = [];
   for (const member of [combat.host, combat.guest, combat.scout])
     views.push(await openMember(browser, member, combat.table));
-  for (const { page } of views)
-    await expect(
-      page.getByRole('list', { name: 'Initiative tracker' }),
-    ).toBeVisible({ timeout: 30_000 });
+  await awaitTrackers(views);
   return views;
 }
 

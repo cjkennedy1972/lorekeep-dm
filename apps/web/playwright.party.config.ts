@@ -17,6 +17,8 @@ export default defineConfig({
   workers: 1,
   use: {
     baseURL: `http://localhost:${webPort}`,
+    // Traces hold request headers (session cookies), the ws-ticket response, and page state. They are
+    // not scrubbed: keep them local, and never upload them as a CI artifact.
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
@@ -24,8 +26,11 @@ export default defineConfig({
   outputDir: 'test-results/party',
   webServer: [
     {
+      // The server's stdout and stderr (pino lines: seat.socket.refused, ws_ticket_outcome, errors) go to a
+      // file that CI uploads with the failure artifacts. A plain shell redirect keeps the pnpm/vitest process as
+      // the one Playwright starts and stops, so the port is released on teardown; no pipe is involved.
       command:
-        'pnpm --filter @game/server exec vitest run -c vitest.party.live.config.ts',
+        'mkdir -p test-results && pnpm --filter @game/server exec vitest run -c vitest.party.live.config.ts > test-results/party-server.log 2>&1',
       url: `http://127.0.0.1:${apiPort}/api/me`, // 401 once up; any HTTP answer counts
       env: {
         LIVE_STATE_FILE: stateFile,
