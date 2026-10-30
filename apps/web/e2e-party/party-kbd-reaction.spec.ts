@@ -47,6 +47,11 @@ function answeredWith(frames: unknown[], choice: 'take' | 'decline') {
   );
 }
 
+// The dialog's countdown re-renders every 100 ms. The Enter below is only meaningful if focus survives those
+// ticks, so each test waits this long between focusing its target and pressing Enter. No condition marks the
+// end of that window, so this is a fixed wait used only at those two points.
+const FOCUS_SETTLE_MS = 300;
+
 // Every opened seat is pushed to `views` as it opens, so the caller's finally closes them even when a
 // later step fails. A seat that is never closed loses its resume token and cannot reconnect in later specs.
 async function openReactionTable(browser: Browser, views: View[]) {
@@ -137,6 +142,13 @@ test.describe('party keyboard-only opportunity attack', () => {
       });
 
       await test.step('Enter on Accept answers take; the window closes for every seat', async () => {
+        // Let several countdown ticks pass; Enter must hit the focused Accept, not a refocused button.
+        await reactorView.page.waitForTimeout(FOCUS_SETTLE_MS);
+        await expect(
+          reactorView.page
+            .getByRole('dialog', DIALOG)
+            .getByRole('button', { name: 'Accept' }),
+        ).toBeFocused();
         await reactorView.page.keyboard.press('Enter');
         await expect
           .poll(() => answeredWith(reactorView.frames, 'take').length)
@@ -161,6 +173,11 @@ test.describe('party keyboard-only opportunity attack', () => {
         const dialog = reactorView.page.getByRole('dialog', DIALOG);
         await expect(dialog).toBeVisible();
         await reactorView.page.keyboard.press('Tab');
+        await expect(
+          dialog.getByRole('button', { name: 'Decline' }),
+        ).toBeFocused();
+        // Let several countdown ticks pass; Enter must hit the focused button, not a refocused Accept.
+        await reactorView.page.waitForTimeout(FOCUS_SETTLE_MS);
         await expect(
           dialog.getByRole('button', { name: 'Decline' }),
         ).toBeFocused();
