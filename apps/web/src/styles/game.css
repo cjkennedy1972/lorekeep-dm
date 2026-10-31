@@ -76,6 +76,27 @@
   display: none;
 }
 
+/* A partial DM failure sits in the page flow, boxed and readable, with a dismiss target. */
+.partial-failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--danger);
+  border-inline-start-width: 0.3rem;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+}
+.partial-failure p {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+.partial-failure button {
+  min-height: var(--target-min);
+  margin-inline-start: auto;
+}
+
 /* Safety: always visible, small, persistent toolbar */
 .game-safety-controls {
   display: flex;

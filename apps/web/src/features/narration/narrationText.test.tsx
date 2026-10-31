@@ -163,3 +163,18 @@ test('splitPrompt leaves text without a trailing question alone', () => {
     prompt: 'What now?',
   });
 });
+
+test('a whitespace-only body renders no paragraph and no prompt', () => {
+  const { container } = render(<NarrationText text={' \n\t \n  '} />);
+  expect(container.querySelectorAll('p')).toHaveLength(0);
+});
+
+test('whitespace around the closing question does not leave an empty body paragraph', () => {
+  const { container } = render(
+    <NarrationText text={'  \n\n   \n\n**What do you do?**'} />,
+  );
+  const paragraphs = [...container.querySelectorAll('p')];
+  expect(paragraphs).toHaveLength(1);
+  expect(paragraphs[0]).toHaveClass('narration-log__prompt');
+  expect(paragraphs[0]).toHaveTextContent('What do you do?');
+});

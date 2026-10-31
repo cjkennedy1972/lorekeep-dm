@@ -322,5 +322,8 @@ export function visibleChunks(turn: NarrationTurn): string {
     text += turn.chunks[index];
     expected += 1;
   }
-  return text || (turn.complete ? (turn.narration ?? '') : '');
+  // A whitespace-only body is no body: it would render an empty bubble and no closing prompt.
+  if (text.trim()) return text;
+  const narration = turn.complete ? (turn.narration ?? '') : '';
+  return narration.trim() ? narration : '';
 }

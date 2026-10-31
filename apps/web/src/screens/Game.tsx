@@ -48,6 +48,7 @@ import { gameStore } from '../state/store.js';
 import { weaponName } from '../features/narration/combatRolls.js';
 import { ChatPanel } from '../features/chat/ChatPanel.js';
 import { Drawer } from '../features/game/Drawer.js';
+import { PartialFailureBanner } from '../features/game/PartialFailureBanner.js';
 import '../styles/game.css';
 
 const renderer = new Canvas2DRenderer();
@@ -384,7 +385,7 @@ export function Game() {
         );
       }
       if (message.type === 'ToolRejected') {
-        setError(
+        setPartialFailure(
           'The DM could not apply part of that action. The rest of the turn may still have succeeded.',
         );
       }
@@ -516,6 +517,8 @@ export function Game() {
   }, [reactionNotice?.reactionId, reactionNotice?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
+  // The DM applied only part of this player's action; shown as a dismissible alert, not the status line.
+  const [partialFailure, setPartialFailure] = useState<string | null>(null);
   // A rejected attack is explained beside the attack buttons, not in the page header.
   const [attackFeedback, setAttackFeedback] = useState<string | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -699,6 +702,7 @@ export function Game() {
     lastActionText.current = text;
     setTurnFailure(null);
     setError('');
+    setPartialFailure(null);
     updatePendingAction(() => ({
       id,
       text,
@@ -1006,6 +1010,15 @@ export function Game() {
         onRetry={live.removed ? undefined : retryRoomConnection}
       />
     );
+  // A solo-mode table has nobody to chat with, so its Party chat drawer would be an empty shell. The server
+  // sends the persisted mode. An older server omits it, so seat count, a pending late join, or a device claim
+  // stands in. Host tools always stays for the host: it carries round and turn-timer controls.
+  const showPartyChat =
+    room?.tableMode !== undefined
+      ? room.tableMode === 'party'
+      : (room?.seats?.length ?? 0) > 1 ||
+        (room?.lateJoinRequests?.length ?? 0) > 0 ||
+        seatClaims.length > 0;
   return (
     <div className="game-screen">
       <div className="game-skip-links">
@@ -1035,6 +1048,12 @@ export function Game() {
         <ConnectionStatus status={live.status} />
         <Link to={`/rooms/${id}`}>Back to lobby</Link>
       </header>
+      {partialFailure && (
+        <PartialFailureBanner
+          message={partialFailure}
+          onDismiss={() => setPartialFailure(null)}
+        />
+      )}
       {(live.status === 'reconnecting' || live.status === 'closed') && (
         <p role="alert">
           The connection to the table dropped. Your game is safe. Actions can be
@@ -1627,24 +1646,26 @@ export function Game() {
               )}
             </Drawer>
           )}
-          <Drawer
-            id="chat"
-            title="Party chat"
-            badge={chatMessages.length || undefined}
-          >
-            <ChatPanel
-              roomId={id}
-              messages={chatMessages}
-              room={room}
-              isHost={isHost}
-              connected={live.status === 'connected'}
-              error={chatError}
-              onSend={(text) => Boolean(live.send('ChatSend', { text }))}
-              onMute={(seatId, muted) =>
-                Boolean(live.send('MuteChat', { seatId, muted }))
-              }
-            />
-          </Drawer>
+          {showPartyChat && (
+            <Drawer
+              id="chat"
+              title="Party chat"
+              badge={chatMessages.length || undefined}
+            >
+              <ChatPanel
+                roomId={id}
+                messages={chatMessages}
+                room={room}
+                isHost={isHost}
+                connected={live.status === 'connected'}
+                error={chatError}
+                onSend={(text) => Boolean(live.send('ChatSend', { text }))}
+                onMute={(seatId, muted) =>
+                  Boolean(live.send('MuteChat', { seatId, muted }))
+                }
+              />
+            </Drawer>
+          )}
         </aside>
       </div>
     </div>

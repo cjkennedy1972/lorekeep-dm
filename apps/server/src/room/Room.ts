@@ -1927,6 +1927,8 @@ export class Room {
       seats,
       revokedSeats,
       spotlightActivity,
+      // The persisted session mode, the same truth that gates gameplay commands; safe for every viewer.
+      tableMode: this.bindingEnforced ? 'party' : 'solo',
     };
     const isHostViewer = this.state.seats.some(
       (seat) => seat.accountId === viewerAccountId && seat.isHost,

@@ -184,6 +184,28 @@ describe('Game screen (live Room)', () => {
     ).toBeTruthy();
   });
 
+  it('a partial DM failure shows as a dismissible alert in the page flow', async () => {
+    const user = userEvent.setup();
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    push('ToolRejected', {});
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(
+      'The DM could not apply part of that action.',
+    );
+    // In the page flow after the header, not a stray thin line above it.
+    const header = document.querySelector('.game-header')!;
+    expect(
+      header.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(
+      screen.queryByText('The DM could not apply part of that action.'),
+    ).not.toBeInTheDocument();
+  });
+
   it('never commits the opening placeholder while non-empty history is being restored', () => {
     const openingVisibilityByCommit: boolean[] = [];
     mount(() => {

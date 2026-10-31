@@ -332,7 +332,8 @@ export class CharacterBuilder {
 
     const char: CharacterInput = {
       id: `character:${klass.id.split(':')[1]}`,
-      name: this.charName || 'Unnamed Hero',
+      // Same default the creation wizard shows players (apps/web defaultHeroName).
+      name: this.charName || 'Hero 1',
       speciesId: this.speciesId ?? '',
       classId: klass.id,
       backgroundId: bg.id,

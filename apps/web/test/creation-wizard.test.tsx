@@ -186,3 +186,30 @@ test('typing over the default Hero name replaces it instead of appending', async
   await user.type(name, 'Mira');
   expect(name.value).toBe('Mira');
 });
+
+test('an untouched default name is saved as Hero 1, the same name the player saw', async () => {
+  gameStore.setCharacter(null);
+  const user = userEvent.setup();
+  render(<CreationWizard />);
+  await user.click(screen.getByRole('radio', { name: /Fighter/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Soldier/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Human/ }));
+  await step(user);
+  await user.click(screen.getByRole('radio', { name: /Standard array/ }));
+  await step(user);
+  const choices = screen.getAllByRole('checkbox');
+  await user.click(choices[0]!);
+  await user.click(choices[1]!);
+  await step(user);
+  await user.click(
+    within(
+      screen.getByRole('group', { name: 'Choose starting equipment' }),
+    ).getAllByRole('radio')[0]!,
+  );
+  await step(user);
+  expect(screen.getByLabelText('Character name')).toHaveValue('Hero 1');
+  await user.click(screen.getByRole('button', { name: 'Save character' }));
+  expect(gameStore.getState().character?.name).toBe('Hero 1');
+});
