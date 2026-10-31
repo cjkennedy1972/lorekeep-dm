@@ -4,15 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { RegistryMemory } from '../../src/dm/memory.js';
 import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { runSweep } from '../../src/retention/sweeper.js';
 
 const CHAR_NAME = 'Brann';
-const SUMMARY =
-  'The guard answered yes. Brannigan waits by the well. Brann the bold nods.';
-const FACT_160 = `Brann ${'x'.repeat(154)}`;
 let db: Pool;
 let dir: string;
 
