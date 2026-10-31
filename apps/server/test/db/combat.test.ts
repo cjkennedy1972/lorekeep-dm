@@ -13,6 +13,7 @@ import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { issueTicket } from '../../src/gateway/tickets.js';
 import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
+import { Room } from '../../src/room/Room.js';
 import { RoomRegistry } from '../../src/room/registry.js';
 import { SessionLease } from '../../src/room/lease.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
@@ -2268,6 +2269,9 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
       // Round-trip first: the server must have consumed the StateSyncAck before
       // the flood starts, or frames land in the pre-ack buffer and close the socket.
       await client.command({ command: 'options' });
+      const submitCombatCommand = vi
+        .spyOn(Room.prototype, 'submitCombatCommand')
+        .mockResolvedValue(true);
       const mark = client.log.length;
       for (let i = 0; i < 200; i++)
         client.ws.send(
@@ -2289,7 +2293,13 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
           ).toBeGreaterThanOrEqual(150),
         { timeout: 2000 },
       );
+      // One warm-up command and the initial snapshot acknowledgement have
+      // already used two tokens. The remaining per-socket budget must admit
+      // substantially more commands than a second combat-only charge allows.
+      expect(submitCombatCommand.mock.calls.length).toBeGreaterThan(12);
+      submitCombatCommand.mockRestore();
     } finally {
+      vi.restoreAllMocks();
       client.close();
     }
   }, 20_000);

@@ -5,6 +5,7 @@ import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { installGateway } from '../../src/gateway/ws.js';
+import { ConnectionRegistry } from '../../src/gateway/connections.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { hashToken } from '../../src/accounts/signup.js';
 import { Persistence } from '../../src/persistence/index.js';
@@ -57,7 +58,8 @@ const rooms = new RoomRegistry(
   new SessionLease(db),
   'input-gate-test',
 );
-installGateway(app, db, rooms);
+const connections = new ConnectionRegistry(db);
+installGateway(app, db, rooms, connections);
 let base: string;
 let tokens: string[];
 let room: Room;
@@ -374,6 +376,9 @@ describe('gateway input gate', () => {
         submitted.push(actionId);
         return true;
       });
+    // This ordering test exercises message admission, not the separate per-seat
+    // handshake-abuse budget consumed by the preceding reconnect tests.
+    connections.resetAuthAttemptHistory();
     const ws = await openSocket(tokens[0]!);
     const first = JSON.parse(playerAction('slow first'));
     const second = JSON.parse(playerAction('fast second'));
