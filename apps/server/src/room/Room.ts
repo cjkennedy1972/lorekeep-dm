@@ -6584,12 +6584,18 @@ export class Room {
       });
       // Preserve the engine's split events in the durable log, but do not let
       // a non-controller infer a hidden reactor's reach from the movement pause.
-      if (
-        clientEvents.some(
-          (event) =>
-            event.type === 'ReactionDeclined' && event.cause === 'auto',
-        )
-      ) {
+      const hiddenReactorDeclinedWithoutViewerPrompt = clientEvents.some(
+        (event) => {
+          if (event.type !== 'ReactionDeclined') return false;
+          const reactor = this.promptReactors.get(String(event.promptId));
+          return (
+            reactor !== undefined &&
+            hidden.has(reactor) &&
+            !controlled.has(reactor)
+          );
+        },
+      );
+      if (hiddenReactorDeclinedWithoutViewerPrompt) {
         const moved = visible.filter((event) => event.type === 'EntityMoved');
         if (moved.length > 1) {
           const first = moved[0]!;
@@ -6597,9 +6603,19 @@ export class Room {
             (event) => event.entityId === first.entityId,
           );
           if (sameMover) {
-            const path = moved.flatMap((event) =>
-              Array.isArray(event.path) ? event.path : [],
+            const started = visible.find(
+              (event) =>
+                event.type === 'MoveStarted' &&
+                event.entityId === first.entityId,
             );
+            // MoveStarted carries the planned route (including its origin); the
+            // per-step EntityMoved events carry only destinations after an
+            // interrupted reaction resumes.
+            const path = Array.isArray(started?.path)
+              ? started.path
+              : moved.flatMap((event) =>
+                  Array.isArray(event.path) ? event.path : [],
+                );
             const combined = {
               ...first,
               path,
@@ -6610,6 +6626,11 @@ export class Room {
             };
             let emitted = false;
             visible = visible.flatMap((event) => {
+              if (
+                event.type === 'MovementSpent' &&
+                event.entityId === first.entityId
+              )
+                return [];
               if (event.type !== 'EntityMoved') return [event];
               if (emitted) return [];
               emitted = true;
