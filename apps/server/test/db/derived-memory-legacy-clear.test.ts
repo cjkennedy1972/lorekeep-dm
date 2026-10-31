@@ -124,6 +124,15 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       ),
     );
     await db.pool.query(
+      await readFile(
+        new URL(
+          '../../migrations/0053_derived_memory_legacy_clear_plan.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    await db.pool.query(
       'INSERT INTO sessions(id,owner_account_id) SELECT * FROM unnest($1::uuid[],$2::uuid[])',
       [sessionIds, accountIds],
     );
@@ -300,7 +309,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     });
     await expect(
       runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
-    ).rejects.toThrow(/matching successful dry run/i);
+    ).rejects.toThrow(/recent matching successful dry run/i);
   });
 
   it('refuses live execution when no dry run exists', async () => {
@@ -963,7 +972,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     );
     await expect(
       runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
-    ).rejects.toThrow(/resume.*counts|no longer equal/i);
+    ).rejects.toThrow(/plan_digest_mismatch/i);
     expect(
       (
         await db.pool.query(
@@ -995,7 +1004,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     await db.pool.query("DELETE FROM scene_summaries WHERE scene_id='legacy'");
     await expect(
       runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
-    ).rejects.toThrow(/resume.*counts|no longer equal/i);
+    ).rejects.toThrow(/plan_digest_mismatch/i);
     expect(
       (
         await db.pool.query(
@@ -1055,11 +1064,9 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
         )
       ).rows[0]?.n,
     ).toBe(1);
-    const again = await runLegacyDerivedMemoryClear(db.pool, {
-      ...flags,
-      dryRun: false,
-    });
-    expect(again.outcome).toBe('live_succeeded');
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+    ).rejects.toThrow(/plan_digest_mismatch/i);
     const audits = await db.pool.query<{
       mode: string;
       counts: unknown;
@@ -1090,6 +1097,232 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     );
   });
 
+  it('refuses a same-count row swap because live must execute the approved row identities', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const planned = await db.pool.query<{ id: string }>(
+      "SELECT id::text FROM scene_summaries WHERE session_id=$1 AND scene_id='legacy'",
+      [sessionIds[0]],
+    );
+    await db.pool.query('DELETE FROM scene_summaries WHERE id=$1', [
+      planned.rows[0]!.id,
+    ]);
+    await db.pool.query(
+      "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'replacement','new uncovered summary')",
+      [sessionIds[0]],
+    );
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+    ).rejects.toThrow(/plan_digest_mismatch/i);
+    expect(
+      (
+        await db.pool.query(
+          'SELECT count(*)::int AS n FROM scene_summaries WHERE session_id=$1',
+          [sessionIds[0]],
+        )
+      ).rows[0]?.n,
+    ).toBe(1);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM registry_entries WHERE entity_id='legacy'",
+        )
+      ).rows[0]?.n,
+    ).toBe(1);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE mode='live' ORDER BY started_at DESC LIMIT 1",
+        )
+      ).rows[0],
+    ).toEqual({ outcome: 'aborted', reason_code: 'plan_digest_mismatch' });
+    expect(dry.counts.sceneSummaries).toBeGreaterThan(0);
+  });
+
+  it('refuses a candidate added after dry run before deleting any planned row', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    await db.pool.query(
+      "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'new-after-plan','new text')",
+      [sessionIds[0]],
+    );
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+    ).rejects.toThrow(/plan_digest_mismatch/i);
+    expect(
+      (
+        await db.pool.query(
+          'SELECT count(*)::int AS n FROM scene_summaries WHERE session_id=$1',
+          [sessionIds[0]],
+        )
+      ).rows[0]?.n,
+    ).toBe(2);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM registry_entries WHERE entity_id='legacy'",
+        )
+      ).rows[0]?.n,
+    ).toBe(1);
+    expect(dry.outcome).toBe('dry_run_succeeded');
+  });
+
+  it('refuses a planned row removed after dry run before deleting anything else', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    await db.pool.query(
+      "DELETE FROM scene_summaries WHERE session_id=$1 AND scene_id='legacy'",
+      [sessionIds[0]],
+    );
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+    ).rejects.toThrow(/plan_digest_mismatch/i);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM registry_entries WHERE entity_id='legacy'",
+        )
+      ).rows[0]?.n,
+    ).toBe(1);
+  });
+
+  it('deletes only planned IDs when candidates change after the locked identity check', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const planned = await db.pool.query<{ id: string }>(
+      "SELECT id::text FROM scene_summaries WHERE session_id=$1 AND scene_id='legacy'",
+      [sessionIds[0]],
+    );
+    const plannedId = planned.rows[0]!.id;
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, {
+        ...flags,
+        dryRun: false,
+        afterSessionIdentityCheckForTests: async (client, sessionId) => {
+          if (sessionId !== sessionIds[0]) return;
+          await client.query('DELETE FROM scene_summaries WHERE id=$1', [
+            plannedId,
+          ]);
+          await client.query(
+            "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'post-check-replacement','unplanned')",
+            [sessionId],
+          );
+        },
+      }),
+    ).rejects.toThrow(/plan_digest_mismatch/i);
+    expect(
+      (
+        await db.pool.query(
+          'SELECT id::text FROM scene_summaries WHERE id=$1',
+          [plannedId],
+        )
+      ).rowCount,
+    ).toBe(1);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM scene_summaries WHERE scene_id='post-check-replacement'",
+        )
+      ).rows[0]?.n,
+    ).toBe(0);
+    expect(dry.outcome).toBe('dry_run_succeeded');
+  });
+
+  it('rechecks the next session after an earlier session commits and preserves counts on drift', async () => {
+    await db.pool.query(
+      "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'mid-run-original','planned before live')",
+      [sessionIds[1]],
+    );
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    let seen = 0;
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, {
+        ...flags,
+        dryRun: false,
+        beforeSessionLockForTests: async (sessionId) => {
+          if (seen++ !== 1) return;
+          await db.pool.query(
+            "DELETE FROM scene_summaries WHERE session_id=$1 AND scene_id='mid-run-original'",
+            [sessionId],
+          );
+          await db.pool.query(
+            "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'mid-run-replacement','replacement')",
+            [sessionId],
+          );
+        },
+      }),
+    ).rejects.toThrow(/plan_digest_mismatch/i);
+    const audit = await db.pool.query<{
+      outcome: string;
+      reason_code: string;
+      counts: Record<string, number>;
+    }>(
+      "SELECT outcome,reason_code,counts FROM derived_memory_legacy_clear_audit WHERE mode='live' ORDER BY started_at DESC LIMIT 1",
+    );
+    expect(audit.rows[0]?.outcome).toBe('failed');
+    expect(audit.rows[0]?.reason_code).toBe('plan_digest_mismatch');
+    expect(audit.rows[0]?.counts.sceneSummariesRemoved).toBeGreaterThan(0);
+    expect(dry.counts.sceneSummaries).toBeGreaterThan(
+      audit.rows[0]!.counts.sceneSummariesRemoved,
+    );
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM scene_summaries WHERE scene_id='mid-run-replacement'",
+        )
+      ).rows[0]?.n,
+    ).toBe(1);
+  });
+
+  it('stores only row IDs/digests outside counts-only audit and purges plans after success', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const plan = await db.pool.query(
+      'SELECT * FROM derived_memory_legacy_clear_plan WHERE dry_run_id=$1',
+      [dry.runId],
+    );
+    expect(plan.rowCount).toBeGreaterThan(0);
+    expect(JSON.stringify(plan.rows)).not.toMatch(
+      /uncovered legacy summary|legacy fact|legacy searchable document/,
+    );
+    const ids = plan.rows.flatMap((row) => [
+      ...(row.scene_summary_ids ?? []),
+      ...(row.registry_entry_ids ?? []),
+      ...(row.registry_fact_ids ?? []),
+      row.session_id,
+    ]);
+    const plannedIds = {
+      summaries: plan.rows.flatMap((row) => row.scene_summary_ids ?? []),
+      entries: plan.rows.flatMap((row) => row.registry_entry_ids ?? []),
+      facts: plan.rows.flatMap((row) => row.registry_fact_ids ?? []),
+    };
+    const audit = await db.pool.query(
+      'SELECT counts FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+      [dry.runId],
+    );
+    expect(JSON.stringify(audit.rows)).not.toMatch(new RegExp(ids.join('|')));
+    const live = await runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      dryRun: false,
+    });
+    expect(live.outcome).toBe('live_succeeded');
+    for (const [table, ids] of [
+      ['scene_summaries', plannedIds.summaries],
+      ['registry_entries', plannedIds.entries],
+      ['registry_facts', plannedIds.facts],
+    ] as const) {
+      if (ids.length === 0) continue;
+      const remaining = await db.pool.query(
+        `SELECT count(*)::int AS n FROM ${table} WHERE id=ANY($1::bigint[])`,
+        [ids],
+      );
+      expect(remaining.rows[0]?.n).toBe(0);
+    }
+    expect(
+      (
+        await db.pool.query(
+          'SELECT count(*)::int AS n FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
+          [dry.runId],
+        )
+      ).rows[0]?.n,
+    ).toBe(0);
+  });
+
   it('aborts before deletion when live counts drift from the dry run', async () => {
     await runLegacyDerivedMemoryClear(db.pool, flags);
     await db.pool.query(
@@ -1098,7 +1331,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     );
     await expect(
       runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
-    ).rejects.toThrow(/matching successful dry run/i);
+    ).rejects.toThrow(/plan_digest_mismatch/i);
     expect(
       (
         await db.pool.query(
@@ -1126,7 +1359,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     try {
       await expect(
         runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
-      ).rejects.toThrow(/matching successful dry run/i);
+      ).rejects.toThrow(/plan_digest_mismatch/i);
     } finally {
       delete process.env.DERIVED_MEMORY_LEGACY_CLEAR_COUNT_TOLERANCE;
     }

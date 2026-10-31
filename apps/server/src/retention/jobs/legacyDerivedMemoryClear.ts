@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { hasLegalHold } from '../types.js';
 
@@ -31,8 +31,16 @@ export type LegacyClearOptions = {
   timeBudgetMs?: number;
   sessionLockTimeoutMs?: number;
   runningStaleAfterMs?: number;
-  /** Test seam for exercising long-batch heartbeat behavior; CLI never supplies this. */
+  /** Test seams; CLI never supplies these. */
   heartbeatIntervalMsForTests?: number;
+  beforeSessionLockForTests?: (
+    sessionId: string,
+    index: number,
+  ) => Promise<void>;
+  afterSessionIdentityCheckForTests?: (
+    client: PoolClient,
+    sessionId: string,
+  ) => Promise<void>;
   now?: () => Date;
   log?: (event: string, counts: LegacyClearCounts, outcome: string) => void;
 };
@@ -50,6 +58,9 @@ type SessionRow = {
   plannedSummaries: number;
   plannedEntries: number;
   plannedFacts: number;
+  plannedSummaryIds: string[];
+  plannedEntryIds: string[];
+  plannedFactIds: string[];
 };
 type AuditRow = {
   run_id: string;
@@ -58,6 +69,111 @@ type AuditRow = {
   finished_at: Date | null;
   outcome: string;
 };
+type PlanRow = CandidateIds & {
+  dry_run_id: string;
+  session_id: string;
+  digest: string;
+  counts: {
+    sceneSummaries: number;
+    registryEntries: number;
+    registryFacts: number;
+  };
+  state: 'pending' | 'done';
+};
+
+class PlanDigestMismatchError extends Error {
+  constructor() {
+    super(
+      'plan_digest_mismatch: candidate row identities changed; take a fresh dry run',
+    );
+    this.name = 'PlanDigestMismatchError';
+  }
+}
+
+async function readPlanRows(
+  client: PoolClient,
+  dryRunId: string,
+): Promise<PlanRow[]> {
+  const result = await client.query<{
+    dry_run_id: string;
+    session_id: string;
+    digest: string;
+    counts: PlanRow['counts'];
+    scene_summary_ids: string[];
+    registry_entry_ids: string[];
+    registry_fact_ids: string[];
+    state: 'pending' | 'done';
+  }>(
+    `SELECT dry_run_id::text,session_id::text,digest,counts,
+            scene_summary_ids::text[],registry_entry_ids::text[],registry_fact_ids::text[],state
+       FROM derived_memory_legacy_clear_plan WHERE dry_run_id=$1 ORDER BY session_id`,
+    [dryRunId],
+  );
+  return result.rows.map((row) => ({
+    dry_run_id: row.dry_run_id,
+    session_id: row.session_id,
+    digest: row.digest,
+    counts: row.counts,
+    sceneSummaryIds: row.scene_summary_ids,
+    registryEntryIds: row.registry_entry_ids,
+    registryFactIds: row.registry_fact_ids,
+    state: row.state,
+  }));
+}
+
+async function planMatchesCurrent(
+  client: PoolClient,
+  dryRunId: string,
+  sessions: SessionRow[],
+): Promise<{ matches: boolean; rows: PlanRow[] }> {
+  const marker = await client.query(
+    'SELECT 1 FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
+    [dryRunId],
+  );
+  if (!marker.rowCount) return { matches: false, rows: [] };
+  const rows = await readPlanRows(client, dryRunId);
+  const currentBySession = new Map(
+    sessions.map((session) => [session.session_id, session]),
+  );
+  const plansBySession = new Map(rows.map((row) => [row.session_id, row]));
+  for (const session of sessions) {
+    if (
+      !session.held &&
+      !session.deferred &&
+      !plansBySession.has(session.session_id)
+    )
+      return { matches: false, rows };
+  }
+  for (const plan of rows) {
+    const current = currentBySession.get(plan.session_id);
+    if (current?.deferred) return { matches: false, rows };
+    const ids =
+      current && !current.held
+        ? {
+            sceneSummaryIds: current.plannedSummaryIds,
+            registryEntryIds: current.plannedEntryIds,
+            registryFactIds: current.plannedFactIds,
+          }
+        : await candidateIdsForSession(client, plan.session_id);
+    if (plan.state === 'done') {
+      if (
+        ids.sceneSummaryIds.length ||
+        ids.registryEntryIds.length ||
+        ids.registryFactIds.length
+      )
+        return { matches: false, rows };
+      continue;
+    }
+    if (
+      planDigest(plan.session_id, ids) !== plan.digest ||
+      plan.counts.sceneSummaries !== plan.sceneSummaryIds.length ||
+      plan.counts.registryEntries !== plan.registryEntryIds.length ||
+      plan.counts.registryFacts !== plan.registryFactIds.length
+    )
+      return { matches: false, rows };
+  }
+  return { matches: true, rows };
+}
 const zeroCounts = (): LegacyClearCounts => ({
   sessionsConsidered: 0,
   sessionsSkippedHeld: 0,
@@ -78,29 +194,69 @@ const positiveInt = (
   return value;
 };
 
-async function legacyCountsForSession(client: PoolClient, sessionId: string) {
-  const result = await client.query<{
-    summaries: string;
-    entries: string;
-    facts: string;
-  }>(
-    `SELECT
-       (SELECT count(*) FROM scene_summaries s WHERE s.session_id=$1 AND NOT EXISTS (
-         SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id
-       ))::text AS summaries,
-       (SELECT count(*) FROM registry_entries e WHERE e.session_id=$1 AND NOT EXISTS (
-         SELECT 1 FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id
-       ))::text AS entries,
-       (SELECT count(*) FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
-         WHERE e.session_id=$1 AND NOT EXISTS (
-           SELECT 1 FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id
-         ))::text AS facts`,
+type CandidateIds = {
+  sceneSummaryIds: string[];
+  registryEntryIds: string[];
+  registryFactIds: string[];
+};
+
+function planDigest(sessionId: string, ids: CandidateIds): string {
+  const normalized = {
+    sessionId,
+    sceneSummaryIds: [...ids.sceneSummaryIds].sort((a, b) =>
+      BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0,
+    ),
+    registryEntryIds: [...ids.registryEntryIds].sort((a, b) =>
+      BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0,
+    ),
+    registryFactIds: [...ids.registryFactIds].sort((a, b) =>
+      BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0,
+    ),
+  };
+  return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
+async function candidateIdsForSession(
+  client: PoolClient,
+  sessionId: string,
+): Promise<CandidateIds> {
+  const summaries = await client.query<{ id: string }>(
+    `SELECT s.id::text AS id FROM scene_summaries s
+      WHERE s.session_id=$1 AND NOT EXISTS (
+        SELECT 1 FROM derived_memory_character_refs r
+         WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id
+      ) ORDER BY s.id`,
+    [sessionId],
+  );
+  const entries = await client.query<{ id: string }>(
+    `SELECT e.id::text AS id FROM registry_entries e
+      WHERE e.session_id=$1 AND NOT EXISTS (
+        SELECT 1 FROM derived_memory_character_refs r
+         WHERE r.row_kind='registry_entry' AND r.row_id=e.id
+      ) ORDER BY e.id`,
+    [sessionId],
+  );
+  const facts = await client.query<{ id: string }>(
+    `SELECT f.id::text AS id FROM registry_facts f
+       JOIN registry_entries e ON e.id=f.entry_id
+      WHERE e.session_id=$1 AND NOT EXISTS (
+        SELECT 1 FROM derived_memory_character_refs r
+         WHERE r.row_kind='registry_entry' AND r.row_id=e.id
+      ) ORDER BY f.id`,
     [sessionId],
   );
   return {
-    sceneSummaries: safeCount(result.rows[0]?.summaries),
-    registryEntries: safeCount(result.rows[0]?.entries),
-    registryFacts: safeCount(result.rows[0]?.facts),
+    sceneSummaryIds: summaries.rows.map((row) => row.id),
+    registryEntryIds: entries.rows.map((row) => row.id),
+    registryFactIds: facts.rows.map((row) => row.id),
+  };
+}
+
+function candidateCounts(ids: CandidateIds) {
+  return {
+    sceneSummaries: ids.sceneSummaryIds.length,
+    registryEntries: ids.registryEntryIds.length,
+    registryFacts: ids.registryFactIds.length,
   };
 }
 
@@ -184,6 +340,9 @@ async function classifySessions(client: PoolClient): Promise<{
         plannedSummaries: 0,
         plannedEntries: 0,
         plannedFacts: 0,
+        plannedSummaryIds: [],
+        plannedEntryIds: [],
+        plannedFactIds: [],
       });
     } else if (deferred || hasSupersessionLink) {
       counts.sessionsDeferred += 1;
@@ -195,10 +354,14 @@ async function classifySessions(client: PoolClient): Promise<{
         plannedSummaries: 0,
         plannedEntries: 0,
         plannedFacts: 0,
+        plannedSummaryIds: [],
+        plannedEntryIds: [],
+        plannedFactIds: [],
       });
     } else {
       counts.sessionsConsidered += 1;
-      const rows = await legacyCountsForSession(client, row.session_id);
+      const ids = await candidateIdsForSession(client, row.session_id);
+      const rows = candidateCounts(ids);
       counts.sceneSummaries += rows.sceneSummaries;
       counts.registryEntries += rows.registryEntries;
       counts.registryFacts += rows.registryFacts;
@@ -209,6 +372,9 @@ async function classifySessions(client: PoolClient): Promise<{
         plannedSummaries: rows.sceneSummaries,
         plannedEntries: rows.registryEntries,
         plannedFacts: rows.registryFacts,
+        plannedSummaryIds: ids.sceneSummaryIds,
+        plannedEntryIds: ids.registryEntryIds,
+        plannedFactIds: ids.registryFactIds,
       });
     }
   }
@@ -295,6 +461,8 @@ export async function runLegacyDerivedMemoryClear(
   const runner = await pool.connect();
   let lockHeld = false;
   let activeRunId: string | null = null;
+  let activeDryRunId: string | null = null;
+  let activePlanRows: PlanRow[] = [];
   let heartbeatClient: PoolClient | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   const heartbeatState: { pending: Promise<void> | null } = { pending: null };
@@ -309,7 +477,7 @@ export async function runLegacyDerivedMemoryClear(
     );
     if (!lockHeld)
       throw new Error(
-        'Another legacy derived-memory clear runner holds the advisory lock',
+        'A legacy derived-memory clear runner (or a just-killed runner finishing its in-flight statement) holds the advisory lock; retry in a few seconds',
       );
     const staleAfter = positiveInt(
       options.runningStaleAfterMs ??
@@ -416,11 +584,46 @@ export async function runLegacyDerivedMemoryClear(
         [codeVersion, started, maxAge],
       );
       const newestDryRunId = newestDry.rows[0]?.run_id ?? null;
+      dryRunId = newestDryRunId;
+      activeDryRunId = newestDryRunId;
       if (newestDryRunId) {
         await runner.query(
           "UPDATE derived_memory_legacy_clear_audit SET reason_code='superseded_by_new_dry_run',finished_at=clock_timestamp() WHERE mode='live' AND code_version=$1 AND outcome='failed' AND reason_code='process_died' AND dry_run_id IS DISTINCT FROM $2 AND started_at >= $3::timestamptz - ($4::bigint * interval '1 millisecond')",
           [codeVersion, newestDryRunId, started, maxAge],
         );
+      }
+      if (newestDryRunId) {
+        const identityPlan = await planMatchesCurrent(
+          runner,
+          newestDryRunId,
+          sessions,
+        );
+        activePlanRows = identityPlan.rows;
+        if (!identityPlan.matches) {
+          await runner.query(
+            `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
+             VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'plan_digest_mismatch')`,
+            [
+              runId,
+              codeVersion,
+              newestDryRunId,
+              JSON.stringify(counts),
+              started,
+            ],
+          );
+          if (backupConfirmedAt)
+            await runner.query(
+              'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
+              [runId, backupConfirmedAt],
+            );
+          await runner.query(
+            'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
+            [newestDryRunId],
+          );
+          await runner.query('COMMIT');
+          emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
+          throw new PlanDigestMismatchError();
+        }
       }
       const resumable = await runner.query<AuditRow>(
         `SELECT run_id,dry_run_id,counts,finished_at,outcome FROM derived_memory_legacy_clear_audit
@@ -488,6 +691,7 @@ export async function runLegacyDerivedMemoryClear(
         runId = resume.run_id;
         activeRunId = runId;
         dryRunId = resume.dry_run_id;
+        activeDryRunId = resume.dry_run_id;
         await runner.query(
           "UPDATE derived_memory_legacy_clear_audit SET outcome='running',finished_at=NULL,heartbeat_at=clock_timestamp() WHERE run_id=$1",
           [runId],
@@ -509,6 +713,8 @@ export async function runLegacyDerivedMemoryClear(
         );
         const dry = previous.rows[0];
         dryRunId = dry?.run_id ?? null;
+        activeDryRunId = dryRunId;
+        activePlanRows = dryRunId ? await readPlanRows(runner, dryRunId) : [];
         const priorCounts = dry?.counts;
         if (
           dryRunId &&
@@ -578,6 +784,34 @@ export async function runLegacyDerivedMemoryClear(
           'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
           [runId, backupConfirmedAt],
         );
+      if (dryRun) {
+        await runner.query(
+          'INSERT INTO derived_memory_legacy_clear_plan_runs(dry_run_id) VALUES($1)',
+          [runId],
+        );
+        for (const session of sessions) {
+          if (session.held || session.deferred) continue;
+          const ids: CandidateIds = {
+            sceneSummaryIds: session.plannedSummaryIds,
+            registryEntryIds: session.plannedEntryIds,
+            registryFactIds: session.plannedFactIds,
+          };
+          await runner.query(
+            `INSERT INTO derived_memory_legacy_clear_plan
+               (dry_run_id,session_id,digest,counts,scene_summary_ids,registry_entry_ids,registry_fact_ids)
+             VALUES($1,$2,$3,$4::jsonb,$5::bigint[],$6::bigint[],$7::bigint[])`,
+            [
+              runId,
+              session.session_id,
+              planDigest(session.session_id, ids),
+              JSON.stringify(candidateCounts(ids)),
+              ids.sceneSummaryIds,
+              ids.registryEntryIds,
+              ids.registryFactIds,
+            ],
+          );
+        }
+      }
     }
     await runner.query('COMMIT');
     if (!dryRun) {
@@ -619,10 +853,15 @@ export async function runLegacyDerivedMemoryClear(
       let processed = resumeCounts?.sessionsProcessed ?? 0;
       let processedThisPass = 0;
       let newlyHeld = 0;
+      const completedSessionIds = new Set<string>();
+      const newlyHeldSessionIds = new Set<string>();
       removedSummaries = resumeCounts?.sceneSummariesRemoved ?? 0;
       removedEntries = resumeCounts?.registryEntriesRemoved ?? 0;
       removedFacts = resumeCounts?.registryFactsRemoved ?? 0;
-      const persistBatchProgress = async () => {
+      const persistBatchProgress = async (
+        sessionId?: string,
+        markDone = false,
+      ) => {
         processed += 1;
         processedThisPass += 1;
         const progressCounts = {
@@ -637,10 +876,27 @@ export async function runLegacyDerivedMemoryClear(
           'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,heartbeat_at=clock_timestamp() WHERE run_id=$1',
           [runId, JSON.stringify(progressCounts)],
         );
+        if (markDone && dryRunId && sessionId) {
+          await runner.query(
+            "UPDATE derived_memory_legacy_clear_plan SET state='done' WHERE dry_run_id=$1 AND session_id=$2",
+            [dryRunId, sessionId],
+          );
+          completedSessionIds.add(sessionId);
+        }
         await runner.query('COMMIT');
       };
+      let sessionIndex = 0;
       for (const session of sessions) {
-        if (session.held || session.deferred) continue;
+        const sessionPlan = activePlanRows.find(
+          (row) => row.session_id === session.session_id,
+        );
+        if (session.held || session.deferred || sessionPlan?.state === 'done')
+          continue;
+        if (!sessionPlan) throw new PlanDigestMismatchError();
+        await options.beforeSessionLockForTests?.(
+          session.session_id,
+          sessionIndex++,
+        );
         if (
           processedThisPass > 0 &&
           processedThisPass % batchSize === 0 &&
@@ -657,7 +913,15 @@ export async function runLegacyDerivedMemoryClear(
             [session.session_id],
           );
           if (!locked.rowCount) {
-            await persistBatchProgress();
+            const currentIds = await candidateIdsForSession(
+              runner,
+              session.session_id,
+            );
+            if (
+              planDigest(session.session_id, currentIds) !== sessionPlan.digest
+            )
+              throw new PlanDigestMismatchError();
+            await persistBatchProgress(session.session_id, true);
             emit(
               options,
               'legacy_clear_live_batch_committed',
@@ -679,6 +943,7 @@ export async function runLegacyDerivedMemoryClear(
             ))
           ) {
             newlyHeld += 1;
+            newlyHeldSessionIds.add(session.session_id);
             await persistBatchProgress();
             emit(
               options,
@@ -710,50 +975,67 @@ export async function runLegacyDerivedMemoryClear(
             throw new Error(
               'Supersession chain appeared after live preflight; refusing to process the session',
             );
-          const before = await legacyCountsForSession(
+          const currentIds = await candidateIdsForSession(
             runner,
             session.session_id,
           );
+          if (planDigest(session.session_id, currentIds) !== sessionPlan.digest)
+            throw new PlanDigestMismatchError();
+          const before = candidateCounts(currentIds);
+          const plannedIds: CandidateIds = {
+            sceneSummaryIds: sessionPlan.sceneSummaryIds,
+            registryEntryIds: sessionPlan.registryEntryIds,
+            registryFactIds: sessionPlan.registryFactIds,
+          };
           if (
-            before.sceneSummaries !== session.plannedSummaries ||
-            before.registryEntries !== session.plannedEntries ||
-            before.registryFacts !== session.plannedFacts
+            before.sceneSummaries !== sessionPlan.counts.sceneSummaries ||
+            before.registryEntries !== sessionPlan.counts.registryEntries ||
+            before.registryFacts !== sessionPlan.counts.registryFacts
           )
-            throw new Error(
-              'Session row counts changed after live preflight; refusing to delete rows not included in the verified counts',
-            );
-          const candidates = await runner.query<{ id: string }>(
-            `WITH RECURSIVE entries AS (
-               SELECT e.id,e.supersedes_id,e.superseded_by,EXISTS(SELECT 1 FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id) covered
-                 FROM registry_entries e WHERE e.session_id=$1
-             ), protected(id) AS (
-               SELECT id FROM entries WHERE covered UNION SELECT e.id FROM entries e JOIN protected p ON e.supersedes_id=p.id OR e.superseded_by=p.id
-             ), candidate(id) AS (SELECT id FROM entries WHERE NOT covered AND id NOT IN (SELECT id FROM protected))
-             SELECT c.id::text FROM candidate c JOIN registry_entries e ON e.id=c.id ORDER BY e.version DESC,e.id DESC`,
-            [session.session_id],
+            throw new PlanDigestMismatchError();
+          await options.afterSessionIdentityCheckForTests?.(
+            runner,
+            session.session_id,
           );
           await runner.query(
-            `UPDATE registry_facts SET supersedes_id=NULL,superseded_by=NULL WHERE entry_id=ANY($1::bigint[])`,
-            [candidates.rows.map((row) => row.id)],
+            'UPDATE registry_facts SET supersedes_id=NULL,superseded_by=NULL WHERE id=ANY($1::bigint[]) AND entry_id=ANY($2::bigint[])',
+            [plannedIds.registryFactIds, plannedIds.registryEntryIds],
           );
           await runner.query(
-            `UPDATE registry_entries SET superseded_by=NULL WHERE id=ANY($1::bigint[])`,
-            [candidates.rows.map((row) => row.id)],
+            'UPDATE registry_entries SET superseded_by=NULL WHERE id=ANY($1::bigint[]) AND session_id=$2',
+            [plannedIds.registryEntryIds, session.session_id],
           );
-          for (const candidate of candidates.rows) {
-            await runner.query('DELETE FROM registry_entries WHERE id=$1', [
-              candidate.id,
-            ]);
-          }
-          await runner.query(
-            `DELETE FROM scene_summaries s WHERE s.session_id=$1 AND NOT EXISTS (
-            SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id)`,
-            [session.session_id],
+          const deletedFacts = await runner.query(
+            'DELETE FROM registry_facts WHERE id=ANY($1::bigint[]) AND entry_id=ANY($2::bigint[]) RETURNING id',
+            [plannedIds.registryFactIds, plannedIds.registryEntryIds],
           );
+          if (deletedFacts.rowCount !== plannedIds.registryFactIds.length)
+            throw new PlanDigestMismatchError();
+          const deletedEntries = await runner.query(
+            `DELETE FROM registry_entries e
+              WHERE e.id=ANY($1::bigint[]) AND e.session_id=$2
+                AND NOT EXISTS (SELECT 1 FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id)
+                AND e.supersedes_id IS NULL AND e.superseded_by IS NULL
+                AND NOT EXISTS (SELECT 1 FROM registry_facts f WHERE f.entry_id=e.id)
+              RETURNING e.id`,
+            [plannedIds.registryEntryIds, session.session_id],
+          );
+          if (deletedEntries.rowCount !== plannedIds.registryEntryIds.length)
+            throw new PlanDigestMismatchError();
+          const deletedSummaries = await runner.query(
+            `DELETE FROM scene_summaries s
+              WHERE s.id=ANY($1::bigint[]) AND s.session_id=$2 AND NOT EXISTS (
+                SELECT 1 FROM derived_memory_character_refs r
+                 WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id
+              ) RETURNING s.id`,
+            [plannedIds.sceneSummaryIds, session.session_id],
+          );
+          if (deletedSummaries.rowCount !== plannedIds.sceneSummaryIds.length)
+            throw new PlanDigestMismatchError();
           removedSummaries += before.sceneSummaries;
           removedEntries += before.registryEntries;
           removedFacts += before.registryFacts;
-          await persistBatchProgress();
+          await persistBatchProgress(session.session_id, true);
         } catch (error) {
           await runner.query('ROLLBACK');
           throw error;
@@ -771,9 +1053,15 @@ export async function runLegacyDerivedMemoryClear(
           'running',
         );
       }
-      const partial =
-        processedThisPass <
-        sessions.filter((s) => !s.held && !s.deferred).length;
+      const partial = sessions.some(
+        (session) =>
+          !session.held &&
+          !session.deferred &&
+          activePlanRows.find((row) => row.session_id === session.session_id)
+            ?.state !== 'done' &&
+          !completedSessionIds.has(session.session_id) &&
+          !newlyHeldSessionIds.has(session.session_id),
+      );
       outcome = partial ? 'live_partial' : 'live_succeeded';
       const actualCounts = {
         ...counts,
@@ -792,6 +1080,11 @@ export async function runLegacyDerivedMemoryClear(
       };
       await runner.query('BEGIN');
       await saveAudit(runner, runId, auditCounts, outcome);
+      if (outcome === 'live_succeeded' && dryRunId)
+        await runner.query(
+          'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
+          [dryRunId],
+        );
       await runner.query('COMMIT');
       emit(
         options,
@@ -805,6 +1098,10 @@ export async function runLegacyDerivedMemoryClear(
     }
     await runner.query('BEGIN');
     await saveAudit(runner, runId, counts, outcome);
+    await runner.query(
+      'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id<>$1',
+      [runId],
+    );
     await runner.query('COMMIT');
     emit(options, 'legacy_clear_dry_run_completed', counts, outcome);
     return { runId, dryRunId, outcome, counts };
@@ -817,9 +1114,14 @@ export async function runLegacyDerivedMemoryClear(
     if (activeRunId) {
       try {
         await runner.query(
-          "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',finished_at=clock_timestamp() WHERE run_id=$1 AND outcome IN ('running','live_partial')",
-          [activeRunId],
+          "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code=CASE WHEN $2 THEN 'plan_digest_mismatch' ELSE NULL END,finished_at=clock_timestamp() WHERE run_id=$1 AND outcome IN ('running','live_partial')",
+          [activeRunId, error instanceof PlanDigestMismatchError],
         );
+        if (!dryRun && activeDryRunId)
+          await runner.query(
+            'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
+            [activeDryRunId],
+          );
       } catch {
         /* audit table may not exist, or preflight may not have inserted a run */
       }
