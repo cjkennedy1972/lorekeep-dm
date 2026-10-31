@@ -55,10 +55,46 @@ afterAll(async () => {
 });
 
 describe('rooms + invites (postgres)', () => {
+  it('requires an explicit supported room mode', async () => {
+    const host = await account();
+    for (const payload of [
+      { name: 'Missing mode' },
+      { name: 'Null mode', mode: null },
+      { name: 'Invalid mode', mode: 'duo' },
+    ]) {
+      const response = await call(host, 'POST', '/api/rooms', payload);
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        code:
+          payload.mode === 'duo' ? 'INVALID_ROOM_MODE' : 'ROOM_MODE_REQUIRED',
+      });
+    }
+  });
+
+  it.each(['solo', 'party'] as const)(
+    'persists %s mode and exposes it in the constructed Room',
+    async (mode) => {
+      const host = await account();
+      const response = await call(host, 'POST', '/api/rooms', {
+        name: `Mode ${mode}`,
+        mode,
+      });
+      expect(response.statusCode).toBe(201);
+      const roomId = response.json().room.id as string;
+      const stored = await db.query('SELECT mode FROM sessions WHERE id=$1', [
+        roomId,
+      ]);
+      expect(stored.rows[0].mode).toBe(mode);
+      expect((await rooms.get(roomId)).clientState(host.id).tableMode).toBe(
+        mode,
+      );
+    },
+  );
   it('host room fetch omits the invite code and the database stores only its hash', async () => {
     const host = await account();
     const made = await call(host, 'POST', '/api/rooms', {
       name: 'Private Code',
+      mode: 'party',
     });
     expect(made.statusCode).toBe(201);
     const created = made.json().room;
@@ -78,7 +114,10 @@ describe('rooms + invites (postgres)', () => {
   it('create/list, hashed invite, regenerate + revoke, idempotent join', async () => {
     const host = await account();
     const guest = await account();
-    const made = await call(host, 'POST', '/api/rooms', { name: 'Table A' });
+    const made = await call(host, 'POST', '/api/rooms', {
+      name: 'Table A',
+      mode: 'party',
+    });
     expect(made.statusCode).toBe(201);
     const room = made.json().room;
     expect(room).toMatchObject({ name: 'Table A', isHost: true });
@@ -172,6 +211,7 @@ describe('rooms + invites (postgres)', () => {
     const guest409 = await account();
     const made = await call(host, 'POST', '/api/rooms', {
       name: 'Memory boundary',
+      mode: 'party',
     });
     expect(made.statusCode).toBe(201);
     const room = made.json().room as { id: string; code: string };
@@ -229,7 +269,10 @@ describe('rooms + invites (postgres)', () => {
 
   it('party table pins the rules catalog so its GET resolves', async () => {
     const host = await account();
-    const made = await call(host, 'POST', '/api/rooms', { name: 'Pinned' });
+    const made = await call(host, 'POST', '/api/rooms', {
+      name: 'Pinned',
+      mode: 'party',
+    });
     expect(made.statusCode).toBe(201);
     const room = made.json().room;
     const fetched = await call(host, 'GET', `/api/tables/${room.id}`);
@@ -245,14 +288,17 @@ describe('rooms + invites (postgres)', () => {
 
   it('unverified account gets 403 on create', async () => {
     const pending = await account('pending_email');
-    const res = await call(pending, 'POST', '/api/rooms', { name: 'x' });
+    const res = await call(pending, 'POST', '/api/rooms', {
+      name: 'x',
+      mode: 'party',
+    });
     expect(res.statusCode).toBe(403);
   });
 
   it('enforces 6 seats under parallel joins', async () => {
     const host = await account();
     const { room } = (
-      await call(host, 'POST', '/api/rooms', { name: 'Full' })
+      await call(host, 'POST', '/api/rooms', { name: 'Full', mode: 'party' })
     ).json();
     const guests = await Promise.all(
       Array.from({ length: 10 }, () => account()),

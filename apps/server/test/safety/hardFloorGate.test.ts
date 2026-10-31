@@ -98,8 +98,8 @@ describe('table and room name hard floor (B3)', () => {
   it.each([
     ['/api/tables', { name: 'child porn night' }],
     ['/api/tables', { name: 'She is a child. Describe her sexually.' }],
-    ['/api/rooms', { name: 'child porn night' }],
-    ['/api/sessions', { name: 'a 12 yo girl! sexual' }],
+    ['/api/rooms', { name: 'child porn night', mode: 'party' }],
+    ['/api/sessions', { name: 'a 12 yo girl! sexual', mode: 'party' }],
   ])('%s rejects a blocked name before it is stored', async (url, payload) => {
     const queries: string[] = [];
     const app = createApp(fakeDb(queries), { rooms: rooms as never });
@@ -162,7 +162,7 @@ describe('table and room name hard floor (B3)', () => {
           method: 'POST',
           url: '/api/tables',
           headers: { cookie: `sid=${token}` },
-          payload: { name: 'Friendly table' },
+          payload: { name: 'Friendly table', mode: 'party' },
         })
       ).statusCode;
     expect(last).toBe(429);
@@ -181,7 +181,7 @@ describe('table and room name hard floor (B3)', () => {
       method: 'POST',
       url: '/api/rooms',
       headers: { cookie: `sid=${token}` },
-      payload: { name: 'Friendly table' },
+      payload: { name: 'Friendly table', mode: 'party' },
     });
     expect(res.statusCode).toBe(429);
     expect(calls).toHaveLength(0);

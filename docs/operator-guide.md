@@ -4,6 +4,10 @@ For the person running a Lorekeep-DM server. Background: [ADR-013](adr/013-llm-p
 
 Party play (M4) operator and player behavior, including what is not shipped yet, is in [operator/party-play.md](operator/party-play.md).
 
+## Room creation API
+
+`POST /api/rooms` (also `/api/sessions`) requires an explicit `mode` in the JSON body: `solo` or `party`, for example `{"name":"My table","mode":"solo"}`. Missing, null, or unsupported values return HTTP 400; there is no server-side default. Use `solo` for one-player games and `party` for tables with party seat-character binding.
+
 ## 1. Server environment
 
 "Production" below means `NODE_ENV` is unset or anything other than `development` or `test`. An unset `NODE_ENV` is production, so the boot checks fail closed.

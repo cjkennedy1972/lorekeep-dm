@@ -40,7 +40,7 @@ async function cookieFetch(): Promise<typeof fetch> {
   await fetch(`${base}/api/rooms`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie },
-    body: JSON.stringify({ name: 'Client Table' }),
+    body: JSON.stringify({ name: 'Client Table', mode: 'party' }),
   });
   return (url, init) =>
     fetch(url, { ...init, headers: { ...init?.headers, cookie } });

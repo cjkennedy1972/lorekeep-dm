@@ -50,7 +50,7 @@ test('axe: no critical or serious violations on safety settings lobby', async ({
     const table = await context.request.post(
       'http://localhost:8787/api/rooms',
       {
-        data: { name: 'Safety audit table' },
+        data: { name: 'Safety audit table', mode: 'party' },
       },
     );
     expect(table.ok()).toBe(true);
@@ -95,7 +95,7 @@ test('axe: no critical or serious violations on join-time content opt-out', asyn
       expect(response.ok()).toBe(true);
     }
     const table = await host.request.post('http://localhost:8787/api/rooms', {
-      data: { name: 'Join safety audit' },
+      data: { name: 'Join safety audit', mode: 'party' },
     });
     expect(table.ok()).toBe(true);
     const { room } = (await table.json()) as {

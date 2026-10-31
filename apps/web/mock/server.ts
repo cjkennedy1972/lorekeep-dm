@@ -100,7 +100,7 @@ export function createMock(
     hostId: string;
     code: string;
     members: Set<string>;
-    solo?: boolean;
+    mode: 'solo' | 'party';
     tierCap?: 'family' | 'standard' | null;
   };
   const rooms = new Map<string, MockRoom>();
@@ -555,7 +555,7 @@ export function createMock(
         hostId: account.id,
         code: newCode(),
         members: new Set([account.id]),
-        solo: true,
+        mode: 'solo',
       };
       rooms.set(r.id, r);
       return json(res, 201, { game: { id: r.id, name: r.name } });
@@ -569,6 +569,20 @@ export function createMock(
     if (route === 'POST /api/rooms') {
       const body = await readBody(req);
       const name = typeof body?.name === 'string' ? body.name.trim() : '';
+      if (body?.mode == null)
+        return err(
+          res,
+          400,
+          'ROOM_MODE_REQUIRED',
+          "Specify a room mode: 'solo' or 'party'.",
+        );
+      if (body.mode !== 'solo' && body.mode !== 'party')
+        return err(
+          res,
+          400,
+          'INVALID_ROOM_MODE',
+          "Room mode must be 'solo' or 'party'.",
+        );
       if (!name || name.length > 80)
         return err(res, 400, 'INVALID_INPUT', 'Enter a table name.');
       const r: MockRoom = {
@@ -577,6 +591,7 @@ export function createMock(
         hostId: account.id,
         code: newCode(),
         members: new Set([account.id]),
+        mode: body.mode,
       };
       rooms.set(r.id, r);
       return json(res, 201, { room: roomView(r, account.id, true) });
@@ -588,7 +603,11 @@ export function createMock(
         return err(res, 404, 'NOT_FOUND', 'Not found.');
       if (req.method === 'GET' && !roomRoute[2])
         return json(res, 200, {
-          room: roomView(r, account.id, r.solo && r.hostId === account.id),
+          room: roomView(
+            r,
+            account.id,
+            r.mode === 'solo' && r.hostId === account.id,
+          ),
         });
       if (req.method === 'POST' && roomRoute[2]) {
         if (r.hostId !== account.id)

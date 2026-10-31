@@ -41,7 +41,7 @@ const create = (cookie: string) =>
     method: 'POST',
     url: '/api/rooms',
     headers: { cookie },
-    payload: { name: 'Table' },
+    payload: { name: 'Table', mode: 'party' },
   });
 afterAll(async () => {
   await rooms.drain();

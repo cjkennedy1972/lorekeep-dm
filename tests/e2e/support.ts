@@ -257,7 +257,7 @@ export async function createRoom(url: string, account: Account) {
       origin: url,
       cookie: `sid=${account.token}`,
     },
-    body: JSON.stringify({ name: 'M0 proof room' }),
+    body: JSON.stringify({ name: 'M0 proof room', mode: 'party' }),
   });
   if (!response.ok)
     throw new Error(

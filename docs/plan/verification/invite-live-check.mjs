@@ -13,7 +13,7 @@ async function acct(n){const email=`${n}-${tag}@example.test`;
 const login=async e=>{const l=await req('POST','/api/login',null,{email:e,password:pw}); if(l.s!==200) throw new Error('login '+l.s+JSON.stringify(l.j)); return l.sc.split(';')[0];};
 const host=await acct('host'), j1=await acct('joinerA'), j2=await acct('joinerB'), out=await acct('outsider');
 const h1=await login(host);
-const c=await req('POST','/api/rooms',h1,{name:'Proof Room'});
+const c=await req('POST','/api/rooms',h1,{name:'Proof Room',mode:'party'});
 const room=c.j.room, code1=c.j.room.code;
 ok('create returns 201 + invite code',c.s===201&&!!code1,`status=${c.s}`);
 const lst=await req('GET','/api/rooms',h1); ok('list after create has no code (hash-only)',lst.j.rooms[0].code===undefined);

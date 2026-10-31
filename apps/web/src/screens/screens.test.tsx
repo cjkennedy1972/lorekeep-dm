@@ -59,7 +59,7 @@ test('host reloading the lobby gets no stale/blank link and can create a new one
     await host(`${http.base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Reload Hall' }),
+      body: JSON.stringify({ name: 'Reload Hall', mode: 'party' }),
     })
   ).json();
   // A reload no longer receives the one-time invite code from the mock API.
@@ -94,7 +94,7 @@ test('host can choose a lower table tier, which is visible to all players', asyn
     await host(`${http.base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Tier Hall' }),
+      body: JSON.stringify({ name: 'Tier Hall', mode: 'party' }),
     })
   ).json();
   const roomId = created.room.id as string;
@@ -153,7 +153,7 @@ test('host lobby restores the saved content tier after loading room details', as
     await host(`${http.base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Saved Tier Hall' }),
+      body: JSON.stringify({ name: 'Saved Tier Hall', mode: 'party' }),
     })
   ).json();
   const roomId = created.room.id as string;
@@ -195,7 +195,7 @@ test('join shows the mature opt-out before joining; keyboard toggle is saved wit
     await host(`${http.base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Opt Out Hall' }),
+      body: JSON.stringify({ name: 'Opt Out Hall', mode: 'party' }),
     })
   ).json();
   useJar();
@@ -228,7 +228,7 @@ test('failed join does not save a changed mature opt-out preference', async () =
     await host(`${http.base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Full Hall' }),
+      body: JSON.stringify({ name: 'Full Hall', mode: 'party' }),
     })
   ).json();
 
@@ -266,7 +266,7 @@ test('lobby content settings: mature is on by default; opt-out toggles and saves
     await http.fetch(`${http.base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Settings Hall' }),
+      body: JSON.stringify({ name: 'Settings Hall', mode: 'party' }),
     })
   ).json();
   renderApp(`/rooms/${created.room.id as string}`);
@@ -401,7 +401,7 @@ test('logged-out join link: login returns to the join and the lobby opens', asyn
     await host(`${http.base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Return Trip' }),
+      body: JSON.stringify({ name: 'Return Trip', mode: 'party' }),
     })
   ).json();
   useJar();
