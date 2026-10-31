@@ -34,7 +34,9 @@ test('shows a loading status, not an empty state, while the character is loading
 test('shows the empty state once loading has finished without a character', () => {
   render(<Sheet character={null} loading={false} />);
 
-  expect(screen.getByText('No character selected.')).toBeTruthy();
+  expect(
+    screen.getByText(/You don’t have a character at this table yet/),
+  ).toBeTruthy();
   expect(screen.queryByRole('status')).toBeNull();
 });
 
