@@ -40,7 +40,9 @@ import { TurnTimerControl } from '../features/round/TurnTimerControl.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { useSheetLoadFailure } from '../features/character/useSheetLoadFailure.js';
 import { ConnectionStatus } from '../room/ConnectionStatus.js';
+import { RoomWaitState } from '../room/RoomWaitState.js';
 import { useRoom } from '../room/useRoom.js';
+import { useRoomStateFailure } from '../room/useRoomStateFailure.js';
 import { api, http } from '../api.js';
 import { gameStore } from '../state/store.js';
 import { weaponName } from '../features/narration/combatRolls.js';
@@ -540,6 +542,16 @@ export function Game() {
     hasCharacterState: Boolean(room?.gameState),
     connectionStatus: live.status,
   });
+  const [roomRetryAttempt, setRoomRetryAttempt] = useState(0);
+  const roomStateStalled = useRoomStateFailure({
+    hasRoom: Boolean(room),
+    connectionStatus: live.status,
+    attempt: roomRetryAttempt,
+  });
+  const retryRoomConnection = () => {
+    setRoomRetryAttempt((attempt) => attempt + 1);
+    live.retry();
+  };
   // Reloading mid-turn loses local pending state; the server's private submission restores it.
   const seededAt = useMemo(
     () => Date.now(),
@@ -974,16 +986,13 @@ export function Game() {
     );
   if (!room)
     return (
-      <section className="game-notice">
-        <h1>Game</h1>
-        <ConnectionStatus status={live.status} />
-        {live.error && <p role="alert">{live.error}</p>}
-        <p role="status" className="loading">
-          <span className="spinner" aria-hidden="true" />
-          Waiting for room state…
-        </p>
-        <div className="skeleton" aria-hidden="true" />
-      </section>
+      <RoomWaitState
+        status={live.status}
+        error={live.error}
+        stalled={roomStateStalled}
+        lobbyHref={`/rooms/${id}`}
+        onRetry={live.removed ? undefined : retryRoomConnection}
+      />
     );
   return (
     <div className="game-screen">
