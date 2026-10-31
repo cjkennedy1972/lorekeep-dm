@@ -203,10 +203,23 @@ export function moveAlong(
         next.y + mover.size > other.pos.y,
     );
     if (hiddenBlocker) {
+      // Validate the hidden-cell boundary before revealing it; future entity
+      // fields must fail open here just like ordinary movement. The bump cell
+      // is not walked, so only prior free steps consume movement budget.
+      const withoutBlocker = {
+        ...current,
+        entities: current.entities.filter(
+          (entity) => entity.id !== hiddenBlocker.id,
+        ),
+      };
+      const error = legalStep(withoutBlocker, mover, next);
+      if (error) return error;
       current = {
         ...current,
-        entities: current.entities.map((e) =>
-          e.id === hiddenBlocker.id ? { ...e, hidden: false } : e,
+        entities: current.entities.map((entity) =>
+          entity.id === hiddenBlocker.id
+            ? { ...entity, hidden: false }
+            : entity,
         ),
       };
       events.push({

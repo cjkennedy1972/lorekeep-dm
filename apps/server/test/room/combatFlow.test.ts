@@ -2391,7 +2391,7 @@ describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
     await room.drain();
   });
 
-  it('broadcast: events naming a hidden reactor reach only its controller', async () => {
+  it('broadcast: a hidden reactor with a controller never opens a private-only window', async () => {
     vi.useFakeTimers();
     const e = engaged();
     const reactorAccount = crypto.randomUUID();
@@ -2421,39 +2421,33 @@ describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
       command: 'move',
       destination: { x: 7, y: 6 },
     });
-    const prompt = (
-      reactor.messages.find((m) => m.type === 'ReactionPrompt') as {
-        payload: { reactionId: string };
-      }
-    ).payload;
-    // The hidden goblin takes its opportunity attack: ReactionSpent{entityId} and the
-    // attack's RollEvent{actorId} name it too.
-    await room.submitCombatCommand(reactorAccount, crypto.randomUUID(), {
-      command: 'reaction',
-      reactionId: prompt.reactionId,
-      choice: 'take',
-    });
     await room.drain();
-    expect(table.events.some((event) => event.type === 'ReactionSpent')).toBe(
-      true,
+    expect(table.events.some((event) => event.type === 'MoveEnded')).toBe(true);
+    const moveBatches = table.messages.filter(
+      (message) =>
+        message.type === 'CombatEvents' &&
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveStarted',
+        ),
     );
     expect(
-      JSON.stringify(
-        table.events.filter((event) => event.type === 'RollEvent'),
+      moveBatches.every((message) =>
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveEnded',
+        ),
       ),
-    ).toContain('ent_goblin-minion_1');
-    // The initial trigger stays concealed; once the reactor attacks, reveal is public.
-    expect(eventTypes(table.messages)).toContain('EntityMoved');
-    expect(eventTypes(table.messages)).not.toEqual(
-      expect.arrayContaining(['OpportunityTriggered']),
+    ).toBe(true);
+    expect(table.events.some((event) => event.type === 'ReactionSpent')).toBe(
+      false,
     );
-    expect(eventTypes(table.messages)).not.toContain('ReactionAvailable');
-    expect(eventTypes(table.messages)).toContain('EntityRevealed');
-    expect(eventTypes(table.messages)).toContain('ReactionResolved');
     expect(
       table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
     ).toEqual([]);
-    expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(true);
+    expect(
+      reactor.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
+    ).toEqual([]);
+    expect(eventTypes(table.messages)).not.toContain('EntityRevealed');
+    expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(false);
   });
 });
 
@@ -2525,26 +2519,30 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     expect(reactorInbox.some((m) => m.type === 'ReactionPrompt')).toBe(true);
   });
 
-  it('a hidden reactor: Opened/Answered/Declined reach only its controller, who still gets the prompt', async () => {
-    const { table, room, reactor, reactorInbox } = await stage({
-      hidden: true,
-    });
-    expect(reactorInbox.some((m) => m.type === 'ReactionPrompt')).toBe(true);
-    const prompt = combatOf(table).pendingReaction!;
-    await room.submitCombatCommand(reactor, crypto.randomUUID(), {
-      command: 'reaction',
-      reactionId: promptIdOf(prompt),
-      choice: 'decline',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(names(table)).toEqual(
-      expect.arrayContaining(['ReactionPromptOpened', 'ReactionAnswered']),
+  it('a hidden reactor with an assigned controller is auto-declined before any seat sees a stalled move', async () => {
+    const { table, reactorInbox } = await stage({ hidden: true });
+    expect(combatOf(table).pendingReaction).toBeUndefined();
+    expect(names(table)).toContain('MoveEnded');
+    const moveBatches = table.messages.filter(
+      (message) =>
+        message.type === 'CombatEvents' &&
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveStarted',
+        ),
     );
-    const seen = table.messages.filter((m) => m.type === 'CombatEvents');
-    const wire = JSON.stringify(seen.map((m) => m.payload));
-    for (const type of ['ReactionPromptOpened', 'ReactionAnswered'])
-      expect(wire).not.toContain(type);
-    expect(wire).not.toContain('ent_goblin-minion_1');
+    expect(
+      moveBatches.every((message) =>
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveEnded',
+        ),
+      ),
+    ).toBe(true);
+    expect(payloads(table, 'ReactionDeclined')).toMatchObject([
+      { cause: 'no-controller' },
+    ]);
+    expect(reactorInbox.some((m) => m.type.startsWith('ReactionPrompt'))).toBe(
+      false,
+    );
     expect(
       table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
     ).toEqual([]);
@@ -2564,6 +2562,11 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     async (cause, opts) => {
       const { table, reactorInbox } = await stage(opts);
       expect(payloads(table, 'ReactionDeclined')).toMatchObject([{ cause }]);
+      if (cause === 'no-controller') {
+        expect(combatOf(table).pendingReaction).toBeUndefined();
+        expect(names(table)).toContain('MoveEnded');
+        expect(names(table)).toContain('ReactionDeclined');
+      }
       const wire = JSON.stringify(table.messages);
       expect(wire).not.toContain('ReactionDeclined');
       expect(wire).not.toContain('ReactionPromptOpen');
@@ -2572,9 +2575,11 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
       expect(JSON.stringify(payloads(table, 'ReactionDeclined'))).not.toContain(
         'ent_',
       );
-      // Its controller (when it has one) still sees the decline.
+      // Hidden reactors never receive a controller-only reaction prompt.
       if (opts.controlled !== false)
-        expect(JSON.stringify(reactorInbox)).toContain('ReactionDeclined');
+        expect(
+          reactorInbox.some((m) => m.type.startsWith('ReactionPrompt')),
+        ).toBe(false);
     },
   );
 

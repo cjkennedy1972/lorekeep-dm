@@ -6426,21 +6426,45 @@ export class Room {
     actionId?: string,
   ): Promise<void> {
     const beforeCombat = roomGameState(this.state);
+    let committed = result;
+    // A hidden reactor cannot open a private-only window: resolve that reaction
+    // before broadcasting the move, so every other seat sees a complete movement.
+    while (committed.state.pendingReaction) {
+      const pending = committed.state.pendingReaction;
+      const reactor = committed.state.entities.find(
+        (entity) => entity.id === pending.entityId,
+      );
+      if (!reactor?.hidden) break;
+      this.rememberPrompt(promptIdOf(pending), pending.entityId);
+      const cause =
+        this.immediateDeclineCause(committed.state) ?? 'no-controller';
+      const declined = this.combatRuntime.decline(
+        committed.state,
+        cause,
+        Date.now(),
+      );
+      if (!declined) break;
+      committed = {
+        ...committed,
+        state: declined.state,
+        events: [...committed.events, ...declined.events],
+      };
+    }
     const resolved =
-      result.events.some((event) => event.type === 'TurnEnded') ||
-      result.events.some((event) => event.type === 'CombatEnded');
-    let combatState = result.state;
+      committed.events.some((event) => event.type === 'TurnEnded') ||
+      committed.events.some((event) => event.type === 'CombatEnded');
+    let combatState = committed.state;
     const priorTurnEvents = beforeCombat?.turnNarrationEvents ?? [];
     const priorTurnEventIds = beforeCombat?.turnNarrationEventIds ?? [];
     const hiddenEntityIds = hiddenIdsOf(combatState);
-    const currentTurnEventIds = result.events.flatMap((event, index) =>
+    const currentTurnEventIds = committed.events.flatMap((event, index) =>
       namesHiddenEntity(event, hiddenEntityIds)
         ? []
         : [String(this.seq + index + 1)],
     );
     const turnNarrationEvents = [
       ...priorTurnEvents,
-      ...result.events.map((event) => ({ ...event })),
+      ...committed.events.map((event) => ({ ...event })),
     ];
     const turnNarrationEventIds = [
       ...priorTurnEventIds,
@@ -6472,13 +6496,13 @@ export class Room {
       beforeCombat ?? undefined,
       combatState,
     );
-    const committedEvents = [...result.events, ...lifecycleEvents];
+    const committedEvents = [...committed.events, ...lifecycleEvents];
     const gameState = settleEngine(
       {
         ...(this.state.gameState as Record<string, unknown> | undefined),
         combatRoom: combatState,
       },
-      result.slots,
+      committed.slots,
     );
     const writes = committedEvents.map((event) => ({
       seq: undefined,

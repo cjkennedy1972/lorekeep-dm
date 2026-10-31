@@ -154,6 +154,49 @@ describe('combat turn resource refresh', () => {
     });
   });
 
+  it.each([2, 3])(
+    'bumps on a hidden cell in a 1-wide path to %i',
+    (destination) => {
+      const corridorMap = {
+        ...map,
+        w: 8,
+        h: 1,
+        cells: [0, 8] as [number, number],
+      };
+      const hiddenCombat: RoomCombatState = {
+        ...combat,
+        map: corridorMap,
+        entities: combat.entities.map((entity) =>
+          entity.id === 'ent_hero'
+            ? { ...entity, pos: { x: 0, y: 0 } }
+            : { ...entity, pos: { x: 2, y: 0 }, hidden: true },
+        ),
+      };
+      const result = createCombatRuntime().execute(hiddenCombat, 'ent_hero', {
+        command: 'move',
+        destination: { x: destination, y: 0 },
+      });
+      expect('code' in result).toBe(false);
+      if ('code' in result) return;
+      expect(
+        result.state.entities.find((entity) => entity.id === 'ent_hero')?.pos,
+      ).toEqual({ x: 1, y: 0 });
+      expect(result.events).toContainEqual({
+        type: 'EntityRevealed',
+        entityId: 'ent_goblin',
+        cause: 'bump',
+      });
+      expect(result.events).toContainEqual({
+        type: 'MovementSpent',
+        entityId: 'ent_hero',
+        feet: 5,
+      });
+      expect(result.state.combat.resources.ent_hero?.movementRemaining).toBe(
+        25,
+      );
+    },
+  );
+
   it('reveals a hidden attacker with cause attack', () => {
     const hiddenAttacker: RoomCombatState = {
       ...combat,
@@ -225,7 +268,7 @@ function setup(runner?: SoloTurnRunner) {
     },
   };
   const room = new Room(store, lease, { snapshot: null, events: [] }, runner);
-  return { room, events, latestSnapshot: () => snapshot };
+  return { room, events, store, latestSnapshot: () => snapshot };
 }
 
 describe('Room combat command seam', () => {
@@ -369,6 +412,42 @@ describe('Room combat command seam', () => {
       }),
     ).toBe(true);
     expect(events).toHaveLength(count);
+  });
+
+  it('restores the revealed hidden blocker from the committed snapshot after restart', async () => {
+    const { room, events, store, latestSnapshot } = setup();
+    const owner = randomUUID();
+    await joinSeated(room, owner, { send() {} });
+    const corridor: RoomCombatState = {
+      ...combat,
+      map: { ...map, w: 8, h: 1, cells: [0, 8] },
+      entities: combat.entities.map((entity) =>
+        entity.id === 'ent_hero'
+          ? { ...entity, pos: { x: 0, y: 0 } }
+          : { ...entity, pos: { x: 2, y: 0 }, hidden: true },
+      ),
+    };
+    room.state = {
+      ...room.state,
+      gameState: {
+        combatRoom: corridor,
+        combatActors: { [owner]: 'ent_hero' },
+      },
+    };
+    await room.submitCombatCommand(owner, randomUUID(), {
+      command: 'move',
+      destination: { x: 3, y: 0 },
+    });
+    const latest = latestSnapshot();
+    expect(events.some((event) => event.type === 'EntityRevealed')).toBe(true);
+    const restarted = new Room(store, lease, { snapshot: latest, events: [] });
+    expect(
+      (
+        restarted.state.gameState as { combatRoom: RoomCombatState }
+      ).combatRoom.entities.find((entity) => entity.id === 'ent_goblin')
+        ?.hidden,
+    ).toBe(false);
+    await room.drain();
   });
 
   it('accepts and persists a command submitted synchronously by NarrationCompleted delivery', async () => {

@@ -30,6 +30,32 @@ describe('concealed identities', () => {
     ]);
   });
 
+  it('replays the revealed snapshot and can rewind to the earlier hidden snapshot', () => {
+    const hidden = {
+      combatRoom: { entities: [{ id: 'g', name: 'Gribble', hidden: true }] },
+    };
+    const revealed = {
+      combatRoom: { entities: [{ id: 'g', name: 'Gribble', hidden: false }] },
+    };
+    const history = [
+      commit(hidden, 1),
+      {
+        type: 'EntityRevealed',
+        payload: { entityId: 'g', cause: 'bump' },
+        seq: 2,
+      } as never,
+      commit(revealed, 3),
+    ];
+    const restarted = history.reduce(reduceRoom, emptyRoom(SID));
+    expect(
+      (restarted.gameState as typeof revealed).combatRoom.entities[0]?.hidden,
+    ).toBe(false);
+    const rewound = history.slice(0, 1).reduce(reduceRoom, emptyRoom(SID));
+    expect(
+      (rewound.gameState as typeof hidden).combatRoom.entities[0]?.hidden,
+    ).toBe(true);
+  });
+
   it('never records a visible entity', () => {
     const state = reduceRoom(
       emptyRoom(SID),
