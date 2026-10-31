@@ -23,10 +23,13 @@ function parseRow(row: {
   const bindingEpoch = Number(row.binding_epoch);
   const cursor = Number(row.cursor);
   if (
-    !Number.isSafeInteger(bindingEpoch) || bindingEpoch < 1 ||
-    !Number.isSafeInteger(cursor) || cursor < 0 ||
+    !Number.isSafeInteger(bindingEpoch) ||
+    bindingEpoch < 1 ||
+    !Number.isSafeInteger(cursor) ||
+    cursor < 0 ||
     !/^[A-Za-z0-9_-]{22}$/.test(row.generation)
-  ) return null;
+  )
+    return null;
   return {
     sessionId: row.session_id,
     seatId: row.seat_id,
@@ -52,10 +55,14 @@ export async function initializeSeatStream(
      RETURNING ${RETURNING}`,
     [sessionId, seatId, nonce],
   );
-  const row = result.rows[0] ?? (await client.query(
-    `SELECT ${RETURNING} FROM seat_streams WHERE session_id=$1 AND seat_id=$2`,
-    [sessionId, seatId],
-  )).rows[0];
+  const row =
+    result.rows[0] ??
+    (
+      await client.query(
+        `SELECT ${RETURNING} FROM seat_streams WHERE session_id=$1 AND seat_id=$2`,
+        [sessionId, seatId],
+      )
+    ).rows[0];
   const stream = row && parseRow(row);
   if (!stream) throw new Error('seat_stream_record_invalid');
   return stream;
@@ -77,18 +84,29 @@ export async function loadSeatStream(
 /** Advance only the identified generation; callers share this client's transaction with the event commit. */
 export async function advanceSeatStream(
   client: PoolClient,
-  stream: Pick<SeatStream, 'sessionId' | 'seatId' | 'bindingEpoch' | 'generation'>,
+  stream: Pick<
+    SeatStream,
+    'sessionId' | 'seatId' | 'bindingEpoch' | 'generation'
+  >,
   by = 1,
 ): Promise<number> {
-  if (!Number.isSafeInteger(by) || by < 1) throw new Error('seat_stream_increment_invalid');
+  if (!Number.isSafeInteger(by) || by < 1)
+    throw new Error('seat_stream_increment_invalid');
   const result = await client.query<{ cursor: string }>(
     `UPDATE seat_streams SET cursor=cursor+$5
      WHERE session_id=$1 AND seat_id=$2 AND binding_epoch=$3 AND generation=$4
      RETURNING cursor::text`,
-    [stream.sessionId, stream.seatId, stream.bindingEpoch, stream.generation, by],
+    [
+      stream.sessionId,
+      stream.seatId,
+      stream.bindingEpoch,
+      stream.generation,
+      by,
+    ],
   );
   const cursor = Number(result.rows[0]?.cursor);
-  if (!Number.isSafeInteger(cursor)) throw new Error('seat_stream_generation_changed');
+  if (!Number.isSafeInteger(cursor))
+    throw new Error('seat_stream_generation_changed');
   return cursor;
 }
 
@@ -99,7 +117,8 @@ export async function reinitializeSeatStream(
   seatId: string,
   bindingEpoch: number,
 ): Promise<SeatStream> {
-  if (!Number.isSafeInteger(bindingEpoch) || bindingEpoch < 1) throw new Error('seat_stream_epoch_invalid');
+  if (!Number.isSafeInteger(bindingEpoch) || bindingEpoch < 1)
+    throw new Error('seat_stream_epoch_invalid');
   const result = await client.query(
     `INSERT INTO seat_streams(session_id, seat_id, binding_epoch, generation, cursor)
      VALUES ($1,$2,$3,$4,0)
