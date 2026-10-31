@@ -7,13 +7,21 @@ import { runLegacyDerivedMemoryClear } from '../../src/retention/jobs/legacyDeri
 const databaseUrl = process.env.DATABASE_URL;
 describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
   let db: TestDatabase;
-  const sessionIds = Array.from({ length: 4 }, () => randomUUID());
+  const sessionIds = Array.from({ length: 6 }, () => randomUUID());
+  const accountIds = Array.from({ length: 6 }, () => randomUUID());
+  const exportId = randomUUID();
+  const unheldExportId = randomUUID();
   const characterId = randomUUID();
   const codeVersion = 'test-build-1';
 
   beforeAll(async () => {
     db = await createTestDatabase({ extraSearchPath: ['public'] });
-    await db.pool.query('CREATE TABLE sessions (id uuid PRIMARY KEY)');
+    await db.pool.query(
+      'CREATE TABLE sessions (id uuid PRIMARY KEY, owner_account_id uuid NOT NULL)',
+    );
+    await db.pool.query(
+      'CREATE TABLE export_jobs (id uuid PRIMARY KEY, account_id uuid NOT NULL)',
+    );
     await db.pool.query(
       'CREATE TABLE unrelated_session_data (session_id uuid NOT NULL, value text NOT NULL)',
     );
@@ -21,7 +29,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       'CREATE TABLE legal_holds (kind text NOT NULL, item_id text NOT NULL, PRIMARY KEY(kind,item_id))',
     );
     await db.pool.query(
-      "CREATE TABLE session_seat_characters (session_id uuid NOT NULL, seat_id uuid NOT NULL, character_id uuid NOT NULL, binding_status text NOT NULL DEFAULT 'active')",
+      "CREATE TABLE session_seat_characters (session_id uuid NOT NULL, seat_id uuid NOT NULL, account_id uuid, character_id uuid NOT NULL, binding_status text NOT NULL DEFAULT 'active')",
     );
     await db.pool.query(
       await readFile(
@@ -74,13 +82,37 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
         'utf8',
       ),
     );
-    await db.pool.query('INSERT INTO sessions(id) SELECT unnest($1::uuid[])', [
-      sessionIds,
-    ]);
+    await db.pool.query(
+      await readFile(
+        new URL(
+          '../../migrations/0046_derived_memory_hold_serialization.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    await db.pool.query(
+      await readFile(
+        new URL(
+          '../../migrations/0050_derived_memory_account_hold_serialization.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    await db.pool.query(
+      'INSERT INTO sessions(id,owner_account_id) SELECT * FROM unnest($1::uuid[],$2::uuid[])',
+      [sessionIds, accountIds],
+    );
+    await db.pool.query(
+      'INSERT INTO export_jobs(id,account_id) VALUES($1,$2),($3,$4)',
+      [exportId, accountIds[4], unheldExportId, accountIds[0]],
+    );
     await db.pool.query(
       `INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES
       ($1,'legacy','uncovered legacy summary'),($2,'indexed','token-covered summary'),
-      ($3,'held','held summary'),($4,'deferred','deferred summary')`,
+      ($3,'held','held summary'),($4,'account-held','account-held summary'),
+      ($5,'export-held','export-held summary'),($6,'deferred','deferred summary')`,
       sessionIds,
     );
     const indexed = await db.pool.query<{ id: string }>(
@@ -99,8 +131,8 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       [sessionIds[1], characterId, indexed.rows[0]?.id],
     );
     await db.pool.query(
-      "INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)",
-      [sessionIds[2]],
+      "INSERT INTO legal_holds(kind,item_id) VALUES ('session',$1),('account',$2),('export',$3)",
+      [sessionIds[2], accountIds[3], exportId],
     );
     const legacyEntry = await db.pool.query<{ id: string }>(
       "INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload) VALUES($1,'npc','legacy',1,'legacy registry', '{}') RETURNING id",
@@ -120,7 +152,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     );
     await db.pool.query(
       'INSERT INTO derived_memory_reconcile_skipped(session_id) VALUES($1)',
-      [sessionIds[3]],
+      [sessionIds[5]],
     );
     await db.pool.query(
       'UPDATE derived_memory_reconciliation_state SET complete=true WHERE singleton=true',
@@ -134,7 +166,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     await db.pool.query('DELETE FROM registry_entries');
     await db.pool.query('DELETE FROM scene_summaries');
     await db.pool.query(
-      `INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,'legacy','uncovered legacy summary'),($2,'indexed','summary ref_abcdefghijklmnopqrstuvwxyzABCDEF'),($3,'held','held summary'),($4,'deferred','deferred summary')`,
+      `INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,'legacy','uncovered legacy summary'),($2,'indexed','summary ref_abcdefghijklmnopqrstuvwxyzABCDEF'),($3,'held','held summary'),($4,'account-held','account-held summary'),($5,'export-held','export-held summary'),($6,'deferred','deferred summary')`,
       sessionIds,
     );
     const summary = await db.pool.query<{ id: string }>(
@@ -187,7 +219,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     });
     expect(result.counts).toEqual({
       sessionsConsidered: 2,
-      sessionsSkippedHeld: 1,
+      sessionsSkippedHeld: 3,
       sessionsDeferred: 1,
       sceneSummaries: 1,
       registryEntries: 1,
@@ -196,7 +228,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     expect(
       (await db.pool.query('SELECT count(*)::int AS n FROM scene_summaries'))
         .rows[0]?.n,
-    ).toBe(4);
+    ).toBe(6);
     expect(
       (await db.pool.query('SELECT count(*)::int AS n FROM registry_entries'))
         .rows[0]?.n,
@@ -279,6 +311,116 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     ).toBe(0);
   });
 
+  it('refuses live execution when global reconciliation is incomplete', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    await db.pool.query(
+      'UPDATE derived_memory_reconciliation_state SET complete=false WHERE singleton=true',
+    );
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+    ).rejects.toThrow(/reconciliation to be complete/i);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT outcome FROM derived_memory_legacy_clear_audit WHERE mode='live'",
+        )
+      ).rows,
+    ).toEqual([{ outcome: 'aborted' }]);
+  });
+
+  it('defers sessions with registry supersession chains across the coverage boundary', async () => {
+    const legacyPredecessor = await db.pool.query<{ id: string }>(
+      "INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload) VALUES($1,'npc','legacy-before-index',1,'legacy predecessor','{}') RETURNING id",
+      [sessionIds[0]],
+    );
+    const indexedSuccessor = await db.pool.query<{ id: string }>(
+      "INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,supersedes_id) VALUES($1,'npc','legacy-before-index',2,'indexed successor','{}',$2) RETURNING id",
+      [sessionIds[0], legacyPredecessor.rows[0]?.id],
+    );
+    await db.pool.query(
+      'UPDATE registry_entries SET superseded_by=$2 WHERE id=$1',
+      [legacyPredecessor.rows[0]?.id, indexedSuccessor.rows[0]?.id],
+    );
+    await db.pool.query(
+      "INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'registry_entry',$3)",
+      [sessionIds[0], characterId, indexedSuccessor.rows[0]?.id],
+    );
+    const indexedPredecessor = await db.pool.query<{ id: string }>(
+      "INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload) VALUES($1,'npc','index-before-legacy',1,'indexed predecessor','{}') RETURNING id",
+      [sessionIds[0]],
+    );
+    const legacySuccessor = await db.pool.query<{ id: string }>(
+      "INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,supersedes_id) VALUES($1,'npc','index-before-legacy',2,'legacy successor','{}',$2) RETURNING id",
+      [sessionIds[0], indexedPredecessor.rows[0]?.id],
+    );
+    await db.pool.query(
+      'UPDATE registry_entries SET superseded_by=$2 WHERE id=$1',
+      [indexedPredecessor.rows[0]?.id, legacySuccessor.rows[0]?.id],
+    );
+    await db.pool.query(
+      "INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'registry_entry',$3)",
+      [sessionIds[0], characterId, indexedPredecessor.rows[0]?.id],
+    );
+
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    expect(dry.counts.sessionsDeferred).toBe(2);
+    expect(dry.counts.registryEntries).toBe(0);
+    await runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false });
+    expect(
+      (
+        await db.pool.query(
+          'SELECT count(*)::int AS n FROM registry_entries WHERE session_id=$1',
+          [sessionIds[0]],
+        )
+      ).rows[0]?.n,
+    ).toBe(5);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM scene_summaries WHERE scene_id='legacy'",
+        )
+      ).rows[0]?.n,
+    ).toBe(1);
+  });
+
+  it('requires a fresh dry run after recovering an orphaned live audit', async () => {
+    const originalDryRun = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const runId = randomUUID();
+    await db.pool.query(
+      "INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at) VALUES($1,'live',$2,$3,$4::jsonb,'running',now())",
+      [
+        runId,
+        codeVersion,
+        originalDryRun.runId,
+        JSON.stringify({
+          ...originalDryRun.counts,
+          sessionsProcessed: 0,
+          sceneSummariesRemoved: 0,
+          registryEntriesRemoved: 0,
+          registryFactsRemoved: 0,
+        }),
+      ],
+    );
+    await db.pool.query("DELETE FROM scene_summaries WHERE scene_id='legacy'");
+    await db.pool.query(
+      "DELETE FROM registry_entries WHERE entity_id='legacy'",
+    );
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    const resumed = await runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      dryRun: false,
+    });
+    expect(resumed.outcome).toBe('live_succeeded');
+    expect(
+      (
+        await db.pool.query(
+          'SELECT outcome FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+          [runId],
+        )
+      ).rows[0]?.outcome,
+    ).toBe('failed');
+  });
+
   it('live removes only uncovered rows from unheld reconciled sessions, is idempotent, and audits counts only', async () => {
     const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
     const live = await runLegacyDerivedMemoryClear(db.pool, {
@@ -293,7 +435,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
           'SELECT scene_id FROM scene_summaries ORDER BY scene_id',
         )
       ).rows.map((r) => r.scene_id),
-    ).toEqual(['deferred', 'held', 'indexed']);
+    ).toEqual(['account-held', 'deferred', 'export-held', 'held', 'indexed']);
     expect(
       (
         await db.pool.query(
@@ -416,6 +558,59 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       ).rows[0]?.n,
     ).toBe(2);
   });
+
+  it('bounds waits for concurrent session writers with lock_timeout', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    const writer = await db.pool.connect();
+    try {
+      await writer.query('BEGIN');
+      await writer.query(
+        "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'writer-lock','uncommitted')",
+        [sessionIds[0]],
+      );
+      await expect(
+        runLegacyDerivedMemoryClear(db.pool, {
+          ...flags,
+          dryRun: false,
+          sessionLockTimeoutMs: 25,
+        }),
+      ).rejects.toThrow(/lock timeout/i);
+    } finally {
+      await writer.query('ROLLBACK');
+      writer.release();
+    }
+  });
+
+  it.each([
+    ['account', accountIds[0]],
+    ['export', unheldExportId],
+  ])(
+    'serializes %s hold changes against affected session locks',
+    async (kind, itemId) => {
+      const sessionLocker = await db.pool.connect();
+      const holdWriter = await db.pool.connect();
+      try {
+        await sessionLocker.query('BEGIN');
+        await sessionLocker.query(
+          'SELECT id FROM sessions WHERE id=$1 FOR UPDATE',
+          [sessionIds[0]],
+        );
+        await holdWriter.query('BEGIN');
+        await holdWriter.query("SELECT set_config('lock_timeout','25ms',true)");
+        await expect(
+          holdWriter.query(
+            'INSERT INTO legal_holds(kind,item_id) VALUES($1,$2)',
+            [kind, itemId],
+          ),
+        ).rejects.toThrow(/lock timeout/i);
+      } finally {
+        await holdWriter.query('ROLLBACK');
+        await sessionLocker.query('ROLLBACK');
+        holdWriter.release();
+        sessionLocker.release();
+      }
+    },
+  );
 
   it('flags are off by default', async () => {
     await expect(

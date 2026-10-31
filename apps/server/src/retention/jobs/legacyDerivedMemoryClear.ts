@@ -5,6 +5,7 @@ const LEGACY_CLEAR_LOCK_KEY = 7_201_939;
 const DEFAULT_DRY_RUN_MAX_AGE_MS = 24 * 60 * 60_000;
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_TIME_BUDGET_MS = 2_000;
+const DEFAULT_SESSION_LOCK_TIMEOUT_MS = 5_000;
 
 export type LegacyClearCounts = {
   sessionsConsidered: number;
@@ -26,6 +27,7 @@ export type LegacyClearOptions = {
   countTolerance?: number;
   batchSize?: number;
   timeBudgetMs?: number;
+  sessionLockTimeoutMs?: number;
   now?: () => Date;
   log?: (event: string, counts: LegacyClearCounts, outcome: string) => void;
 };
@@ -96,9 +98,11 @@ async function legacyCountsForSession(client: PoolClient, sessionId: string) {
 }
 
 /** Read-only count pass; session ids are used internally and never leave this module or enter audit/logs. */
-async function classifySessions(
-  client: PoolClient,
-): Promise<{ sessions: SessionRow[]; counts: LegacyClearCounts }> {
+async function classifySessions(client: PoolClient): Promise<{
+  sessions: SessionRow[];
+  counts: LegacyClearCounts;
+  reconciliationComplete: boolean;
+}> {
   const state = await client.query<{ complete: boolean }>(
     'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
   );
@@ -108,8 +112,22 @@ async function classifySessions(
     );
   const result = await client.query<SessionRow>(
     `SELECT s.id::text AS session_id,
-      EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=s.id::text) AS held,
-      (NOT $1::boolean OR EXISTS(SELECT 1 FROM derived_memory_reconcile_skipped d WHERE d.session_id=s.id)) AS deferred
+      (EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=s.id::text)
+       OR EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='account' AND
+                  (h.item_id=s.owner_account_id::text OR EXISTS(
+                    SELECT 1 FROM session_seat_characters b
+                     WHERE b.session_id=s.id AND b.account_id::text=h.item_id)))
+       OR EXISTS(SELECT 1 FROM legal_holds h JOIN export_jobs x ON x.id::text=h.item_id
+                  WHERE h.kind='export' AND
+                    (x.account_id=s.owner_account_id OR EXISTS(
+                      SELECT 1 FROM session_seat_characters b
+                       WHERE b.session_id=s.id AND b.account_id=x.account_id)))) AS held,
+      (NOT $1::boolean
+       OR EXISTS(SELECT 1 FROM derived_memory_reconcile_skipped d WHERE d.session_id=s.id)
+       OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id
+                  AND (e.supersedes_id IS NOT NULL OR e.superseded_by IS NOT NULL))
+       OR EXISTS(SELECT 1 FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
+                  WHERE e.session_id=s.id AND (f.supersedes_id IS NOT NULL OR f.superseded_by IS NOT NULL))) AS deferred
      FROM sessions s
      WHERE EXISTS(SELECT 1 FROM scene_summaries m WHERE m.session_id=s.id)
         OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id)
@@ -149,7 +167,7 @@ async function classifySessions(
       });
     }
   }
-  return { sessions, counts };
+  return { sessions, counts, reconciliationComplete: state.rows[0].complete };
 }
 
 function matchesCounts(
@@ -242,6 +260,9 @@ export async function runLegacyDerivedMemoryClear(
       throw new Error(
         'Another legacy derived-memory clear runner holds the advisory lock',
       );
+    await runner.query(
+      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',finished_at=now() WHERE mode='live' AND outcome='running'",
+    );
     const now = options.now ?? (() => new Date());
     const maxAge = positiveInt(
       options.dryRunMaxAgeMs ??
@@ -273,17 +294,38 @@ export async function runLegacyDerivedMemoryClear(
         ),
       'time budget',
     );
+    const sessionLockTimeout = positiveInt(
+      options.sessionLockTimeoutMs ??
+        Number(
+          process.env.DERIVED_MEMORY_LEGACY_CLEAR_LOCK_TIMEOUT_MS ??
+            DEFAULT_SESSION_LOCK_TIMEOUT_MS,
+        ),
+      'session lock timeout',
+    );
     const started = now();
     let runId: string = randomUUID();
     activeRunId = runId;
     await runner.query('BEGIN');
-    const { sessions, counts } = await classifySessions(runner);
+    const { sessions, counts, reconciliationComplete } =
+      await classifySessions(runner);
     let dryRunId: string | null = null;
     let resumeCounts: Record<string, number> | null = null;
     let removedSummaries = 0;
     let removedEntries = 0;
     let removedFacts = 0;
     let idempotentCompletion = false;
+    if (!dryRun && !reconciliationComplete) {
+      await runner.query(
+        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at)
+         VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4)`,
+        [runId, codeVersion, JSON.stringify(counts), started],
+      );
+      await runner.query('COMMIT');
+      emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
+      throw new Error(
+        'Live clear requires global reference reconciliation to be complete; refusing to report success while coverage is unverified',
+      );
+    }
     if (!dryRun) {
       const resumable = await runner.query<AuditRow>(
         `SELECT run_id,dry_run_id,counts,finished_at,outcome FROM derived_memory_legacy_clear_audit
@@ -432,6 +474,9 @@ export async function runLegacyDerivedMemoryClear(
           break;
         await runner.query('BEGIN');
         try {
+          await runner.query("SELECT set_config('lock_timeout',$1,true)", [
+            `${sessionLockTimeout}ms`,
+          ]);
           const locked = await runner.query(
             'SELECT id FROM sessions WHERE id=$1 FOR UPDATE',
             [session.session_id],
@@ -443,7 +488,18 @@ export async function runLegacyDerivedMemoryClear(
             continue;
           }
           const held = await runner.query(
-            "SELECT 1 FROM legal_holds WHERE kind='session' AND item_id=$1",
+            `SELECT 1 FROM sessions s
+             WHERE s.id=$1 AND (
+               EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=s.id::text)
+               OR EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='account' AND
+                          (h.item_id=s.owner_account_id::text OR EXISTS(
+                            SELECT 1 FROM session_seat_characters b
+                             WHERE b.session_id=s.id AND b.account_id::text=h.item_id)))
+               OR EXISTS(SELECT 1 FROM legal_holds h JOIN export_jobs x ON x.id::text=h.item_id
+                          WHERE h.kind='export' AND
+                            (x.account_id=s.owner_account_id OR EXISTS(
+                              SELECT 1 FROM session_seat_characters b
+                               WHERE b.session_id=s.id AND b.account_id=x.account_id))))`,
             [session.session_id],
           );
           if (held.rowCount) {
@@ -457,7 +513,11 @@ export async function runLegacyDerivedMemoryClear(
             'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
           );
           const deferred = await runner.query(
-            'SELECT 1 FROM derived_memory_reconcile_skipped WHERE session_id=$1',
+            `SELECT 1 WHERE EXISTS(SELECT 1 FROM derived_memory_reconcile_skipped WHERE session_id=$1)
+             OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=$1
+                        AND (e.supersedes_id IS NOT NULL OR e.superseded_by IS NOT NULL))
+             OR EXISTS(SELECT 1 FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
+                        WHERE e.session_id=$1 AND (f.supersedes_id IS NOT NULL OR f.superseded_by IS NOT NULL))`,
             [session.session_id],
           );
           if (!state.rows[0]?.complete || deferred.rowCount)

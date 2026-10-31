@@ -8,10 +8,6 @@ if (!enabled)
   throw new Error(
     'Set DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true to invoke this separate job',
   );
-if (!dryRun && process.env.DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN !== 'false')
-  throw new Error(
-    'Live mode requires DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN=false',
-  );
 const codeVersion = process.env.DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION;
 if (!codeVersion)
   throw new Error(
