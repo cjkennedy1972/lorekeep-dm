@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import type { ServerMessage } from '@game/schema';
 import { NarrationLog } from './NarrationLog.js';
@@ -219,4 +220,117 @@ test('a live narration after restore raises the New narration chip while the rea
   expect(
     screen.getByRole('button', { name: 'New narration' }),
   ).toBeInTheDocument();
+});
+
+const chunk = (
+  seq: number,
+  turnId: string,
+  index: number,
+  text: string,
+): ServerMessage =>
+  ({
+    seq,
+    type: 'NarrationChunk',
+    payload: { turnId, index, text },
+  }) as ServerMessage;
+
+test('streamed text into a turn the reader has scrolled away from raises the chip', () => {
+  const { rerender } = render(
+    <NarrationLog
+      messages={[
+        turn(1, 'turn-1', 'The gate creaks.'),
+        chunk(2, 'turn-2', 0, 'Rain starts'),
+      ]}
+    />,
+  );
+  const list = screen.getByRole('list', { name: /Story entries/ });
+
+  // Scroll away, then jump back so the chip clears before the streamed text arrives.
+  list.scrollTop = 0;
+  fireEvent.scroll(list);
+  fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
+  expect(
+    screen.queryByRole('button', { name: /New narration|Jump to latest/ }),
+  ).toBeNull();
+  list.scrollTop = 0;
+  fireEvent.scroll(list);
+
+  rerender(
+    <NarrationLog
+      messages={[
+        turn(1, 'turn-1', 'The gate creaks.'),
+        chunk(2, 'turn-2', 0, 'Rain starts'),
+        chunk(3, 'turn-2', 1, '. What do you do?'),
+      ]}
+    />,
+  );
+
+  expect(list.scrollTop).toBe(0);
+  expect(
+    screen.getByRole('button', { name: 'New narration' }),
+  ).toBeInTheDocument();
+});
+
+test('new narration below is announced politely without moving focus', () => {
+  const { rerender } = render(
+    <NarrationLog messages={[turn(1, 'turn-1', 'The gate creaks.')]} />,
+  );
+  const list = screen.getByRole('list', { name: /Story entries/ });
+  list.scrollTop = 0;
+  fireEvent.scroll(list);
+
+  const outside = document.createElement('input');
+  document.body.appendChild(outside);
+  outside.focus();
+
+  rerender(
+    <NarrationLog
+      messages={[
+        turn(1, 'turn-1', 'The gate creaks.'),
+        turn(2, 'turn-2', 'Rain starts. What do you do?'),
+      ]}
+    />,
+  );
+
+  expect(document.activeElement).toBe(outside);
+  const announcement = screen.getByText('New narration below.');
+  expect(announcement.closest('[aria-live]')).toHaveAttribute(
+    'aria-live',
+    'polite',
+  );
+  outside.remove();
+});
+
+test('the reader can jump to new narration from the keyboard', async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(
+    <NarrationLog messages={[turn(1, 'turn-1', 'The gate creaks.')]} />,
+  );
+  const list = screen.getByRole('list', { name: /Story entries/ });
+  list.scrollTop = 0;
+  fireEvent.scroll(list);
+  rerender(
+    <NarrationLog
+      messages={[
+        turn(1, 'turn-1', 'The gate creaks.'),
+        turn(2, 'turn-2', 'Rain starts. What do you do?'),
+      ]}
+    />,
+  );
+
+  await user.tab();
+  let focused = document.activeElement;
+  while (
+    focused &&
+    focused.textContent !== 'New narration' &&
+    focused !== document.body
+  ) {
+    await user.tab();
+    focused = document.activeElement;
+  }
+  expect(focused).toBe(screen.getByRole('button', { name: 'New narration' }));
+  await user.keyboard('{Enter}');
+
+  expect(list.scrollTop).toBe(geometry.scrollHeight);
+  expect(screen.queryByText('New narration below.')).toBeNull();
 });
