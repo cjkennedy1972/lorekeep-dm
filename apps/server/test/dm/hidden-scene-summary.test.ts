@@ -81,6 +81,7 @@ const echo = (extra = ''): LlmAdapter =>
 const run = (adapter: LlmAdapter, db: never) =>
   closeScene({
     sessionId: 's',
+    leaseEpoch: null,
     sceneId: 'sc',
     events,
     db,
@@ -110,6 +111,7 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
     prompts.length = 0;
     await closeScene({
       sessionId: 's',
+      leaseEpoch: null,
       sceneId: 'combat-projection',
       db,
       adapter: echo(),
@@ -381,6 +383,7 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
     prompts.length = 0;
     await closeScene({
       sessionId: 's',
+      leaseEpoch: null,
       sceneId: 'sc',
       db,
       adapter: echo(' Gribble the goblin ambushed the party.'),

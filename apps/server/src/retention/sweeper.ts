@@ -62,6 +62,28 @@ export async function reconcileDerivedMemoryWithinBudget(
     let processed = 0;
     let complete = false;
     try {
+      const skipped = await db.query<{ session_id: string }>(
+        'SELECT session_id FROM derived_memory_reconcile_skipped ORDER BY first_skipped_at,session_id',
+      );
+      for (const { session_id } of skipped.rows) {
+        let retryComplete = false;
+        while (!retryComplete) {
+          if (batches > 0 && monotonicNowMs() - startedAt >= timeBudgetMs)
+            break;
+          const batch = await reconcileDerivedMemoryCharacterRefs(
+            db,
+            null,
+            batchSize,
+            session_id,
+          );
+          batches += 1;
+          processed += batch.processed;
+          retryComplete = batch.complete;
+          if (!batch.processed && !retryComplete) break;
+          if (monotonicNowMs() - startedAt >= timeBudgetMs) break;
+        }
+        if (batches > 0 && monotonicNowMs() - startedAt >= timeBudgetMs) break;
+      }
       for (let shouldContinue = true; shouldContinue; ) {
         const state = (
           await db.query<{
@@ -123,7 +145,14 @@ async function coverageBlockedDeletionCount(
            OR EXISTS (SELECT 1 FROM session_character_tokens t JOIN account_characters c ON c.id=t.character_id WHERE c.account_id=a.id)
            OR EXISTS (SELECT 1 FROM derived_memory_character_refs r JOIN account_characters c ON c.id=r.character_id WHERE c.account_id=a.id)
            OR EXISTS (SELECT 1 FROM sessions s JOIN account_characters c ON s.character_id::text=c.id::text WHERE s.owner_account_id=a.id AND c.account_id=a.id))
-         AND EXISTS (SELECT 1 FROM derived_memory_reconciliation_state WHERE singleton=true AND complete=false)`,
+         AND (EXISTS (SELECT 1 FROM derived_memory_reconciliation_state WHERE singleton=true AND complete=false)
+           OR EXISTS (
+             SELECT 1 FROM derived_memory_reconcile_skipped skipped
+             WHERE EXISTS (SELECT 1 FROM session_character_tokens t JOIN account_characters c ON c.id=t.character_id WHERE t.session_id=skipped.session_id AND c.account_id=a.id)
+                OR EXISTS (SELECT 1 FROM session_seat_characters b JOIN account_characters c ON c.id=b.character_id WHERE b.session_id=skipped.session_id AND c.account_id=a.id)
+                OR EXISTS (SELECT 1 FROM derived_memory_character_refs r JOIN account_characters c ON c.id=r.character_id WHERE r.session_id=skipped.session_id AND c.account_id=a.id)
+                OR EXISTS (SELECT 1 FROM sessions s JOIN account_characters c ON s.character_id::text=c.id::text WHERE s.id=skipped.session_id AND c.account_id=a.id)
+           ))`,
     [cutoff],
   );
   return Number(result.rows[0]?.count ?? 0);

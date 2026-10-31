@@ -620,6 +620,10 @@ describe('ADR-039 step 3 probe (f2b5c15e)', () => {
       s,
       'released-identity',
       'Brann met the guard by the old road.',
+      [],
+      null,
+      {},
+      null,
     );
     const rows = await q(
       "SELECT summary FROM scene_summaries WHERE session_id=$1 AND scene_id='released-identity'",

@@ -115,9 +115,8 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
             },
           },
         ],
-        null,
-        {},
         0,
+        {},
       ),
     ).rejects.toMatchObject({ name: 'DerivedMemoryLeaseLostError' });
     const rows = await db.pool.query(
@@ -125,6 +124,72 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       [sessionId],
     );
     expect(rows.rowCount).toBe(0);
+    const missingEpochWrites = await Promise.allSettled([
+      registry.upsert(
+        sessionId,
+        {
+          kind: 'npc',
+          id: 'npc_omitted_epoch',
+          after: {
+            id: 'npc_omitted_epoch',
+            name: 'Omitted',
+            role: 'guard',
+            disposition: 'neutral',
+            facts: [],
+          },
+        },
+        undefined as unknown as number | null,
+      ),
+      registry.upsertMany(
+        sessionId,
+        [
+          {
+            kind: 'npc',
+            id: 'npc_many_omitted_epoch',
+            after: {
+              id: 'npc_many_omitted_epoch',
+              name: 'Omitted Many',
+              role: 'guard',
+              disposition: 'neutral',
+              facts: [],
+            },
+          },
+        ],
+        undefined as unknown as number | null,
+      ),
+      registry.closeScene(
+        sessionId,
+        'scene-omitted-epoch',
+        'Omitted epoch must not persist.',
+        [],
+        null,
+        {},
+        undefined as unknown as number | null,
+      ),
+    ]);
+    expect(missingEpochWrites.map(({ status }) => status)).toEqual([
+      'rejected',
+      'rejected',
+      'rejected',
+    ]);
+    for (const outcome of missingEpochWrites)
+      if (outcome.status === 'rejected')
+        expect(outcome.reason).toMatchObject({
+          name: 'DerivedMemoryLeaseLostError',
+        });
+    const absentEpochRows = await db.pool.query(
+      "SELECT id FROM registry_entries WHERE session_id=$1 AND entity_id IN ('npc_omitted_epoch','npc_many_omitted_epoch')",
+      [sessionId],
+    );
+    expect(absentEpochRows.rowCount).toBe(0);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT 1 FROM scene_summaries WHERE session_id=$1 AND scene_id='scene-omitted-epoch'",
+          [sessionId],
+        )
+      ).rowCount,
+    ).toBe(0);
     await db.pool.query('DELETE FROM session_lease WHERE session_id=$1', [
       sessionId,
     ]);
@@ -207,6 +272,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     };
     const out = await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-privacy',
       events: [
         {
@@ -321,6 +387,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(projectSummarizerEvents(events)).toHaveLength(7);
     await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-combat-recap',
       events,
       adapter,
@@ -551,6 +618,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
         ],
         null,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
     await expect(
@@ -569,6 +637,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
         },
         null,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
     await expect(
@@ -588,6 +657,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
         ],
         undefined,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
     const persisted = await db.pool.query(
@@ -606,6 +676,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
         [],
         null,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
     await registry.upsertMany(
@@ -691,6 +762,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     await expect(
       closeScene({
         sessionId: heldSession,
+        leaseEpoch: null,
         sceneId: 'scene-held-no-binding',
         events: [],
         adapter: holdAdapter,
@@ -729,6 +801,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     } as unknown as LlmAdapter;
     const out = await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-caller-player-text',
       events: [],
       forbiddenPlayerText: [quotedText],
@@ -790,6 +863,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       } as unknown as LlmAdapter;
       const closing = closeScene({
         sessionId: heldSession,
+        leaseEpoch: null,
         sceneId: 'scene-held-race',
         events: [],
         adapter: holdAdapter,
@@ -843,6 +917,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     } as unknown as LlmAdapter;
     await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-foreign-seat-id',
       events: [
         {
@@ -861,6 +936,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     await closeScene({
       db: db.pool,
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-foreign-turn-id',
       events: [
         {
@@ -880,6 +956,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(prompts.join('\n')).not.toContain(foreignTurnId);
     await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-bound-seat-id',
       events: [
         {
@@ -917,6 +994,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     await expect(
       closeScene({
         sessionId,
+        leaseEpoch: null,
         sceneId: 'scene-uncertain',
         events: [],
         adapter,
@@ -941,6 +1019,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     };
     const out = await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-fallback',
       events: [
         {

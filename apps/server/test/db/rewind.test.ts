@@ -112,11 +112,27 @@ describe('rewind plan', () => {
       await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], {
         turn: 1,
       });
-      await memory.closeScene(id, 'scene-a', 'Kept scene.', [], ids.a);
+      await memory.closeScene(
+        id,
+        'scene-a',
+        'Kept scene.',
+        [],
+        ids.a,
+        {},
+        null,
+      );
       await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], {
         turn: 2,
       });
-      await memory.closeScene(id, 'scene-b', 'Reverted scene.', [], ids.b);
+      await memory.closeScene(
+        id,
+        'scene-b',
+        'Reverted scene.',
+        [],
+        ids.b,
+        {},
+        null,
+      );
 
       await persistence.writeTurn(
         id,
@@ -273,7 +289,15 @@ describe('rewind plan', () => {
       await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], {
         turn: 2,
       });
-      await memory.closeScene(id, 'scene-b', 'First telling.', [], ids.b);
+      await memory.closeScene(
+        id,
+        'scene-b',
+        'First telling.',
+        [],
+        ids.b,
+        {},
+        null,
+      );
       await persistence.writeTurn(id, [revert(ids.b)], { turn: 1 });
 
       expect(
@@ -283,6 +307,8 @@ describe('rewind plan', () => {
           'Regenerated telling.',
           [],
           ids.c,
+          {},
+          null,
         ),
       ).toBe(true);
       const { rows } = await pool.query<{ summary: string }>(
@@ -338,7 +364,15 @@ describe('rewind plan', () => {
       await persistence.writeTurn(id, [row('a', 'NarrationCompleted')], {
         turn: 1,
       });
-      await memory.closeScene(id, 'scene-seed', 'Seeded scene.');
+      await memory.closeScene(
+        id,
+        'scene-seed',
+        'Seeded scene.',
+        [],
+        null,
+        {},
+        null,
+      );
       await memory.upsertMany(
         id,
         [
@@ -395,7 +429,15 @@ describe('rewind plan', () => {
         undefined,
         ids.b,
       );
-      await memory.closeScene(id, 'scene-b', 'Mayor scene.', [], ids.b);
+      await memory.closeScene(
+        id,
+        'scene-b',
+        'Mayor scene.',
+        [],
+        ids.b,
+        {},
+        null,
+      );
 
       await pool.query(
         "CREATE FUNCTION fail_registry_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected delete failure'; END $$",

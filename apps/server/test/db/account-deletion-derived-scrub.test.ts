@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { runSweep } from '../../src/retention/sweeper.js';
@@ -27,6 +27,12 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'derived-scrub-'));
   await db.query(
     'UPDATE derived_memory_reconciliation_state SET complete=true WHERE singleton=true',
+  );
+});
+beforeEach(async () => {
+  await db.query('DELETE FROM derived_memory_reconcile_skipped');
+  await db.query(
+    'UPDATE derived_memory_reconciliation_state SET complete=true,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
   );
 });
 afterAll(async () => {
@@ -881,7 +887,7 @@ describe('account deletion scrubs DM-authored derived memory', () => {
     }
   });
 
-  it('deletes only referenced rows in a proven-solo session and preserves unreferenced NPC memory', async () => {
+  it('deletes only indexed rows and preserves unreferenced NPC memory', async () => {
     const owner = randomUUID();
     const session = randomUUID();
     const characterId = randomUUID();

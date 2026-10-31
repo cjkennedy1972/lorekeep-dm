@@ -69,6 +69,15 @@ describe.skipIf(!databaseUrl)(
           'utf8',
         ),
       );
+      await db.pool.query(
+        await readFile(
+          new URL(
+            '../../migrations/0048_derived_memory_reconcile_skipped.sql',
+            import.meta.url,
+          ),
+          'utf8',
+        ),
+      );
     });
     afterAll(async () => db?.close());
 

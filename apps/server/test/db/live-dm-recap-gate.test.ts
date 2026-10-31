@@ -102,6 +102,10 @@ async function createResumableTable(
     id,
     'scene:opening',
     'The adventurer followed the lantern light into Greyfen.',
+    [],
+    null,
+    {},
+    null,
   );
   await db.query(
     `INSERT INTO events(session_id,seq,turn_id,type,payload)

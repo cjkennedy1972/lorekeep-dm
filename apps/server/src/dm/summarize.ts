@@ -446,8 +446,8 @@ export interface CloseSceneInput extends SceneSummaryInput {
   tier: ContentTier;
   tableLines: readonly string[];
   turnId?: string;
-  /** Lease epoch captured by the Room when this summarizer call began. */
-  leaseEpoch?: number;
+  /** Lease epoch captured at call start; null asserts this session has no lease row. */
+  leaseEpoch: number | null;
   /** Entities hidden from the table (ADR-034 §3); summary inputs and outputs are filtered to the public view. */
   hidden?: readonly HiddenEntity[];
 }

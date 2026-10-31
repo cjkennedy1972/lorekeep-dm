@@ -374,15 +374,18 @@ function screenRegistryValue(
 export class RegistryMemory {
   constructor(private readonly pool: Pg) {}
 
-  /** Persist a scene summary and its validated diffs atomically; duplicate closes are no-ops. */
+  /** Persist a scene summary and its validated diffs atomically; duplicate closes are no-ops.
+   * expectedLeaseEpoch must be captured by the caller before generation; null asserts no lease row.
+   */
   async closeScene(
     sessionId: string,
     sceneId: string,
     summary: string,
-    diffs: readonly RegistryDiff[] = [],
-    turnId: string | null = null,
-    privacy: RegistryPrivacyOptions = {},
-    expectedLeaseEpoch?: number,
+    diffs: readonly RegistryDiff[] | undefined,
+    turnId: string | null | undefined,
+    privacy: RegistryPrivacyOptions | undefined,
+    /** Null is valid only when this session has no lease row. */
+    expectedLeaseEpoch: number | null,
   ): Promise<boolean> {
     if (!sceneId.trim()) throw new Error('Scene id is required');
     if (!summary.trim() || summary.trim().length > MAX_SCENE_SUMMARY_CHARS)
@@ -392,15 +395,7 @@ export class RegistryMemory {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await lockSessionForDerivedMemoryWrite(client, sessionId);
-      if (expectedLeaseEpoch !== undefined) {
-        const lease = await client.query<{ epoch: string }>(
-          'SELECT epoch FROM session_lease WHERE session_id=$1',
-          [sessionId],
-        );
-        if (Number(lease.rows[0]?.epoch) !== expectedLeaseEpoch)
-          throw new DerivedMemoryLeaseLostError();
-      }
+      await this.assertLeaseEpoch(client, sessionId, expectedLeaseEpoch);
       const identityContext = await loadRegistryIdentityContext(
         client,
         sessionId,
@@ -408,7 +403,7 @@ export class RegistryMemory {
       const normalized = screenRegistryText(
         summary.trim(),
         identityContext,
-        privacy,
+        privacy ?? {},
       );
       if (normalized.length > MAX_SCENE_SUMMARY_CHARS)
         throw new Error(
@@ -443,9 +438,9 @@ export class RegistryMemory {
       await this.upsertManyInTransaction(
         client,
         sessionId,
-        diffs,
-        turnId,
-        privacy,
+        diffs ?? [],
+        turnId ?? null,
+        privacy ?? {},
       );
       await client.query('COMMIT');
       return true;
@@ -473,6 +468,7 @@ export class RegistryMemory {
     return rows.map((row) => row.text);
   }
 
+  /** expectedLeaseEpoch is captured at turn start; null asserts no session lease exists. */
   async upsert(
     sessionId: string,
     diff: RegistryDiff | RegistryEvent,
@@ -499,6 +495,7 @@ export class RegistryMemory {
     }
   }
 
+  /** expectedLeaseEpoch is captured at turn start; null asserts no session lease exists. */
   async upsertMany(
     sessionId: string,
     diffs: readonly RegistryDiff[],

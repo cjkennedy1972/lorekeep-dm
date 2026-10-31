@@ -326,6 +326,7 @@ describe('scene summaries and recap', () => {
     } as never;
     const closed = await closeScene({
       sessionId: 'table-b',
+      leaseEpoch: null,
       sceneId: 'scene-b',
       events: [],
       db,
@@ -382,6 +383,7 @@ describe('scene summaries and recap', () => {
     };
     const result = await closeScene({
       sessionId: 'session-1',
+      leaseEpoch: null,
       sceneId: 'scene-1',
       events: [],
       db,
@@ -541,6 +543,7 @@ describe('scene summaries and recap', () => {
     };
     const result = await closeScene({
       sessionId: 'session-1',
+      leaseEpoch: null,
       sceneId: 'scene-1',
       events: [],
       db,
