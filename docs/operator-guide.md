@@ -187,11 +187,11 @@ Note (M3-38 r3): the live eval path now applies the same port rule to `https:` e
 
 This is a separate build-only operator job, not part of startup, the retention sweeper, migrations, CI, or package lifecycle scripts. It is disabled by default. Live mode requires a recent successful dry run, an explicit owner go-ahead for that execution, and a recent backup attestation.
 
-Worst case: after a fresh dry run with global reconciliation complete, every uncovered scene_summaries row and every uncovered registry_entries row eligible under the chain-retention predicate (and the registry_facts cascade) in non-held, non-deferred, non-skipped sessions is deleted permanently, including NPC/world entries without character tokens. Uncovered registry entries connected by any supersession link to a covered/indexed row are retained and counted in retainedChain; wholly legacy chains are deleted child-first, FK-safely. Covered rows are retained. There is no rebuild or rollback.
+Worst case: after a fresh dry run with reconciliation complete, every uncovered `scene_summaries` row and every uncovered `registry_entries` row (and their `registry_facts` cascade) in non-held, non-deferred, non-skipped sessions is deleted permanently, including NPC/world entries without character tokens. A session with any supersession link is deferred whole and none of its derived-memory rows are removed by this job. There is no rebuild or rollback.
 
 ### Procedure
 
-1. Select the target database explicitly. Confirm ADR-039 steps 1–3 are deployed and migrations 0045–0052 are applied. Global reconciliation must be complete for live mode. Dry-run reports per-session reconciliation-skipped sessions as deferred; live refuses the entire run if any in-scope session remains in the skipped table.
+1. Select the target database explicitly. Confirm ADR-039 steps 1–3 are deployed and migrations 0045–0052 are applied. Global reconciliation must be complete for live mode; only globally incomplete reconciliation refuses live and writes an `aborted` audit row with reason `global_reconciliation_incomplete`. Sessions in `derived_memory_reconcile_skipped` are deferred and untouched; live may complete other eligible sessions. Any unheld session with any `supersedes_id` or `superseded_by` link is deferred whole and counted in `sessionsDeferredChain`; no rows from that session are deleted.
 2. Required backup and restore check before live execution: create a custom-format dump, inspect it, and restore it to a separate empty scratch database. Keep the file and database URLs in a protected local environment; never store them in the repository, PR, logs, or audit.
 
        test -n "$DATABASE_URL" || exit 1
@@ -214,7 +214,7 @@ Worst case: after a fresh dry run with global reconciliation complete, every unc
        export DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<immutable-revision>
        pnpm --filter @game/server derived-memory:legacy-clear
 
-   Dry-run deletes nothing. Review the successful audit counts, including held/deferred sessions, uncovered summaries/entries/facts, and retainedChain. The approval citation contains no email address; audit rows and logs are counts-only and have no row/session ids or row text.
+   Dry-run deletes nothing. Review the successful audit counts, including held/deferred sessions, `sessionsDeferredChain`, and uncovered summaries/entries/facts. The approval citation contains no email address; audit rows and logs are counts-only and have no row/session ids or row text.
 5. Obtain the owner's explicit go-ahead for this live execution. After the backup restore check, use the same database and immutable code version, and set the recent attestation timestamp. Fresh live counts must match the dry-run plan within configured tolerance (default zero). Set both live gates explicitly:
 
        export DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true
@@ -224,4 +224,4 @@ Worst case: after a fresh dry run with global reconciliation complete, every unc
        pnpm --filter @game/server derived-memory:legacy-clear
 6. Review derived_memory_legacy_clear_audit ordered by started_at, including mode, counts, dry-run link, heartbeat, backup_confirmed_at, outcome, and fixed reason_code. Disable both gates after completion. Never run against real data without the owner's go-ahead.
 
-Each committed session batch persists cumulative removed counts and refreshes heartbeat_at. Once a later invocation owns the advisory lock, it marks a stale running audit (default heartbeat window 15 minutes) aborted with reason process_died, preserving the last counts. Resume uses the same still-recent dry-run id and permits remaining candidate counts less than or equal to the dry-run plan; any increase refuses before deletion, while decreases from already committed batches are expected. The per-session lock timeout defaults to 5000 ms. Rollback: none; completed deletion is permanent.
+Each session batch writes cumulative removed counts and refreshes `heartbeat_at` in the same transaction as that session’s deletion, so a crash cannot commit one without the other. A SIGKILL leaves the audit outcome `running` until a later invocation obtains the advisory lock; that invocation marks stale rows (default heartbeat window 15 minutes) `failed` with reason `process_died`, retaining their last persisted counts. A resume must use the same still-recent dry-run id and the exact expected remaining counts: remaining candidates plus the audit’s completed-removal counts must equal the dry-run counts. Any unexplained increase or decrease refuses before deletion; take a fresh dry run before trying again. The per-session lock timeout defaults to 5000 ms. Rollback: none; completed deletion is permanent.

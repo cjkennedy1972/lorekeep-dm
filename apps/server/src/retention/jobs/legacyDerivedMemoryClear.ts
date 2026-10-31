@@ -13,10 +13,10 @@ export type LegacyClearCounts = {
   sessionsConsidered: number;
   sessionsSkippedHeld: number;
   sessionsDeferred: number;
+  sessionsDeferredChain: number;
   sceneSummaries: number;
   registryEntries: number;
   registryFacts: number;
-  retainedChain: number;
 };
 export type LegacyClearOutcome =
   | 'dry_run_succeeded'
@@ -61,10 +61,10 @@ const zeroCounts = (): LegacyClearCounts => ({
   sessionsConsidered: 0,
   sessionsSkippedHeld: 0,
   sessionsDeferred: 0,
+  sessionsDeferredChain: 0,
   sceneSummaries: 0,
   registryEntries: 0,
   registryFacts: 0,
-  retainedChain: 0,
 });
 const safeCount = (v: string | number | undefined): number => Number(v ?? 0);
 const positiveInt = (
@@ -82,33 +82,24 @@ async function legacyCountsForSession(client: PoolClient, sessionId: string) {
     summaries: string;
     entries: string;
     facts: string;
-    retained_chain: string;
   }>(
-    `WITH RECURSIVE entries AS (
-       SELECT e.id,e.supersedes_id,e.superseded_by,
-              EXISTS(SELECT 1 FROM derived_memory_character_refs r
-                      WHERE r.row_kind='registry_entry' AND r.row_id=e.id) AS covered
-         FROM registry_entries e WHERE e.session_id=$1
-     ), protected(id) AS (
-       SELECT id FROM entries WHERE covered
-       UNION
-       SELECT e.id
-         FROM entries e JOIN protected p ON e.supersedes_id=p.id OR e.superseded_by=p.id
-     ), candidates AS (SELECT id FROM entries WHERE NOT covered AND id NOT IN (SELECT id FROM protected))
-     SELECT
+    `SELECT
        (SELECT count(*) FROM scene_summaries s WHERE s.session_id=$1 AND NOT EXISTS (
          SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id
        ))::text AS summaries,
-       (SELECT count(*) FROM candidates)::text AS entries,
-       (SELECT count(*) FROM registry_facts f WHERE f.entry_id IN (SELECT id FROM candidates))::text AS facts,
-       (SELECT count(*) FROM entries e WHERE NOT e.covered AND e.id IN (SELECT id FROM protected))::text AS retained_chain`,
+       (SELECT count(*) FROM registry_entries e WHERE e.session_id=$1 AND NOT EXISTS (
+         SELECT 1 FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id
+       ))::text AS entries,
+       (SELECT count(*) FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
+         WHERE e.session_id=$1 AND NOT EXISTS (
+           SELECT 1 FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id
+         ))::text AS facts`,
     [sessionId],
   );
   return {
     sceneSummaries: safeCount(result.rows[0]?.summaries),
     registryEntries: safeCount(result.rows[0]?.entries),
     registryFacts: safeCount(result.rows[0]?.facts),
-    retainedChain: safeCount(result.rows[0]?.retained_chain),
   };
 }
 
@@ -175,6 +166,14 @@ async function classifySessions(client: PoolClient): Promise<{
       [row.session_id],
     );
     const deferred = !state.rows[0].complete || Boolean(skipped.rowCount);
+    const hasSupersessionLink = Boolean(
+      (
+        await client.query(
+          'SELECT 1 FROM registry_entries WHERE session_id=$1 AND (supersedes_id IS NOT NULL OR superseded_by IS NOT NULL) LIMIT 1',
+          [row.session_id],
+        )
+      ).rowCount,
+    );
     if (held) {
       counts.sessionsSkippedHeld += 1;
       sessions.push({
@@ -185,12 +184,13 @@ async function classifySessions(client: PoolClient): Promise<{
         plannedEntries: 0,
         plannedFacts: 0,
       });
-    } else if (deferred) {
+    } else if (deferred || hasSupersessionLink) {
       counts.sessionsDeferred += 1;
+      if (hasSupersessionLink) counts.sessionsDeferredChain += 1;
       sessions.push({
         session_id: row.session_id,
         held,
-        deferred,
+        deferred: deferred || hasSupersessionLink,
         plannedSummaries: 0,
         plannedEntries: 0,
         plannedFacts: 0,
@@ -201,7 +201,6 @@ async function classifySessions(client: PoolClient): Promise<{
       counts.sceneSummaries += rows.sceneSummaries;
       counts.registryEntries += rows.registryEntries;
       counts.registryFacts += rows.registryFacts;
-      counts.retainedChain += rows.retainedChain;
       sessions.push({
         session_id: row.session_id,
         held,
@@ -321,7 +320,7 @@ export async function runLegacyDerivedMemoryClear(
       'running audit staleness window',
     );
     await runner.query(
-      "UPDATE derived_memory_legacy_clear_audit SET outcome='aborted',reason_code='process_died',finished_at=now() WHERE mode='live' AND outcome='running' AND heartbeat_at < now() - ($1::bigint * interval '1 millisecond')",
+      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=now() WHERE mode='live' AND outcome='running' AND heartbeat_at < now() - ($1::bigint * interval '1 millisecond')",
       [staleAfter],
     );
     const now = options.now ?? (() => new Date());
@@ -386,31 +385,6 @@ export async function runLegacyDerivedMemoryClear(
     let removedEntries = 0;
     let removedFacts = 0;
     let idempotentCompletion = false;
-    if (!dryRun && reconciliationComplete) {
-      const skippedInScope = await runner.query(
-        `SELECT 1 FROM sessions s JOIN derived_memory_reconcile_skipped d ON d.session_id=s.id
-          WHERE EXISTS(SELECT 1 FROM scene_summaries x WHERE x.session_id=s.id)
-             OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id) LIMIT 1`,
-      );
-      if (skippedInScope.rowCount) {
-        await runner.query(
-          `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code,backup_confirmed_at)
-           VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4,'reconciliation_skipped_in_scope',$5)`,
-          [
-            runId,
-            codeVersion,
-            JSON.stringify(counts),
-            started,
-            backupConfirmedAt,
-          ],
-        );
-        await runner.query('COMMIT');
-        emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
-        throw new Error(
-          'Live clear refuses while any in-scope session is coverage-skipped',
-        );
-      }
-    }
     if (!dryRun && !reconciliationComplete) {
       await runner.query(
         `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code)
@@ -430,7 +404,7 @@ export async function runLegacyDerivedMemoryClear(
     if (!dryRun) {
       const resumable = await runner.query<AuditRow>(
         `SELECT run_id,dry_run_id,counts,finished_at,outcome FROM derived_memory_legacy_clear_audit
-         WHERE mode='live' AND code_version=$1 AND outcome IN ('live_partial','aborted')
+         WHERE mode='live' AND code_version=$1 AND outcome IN ('live_partial','failed')
            AND (outcome='live_partial' OR reason_code='process_died')
            AND started_at >= $2::timestamptz - ($3::bigint * interval '1 millisecond')
          ORDER BY started_at DESC LIMIT 1`,
@@ -453,25 +427,25 @@ export async function runLegacyDerivedMemoryClear(
           sessionsConsidered: safeCount(dryPlan?.sessionsConsidered),
           sessionsSkippedHeld: safeCount(dryPlan?.sessionsSkippedHeld),
           sessionsDeferred: safeCount(dryPlan?.sessionsDeferred),
+          sessionsDeferredChain: safeCount(dryPlan?.sessionsDeferredChain),
           sceneSummaries: safeCount(dryPlan?.sceneSummaries),
           registryEntries: safeCount(dryPlan?.registryEntries),
           registryFacts: safeCount(dryPlan?.registryFacts),
-          retainedChain: safeCount(dryPlan?.retainedChain),
         };
         const resumedMatches =
           Boolean(validDryRun.rowCount) &&
-          counts.sceneSummaries <= plan.sceneSummaries &&
-          counts.registryEntries <= plan.registryEntries &&
-          counts.registryFacts <= plan.registryFacts &&
-          counts.retainedChain <= plan.retainedChain &&
+          counts.sceneSummaries + removedSummaries === plan.sceneSummaries &&
+          counts.registryEntries + removedEntries === plan.registryEntries &&
+          counts.registryFacts + removedFacts === plan.registryFacts &&
           counts.sessionsSkippedHeld === plan.sessionsSkippedHeld &&
-          counts.sessionsDeferred === plan.sessionsDeferred;
+          counts.sessionsDeferred === plan.sessionsDeferred &&
+          counts.sessionsDeferredChain === plan.sessionsDeferredChain;
         if (!resumedMatches) {
           await runner.query('ROLLBACK');
           await runner.query('BEGIN');
           await runner.query(
             `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
-             VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'resume_count_increase')`,
+             VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'resume_count_mismatch')`,
             [
               runId,
               codeVersion,
@@ -488,7 +462,7 @@ export async function runLegacyDerivedMemoryClear(
           await runner.query('COMMIT');
           emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
           throw new Error(
-            'Resumed live candidate counts exceed the original dry-run plan; refusing to continue',
+            'Resumed live candidate counts no longer equal the original dry-run plan; refusing to continue',
           );
         }
         runId = resume.run_id;
@@ -602,6 +576,23 @@ export async function runLegacyDerivedMemoryClear(
       removedSummaries = resumeCounts?.sceneSummariesRemoved ?? 0;
       removedEntries = resumeCounts?.registryEntriesRemoved ?? 0;
       removedFacts = resumeCounts?.registryFactsRemoved ?? 0;
+      const persistBatchProgress = async () => {
+        processed += 1;
+        processedThisPass += 1;
+        const progressCounts = {
+          ...(resumeCounts ?? counts),
+          sessionsSkippedHeld: counts.sessionsSkippedHeld + newlyHeld,
+          sessionsProcessed: processed,
+          sceneSummariesRemoved: removedSummaries,
+          registryEntriesRemoved: removedEntries,
+          registryFactsRemoved: removedFacts,
+        };
+        await runner.query(
+          'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,heartbeat_at=now() WHERE run_id=$1',
+          [runId, JSON.stringify(progressCounts)],
+        );
+        await runner.query('COMMIT');
+      };
       for (const session of sessions) {
         if (session.held || session.deferred) continue;
         if (
@@ -620,9 +611,13 @@ export async function runLegacyDerivedMemoryClear(
             [session.session_id],
           );
           if (!locked.rowCount) {
-            await runner.query('COMMIT');
-            processed += 1;
-            processedThisPass += 1;
+            await persistBatchProgress();
+            emit(
+              options,
+              'legacy_clear_live_batch_committed',
+              counts,
+              'running',
+            );
             continue;
           }
           const owner = await runner.query<{ owner_account_id: string }>(
@@ -637,10 +632,17 @@ export async function runLegacyDerivedMemoryClear(
               owner.rows[0].owner_account_id,
             ))
           ) {
-            await runner.query('COMMIT');
             newlyHeld += 1;
-            processed += 1;
-            processedThisPass += 1;
+            await persistBatchProgress();
+            emit(
+              options,
+              'legacy_clear_live_batch_committed',
+              {
+                ...counts,
+                sessionsSkippedHeld: counts.sessionsSkippedHeld + newlyHeld,
+              },
+              'running',
+            );
             continue;
           }
           const state = await runner.query<{ complete: boolean }>(
@@ -653,6 +655,14 @@ export async function runLegacyDerivedMemoryClear(
           if (!state.rows[0]?.complete || deferred.rowCount)
             throw new Error(
               'Coverage state changed after live preflight; aborting without processing this session',
+            );
+          const chain = await runner.query(
+            'SELECT 1 FROM registry_entries WHERE session_id=$1 AND (supersedes_id IS NOT NULL OR superseded_by IS NOT NULL) LIMIT 1',
+            [session.session_id],
+          );
+          if (chain.rowCount)
+            throw new Error(
+              'Supersession chain appeared after live preflight; refusing to process the session',
             );
           const before = await legacyCountsForSession(
             runner,
@@ -697,25 +707,11 @@ export async function runLegacyDerivedMemoryClear(
           removedSummaries += before.sceneSummaries;
           removedEntries += before.registryEntries;
           removedFacts += before.registryFacts;
-          await runner.query('COMMIT');
+          await persistBatchProgress();
         } catch (error) {
           await runner.query('ROLLBACK');
           throw error;
         }
-        processed += 1;
-        processedThisPass += 1;
-        const progressCounts = {
-          ...(resumeCounts ?? counts),
-          sessionsSkippedHeld: counts.sessionsSkippedHeld + newlyHeld,
-          sessionsProcessed: processed,
-          sceneSummariesRemoved: removedSummaries,
-          registryEntriesRemoved: removedEntries,
-          registryFactsRemoved: removedFacts,
-        };
-        await runner.query(
-          'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,heartbeat_at=now() WHERE run_id=$1',
-          [runId, JSON.stringify(progressCounts)],
-        );
         emit(
           options,
           'legacy_clear_live_batch_committed',
