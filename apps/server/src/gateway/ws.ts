@@ -602,6 +602,9 @@ export function installGateway(
           resumeToken: string,
           previousTokenHash: string,
         ) => {
+          // Fence socket-close cleanup before the first DB await/retry delay.
+          // Only a confirmed rollback or invalidation may clear this guard.
+          preserveSeatLeaseUntilExpiry = true;
           for (const attempt of [1, 2] as const) {
             let restored = false;
             try {
@@ -616,7 +619,10 @@ export function installGateway(
             } catch {
               // A failed rollback is retried below without exposing DB details.
             }
-            if (restored) return true;
+            if (restored) {
+              preserveSeatLeaseUntilExpiry = false;
+              return true;
+            }
             try {
               app.log.warn(
                 {
@@ -645,9 +651,8 @@ export function installGateway(
           // hash and accept T1 after its lease expires. T1 is a fresh 128-bit
           // credential never delivered to a client, and this requires two DB
           // writes to fail; this restart window is an accepted residual risk,
-          // not a durable revocation. Preserve the lease before retry awaits so
-          // a concurrent close cannot release it early.
-          preserveSeatLeaseUntilExpiry = true;
+          // not a durable revocation. The lease-preservation guard was set
+          // before rollback awaits so a concurrent close cannot release it.
           markSeatResumeTokenInvalidationPending(identity.sessionId, seatId);
           for (const attempt of [1, 2] as const) {
             try {
@@ -659,6 +664,7 @@ export function installGateway(
                 resumeToken,
               );
               if (invalidated) {
+                preserveSeatLeaseUntilExpiry = false;
                 clearSeatResumeTokenInvalidationPending(
                   identity.sessionId,
                   seatId,

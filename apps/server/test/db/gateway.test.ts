@@ -611,6 +611,65 @@ describe('pending first-token handoff', () => {
     }
   }, 20_000);
 
+  it('retains the lease when the socket closes during rollback retry delay', async () => {
+    const { id, token: t1 } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    let t2: string | undefined;
+    let failedSocket: WebSocket | undefined;
+    let closedDuringRetryDelay = false;
+    const rollback = vi
+      .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
+      .mockRejectedValue(new Error('injected rollback DB failure'));
+    const invalidate = vi
+      .spyOn(resumeTokenModule, 'invalidateSeatResumeToken')
+      .mockRejectedValue(new Error('injected invalidation DB failure'));
+    const originalSetTimeout = globalThis.setTimeout;
+    const delay = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (
+        timeout === 20 &&
+        rollback.mock.calls.length === 1 &&
+        failedSocket &&
+        failedSocket.readyState === WebSocket.OPEN
+      ) {
+        closedDuringRetryDelay = true;
+        void closeSocket(failedSocket);
+      }
+      return originalSetTimeout(handler, timeout, ...args);
+    }) as typeof setTimeout);
+    const failSend = failSeatAuthenticatedSend('callback', (token) => {
+      t2 = token;
+    });
+    try {
+      failedSocket = connect(await ticket(tokens[0]!, id), null, false);
+      await closed(failedSocket);
+      expect(closedDuringRetryDelay).toBe(true);
+      expect(t2).toEqual(expect.any(String));
+      await new Promise((resolve) => originalSetTimeout(resolve, 60));
+
+      const row = await db.query<{ active_socket_id: string | null }>(
+        'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+        [id, seatId],
+      );
+      expect(row.rows[0]?.active_socket_id).toEqual(expect.any(String));
+      expect(rollback).toHaveBeenCalledTimes(2);
+      for (const token of [t1, t2!]) {
+        expect(
+          await authorizeSeatSocket(db, id, seatId, randomUUID(), token),
+        ).toEqual({ status: 'invalid-token' });
+      }
+    } finally {
+      failSend.mockRestore();
+      delay.mockRestore();
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      clearSeatResumeTokenInvalidationPending(id, seatId);
+    }
+  }, 20_000);
+
   it('restores a presented resume token after SeatAuthenticated send failure', async () => {
     const { id } = await pendingSeat();
     const first = connect(await ticket(tokens[0]!, id), null, false);
