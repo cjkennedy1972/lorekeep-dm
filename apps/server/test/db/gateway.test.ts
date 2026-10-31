@@ -1139,6 +1139,80 @@ describe('pending first-token handoff', () => {
 });
 
 describe('one-time gateway', () => {
+  it('charges ChatSend and StateSyncAck to the per-socket message budget', async () => {
+    const id = randomUUID();
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      id,
+      accounts[0],
+    ]);
+    const room = await rooms.get(id);
+    const priorToken0 = resumeTokens.get(tokens[0]!);
+    const priorToken1 = resumeTokens.get(tokens[1]!);
+    const initialToken = await room.seat(
+      accounts[0]!,
+      'Rate-limit player',
+      false,
+      hashToken(tokens[0]!),
+    );
+    if (!initialToken) throw new Error('rate-limit seat has no resume token');
+    resumeTokens.set(tokens[0]!, initialToken);
+    const secondInitialToken = await room.seat(
+      accounts[1]!,
+      'Second rate-limit player',
+      false,
+      hashToken(tokens[1]!),
+    );
+    if (!secondInitialToken)
+      throw new Error('second rate-limit seat has no resume token');
+    resumeTokens.set(tokens[1]!, secondInitialToken);
+    const chatSocket = connect(await ticket(tokens[0]!, id));
+    const ackSocket = connect(await ticket(tokens[1]!, id));
+    try {
+      const chatState = await nextOfType(chatSocket, 'StateSync');
+      await nextOfType(ackSocket, 'StateSync');
+      for (let index = 0; index < 24; index++) {
+        chatSocket.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'ChatSend',
+            payload: { text: `budget probe ${index}` },
+            lastSeq: chatState.seq,
+          }),
+        );
+        ackSocket.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'StateSyncAck',
+            payload: { seq: chatState.seq },
+            lastSeq: chatState.seq,
+          }),
+        );
+      }
+      const waitForRateLimit = async (ws: WebSocket) => {
+        for (let index = 0; index < 40; index++) {
+          const message = await next(ws);
+          if (
+            message.type === 'Error' &&
+            message.payload.code === 'RATE_LIMITED'
+          )
+            return message;
+        }
+        throw new Error('message budget was not enforced');
+      };
+      await expect(waitForRateLimit(chatSocket)).resolves.toMatchObject({
+        payload: { code: 'RATE_LIMITED' },
+      });
+      await expect(waitForRateLimit(ackSocket)).resolves.toMatchObject({
+        payload: { code: 'RATE_LIMITED' },
+      });
+    } finally {
+      await Promise.all([closeSocket(chatSocket), closeSocket(ackSocket)]);
+      if (priorToken0) resumeTokens.set(tokens[0]!, priorToken0);
+      else resumeTokens.delete(tokens[0]!);
+      if (priorToken1) resumeTokens.set(tokens[1]!, priorToken1);
+      else resumeTokens.delete(tokens[1]!);
+    }
+  }, 30_000);
   it('serializes solo recovery behind a concurrent seat join', async () => {
     const id = randomUUID();
     await db.query(
@@ -2606,6 +2680,26 @@ describe('party character binding WebSocket authorization', () => {
     if (f.prior1) resumeTokens.set(tokens[1]!, f.prior1);
     else resumeTokens.delete(tokens[1]!);
   }
+
+  it('replies INVALID_ACTION when a character binding has a malformed UUID', async () => {
+    const f = await fixture();
+    try {
+      const actionId = randomUUID();
+      f.owner.send(
+        JSON.stringify({
+          actionId,
+          type: 'BindCharacter',
+          payload: { characterId: 'not-a-uuid', expectedRevision: f.revision },
+          lastSeq: f.room.seq,
+        }),
+      );
+      await expect(nextOfType(f.owner, 'Error')).resolves.toMatchObject({
+        payload: { code: 'INVALID_ACTION', actionId },
+      });
+    } finally {
+      await shutdown(f);
+    }
+  }, 30_000);
 
   it('broadcasts identifier-only bind, privately confirms to owner, and makes actionId retries idempotent', async () => {
     const f = await fixture();

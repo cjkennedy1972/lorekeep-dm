@@ -237,6 +237,55 @@ describe('gateway input gate', () => {
     submit.mockRestore();
   }, 30_000);
 
+  it('keeps a clarification reply retryable when the judge is unavailable', async () => {
+    gate = {
+      check: async () => 'block',
+      checkDetailed: async () => ({
+        decision: 'block',
+        attributable: false,
+        source: 'failclosed',
+      }),
+    } as InputGate;
+    const actionId = randomUUID();
+    room.state.openClarifications = {
+      [actionId]: {
+        accountId: accounts[0],
+        playerName: 'Gate 0',
+        text: 'choose a route',
+        question: 'Which route?',
+        deadlineAt: Date.now() + 60_000,
+      },
+    } as never;
+    const answer = vi.spyOn(Room.prototype, 'answerClarification');
+    const ws = await openSocket(tokens[0]!);
+    try {
+      ws.send(
+        JSON.stringify({
+          actionId,
+          type: 'ClarificationAnswer',
+          payload: { actionId, answer: 'north' },
+          lastSeq: 0,
+        }),
+      );
+      let reply = await nextMessage(ws);
+      while (reply.type !== 'Error') reply = await nextMessage(ws);
+      expect(reply).toMatchObject({
+        type: 'Error',
+        payload: {
+          code: 'TURN_FAILED',
+          actionId,
+          message:
+            'The storyteller is unavailable. Your action is kept; try again.',
+        },
+      });
+      expect(answer).not.toHaveBeenCalled();
+    } finally {
+      ws.close();
+      answer.mockRestore();
+      gate = testGate(async () => 'allow');
+    }
+  }, 30_000);
+
   it('a revoked seat receives the generic closed-clarification error', async () => {
     gate = testGate(async () => 'allow');
     const actionId = randomUUID();

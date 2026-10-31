@@ -1138,6 +1138,17 @@ export function installGateway(
           }
           const stateAck = StateSyncAckSchema.safeParse(envelope);
           if (stateAck.success) {
+            if (!messageAdmission.admit('StateSyncAck')) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'RATE_LIMITED',
+                  message: 'Too many messages.',
+                },
+              });
+              return;
+            }
             if (
               !snapshotAcknowledged &&
               stateAck.data.payload.seq === requiredSnapshotSeq
@@ -1166,6 +1177,18 @@ export function installGateway(
           }
           const chat = ChatSendSchema.safeParse(envelope);
           if (chat.success) {
+            if (!messageAdmission.admit('ChatSend')) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'RATE_LIMITED',
+                  message: 'Too many messages.',
+                  actionId: chat.data.actionId,
+                },
+              });
+              return;
+            }
             const receivedAt = Math.floor(performance.now());
             const receipt = room.registerChatReceipt(receivedAt);
             if (pendingChatMessages >= 2) {
@@ -1407,7 +1430,18 @@ export function installGateway(
           };
           if (msg.type === 'BindCharacter') {
             const command = BindCharacterSchema.safeParse(msg);
-            if (!command.success) return;
+            if (!command.success) {
+              send({
+                seq: room.seq,
+                type: 'Error',
+                payload: {
+                  code: 'INVALID_ACTION',
+                  message: 'Character binding is invalid.',
+                  actionId: msg.actionId,
+                },
+              });
+              return;
+            }
             if (room.hasActionId(msg.actionId)) return;
             if (!room.reserveActionMutation(identity.accountId, 'bind')) {
               send({
@@ -1735,20 +1769,6 @@ export function installGateway(
                   code: 'INVALID_ACTION',
                   message: 'Combat command is invalid.',
                   actionId: msg.actionId,
-                },
-              });
-              return;
-            }
-            // Combat commands also charge at handler admission, preserving the
-            // existing tighter mailbox limit before they reach the Room actor.
-            if (!messageAdmission.consumeAction()) {
-              send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'RATE_LIMITED',
-                  message: 'Too many messages.',
-                  actionId: action.data.actionId,
                 },
               });
               return;
@@ -2205,13 +2225,14 @@ export function installGateway(
               return;
             }
             return app.inputGate
-              .check({
+              .checkDetailed({
                 text: answer.data.payload.answer,
                 surface: 'clarification',
                 accountId: identity.accountId,
                 sessionId: identity.sessionId,
               })
-              .then((decision) => {
+              .then((verdict) => {
+                const decision = verdict.decision;
                 if (decision === 'busy')
                   return send({
                     seq: room.seq,
@@ -2237,9 +2258,10 @@ export function installGateway(
                     seq: room.seq,
                     type: 'Error',
                     payload: {
-                      code: 'CONTENT_REJECTED',
-                      message: 'That reply cannot be sent.',
-                      actionId: answer.data.payload.actionId,
+                      ...inputBlockErrorPayload(
+                        verdict.source,
+                        answer.data.payload.actionId,
+                      ),
                     },
                   });
                 return room
