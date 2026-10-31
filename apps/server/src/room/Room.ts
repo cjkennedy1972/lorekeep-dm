@@ -98,6 +98,101 @@ function isSeatOwner(
   );
 }
 
+interface ProjectedCharacters {
+  byKey: Record<string, unknown>;
+  controlledEntityIds: Set<string>;
+}
+
+function projectCharactersForViewer(
+  characters: unknown,
+  viewerAccountId: string | undefined,
+  bindings: ReadonlyMap<string, PrivateSeatCharacterBinding> | undefined,
+  allowLegacyAccountKey: boolean,
+): ProjectedCharacters {
+  if (
+    !characters ||
+    typeof characters !== 'object' ||
+    Array.isArray(characters)
+  )
+    return { byKey: {}, controlledEntityIds: new Set() };
+
+  const visibleSeatIds = new Set(bindings?.keys() ?? []);
+  const seatByAccount = new Map(
+    [...(bindings?.entries() ?? [])].map(([seatId, binding]) => [
+      binding.accountId,
+      seatId,
+    ]),
+  );
+  // Before binding enforcement, legacy solo account keys are accepted only for the owner.
+  if (
+    (!bindings || bindings.size === 0) &&
+    allowLegacyAccountKey &&
+    viewerAccountId
+  )
+    visibleSeatIds.add(viewerAccountId);
+
+  const projected: Record<string, unknown> = {};
+  const controlledIds = new Set<string>();
+  for (const [sourceKey, character] of Object.entries(
+    characters as Record<string, unknown>,
+  )) {
+    const seatId = seatByAccount.get(sourceKey) ?? sourceKey;
+    if (!visibleSeatIds.has(seatId)) continue;
+    const owned = isSeatOwner(
+      seatId,
+      viewerAccountId,
+      bindings,
+      allowLegacyAccountKey,
+    );
+    // Legacy solo clients index their sheet by account ID. Once binding is
+    // enforced, both the owner and peers use the stable seat ID, so no account
+    // ID is emitted in party snapshots.
+    const keepsLegacyAccountKey = allowLegacyAccountKey;
+    const outputKey =
+      owned && keepsLegacyAccountKey ? (viewerAccountId ?? seatId) : seatId;
+    // A rewind can restore both account- and seat-keyed values. Prefer the
+    // canonical seat-keyed value regardless of the viewer-specific output key.
+    if (sourceKey !== seatId && Object.hasOwn(projected, outputKey)) continue;
+    if (owned) {
+      projected[outputKey] = character;
+      const id = (character as { id?: unknown } | null)?.id;
+      if (typeof id === 'string') controlledIds.add(id);
+      continue;
+    }
+    if (
+      !character ||
+      typeof character !== 'object' ||
+      Array.isArray(character)
+    ) {
+      projected[outputKey] = character;
+      continue;
+    }
+    const card = character as Record<string, unknown>;
+    const publicFields = ['id', 'name', 'speciesId', 'classId', 'level'];
+    projected[outputKey] = {
+      ...Object.fromEntries(
+        publicFields
+          .filter((field) => field in card)
+          .map((field) => [field, card[field]]),
+      ),
+      ...(card.hp &&
+      typeof card.hp === 'object' &&
+      !Array.isArray(card.hp) &&
+      'current' in card.hp
+        ? {
+            hp: {
+              current: (card.hp as { current: unknown }).current,
+              ...('max' in (card.hp as Record<string, unknown>)
+                ? { max: (card.hp as Record<string, unknown>).max }
+                : {}),
+            },
+          }
+        : {}),
+    };
+  }
+  return { byKey: projected, controlledEntityIds: controlledIds };
+}
+
 /** Combat entity ids the viewer controls: the characters of the seats it owns. */
 function controlledEntityIds(
   characters: unknown,
@@ -105,17 +200,12 @@ function controlledEntityIds(
   bindings: ReadonlyMap<string, PrivateSeatCharacterBinding> | undefined,
   allowLegacyAccountKey: boolean,
 ): Set<string> {
-  const ids = new Set<string>();
-  if (!characters || typeof characters !== 'object') return ids;
-  for (const [seatId, character] of Object.entries(characters)) {
-    const id = (character as { id?: unknown } | null)?.id;
-    if (
-      typeof id === 'string' &&
-      isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
-    )
-      ids.add(id);
-  }
-  return ids;
+  return projectCharactersForViewer(
+    characters,
+    viewerAccountId,
+    bindings,
+    allowLegacyAccountKey,
+  ).controlledEntityIds;
 }
 
 function clientGameState(
@@ -162,48 +252,12 @@ function clientGameState(
       result[key] = source[key];
       continue;
     }
-    const characters: Record<string, unknown> = {};
-    for (const [seatId, character] of Object.entries(
-      source.characters as Record<string, unknown>,
-    )) {
-      if (
-        isSeatOwner(seatId, viewerAccountId, bindings, allowLegacyAccountKey)
-      ) {
-        characters[seatId] = character;
-        continue;
-      }
-      if (
-        !character ||
-        typeof character !== 'object' ||
-        Array.isArray(character)
-      ) {
-        characters[seatId] = character;
-        continue;
-      }
-      const card = character as Record<string, unknown>;
-      const publicFields = ['id', 'name', 'speciesId', 'classId', 'level'];
-      characters[seatId] = {
-        ...Object.fromEntries(
-          publicFields
-            .filter((field) => field in card)
-            .map((field) => [field, card[field]]),
-        ),
-        ...(card.hp &&
-        typeof card.hp === 'object' &&
-        !Array.isArray(card.hp) &&
-        'current' in card.hp
-          ? {
-              hp: {
-                current: (card.hp as { current: unknown }).current,
-                ...('max' in (card.hp as Record<string, unknown>)
-                  ? { max: (card.hp as Record<string, unknown>).max }
-                  : {}),
-              },
-            }
-          : {}),
-      };
-    }
-    result[key] = characters;
+    result[key] = projectCharactersForViewer(
+      source.characters,
+      viewerAccountId,
+      bindings,
+      allowLegacyAccountKey,
+    ).byKey;
   }
   if (source.checkpoint && typeof source.checkpoint === 'object')
     result.checkpoint = clientGameState(
@@ -744,6 +798,32 @@ export class RoomSeatRequiredError extends Error {
   }
 }
 
+const CLIENT_ROOM_STATE_KEYS = new Set([
+  'sessionId',
+  'phase',
+  'round',
+  'restVote',
+  'restVoteCount',
+  'restVoteLastClosedAt',
+  'lastRestVoteResult',
+  'lastRestVoteResultTurnId',
+  'roundsEnabled',
+  'roundDurationMs',
+  'turnTimerMs',
+  'turnTimeoutAction',
+  'closedRoundSubmissions',
+  'gameState',
+  'xCard',
+  'paused',
+  'pauseCause',
+  'spotlightTurn',
+  'spotlightCursor',
+  'presenceEventAt',
+  'presenceEventType',
+  'spotlightActivity',
+  'ended',
+]);
+
 export class Room {
   private mailbox: Promise<unknown> = Promise.resolve();
   private readonly connections = new Map<string, Connection>();
@@ -1269,6 +1349,22 @@ export class Room {
         ...additionalActionIds,
       ]),
     ];
+    if (sessionModeTransition === 'solo-to-party') {
+      const ownerSeat =
+        this.state.seats.find((seat) => seat.isHost) ?? this.state.seats[0];
+      const game = state.gameState as
+        | { characters?: Record<string, unknown> }
+        | undefined;
+      if (ownerSeat && game?.characters) {
+        const characters = { ...game.characters };
+        const ownerCharacter = characters[String(ownerSeat.accountId)];
+        if (ownerCharacter !== undefined) {
+          delete characters[String(ownerSeat.accountId)];
+          characters[String(ownerSeat.seatId)] = ownerCharacter;
+          state = { ...state, gameState: { ...game, characters } };
+        }
+      }
+    }
     const stored = await this.writeTurn(
       this.sessionId,
       inputs,
@@ -1779,7 +1875,7 @@ export class Room {
         clientSeat.chatMutedUntil = undefined;
       }
       const isSelf = accountId === viewerAccountId;
-      return isSelf
+      return isSelf && !this.bindingEnforced
         ? { ...clientSeat, accountId, isSelf }
         : { ...clientSeat, isSelf };
     });
@@ -1787,7 +1883,7 @@ export class Room {
       const { accountId, matureOptOut, ...clientSeat } = seat;
       void matureOptOut;
       const isSelf = accountId === viewerAccountId;
-      return isSelf
+      return isSelf && !this.bindingEnforced
         ? { ...clientSeat, accountId, isSelf }
         : { ...clientSeat, isSelf };
     });
@@ -1797,12 +1893,17 @@ export class Room {
       lateJoinRequestCharacterIds,
       lateJoinActionOwners,
       openClarifications,
-      ...visibleRoomState
+      ...remainingRoomState
     } = this.state;
     void lateJoinRequestResults;
     void lateJoinRequestCharacterIds;
     void lateJoinActionOwners;
     void openClarifications;
+    const visibleRoomState = Object.fromEntries(
+      Object.entries(remainingRoomState).filter(([key]) =>
+        CLIENT_ROOM_STATE_KEYS.has(key),
+      ),
+    );
     const spotlightActivity = Object.fromEntries(
       Object.entries(this.state.spotlightActivity ?? []).flatMap(
         ([accountId, turn]) => {
@@ -1816,6 +1917,8 @@ export class Room {
     );
     const clientVisibleState: import('@game/schema').ClientRoomState = {
       ...visibleRoomState,
+      sessionId: this.state.sessionId,
+      phase: this.state.phase,
       seats,
       revokedSeats,
       spotlightActivity,
@@ -2463,6 +2566,8 @@ export class Room {
         catalog,
         hitDiceToSpend,
         interruptionChance,
+        undefined,
+        this.state.seats.find((seat) => seat.accountId === accountId)?.seatId,
       );
       await this.commitGameState(resolved.gameState, resolved.events);
     });
@@ -2748,17 +2853,20 @@ export class Room {
         throw new Error('Game state is unavailable for rest effects');
       const effects: Record<string, unknown>[] = [];
       for (const seat of this.state.seats) {
-        if (
-          !(gameState.characters as Record<string, unknown> | undefined)?.[
-            seat.accountId
-          ]
-        )
+        const characters = gameState.characters as
+          | Record<string, unknown>
+          | undefined;
+        if (!characters?.[seat.accountId] && !characters?.[seat.seatId])
           continue;
         const rested = resolveSoloRest(
           gameState,
           seat.accountId,
           vote.type,
           loadCatalog(),
+          1,
+          0,
+          undefined,
+          seat.seatId,
         );
         gameState = rested.gameState;
         effects.push(...rested.events);
@@ -2829,7 +2937,12 @@ export class Room {
         | Record<string, unknown>
         | undefined;
       if (!gameState) throw new Error('Game state is unavailable');
-      const resolved = resolveDeathSave(gameState, accountId);
+      const resolved = resolveDeathSave(
+        gameState,
+        accountId,
+        undefined,
+        this.state.seats.find((seat) => seat.accountId === accountId)?.seatId,
+      );
       await this.commitGameState(resolved.gameState, resolved.events);
       if (resolved.prompt === 'tpk-choice')
         this.broadcast({
@@ -6369,7 +6482,8 @@ export class Room {
       const result = this.combatRuntime.execute(current, actorId, command, {
         character: actsAsBoundSeat
           ? ({ ...bound!.characterSnapshot, id: actorId } as never)
-          : gameState?.characters?.[accountId],
+          : (gameState?.characters?.[seat.seatId] ??
+            gameState?.characters?.[accountId]),
         now: Date.now(),
         controlledEntityIds: this.controlledBy(accountId),
       });
@@ -7383,39 +7497,69 @@ export class Room {
   }
 
   projectMessageForViewer(value: unknown, viewerAccountId: string): unknown {
+    void viewerAccountId;
     const seats = [...this.state.seats, ...(this.state.revokedSeats ?? [])];
     const seatByAccount = new Map<string, string>(
       seats.map((seat) => [String(seat.accountId), String(seat.seatId)]),
     );
-    const project = (current: unknown): unknown => {
-      if (Array.isArray(current)) return current.map(project);
+    const knownSeatIds = new Set(seats.map((seat) => String(seat.seatId)));
+    const project = (current: unknown, parentKey?: string): unknown => {
+      if (typeof current === 'string')
+        return seatByAccount.get(current) ?? current;
+      if (Array.isArray(current))
+        return current.map((item) => project(item, parentKey));
       if (!current || typeof current !== 'object') return current;
       const result: Record<string, unknown> = {};
       for (const [key, item] of Object.entries(current)) {
-        if (/accountIds$/.test(key) && Array.isArray(item)) {
-          const prefix = key.slice(0, -'accountIds'.length);
-          result[`${prefix}SeatIds`] = item.flatMap((accountId) => {
-            if (typeof accountId !== 'string') return [];
-            const seatId = seatByAccount.get(accountId);
-            return seatId ? [seatId] : [];
-          });
+        const accountKeySeat = seatByAccount.get(key);
+        const accountNamed = /account/i.test(key) || /ownerRef/i.test(key);
+        if (accountKeySeat) {
+          const projectedKey =
+            !this.bindingEnforced &&
+            parentKey === 'characters' &&
+            key === viewerAccountId
+              ? key
+              : accountKeySeat;
+          result[projectedKey] =
+            item && typeof item === 'object' ? project(item, key) : item;
           continue;
         }
-        if (/accountId$/.test(key) && typeof item === 'string') {
-          const seatId = seatByAccount.get(item);
-          const prefix = key.slice(0, -'AccountId'.length);
-          const seatKey = prefix ? `${prefix}SeatId` : 'seatId';
-          const selfKey = prefix ? `${prefix}IsSelf` : 'isSelf';
-          if (item === viewerAccountId) {
-            result[key] = item;
-            result[selfKey] = true;
-          } else if (seatId) {
-            result[seatKey] = seatId;
-            result[selfKey] = false;
+        if (accountNamed) {
+          if (typeof item === 'string') {
+            const seatId = seatByAccount.get(item);
+            if (seatId)
+              result[
+                key.replace(
+                  /accountIds?/gi,
+                  (match) =>
+                    `${match[0] === match[0]?.toUpperCase() ? 'Seat' : 'seat'}Id${match.toLowerCase().endsWith('s') ? 's' : ''}`,
+                )
+              ] = seatId;
+          } else if (Array.isArray(item)) {
+            const values = item.flatMap((entry) =>
+              typeof entry === 'string' && seatByAccount.has(entry)
+                ? [seatByAccount.get(entry)!]
+                : [],
+            );
+            if (values.length)
+              result[
+                key.replace(
+                  /accountIds?/gi,
+                  (match) =>
+                    `${match[0] === match[0]?.toUpperCase() ? 'Seat' : 'seat'}Id${match.toLowerCase().endsWith('s') ? 's' : ''}`,
+                )
+              ] = values;
           }
+          // Account-named fields with object/number/null values fail closed.
           continue;
         }
-        result[key] = project(item);
+        if (parentKey === 'characters') {
+          // Character maps are keyed only by known seats after transport projection.
+          // Unknown/account-shaped keys must not pass through as raw identifiers.
+          if (knownSeatIds.has(key)) result[key] = project(item, key);
+          continue;
+        }
+        result[key] = project(item, key);
       }
       return result;
     };

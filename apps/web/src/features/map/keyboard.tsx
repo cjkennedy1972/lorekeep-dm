@@ -139,8 +139,10 @@ export function MapKeyboard({
   }, [movementState, selectedId, point]);
 
   const announce = (text: string) => {
+    // This component already owns an aria-live region. Mirroring every map
+    // announcement into the character sheet creates duplicate live regions
+    // once a viewer's private character is available.
     setMessage(text);
-    store.setAnnouncement(text);
   };
   const selectEntity = (id: string) => {
     const entity = placed.find((item) => item.id === id);

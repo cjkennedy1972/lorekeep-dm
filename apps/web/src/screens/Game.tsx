@@ -535,6 +535,7 @@ export function Game() {
     question: string;
   } | null>(null);
   const room = live.room;
+  const selfSeat = room?.seats?.find((seat) => seat.isSelf);
   const sheetLoadFailed = useSheetLoadFailure({
     hasCharacterState: Boolean(room?.gameState),
     connectionStatus: live.status,
@@ -572,9 +573,10 @@ export function Game() {
       const parsed = BattlemapSchema.safeParse(combat.map);
       if (parsed.success) setMap(parsed.data);
     }
-    const accountCharacter = account
-      ? asRecord(gs.characters)[account.id]
-      : undefined;
+    const projectedCharacters = asRecord(gs.characters);
+    const accountCharacter =
+      (selfSeat && projectedCharacters[selfSeat.seatId]) ??
+      (account ? projectedCharacters[account.id] : undefined);
     if (accountCharacter) {
       const parsed = CharacterSchema.safeParse(accountCharacter);
       if (parsed.success) gameStore.setCharacter(parsed.data);
@@ -797,10 +799,14 @@ export function Game() {
     : { width: 0, height: 0 };
 
   // Host status comes from the shared seat flag, so only the real host sees enabled host controls.
-  const selfSeat = room?.seats?.find((seat) => seat.isSelf);
   const isHost = selfSeat?.isHost === true;
   const activeEntity = entities.find((item) => item.id === active);
-  const selfCharacterId = account ? characters[account.id]?.id : undefined;
+  const selfCharacterId = selfSeat
+    ? (characters[selfSeat.seatId]?.id ??
+      (account ? characters[account.id]?.id : undefined))
+    : account
+      ? characters[account.id]?.id
+      : undefined;
   const yourTurn = Boolean(
     active &&
       (active === selfCharacterId ||

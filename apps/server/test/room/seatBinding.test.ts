@@ -154,6 +154,232 @@ function party(
 }
 
 describe('ADR-035 party seat gating', () => {
+  it.each([
+    {
+      name: 'unconverted solo',
+      setup: () => party({ partyMode: false, bindA: false, bindB: false }),
+      viewer: 'owner' as const,
+      shape: 'legacy-account' as const,
+    },
+    {
+      name: 'converted solo',
+      setup: () => party({ partyMode: true, bindA: true, bindB: false }),
+      viewer: 'owner' as const,
+      shape: 'seat' as const,
+    },
+    {
+      name: 'party-from-start',
+      setup: () => party({ partyMode: true, bindA: true, bindB: true }),
+      viewer: 'owner' as const,
+      shape: 'party' as const,
+    },
+    {
+      name: 'spectator',
+      setup: () => party({ partyMode: true, bindA: true, bindB: true }),
+      viewer: 'spectator' as const,
+      shape: 'party' as const,
+    },
+  ])(
+    'projects visible characters for $name viewers',
+    ({ setup, viewer, shape }) => {
+      const f = setup();
+      const heroA = {
+        id: 'hero-a',
+        name: 'Aster',
+        hp: { current: 8, max: 20 },
+        privateNotes: 'A private backstory',
+      };
+      const heroB = {
+        id: 'hero-b',
+        name: 'Bryn',
+        hp: { current: 6, max: 18 },
+        privateNotes: 'B private backstory',
+      };
+      f.room.state.gameState = {
+        characters:
+          shape === 'legacy-account'
+            ? { [f.accountA]: heroA }
+            : shape === 'seat'
+              ? { [f.seatA]: heroA }
+              : { [f.seatA]: heroA, [f.seatB]: heroB },
+      };
+      const viewerId = viewer === 'owner' ? f.accountA : randomUUID();
+      const characters = (
+        f.room.clientState(viewerId).gameState as {
+          characters: Record<string, Record<string, unknown>>;
+        }
+      ).characters;
+
+      if (viewer === 'owner') {
+        const ownKey = shape === 'legacy-account' ? f.accountA : f.seatA;
+        expect(characters[ownKey]).toEqual(heroA);
+        if (shape === 'legacy-account')
+          expect(characters).not.toHaveProperty(f.seatA);
+        else expect(characters).not.toHaveProperty(f.accountA);
+        expect(JSON.stringify(characters)).not.toContain(f.accountB);
+        if (shape === 'party') {
+          expect(characters[f.seatB]).toEqual({
+            id: heroB.id,
+            name: heroB.name,
+            hp: { current: 6, max: 18 },
+          });
+        }
+      } else {
+        expect(characters).toEqual({
+          [f.seatA]: {
+            id: heroA.id,
+            name: heroA.name,
+            hp: { current: 8, max: 20 },
+          },
+          [f.seatB]: {
+            id: heroB.id,
+            name: heroB.name,
+            hp: { current: 6, max: 18 },
+          },
+        });
+        expect(JSON.stringify(characters)).not.toContain(f.accountA);
+        expect(JSON.stringify(characters)).not.toContain(f.accountB);
+      }
+      if (viewer === 'spectator')
+        expect(JSON.stringify(characters)).not.toContain('privateNotes');
+      else if (shape === 'party')
+        expect(characters[f.seatB]).not.toHaveProperty('privateNotes');
+    },
+  );
+  it('keys owner character entries by seat ID in enforced party mode', () => {
+    const f = party({ bindA: true, partyMode: true });
+    const projected = f.room.projectMessageForViewer(
+      { characters: { [f.accountA]: { id: 'hero-a' } } },
+      f.accountA,
+    ) as { characters: Record<string, unknown> };
+    expect(projected.characters).toEqual({ [f.seatA]: { id: 'hero-a' } });
+    expect(JSON.stringify(projected)).not.toContain(f.accountA);
+  });
+
+  it('preserves the legacy solo owner account-keyed character message shape', () => {
+    const f = party({ bindA: false, bindB: false, partyMode: false });
+    const projected = f.room.projectMessageForViewer(
+      {
+        characters: { [f.accountA]: { id: 'hero-a' } },
+        seats: [{ accountId: f.accountA, seatId: f.seatA, isSelf: true }],
+      },
+      f.accountA,
+    ) as {
+      characters: Record<string, unknown>;
+      seats: Array<Record<string, unknown>>;
+    };
+    expect(projected.characters).toEqual({ [f.accountA]: { id: 'hero-a' } });
+    // accountId is intentionally renamed, but the in-repo client contract
+    // still receives the owner's isSelf marker.
+    expect(projected.seats[0]).toEqual({ seatId: f.seatA, isSelf: true });
+  });
+
+  it('projects mixed-case account-id suffix fields to seat ids', () => {
+    const f = party();
+    const projected = f.room.projectMessageForViewer(
+      {
+        actorAccountId: f.accountB,
+        fromAccountId: f.accountA,
+        memberAccountIds: [f.accountA, f.accountB],
+      },
+      f.accountA,
+    );
+    expect(projected).toEqual({
+      actorSeatId: f.seatB,
+      fromSeatId: f.seatA,
+      memberSeatIds: [f.seatA, f.seatB],
+    });
+    expect(JSON.stringify(projected)).not.toContain(f.accountA);
+    expect(JSON.stringify(projected)).not.toContain(f.accountB);
+  });
+
+  it('fails closed for account-shaped projection fields and keys', () => {
+    const f = party();
+    const payload = {
+      accountId: [f.accountB],
+      nested: { accountId: { value: f.accountB } },
+      memberAccountIds: f.accountB,
+      accountIdList: f.accountB,
+      ownerRef: { accountId: f.accountB },
+      characters: {
+        [f.seatB]: { id: 'known-seat' },
+        [randomUUID()]: { id: 'unmapped-account-shaped-key' },
+      },
+      [f.accountB]: { visible: true },
+      [randomUUID()]: { visible: true },
+      [f.seatB]: { visible: true },
+      seatId: f.seatA,
+    };
+    const projected = f.room.projectMessageForViewer(payload, f.accountA);
+    expect(JSON.stringify(projected)).not.toContain(f.accountB);
+    expect(projected).toMatchObject({
+      [f.seatB]: { visible: true },
+      characters: { [f.seatB]: { id: 'known-seat' } },
+      seatId: f.seatA,
+    });
+    expect(projected).not.toHaveProperty('accountId');
+    expect(projected).not.toHaveProperty('nested.accountId');
+    expect(projected).not.toHaveProperty('ownerRef');
+    expect(Object.keys(projected.characters as object)).toEqual([f.seatB]);
+  });
+
+  it('projects legacy account-keyed character state under the owner account after rewind', () => {
+    const f = party();
+    const character = {
+      id: randomUUID(),
+      hp: { current: 7 },
+      inventory: ['potion'],
+    };
+    f.room.state.gameState = { characters: { [f.accountA]: character } };
+    const projected = f.room.clientState(f.accountA).gameState as {
+      characters: Record<string, unknown>;
+    };
+    expect(projected.characters).toEqual({ [f.seatA]: character });
+    expect(JSON.stringify(projected)).not.toContain(f.accountA);
+  });
+
+  it('drops unknown top-level fields from client room state', () => {
+    const f = party();
+    (f.room.state as unknown as Record<string, unknown>).futureAccountId =
+      f.accountB;
+    const clientState = f.room.clientState(f.accountA);
+    expect(clientState).not.toHaveProperty('futureAccountId');
+    expect(JSON.stringify(clientState)).not.toContain(f.accountB);
+  });
+
+  it('broadcasts the solo owner sheet while conversion is pending without bindings', () => {
+    const f = party({ bindA: false, bindB: false, partyMode: false });
+    const privateSheet = { id: 'owner-sheet', name: 'Owner sheet' };
+    f.room.state.gameState = { characters: { [f.accountA]: privateSheet } };
+    (
+      f.room as unknown as { soloPartyConversionPending: boolean }
+    ).soloPartyConversionPending = true;
+    const connection = {
+      msgs: [] as unknown[],
+      send(message: unknown) {
+        this.msgs.push(message);
+      },
+      close() {},
+    };
+    (
+      f.room as unknown as { connections: Map<string, typeof connection> }
+    ).connections.set(f.accountA, connection);
+    const state = f.room.clientState(f.accountA);
+    (f.room as unknown as { broadcast(message: unknown): void }).broadcast({
+      seq: 1,
+      type: 'StateSync',
+      payload: { state },
+    });
+    const sync = connection.msgs[0] as {
+      payload: {
+        state: { gameState: { characters: Record<string, unknown> } };
+      };
+    };
+    expect(sync.payload.state.gameState.characters[f.accountA]).toEqual(
+      privateSheet,
+    );
+  });
+
   it('keeps the solo owner able to submit an action while a late join awaits binding', async () => {
     const f = party({
       partyMode: false,
@@ -517,6 +743,7 @@ describe('ADR-035 party seat gating', () => {
     });
     expect(other.characters[f.seatA]).not.toHaveProperty('privateNotes');
     expect(own.characters[f.seatA]).toEqual(privateSheet);
+    expect(own.characters).not.toHaveProperty(f.accountA);
 
     const solo = party({ bindA: false, partyMode: false });
     solo.room.state.gameState = {
@@ -529,6 +756,49 @@ describe('ADR-035 party seat gating', () => {
         }
       ).characters[solo.accountA],
     ).toEqual(privateSheet);
+  });
+
+  it('keeps the solo owner sheet addressable by account ID when a binding exists', () => {
+    const f = party({ bindA: true, partyMode: false });
+    const privateSheet = {
+      id: randomUUID(),
+      name: 'Aria',
+      hp: { current: 12, max: 18, temp: 0 },
+      slots: { '1': { current: 2, max: 2 } },
+    };
+    f.room.state.gameState = {
+      characters: { [f.accountA]: privateSheet },
+    };
+
+    const owner = f.room.clientState(f.accountA).gameState as {
+      characters: Record<string, unknown>;
+    };
+    expect(owner.characters[f.accountA]).toEqual(privateSheet);
+    expect(owner.characters).not.toHaveProperty(f.seatA);
+
+    const other = f.room.clientState(f.accountB).gameState as {
+      characters: Record<string, Record<string, unknown>>;
+    };
+    expect(other.characters[f.seatA]).toMatchObject({
+      id: privateSheet.id,
+      name: privateSheet.name,
+      hp: { current: 12, max: 18 },
+    });
+    expect(other.characters).not.toHaveProperty(f.accountA);
+    expect(JSON.stringify(other)).not.toContain('slots');
+
+    const ownerWire = f.room.projectMessageForViewer(
+      { characters: owner.characters },
+      f.accountA,
+    ) as { characters: Record<string, unknown> };
+    expect(ownerWire.characters).toHaveProperty(f.accountA);
+    expect(ownerWire.characters).not.toHaveProperty(f.seatA);
+    const otherWire = f.room.projectMessageForViewer(
+      { characters: owner.characters },
+      f.accountB,
+    ) as { characters: Record<string, unknown> };
+    expect(otherWire.characters).toHaveProperty(f.seatA);
+    expect(otherWire.characters).not.toHaveProperty(f.accountA);
   });
 
   it.each(['leave', 'kick'] as const)(

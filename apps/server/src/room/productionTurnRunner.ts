@@ -454,7 +454,17 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       state.characters = { [request.accountId]: savedCharacter };
     if (!state.premise) state.premise = table.rows[0].premise ?? undefined;
     const actors = state.characters ?? {};
-    if (Object.keys(actors).length && !actors[request.accountId])
+    const accountActor = actors[request.accountId];
+    const playerActor =
+      accountActor ??
+      Object.values(actors).find(
+        (actor) =>
+          actor &&
+          typeof actor === 'object' &&
+          'id' in actor &&
+          actor.id === savedCharacter?.id,
+      );
+    if (Object.keys(actors).length && !playerActor)
       throw new Error('Player character is not configured for this table');
 
     // Snapshot the tier and boundary union once for this turn. Free-text tool outputs

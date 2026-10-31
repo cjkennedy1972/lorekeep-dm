@@ -17,12 +17,16 @@ export function resolveDeathSave(
   gameState: Record<string, unknown>,
   accountId: string,
   rng: RngState = randomInt(0x1_0000_0000),
+  seatId?: string,
 ): DeathResolution {
   const characters = (gameState.characters ?? {}) as Record<
     string,
     { id: string; hp: { current: number; max: number; temp: number } }
   >;
-  const character = characters[accountId];
+  const characterKey = Object.hasOwn(characters, accountId)
+    ? accountId
+    : seatId;
+  const character = characterKey ? characters[characterKey] : undefined;
   if (!character || character.hp.current > 0)
     throw new Error('No death save is due');
   const records = (gameState.deathSaves ?? {}) as Record<string, DeathSaves>;
@@ -44,7 +48,7 @@ export function resolveDeathSave(
         ? {
             characters: {
               ...characters,
-              [accountId]: {
+              [characterKey!]: {
                 ...character,
                 hp: { ...character.hp, current: 1 },
               },
