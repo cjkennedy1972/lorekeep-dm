@@ -203,9 +203,9 @@ function identityPattern(identity: string): RegExp {
     part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
   );
   if (!escaped.length) return /$a/u;
-  const separator = '(?:[^\p{L}\p{N}]+)';
+  const separator = String.raw`(?:[^\p{L}\p{N}]+)`;
   return new RegExp(
-    `(?<![\p{L}\p{N}])${escaped.join(separator)}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
+    String.raw`(?<![\p{L}\p{N}])${escaped.join(separator)}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
     'giu',
   );
 }
@@ -226,7 +226,7 @@ function containsRegistryIdentity(
           '\\$&',
         );
         return new RegExp(
-          `(?<![\p{L}\p{N}])${needle}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
+          String.raw`(?<![\p{L}\p{N}])${needle}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
           'u',
         ).test(folded);
       }),
