@@ -1,10 +1,109 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
 const hash = (token: string) =>
   createHash('sha256').update(token).digest('hex');
 const unresolvedInvalidations = new Set<string>();
 const seatKey = (sessionId: string, seatId: string) => `${sessionId}:${seatId}`;
+
+export type SeatResumeCandidateActivation =
+  | 'activated'
+  | 'already-activated'
+  | 'rejected';
+
+export type SeatResumeCandidateStart =
+  | { status: 'started'; rotationId: string; candidate: string }
+  | { status: 'rate-limited' | 'pending' | 'lease-lost' };
+
+/** Persist a non-authenticating candidate, charging only a successful ordinary start. */
+export async function beginSeatResumeCandidate(
+  db: Pool,
+  sessionId: string,
+  seatId: string,
+  socketId: string,
+  ownerRecovery = false,
+): Promise<SeatResumeCandidateStart> {
+  const rotationId = randomUUID();
+  const candidate = randomBytes(16).toString('base64url');
+  const result = await db.query<{ pending_rotation_id: string }>(
+    `UPDATE seat_resume_tokens SET
+       pending_token_hash=$4, pending_rotation_id=$5, pending_socket_id=$3,
+       pending_expires_at=clock_timestamp()+interval '30 seconds', pending_started_at=statement_timestamp(),
+       pending_owner_recovery=$6,
+       rotation_window_started_at=CASE WHEN $6 THEN rotation_window_started_at
+         WHEN rotation_window_started_at IS NULL OR rotation_window_started_at+interval '60 seconds'<=clock_timestamp() THEN statement_timestamp()
+         ELSE rotation_window_started_at END,
+       rotation_starts_in_window=CASE WHEN $6 THEN rotation_starts_in_window
+         WHEN rotation_window_started_at IS NULL OR rotation_window_started_at+interval '60 seconds'<=clock_timestamp() THEN 1
+         ELSE rotation_starts_in_window+1 END
+     WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$3
+       AND heartbeat_at>clock_timestamp()-interval '15 seconds'
+       AND (pending_rotation_id IS NULL OR pending_expires_at<=clock_timestamp())
+       AND ($6 OR rotation_window_started_at IS NULL
+         OR rotation_window_started_at+interval '60 seconds'<=clock_timestamp() OR rotation_starts_in_window<6)
+     RETURNING pending_rotation_id`,
+    [sessionId, seatId, socketId, hash(candidate), rotationId, ownerRecovery],
+  );
+  if (result.rowCount === 1)
+    return { status: 'started', rotationId, candidate };
+  const state = await db.query<{
+    pending: boolean;
+    limited: boolean;
+    live: boolean;
+  }>(
+    `SELECT (active_socket_id=$4::uuid AND heartbeat_at>clock_timestamp()-interval '15 seconds') AS live,
+       (pending_rotation_id IS NOT NULL AND pending_expires_at>clock_timestamp()) AS pending,
+       (NOT $3::boolean AND rotation_window_started_at IS NOT NULL
+         AND rotation_window_started_at+interval '60 seconds'>clock_timestamp() AND rotation_starts_in_window>=6) AS limited
+     FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$4::uuid`,
+    [sessionId, seatId, ownerRecovery, socketId],
+  );
+  if (!state.rows.length || !state.rows[0]!.live)
+    return { status: 'lease-lost' };
+  if (state.rows[0]!.pending) return { status: 'pending' };
+  if (state.rows[0]!.limited) return { status: 'rate-limited' };
+  return { status: 'lease-lost' };
+}
+
+/** Activate only the exact live pending tuple; activation and budget refund are one CAS. */
+export async function activateSeatResumeCandidate(
+  db: Pool,
+  sessionId: string,
+  seatId: string,
+  socketId: string,
+  rotationId: string,
+  candidate: string,
+): Promise<SeatResumeCandidateActivation> {
+  const result = await db.query(
+    `UPDATE seat_resume_tokens SET token_hash=pending_token_hash, rotated_at=clock_timestamp(),
+       last_activated_rotation_id=pending_rotation_id, last_activated_socket_id=pending_socket_id,
+       last_activated_at=clock_timestamp(),
+       rotation_starts_in_window=CASE WHEN NOT pending_owner_recovery AND pending_started_at>=rotation_window_started_at
+           AND clock_timestamp()<rotation_window_started_at+interval '60 seconds'
+         THEN rotation_starts_in_window-1 ELSE rotation_starts_in_window END,
+       rotation_window_started_at=CASE WHEN NOT pending_owner_recovery AND pending_started_at>=rotation_window_started_at
+           AND clock_timestamp()<rotation_window_started_at+interval '60 seconds'
+           AND rotation_starts_in_window=1 THEN NULL ELSE rotation_window_started_at END,
+       pending_token_hash=NULL, pending_rotation_id=NULL, pending_socket_id=NULL,
+       pending_expires_at=NULL, pending_started_at=NULL, pending_owner_recovery=false
+     WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$3
+       AND heartbeat_at>clock_timestamp()-interval '15 seconds'
+       AND pending_rotation_id=$4 AND pending_socket_id=$3 AND pending_token_hash=$5
+       AND pending_expires_at>clock_timestamp()`,
+    [sessionId, seatId, socketId, rotationId, hash(candidate)],
+  );
+  if (result.rowCount === 1) return 'activated';
+  const duplicate = await db.query(
+    `SELECT 1 FROM seat_resume_tokens
+     WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$3
+       AND heartbeat_at>clock_timestamp()-interval '15 seconds'
+       AND last_activated_rotation_id=$4 AND last_activated_socket_id=$3
+       AND last_activated_at>clock_timestamp()-interval '30 seconds'`,
+    [sessionId, seatId, socketId, rotationId],
+  );
+  return duplicate.rowCount === 1 ? 'already-activated' : 'rejected';
+}
+
 const unmatchableTokenHash = () =>
   createHash('sha256').update(randomBytes(32)).digest('hex');
 
@@ -133,12 +232,12 @@ export async function authorizeSeatSocket(
     const reserved = await client.query<{ token_hash: string }>(
       `INSERT INTO seat_resume_tokens
          (session_id,seat_id,token_hash,rotated_at,active_socket_id,heartbeat_at)
-       VALUES($1,$2,md5(random()::text || clock_timestamp()::text),clock_timestamp(),$3,clock_timestamp())
+       VALUES($1,$2,$4,clock_timestamp(),$3,clock_timestamp())
        ON CONFLICT(session_id,seat_id) DO UPDATE SET
          active_socket_id=EXCLUDED.active_socket_id,
          heartbeat_at=EXCLUDED.heartbeat_at
        RETURNING token_hash`,
-      [sessionId, seatId, socketId],
+      [sessionId, seatId, socketId, unmatchableTokenHash()],
     );
     const previousTokenHash = reserved.rows[0]?.token_hash;
     if (!previousTokenHash)
