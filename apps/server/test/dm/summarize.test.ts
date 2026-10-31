@@ -76,6 +76,13 @@ describe('scene summaries and recap', () => {
       containsIdentityVariant('The unrelated village', ['Will Harper']),
     ).toBe(false);
     expect(containsIdentityVariant('X enters', ['X'])).toBe(true);
+    // Summarizer-output screening remains conservative for component-only names.
+    expect(
+      containsIdentityVariant('Will arrived at dawn.', ['Will Harper']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('Harper arrived at dawn.', ['Will Harper']),
+    ).toBe(true);
   });
 
   it('screens names across format characters, common homoglyphs, and plural-s forms', () => {

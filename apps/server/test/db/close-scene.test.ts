@@ -454,6 +454,27 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     expect(stored.rows[0]?.summary).not.toContain(quote);
   });
 
+  it('does not persist a five-word fragment of a forbidden player line', async () => {
+    const playerLine = 'We will stand the watch at dusk.';
+    const fragment = 'stand the watch at dusk';
+    const { sessionId } = await turn(
+      'scene-marowfell-well',
+      { summary: 'The party leaves the well.' },
+      undefined,
+      fragment,
+      [playerLine],
+    );
+    const stored = await db.query<{ summary: string }>(
+      'SELECT summary FROM scene_summaries WHERE session_id=$1',
+      [sessionId],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]?.summary).toBe(
+      'The scene closed without additional recorded events.',
+    );
+    expect(stored.rows[0]?.summary).not.toContain(fragment);
+  });
+
   it('does not persist a summary echoing one seat quote from a multi-seat round', async () => {
     const seatQuote = 'The brass key is beneath the well.';
     const { sessionId } = await turn(

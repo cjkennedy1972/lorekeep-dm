@@ -6,7 +6,14 @@ import {
   RulingSchema,
 } from '@game/schema';
 import type { Pool, PoolClient } from 'pg';
-import { identityPatterns, mentionsIdentity } from './identityMatcher.js';
+import {
+  identityPartPattern,
+  identityParts,
+  isCommonWordNamePart,
+  identityRewritePatterns,
+  mentionsIdentity,
+} from './identityMatcher.js';
+import { containsForbiddenWordRun } from './textScreening.js';
 import {
   ensureSessionCharacterToken,
   indexDerivedMemoryRow,
@@ -199,10 +206,25 @@ function containsRegistryIdentity(
   text: string,
   identities: readonly string[],
 ): boolean {
-  const folded = foldPrivacyText(text);
-  return identities.some((identity) =>
-    mentionsIdentity(text, identity, folded),
-  );
+  return identities.some((identity) => {
+    let probe = text;
+    for (const part of identityParts(identity)) {
+      if (
+        isCommonWordNamePart(part) &&
+        part === part.toLocaleLowerCase('und')
+      ) {
+        probe = probe.replace(identityPartPattern(part), ' ');
+        continue;
+      }
+      const insensitive = identityPartPattern(part);
+      const sensitive = identityPartPattern(part, true);
+      insensitive.lastIndex = 0;
+      sensitive.lastIndex = 0;
+      if (insensitive.test(text) && !sensitive.test(text))
+        probe = probe.replace(identityPartPattern(part), ' ');
+    }
+    return mentionsIdentity(probe, identity, foldPrivacyText(probe));
+  });
 }
 
 type RegistryIdentityContext = {
@@ -271,7 +293,10 @@ function screenRegistryText(
   const quotes = (privacy.forbiddenPlayerText ?? [])
     .map(foldPrivacyText)
     .filter(Boolean);
-  if (quotes.some((quote) => folded.includes(quote)))
+  if (
+    quotes.some((quote) => folded.includes(quote)) ||
+    containsForbiddenWordRun(text, privacy.forbiddenPlayerText ?? [])
+  )
     throw new Error(
       'Registry payload contains quoted player text; refusing write',
     );
@@ -280,7 +305,7 @@ function screenRegistryText(
     ([a], [b]) => b.length - a.length,
   )) {
     if (!identity.trim()) continue;
-    const matchers = identityPatterns(identity);
+    const matchers = identityRewritePatterns(identity);
     const matches = matchers.some((matcher) => {
       matcher.lastIndex = 0;
       return matcher.test(replaced);

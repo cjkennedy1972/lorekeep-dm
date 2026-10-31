@@ -301,6 +301,100 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(JSON.stringify(rows.rows)).not.toMatch(/Harpers|Harper's/);
   });
 
+  it('rewrites only case-matching identity components in registry prose', async () => {
+    for (const [name, email] of [
+      ['Corin Jones', 'corin-jones@example.test'],
+      ['Ash Ember', 'ash-ember@example.test'],
+    ]) {
+      const extraAccountId = randomUUID();
+      const extraCharacterId = randomUUID();
+      await db.pool.query('INSERT INTO accounts VALUES($1,$2,$3)', [
+        extraAccountId,
+        name,
+        email,
+      ]);
+      await db.pool.query(
+        `INSERT INTO session_seat_characters(session_id,account_id,seat_id,character_id,binding_status,character_snapshot) VALUES($1,$2,$3,$4,'active',$5)`,
+        [
+          sessionId,
+          extraAccountId,
+          randomUUID(),
+          extraCharacterId,
+          JSON.stringify({ name }),
+        ],
+      );
+    }
+    const registry = new RegistryMemory(db.pool);
+    await registry.upsertMany(sessionId, [
+      {
+        kind: 'npc',
+        id: 'npc_component_case',
+        after: {
+          id: 'npc_component_case',
+          name: 'Lantern Keeper',
+          role: 'guide',
+          disposition: 'neutral',
+          facts: [
+            'The party will continue.',
+            'The harper waits by the road.',
+            'The joneses gather before dawn.',
+            'The embers glow in the hearth.',
+            'Will arrived at dawn.',
+            'Harper arrived at dusk.',
+            'wIlL hArPeR left at noon.',
+            "Will's map marks the trail.",
+          ],
+        },
+      },
+    ]);
+    const rows = await db.pool.query<{ fact: string }>(
+      `SELECT f.fact FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
+       WHERE e.session_id=$1 AND e.entity_id='npc_component_case' ORDER BY f.id`,
+      [sessionId],
+    );
+    const token = (
+      await db.pool.query<{ token: string }>(
+        'SELECT token FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+        [sessionId, characterId],
+      )
+    ).rows[0]?.token;
+    expect(token).toBeTruthy();
+    expect(rows.rows.map((row) => row.fact)).toEqual([
+      'The party will continue.',
+      'The harper waits by the road.',
+      'The joneses gather before dawn.',
+      'The embers glow in the hearth.',
+      `${token} arrived at dawn.`,
+      `${token} arrived at dusk.`,
+      `${token} left at noon.`,
+      `${token} map marks the trail.`,
+    ]);
+  });
+
+  it('still fails closed on confusable identity variants in registry prose', async () => {
+    const registry = new RegistryMemory(db.pool);
+    await expect(
+      registry.upsertMany(sessionId, [
+        {
+          kind: 'npc',
+          id: 'npc_confusable_identity',
+          after: {
+            id: 'npc_confusable_identity',
+            name: 'Guide',
+            role: 'traveler',
+            disposition: 'neutral',
+            facts: ['The Harpеr waits by the road.'],
+          },
+        },
+      ]),
+    ).rejects.toThrow(/unscreened character identity/i);
+    const rows = await db.pool.query(
+      "SELECT 1 FROM registry_entries WHERE session_id=$1 AND entity_id='npc_confusable_identity'",
+      [sessionId],
+    );
+    expect(rows.rows).toEqual([]);
+  });
+
   it('blocks Joneses variants on registry writes', async () => {
     const unboundAccountId = randomUUID();
     await db.pool.query('INSERT INTO accounts VALUES($1,$2,$3)', [
@@ -447,6 +541,35 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(safeEntry.rows[0]?.fact).toContain(token);
     expect(safeEntry.rows[0]?.fact).not.toMatch(/Will/i);
     expect(safeEntry.rows[0]?.refs).toBe(1);
+  });
+
+  it('rejects registry text containing a five-word fragment of player text', async () => {
+    const playerLine = 'We will stand the watch at dusk.';
+    const registry = new RegistryMemory(db.pool);
+    await expect(
+      registry.upsertMany(
+        sessionId,
+        [
+          {
+            kind: 'npc',
+            id: 'npc_player_fragment',
+            after: {
+              id: 'npc_player_fragment',
+              name: 'Guide',
+              role: 'traveler',
+              disposition: 'neutral',
+              facts: ['They stand the watch at dusk tonight.'],
+            },
+          },
+        ],
+        { forbiddenPlayerText: [playerLine] },
+      ),
+    ).rejects.toThrow(/player text|privacy/i);
+    const rows = await db.pool.query(
+      "SELECT 1 FROM registry_entries WHERE session_id=$1 AND entity_id='npc_player_fragment'",
+      [sessionId],
+    );
+    expect(rows.rows).toEqual([]);
   });
 
   it('refuses to close a held session with no active character binding', async () => {

@@ -10,6 +10,7 @@ import type { LlmAdapter, LlmRequest } from '../llm/adapter.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
 import { mentionsIdentity } from './identityMatcher.js';
+import { containsForbiddenWordRun } from './textScreening.js';
 
 export const MAX_SCENE_SUMMARY_WORDS = 120;
 export const MAX_SCENE_SUMMARY_CHARS = 1_200;
@@ -629,7 +630,8 @@ function isSafePlayerVisibleText(
     forbiddenPlayerText
       .map((quote) => foldIdentity(quote).trim())
       .filter(Boolean)
-      .some((quote) => foldedText.includes(quote))
+      .some((quote) => foldedText.includes(quote)) ||
+    containsForbiddenWordRun(text, forbiddenPlayerText)
   )
     return false;
   return !containsIdentityVariant(text, identityVariants);
