@@ -64,6 +64,12 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
     );
     expect(pending.status).toBe('started');
     if (pending.status !== 'started') return;
+    const timing = await database!.pool.query(
+      `SELECT pending_started_at >= rotation_window_started_at AS started_in_window
+       FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2`,
+      [sessionId, seatId],
+    );
+    expect(timing.rows[0]!.started_in_window).toBe(true);
     const row = await database!.pool.query(
       'SELECT token_hash,pending_token_hash,pending_rotation_id,last_activated_rotation_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
       [sessionId, seatId],

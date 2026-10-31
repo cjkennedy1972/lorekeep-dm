@@ -28,10 +28,10 @@ export async function beginSeatResumeCandidate(
   const result = await db.query<{ pending_rotation_id: string }>(
     `UPDATE seat_resume_tokens SET
        pending_token_hash=$4, pending_rotation_id=$5, pending_socket_id=$3,
-       pending_expires_at=clock_timestamp()+interval '30 seconds', pending_started_at=clock_timestamp(),
+       pending_expires_at=clock_timestamp()+interval '30 seconds', pending_started_at=statement_timestamp(),
        pending_owner_recovery=$6,
        rotation_window_started_at=CASE WHEN $6 THEN rotation_window_started_at
-         WHEN rotation_window_started_at IS NULL OR rotation_window_started_at+interval '60 seconds'<=clock_timestamp() THEN clock_timestamp()
+         WHEN rotation_window_started_at IS NULL OR rotation_window_started_at+interval '60 seconds'<=clock_timestamp() THEN statement_timestamp()
          ELSE rotation_window_started_at END,
        rotation_starts_in_window=CASE WHEN $6 THEN rotation_starts_in_window
          WHEN rotation_window_started_at IS NULL OR rotation_window_started_at+interval '60 seconds'<=clock_timestamp() THEN 1
