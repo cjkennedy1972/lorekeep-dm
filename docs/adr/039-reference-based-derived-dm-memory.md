@@ -34,9 +34,9 @@ Stored values are untrusted. Re-screen each retrieved summary and registry value
 
 `RegistryMemory.closeScene` writes through `this.pool`; its transaction must lock/check the session lease row and compare the fence epoch captured when summarization began before inserting the summary or registry diffs. A changed epoch, active deletion fence, or post-scrub state rejects the whole write (rollback); checking only at summarizer start is insufficient. Apply equivalent write fencing to other registry mutation entry points.
 
-Legal holds are a proposed exception to deletion and remain PENDING owner (Chris) sign-off; they are not accepted policy yet. The intended hold-detection source is the existing `legal_holds` table defined in `apps/server/migrations/0006_retention.sql` (session holds match `kind='session'` and `item_id=session_id::text`). If approved, a held session's derived rows, token map, and token-to-row index would be retained unchanged, even after a deletion request. Hold detection must occur before any mutation and fail closed for the entire affected session; no partial scrub. Reply to a deletion request by confirming the request is recorded but that specified held data cannot be erased while the hold applies, identifying the hold basis/process without disclosing another party's data, and offer no claim that deletion is complete. Only an authorized owner/legal-hold release permits later deletion. The legacy clear also skips held sessions and cannot bypass hold checks through bulk migration.
+Legal holds are an exception to deletion approved by the owner (Chris) on 2026-10-30; see Owner approvals below. The intended hold-detection source is the existing `legal_holds` table defined in `apps/server/migrations/0006_retention.sql` (session holds match `kind='session'` and `item_id=session_id::text`). A held session's derived rows, token map, and token-to-row index are retained unchanged, even after a deletion request. Hold detection must occur before any mutation and fail closed for the entire affected session; no partial scrub. Reply to a deletion request by confirming the request is recorded but that specified held data cannot be erased while the hold applies, identifying the hold basis/process without disclosing another party's data, and offer no claim that deletion is complete. Only an authorized owner/legal-hold release permits later deletion. The legacy clear also skips held sessions and cannot bypass hold checks through bulk migration.
 
-Code inspection: `registry_entries` are written from validated registry events and scene-close diffs; no replay/rebuild path reconstructs them from canonical events. Therefore a one-time legacy clear loses registry continuity (and legacy summaries) and cannot promise reconstruction. Make the one-time clear an implementation gate requiring explicit owner (Chris) approval before execution. PENDING owner (Chris) decision: legacy rows may continue retaining player names/quoted text until the one-time clear is approved. This risk is not yet accepted; legacy rows persist until approved. Until then, rollout must not clear legacy rows or claim the invariant for pre-existing rows; new writes still enforce it. Clear only unheld sessions after approval, with idempotent counts-only audit. Do not attempt string replacement or heuristic classification.
+Code inspection: `registry_entries` are written from validated registry events and scene-close diffs; no replay/rebuild path reconstructs them from canonical events. Therefore a one-time legacy clear loses registry continuity (and legacy summaries) and cannot promise reconstruction. Make the one-time clear an implementation gate requiring explicit owner (Chris) approval before execution. Owner decision (Chris), recorded 2026-10-31 after the continuity-loss correction: the one-time clear of legacy rows is approved as a separate gated job (see Owner approvals below). Until that job runs, legacy rows persist and may retain player names/quoted text, and rollout must not claim the invariant for pre-existing rows; new writes still enforce it. Clear only unheld sessions, with idempotent counts-only audit. Do not attempt string replacement or heuristic classification.
 
 ### Migration, deployment, rollback and operational retention
 
@@ -86,3 +86,31 @@ Honor ADR-024/025 turn linkage: scene summaries and registry versions carry the 
 - Rewind tests prove turn-linked rows are removed atomically and mappings remain character-stable; export tests enforce solo authorized scope and omit mapping data.
 - Migration tests apply 0045 to a database with existing rows, validate indexes/uniqueness/FKs and prove legacy rows remain untouched. Test deploy compatibility with old code, interruption/restart during index reconciliation, rollback with additive schema retained, and that indexed deletion finds summary and registry rows plus cascading facts without substring search.
 - Legacy-clear tests establish hold-awareness, idempotence, and no registry rebuild claim. Execution remains blocked until explicit Chris approval. Hold-deletion tests verify held rows/mappings/indexes remain, response reports deletion incomplete due to hold, then deletion completes only after hold release. Provider/logging tests assert request/response bodies are absent from logs/traces/cost records; verify configured retention/ZDR policy before identity-bearing requests.
+
+## Owner approvals and reviewer notes (recorded 2026-10-31)
+
+Appended record; earlier text is unchanged except the two PENDING markers above. This section records the owner's decisions and the conditions that carry forward. It does not change the Status line, which remains Proposed pending Atlas's decision.
+
+### Owner approvals
+
+- **2026-10-30 21:49 UTC, legal-hold exception: approved.** Chris accepted the legal-hold exception to derived-memory deletion as described in "Transaction fencing, holds, deletion and legacy clear". Held sessions keep derived rows, token map and token-to-row index until an authorized release. A deletion request for held data is reported as incomplete until release, and no completion claim is made.
+- **2026-10-30 21:49 UTC, legacy-row clear: first approval, not valid on its own.** Chris approved a one-time removal of legacy derived-memory rows on the basis that they were a regenerable cache. That description was wrong.
+- **2026-10-30 22:06 ET (2026-10-31 02:06 UTC), correction sent to the owner.** Atlas corrected the basis: code inspection shows nothing rebuilds registry entries from canonical events, so the clear permanently removes registry continuity (legacy summaries and registry entries and facts). The clear cannot promise reconstruction.
+- **2026-10-31 02:48 UTC, legacy-row clear: reconfirmed by the owner after the correction.** Chris replied "Yes clear legacy rows and delete the trace artifacts". The reply's reference to CI trace artifacts is outside ADR-039 and is not recorded here. Only the legacy-row clear is governed by this ADR.
+
+### Conditions carried forward
+
+- The clear is a separate gated job, not a migration side effect. It runs as step 4 of the implementation plan, with a dry run first and a counts-only audit.
+- The job skips held sessions and never rebuilds or string-replaces registry contents.
+- Each execution references the 2026-10-31 reconfirmation in its run audit, and still honors hold checks.
+- The legal-hold release path is still an open owner decision (workboard card `560fa0f6`). This ADR does not settle it, so later deletion of held data is blocked.
+
+### Delegated open questions
+
+Chris delegated the remaining open ADR-039 questions to Atlas, to decide after research. They are not decided by this record.
+
+### Reviewer notes (non-blocking)
+
+- Hold-aware deletion must not ship before owner sign-off. That sign-off is now recorded (2026-10-30), so the requirement is satisfied. Implementation and its acceptance tests still apply.
+- `turn_id` on `scene_summaries` and `registry_entries` is `text`, not `uuid` (migrations `0030_scene_summary_turn_link.sql` and `0031_registry_turn_link.sql`). Turn linkage and the rewind rules must use text.
+- `SeatJoined` is persisted by the `join` and `seat` methods of `Room` in `apps/server/src/room/Room.ts`. Cite these functions, not line numbers; the "near line 2186" reference in Context is superseded by this note.
