@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeScene } from '../../src/dm/summarize.js';
+import { RegistryMemory } from '../../src/dm/memory.js';
+import { Persistence } from '../../src/persistence/index.js';
 import type { LlmAdapter, LlmChunk } from '../../src/llm/adapter.js';
 import type { Moderator } from '../../src/safety/moderator.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
@@ -45,6 +47,9 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
   beforeAll(async () => {
     db = await createTestDatabase({ extraSearchPath: ['public'] });
     await db.pool.query('CREATE TABLE sessions(id uuid PRIMARY KEY)');
+    await db.pool.query(
+      'CREATE TABLE session_lease(session_id uuid PRIMARY KEY,node_id text NOT NULL,expires_at timestamptz NOT NULL,epoch bigint NOT NULL)',
+    );
     await db.pool.query('INSERT INTO sessions(id) VALUES($1)', [sessionId]);
     await db.pool.query(
       'CREATE TABLE accounts(id uuid PRIMARY KEY, display_name text NOT NULL, email text NOT NULL)',
@@ -76,6 +81,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       '0030_scene_summary_turn_link.sql',
       '0031_registry_turn_link.sql',
       '0045_derived_memory_character_refs.sql',
+      '0046_derived_memory_hold_serialization.sql',
     ]) {
       await db.pool.query(
         await readFile(
@@ -185,6 +191,283 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       'registry_entry',
       'scene_summary',
     ]);
+  });
+
+  it('rejects registry persistence when an upserted fact contains player identity and quoted player text', async () => {
+    const registry = new RegistryMemory(db.pool);
+    await expect(
+      registry.upsertMany(
+        sessionId,
+        [
+          {
+            kind: 'npc',
+            id: 'npc_privacy_gate',
+            after: {
+              id: 'npc_privacy_gate',
+              name: 'Guide',
+              role: 'traveler',
+              disposition: 'neutral',
+              facts: [`Will Harper said: ${quotedText}`],
+            },
+          },
+        ],
+        { forbiddenPlayerText: [quotedText] },
+      ),
+    ).rejects.toThrow(/player text|privacy/i);
+    await expect(
+      registry.upsert(
+        sessionId,
+        {
+          kind: 'npc',
+          id: 'npc_privacy_upsert',
+          after: {
+            id: 'npc_privacy_upsert',
+            name: 'Guide',
+            role: 'traveler',
+            disposition: 'neutral',
+            facts: [`Will Harper said: ${quotedText}`],
+          },
+        },
+        { forbiddenPlayerText: [quotedText] },
+      ),
+    ).rejects.toThrow(/player text|privacy/i);
+    await expect(
+      new Persistence(db.pool).persistRegistryEvents(
+        sessionId,
+        [
+          {
+            type: 'NpcUpserted',
+            npc: {
+              id: 'npc_privacy_event',
+              name: 'Guide',
+              role: 'traveler',
+              disposition: 'neutral',
+              facts: [`Will Harper said: ${quotedText}`],
+            },
+          },
+        ],
+        undefined,
+        { forbiddenPlayerText: [quotedText] },
+      ),
+    ).rejects.toThrow(/player text|privacy/i);
+    const persisted = await db.pool.query(
+      `SELECT e.name,e.payload::text AS payload,e.search_document,f.fact
+         FROM registry_entries e LEFT JOIN registry_facts f ON f.entry_id=e.id
+        WHERE e.session_id=$1 AND e.entity_id IN ('npc_privacy_gate','npc_privacy_upsert','npc_privacy_event')`,
+      [sessionId],
+    );
+    expect(persisted.rows).toEqual([]);
+
+    await expect(
+      registry.closeScene(
+        sessionId,
+        'scene_registry_quote_gate',
+        `Will Harper said: ${quotedText}`,
+        [],
+        null,
+        { forbiddenPlayerText: [quotedText] },
+      ),
+    ).rejects.toThrow(/player text|privacy/i);
+    await registry.upsertMany(sessionId, [
+      {
+        kind: 'npc',
+        id: 'npc_privacy_tokenized',
+        after: {
+          id: 'npc_privacy_tokenized',
+          name: 'Guide',
+          role: 'traveler',
+          disposition: 'neutral',
+          facts: ['Will Harper crossed the hall.'],
+        },
+      },
+    ]);
+    const token = (
+      await db.pool.query(
+        'SELECT token FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+        [sessionId, characterId],
+      )
+    ).rows[0]?.token as string;
+    const safeEntry = await db.pool.query<{ fact: string; refs: number }>(
+      `SELECT f.fact,(SELECT count(*)::int FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id) AS refs
+         FROM registry_entries e JOIN registry_facts f ON f.entry_id=e.id
+        WHERE e.session_id=$1 AND e.entity_id='npc_privacy_tokenized'`,
+      [sessionId],
+    );
+    expect(safeEntry.rows[0]?.fact).toContain(token);
+    expect(safeEntry.rows[0]?.fact).not.toContain(displayName);
+    expect(safeEntry.rows[0]?.refs).toBe(1);
+  });
+
+  it('refuses to close a held session with no active character binding', async () => {
+    const heldSession = randomUUID();
+    await db.pool.query('INSERT INTO sessions(id) VALUES($1)', [heldSession]);
+    await db.pool.query(
+      "INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)",
+      [heldSession],
+    );
+    const holdAdapter: LlmAdapter = {
+      ...adapter,
+      async *complete() {
+        yield {
+          type: 'text',
+          delta: JSON.stringify({ summary: 'Closed.', registryDiffs: [] }),
+        };
+      },
+    } as unknown as LlmAdapter;
+    await expect(
+      closeScene({
+        sessionId: heldSession,
+        sceneId: 'scene-held-no-binding',
+        events: [],
+        adapter: holdAdapter,
+        db: db.pool,
+        moderator,
+        tier: 'standard',
+        tableLines: [],
+      }),
+    ).rejects.toThrow(/held/i);
+    expect(
+      (
+        await db.pool.query(
+          'SELECT 1 FROM scene_summaries WHERE session_id=$1',
+          [heldSession],
+        )
+      ).rowCount,
+    ).toBe(0);
+  });
+
+  it('serializes closeScene against a session hold inserted after its initial check', async () => {
+    const heldSession = randomUUID();
+    await db.pool.query('INSERT INTO sessions(id) VALUES($1)', [heldSession]);
+    const holdWriter = await db.pool.connect();
+    await holdWriter.query('BEGIN');
+    try {
+      await holdWriter.query(
+        "INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)",
+        [heldSession],
+      );
+      const holdAdapter: LlmAdapter = {
+        ...adapter,
+        async *complete() {
+          yield {
+            type: 'text',
+            delta: JSON.stringify({ summary: 'Closed.', registryDiffs: [] }),
+          };
+        },
+      } as unknown as LlmAdapter;
+      const closing = closeScene({
+        sessionId: heldSession,
+        sceneId: 'scene-held-race',
+        events: [],
+        adapter: holdAdapter,
+        db: db.pool,
+        moderator,
+        tier: 'standard',
+        tableLines: [],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(
+        (
+          await db.pool.query(
+            'SELECT 1 FROM scene_summaries WHERE session_id=$1',
+            [heldSession],
+          )
+        ).rowCount,
+      ).toBe(0);
+      await holdWriter.query('COMMIT');
+      await expect(closing).rejects.toThrow(/held/i);
+      expect(
+        (
+          await db.pool.query(
+            'SELECT 1 FROM scene_summaries WHERE session_id=$1',
+            [heldSession],
+          )
+        ).rowCount,
+      ).toBe(0);
+    } catch (error) {
+      await holdWriter.query('ROLLBACK');
+      throw error;
+    } finally {
+      holdWriter.release();
+    }
+  });
+
+  it('drops a seat entity id unless it resolves to an active binding in this session', async () => {
+    const foreignSeatId = randomUUID();
+    const prompts: string[] = [];
+    const seatAdapter: LlmAdapter = {
+      ...adapter,
+      async *complete(req: { messages: { content: string }[] }) {
+        prompts.push(req.messages.map((message) => message.content).join('\n'));
+        yield {
+          type: 'text',
+          delta: JSON.stringify({
+            summary: 'The turn passed.',
+            registryDiffs: [],
+          }),
+        };
+      },
+    } as unknown as LlmAdapter;
+    await closeScene({
+      sessionId,
+      sceneId: 'scene-foreign-seat-id',
+      events: [
+        {
+          type: 'InitiativeRolled',
+          payload: { entityId: `ent_seat_${foreignSeatId}`, total: 10 },
+        },
+      ],
+      adapter: seatAdapter,
+      db: db.pool,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+    });
+    expect(prompts.join('\n')).not.toContain(`ent_seat_${foreignSeatId}`);
+    const foreignTurnId = randomUUID();
+    await closeScene({
+      db: db.pool,
+      sessionId,
+      sceneId: 'scene-foreign-turn-id',
+      events: [
+        {
+          type: 'TurnOpened',
+          payload: {
+            turnId: foreignTurnId,
+            entityId: `ent_seat_${foreignSeatId}`,
+            deadline: 10,
+          },
+        },
+      ],
+      adapter: seatAdapter,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+    });
+    expect(prompts.join('\n')).not.toContain(foreignTurnId);
+    await closeScene({
+      sessionId,
+      sceneId: 'scene-bound-seat-id',
+      events: [
+        {
+          type: 'InitiativeRolled',
+          payload: { entityId: `ent_seat_${seatId}`, total: 12 },
+        },
+      ],
+      adapter: seatAdapter,
+      db: db.pool,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+    });
+    const mappedToken = (
+      await db.pool.query(
+        'SELECT token FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+        [sessionId, characterId],
+      )
+    ).rows[0]?.token as string;
+    expect(prompts.join('\n')).not.toContain(`ent_seat_${seatId}`);
+    expect(prompts.join('\n')).toContain(mappedToken);
   });
 
   it('fails closed before any write when the identity inventory cannot be screened', async () => {

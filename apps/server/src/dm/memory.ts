@@ -6,7 +6,11 @@ import {
   RulingSchema,
 } from '@game/schema';
 import type { Pool, PoolClient } from 'pg';
-import { indexDerivedMemoryRow } from './characterReferences.js';
+import {
+  ensureSessionCharacterToken,
+  indexDerivedMemoryRow,
+  lockSessionForDerivedMemoryWrite,
+} from './characterReferences.js';
 
 export const MAX_MEMORY_RESULTS = 20;
 export const MAX_MEMORY_CHARS = 4_000;
@@ -48,6 +52,10 @@ export type RegistryDiff =
     };
 
 type Pg = Pick<Pool, 'query' | 'connect'>;
+export type RegistryPrivacyOptions = {
+  /** Locally held player utterances; never included in registry data or logs. */
+  forbiddenPlayerText?: readonly string[];
+};
 export type RegistryEvent =
   | { type: 'NpcUpserted'; npc: Record<string, unknown> & { id: string } }
   | {
@@ -142,6 +150,197 @@ export function extractMentionedRegistryFacts(
     );
 }
 
+const PRIVACY_CONFUSABLES: Readonly<Record<string, string>> = {
+  а: 'a',
+  е: 'e',
+  о: 'o',
+  р: 'p',
+  с: 'c',
+  у: 'y',
+  х: 'x',
+  і: 'i',
+  ј: 'j',
+  к: 'k',
+  м: 'm',
+  т: 't',
+  в: 'b',
+  н: 'h',
+  ԁ: 'd',
+  ԛ: 'q',
+  ӏ: 'l',
+  α: 'a',
+  β: 'b',
+  ε: 'e',
+  ι: 'i',
+  κ: 'k',
+  ο: 'o',
+  ρ: 'p',
+  τ: 't',
+  υ: 'y',
+  χ: 'x',
+  ν: 'v',
+  μ: 'm',
+  η: 'n',
+};
+const foldPrivacyText = (text: string) =>
+  text
+    .normalize('NFKC')
+    .replace(/\p{Cf}/gu, '')
+    .toLocaleLowerCase('und')
+    .replace(/ß/g, 'ss')
+    .replace(/ς/g, 'σ')
+    .replace(
+      /[а-ео-сухіјкмтвнԁԛӏαβε ικορτυχνμη]/gu,
+      (char) => PRIVACY_CONFUSABLES[char] ?? char,
+    );
+
+function identityPattern(identity: string): RegExp {
+  const parts = identity
+    .trim()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  const escaped = parts.map((part) =>
+    part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  );
+  if (!escaped.length) return /$a/u;
+  const separator = '(?:[^\p{L}\p{N}]+)';
+  return new RegExp(
+    `(?<![\p{L}\p{N}])${escaped.join(separator)}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
+    'giu',
+  );
+}
+
+function containsRegistryIdentity(
+  text: string,
+  identities: readonly string[],
+): boolean {
+  const folded = foldPrivacyText(text);
+  return identities.some((identity) =>
+    identity
+      .trim()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean)
+      .some((part) => {
+        const needle = foldPrivacyText(part).replace(
+          /[.*+?^${}()|[\]\\]/g,
+          '\\$&',
+        );
+        return new RegExp(
+          `(?<![\p{L}\p{N}])${needle}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
+          'u',
+        ).test(folded);
+      }),
+  );
+}
+
+type RegistryIdentityContext = {
+  tokenByCharacter: Map<string, string>;
+  tokenByIdentity: Map<string, string | null>;
+};
+
+async function loadRegistryIdentityContext(
+  client: PoolClient,
+  sessionId: string,
+): Promise<RegistryIdentityContext> {
+  const identityRows = await client.query<{
+    display_name: string | null;
+    email: string | null;
+    character_snapshot: unknown;
+    character_id: string | null;
+  }>(
+    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id
+       FROM session_seat_characters b
+       LEFT JOIN accounts a ON a.id=b.account_id
+      WHERE b.session_id=$1 AND b.binding_status='active'`,
+    [sessionId],
+  );
+  const tokenByCharacter = new Map<string, string>();
+  const tokenByIdentity = new Map<string, string | null>();
+  for (const row of identityRows.rows) {
+    let token: string | null = null;
+    if (row.character_id) {
+      token = await ensureSessionCharacterToken(
+        client,
+        sessionId,
+        row.character_id,
+      );
+      tokenByCharacter.set(row.character_id, token);
+    }
+    const snapshot =
+      row.character_snapshot && typeof row.character_snapshot === 'object'
+        ? (row.character_snapshot as Record<string, unknown>)
+        : {};
+    const identities = [
+      row.display_name,
+      row.email,
+      snapshot.name,
+      ...(Array.isArray(snapshot.aliases) ? snapshot.aliases : []),
+    ].filter(
+      (value): value is string => typeof value === 'string' && !!value.trim(),
+    );
+    for (const identity of identities) {
+      const prior = tokenByIdentity.get(identity);
+      if (prior !== undefined && prior !== token)
+        throw new Error(
+          'Ambiguous character identity; refusing registry write',
+        );
+      tokenByIdentity.set(identity, token);
+    }
+  }
+  return { tokenByCharacter, tokenByIdentity };
+}
+
+function screenRegistryText(
+  text: string,
+  context: RegistryIdentityContext,
+  privacy: RegistryPrivacyOptions,
+): string {
+  const folded = foldPrivacyText(text);
+  const quotes = (privacy.forbiddenPlayerText ?? [])
+    .map(foldPrivacyText)
+    .filter(Boolean);
+  if (quotes.some((quote) => folded.includes(quote)))
+    throw new Error(
+      'Registry payload contains quoted player text; refusing write',
+    );
+  let replaced = text;
+  for (const [identity, token] of [...context.tokenByIdentity].sort(
+    ([a], [b]) => b.length - a.length,
+  )) {
+    if (!identity.trim()) continue;
+    const matcher = identityPattern(identity);
+    if (!matcher.test(replaced)) continue;
+    matcher.lastIndex = 0;
+    if (!token)
+      throw new Error('Unbound character identity; refusing registry write');
+    replaced = replaced.replace(matcher, token);
+  }
+  if (containsRegistryIdentity(replaced, [...context.tokenByIdentity.keys()]))
+    throw new Error(
+      'Registry payload contains an unscreened character identity',
+    );
+  return replaced;
+}
+
+function screenRegistryValue(
+  value: unknown,
+  context: RegistryIdentityContext,
+  privacy: RegistryPrivacyOptions,
+): unknown {
+  if (typeof value === 'string')
+    return screenRegistryText(value, context, privacy);
+  if (Array.isArray(value))
+    return value.map((item) => screenRegistryValue(item, context, privacy));
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        screenRegistryValue(item, context, privacy),
+      ]),
+    );
+  return value;
+}
+
 /** Postgres-backed, session-scoped registry writes and lexical retrieval. */
 export class RegistryMemory {
   constructor(private readonly pool: Pg) {}
@@ -153,17 +352,30 @@ export class RegistryMemory {
     summary: string,
     diffs: readonly RegistryDiff[] = [],
     turnId: string | null = null,
-    characterByToken: ReadonlyMap<string, string> = new Map(),
+    privacy: RegistryPrivacyOptions = {},
   ): Promise<boolean> {
-    const normalized = summary.trim();
     if (!sceneId.trim()) throw new Error('Scene id is required');
-    if (!normalized || normalized.length > MAX_SCENE_SUMMARY_CHARS)
+    if (!summary.trim() || summary.trim().length > MAX_SCENE_SUMMARY_CHARS)
       throw new Error(
         `Scene summary must contain 1 to ${MAX_SCENE_SUMMARY_CHARS} characters`,
       );
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await lockSessionForDerivedMemoryWrite(client, sessionId);
+      const identityContext = await loadRegistryIdentityContext(
+        client,
+        sessionId,
+      );
+      const normalized = screenRegistryText(
+        summary.trim(),
+        identityContext,
+        privacy,
+      );
+      if (normalized.length > MAX_SCENE_SUMMARY_CHARS)
+        throw new Error(
+          `Scene summary must contain 1 to ${MAX_SCENE_SUMMARY_CHARS} characters`,
+        );
       const inserted = await client.query(
         `INSERT INTO scene_summaries(session_id, scene_id, summary, turn_id)
          VALUES ($1, $2, $3, $4) ON CONFLICT (session_id, scene_id) DO NOTHING RETURNING id`,
@@ -174,8 +386,11 @@ export class RegistryMemory {
         return false;
       }
       const summaryId = inserted.rows[0]?.id;
-      if (characterByToken.size && summaryId) {
-        const ids = [...characterByToken].flatMap(([token, id]) =>
+      const tokenToCharacter = new Map(
+        [...identityContext.tokenByCharacter].map(([id, token]) => [token, id]),
+      );
+      if (tokenToCharacter.size && summaryId) {
+        const ids = [...tokenToCharacter].flatMap(([token, id]) =>
           normalized.includes(token) ? [id] : [],
         );
         if (ids.length)
@@ -192,7 +407,7 @@ export class RegistryMemory {
         sessionId,
         diffs,
         turnId,
-        characterByToken,
+        privacy,
       );
       await client.query('COMMIT');
       return true;
@@ -223,19 +438,17 @@ export class RegistryMemory {
   async upsert(
     sessionId: string,
     diff: RegistryDiff | RegistryEvent,
+    privacy: RegistryPrivacyOptions = {},
   ): Promise<void> {
-    const normalized = this.fromDiff(diff);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await this.writeEntry(
+      await this.upsertManyInTransaction(
         client,
         sessionId,
-        normalized.kind,
-        normalized.id,
-        normalized.after,
-        normalized.aliases,
-        normalized.supersedesFacts,
+        [diff],
+        null,
+        privacy,
       );
       await client.query('COMMIT');
     } catch (error) {
@@ -249,12 +462,19 @@ export class RegistryMemory {
   async upsertMany(
     sessionId: string,
     diffs: readonly RegistryDiff[],
+    privacy: RegistryPrivacyOptions = {},
   ): Promise<void> {
     if (!diffs.length) return;
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await this.upsertManyInTransaction(client, sessionId, diffs);
+      await this.upsertManyInTransaction(
+        client,
+        sessionId,
+        diffs,
+        null,
+        privacy,
+      );
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -269,8 +489,15 @@ export class RegistryMemory {
     sessionId: string,
     events: readonly RegistryEvent[],
     turnId: string | null = null,
+    privacy: RegistryPrivacyOptions = {},
   ): Promise<void> {
-    await this.upsertManyInTransaction(client, sessionId, events, turnId);
+    await this.upsertManyInTransaction(
+      client,
+      sessionId,
+      events,
+      turnId,
+      privacy,
+    );
   }
 
   /** Remove registry versions written by reverted turns and restore the versions they superseded. */
@@ -304,9 +531,21 @@ export class RegistryMemory {
     sessionId: string,
     diffs: readonly (RegistryDiff | RegistryEvent)[],
     turnId: string | null = null,
-    characterByToken: ReadonlyMap<string, string> = new Map(),
+    privacy: RegistryPrivacyOptions = {},
   ): Promise<void> {
-    for (const diff of diffs) {
+    await lockSessionForDerivedMemoryWrite(client, sessionId);
+    const identityContext = await loadRegistryIdentityContext(
+      client,
+      sessionId,
+    );
+    const screened = diffs.map(
+      (diff) =>
+        screenRegistryValue(diff, identityContext, privacy) as
+          | RegistryDiff
+          | RegistryEvent,
+    );
+    const tokenByCharacter = identityContext.tokenByCharacter;
+    for (const diff of screened) {
       const normalized = this.fromDiff(diff);
       const entryId = await this.writeEntry(
         client,
@@ -318,10 +557,10 @@ export class RegistryMemory {
         normalized.supersedesFacts,
         turnId,
       );
-      if (entryId && characterByToken.size) {
+      if (entryId) {
         const body = JSON.stringify(diff);
-        const ids = [...characterByToken].flatMap(([token, id]) =>
-          body.includes(token) ? [id] : [],
+        const ids = [...tokenByCharacter].flatMap(([characterId, token]) =>
+          body.includes(token) ? [characterId] : [],
         );
         if (ids.length)
           await indexDerivedMemoryRow(

@@ -10,7 +10,7 @@ import {
   type ChatMessage,
   type StateSync,
 } from '@game/schema';
-import type { RegistryEvent } from '../dm/memory.js';
+import type { RegistryEvent, RegistryPrivacyOptions } from '../dm/memory.js';
 import {
   ChatSeatRevokedError,
   LeaseConflictError,
@@ -326,6 +326,7 @@ export interface RoomStore {
     sessionId: string,
     events: readonly RegistryEvent[],
     lease: Lease,
+    privacy?: RegistryPrivacyOptions,
   ): Promise<void>;
   writeTurn(
     sessionId: string,
@@ -2517,10 +2518,20 @@ export class Room {
     return this.enqueue(async () => {
       if (!this.store.persistRegistryEvents)
         throw new Error('Room store does not support registry persistence');
+      const gameState = this.state.gameState as
+        | { lastPlayerText?: unknown }
+        | undefined;
       await this.store.persistRegistryEvents(
         this.sessionId,
         events,
         this.lease,
+        {
+          forbiddenPlayerText:
+            typeof gameState?.lastPlayerText === 'string' &&
+            gameState.lastPlayerText.trim()
+              ? [gameState.lastPlayerText]
+              : [],
+        },
       );
     });
   }

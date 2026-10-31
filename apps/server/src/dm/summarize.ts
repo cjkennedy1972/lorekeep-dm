@@ -82,6 +82,15 @@ const SUMMARIZER_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
 const UUID_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SESSION_SCOPED_OPAQUE_ID_FIELDS = new Set([
+  'combatId',
+  'encounterId',
+  'turnId',
+  'promptId',
+  'eventIds',
+  'seatId',
+  'sceneId',
+]);
 const ENTITY_ID = (value: unknown) =>
   typeof value === 'string' &&
   (UUID_ID.test(value) ||
@@ -491,12 +500,49 @@ export function publicSceneEvents(
   });
 }
 
+const CONFUSABLES: Readonly<Record<string, string>> = {
+  а: 'a',
+  е: 'e',
+  о: 'o',
+  р: 'p',
+  с: 'c',
+  у: 'y',
+  х: 'x',
+  і: 'i',
+  ј: 'j',
+  к: 'k',
+  м: 'm',
+  т: 't',
+  в: 'b',
+  н: 'h',
+  ԁ: 'd',
+  ԛ: 'q',
+  ӏ: 'l',
+  α: 'a',
+  β: 'b',
+  ε: 'e',
+  ι: 'i',
+  κ: 'k',
+  ο: 'o',
+  ρ: 'p',
+  τ: 't',
+  υ: 'y',
+  χ: 'x',
+  ν: 'v',
+  μ: 'm',
+  η: 'n',
+};
 const foldIdentity = (value: string) =>
   value
     .normalize('NFKC')
+    .replace(/\p{Cf}/gu, '')
     .toLocaleLowerCase('und')
     .replace(/ß/g, 'ss')
-    .replace(/ς/g, 'σ');
+    .replace(/ς/g, 'σ')
+    .replace(
+      /[а-ео-сухіјкмтвнԁԛӏαβε ικορτυχνμη]/gu,
+      (char) => CONFUSABLES[char] ?? char,
+    );
 
 /** Match complete Unicode letter/number components, including possessives. */
 export function containsIdentityVariant(
@@ -522,7 +568,7 @@ export function containsIdentityVariant(
       }
       const needle = foldIdentity(part).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return new RegExp(
-        `(?<![\\p{L}\\p{N}])${needle}(?:['’]s|['’])?(?![\\p{L}\\p{N}])`,
+        `(?<![\\p{L}\\p{N}])${needle}(?:['’]s|['’]|s)?(?![\\p{L}\\p{N}])`,
         'u',
       ).test(folded);
     });
@@ -532,6 +578,7 @@ export function containsIdentityVariant(
 type SessionIdentityInventory = {
   variants: string[];
   seatIds: Set<string>;
+  tokenBySeatId: Map<string, string>;
   tokenByCharacter: Map<string, string>;
   characterByToken: Map<string, string>;
 };
@@ -553,6 +600,7 @@ async function captureIdentityVariants(
   );
   const variants: string[] = [];
   const seatIds = new Set<string>();
+  const tokenBySeatId = new Map<string, string>();
   const tokenByCharacter = new Map<string, string>();
   const characterByToken = new Map<string, string>();
   for (const row of rows) {
@@ -576,44 +624,47 @@ async function captureIdentityVariants(
         row.character_id,
       );
       tokenByCharacter.set(row.character_id, token);
+      tokenBySeatId.set(row.seat_id, token);
       characterByToken.set(token, row.character_id);
     }
   }
   return {
     variants: variants.filter(Boolean),
     seatIds,
+    tokenBySeatId,
     tokenByCharacter,
     characterByToken,
   };
-}
-
-function replaceCharacterIds(
-  value: unknown,
-  tokens: ReadonlyMap<string, string>,
-): unknown {
-  if (typeof value === 'string') return tokens.get(value) ?? value;
-  if (Array.isArray(value))
-    return value.map((item) => replaceCharacterIds(item, tokens));
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        key,
-        replaceCharacterIds(item, tokens),
-      ]),
-    );
-  return value;
 }
 
 /** Persist a summary exactly once, then apply validated registry updates. */
 export async function closeScene(
   input: CloseSceneInput,
 ): Promise<SceneSummaryResult & { persisted: boolean }> {
+  const held = await input.db.query(
+    "SELECT 1 FROM legal_holds WHERE kind='session' AND item_id=$1::uuid::text",
+    [input.sessionId],
+  );
+  if (held.rowCount) throw new Error('Session is held; refusing scene summary');
   const hidden = input.hidden ?? [];
   const inventory = await captureIdentityVariants(input.db, input.sessionId);
+  const resolveEntityToken = (id: string): string | undefined => {
+    if (inventory.tokenByCharacter.has(id))
+      return inventory.tokenByCharacter.get(id);
+    const seatMatch = /^ent_seat_([0-9a-f-]{36})$/i.exec(id);
+    if (seatMatch) return inventory.tokenBySeatId.get(seatMatch[1]!);
+    if (inventory.characterByToken.has(id)) return id;
+    return undefined;
+  };
   const projected = projectSummarizerEvents(
     publicSceneEvents(input.events, hidden),
   ).filter((event) => {
     const payload = event.payload as Record<string, unknown>;
+    // These identifiers have no session-scoped resolver in the closeScene input.
+    // Fail closed by omitting the event instead of sending format-valid but
+    // unresolved IDs (or relying on client/event-supplied provenance).
+    if ([...SESSION_SCOPED_OPAQUE_ID_FIELDS].some((key) => key in payload))
+      return false;
     if (
       event.type === 'LateJoinSpawned' &&
       !inventory.seatIds.has(String(payload.seatId))
@@ -625,20 +676,27 @@ export async function closeScene(
       'moverId',
       'attackerId',
     ].flatMap((key) =>
-      typeof payload[key] === 'string' && UUID_ID.test(payload[key] as string)
-        ? [payload[key] as string]
-        : [],
+      typeof payload[key] === 'string' ? [payload[key] as string] : [],
     );
     for (const key of ['entityIds', 'order', 'affected'])
-      if (Array.isArray(payload[key]))
-        ids.push(
-          ...(payload[key] as string[]).filter((id) => UUID_ID.test(id)),
-        );
-    return ids.every((id) => inventory.tokenByCharacter.has(id));
+      if (Array.isArray(payload[key])) ids.push(...(payload[key] as string[]));
+    return ids.every((id) => resolveEntityToken(id) !== undefined);
   });
+  const replaceBoundEntityIds = (value: unknown): unknown => {
+    if (typeof value === 'string') return resolveEntityToken(value) ?? value;
+    if (Array.isArray(value)) return value.map(replaceBoundEntityIds);
+    if (value && typeof value === 'object')
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+          key,
+          replaceBoundEntityIds(item),
+        ]),
+      );
+    return value;
+  };
   const tokenized = projected.map((event) => ({
     ...event,
-    payload: replaceCharacterIds(event.payload, inventory.tokenByCharacter),
+    payload: replaceBoundEntityIds(event.payload),
   }));
   const result = await summarizeScene({
     ...input,
@@ -744,7 +802,18 @@ export async function closeScene(
     summary,
     registryDiffs,
     input.turnId ?? null,
-    inventory.characterByToken,
+    {
+      forbiddenPlayerText: input.events.flatMap((event) => {
+        if (
+          event.type !== 'PlayerAction' ||
+          !event.payload ||
+          typeof event.payload !== 'object'
+        )
+          return [];
+        const text = (event.payload as Record<string, unknown>).text;
+        return typeof text === 'string' && text.trim() ? [text] : [];
+      }),
+    },
   );
   return { summary, registryDiffs, fallback, persisted };
 }

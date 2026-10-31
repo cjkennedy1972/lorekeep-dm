@@ -21,8 +21,24 @@ type DerivedRow = {
   body: string;
 };
 
-// The hold read is not locked: token minting, reference writes, and reconciliation are
-// currently unwired from production mutation paths. Serialize with hold creation when writers land.
+/**
+ * Serialize derived-memory writes with session-hold creation and reject writes to held sessions.
+ * The legal_holds trigger takes the matching session row FOR UPDATE before inserting/deleting a
+ * session hold; writers take FOR SHARE and re-check the hold in this same transaction.
+ */
+export async function lockSessionForDerivedMemoryWrite(
+  db: Queryable,
+  sessionId: string,
+): Promise<void> {
+  await db.query('SELECT id FROM sessions WHERE id=$1 FOR SHARE', [sessionId]);
+  const held = await db.query(
+    "SELECT 1 FROM legal_holds WHERE kind='session' AND item_id=$1::uuid::text",
+    [sessionId],
+  );
+  if (held.rowCount)
+    throw new Error('Session is held; refusing derived memory mutation');
+}
+
 const isHeld = async (db: Queryable, sessionId: string): Promise<boolean> => {
   const held = await db.query(
     "SELECT 1 FROM legal_holds WHERE kind='session' AND item_id=$1::uuid::text",
@@ -59,8 +75,7 @@ export async function ensureSessionCharacterToken(
       client.release();
     }
   }
-  if (await isHeld(db, sessionId))
-    throw new Error('Session is held; refusing character token mutation');
+  await lockSessionForDerivedMemoryWrite(db, sessionId);
   const binding = await db.query(
     `SELECT 1 FROM session_seat_characters
     WHERE session_id=$1 AND character_id=$2 AND binding_status='active'`,
@@ -96,8 +111,7 @@ export async function indexDerivedMemoryRow(
   rowId: string | number,
   characterIds: readonly string[],
 ): Promise<void> {
-  if (await isHeld(db, sessionId))
-    throw new Error('Session is held; refusing derived reference mutation');
+  await lockSessionForDerivedMemoryWrite(db, sessionId);
   const ids = [...new Set(characterIds)];
   for (const characterId of ids) {
     await db.query(

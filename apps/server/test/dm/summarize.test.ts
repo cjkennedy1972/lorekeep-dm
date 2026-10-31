@@ -75,6 +75,21 @@ describe('scene summaries and recap', () => {
     expect(containsIdentityVariant('X enters', ['X'])).toBe(true);
   });
 
+  it('screens names across format characters, common homoglyphs, and plural-s forms', () => {
+    expect(
+      containsIdentityVariant('The lantern follows Em\u200bber.', ['Ember']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('The lantern follows Еmber.', ['Ember']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('The lantern follows Embers.', ['Ember']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('The lantern follows Alice.', ['Bob Smith']),
+    ).toBe(false);
+  });
+
   it('rejects unknown fields and free-text event types from the summarizer projection', () => {
     expect(
       projectSummarizerEvents([
@@ -262,8 +277,11 @@ describe('scene summaries and recap', () => {
       },
       async connect() {
         return {
-          async query() {
-            return { rows: [], rowCount: 1 };
+          async query(sql: string) {
+            return {
+              rows: [],
+              rowCount: sql.includes('INSERT INTO scene_summaries') ? 1 : 0,
+            };
           },
           release() {},
         };
@@ -293,7 +311,7 @@ describe('scene summaries and recap', () => {
 
   it('does not persist a blocked model-authored scene summary or registry diff', async () => {
     let persistedSummary = '';
-    let calls = 0;
+    let sceneWrites = 0;
     const moderationRequests: ModerationRequest[] = [];
     const db = {
       async query() {
@@ -302,8 +320,8 @@ describe('scene summaries and recap', () => {
       async connect() {
         return {
           async query(sql: string, params: unknown[] = []) {
-            calls++;
             if (sql.includes('INSERT INTO scene_summaries')) {
+              sceneWrites++;
               persistedSummary = String(params[2]);
               return { rows: [], rowCount: 1 };
             }
@@ -356,7 +374,7 @@ describe('scene summaries and recap', () => {
       direction: 'output',
       sessionId: 'session-1',
     });
-    expect(calls).toBe(3); // BEGIN, INSERT safe summary, COMMIT
+    expect(sceneWrites).toBe(1);
   });
 
   it('bounds a summary by both word and character limits', () => {
