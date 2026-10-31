@@ -85,8 +85,18 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
         },
       ],
       'turn-close',
+      {},
+      null,
     );
-    await memory.closeScene(sessionId, 'scene-untagged', 'Untagged scene.');
+    await memory.closeScene(
+      sessionId,
+      'scene-untagged',
+      'Untagged scene.',
+      [],
+      null,
+      {},
+      null,
+    );
     const summaries = await database!.pool.query<{
       scene_id: string;
       turn_id: string | null;
@@ -119,13 +129,33 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
         sessionId,
         'scene-1',
         'The party secured the silver archive.',
+        [],
+        null,
+        {},
+        null,
       ),
     ).toBe(true);
     expect(
-      await memory.closeScene(sessionId, 'scene-1', 'A duplicate close.'),
+      await memory.closeScene(
+        sessionId,
+        'scene-1',
+        'A duplicate close.',
+        [],
+        null,
+        {},
+        null,
+      ),
     ).toBe(false);
     await expect(
-      memory.closeScene(sessionId, 'scene-2', 'x'.repeat(1201)),
+      memory.closeScene(
+        sessionId,
+        'scene-2',
+        'x'.repeat(1201),
+        [],
+        null,
+        {},
+        null,
+      ),
     ).rejects.toThrow(/1200/);
     await database!.pool.query(
       "INSERT INTO events(session_id,seq,turn_id,type,payload,expires_at) VALUES($1,1,$1,'Transcript','{}',now())",
@@ -187,7 +217,15 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
           },
         })
       ).summary;
-    await memory.closeScene(sessionId, 'replay-scene', await replay());
+    await memory.closeScene(
+      sessionId,
+      'replay-scene',
+      await replay(),
+      [],
+      null,
+      {},
+      null,
+    );
     const stored = await database!.pool.query<{ id: string; summary: string }>(
       'SELECT id,summary FROM scene_summaries WHERE session_id=$1 AND scene_id=$2',
       [sessionId, 'replay-scene'],

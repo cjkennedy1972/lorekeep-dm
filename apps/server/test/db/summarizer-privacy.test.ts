@@ -93,6 +93,148 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
   }, 30_000);
   afterAll(async () => db?.close());
 
+  it('rejects registry upserts when the captured lease epoch is stale', async () => {
+    const registry = new RegistryMemory(db.pool);
+    await db.pool.query(
+      `INSERT INTO session_lease(session_id,node_id,expires_at,epoch) VALUES($1,'worker',now()+interval '1 hour',1)`,
+      [sessionId],
+    );
+    await expect(
+      registry.upsertMany(
+        sessionId,
+        [
+          {
+            kind: 'npc',
+            id: 'npc_stale_lease',
+            after: {
+              id: 'npc_stale_lease',
+              name: 'Stale Guard',
+              role: 'guard',
+              disposition: 'neutral',
+              facts: [],
+            },
+          },
+        ],
+        0,
+        {},
+      ),
+    ).rejects.toMatchObject({ name: 'DerivedMemoryLeaseLostError' });
+    const rows = await db.pool.query(
+      "SELECT id FROM registry_entries WHERE session_id=$1 AND entity_id='npc_stale_lease'",
+      [sessionId],
+    );
+    expect(rows.rowCount).toBe(0);
+    const missingEpochWrites = await Promise.allSettled([
+      registry.upsert(
+        sessionId,
+        {
+          kind: 'npc',
+          id: 'npc_omitted_epoch',
+          after: {
+            id: 'npc_omitted_epoch',
+            name: 'Omitted',
+            role: 'guard',
+            disposition: 'neutral',
+            facts: [],
+          },
+        },
+        undefined as unknown as number | null,
+      ),
+      registry.upsertMany(
+        sessionId,
+        [
+          {
+            kind: 'npc',
+            id: 'npc_many_omitted_epoch',
+            after: {
+              id: 'npc_many_omitted_epoch',
+              name: 'Omitted Many',
+              role: 'guard',
+              disposition: 'neutral',
+              facts: [],
+            },
+          },
+        ],
+        undefined as unknown as number | null,
+      ),
+      registry.closeScene(
+        sessionId,
+        'scene-omitted-epoch',
+        'Omitted epoch must not persist.',
+        [],
+        null,
+        {},
+        undefined as unknown as number | null,
+      ),
+    ]);
+    expect(missingEpochWrites.map(({ status }) => status)).toEqual([
+      'rejected',
+      'rejected',
+      'rejected',
+    ]);
+    for (const outcome of missingEpochWrites)
+      if (outcome.status === 'rejected')
+        expect(outcome.reason).toMatchObject({
+          name: 'DerivedMemoryLeaseLostError',
+        });
+    const absentEpochRows = await db.pool.query(
+      "SELECT id FROM registry_entries WHERE session_id=$1 AND entity_id IN ('npc_omitted_epoch','npc_many_omitted_epoch')",
+      [sessionId],
+    );
+    expect(absentEpochRows.rowCount).toBe(0);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT 1 FROM scene_summaries WHERE session_id=$1 AND scene_id='scene-omitted-epoch'",
+          [sessionId],
+        )
+      ).rowCount,
+    ).toBe(0);
+    await db.pool.query('DELETE FROM session_lease WHERE session_id=$1', [
+      sessionId,
+    ]);
+  });
+
+  it.each(['upsert', 'upsertMany'] as const)(
+    'rejects a %s when the lease is taken over after the caller captured its epoch',
+    async (method) => {
+      await db.pool.query(
+        `INSERT INTO session_lease(session_id,node_id,expires_at,epoch) VALUES($1,'worker',now()+interval '1 hour',2)
+         ON CONFLICT(session_id) DO UPDATE SET node_id='worker',expires_at=now()+interval '1 hour',epoch=2`,
+        [sessionId],
+      );
+      // The caller still holds epoch 1; storage has already moved to epoch 2.
+      // An API that silently captures the current epoch would wrongly accept this stale write.
+      const registry = new RegistryMemory(db.pool);
+      const diff = {
+        kind: 'npc' as const,
+        id: `npc_stale_${method}`,
+        after: {
+          id: `npc_stale_${method}`,
+          name: 'Stale Guard',
+          role: 'guard',
+          disposition: 'neutral',
+          facts: [],
+        },
+      };
+      const write =
+        method === 'upsert'
+          ? registry.upsert(sessionId, diff, 1)
+          : registry.upsertMany(sessionId, [diff], 1);
+      await expect(write).rejects.toMatchObject({
+        name: 'DerivedMemoryLeaseLostError',
+      });
+      const rows = await db.pool.query(
+        'SELECT 1 FROM registry_entries WHERE session_id=$1 AND entity_id=$2',
+        [sessionId, diff.id],
+      );
+      expect(rows.rowCount).toBe(0);
+      await db.pool.query('DELETE FROM session_lease WHERE session_id=$1', [
+        sessionId,
+      ]);
+    },
+  );
+
   it('sends only projected fields and opaque tokens; retries name collisions and indexes summary/registry references', async () => {
     let call = 0;
     adapter.complete = async function* (req: {
@@ -130,6 +272,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     };
     const out = await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-privacy',
       events: [
         {
@@ -244,6 +387,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(projectSummarizerEvents(events)).toHaveLength(7);
     await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-combat-recap',
       events,
       adapter,
@@ -277,22 +421,26 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
 
   it('tokenizes plural and possessive identity variants on registry writes', async () => {
     const registry = new RegistryMemory(db.pool);
-    await registry.upsertMany(sessionId, [
-      {
-        kind: 'npc',
-        id: 'npc_plural_identity',
-        after: {
+    await registry.upsertMany(
+      sessionId,
+      [
+        {
+          kind: 'npc',
           id: 'npc_plural_identity',
-          name: 'The Harpers',
-          role: 'guild',
-          disposition: 'neutral',
-          facts: [
-            'The Harpers hold the mill deed.',
-            "Harper's seal marks the deed.",
-          ],
+          after: {
+            id: 'npc_plural_identity',
+            name: 'The Harpers',
+            role: 'guild',
+            disposition: 'neutral',
+            facts: [
+              'The Harpers hold the mill deed.',
+              "Harper's seal marks the deed.",
+            ],
+          },
         },
-      },
-    ]);
+      ],
+      null,
+    );
     const rows = await db.pool.query(
       "SELECT name, payload::text AS payload, search_document FROM registry_entries WHERE session_id=$1 AND entity_id='npc_plural_identity'",
       [sessionId],
@@ -325,28 +473,32 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       );
     }
     const registry = new RegistryMemory(db.pool);
-    await registry.upsertMany(sessionId, [
-      {
-        kind: 'npc',
-        id: 'npc_component_case',
-        after: {
+    await registry.upsertMany(
+      sessionId,
+      [
+        {
+          kind: 'npc',
           id: 'npc_component_case',
-          name: 'Lantern Keeper',
-          role: 'guide',
-          disposition: 'neutral',
-          facts: [
-            'The party will continue.',
-            'The harper waits by the road.',
-            'The joneses gather before dawn.',
-            'The embers glow in the hearth.',
-            'Will arrived at dawn.',
-            'Harper arrived at dusk.',
-            'wIlL hArPeR left at noon.',
-            "Will's map marks the trail.",
-          ],
+          after: {
+            id: 'npc_component_case',
+            name: 'Lantern Keeper',
+            role: 'guide',
+            disposition: 'neutral',
+            facts: [
+              'The party will continue.',
+              'The harper waits by the road.',
+              'The joneses gather before dawn.',
+              'The embers glow in the hearth.',
+              'Will arrived at dawn.',
+              'Harper arrived at dusk.',
+              'wIlL hArPeR left at noon.',
+              "Will's map marks the trail.",
+            ],
+          },
         },
-      },
-    ]);
+      ],
+      null,
+    );
     const rows = await db.pool.query<{ fact: string }>(
       `SELECT f.fact FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
        WHERE e.session_id=$1 AND e.entity_id='npc_component_case' ORDER BY f.id`,
@@ -374,19 +526,23 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
   it('still fails closed on confusable identity variants in registry prose', async () => {
     const registry = new RegistryMemory(db.pool);
     await expect(
-      registry.upsertMany(sessionId, [
-        {
-          kind: 'npc',
-          id: 'npc_confusable_identity',
-          after: {
+      registry.upsertMany(
+        sessionId,
+        [
+          {
+            kind: 'npc',
             id: 'npc_confusable_identity',
-            name: 'Guide',
-            role: 'traveler',
-            disposition: 'neutral',
-            facts: ['The Harpеr waits by the road.'],
+            after: {
+              id: 'npc_confusable_identity',
+              name: 'Guide',
+              role: 'traveler',
+              disposition: 'neutral',
+              facts: ['The Harpеr waits by the road.'],
+            },
           },
-        },
-      ]),
+        ],
+        null,
+      ),
     ).rejects.toThrow(/unscreened character identity/i);
     const rows = await db.pool.query(
       "SELECT 1 FROM registry_entries WHERE session_id=$1 AND entity_id='npc_confusable_identity'",
@@ -413,23 +569,27 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       ],
     );
     const registry = new RegistryMemory(db.pool);
-    await registry.upsertMany(sessionId, [
-      {
-        kind: 'npc',
-        id: 'npc_group',
-        after: {
+    await registry.upsertMany(
+      sessionId,
+      [
+        {
+          kind: 'npc',
           id: 'npc_group',
-          name: 'Neighbors',
-          role: 'group',
-          disposition: 'neutral',
-          facts: [
-            'The Joneses gathered at the mill.',
-            "Joneses' deed is at the inn.",
-            'Joneses’ seal marks the box.',
-          ],
+          after: {
+            id: 'npc_group',
+            name: 'Neighbors',
+            role: 'group',
+            disposition: 'neutral',
+            facts: [
+              'The Joneses gathered at the mill.',
+              "Joneses' deed is at the inn.",
+              'Joneses’ seal marks the box.',
+            ],
+          },
         },
-      },
-    ]);
+      ],
+      null,
+    );
     const rows = await db.pool.query<{ payload: string }>(
       "SELECT payload::text AS payload FROM registry_entries WHERE session_id=$1 AND entity_id='npc_group'",
       [sessionId],
@@ -456,7 +616,9 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
             },
           },
         ],
+        null,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
     await expect(
@@ -473,7 +635,9 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
             facts: [`Will Harper said: ${quotedText}`],
           },
         },
+        null,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
     await expect(
@@ -493,6 +657,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
         ],
         undefined,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
     const persisted = await db.pool.query(
@@ -511,21 +676,26 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
         [],
         null,
         { forbiddenPlayerText: [quotedText] },
+        null,
       ),
     ).rejects.toThrow(/player text|privacy/i);
-    await registry.upsertMany(sessionId, [
-      {
-        kind: 'npc',
-        id: 'npc_privacy_tokenized',
-        after: {
+    await registry.upsertMany(
+      sessionId,
+      [
+        {
+          kind: 'npc',
           id: 'npc_privacy_tokenized',
-          name: 'Guide',
-          role: 'traveler',
-          disposition: 'neutral',
-          facts: ["Wills’ map guides Will's route past Will Harper."],
+          after: {
+            id: 'npc_privacy_tokenized',
+            name: 'Guide',
+            role: 'traveler',
+            disposition: 'neutral',
+            facts: ["Wills’ map guides Will's route past Will Harper."],
+          },
         },
-      },
-    ]);
+      ],
+      null,
+    );
     const token = (
       await db.pool.query(
         'SELECT token FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
@@ -562,6 +732,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
             },
           },
         ],
+        null,
         { forbiddenPlayerText: [playerLine] },
       ),
     ).rejects.toThrow(/player text|privacy/i);
@@ -591,6 +762,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     await expect(
       closeScene({
         sessionId: heldSession,
+        leaseEpoch: null,
         sceneId: 'scene-held-no-binding',
         events: [],
         adapter: holdAdapter,
@@ -629,6 +801,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     } as unknown as LlmAdapter;
     const out = await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-caller-player-text',
       events: [],
       forbiddenPlayerText: [quotedText],
@@ -641,6 +814,32 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(call).toBe(2);
     expect(prompts.join('\n')).not.toContain(quotedText);
     expect(out.summary).toBe('The combat ended.');
+  });
+
+  it('returns a non-persisted fallback when the captured lease epoch is stale', async () => {
+    const out = await closeScene({
+      sessionId,
+      sceneId: 'scene-stale-lease',
+      events: [],
+      adapter,
+      db: db.pool,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+      leaseEpoch: 99,
+    });
+    expect(out).toMatchObject({
+      summary: '',
+      registryDiffs: [],
+      fallback: true,
+      persisted: false,
+    });
+    expect(
+      await db.pool.query(
+        'SELECT 1 FROM scene_summaries WHERE session_id=$1 AND scene_id=$2',
+        [sessionId, 'scene-stale-lease'],
+      ),
+    ).toMatchObject({ rowCount: 0 });
   });
 
   it('serializes closeScene against a session hold inserted after its initial check', async () => {
@@ -664,6 +863,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       } as unknown as LlmAdapter;
       const closing = closeScene({
         sessionId: heldSession,
+        leaseEpoch: null,
         sceneId: 'scene-held-race',
         events: [],
         adapter: holdAdapter,
@@ -717,6 +917,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     } as unknown as LlmAdapter;
     await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-foreign-seat-id',
       events: [
         {
@@ -735,6 +936,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     await closeScene({
       db: db.pool,
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-foreign-turn-id',
       events: [
         {
@@ -754,6 +956,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(prompts.join('\n')).not.toContain(foreignTurnId);
     await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-bound-seat-id',
       events: [
         {
@@ -791,6 +994,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     await expect(
       closeScene({
         sessionId,
+        leaseEpoch: null,
         sceneId: 'scene-uncertain',
         events: [],
         adapter,
@@ -815,6 +1019,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     };
     const out = await closeScene({
       sessionId,
+      leaseEpoch: null,
       sceneId: 'scene-fallback',
       events: [
         {

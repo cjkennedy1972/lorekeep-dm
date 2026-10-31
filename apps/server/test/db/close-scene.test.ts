@@ -140,6 +140,7 @@ async function turn(
       sessionId,
       accountId,
       actionId: randomUUID(),
+      leaseEpoch: null,
       text: 'We finish here and move on.',
       ...(forbiddenPlayerText ? { forbiddenPlayerText } : {}),
       state: { sceneId, adventureId: ADVENTURE },

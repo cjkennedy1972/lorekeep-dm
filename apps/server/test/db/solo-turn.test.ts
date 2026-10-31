@@ -996,10 +996,19 @@ describe('solo turn persisted lifecycle', () => {
       `M2-28 scripted timing ms: create=${Math.round(createdAt - startedAt)}; websocket=${Math.round(connectedAt - createdAt)}; first-narration=${Math.round(narratedAt - connectedAt)}; total=${Math.round(narratedAt - startedAt)} (limit=180000)\n`,
     );
 
+    const lease = await db.query<{ epoch: string }>(
+      'SELECT epoch FROM session_lease WHERE session_id=$1',
+      [gameId],
+    );
+    expect(lease.rows[0]).toBeDefined();
     await new RegistryMemory(db).closeScene(
       gameId,
       'scene:opening',
       'The adventurer followed the lantern light into Greyfen and found the road abandoned.',
+      [],
+      null,
+      {},
+      Number(lease.rows[0]!.epoch),
     );
     const beforeRestart = await fetch(`${base}/api/tables/${gameId}`, {
       headers: { cookie: `sid=${owner.token}` },

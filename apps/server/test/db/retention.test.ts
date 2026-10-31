@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { LocalObjectStore } from '../../src/storage/objectStore.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
 import { retentionHealth, runSweep } from '../../src/retention/sweeper.js';
+import { getIndexedDerivedMemoryRows } from '../../src/dm/characterReferences.js';
 import { purgeArchivedSessions } from '../../src/retention/jobs/sessions.js';
 import { restoreForMember } from '../../src/rooms/invites.js';
 
@@ -23,6 +24,12 @@ afterAll(async () => {
     await q('DELETE FROM accounts WHERE id=$1', [id]);
   }
   await pool.end();
+});
+beforeEach(async () => {
+  await pool.query('DELETE FROM derived_memory_reconcile_skipped');
+  await pool.query(
+    'UPDATE derived_memory_reconciliation_state SET complete=true,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
+  );
 });
 const logs: Record<string, unknown>[] = [];
 const log = (e: Record<string, unknown>) => void logs.push(e);
@@ -60,6 +67,242 @@ async function seatEvent(
 }
 
 describe('retention sweeper (Postgres)', () => {
+  it('tracks held sessions separately, retries them first, and lets unrelated deletion proceed', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'held-reconcile-'));
+    const targetHeld = await account('deleting', 'Held target');
+    const heldOwner = await account('active', 'Held owner');
+    const targetFree = await account('deleting', 'Free target');
+    const freeOwner = await account('active', 'Free owner');
+    const heldSession = randomUUID();
+    const freeSession = randomUUID();
+    const heldCharacter = randomUUID();
+    const freeCharacter = randomUUID();
+    const heldToken = 'H'.repeat(32);
+    const freeToken = 'F'.repeat(32);
+    accountIds.push(targetHeld, heldOwner, targetFree, freeOwner);
+    sessionIds.push(heldSession, freeSession);
+    try {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=false,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
+      );
+      await q(
+        "UPDATE accounts SET deletion_requested_at=now()-interval '25 hours' WHERE id=ANY($1::uuid[])",
+        [[targetHeld, targetFree]],
+      );
+      for (const [id, owner, character, token, label] of [
+        [heldSession, heldOwner, heldCharacter, heldToken, 'held'] as const,
+        [freeSession, freeOwner, freeCharacter, freeToken, 'free'] as const,
+      ]) {
+        await q(
+          'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+          [
+            character,
+            label === 'held' ? targetHeld : targetFree,
+            { id: character, name: label },
+          ],
+        );
+        await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+          id,
+          owner,
+        ]);
+        await q(
+          `INSERT INTO session_seat_characters(session_id,account_id,seat_id,character_id,character_snapshot,binding_status) VALUES($1,$2,$3,$4,$5,'active')`,
+          [
+            id,
+            label === 'held' ? targetHeld : targetFree,
+            randomUUID(),
+            character,
+            { id: character, name: label },
+          ],
+        );
+        await q(
+          'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+          [id, character, token],
+        );
+        await q(
+          'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+          [id, label, `memory ${token}`],
+        );
+      }
+      await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
+        heldSession,
+      ]);
+      const emitted: Record<string, unknown>[] = [];
+      const first = await runSweep(pool, {
+        store: new LocalObjectStore(dir),
+        log: (entry) => emitted.push(entry),
+        reconciliationBatchSize: 100,
+        reconciliationTimeBudgetMs: 10_000,
+        coverageEscalationMs: 24 * 60 * 60_000,
+      });
+      expect(first?.reconciliation).toMatchObject({
+        complete: true,
+        locked: false,
+      });
+      expect(
+        await count(
+          'SELECT count(*)::int AS n FROM derived_memory_reconcile_skipped WHERE session_id=$1',
+          [heldSession],
+        ),
+      ).toBe(1);
+      expect(first?.accounts.deleted).toBeGreaterThan(0);
+      expect(first?.accounts.held).toBeGreaterThan(0);
+      expect(first?.deletionsBlockedByCoverage).toBe(1);
+      expect(emitted).toContainEqual({
+        level: 'error',
+        job: 'accountDeletion',
+        event: 'coverage_escalation',
+        count: 1,
+      });
+      expect(
+        await count('SELECT count(*)::int AS n FROM accounts WHERE id=$1', [
+          targetFree,
+        ]),
+      ).toBe(0);
+      expect(
+        await q('SELECT status FROM accounts WHERE id=$1', [targetHeld]),
+      ).toEqual([{ status: 'deleting' }]);
+      await expect(
+        getIndexedDerivedMemoryRows(pool, heldSession, heldCharacter),
+      ).rejects.toThrow(/coverage is unverified/i);
+      await expect(
+        getIndexedDerivedMemoryRows(pool, freeSession, freeCharacter),
+      ).resolves.toHaveLength(0);
+
+      await q("DELETE FROM legal_holds WHERE kind='session' AND item_id=$1", [
+        heldSession,
+      ]);
+      const second = await runSweep(pool, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+        reconciliationBatchSize: 100,
+        reconciliationTimeBudgetMs: 10_000,
+      });
+      expect(second?.reconciliation.complete).toBe(true);
+      expect(
+        await count(
+          'SELECT count(*)::int AS n FROM derived_memory_reconcile_skipped WHERE session_id=$1',
+          [heldSession],
+        ),
+      ).toBe(0);
+      expect(
+        await count('SELECT count(*)::int AS n FROM accounts WHERE id=$1', [
+          targetHeld,
+        ]),
+      ).toBe(0);
+      expect(
+        await count(
+          'SELECT count(*)::int AS n FROM scene_summaries WHERE session_id=$1',
+          [heldSession],
+        ),
+      ).toBe(0);
+    } finally {
+      await q(
+        "DELETE FROM legal_holds WHERE kind='session' AND item_id=ANY($1::text[])",
+        [[heldSession, freeSession]],
+      );
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+  it('reconciles before deletion and escalates old coverage-blocked requests without identifying data', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'coverage-sweep-'));
+    const store = new LocalObjectStore(dir);
+    const target = await account('deleting', 'Target');
+    const owner = await account('active', 'Room owner');
+    const session = randomUUID();
+    const character = randomUUID();
+    const before = (
+      await q(
+        'SELECT complete,checkpoint_session_id,checkpoint_row_kind,checkpoint_row_id FROM derived_memory_reconciliation_state WHERE singleton=true',
+      )
+    )[0];
+    accountIds.push(target, owner);
+    sessionIds.push(session);
+    try {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=false,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
+      );
+      await q(
+        "UPDATE accounts SET deletion_requested_at=now()-interval '25 hours' WHERE id=$1",
+        [target],
+      );
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [character, target, { id: character, name: 'Target Hero' }],
+      );
+      await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+        session,
+        owner,
+      ]);
+      await q(
+        `INSERT INTO session_seat_characters(session_id,account_id,seat_id,character_id,character_snapshot,binding_status)
+         VALUES($1,$2,$3,$4,$5,'active')`,
+        [
+          session,
+          target,
+          randomUUID(),
+          character,
+          { id: character, name: 'Target Hero' },
+        ],
+      );
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, character, 'R'.repeat(32)],
+      );
+      await q(
+        `INSERT INTO scene_summaries(session_id,scene_id,summary) SELECT $1,'reconcile-'||n,'legacy '||n FROM generate_series(1,8) n`,
+        [session],
+      );
+      const emitted: Record<string, unknown>[] = [];
+      const result = await runSweep(pool, {
+        store,
+        log: (entry) => emitted.push(entry),
+        now: () => new Date(),
+        reconciliationBatchSize: 1,
+        reconciliationTimeBudgetMs: 1,
+        monotonicNowMs: (() => {
+          let call = 0;
+          return () => (call++ === 0 ? 0 : 10);
+        })(),
+        coverageEscalationMs: 24 * 60 * 60_000,
+      });
+      expect(result?.reconciliation).toMatchObject({
+        batches: 1,
+        complete: false,
+      });
+      expect(result?.accounts.held).toBeGreaterThan(0);
+      expect(result?.deletionsBlockedByCoverage).toBe(1);
+      expect(emitted).toContainEqual({
+        level: 'error',
+        job: 'accountDeletion',
+        event: 'coverage_escalation',
+        count: 1,
+      });
+      expect(JSON.stringify(emitted)).not.toContain(target);
+      expect(JSON.stringify(emitted)).not.toContain(character);
+      expect(
+        await count(
+          'SELECT count(*)::int AS n FROM scene_summaries WHERE session_id=$1',
+          [session],
+        ),
+      ).toBe(8);
+      expect(
+        (await q('SELECT status FROM accounts WHERE id=$1', [target]))[0]
+          ?.status,
+      ).toBe('deleting');
+    } finally {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=$1,checkpoint_session_id=$2,checkpoint_row_kind=$3,checkpoint_row_id=$4 WHERE singleton=true',
+        [
+          before.complete,
+          before.checkpoint_session_id,
+          before.checkpoint_row_kind,
+          before.checkpoint_row_id,
+        ],
+      );
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
   it('deletes only expired rows, then a second sweep deletes nothing', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sweep-'));
     const store = new LocalObjectStore(dir);

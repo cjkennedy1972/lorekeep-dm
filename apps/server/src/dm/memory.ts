@@ -60,6 +60,13 @@ export type RegistryDiff =
     };
 
 type Pg = Pick<Pool, 'query' | 'connect'>;
+export class DerivedMemoryLeaseLostError extends Error {
+  constructor() {
+    super('Session lease changed during derived-memory generation');
+    this.name = 'DerivedMemoryLeaseLostError';
+  }
+}
+
 export type RegistryPrivacyOptions = {
   /** Locally held player utterances; never included in registry data or logs. */
   forbiddenPlayerText?: readonly string[];
@@ -241,11 +248,17 @@ async function loadRegistryIdentityContext(
     email: string | null;
     character_snapshot: unknown;
     character_id: string | null;
+    binding_status: string;
+    token: string | null;
+    character: unknown;
   }>(
-    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id
+    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id,b.binding_status,
+            t.token,c.character
        FROM session_seat_characters b
        LEFT JOIN accounts a ON a.id=b.account_id
-      WHERE b.session_id=$1 AND b.binding_status='active'`,
+       LEFT JOIN session_character_tokens t ON t.session_id=b.session_id AND t.character_id=b.character_id
+       LEFT JOIN account_characters c ON c.id=b.character_id
+      WHERE b.session_id=$1`,
     [sessionId],
   );
   const tokenByCharacter = new Map<string, string>();
@@ -253,12 +266,15 @@ async function loadRegistryIdentityContext(
   for (const row of identityRows.rows) {
     let token: string | null = null;
     if (row.character_id) {
-      token = await ensureSessionCharacterToken(
-        client,
-        sessionId,
-        row.character_id,
-      );
-      tokenByCharacter.set(row.character_id, token);
+      token = row.token;
+      if (!token && row.binding_status === 'active') {
+        token = await ensureSessionCharacterToken(
+          client,
+          sessionId,
+          row.character_id,
+        );
+      }
+      if (token) tokenByCharacter.set(row.character_id, token);
     }
     const snapshot =
       row.character_snapshot && typeof row.character_snapshot === 'object'
@@ -269,6 +285,16 @@ async function loadRegistryIdentityContext(
       row.email,
       snapshot.name,
       ...(Array.isArray(snapshot.aliases) ? snapshot.aliases : []),
+      ...(() => {
+        const profile =
+          row.character && typeof row.character === 'object'
+            ? (row.character as Record<string, unknown>)
+            : {};
+        return [
+          profile.name,
+          ...(Array.isArray(profile.aliases) ? profile.aliases : []),
+        ];
+      })(),
     ].filter(
       (value): value is string => typeof value === 'string' && !!value.trim(),
     );
@@ -348,14 +374,18 @@ function screenRegistryValue(
 export class RegistryMemory {
   constructor(private readonly pool: Pg) {}
 
-  /** Persist a scene summary and its validated diffs atomically; duplicate closes are no-ops. */
+  /** Persist a scene summary and its validated diffs atomically; duplicate closes are no-ops.
+   * expectedLeaseEpoch must be captured by the caller before generation; null asserts no lease row.
+   */
   async closeScene(
     sessionId: string,
     sceneId: string,
     summary: string,
-    diffs: readonly RegistryDiff[] = [],
-    turnId: string | null = null,
-    privacy: RegistryPrivacyOptions = {},
+    diffs: readonly RegistryDiff[] | undefined,
+    turnId: string | null | undefined,
+    privacy: RegistryPrivacyOptions | undefined,
+    /** Null is valid only when this session has no lease row. */
+    expectedLeaseEpoch: number | null,
   ): Promise<boolean> {
     if (!sceneId.trim()) throw new Error('Scene id is required');
     if (!summary.trim() || summary.trim().length > MAX_SCENE_SUMMARY_CHARS)
@@ -365,7 +395,7 @@ export class RegistryMemory {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await lockSessionForDerivedMemoryWrite(client, sessionId);
+      await this.assertLeaseEpoch(client, sessionId, expectedLeaseEpoch);
       const identityContext = await loadRegistryIdentityContext(
         client,
         sessionId,
@@ -373,7 +403,7 @@ export class RegistryMemory {
       const normalized = screenRegistryText(
         summary.trim(),
         identityContext,
-        privacy,
+        privacy ?? {},
       );
       if (normalized.length > MAX_SCENE_SUMMARY_CHARS)
         throw new Error(
@@ -408,9 +438,9 @@ export class RegistryMemory {
       await this.upsertManyInTransaction(
         client,
         sessionId,
-        diffs,
-        turnId,
-        privacy,
+        diffs ?? [],
+        turnId ?? null,
+        privacy ?? {},
       );
       await client.query('COMMIT');
       return true;
@@ -438,14 +468,17 @@ export class RegistryMemory {
     return rows.map((row) => row.text);
   }
 
+  /** expectedLeaseEpoch is captured at turn start; null asserts no session lease exists. */
   async upsert(
     sessionId: string,
     diff: RegistryDiff | RegistryEvent,
+    expectedLeaseEpoch: number | null,
     privacy: RegistryPrivacyOptions = {},
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.assertLeaseEpoch(client, sessionId, expectedLeaseEpoch);
       await this.upsertManyInTransaction(
         client,
         sessionId,
@@ -462,15 +495,18 @@ export class RegistryMemory {
     }
   }
 
+  /** expectedLeaseEpoch is captured at turn start; null asserts no session lease exists. */
   async upsertMany(
     sessionId: string,
     diffs: readonly RegistryDiff[],
+    expectedLeaseEpoch: number | null,
     privacy: RegistryPrivacyOptions = {},
   ): Promise<void> {
     if (!diffs.length) return;
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.assertLeaseEpoch(client, sessionId, expectedLeaseEpoch);
       await this.upsertManyInTransaction(
         client,
         sessionId,
@@ -527,6 +563,20 @@ export class RegistryMemory {
       'DELETE FROM registry_entries WHERE session_id=$1 AND turn_id = ANY($2::text[])',
       [sessionId, turnIds],
     );
+  }
+
+  private async assertLeaseEpoch(
+    client: PoolClient,
+    sessionId: string,
+    expectedLeaseEpoch: number | null,
+  ): Promise<void> {
+    await lockSessionForDerivedMemoryWrite(client, sessionId);
+    const lease = await client.query<{ epoch: string }>(
+      'SELECT epoch FROM session_lease WHERE session_id=$1 FOR SHARE',
+      [sessionId],
+    );
+    const actual = lease.rows[0] ? Number(lease.rows[0].epoch) : null;
+    if (actual !== expectedLeaseEpoch) throw new DerivedMemoryLeaseLostError();
   }
 
   private async upsertManyInTransaction(

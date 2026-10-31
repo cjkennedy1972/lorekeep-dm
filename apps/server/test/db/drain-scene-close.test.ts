@@ -88,6 +88,13 @@ async function harness(
   sessionId: string,
   dm: ReturnType<typeof slowSummaryDm>,
 ) {
+  // Room fixtures supply this lease below; the derived-memory write verifies
+  // the same persisted epoch that production acquires through SessionLease.
+  await db.query(
+    `INSERT INTO session_lease(session_id,node_id,expires_at,epoch)
+     VALUES($1,'node',clock_timestamp()+interval '1 minute',1)`,
+    [sessionId],
+  );
   const inner = new ProductionSoloTurnRunner(
     db,
     undefined,

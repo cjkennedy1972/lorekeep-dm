@@ -3,6 +3,8 @@ import type { TurnResult } from '../dm/orchestrator.js';
 
 export interface SoloTurnRequest {
   sessionId: string;
+  /** Fencing epoch captured with the Room turn; null asserts no lease row exists. */
+  leaseEpoch: number | null;
   accountId: string;
   actionId: string;
   text: string;

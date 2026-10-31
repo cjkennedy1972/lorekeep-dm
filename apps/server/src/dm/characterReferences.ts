@@ -152,6 +152,7 @@ export async function reconcileDerivedMemoryCharacterRefs(
   pool: Pool,
   checkpoint: ReferenceCursor | null = null,
   batchSize = 100,
+  onlySessionId?: string,
 ): Promise<ReconciliationResult> {
   const limit = Math.max(1, Math.min(500, Math.floor(batchSize)));
   const client = await pool.connect();
@@ -169,7 +170,48 @@ export async function reconcileDerivedMemoryCharacterRefs(
       throw new Error(
         'Reconciliation state is missing; refusing coverage update',
       );
-    if (checkpoint) {
+    let effectiveCheckpoint = checkpoint;
+    if (onlySessionId) {
+      const skipped = await client.query<{
+        checkpoint_row_kind: DerivedMemoryRowKind | null;
+        checkpoint_row_id: string | null;
+      }>(
+        'SELECT checkpoint_row_kind,checkpoint_row_id FROM derived_memory_reconcile_skipped WHERE session_id=$1 FOR UPDATE',
+        [onlySessionId],
+      );
+      if (!skipped.rows[0]) {
+        await client.query('COMMIT');
+        return { checkpoint: null, processed: 0, complete: true };
+      }
+      const sessionLock = await client.query(
+        'SELECT id FROM sessions WHERE id=$1 FOR SHARE',
+        [onlySessionId],
+      );
+      if (!sessionLock.rowCount) {
+        await client.query(
+          'DELETE FROM derived_memory_reconcile_skipped WHERE session_id=$1',
+          [onlySessionId],
+        );
+        await client.query('COMMIT');
+        return { checkpoint: null, processed: 0, complete: true };
+      }
+      if (await isHeld(client, onlySessionId)) {
+        await client.query(
+          'UPDATE derived_memory_reconcile_skipped SET checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE session_id=$1',
+          [onlySessionId],
+        );
+        await client.query('COMMIT');
+        return { checkpoint: null, processed: 0, complete: false };
+      }
+      effectiveCheckpoint =
+        skipped.rows[0].checkpoint_row_kind && skipped.rows[0].checkpoint_row_id
+          ? {
+              sessionId: onlySessionId,
+              rowKind: skipped.rows[0].checkpoint_row_kind,
+              rowId: skipped.rows[0].checkpoint_row_id,
+            }
+          : null;
+    } else if (checkpoint) {
       const stored = state.rows[0];
       if (
         stored.checkpoint_session_id !== checkpoint.sessionId ||
@@ -184,23 +226,26 @@ export async function reconcileDerivedMemoryCharacterRefs(
         'UPDATE derived_memory_reconciliation_state SET complete=false,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
       );
     }
+    const cursor = effectiveCheckpoint;
     const [summaries, entries] = await Promise.all([
       client.query<{ session_id: string; row_id: string; body: string }>(
-        `SELECT session_id,id AS row_id,summary AS body FROM scene_summaries WHERE $1::uuid IS NULL OR (session_id,id) > ($1::uuid, CASE WHEN $2='scene_summary' THEN $3::bigint ELSE 9223372036854775807::bigint END) ORDER BY session_id,id LIMIT $4`,
+        `SELECT session_id,id AS row_id,summary AS body FROM scene_summaries WHERE ($5::uuid IS NULL OR session_id=$5) AND ($1::uuid IS NULL OR (session_id,id) > ($1::uuid, CASE WHEN $2='scene_summary' THEN $3::bigint ELSE 9223372036854775807::bigint END)) ORDER BY session_id,id LIMIT $4`,
         [
-          checkpoint?.sessionId ?? null,
-          checkpoint?.rowKind ?? null,
-          checkpoint?.rowId ?? null,
+          cursor?.sessionId ?? null,
+          cursor?.rowKind ?? null,
+          cursor?.rowId ?? null,
           limit,
+          onlySessionId ?? null,
         ],
       ),
       client.query<{ session_id: string; row_id: string; body: string }>(
-        `SELECT e.session_id,e.id AS row_id,concat_ws(' ',e.name,array_to_string(e.aliases,' '),e.payload::text,e.search_document,(SELECT string_agg(f.fact,' ') FROM registry_facts f WHERE f.entry_id=e.id)) AS body FROM registry_entries e WHERE $1::uuid IS NULL OR (e.session_id,e.id) > ($1::uuid, CASE WHEN $2='scene_summary' THEN 0::bigint ELSE $3::bigint END) ORDER BY e.session_id,e.id LIMIT $4`,
+        `SELECT e.session_id,e.id AS row_id,concat_ws(' ',e.name,array_to_string(e.aliases,' '),e.payload::text,e.search_document,(SELECT string_agg(f.fact,' ') FROM registry_facts f WHERE f.entry_id=e.id)) AS body FROM registry_entries e WHERE ($5::uuid IS NULL OR e.session_id=$5) AND ($1::uuid IS NULL OR (e.session_id,e.id) > ($1::uuid, CASE WHEN $2='scene_summary' THEN 0::bigint ELSE $3::bigint END)) ORDER BY e.session_id,e.id LIMIT $4`,
         [
-          checkpoint?.sessionId ?? null,
-          checkpoint?.rowKind ?? null,
-          checkpoint?.rowId ?? null,
+          cursor?.sessionId ?? null,
+          cursor?.rowKind ?? null,
+          cursor?.rowId ?? null,
           limit,
+          onlySessionId ?? null,
         ],
       ),
     ]);
@@ -218,7 +263,7 @@ export async function reconcileDerivedMemoryCharacterRefs(
         body: r.body,
       })),
     ]
-      .filter((row) => afterCursor(row, checkpoint))
+      .filter((row) => afterCursor(row, cursor))
       .sort(
         (a, b) =>
           a.session_id.localeCompare(b.session_id) ||
@@ -254,7 +299,18 @@ export async function reconcileDerivedMemoryCharacterRefs(
       tokensBySession.set(stored.session_id, sessionTokens);
     }
     for (const row of candidates) {
-      if (await isHeld(client, row.session_id)) continue;
+      const sessionLock = await client.query(
+        'SELECT id FROM sessions WHERE id=$1 FOR SHARE',
+        [row.session_id],
+      );
+      if (!sessionLock.rowCount) continue;
+      if (await isHeld(client, row.session_id)) {
+        await client.query(
+          'INSERT INTO derived_memory_reconcile_skipped(session_id) VALUES($1) ON CONFLICT(session_id) DO NOTHING',
+          [row.session_id],
+        );
+        continue;
+      }
       const matchingCharacterIds = (tokensBySession.get(row.session_id) ?? [])
         .filter(({ token }) => containsStoredToken(row.body, token))
         .map(({ character_id }) => character_id);
@@ -273,16 +329,30 @@ export async function reconcileDerivedMemoryCharacterRefs(
           rowKind: last.row_kind,
           rowId: last.row_id,
         }
-      : checkpoint;
-    await client.query(
-      'UPDATE derived_memory_reconciliation_state SET complete=$1,checkpoint_session_id=$2,checkpoint_row_kind=$3,checkpoint_row_id=$4 WHERE singleton=true',
-      [
-        complete,
-        next?.sessionId ?? null,
-        next?.rowKind ?? null,
-        next?.rowId ?? null,
-      ],
-    );
+      : cursor;
+    if (onlySessionId) {
+      if (complete) {
+        await client.query(
+          'DELETE FROM derived_memory_reconcile_skipped WHERE session_id=$1',
+          [onlySessionId],
+        );
+      } else if (last) {
+        await client.query(
+          'UPDATE derived_memory_reconcile_skipped SET checkpoint_row_kind=$2,checkpoint_row_id=$3 WHERE session_id=$1',
+          [onlySessionId, last.row_kind, last.row_id],
+        );
+      }
+    } else {
+      await client.query(
+        'UPDATE derived_memory_reconciliation_state SET complete=$1,checkpoint_session_id=$2,checkpoint_row_kind=$3,checkpoint_row_id=$4 WHERE singleton=true',
+        [
+          complete,
+          next?.sessionId ?? null,
+          next?.rowKind ?? null,
+          next?.rowId ?? null,
+        ],
+      );
+    }
     await client.query('COMMIT');
     return {
       checkpoint: last
@@ -291,7 +361,7 @@ export async function reconcileDerivedMemoryCharacterRefs(
             rowKind: last.row_kind,
             rowId: last.row_id,
           }
-        : checkpoint,
+        : cursor,
       processed: candidates.length,
       complete,
     };
@@ -313,6 +383,12 @@ export async function getIndexedDerivedMemoryRows(
     'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
   );
   if (!state.rows[0]?.complete)
+    throw new Error('Reference-index coverage is unverified; defer deletion');
+  const skipped = await db.query(
+    'SELECT 1 FROM derived_memory_reconcile_skipped WHERE session_id=$1',
+    [sessionId],
+  );
+  if (skipped.rowCount)
     throw new Error('Reference-index coverage is unverified; defer deletion');
   if (await isHeld(db, sessionId))
     throw new Error('Session is held; refusing indexed lookup');
