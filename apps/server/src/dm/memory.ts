@@ -6,7 +6,7 @@ import {
   RulingSchema,
 } from '@game/schema';
 import type { Pool, PoolClient } from 'pg';
-import { identityParts, identityPattern } from './identityMatcher.js';
+import { identityPattern } from './identityMatcher.js';
 import {
   ensureSessionCharacterToken,
   indexDerivedMemoryRow,

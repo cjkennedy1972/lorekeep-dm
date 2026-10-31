@@ -9,11 +9,7 @@ import {
 import type { LlmAdapter, LlmRequest } from '../llm/adapter.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
-import {
-  identityParts,
-  mentionsIdentity,
-  mentionsIdentityPart,
-} from './identityMatcher.js';
+import { mentionsIdentity } from './identityMatcher.js';
 
 export const MAX_SCENE_SUMMARY_WORDS = 120;
 export const MAX_SCENE_SUMMARY_CHARS = 1_200;
