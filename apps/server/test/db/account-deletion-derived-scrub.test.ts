@@ -171,14 +171,24 @@ describe('account deletion scrubs DM-authored derived memory', () => {
           { accountId: gone, characterId, action: 'old event' },
         ],
       );
-      await q(
-        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+      const summary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
         [session, 'legacy-scene', 'Legacy character memory.'],
       );
-      await q(
+      const entry = await q(
         `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document)
-         VALUES($1,'npc','legacy-npc',1,'Legacy NPC',$2,'Legacy character reference')`,
+         VALUES($1,'npc','legacy-npc',1,'Legacy NPC',$2,'Legacy character reference') RETURNING id`,
         [session, { note: 'Legacy character reference.' }],
+      );
+      const token = 'R'.repeat(32);
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, characterId, token],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES
+        ($1,$2,'scene_summary',$3),($1,$2,'registry_entry',$4)`,
+        [session, characterId, summary[0].id, entry[0].id],
       );
       await q(
         "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
@@ -202,6 +212,18 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       ).toHaveLength(0);
       expect(
         await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(0);
+      expect(
+        await q(
+          'SELECT 1 FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
+      ).toHaveLength(0);
+      expect(
+        await q(
+          'SELECT 1 FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
       ).toHaveLength(0);
       expect(
         await q('SELECT payload FROM events WHERE session_id=$1', [session]),
@@ -359,8 +381,8 @@ describe('account deletion scrubs DM-authored derived memory', () => {
           { id: characterId, name: CHAR_NAME },
         ],
       );
-      await q(
-        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+      const summary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
         [session, 'scene-quoted', `The player said: “I am ${CHAR_NAME}.”`],
       );
       await q(
@@ -390,6 +412,16 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         entry[0].id,
         `${CHAR_NAME} said yes to the guard`,
       ]);
+      const token = 'D'.repeat(32);
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, characterId, token],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES
+        ($1,$2,'scene_summary',$3),($1,$2,'registry_entry',$4)`,
+        [session, characterId, summary[0].id, entry[0].id],
+      );
 
       expect(
         await new SeatCharacterRepository(db).deleteOwnedCharacter(
@@ -407,6 +439,18 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       ).toHaveLength(0);
       expect(
         await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(0);
+      expect(
+        await q(
+          'SELECT 1 FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
+      ).toHaveLength(0);
+      expect(
+        await q(
+          'SELECT 1 FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
       ).toHaveLength(0);
       expect(
         await q(
@@ -458,9 +502,17 @@ describe('account deletion scrubs DM-authored derived memory', () => {
           { id: characterId, name: CHAR_NAME },
         ],
       );
-      await q(
-        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+      const heldSummary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
         [session, 'held-character-scene', 'Held memory stays.'],
+      );
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, characterId, 'H'.repeat(32)],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)`,
+        [session, characterId, heldSummary[0].id],
       );
       await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
         session,
@@ -477,6 +529,18 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       expect(failure).toMatchObject({ code: 'SESSION_HELD' });
       expect(
         await q('SELECT id FROM account_characters WHERE id=$1', [characterId]),
+      ).toHaveLength(1);
+      expect(
+        await q(
+          'SELECT 1 FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
+      ).toHaveLength(1);
+      expect(
+        await q(
+          'SELECT 1 FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
       ).toHaveLength(1);
       expect(
         await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
@@ -529,9 +593,18 @@ describe('account deletion scrubs DM-authored derived memory', () => {
           { seatId: randomUUID(), accountId: heir, displayName: 'Heir' },
         ],
       );
-      await q(
-        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+      const heldSummary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
         [heldSession, 'held-scene', 'Retain while held.'],
+      );
+      const heldCharacter = randomUUID();
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [heldSession, heldCharacter, 'L'.repeat(32)],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)`,
+        [heldSession, heldCharacter, heldSummary[0].id],
       );
       await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
         heldSession,
@@ -555,6 +628,18 @@ describe('account deletion scrubs DM-authored derived memory', () => {
           heldSession,
         ]),
       ).toEqual([{ summary: 'Retain while held.' }]);
+      expect(
+        await q(
+          'SELECT 1 FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+          [heldSession, heldCharacter],
+        ),
+      ).toHaveLength(1);
+      expect(
+        await q(
+          'SELECT 1 FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2',
+          [heldSession, heldCharacter],
+        ),
+      ).toHaveLength(1);
       expect(
         await q('SELECT node_id FROM session_lease WHERE session_id=$1', [
           heldSession,

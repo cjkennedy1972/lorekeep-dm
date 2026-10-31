@@ -215,7 +215,9 @@ export class SeatCharacterRepository {
          WHERE s.character_id=$1
          UNION
          SELECT b.session_id FROM session_seat_characters b
-         WHERE b.character_id=$1::uuid`,
+         WHERE b.character_id=$1::uuid
+         UNION
+         SELECT token.session_id FROM session_character_tokens token WHERE token.character_id=$1::uuid`,
         [characterId],
       );
       const sessionIds = referencedSessions.rows
@@ -244,6 +246,10 @@ export class SeatCharacterRepository {
       }
       if (sessionIds.length) {
         await client.query(
+          'DELETE FROM derived_memory_character_refs WHERE session_id = ANY($1::uuid[])',
+          [sessionIds],
+        );
+        await client.query(
           'DELETE FROM scene_summaries WHERE session_id = ANY($1::uuid[])',
           [sessionIds],
         );
@@ -256,6 +262,16 @@ export class SeatCharacterRepository {
           [sessionIds],
         );
       }
+      // No character FK is used because held sessions retain mapping/refs; the
+      // hold check above covers every token-mapped session before this cleanup.
+      await client.query(
+        'DELETE FROM derived_memory_character_refs WHERE character_id=$1::uuid',
+        [characterId],
+      );
+      await client.query(
+        'DELETE FROM session_character_tokens WHERE character_id=$1::uuid',
+        [characterId],
+      );
       const deleted = await client.query(
         'DELETE FROM account_characters WHERE id=$1 AND account_id=$2',
         [characterId, accountId],
@@ -456,6 +472,18 @@ export class SeatCharacterRepository {
          character_snapshot = jsonb_set(character_snapshot - 'id' - 'name', '{name}', '"Deleted player"'::jsonb),
          binding_status='redacted', unbound_at=COALESCE(unbound_at,now())
        WHERE account_id=$1`,
+      [accountId],
+    );
+    await client.query(
+      `DELETE FROM derived_memory_character_refs r
+      WHERE r.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
+        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=r.session_id::text)`,
+      [accountId],
+    );
+    await client.query(
+      `DELETE FROM session_character_tokens t
+      WHERE t.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
+        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=t.session_id::text)`,
       [accountId],
     );
     await client.query('DELETE FROM account_characters WHERE account_id=$1', [

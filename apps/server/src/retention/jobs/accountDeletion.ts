@@ -366,6 +366,10 @@ async function deleteAccount(
   if (derivedSessionIds.size) {
     const sessionIds = [...derivedSessionIds];
     await client.query(
+      'DELETE FROM derived_memory_character_refs WHERE session_id = ANY($1::uuid[])',
+      [sessionIds],
+    );
+    await client.query(
       'DELETE FROM scene_summaries WHERE session_id = ANY($1::uuid[])',
       [sessionIds],
     );

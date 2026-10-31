@@ -5,6 +5,7 @@ import {
   ensureSessionCharacterToken,
   getIndexedDerivedMemoryRows,
   indexDerivedMemoryRow,
+  indexDerivedMemoryRow,
   reconcileDerivedMemoryCharacterRefs,
 } from '../../src/dm/characterReferences.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
@@ -20,6 +21,16 @@ describe.skipIf(!databaseUrl)(
       db = await createTestDatabase({ extraSearchPath: ['public'] });
       await db.pool.query('CREATE TABLE sessions (id uuid PRIMARY KEY)');
       await db.pool.query('INSERT INTO sessions VALUES ($1)', [sessionId]);
+      await db.pool.query(
+        `CREATE TABLE legal_holds (kind text NOT NULL, item_id text NOT NULL, PRIMARY KEY(kind,item_id))`,
+      );
+      await db.pool.query(
+        `CREATE TABLE session_seat_characters (session_id uuid NOT NULL, seat_id uuid NOT NULL, character_id uuid NOT NULL, binding_status text NOT NULL DEFAULT 'active')`,
+      );
+      await db.pool.query(
+        `INSERT INTO session_seat_characters(session_id,seat_id,character_id) VALUES ($1,$2,$3)`,
+        [sessionId, randomUUID(), characterId],
+      );
       await db.pool.query(
         await readFile(
           new URL('../../migrations/0014_registry.sql', import.meta.url),
@@ -84,7 +95,7 @@ describe.skipIf(!databaseUrl)(
         sessionId,
         characterId,
       );
-      expect(token).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+      expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
       expect(
         await ensureSessionCharacterToken(db.pool, sessionId, characterId),
       ).toBe(token);
@@ -92,6 +103,12 @@ describe.skipIf(!databaseUrl)(
         db.pool.query(
           'INSERT INTO session_character_tokens VALUES ($1,$2,$3)',
           [sessionId, randomUUID(), token],
+        ),
+      ).rejects.toThrow();
+      await expect(
+        db.pool.query(
+          'INSERT INTO session_character_tokens VALUES ($1,$2,$3)',
+          [sessionId, randomUUID(), 'a'.repeat(33)],
         ),
       ).rejects.toThrow();
       await expect(
@@ -165,12 +182,17 @@ describe.skipIf(!databaseUrl)(
         1,
       );
       expect(resumed.processed).toBe(1);
-      await reconcileDerivedMemoryCharacterRefs(db.pool, first.checkpoint, 1);
+      let finalBatch = resumed;
+      while (!finalBatch.complete)
+        finalBatch = await reconcileDerivedMemoryCharacterRefs(
+          db.pool,
+          finalBatch.checkpoint,
+          1,
+        );
       const indexed = await getIndexedDerivedMemoryRows(
         db.pool,
         sessionId,
         characterId,
-        true,
       );
       expect(indexed).toEqual(
         expect.arrayContaining([
@@ -186,9 +208,182 @@ describe.skipIf(!databaseUrl)(
         [sessionId, characterId, entry.rows[0]!.id],
       );
       expect(referencedFacts.rowCount).toBe(1);
+    });
+
+    it('computes coverage and refuses a partially reconciled session, then accepts full coverage', async () => {
+      const partialSession = randomUUID();
+      const partialCharacter = randomUUID();
+      await db.pool.query('INSERT INTO sessions VALUES ($1)', [partialSession]);
+      await db.pool.query(
+        'INSERT INTO session_seat_characters(session_id,seat_id,character_id) VALUES ($1,$2,$3)',
+        [partialSession, randomUUID(), partialCharacter],
+      );
+      const partialToken = await ensureSessionCharacterToken(
+        db.pool,
+        partialSession,
+        partialCharacter,
+      );
+      await db.pool.query(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3),($1,$4,$5)',
+        [partialSession, 'p1', partialToken, 'p2', 'unreferenced'],
+      );
+      const partial = await reconcileDerivedMemoryCharacterRefs(
+        db.pool,
+        null,
+        1,
+      );
+      expect(partial.complete).toBe(false);
       await expect(
-        getIndexedDerivedMemoryRows(db.pool, sessionId, characterId, false),
-      ).rejects.toThrow(/coverage is unverified/);
+        reconcileDerivedMemoryCharacterRefs(
+          db.pool,
+          {
+            sessionId: partialSession,
+            rowKind: 'scene_summary',
+            rowId: '999999999',
+          },
+          1,
+        ),
+      ).rejects.toThrow(/checkpoint does not match durable state/i);
+      await expect(
+        getIndexedDerivedMemoryRows(db.pool, partialSession, partialCharacter),
+      ).rejects.toThrow(/unverified|incomplete/i);
+      let done = partial;
+      while (!done.complete)
+        done = await reconcileDerivedMemoryCharacterRefs(
+          db.pool,
+          done.checkpoint,
+          1,
+        );
+      const fullCoverage = await getIndexedDerivedMemoryRows(
+        db.pool,
+        partialSession,
+        partialCharacter,
+      );
+      expect(fullCoverage).toHaveLength(1);
+      await db.pool.query(
+        'DELETE FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2 AND row_kind=$3 AND row_id=$4',
+        [
+          partialSession,
+          partialCharacter,
+          fullCoverage[0]!.rowKind,
+          fullCoverage[0]!.rowId,
+        ],
+      );
+      await expect(
+        getIndexedDerivedMemoryRows(db.pool, partialSession, partialCharacter),
+      ).rejects.toThrow(/coverage is incomplete/i);
+      const unmappedCharacter = randomUUID();
+      await db.pool.query(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id)
+         SELECT $1,$2,'scene_summary',id FROM scene_summaries WHERE session_id=$1 LIMIT 1`,
+        [partialSession, unmappedCharacter],
+      );
+      await expect(
+        getIndexedDerivedMemoryRows(db.pool, partialSession, unmappedCharacter),
+      ).rejects.toThrow(/coverage is incomplete/i);
+    });
+
+    it('refuses to mint a token for a held session before writing', async () => {
+      const heldSession = randomUUID();
+      await db.pool.query('INSERT INTO sessions VALUES ($1)', [heldSession]);
+      await db.pool.query("INSERT INTO legal_holds VALUES ('session',$1)", [
+        heldSession,
+      ]);
+      await expect(
+        ensureSessionCharacterToken(db.pool, heldSession, randomUUID()),
+      ).rejects.toThrow(/held/i);
+      expect(
+        (
+          await db.pool.query(
+            'SELECT 1 FROM session_character_tokens WHERE session_id=$1',
+            [heldSession],
+          )
+        ).rowCount,
+      ).toBe(0);
+    });
+
+    it('does not reconcile references in held sessions', async () => {
+      const heldSession = randomUUID();
+      const heldCharacter = randomUUID();
+      await db.pool.query('INSERT INTO sessions VALUES ($1)', [heldSession]);
+      await db.pool.query("INSERT INTO legal_holds VALUES ('session',$1)", [
+        heldSession,
+      ]);
+      await db.pool.query(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES ($1,$2,$3)',
+        [heldSession, heldCharacter, 'H'.repeat(32)],
+      );
+      await db.pool.query(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3)',
+        [heldSession, 'held-token', `held ${'H'.repeat(32)}`],
+      );
+      const heldRow = await db.pool.query<{ id: string }>(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3) RETURNING id',
+        [heldSession, 'held-dual-write', 'must not be indexed'],
+      );
+      const heldClient = await db.pool.connect();
+      try {
+        await heldClient.query('BEGIN');
+        await expect(
+          indexDerivedMemoryRow(
+            heldClient,
+            heldSession,
+            'scene_summary',
+            heldRow.rows[0]!.id,
+            [heldCharacter],
+          ),
+        ).rejects.toThrow(/held/i);
+        await heldClient.query('ROLLBACK');
+      } finally {
+        heldClient.release();
+      }
+      await reconcileDerivedMemoryCharacterRefs(db.pool, null, 500);
+      expect(
+        (
+          await db.pool.query(
+            'SELECT 1 FROM derived_memory_character_refs WHERE session_id=$1',
+            [heldSession],
+          )
+        ).rowCount,
+      ).toBe(0);
+    });
+
+    it('matches exact boundary tokens including a plural suffix without matching longer opaque strings', async () => {
+      const token = await ensureSessionCharacterToken(
+        db.pool,
+        sessionId,
+        characterId,
+      );
+      const bodies = [
+        [`at-start ${randomUUID()}`, `${token} starts`],
+        [`at-end ${randomUUID()}`, `ends ${token}`],
+        [`punctuation ${randomUUID()}`, `(${token}),`],
+        [`plural ${randomUUID()}`, `plural ${token}s acted`],
+        [`long-prefix ${randomUUID()}`, `x${token}`],
+        [`long-suffix ${randomUUID()}`, `${token}x`],
+      ];
+      const ids: string[] = [];
+      for (const [sceneId, body] of bodies) {
+        const row = await db.pool.query<{ id: string }>(
+          'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3) RETURNING id',
+          [sessionId, sceneId, body],
+        );
+        ids.push(row.rows[0]!.id);
+      }
+      await reconcileDerivedMemoryCharacterRefs(db.pool, null, 500);
+      const indexed = await db.pool.query<{ row_id: string }>(
+        'SELECT row_id FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2 AND row_id=ANY($3::bigint[])',
+        [sessionId, characterId, ids],
+      );
+      expect(indexed.rows.map(({ row_id }) => row_id).sort()).toEqual(
+        ids.slice(0, 4).sort(),
+      );
+    });
+
+    it('refuses to mint a token unless the character has an active session seat binding', async () => {
+      await expect(
+        ensureSessionCharacterToken(db.pool, sessionId, randomUUID()),
+      ).rejects.toThrow(/binding/i);
     });
   },
 );
