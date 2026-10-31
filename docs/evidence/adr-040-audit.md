@@ -177,35 +177,35 @@ Helper paths to audit at cutover: `trackerMessage` and `reactionMessage` / `reac
 
 ## B. Broadcast StateSync sites
 
-| Site | Trigger (mechanically inferred; verify) | Disposition |
+| Site | Enclosing method / trigger | Disposition |
 |---|---|---|
-| apps/server/src/room/Room.ts:1165 | late.join-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:1448 | presence-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:1495 | presence-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:1663 | presence-related path (verify exact trigger) | visible-trigger OK only if independent visible state change/request; verify |
-| apps/server/src/room/Room.ts:2217 | presence-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:2261 | reconnect-related path (verify exact trigger) | visible-trigger OK only if independent visible state change/request; verify |
-| apps/server/src/room/Room.ts:2312 | presence-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:2489 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:3237 | tier-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:3280 | pause-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:3360 | TBD — inspect enclosing method at callsite | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:3811 | late.join-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:3866 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4105 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4193 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4461 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4641 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4698 | presence-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4713 | pause-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4736 | mute-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4797 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4832 | transfer-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4860 | mute-related path (verify exact trigger) | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:4878 | TBD — inspect enclosing method at callsite | needs per-recipient projection gating |
-| apps/server/src/room/Room.ts:6954 | lateJoin-related path (verify exact trigger) | needs per-recipient projection gating |
+| apps/server/src/room/Room.ts:1165 | `scheduleLateJoinExpiry` | TBD — inspect caller and trigger before deciding |
+| apps/server/src/room/Room.ts:1448 | `recordLateJoinSnapshot` | TBD — inspect caller and trigger before deciding |
+| apps/server/src/room/Room.ts:1495 | `recordLateJoinSnapshot` | TBD — inspect caller and trigger before deciding |
+| apps/server/src/room/Room.ts:1663 | `subscribe` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:2217 | `join` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:2261 | `join` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:2312 | `seat` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:2489 | `leave` | TBD — inspect caller and trigger before deciding |
+| apps/server/src/room/Room.ts:3237 | `setHostTierCap` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:3280 | `setPaused` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:3360 | `rewindLastTurn` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:3811 | `requestLateJoin` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:3866 | `approveLateJoin` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4105 | `denyLateJoin` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4193 | `cancelLateJoin` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4461 | `acknowledgeLateJoinSnapshot` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4641 | `acknowledgeLateJoinSnapshot` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4698 | `schedulePresenceTransition` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4713 | `schedulePresenceTransition` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4736 | `setSystemChatMute` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4797 | `kickSeat` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4832 | `transferHost` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4860 | `setChatMute` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:4878 | `endTable` | visible-trigger OK (visible state change or explicit request/recovery; confirm each call is recipient-specific) |
+| apps/server/src/room/Room.ts:6954 | `announceCombat` | needs per-recipient projection gating (canonical combat commit/boundary) |
 
-ADR-040 “Projection, broadcasts, and chat” requires every StateSync to be recipient-specific and cursor-based. Independent visible state changes and explicit request/recovery replies may remain; any canonical-commit broadcast must be gated per recipient on a non-empty projected batch. Do not infer safety solely from the method name. This baseline found 25 literal `type: 'StateSync'` constructions in Room/gateway. Review their builders/callers before implementation.
+ADR-040 “Projection, broadcasts, and chat” permits independent visible state changes and explicit recipient-specific request/recovery replies. Canonical-commit-triggered snapshots require per-recipient non-empty projection gating. `subscribe`/join/recovery paths are not canonical-commit broadcasts; confirm each recipient builder/caller. Combat boundary sites must be driven by recipient-projected batches, never raw event lists.
 
 ## C. Schema changes required by ADR-040
 
