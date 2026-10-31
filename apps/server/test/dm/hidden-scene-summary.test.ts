@@ -145,7 +145,9 @@ describe('scene close uses the public view (ADR-034 §3)', () => {
     await run(echo(), db);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.some(leaks)).toBe(false);
-    expect(rows.join(' ')).toContain('camped by the well');
+    // ADR-039 § Implementation plan, step 2: SceneNote is not in the versioned
+    // event allowlist, so its summary must not reach the summarizer or storage.
+    expect(rows.join(' ')).not.toContain('camped by the well');
   });
 
   it('deterministic fallback omits hidden events', async () => {

@@ -1,5 +1,6 @@
 import { RegistryMemory, type RegistryDiff } from './memory.js';
 import { EngineEventSchema } from '@game/schema';
+import { ensureSessionCharacterToken } from './characterReferences.js';
 import type { Pool } from 'pg';
 import {
   EVENT_ID_RULES,
@@ -15,6 +16,11 @@ export const MAX_SCENE_SUMMARY_CHARS = 1_200;
 export interface SceneSummaryInput {
   sceneId: string;
   events: readonly { type: string; payload: unknown }[];
+  /** Identity data remains local; tokens alone are substituted into event projections. */
+  identityVariants?: readonly string[];
+  validReferenceTokens?: readonly string[];
+  /** Local-only exact player utterances used to block model echo; never prompt data. */
+  forbiddenPlayerText?: readonly string[];
   adapter: LlmAdapter;
   signal?: AbortSignal;
 }
@@ -74,6 +80,73 @@ const SUMMARIZER_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ContentTierChanged: ['from', 'to'],
 };
 
+const UUID_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ENTITY_ID = (value: unknown) =>
+  typeof value === 'string' &&
+  (UUID_ID.test(value) ||
+    /^ent_[a-z0-9_-]{1,64}$/.test(value) ||
+    /^[A-Za-z0-9_-]{32}$/.test(value));
+function validProjectedIdFields(data: Record<string, unknown>): boolean {
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      ['entityId', 'reactorEntityId', 'moverId', 'attackerId'].includes(key) &&
+      !ENTITY_ID(value)
+    )
+      return false;
+    if (
+      ['entityIds', 'order', 'affected'].includes(key) &&
+      (!Array.isArray(value) || !value.every(ENTITY_ID))
+    )
+      return false;
+    if (key === 'seatId' && (typeof value !== 'string' || !UUID_ID.test(value)))
+      return false;
+    if (
+      key === 'sceneId' &&
+      (typeof value !== 'string' ||
+        !(UUID_ID.test(value) || /^scene-[a-z0-9_-]{1,80}$/.test(value)))
+    )
+      return false;
+    if (
+      key === 'combatId' &&
+      (typeof value !== 'string' ||
+        !(UUID_ID.test(value) || /^combat-[a-z0-9_-]{1,80}$/.test(value)))
+    )
+      return false;
+    if (
+      key === 'encounterId' &&
+      (typeof value !== 'string' || !/^encounter-[a-z0-9_-]{1,80}$/.test(value))
+    )
+      return false;
+    if (
+      key === 'turnId' &&
+      (typeof value !== 'string' ||
+        !(UUID_ID.test(value) || /^turn_[a-z0-9_-]{1,64}$/.test(value)))
+    )
+      return false;
+    if (
+      key === 'promptId' &&
+      (typeof value !== 'string' || !/^rp_[0-9]{1,12}$/.test(value))
+    )
+      return false;
+    if (
+      key === 'eventIds' &&
+      (!Array.isArray(value) ||
+        !value.every(
+          (id) => typeof id === 'string' && /^[0-9]{1,20}$/.test(id),
+        ))
+    )
+      return false;
+    if (
+      key === 'conditionId' &&
+      (typeof value !== 'string' ||
+        !/^condition:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value))
+    )
+      return false;
+  }
+  return true;
+}
+
 /** Version 1 server projection. Unknown types and events with extra fields are discarded. */
 export function projectSummarizerEvents(
   events: SceneSummaryInput['events'],
@@ -87,10 +160,13 @@ export function projectSummarizerEvents(
       Array.isArray(payload)
     )
       return [];
-    const data = payload as Record<string, unknown>;
+    const raw = payload as Record<string, unknown>;
+    if ('type' in raw && raw.type !== type) return [];
+    const data = { ...raw };
+    delete data.type;
     if (Object.keys(data).some((key) => !fields.includes(key))) return [];
     const validated = EngineEventSchema.safeParse({ type, ...data });
-    if (!validated.success) return [];
+    if (!validated.success || !validProjectedIdFields(data)) return [];
     const validatedData = validated.data as unknown as Record<string, unknown>;
     return [
       {
@@ -294,20 +370,68 @@ export async function summarizeScene(
     },
     signal: input.signal,
   };
-  try {
-    let response = '';
-    for await (const chunk of input.adapter.complete(request))
-      if (chunk.type === 'text') response += chunk.delta;
-    const parsed = parseSummary(response);
-    if (!parsed.summary) throw new Error('Empty scene summary');
-    return { ...parsed, fallback: false };
-  } catch {
-    return {
-      summary: deterministicSummary(events),
-      registryDiffs: [],
-      fallback: true,
-    };
+  const validTokens = new Set(input.validReferenceTokens ?? []);
+  const screen = (parsed: ReturnType<typeof parseSummary>) => {
+    const text = `${parsed.summary}\n${JSON.stringify(parsed.registryDiffs)}`;
+    const candidates =
+      text.match(/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32}(?![A-Za-z0-9_-])/g) ?? [];
+    if (candidates.some((token) => !validTokens.has(token))) return false;
+    if (
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i.test(
+        text,
+      )
+    )
+      return false;
+    const foldedText = foldIdentity(text);
+    if (
+      (input.forbiddenPlayerText ?? []).some((quote) =>
+        foldedText.includes(foldIdentity(quote).trim()),
+      )
+    )
+      return false;
+    return !containsIdentityVariant(text, input.identityVariants ?? []);
+  };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const requestForAttempt =
+        attempt === 0
+          ? request
+          : {
+              ...request,
+              messages: [
+                ...request.messages,
+                {
+                  role: 'system' as const,
+                  content:
+                    'PRIVACY RETRY: Refer to player characters only with their exact opaque reference tokens. Do not include any player name, account handle, alias, nickname, or quoted player wording.',
+                },
+              ],
+            };
+      let response = '';
+      for await (const chunk of input.adapter.complete(requestForAttempt))
+        if (chunk.type === 'text') response += chunk.delta;
+      const parsed = parseSummary(response);
+      if (parsed.summary && screen(parsed))
+        return { ...parsed, fallback: false };
+      console.info(
+        JSON.stringify({
+          event: 'derived_memory_privacy_collision',
+          attempt: attempt + 1,
+        }),
+      );
+    } catch {
+      break;
+    }
   }
+  const summary = deterministicSummary(events);
+  const fallbackResult = {
+    summary,
+    registryDiffs: [] as RegistryDiff[],
+    fallback: true,
+  };
+  return screen(fallbackResult)
+    ? fallbackResult
+    : { summary: '', registryDiffs: [], fallback: true };
 }
 
 export interface CloseSceneInput extends SceneSummaryInput {
@@ -405,35 +529,79 @@ export function containsIdentityVariant(
   });
 }
 
+type SessionIdentityInventory = {
+  variants: string[];
+  seatIds: Set<string>;
+  tokenByCharacter: Map<string, string>;
+  characterByToken: Map<string, string>;
+};
+
 async function captureIdentityVariants(
-  db: Pick<Pool, 'query'>,
+  db: Pick<Pool, 'query' | 'connect'>,
   sessionId: string,
-): Promise<string[]> {
+): Promise<SessionIdentityInventory> {
   const { rows } = await db.query<{
     display_name: string;
     email: string;
     character_snapshot: unknown;
+    character_id: string | null;
+    seat_id: string;
   }>(
-    `SELECT a.display_name,a.email,b.character_snapshot FROM session_seat_characters b
+    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id,b.seat_id FROM session_seat_characters b
       JOIN accounts a ON a.id=b.account_id WHERE b.session_id=$1 AND b.binding_status='active'`,
     [sessionId],
   );
-  const values: string[] = [];
+  const variants: string[] = [];
+  const seatIds = new Set<string>();
+  const tokenByCharacter = new Map<string, string>();
+  const characterByToken = new Map<string, string>();
   for (const row of rows) {
-    values.push(row.display_name, row.email);
+    seatIds.add(row.seat_id);
+    variants.push(row.display_name, row.email);
     const snapshot =
       row.character_snapshot && typeof row.character_snapshot === 'object'
         ? (row.character_snapshot as Record<string, unknown>)
         : {};
-    if (typeof snapshot.name === 'string') values.push(snapshot.name);
+    if (typeof snapshot.name === 'string') variants.push(snapshot.name);
     if (Array.isArray(snapshot.aliases))
-      values.push(
+      variants.push(
         ...snapshot.aliases.filter(
           (value): value is string => typeof value === 'string',
         ),
       );
+    if (row.character_id) {
+      const token = await ensureSessionCharacterToken(
+        db,
+        sessionId,
+        row.character_id,
+      );
+      tokenByCharacter.set(row.character_id, token);
+      characterByToken.set(token, row.character_id);
+    }
   }
-  return values.filter(Boolean);
+  return {
+    variants: variants.filter(Boolean),
+    seatIds,
+    tokenByCharacter,
+    characterByToken,
+  };
+}
+
+function replaceCharacterIds(
+  value: unknown,
+  tokens: ReadonlyMap<string, string>,
+): unknown {
+  if (typeof value === 'string') return tokens.get(value) ?? value;
+  if (Array.isArray(value))
+    return value.map((item) => replaceCharacterIds(item, tokens));
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        replaceCharacterIds(item, tokens),
+      ]),
+    );
+  return value;
 }
 
 /** Persist a summary exactly once, then apply validated registry updates. */
@@ -441,27 +609,96 @@ export async function closeScene(
   input: CloseSceneInput,
 ): Promise<SceneSummaryResult & { persisted: boolean }> {
   const hidden = input.hidden ?? [];
-  const identities = await captureIdentityVariants(input.db, input.sessionId);
+  const inventory = await captureIdentityVariants(input.db, input.sessionId);
+  const projected = projectSummarizerEvents(
+    publicSceneEvents(input.events, hidden),
+  ).filter((event) => {
+    const payload = event.payload as Record<string, unknown>;
+    if (
+      event.type === 'LateJoinSpawned' &&
+      !inventory.seatIds.has(String(payload.seatId))
+    )
+      return false;
+    const ids = [
+      'entityId',
+      'reactorEntityId',
+      'moverId',
+      'attackerId',
+    ].flatMap((key) =>
+      typeof payload[key] === 'string' && UUID_ID.test(payload[key] as string)
+        ? [payload[key] as string]
+        : [],
+    );
+    for (const key of ['entityIds', 'order', 'affected'])
+      if (Array.isArray(payload[key]))
+        ids.push(
+          ...(payload[key] as string[]).filter((id) => UUID_ID.test(id)),
+        );
+    return ids.every((id) => inventory.tokenByCharacter.has(id));
+  });
+  const tokenized = projected.map((event) => ({
+    ...event,
+    payload: replaceCharacterIds(event.payload, inventory.tokenByCharacter),
+  }));
   const result = await summarizeScene({
     ...input,
-    events: publicSceneEvents(input.events, hidden),
+    events: tokenized,
+    identityVariants: inventory.variants,
+    validReferenceTokens: [...inventory.characterByToken.keys()],
+    forbiddenPlayerText: input.events.flatMap((event) => {
+      if (
+        event.type !== 'PlayerAction' ||
+        !event.payload ||
+        typeof event.payload !== 'object'
+      )
+        return [];
+      const text = (event.payload as Record<string, unknown>).text;
+      return typeof text === 'string' && text.trim() ? [text] : [];
+    }),
   });
   let summary = hiddenMatcher(hidden).scrub(result.summary);
   let registryDiffs = result.registryDiffs.filter(
     (diff) => !hiddenMatcher(hidden).mentions(diff),
   );
   if (
-    containsIdentityVariant(summary, identities) ||
+    containsIdentityVariant(summary, inventory.variants) ||
     registryDiffs.some((diff) =>
-      containsIdentityVariant(JSON.stringify(diff), identities),
+      containsIdentityVariant(JSON.stringify(diff), inventory.variants),
     )
   ) {
-    summary = deterministicSummary(projectSummarizerEvents(input.events));
+    summary = deterministicSummary(tokenized);
     registryDiffs = [];
-    if (containsIdentityVariant(summary, identities))
+    if (containsIdentityVariant(summary, inventory.variants))
       summary = 'The scene has ended.';
   }
   let fallback = result.fallback;
+  const privacySafe = (text: string) => {
+    if (containsIdentityVariant(text, inventory.variants)) return false;
+    const foldedText = foldIdentity(text);
+    if (
+      input.events.some((event) => {
+        if (
+          event.type !== 'PlayerAction' ||
+          !event.payload ||
+          typeof event.payload !== 'object'
+        )
+          return false;
+        const quote = (event.payload as Record<string, unknown>).text;
+        return (
+          typeof quote === 'string' &&
+          foldedText.includes(foldIdentity(quote).trim())
+        );
+      })
+    )
+      return false;
+    const tokens =
+      text.match(/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32}(?![A-Za-z0-9_-])/g) ?? [];
+    if (tokens.some((token) => !inventory.characterByToken.has(token)))
+      return false;
+    return !/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i.test(
+      text,
+    );
+  };
   const allowed = async (text: string) => {
     try {
       return (
@@ -492,6 +729,13 @@ export async function closeScene(
     registryDiffs = [];
     fallback = true;
   }
+  if (
+    !summary ||
+    !privacySafe(summary) ||
+    registryDiffs.some((diff) => !privacySafe(JSON.stringify(diff)))
+  ) {
+    return { summary: '', registryDiffs: [], fallback: true, persisted: false };
+  }
   input.signal?.throwIfAborted();
   const memory = new RegistryMemory(input.db);
   const persisted = await memory.closeScene(
@@ -500,6 +744,7 @@ export async function closeScene(
     summary,
     registryDiffs,
     input.turnId ?? null,
+    inventory.characterByToken,
   );
   return { summary, registryDiffs, fallback, persisted };
 }

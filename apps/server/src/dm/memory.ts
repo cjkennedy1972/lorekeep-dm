@@ -6,6 +6,7 @@ import {
   RulingSchema,
 } from '@game/schema';
 import type { Pool, PoolClient } from 'pg';
+import { indexDerivedMemoryRow } from './characterReferences.js';
 
 export const MAX_MEMORY_RESULTS = 20;
 export const MAX_MEMORY_CHARS = 4_000;
@@ -152,6 +153,7 @@ export class RegistryMemory {
     summary: string,
     diffs: readonly RegistryDiff[] = [],
     turnId: string | null = null,
+    characterByToken: ReadonlyMap<string, string> = new Map(),
   ): Promise<boolean> {
     const normalized = summary.trim();
     if (!sceneId.trim()) throw new Error('Scene id is required');
@@ -164,14 +166,34 @@ export class RegistryMemory {
       await client.query('BEGIN');
       const inserted = await client.query(
         `INSERT INTO scene_summaries(session_id, scene_id, summary, turn_id)
-         VALUES ($1, $2, $3, $4) ON CONFLICT (session_id, scene_id) DO NOTHING`,
+         VALUES ($1, $2, $3, $4) ON CONFLICT (session_id, scene_id) DO NOTHING RETURNING id`,
         [sessionId, sceneId, normalized, turnId],
       );
       if (inserted.rowCount !== 1) {
         await client.query('ROLLBACK');
         return false;
       }
-      await this.upsertManyInTransaction(client, sessionId, diffs, turnId);
+      const summaryId = inserted.rows[0]?.id;
+      if (characterByToken.size && summaryId) {
+        const ids = [...characterByToken].flatMap(([token, id]) =>
+          normalized.includes(token) ? [id] : [],
+        );
+        if (ids.length)
+          await indexDerivedMemoryRow(
+            client,
+            sessionId,
+            'scene_summary',
+            summaryId,
+            ids,
+          );
+      }
+      await this.upsertManyInTransaction(
+        client,
+        sessionId,
+        diffs,
+        turnId,
+        characterByToken,
+      );
       await client.query('COMMIT');
       return true;
     } catch (error) {
@@ -282,10 +304,11 @@ export class RegistryMemory {
     sessionId: string,
     diffs: readonly (RegistryDiff | RegistryEvent)[],
     turnId: string | null = null,
+    characterByToken: ReadonlyMap<string, string> = new Map(),
   ): Promise<void> {
     for (const diff of diffs) {
       const normalized = this.fromDiff(diff);
-      await this.writeEntry(
+      const entryId = await this.writeEntry(
         client,
         sessionId,
         normalized.kind,
@@ -295,6 +318,20 @@ export class RegistryMemory {
         normalized.supersedesFacts,
         turnId,
       );
+      if (entryId && characterByToken.size) {
+        const body = JSON.stringify(diff);
+        const ids = [...characterByToken].flatMap(([token, id]) =>
+          body.includes(token) ? [id] : [],
+        );
+        if (ids.length)
+          await indexDerivedMemoryRow(
+            client,
+            sessionId,
+            'registry_entry',
+            entryId,
+            ids,
+          );
+      }
     }
   }
 
@@ -331,7 +368,7 @@ export class RegistryMemory {
     aliases: string[] | undefined = undefined,
     supersedesFacts: Record<string, string> = {},
     turnId: string | null = null,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
       [`${sessionId}:${kind}:${entityId}`],
@@ -368,7 +405,7 @@ export class RegistryMemory {
       JSON.stringify(prior?.payload) === JSON.stringify(payload) &&
       JSON.stringify(prior?.aliases ?? []) === JSON.stringify(aliases)
     )
-      return;
+      return prior?.id;
 
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO registry_entries(session_id, entity_type, entity_id, version, name, aliases, payload, supersedes_id, mentioned_at, turn_id)
@@ -429,6 +466,7 @@ export class RegistryMemory {
       `UPDATE registry_entries e SET search_document = ${REGISTRY_SEARCH_DOCUMENT_SQL} WHERE e.id=$1`,
       [nextId],
     );
+    return nextId;
   }
 
   async entities(sessionId: string): Promise<RegistryEntity[]> {

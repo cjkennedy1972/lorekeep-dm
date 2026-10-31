@@ -44,6 +44,26 @@ class FixtureAdapter implements LlmAdapter {
 }
 
 describe('scene summaries and recap', () => {
+  it('retries once and discards output with unknown opaque tokens', async () => {
+    const adapter = new FixtureAdapter(
+      JSON.stringify({
+        summary: `The event ${'z'.repeat(32)} occurred.`,
+        registryDiffs: [],
+      }),
+    );
+    const result = await summarizeScene({
+      sceneId: 's1',
+      events: [
+        { type: 'HpChanged', payload: { entityId: 'ent_1', delta: -1, hp: 9 } },
+      ],
+      adapter,
+      validReferenceTokens: ['a'.repeat(32)],
+    });
+    expect(adapter.calls).toBe(2);
+    expect(result.fallback).toBe(true);
+    expect(result.summary).toContain('HpChanged');
+    expect(result.summary).not.toContain('z'.repeat(32));
+  });
   it('screens Unicode-normalized name fragments and common-word possessives on Unicode boundaries', () => {
     expect(
       containsIdentityVariant('WILL’S lantern glows', ['Will Harper']),
@@ -77,7 +97,10 @@ describe('scene summaries and recap', () => {
     const result = await summarizeScene({
       sceneId: 's1',
       events: [
-        { type: 'InitiativeRolled', payload: { entityId: 'ent_1', total: 12 } },
+        {
+          type: 'InitiativeRolled',
+          payload: { type: 'InitiativeRolled', entityId: 'ent_1', total: 12 },
+        },
         {
           type: 'HpChanged',
           payload: {
@@ -89,7 +112,12 @@ describe('scene summaries and recap', () => {
         },
         {
           type: 'TurnOpened',
-          payload: { turnId: 'turn_1', entityId: 'ent_1', deadline: 123 },
+          payload: {
+            type: 'TurnOpened',
+            turnId: '11111111-1111-4111-8111-111111111111',
+            entityId: 'ent_1',
+            deadline: 123,
+          },
         },
         {
           type: 'SeatJoined',
