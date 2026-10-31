@@ -6597,10 +6597,9 @@ export class Room {
             (event) => event.entityId === first.entityId,
           );
           if (sameMover) {
-            const path = moved.flatMap((event, index) => {
-              const part = Array.isArray(event.path) ? event.path : [];
-              return index > 0 ? part.slice(1) : part;
-            });
+            const path = moved.flatMap((event) =>
+              Array.isArray(event.path) ? event.path : [],
+            );
             const combined = {
               ...first,
               path,
