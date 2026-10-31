@@ -516,6 +516,90 @@ describe('pending first-token handoff', () => {
     }
   }, 20_000);
 
+  it('keeps T1 fenced when a stale invalidation races with takeover rollback', async () => {
+    const { id } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    let t1: string | undefined;
+    let takeover:
+      | { socketId: string; resumeToken: string; previousTokenHash: string }
+      | undefined;
+    const rollback = vi
+      .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
+      .mockRejectedValue(new Error('injected rollback DB failure'));
+    const invalidate = vi
+      .spyOn(resumeTokenModule, 'invalidateSeatResumeToken')
+      .mockImplementation(
+        async (_db, sessionId, claimedSeatId, oldSocketId) => {
+          // Model a lease released during the failed rollback window, followed by
+          // a host-approved takeover that commits T2 before A's stale CAS returns.
+          await releaseSeatSocket(db, sessionId, claimedSeatId, oldSocketId);
+          const socketId = randomUUID();
+          const reserved = await authorizeSeatSocket(
+            db,
+            sessionId,
+            claimedSeatId,
+            socketId,
+            undefined,
+            true,
+            accounts[0],
+          );
+          expect(reserved.status).toBe('authorized');
+          if (reserved.status !== 'authorized') return false;
+          expect(reserved.previousTokenHash).toBe(
+            createHash('sha256').update(t1!).digest('hex'),
+          );
+          expect(
+            await commitSeatResumeToken(
+              db,
+              sessionId,
+              claimedSeatId,
+              socketId,
+              reserved.resumeToken,
+            ),
+          ).toBe(true);
+          takeover = {
+            socketId,
+            resumeToken: reserved.resumeToken,
+            previousTokenHash: reserved.previousTokenHash,
+          };
+          return true;
+        },
+      );
+    const failSend = failSeatAuthenticatedSend('callback', (token) => {
+      t1 = token;
+    });
+    try {
+      const failed = connect(await ticket(tokens[0]!, id), null, false);
+      expect(await closed(failed)).toBe(1011);
+      expect(t1).toEqual(expect.any(String));
+      expect(takeover).toBeDefined();
+      expect(rollback).toHaveBeenCalledTimes(2);
+
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      const second = takeover!;
+      expect(
+        await rollbackSeatResumeToken(
+          db,
+          id,
+          seatId,
+          second.socketId,
+          second.resumeToken,
+          second.previousTokenHash,
+        ),
+      ).toBe(true);
+      await releaseSeatSocket(db, id, seatId, second.socketId);
+      expect(
+        await authorizeSeatSocket(db, id, seatId, randomUUID(), t1),
+      ).toEqual({ status: 'invalid-token' });
+    } finally {
+      failSend.mockRestore();
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      clearSeatResumeTokenInvalidationPending(id, seatId);
+    }
+  }, 20_000);
+
   it('retains the lease and fences a token while invalidation remains unresolved', async () => {
     const { id } = await pendingSeat();
     const seatId = (await rooms.get(id)).state.seats[0]!.seatId;

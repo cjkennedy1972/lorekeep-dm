@@ -603,7 +603,8 @@ export function installGateway(
           previousTokenHash: string,
         ) => {
           // Fence socket-close cleanup before the first DB await/retry delay.
-          // Only a confirmed rollback or invalidation may clear this guard.
+          // Confirmed rollback/invalidation can clear this lease guard; only
+          // delivery of a credential clears the separate process-local fence.
           preserveSeatLeaseUntilExpiry = true;
           for (const attempt of [1, 2] as const) {
             let restored = false;
@@ -621,6 +622,23 @@ export function installGateway(
             }
             if (restored) {
               preserveSeatLeaseUntilExpiry = false;
+              try {
+                await releaseSeatSocket(
+                  db,
+                  identity.sessionId,
+                  seatId,
+                  socketId,
+                );
+              } catch {
+                try {
+                  app.log.warn(
+                    { event: 'seat.socket.lease_release_failed', attempt },
+                    'Seat socket lease release failed after token rollback',
+                  );
+                } catch {
+                  // Cleanup diagnostics must not create another socket failure.
+                }
+              }
               return true;
             }
             try {
@@ -649,9 +667,10 @@ export function installGateway(
           // This fence is intentionally process-local; after a process restart,
           // if both rollback and invalidation failed, the DB can still hold T1's
           // hash and accept T1 after its lease expires. T1 is a fresh 128-bit
-          // credential never delivered to a client, and this requires two DB
-          // writes to fail; this restart window is an accepted residual risk,
-          // not a durable revocation. The lease-preservation guard was set
+          // credential not known to be delivered to a client; a send error does
+          // not prove no bytes arrived. If both rollback and invalidation writes
+          // fail, the process-local fence is not durable across a restart. The
+          // lease-preservation guard was set
           // before rollback awaits so a concurrent close cannot release it.
           markSeatResumeTokenInvalidationPending(identity.sessionId, seatId);
           for (const attempt of [1, 2] as const) {
@@ -665,10 +684,6 @@ export function installGateway(
               );
               if (invalidated) {
                 preserveSeatLeaseUntilExpiry = false;
-                clearSeatResumeTokenInvalidationPending(
-                  identity.sessionId,
-                  seatId,
-                );
                 try {
                   await releaseSeatSocket(
                     db,
