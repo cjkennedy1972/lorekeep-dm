@@ -8,7 +8,11 @@ import type { RegistryEvent } from '../dm/memory.js';
 import { RegistryMemory } from '../dm/memory.js';
 import { concealedEntities } from './eventVisibility.js';
 import { canBootstrapCombat } from './combatBootstrap.js';
-import { closeScene, hiddenMatcher } from '../dm/summarize.js';
+import {
+  closeScene,
+  hiddenMatcher,
+  screenSceneCloseSummary,
+} from '../dm/summarize.js';
 import {
   createSceneCloseExecutor,
   judgeLeaveIntent,
@@ -117,6 +121,7 @@ type GameState = {
   lastNarration?: string;
   lastCombatBeat?: string;
   lastPlayerText?: string;
+  forbiddenPlayerText?: string[];
   world?: WorldRegistry;
   combatRoom?: RoomCombatState;
   resolvedEncounters?: string[];
@@ -646,6 +651,13 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
       sceneId: adventure?.ok ? initialSceneId : undefined,
       nextSceneIds: currentScene?.nextSceneIds ?? [],
       allowSummary: allowPlayerVisibleText,
+      screenSummary: (summary) =>
+        screenSceneCloseSummary(
+          this.db as Pool,
+          request.sessionId,
+          summary,
+          request.forbiddenPlayerText ?? [request.text],
+        ),
       playerText: request.text,
       judgeLeave:
         this.leaveJudgeOverride ??
@@ -1487,6 +1499,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           tableLines,
           turnId: request.actionId,
           hidden: hiddenNow,
+          forbiddenPlayerText: request.forbiddenPlayerText ?? [request.text],
         });
       }
     }
@@ -1508,6 +1521,9 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           : {
               lastNarration: result.narration,
               lastPlayerText: request.text,
+              forbiddenPlayerText: [
+                ...(request.forbiddenPlayerText ?? [request.text]),
+              ],
             }),
       },
     };

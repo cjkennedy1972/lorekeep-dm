@@ -249,6 +249,8 @@ describe('recorded injection proposals through ProductionSoloTurnRunner', () => 
         unknown
       >;
       delete sharedState.lastPlayerText;
+      expect(sharedState.forbiddenPlayerText).toEqual([replay.text]);
+      delete sharedState.forbiddenPlayerText;
       expect(sharedState).toEqual(inputState);
       expect(JSON.stringify(sharedState)).not.toContain(replay.text);
       expect(result.narration).not.toContain(replay.text);

@@ -13,6 +13,8 @@ import {
   closeScene,
   summarizeScene,
   MAX_SCENE_SUMMARY_WORDS,
+  containsIdentityVariant,
+  projectSummarizerEvents,
 } from '../../src/dm/summarize.js';
 import type {
   Moderator,
@@ -23,11 +25,15 @@ import { JudgeBudget } from '../../src/safety/judgeBudget.js';
 
 class FixtureAdapter implements LlmAdapter {
   calls = 0;
+  lastRequest?: { messages: { content: string }[] };
   constructor(private readonly response: string | Error) {}
   capabilities() {
     return { streaming: true, nativeTools: false, jsonSchema: true };
   }
-  async *complete(): AsyncIterable<LlmChunk> {
+  async *complete(request: {
+    messages: { content: string }[];
+  }): AsyncIterable<LlmChunk> {
+    this.lastRequest = request;
     this.calls++;
     if (this.response instanceof Error) throw this.response;
     yield { type: 'text', delta: this.response };
@@ -38,6 +44,160 @@ class FixtureAdapter implements LlmAdapter {
 }
 
 describe('scene summaries and recap', () => {
+  it('retries once and discards output with unknown opaque tokens', async () => {
+    const adapter = new FixtureAdapter(
+      JSON.stringify({
+        summary: `The event ${'z'.repeat(32)} occurred.`,
+        registryDiffs: [],
+      }),
+    );
+    const result = await summarizeScene({
+      sceneId: 's1',
+      events: [
+        { type: 'HpChanged', payload: { entityId: 'ent_1', delta: -1, hp: 9 } },
+      ],
+      adapter,
+      validReferenceTokens: ['a'.repeat(32)],
+    });
+    expect(adapter.calls).toBe(2);
+    expect(result.fallback).toBe(true);
+    expect(result.summary).toContain('HpChanged');
+    expect(result.summary).not.toContain('z'.repeat(32));
+  });
+  it('matches complete multiword identities without matching common components', () => {
+    expect(
+      containsIdentityVariant('Will Harper finds a lantern.', ['Will Harper']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('The party will continue.', ['Will Harper']),
+    ).toBe(false);
+    expect(containsIdentityVariant('The café is quiet', ['Café'])).toBe(true);
+    expect(
+      containsIdentityVariant('The unrelated village', ['Will Harper']),
+    ).toBe(false);
+    expect(containsIdentityVariant('X enters', ['X'])).toBe(true);
+    // Summarizer-output screening remains conservative for component-only names.
+    expect(
+      containsIdentityVariant('Will arrived at dawn.', ['Will Harper']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('Harper arrived at dawn.', ['Will Harper']),
+    ).toBe(true);
+  });
+
+  it('screens names across format characters, common homoglyphs, and plural-s forms', () => {
+    expect(
+      containsIdentityVariant('The lantern follows Em\u200bber.', ['Ember']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('The lantern follows Еmber.', ['Ember']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('The lantern follows Embers.', ['Ember']),
+    ).toBe(true);
+    expect(containsIdentityVariant('The Joneses gathered.', ['Jones'])).toBe(
+      true,
+    );
+    expect(
+      containsIdentityVariant('The lantern follows Alice.', ['Bob Smith']),
+    ).toBe(false);
+    expect(
+      containsIdentityVariant('Will Harper’s map is here.', ['Will Harper']),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['Harper', 'Harpers'],
+    ['Harper', "Harper's"],
+    ['Harper', 'Harper’s'],
+    ['Jones', 'Joneses'],
+    ['Jones', "Joneses'"],
+    ['Jones', 'Joneses’'],
+    ['Ember', 'Embers'],
+    ['Alex', 'Alexes'],
+    ['Lopez', 'Lopezes'],
+    ['Church', 'Churches'],
+    ['Ash', 'Ashes'],
+    ['James', 'Jameses'],
+    ['James', "James'"],
+    ['James', 'James’'],
+  ])('screens identity tail %s -> %s in shared paths', (name, variant) => {
+    expect(containsIdentityVariant(`The ${variant} arrived.`, [name])).toBe(
+      true,
+    );
+  });
+
+  it('rejects unknown fields and free-text event types from the summarizer projection', () => {
+    expect(
+      projectSummarizerEvents([
+        {
+          type: 'ConditionApplied',
+          payload: {
+            entityId: 'ent_1',
+            conditionId: 'prone',
+            source: 'PLAYER QUOTE',
+          },
+        },
+        { type: 'SeatJoined', payload: { displayName: 'A Name' } },
+      ]),
+    ).toEqual([]);
+  });
+  it('sends only exact allowlisted event fields to the summarizer and fallback', async () => {
+    const adapter = new FixtureAdapter(
+      JSON.stringify({ summary: 'A turn resolved.', registryDiffs: [] }),
+    );
+    const result = await summarizeScene({
+      sceneId: 's1',
+      events: [
+        {
+          type: 'InitiativeRolled',
+          payload: { type: 'InitiativeRolled', entityId: 'ent_1', total: 12 },
+        },
+        {
+          type: 'HpChanged',
+          payload: {
+            entityId: 'ent_1',
+            delta: -2,
+            hp: 8,
+            playerText: 'NEVER_FORWARD_THIS',
+          },
+        },
+        {
+          type: 'TurnOpened',
+          payload: {
+            type: 'TurnOpened',
+            turnId: '11111111-1111-4111-8111-111111111111',
+            entityId: 'ent_1',
+            deadline: 123,
+          },
+        },
+        {
+          type: 'SeatJoined',
+          payload: {
+            seatId: 'seat_1',
+            displayName: 'NEVER_FORWARD_NAME',
+            accountId: 'account_1',
+          },
+        },
+      ],
+      adapter,
+    });
+    const request = (
+      adapter as unknown as {
+        lastRequest?: { messages: { content: string }[] };
+      }
+    ).lastRequest;
+    expect(
+      request?.messages.map((message) => message.content).join(' '),
+    ).not.toContain('NEVER_FORWARD');
+    expect(
+      request?.messages.map((message) => message.content).join(' '),
+    ).toContain('InitiativeRolled');
+    expect(
+      request?.messages.map((message) => message.content).join(' '),
+    ).not.toContain('SeatJoined');
+    expect(result.summary).toBe('A turn resolved.');
+  });
   it('replaces a blocked or unavailable recap with authored safe text', async () => {
     const requests: ModerationRequest[] = [];
     const moderator: Moderator = {
@@ -154,8 +314,11 @@ describe('scene summaries and recap', () => {
       },
       async connect() {
         return {
-          async query() {
-            return { rows: [], rowCount: 1 };
+          async query(sql: string) {
+            return {
+              rows: [],
+              rowCount: sql.includes('INSERT INTO scene_summaries') ? 1 : 0,
+            };
           },
           release() {},
         };
@@ -185,7 +348,7 @@ describe('scene summaries and recap', () => {
 
   it('does not persist a blocked model-authored scene summary or registry diff', async () => {
     let persistedSummary = '';
-    let calls = 0;
+    let sceneWrites = 0;
     const moderationRequests: ModerationRequest[] = [];
     const db = {
       async query() {
@@ -194,8 +357,8 @@ describe('scene summaries and recap', () => {
       async connect() {
         return {
           async query(sql: string, params: unknown[] = []) {
-            calls++;
             if (sql.includes('INSERT INTO scene_summaries')) {
+              sceneWrites++;
               persistedSummary = String(params[2]);
               return { rows: [], rowCount: 1 };
             }
@@ -248,7 +411,7 @@ describe('scene summaries and recap', () => {
       direction: 'output',
       sessionId: 'session-1',
     });
-    expect(calls).toBe(3); // BEGIN, INSERT safe summary, COMMIT
+    expect(sceneWrites).toBe(1);
   });
 
   it('bounds a summary by both word and character limits', () => {
@@ -426,7 +589,9 @@ describe('scene summaries and recap', () => {
     });
     expect(result.fallback).toBe(true);
     expect(result.registryDiffs).toEqual([]);
-    expect(result.summary).toContain('LocationChanged');
+    expect(result.summary).toBe(
+      'The scene closed without additional recorded events.',
+    );
     expect(events).toEqual(before);
   });
 

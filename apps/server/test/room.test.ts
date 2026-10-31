@@ -2867,10 +2867,16 @@ describe('room actor', () => {
   });
   it('resolves one receipt-ordered batch even when gate decisions arrive out of order', async () => {
     const { store, events } = fixture();
-    const requests: { text: string }[] = [];
+    const requests: {
+      text: string;
+      forbiddenPlayerText?: readonly string[];
+    }[] = [];
     const room = new Room(store, lease, await store.loadLatest(id), {
       async run(request) {
-        requests.push({ text: request.text });
+        requests.push({
+          text: request.text,
+          forbiddenPlayerText: request.forbiddenPlayerText,
+        });
         return {
           narration: 'The party acts.',
           events: [],
@@ -2882,8 +2888,10 @@ describe('room actor', () => {
     });
     const accountA = randomUUID();
     const accountB = randomUUID();
+    const accountC = randomUUID();
     await room.seat(accountA, 'A');
     await room.seat(accountB, 'B');
+    await room.seat(accountC, 'C');
     await room.persistGameState({});
     const messagesA: unknown[] = [];
     await room.subscribe(accountA, {
@@ -2907,13 +2915,23 @@ describe('room actor', () => {
         11,
       ),
     ).toBe(true);
+    expect(
+      await room.submitAction(accountC, randomUUID(), 'third quote', 'C', 33),
+    ).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(
       events.filter((event) => event.type === 'RoundResolved'),
     ).toHaveLength(1);
     expect(requests).toEqual([
-      { text: 'B: second by receipt\n\nA: first by receipt' },
+      {
+        text: 'B: second by receipt\n\nA: first by receipt\n\nC: third quote',
+        forbiddenPlayerText: [
+          'second by receipt',
+          'first by receipt',
+          'third quote',
+        ],
+      },
     ]);
     const resolved = events.filter((event) => event.type === 'RoundResolved');
     expect(resolved).toHaveLength(1);
@@ -2924,7 +2942,7 @@ describe('room actor', () => {
       (
         resolved[0]?.payload as { actions: { receiptSeq: number }[] }
       ).actions.map((action) => action.receiptSeq),
-    ).toEqual([11, 22]);
+    ).toEqual([11, 22, 33]);
     expect(messagesA).toContainEqual(
       expect.objectContaining({
         type: 'RoundResolved',

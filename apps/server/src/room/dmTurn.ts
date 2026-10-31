@@ -6,6 +6,8 @@ export interface SoloTurnRequest {
   accountId: string;
   actionId: string;
   text: string;
+  /** Individual submitted player lines; never collapse multi-seat quotes into one blob. */
+  forbiddenPlayerText?: readonly string[];
   state: unknown;
   playerName?: string;
   lastRestVoteResult?: {

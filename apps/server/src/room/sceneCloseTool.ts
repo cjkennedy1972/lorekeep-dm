@@ -7,6 +7,7 @@ const LEAVE_JUDGE_PROMPT =
 const MAX_LEAVE_JUDGMENTS_PER_TURN = 2;
 
 export type LeaveJudge = (playerText: string) => Promise<boolean>;
+export const SAFE_SCENE_CLOSE_FALLBACK = 'The scene closes.';
 
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;' } as const;
 
@@ -52,6 +53,7 @@ export function createSceneCloseExecutor(input: {
   sceneId?: string;
   nextSceneIds: readonly string[];
   allowSummary: (summary: string) => Promise<boolean>;
+  screenSummary: (summary: string) => Promise<boolean>;
   playerText: string;
   judgeLeave: LeaveJudge;
 }): SceneCloseExecutor {
@@ -86,7 +88,11 @@ export function createSceneCloseExecutor(input: {
           error: 'invalid-scene-transition',
           hint: 'Choose one of the authored next scenes listed in the context, or omit nextSceneId.',
         };
-      if (!(await input.allowSummary(summary)))
+      let safeSummary = (await input.screenSummary(summary))
+        ? summary
+        : SAFE_SCENE_CLOSE_FALLBACK;
+      if (!(await input.screenSummary(safeSummary))) safeSummary = '';
+      if (!(await input.allowSummary(safeSummary)))
         return {
           ok: false,
           error: 'schema-violation',
@@ -95,7 +101,7 @@ export function createSceneCloseExecutor(input: {
       const event = {
         type: 'SceneClosed',
         sceneId: input.sceneId,
-        summary,
+        summary: safeSummary,
         ...(nextSceneId ? { nextSceneId } : {}),
       };
       return {

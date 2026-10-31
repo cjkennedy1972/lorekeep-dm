@@ -38,6 +38,7 @@ describe('scene close leave-intent gate', () => {
       sceneId: undefined,
       nextSceneIds: [],
       allowSummary: async () => true,
+      screenSummary: async () => true,
       playerText: 'We head out to the tavern.',
       judgeLeave,
     });
@@ -55,6 +56,7 @@ describe('scene close leave-intent gate', () => {
       sceneId: 'loc_redteam',
       nextSceneIds: ['loc_tavern'],
       allowSummary: async () => true,
+      screenSummary: async () => true,
       playerText: 'We head out to the tavern.',
       judgeLeave: async () => true,
     });
@@ -62,6 +64,26 @@ describe('scene close leave-intent gate', () => {
     await expect(executor(closeArgs)).resolves.toMatchObject({
       ok: true,
       output: { events: [{ type: 'SceneClosed', sceneId: 'loc_redteam' }] },
+    });
+  });
+
+  it('uses the deterministic summary fallback when privacy screening detects a quote', async () => {
+    const quote = 'We finish here and move on.';
+    const executor = createSceneCloseExecutor({
+      sceneId: 'loc_redteam',
+      nextSceneIds: [],
+      allowSummary: async () => true,
+      screenSummary: async (summary) => !summary.includes(quote),
+      playerText: quote,
+      judgeLeave: async () => true,
+    });
+
+    const result = await executor({ summary: `Solo said: ${quote}` });
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        events: [{ type: 'SceneClosed', summary: 'The scene closes.' }],
+      },
     });
   });
 
@@ -264,6 +286,7 @@ describe('scene close judgment cap', () => {
       sceneId: 'loc_redteam',
       nextSceneIds: ['loc_tavern'],
       allowSummary: async () => true,
+      screenSummary: async () => true,
       playerText: 'We head out to the tavern.',
       judgeLeave,
     });
@@ -287,6 +310,7 @@ describe('scene close judgment cap', () => {
       sceneId: 'loc_redteam',
       nextSceneIds: ['loc_tavern'],
       allowSummary,
+      screenSummary: async () => true,
       playerText: 'We head out to the tavern.',
       judgeLeave,
     });

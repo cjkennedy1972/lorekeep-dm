@@ -9,6 +9,8 @@ describe('Adventure #1 registry seed persistence', () => {
       query: vi.fn(async (...args: unknown[]) => {
         calls.push(args);
         const query = String(args[0] ?? '');
+        if (query.includes('FROM legal_holds'))
+          return { rowCount: 0, rows: [] };
         if (query.includes('SELECT id, version, payload'))
           return { rowCount: 0, rows: [] };
         if (query.includes('RETURNING id'))

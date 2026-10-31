@@ -10,7 +10,7 @@ import {
   type ChatMessage,
   type StateSync,
 } from '@game/schema';
-import type { RegistryEvent } from '../dm/memory.js';
+import type { RegistryEvent, RegistryPrivacyOptions } from '../dm/memory.js';
 import {
   ChatSeatRevokedError,
   LeaseConflictError,
@@ -328,6 +328,7 @@ export interface RoomStore {
     sessionId: string,
     events: readonly RegistryEvent[],
     lease: Lease,
+    privacy?: RegistryPrivacyOptions,
   ): Promise<void>;
   writeTurn(
     sessionId: string,
@@ -2593,10 +2594,26 @@ export class Room {
     return this.enqueue(async () => {
       if (!this.store.persistRegistryEvents)
         throw new Error('Room store does not support registry persistence');
+      const gameState = this.state.gameState as
+        | { lastPlayerText?: unknown; forbiddenPlayerText?: unknown }
+        | undefined;
       await this.store.persistRegistryEvents(
         this.sessionId,
         events,
         this.lease,
+        {
+          forbiddenPlayerText: [
+            ...(Array.isArray(gameState?.forbiddenPlayerText)
+              ? gameState.forbiddenPlayerText.filter(
+                  (line): line is string => typeof line === 'string',
+                )
+              : []),
+            ...(typeof gameState?.lastPlayerText === 'string' &&
+            gameState.lastPlayerText.trim()
+              ? [gameState.lastPlayerText]
+              : []),
+          ],
+        },
       );
     });
   }
@@ -5095,6 +5112,17 @@ export class Room {
         actions.length === 1 ? first.playerName : 'Party',
         false,
         roundId,
+        undefined,
+        undefined,
+        actions.flatMap((action) => {
+          const prefix = `${action.playerName}: `;
+          const lines = `${prefix}${action.text}`
+            .split(/\r?\n/u)
+            .map((line) =>
+              line.startsWith(prefix) ? line.slice(prefix.length) : line,
+            );
+          return [...new Set([action.text, ...lines])];
+        }),
       );
     } catch (error) {
       const restricted = error instanceof LiveDmRestrictedError;
@@ -5808,6 +5836,7 @@ export class Room {
     roundId?: string,
     combatTurnId?: string,
     combatFacts?: readonly Record<string, unknown>[],
+    forbiddenPlayerText?: readonly string[],
   ): Promise<void> {
     const startCombat = JSON.stringify(roomGameState(this.state) ?? null);
     const startGame = structuredClone(this.state.gameState ?? {}) as Record<
@@ -5844,6 +5873,7 @@ export class Room {
           steerAway: xCardAtStart.requested > xCardAtStart.steered,
           ...(combatTurnId ? { combatNarration: true } : {}),
           ...(combatFacts ? { combatFacts } : {}),
+          ...(forbiddenPlayerText ? { forbiddenPlayerText } : {}),
           signal: AbortSignal.any([this.drainAbort.signal, turnAbort.signal]),
         },
         (event) => {

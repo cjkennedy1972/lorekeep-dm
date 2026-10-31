@@ -6,7 +6,11 @@ import {
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { ChatMessageSchema, type ChatHistoryEntry } from '@game/schema';
-import { RegistryMemory, type RegistryEvent } from '../dm/memory.js';
+import {
+  RegistryMemory,
+  type RegistryEvent,
+  type RegistryPrivacyOptions,
+} from '../dm/memory.js';
 import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
@@ -189,6 +193,7 @@ export class Persistence {
     sessionId: string,
     events: readonly RegistryEvent[],
     lease?: LeaseFence,
+    privacy: RegistryPrivacyOptions = {},
   ): Promise<void> {
     if (!events.length) return Promise.resolve();
     return this.transaction(sessionId, lease, async (client) => {
@@ -196,6 +201,8 @@ export class Persistence {
         client,
         sessionId,
         events,
+        null,
+        privacy,
       );
     });
   }
@@ -506,13 +513,30 @@ export class Persistence {
             'The room log changed while the rewind was planned; retry.',
           );
       }
-      if (registryEvents.length)
+      if (registryEvents.length) {
+        const gameState =
+          state && typeof state === 'object' && 'gameState' in state
+            ? (state as { gameState?: unknown }).gameState
+            : undefined;
+        const lastPlayerText =
+          gameState &&
+          typeof gameState === 'object' &&
+          'lastPlayerText' in gameState
+            ? (gameState as { lastPlayerText?: unknown }).lastPlayerText
+            : undefined;
         await new RegistryMemory(this.pool).persistEventsInTransaction(
           client,
           sessionId,
           registryEvents,
           registryTurnId ?? null,
+          {
+            forbiddenPlayerText:
+              typeof lastPlayerText === 'string' && lastPlayerText.trim()
+                ? [lastPlayerText]
+                : [],
+          },
         );
+      }
       const safetyFlags = events.filter((event) => event.type === 'SafetyFlag');
       for (const event of safetyFlags) {
         const payload = event.payload as { seatId?: unknown; kind?: unknown };

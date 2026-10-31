@@ -13,6 +13,9 @@ describe.skipIf(!databaseUrl)('durable scene summaries', () => {
   beforeAll(async () => {
     database = await createTestDatabase({ extraSearchPath: ['public'] });
     await database.pool.query('CREATE TABLE sessions (id uuid PRIMARY KEY)');
+    await database.pool.query(
+      'CREATE TABLE legal_holds (kind text NOT NULL, item_id text NOT NULL)',
+    );
     await database.pool.query(`CREATE TABLE events (
       session_id uuid NOT NULL REFERENCES sessions(id),
       seq bigint NOT NULL,
