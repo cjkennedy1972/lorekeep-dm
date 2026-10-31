@@ -24,6 +24,7 @@ export type MovementCombatant = ThreatEntity & {
   ac?: number;
   opportunityAttack?: Omit<AttackInput, 'attackerId' | 'targetId' | 'target'>;
   reaction?: boolean;
+  hidden?: boolean;
   reachFt?: number;
 };
 export type MovementMode = 'normal' | 'disengage' | 'forced';
@@ -37,6 +38,11 @@ export type MovementEvent =
   | { type: 'MovementSpent'; entityId: string; feet: number }
   | { type: 'EntityMoved'; entityId: string; path: GridPos[]; cost: number }
   | { type: 'OpportunityTriggered'; moverId: string; attackerId: string }
+  | {
+      type: 'EntityRevealed';
+      entityId: string;
+      cause: 'bump' | 'attack' | 'opportunity';
+    }
   | {
       type: 'ReactionAvailable';
       entityId: string;
@@ -186,6 +192,48 @@ export function moveAlong(
   for (let i = 1; i < path.length; i++) {
     const mover = current.entities.find((e) => e.id === entityId)!;
     const next = path[i]!;
+    const hiddenBlocker = current.entities.find(
+      (other) =>
+        other.id !== mover.id &&
+        other.hidden &&
+        next.x < other.pos.x + other.size &&
+        next.x + mover.size > other.pos.x &&
+        next.y < other.pos.y + other.size &&
+        next.y + mover.size > other.pos.y,
+    );
+    if (hiddenBlocker) {
+      // Validate the hidden-cell boundary before revealing it; future entity
+      // fields must fail open here just like ordinary movement. The bump cell
+      // is not walked, so only prior free steps consume movement budget.
+      const withoutBlocker = {
+        ...current,
+        entities: current.entities.filter(
+          (entity) => entity.id !== hiddenBlocker.id,
+        ),
+      };
+      const error = legalStep(withoutBlocker, mover, next);
+      if (error) return error;
+      current = {
+        ...current,
+        entities: current.entities.map((entity) =>
+          entity.id === hiddenBlocker.id
+            ? { ...entity, hidden: false }
+            : entity,
+        ),
+      };
+      events.push({
+        type: 'EntityRevealed',
+        entityId: hiddenBlocker.id,
+        cause: 'bump',
+      });
+      return {
+        ok: true,
+        state: current,
+        events,
+        pending,
+        movementEnd: 'blocked',
+      };
+    }
     const error = legalStep(current, mover, next);
     if (error) return error;
     const stepCost = movementCost(current, mover, next);
@@ -328,6 +376,19 @@ export function resolveReaction(
     reactionId,
   });
   if (choice === 'take') {
+    if (hostile.hidden && hostile.opportunityAttack) {
+      current = {
+        ...current,
+        entities: current.entities.map((e) =>
+          e.id === hostile.id ? { ...e, hidden: false } : e,
+        ),
+      };
+      events.push({
+        type: 'EntityRevealed',
+        entityId: hostile.id,
+        cause: 'opportunity',
+      });
+    }
     events.push({ type: 'ReactionSpent', entityId: hostile.id });
     if (hostile.opportunityAttack) {
       const attackResult = attack({

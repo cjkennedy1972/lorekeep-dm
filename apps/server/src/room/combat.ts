@@ -571,9 +571,17 @@ export function createCombatRuntime(
           }
           return event;
         });
+        const revealed = attacker.hidden
+          ? [{ type: 'EntityRevealed', entityId: attacker.id, cause: 'attack' }]
+          : [];
         const hit = withHp(
           {
             ...state,
+            entities: attacker.hidden
+              ? state.entities.map((item) =>
+                  item.id === attacker.id ? { ...item, hidden: false } : item,
+                )
+              : state.entities,
             seed: result.rng,
             combat: {
               ...state.combat,
@@ -589,6 +597,7 @@ export function createCombatRuntime(
         return {
           state: closing.state,
           events: [
+            ...revealed,
             ...resolvedEvents,
             ...hit.events,
             { type: 'ActionSpent', entityId: actorId },
@@ -626,7 +635,16 @@ export function createCombatRuntime(
         const entity = state.entities.find((item) => item.id === actorId);
         if (!entity) return reject('That actor is not on the map.');
         const mv = movementState(state, actorId);
-        const route = path(mv, actorId, command.destination);
+        // Hidden entities never participate in route planning; movement execution sees
+        // authoritative state and stops at the first hidden occupant as a bump.
+        const routeState = {
+          ...mv,
+          entities: mv.entities.filter((item) => !item.hidden),
+        };
+        // Plan once against the viewer-visible map. Execution walks that exact route
+        // against authoritative state; moveAlong stops at and reveals the first
+        // hidden occupant, so no hidden entity can influence route or stop selection.
+        const route = path(routeState, actorId, command.destination);
         if ('error' in route)
           return reject('That destination is not reachable.');
         const moved = moveAlong(mv, actorId, route.path, 'normal');
@@ -643,25 +661,38 @@ export function createCombatRuntime(
           string,
           unknown
         >[];
-        const events: Record<string, unknown>[] = moved.pending.length
-          ? [
-              { type: 'MoveStarted', entityId: actorId, path: route.path },
-              ...engineEvents,
-            ]
-          : [
-              { type: 'MoveStarted', entityId: actorId, path: route.path },
-              {
-                type: 'EntityMoved',
-                entityId: actorId,
-                path: route.path,
-                cost: route.cost,
-              },
-              {
-                type: 'MoveEnded',
-                entityId: actorId,
-                reason: moved.movementEnd ?? 'complete',
-              },
-            ];
+        const movementRevealed = moved.events.some(
+          (event) => event.type === 'EntityRevealed',
+        );
+        const events: Record<string, unknown>[] =
+          moved.pending.length || movementRevealed
+            ? [
+                { type: 'MoveStarted', entityId: actorId, path: route.path },
+                ...engineEvents,
+                ...(!moved.pending.length
+                  ? [
+                      {
+                        type: 'MoveEnded',
+                        entityId: actorId,
+                        reason: moved.movementEnd ?? 'complete',
+                      },
+                    ]
+                  : []),
+              ]
+            : [
+                { type: 'MoveStarted', entityId: actorId, path: route.path },
+                {
+                  type: 'EntityMoved',
+                  entityId: actorId,
+                  path: route.path,
+                  cost: route.cost,
+                },
+                {
+                  type: 'MoveEnded',
+                  entityId: actorId,
+                  reason: moved.movementEnd ?? 'complete',
+                },
+              ];
         return { state: next, events };
       }
       return reject(

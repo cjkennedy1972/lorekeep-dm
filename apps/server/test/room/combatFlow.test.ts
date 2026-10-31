@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BattlemapSchema, rleEncode, type Battlemap } from '@game/schema';
+import { loadAuthoredMap } from '@game/rules-engine';
 import {
   combatTracker,
   combatOpeningSummary,
@@ -10,6 +12,7 @@ import {
   account,
   bootstrapped,
   catalog,
+  cryptMap,
   hero,
   memoryTable,
   partyCombat,
@@ -56,6 +59,27 @@ function engaged() {
     'ent_goblin-minion_2': { x: 12, y: 16 },
   });
   return { ...b, state };
+}
+
+/** An authored map from rows of '.' (floor) and '#' (stone wall), palette-compatible with the crypt room. */
+function mapFrom(rows: string[]): Battlemap {
+  const grid = rows.flatMap((row) => [...row].map((c) => (c === '#' ? 3 : 0)));
+  const loaded = loadAuthoredMap(
+    BattlemapSchema.parse({
+      mapId: 'hidden-route-fixture',
+      w: rows[0]!.length,
+      h: rows.length,
+      palette: cryptMap.palette,
+      cells: rleEncode(grid),
+      edges: [],
+      features: [],
+      markers: [],
+      zones: [],
+      diagonalRule: '5ft',
+    }),
+  );
+  if (!loaded.ok) throw new Error('hidden-route fixture map failed validation');
+  return loaded.map;
 }
 
 describe('combat bootstrap from the DM start_combat result', () => {
@@ -1275,6 +1299,37 @@ describe('monster turns', () => {
     );
   });
 
+  it('reveals a hidden monster when its scripted turn attacks', () => {
+    const { runtime, state } = engaged();
+    const staged = {
+      ...state,
+      seed: 42,
+      entities: state.entities.map((entity) =>
+        entity.id === 'ent_goblin-minion_1'
+          ? { ...entity, pos: { x: 8, y: 2 }, hidden: true }
+          : entity,
+      ),
+    };
+    const result = ok(
+      runtime.execute(
+        staged,
+        'ent_aria',
+        { command: 'end-turn' },
+        { now: NOW },
+      ),
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'ent_goblin-minion_1',
+      cause: 'attack',
+    });
+    expect(
+      result.state.entities.find(
+        (entity) => entity.id === 'ent_goblin-minion_1',
+      )?.hidden,
+    ).toBe(false);
+  });
+
   it('resolves a live goblin turn with its catalog dagger damage type', () => {
     const { runtime, state } = engaged();
     const staged = {
@@ -1301,6 +1356,50 @@ describe('monster turns', () => {
 
     expect(roll?.attackId).toBe('dagger');
     expect(damage?.damageType).toBe('piercing');
+  });
+
+  it('hidden bump approach is invariant to a second hidden occupant', () => {
+    const { runtime, state } = bootstrapped();
+    const hiddenId = 'ent_goblin-minion_1';
+    const secondId = 'ent_goblin-minion_2';
+    const run = (withSecond: boolean) => {
+      const staged = placed(state, {
+        ent_aria: { x: 0, y: 1 },
+        [hiddenId]: { x: 3, y: 1 },
+        [secondId]: { x: 2, y: 0 },
+      });
+      staged.entities = staged.entities
+        .filter((entity) => withSecond || entity.id !== secondId)
+        .map((entity) =>
+          entity.id === hiddenId || entity.id === secondId
+            ? { ...entity, hidden: true }
+            : entity,
+        );
+      staged.combat.resources.ent_aria!.movementRemaining = 30;
+      return ok(
+        runtime.execute(
+          staged,
+          'ent_aria',
+          { command: 'move', destination: { x: 3, y: 1 } },
+          { now: NOW },
+        ),
+      );
+    };
+    const alone = run(false);
+    const together = run(true);
+    const heroPos = (result: typeof alone) =>
+      result.state.entities.find((entity) => entity.id === 'ent_aria')?.pos;
+    expect(heroPos(alone)).toEqual(heroPos(together));
+    expect(alone.events).toEqual(together.events);
+    expect(heroPos(alone)).not.toEqual({ x: 3, y: 1 });
+    expect(alone.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: hiddenId,
+      cause: 'bump',
+    });
+    expect(alone.events).not.toContainEqual(
+      expect.objectContaining({ entityId: secondId }),
+    );
   });
 
   it('approach from across the map, then end combat when the rules say so', () => {
@@ -2248,6 +2347,56 @@ describe('reaction hardening (M4-6d carry-overs)', () => {
   });
 });
 
+describe('hidden bump route invariance (route planning ignores hidden occupants)', () => {
+  const HERO = 'ent_aria';
+  const G1 = 'ent_goblin-minion_1';
+  const G2 = 'ent_goblin-minion_2';
+  // The crypt room walls (0,0) and (2,0), so these cells need an open map.
+  const open = mapFrom(Array.from({ length: 10 }, () => '.'.repeat(10)));
+  /** Hero walks from (0,0) to hidden G1 at (3,1); `second` is a hidden G2 cell, or G2 is absent. */
+  const walk = (
+    second: { x: number; y: number } | null,
+    controlled = false,
+  ) => {
+    const { runtime, state } = bootstrapped();
+    const positioned = placed(state, {
+      [HERO]: { x: 0, y: 0 },
+      [G1]: { x: 3, y: 1 },
+      [G2]: second ?? { x: 7, y: 7 },
+    });
+    const staged = {
+      ...positioned,
+      map: open,
+      entities: positioned.entities
+        .filter((entity) => second !== null || entity.id !== G2)
+        .map((entity) =>
+          entity.id === G1 || entity.id === G2
+            ? { ...entity, hidden: true }
+            : entity,
+        ),
+    };
+    staged.combat.resources[HERO]!.movementRemaining = 30;
+    return ok(
+      runtime.execute(
+        staged,
+        HERO,
+        { command: 'move', destination: { x: 3, y: 1 } },
+        controlled
+          ? { now: NOW, controlledEntityIds: new Set([G2]) }
+          : { now: NOW },
+      ),
+    );
+  };
+  const routeOf = (result: ReturnType<typeof walk>) =>
+    result.events.find((event) => event.type === 'MoveStarted')?.path;
+
+  it('route planning ignores a hidden second even when the mover controls it', () => {
+    const alone = walk(null);
+    const controlled = walk({ x: 2, y: 0 }, true);
+    expect(routeOf(controlled)).toEqual(routeOf(alone));
+  });
+});
+
 describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
   type Msg = import('@game/schema').ServerMessage;
   const inbox = () => {
@@ -2360,7 +2509,7 @@ describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
     await room.drain();
   });
 
-  it('broadcast: events naming a hidden reactor reach only its controller', async () => {
+  it('broadcast: a hidden reactor with a controller never opens a private-only window', async () => {
     vi.useFakeTimers();
     const e = engaged();
     const reactorAccount = crypto.randomUUID();
@@ -2390,38 +2539,152 @@ describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
       command: 'move',
       destination: { x: 7, y: 6 },
     });
-    const prompt = (
-      reactor.messages.find((m) => m.type === 'ReactionPrompt') as {
-        payload: { reactionId: string };
-      }
-    ).payload;
-    // The hidden goblin takes its opportunity attack: ReactionSpent{entityId} and the
-    // attack's RollEvent{actorId} name it too.
-    await room.submitCombatCommand(reactorAccount, crypto.randomUUID(), {
-      command: 'reaction',
-      reactionId: prompt.reactionId,
-      choice: 'take',
-    });
     await room.drain();
-    expect(table.events.some((event) => event.type === 'ReactionSpent')).toBe(
-      true,
+    expect(table.events.some((event) => event.type === 'MoveEnded')).toBe(true);
+    const moveBatches = table.messages.filter(
+      (message) =>
+        message.type === 'CombatEvents' &&
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveStarted',
+        ),
     );
     expect(
-      JSON.stringify(
-        table.events.filter((event) => event.type === 'RollEvent'),
+      moveBatches.every((message) =>
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveEnded',
+        ),
       ),
-    ).toContain('ent_goblin-minion_1');
-    // ...the mover sees the move but nothing that names the hidden reactor.
-    expect(eventTypes(table.messages)).toContain('EntityMoved');
-    expect(eventTypes(table.messages)).not.toEqual(
-      expect.arrayContaining(['OpportunityTriggered']),
+    ).toBe(true);
+    expect(table.events.some((event) => event.type === 'ReactionSpent')).toBe(
+      false,
     );
-    expect(eventTypes(table.messages)).not.toContain('ReactionAvailable');
-    expect(eventTypes(table.messages)).not.toContain('ReactionResolved');
     expect(
       table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
     ).toEqual([]);
+    expect(
+      reactor.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
+    ).toEqual([]);
+    expect(eventTypes(table.messages)).not.toContain('EntityRevealed');
     expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(false);
+  });
+
+  // The engine reveals a reactor only when its reaction resolves, so a same-commit reveal
+  // is injected into the move's own output: the reactor is un-hidden in the same commit.
+  const sameCommitReveal = (
+    runtime: ReturnType<typeof engaged>['runtime'],
+    reactorId: string,
+  ) => ({
+    ...runtime,
+    execute: (...args: Parameters<typeof runtime.execute>) => {
+      const result = runtime.execute(...args);
+      if ('code' in result) return result;
+      const at = result.events.findIndex(
+        (event) =>
+          event.type === 'OpportunityTriggered' &&
+          event.attackerId === reactorId,
+      );
+      if (at < 0) return result;
+      return {
+        ...result,
+        state: {
+          ...result.state,
+          entities: result.state.entities.map((entity) =>
+            entity.id === reactorId ? { ...entity, hidden: false } : entity,
+          ),
+        },
+        events: [
+          ...result.events.slice(0, at + 1),
+          { type: 'EntityRevealed', entityId: reactorId, cause: 'opportunity' },
+          ...result.events.slice(at + 1),
+        ],
+      };
+    },
+  });
+
+  it('same-commit reveal: non-controllers get EntityRevealed but no reaction events', async () => {
+    vi.useFakeTimers();
+    const e = engaged();
+    const reactorId = 'ent_goblin-minion_1';
+    const reactorAccount = crypto.randomUUID();
+    const other = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      entities: e.state.entities.map((entity) =>
+        entity.id === reactorId ? { ...entity, hidden: true } : entity,
+      ),
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: { [account]: 'ent_aria', [reactorAccount]: reactorId },
+      combatRoom: combat,
+    });
+    const room = table.boot([], sameCommitReveal(e.runtime, reactorId));
+    await joinSeated(room, account, table.connection);
+    const reactor = inbox();
+    await joinSeated(room, reactorAccount, reactor.connection);
+    const watcher = inbox();
+    await joinSeated(room, other, watcher.connection);
+    reactor.messages.length = 0;
+    watcher.messages.length = 0;
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'move',
+      destination: { x: 7, y: 6 },
+    });
+    await room.drain();
+    expect(eventTypes(watcher.messages)).toContain('EntityRevealed');
+    for (const type of [
+      'OpportunityTriggered',
+      'ReactionAvailable',
+      'ReactionResolved',
+    ])
+      expect(eventTypes(watcher.messages)).not.toContain(type);
+    expect(watcher.messages.filter((m) => m.type === 'ReactionPrompt')).toEqual(
+      [],
+    );
+    expect(eventTypes(reactor.messages)).toEqual(
+      expect.arrayContaining([
+        'EntityRevealed',
+        'OpportunityTriggered',
+        'ReactionAvailable',
+      ]),
+    );
+    await room.drain();
+  });
+
+  it('same-commit reveal with no controller: no reaction events reach any seat', async () => {
+    vi.useFakeTimers();
+    const e = engaged();
+    const reactorId = 'ent_goblin-minion_1';
+    const other = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      entities: e.state.entities.map((entity) =>
+        entity.id === reactorId ? { ...entity, hidden: true } : entity,
+      ),
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: combat,
+    });
+    const room = table.boot([], sameCommitReveal(e.runtime, reactorId));
+    await joinSeated(room, account, table.connection);
+    const watcher = inbox();
+    await joinSeated(room, other, watcher.connection);
+    watcher.messages.length = 0;
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'move',
+      destination: { x: 7, y: 6 },
+    });
+    await room.drain();
+    expect(eventTypes(watcher.messages)).toContain('EntityRevealed');
+    for (const type of [
+      'OpportunityTriggered',
+      'ReactionAvailable',
+      'ReactionResolved',
+    ])
+      expect(eventTypes(watcher.messages)).not.toContain(type);
+    await room.drain();
   });
 });
 
@@ -2493,26 +2756,38 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     expect(reactorInbox.some((m) => m.type === 'ReactionPrompt')).toBe(true);
   });
 
-  it('a hidden reactor: Opened/Answered/Declined reach only its controller, who still gets the prompt', async () => {
-    const { table, room, reactor, reactorInbox } = await stage({
-      hidden: true,
-    });
-    expect(reactorInbox.some((m) => m.type === 'ReactionPrompt')).toBe(true);
-    const prompt = combatOf(table).pendingReaction!;
-    await room.submitCombatCommand(reactor, crypto.randomUUID(), {
-      command: 'reaction',
-      reactionId: promptIdOf(prompt),
-      choice: 'decline',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(names(table)).toEqual(
-      expect.arrayContaining(['ReactionPromptOpened', 'ReactionAnswered']),
+  it('a hidden reactor with an assigned controller is auto-declined before any seat sees a stalled move', async () => {
+    const { table, reactorInbox } = await stage({ hidden: true });
+    expect(combatOf(table).pendingReaction).toBeUndefined();
+    expect(names(table)).toContain('MoveEnded');
+    const deliveredEvents = table.messages.flatMap((message) =>
+      message.type === 'CombatEvents'
+        ? (message.payload as { events: { type: string }[] }).events
+        : [],
     );
-    const seen = table.messages.filter((m) => m.type === 'CombatEvents');
-    const wire = JSON.stringify(seen.map((m) => m.payload));
-    for (const type of ['ReactionPromptOpened', 'ReactionAnswered'])
-      expect(wire).not.toContain(type);
-    expect(wire).not.toContain('ent_goblin-minion_1');
+    expect(
+      deliveredEvents.filter((event) => event.type === 'EntityMoved'),
+    ).toHaveLength(1);
+    const moveBatches = table.messages.filter(
+      (message) =>
+        message.type === 'CombatEvents' &&
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveStarted',
+        ),
+    );
+    expect(
+      moveBatches.every((message) =>
+        (message.payload as { events: { type: string }[] }).events.some(
+          (event) => event.type === 'MoveEnded',
+        ),
+      ),
+    ).toBe(true);
+    expect(payloads(table, 'ReactionDeclined')).toMatchObject([
+      { cause: 'auto' },
+    ]);
+    expect(reactorInbox.some((m) => m.type.startsWith('ReactionPrompt'))).toBe(
+      false,
+    );
     expect(
       table.messages.filter((m) => m.type.startsWith('ReactionPrompt')),
     ).toEqual([]);
@@ -2532,6 +2807,11 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     async (cause, opts) => {
       const { table, reactorInbox } = await stage(opts);
       expect(payloads(table, 'ReactionDeclined')).toMatchObject([{ cause }]);
+      if (cause === 'no-controller') {
+        expect(combatOf(table).pendingReaction).toBeUndefined();
+        expect(names(table)).toContain('MoveEnded');
+        expect(names(table)).toContain('ReactionDeclined');
+      }
       const wire = JSON.stringify(table.messages);
       expect(wire).not.toContain('ReactionDeclined');
       expect(wire).not.toContain('ReactionPromptOpen');
@@ -2540,9 +2820,11 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
       expect(JSON.stringify(payloads(table, 'ReactionDeclined'))).not.toContain(
         'ent_',
       );
-      // Its controller (when it has one) still sees the decline.
+      // Hidden reactors never receive a controller-only reaction prompt.
       if (opts.controlled !== false)
-        expect(JSON.stringify(reactorInbox)).toContain('ReactionDeclined');
+        expect(
+          reactorInbox.some((m) => m.type.startsWith('ReactionPrompt')),
+        ).toBe(false);
     },
   );
 

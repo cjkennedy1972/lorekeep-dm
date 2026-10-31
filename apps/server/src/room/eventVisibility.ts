@@ -23,6 +23,7 @@ export const EVENT_ID_RULES: Readonly<Record<string, Rule>> = {
   MoveStarted: subject,
   MoveEnded: subject,
   EntityMoved: subject,
+  EntityRevealed: none,
   EntityPlaced: subject,
   EntityDown: subject,
   HpChanged: subject,

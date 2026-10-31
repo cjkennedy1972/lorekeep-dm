@@ -58,6 +58,196 @@ const route = [
 ];
 
 describe('movement and opportunity attacks', () => {
+  test.each([2, 3])(
+    'bump path ending at or crossing hidden cell %i',
+    (destination) => {
+      const s = state();
+      s.entities = [
+        { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+        { ...s.entities[1]!, pos: { x: 2, y: 0 }, hidden: true },
+      ];
+      const result = moveAlong(
+        s,
+        'mover',
+        Array.from({ length: destination + 1 }, (_, x) => ({ x, y: 0 })),
+      );
+      expect('ok' in result).toBe(true);
+      if (!('ok' in result)) return;
+      expect(result.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+        x: 1,
+        y: 0,
+      });
+      expect(result.events).toContainEqual({
+        type: 'EntityRevealed',
+        entityId: 'orc',
+        cause: 'bump',
+      });
+      expect(
+        result.events
+          .filter((e) => e.type === 'MovementSpent')
+          .reduce((n, e) => n + e.feet, 0),
+      ).toBe(5);
+      expect(result.state.resources?.mover?.movementLeft).toBe(25);
+      expect(result.movementEnd).toBe('blocked');
+    },
+  );
+
+  test('bumps and reveals a hidden ally on the planned route', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+      { ...s.entities[1]!, team: 'heroes', pos: { x: 2, y: 0 }, hidden: true },
+    ];
+    const result = moveAlong(s, 'mover', [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+    ]);
+    expect('ok' in result).toBe(true);
+    if (!('ok' in result)) return;
+    expect(result.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+      x: 1,
+      y: 0,
+    });
+    expect(result.state.entities.find((e) => e.id === 'orc')?.hidden).toBe(
+      false,
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'orc',
+      cause: 'bump',
+    });
+    expect(result.movementEnd).toBe('blocked');
+  });
+
+  test('spends only walked cells when the remaining budget reaches the hidden blocker', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+      { ...s.entities[1]!, pos: { x: 2, y: 0 }, hidden: true },
+    ];
+    s.resources = { mover: { movementLeft: 5 } };
+    const result = moveAlong(s, 'mover', [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+    ]);
+    expect('ok' in result).toBe(true);
+    if (!('ok' in result)) return;
+    expect(result.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+      x: 1,
+      y: 0,
+    });
+    expect(result.state.resources?.mover?.movementLeft).toBe(0);
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'orc',
+      cause: 'bump',
+    });
+    expect(
+      result.events
+        .filter((e) => e.type === 'MovementSpent')
+        .reduce((n, e) => n + e.feet, 0),
+    ).toBe(5);
+  });
+
+  test('does not reveal a hidden blocker when terrain makes its cell illegal', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+      { ...s.entities[1]!, pos: { x: 2, y: 0 }, hidden: true },
+    ];
+    s.map = {
+      ...map,
+      palette: [
+        ...map.palette,
+        { ...map.palette[0]!, terrainId: 'wall', blocksMove: true },
+      ],
+      cells: rleEncode(Array.from({ length: 12 }, (_, i) => (i === 2 ? 1 : 0))),
+    };
+    const result = moveAlong(s, 'mover', [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+    ]);
+    expect(result).toMatchObject({ reason: 'blocked' });
+    expect(s.entities.find((e) => e.id === 'orc')?.hidden).toBe(true);
+  });
+
+  test('does not reveal a hidden blocker before the preceding walked step passes budget checks', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+      { ...s.entities[1]!, pos: { x: 2, y: 0 }, hidden: true },
+    ];
+    s.resources = { mover: { movementLeft: 0 } };
+    const result = moveAlong(s, 'mover', [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+    ]);
+    expect(result).toMatchObject({ reason: 'insufficient_movement' });
+    expect(s.entities.find((e) => e.id === 'orc')?.hidden).toBe(true);
+  });
+  test('bumping a hidden hostile reveals it and stops on the last free cell', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+      { ...s.entities[1]!, pos: { x: 3, y: 0 }, hidden: true },
+    ];
+    const result = moveAlong(s, 'mover', [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+    ]);
+    expect('ok' in result).toBe(true);
+    if (!('ok' in result)) return;
+    expect(result.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+      x: 2,
+      y: 0,
+    });
+    expect(result.state.entities.find((e) => e.id === 'orc')?.hidden).toBe(
+      false,
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'orc',
+      cause: 'bump',
+    });
+    expect(
+      result.events
+        .filter((e) => e.type === 'MovementSpent')
+        .reduce((n, e) => n + e.feet, 0),
+    ).toBe(10);
+  });
+
+  test('a hidden reactor is revealed when its opportunity attack is taken', () => {
+    const s = state();
+    s.entities = s.entities.map((e) =>
+      e.id === 'orc' ? { ...e, hidden: true } : e,
+    );
+    const paused = moveAlong(s, 'mover', route);
+    if (!('ok' in paused)) throw new Error('expected reaction pause');
+    const result = resolveReaction(
+      paused.state,
+      paused.pending[0]!.reactionId,
+      'take',
+    );
+    expect('ok' in result).toBe(true);
+    if (!('ok' in result)) return;
+    expect(result.state.entities.find((e) => e.id === 'orc')?.hidden).toBe(
+      false,
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'orc',
+      cause: 'opportunity',
+    });
+    expect(result.state.pendingReactions).toEqual({});
+  });
+
   test('hostile leaving reach pauses once and decline resumes to the same destination/cost', () => {
     const initial = state();
     expect(threatenedBy(initial.entities[0]!, initial.entities)).toHaveLength(

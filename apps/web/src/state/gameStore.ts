@@ -132,6 +132,8 @@ export function createGameStore(initial = initialGameState()): GameStore {
       return () => void listeners.delete(listener);
     },
     applyEvent(event) {
+      // EntityRevealed changes server visibility state; it carries no client combat resources.
+      if (event.type === 'EntityRevealed') return;
       if (
         event.type === 'HpChanged' ||
         event.type === 'ConditionApplied' ||

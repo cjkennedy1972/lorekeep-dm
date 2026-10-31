@@ -6540,21 +6540,44 @@ export class Room {
     actionId?: string,
   ): Promise<void> {
     const beforeCombat = roomGameState(this.state);
+    let committed = result;
+    // A hidden reactor cannot open a private-only window: resolve that reaction
+    // before broadcasting the move, so every other seat sees a complete movement.
+    while (committed.state.pendingReaction) {
+      const pending = committed.state.pendingReaction;
+      const reactor = committed.state.entities.find(
+        (entity) => entity.id === pending.entityId,
+      );
+      if (!reactor?.hidden) break;
+      this.rememberPrompt(promptIdOf(pending), pending.entityId);
+      const cause = this.immediateDeclineCause(committed.state) ?? 'auto';
+      const declined = this.combatRuntime.decline(
+        committed.state,
+        cause,
+        Date.now(),
+      );
+      if (!declined) break;
+      committed = {
+        ...committed,
+        state: declined.state,
+        events: [...committed.events, ...declined.events],
+      };
+    }
     const resolved =
-      result.events.some((event) => event.type === 'TurnEnded') ||
-      result.events.some((event) => event.type === 'CombatEnded');
-    let combatState = result.state;
+      committed.events.some((event) => event.type === 'TurnEnded') ||
+      committed.events.some((event) => event.type === 'CombatEnded');
+    let combatState = committed.state;
     const priorTurnEvents = beforeCombat?.turnNarrationEvents ?? [];
     const priorTurnEventIds = beforeCombat?.turnNarrationEventIds ?? [];
-    const hiddenEntityIds = hiddenIdsOf(combatState);
-    const currentTurnEventIds = result.events.flatMap((event, index) =>
+    const hiddenEntityIds = hiddenIdsOf(beforeCombat ?? { entities: [] });
+    const currentTurnEventIds = committed.events.flatMap((event, index) =>
       namesHiddenEntity(event, hiddenEntityIds)
         ? []
         : [String(this.seq + index + 1)],
     );
     const turnNarrationEvents = [
       ...priorTurnEvents,
-      ...result.events.map((event) => ({ ...event })),
+      ...committed.events.map((event) => ({ ...event })),
     ];
     const turnNarrationEventIds = [
       ...priorTurnEventIds,
@@ -6586,13 +6609,13 @@ export class Room {
       beforeCombat ?? undefined,
       combatState,
     );
-    const committedEvents = [...result.events, ...lifecycleEvents];
+    const committedEvents = [...committed.events, ...lifecycleEvents];
     const gameState = settleEngine(
       {
         ...(this.state.gameState as Record<string, unknown> | undefined),
         combatRoom: combatState,
       },
-      result.slots,
+      committed.slots,
     );
     const writes = committedEvents.map((event) => ({
       seq: undefined,
@@ -6630,7 +6653,16 @@ export class Room {
       console.error(
         `Combat turn events were stored with non-contiguous seq for ${this.sessionId}`,
       );
-    this.announceCombat(combatState, committedEvents, accountId, actionId);
+    this.announceCombat(
+      combatState,
+      committedEvents,
+      accountId,
+      actionId,
+      new Set([
+        ...hiddenIdsOf(beforeCombat ?? { entities: [] }),
+        ...hiddenIdsOf(combatState ?? { entities: [] }),
+      ]),
+    );
   }
 
   /** Broadcast what changed, arm the reaction deadline and queue the DM's narration. */
@@ -6639,6 +6671,7 @@ export class Room {
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
     actionId?: string,
+    concealedAtCommit?: ReadonlySet<string>,
   ): void {
     for (const event of events)
       if (event.type === 'ReactionPromptOpened')
@@ -6652,17 +6685,74 @@ export class Room {
       (event) => event.type !== 'TurnResolved',
     );
     // ADR-034 §3: a committed event naming a hidden entity reaches only its controller.
-    const hidden = hiddenIdsOf(state);
+    const hidden = concealedAtCommit ?? hiddenIdsOf(state);
     const pcIds = new Set(
       state.entities.filter((e) => e.kind === 'character').map((e) => e.id),
     );
     for (const [viewer, connection] of this.connections) {
       const controlled = this.controlledBy(viewer);
-      const visible = clientEvents.flatMap((event) => {
+      let visible = clientEvents.flatMap((event) => {
         if (this.promptHiddenFrom(event, hidden, controlled)) return [];
         const shown = projectEventForViewer(event, hidden, controlled);
         return shown ? [shown] : [];
       });
+      // Preserve the engine's split events in the durable log, but do not let
+      // a non-controller infer a hidden reactor's reach from the movement pause.
+      const hiddenReactorDeclinedWithoutViewerPrompt = clientEvents.some(
+        (event) => {
+          if (event.type !== 'ReactionDeclined') return false;
+          const reactor = this.promptReactors.get(String(event.promptId));
+          return (
+            reactor !== undefined &&
+            hidden.has(reactor) &&
+            !controlled.has(reactor)
+          );
+        },
+      );
+      if (hiddenReactorDeclinedWithoutViewerPrompt) {
+        const moved = visible.filter((event) => event.type === 'EntityMoved');
+        if (moved.length > 1) {
+          const first = moved[0]!;
+          const sameMover = moved.every(
+            (event) => event.entityId === first.entityId,
+          );
+          if (sameMover) {
+            const started = visible.find(
+              (event) =>
+                event.type === 'MoveStarted' &&
+                event.entityId === first.entityId,
+            );
+            // MoveStarted carries the planned route (including its origin); the
+            // per-step EntityMoved events carry only destinations after an
+            // interrupted reaction resumes.
+            const path = Array.isArray(started?.path)
+              ? started.path
+              : moved.flatMap((event) =>
+                  Array.isArray(event.path) ? event.path : [],
+                );
+            const combined = {
+              ...first,
+              path,
+              cost: moved.reduce(
+                (sum, event) => sum + Number(event.cost ?? 0),
+                0,
+              ),
+            };
+            let emitted = false;
+            visible = visible.flatMap((event) => {
+              if (
+                event.type === 'MovementSpent' &&
+                event.entityId === first.entityId
+              )
+                return [];
+              if (event.type !== 'EntityMoved') return [event];
+              if (emitted) return [];
+              emitted = true;
+              return [combined];
+            });
+          }
+        }
+      }
       if (visible.length)
         connection.send(
           this.projectMessageForViewer(

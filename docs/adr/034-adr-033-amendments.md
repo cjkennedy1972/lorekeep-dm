@@ -154,3 +154,11 @@ Status unchanged: Accepted (2026-10-25). The decision text above is unchanged. T
 ## Addendum (2026-10-28): per-hit damage visibility
 
 8. **Per-hit damage.** Per-hit damage is hidden for non-party targets; only the target's controller and party-member targets receive it.
+
+## Clarification (2026-10-31): hidden-reaction delivery
+
+This clarification supplements §3 without editing the accepted text above:
+
+1. An uncontrolled reacting entity has no controlling seat to receive a prompt, so its prompt is immediately declined with `ReactionDeclined{cause: no-controller}`. Hidden uncontrolled reactors remain hidden from non-controlling viewers as specified in §3.
+2. For a viewer who did not receive a hidden reactor's prompt, the server coalesces the mover's per-step `EntityMoved` events into one event with the complete walked route and withholds that mover's per-step `MovementSpent` events. This applies to hidden-reactor declines with any cause: `auto`, `no-controller`, `cap`, `presence`, `restart`, `timeout`, or `combat-ended`. The engine and durable event log retain the full events (ADR-034 §3, item 2).
+3. `EntityRevealed` on bump, attack, or opportunity is intentionally public to all seats. A reveal is game information, not hidden-entity metadata; this follows the visibility contract in ADR-034 §3, where `EntityRevealed` has no hidden-entity subject redaction.

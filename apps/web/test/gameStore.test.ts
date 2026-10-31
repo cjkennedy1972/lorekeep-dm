@@ -49,6 +49,19 @@ describe('gameStore', () => {
     expect(store.getState().combat).toEqual(replay(emptyCombatState(), log));
   });
 
+  it('tolerates EntityRevealed without passing it to the resource reducer', () => {
+    const store = createGameStore();
+    const before = store.getState();
+    expect(() =>
+      store.applyEvent({
+        type: 'EntityRevealed',
+        entityId: 'hidden-goblin',
+        cause: 'bump',
+      } as never),
+    ).not.toThrow();
+    expect(store.getState()).toBe(before);
+  });
+
   it('notifies subscribers', () => {
     const store = createGameStore();
     let n = 0;

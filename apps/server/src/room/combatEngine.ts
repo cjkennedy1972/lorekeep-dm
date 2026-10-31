@@ -53,6 +53,7 @@ export function movementState(
       const weapon = meleeAttack(e);
       return {
         id: e.id,
+        hidden: e.hidden,
         pos: e.pos,
         size: e.size,
         team: e.team,
@@ -120,7 +121,12 @@ export function applyMovement(
     entities: state.entities.map((e) => {
       const live = moved.entities.find((item) => item.id === e.id);
       return live
-        ? { ...e, pos: { ...live.pos }, hp: moved.hp?.[e.id] ?? live.hp }
+        ? {
+            ...e,
+            hidden: live.hidden,
+            pos: { ...live.pos },
+            hp: moved.hp?.[e.id] ?? live.hp,
+          }
         : e;
     }),
     combat: { ...state.combat, resources },
@@ -357,6 +363,8 @@ function monsterTurn(
         target.id,
         target.ac ?? 10,
       );
+      if (monster.hidden)
+        events.push({ type: 'EntityRevealed', entityId: id, cause: 'attack' });
       events.push(...attackEvents, {
         type: 'ActionSpent',
         entityId: id,
@@ -364,6 +372,11 @@ function monsterTurn(
       const hurt = withHp(
         {
           ...state,
+          entities: monster.hidden
+            ? state.entities.map((entity) =>
+                entity.id === id ? { ...entity, hidden: false } : entity,
+              )
+            : state.entities,
           seed: result.rng,
           combat: {
             ...state.combat,
