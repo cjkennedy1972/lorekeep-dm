@@ -220,7 +220,7 @@ describe('room routes', () => {
         method: 'POST',
         url,
         headers: cookie,
-        payload: { name: 'x' },
+        payload: { name: 'x', mode: 'party' },
       });
       expect(res.statusCode, url).toBe(403);
       expect(res.json().code).toBe('EMAIL_UNVERIFIED');
@@ -231,7 +231,7 @@ describe('room routes', () => {
       method: 'POST',
       url: '/api/rooms',
       headers: { ...cookie, origin: 'https://evil.example' },
-      payload: { name: 'x' },
+      payload: { name: 'x', mode: 'party' },
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().code).toBe('BAD_ORIGIN');
@@ -241,7 +241,7 @@ describe('room routes', () => {
       method: 'POST',
       url: '/api/rooms',
       headers: cookie,
-      payload: { name: '   ' },
+      payload: { name: '   ', mode: 'party' },
     });
     expect(res.statusCode).toBe(400);
   });

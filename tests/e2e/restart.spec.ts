@@ -76,7 +76,7 @@ test('SIGTERM and restart preserves room state and seq; client reconnects', asyn
     // Authenticated recovery marks the seat returning until the reconnect hold elapses.
     const recoveredExpectedState = {
       ...expectedState,
-      // /api/rooms inserts without a mode, so the migration default 'party' applies.
+      // createRoom explicitly requests party mode, matching the restart behavior under test.
       tableMode: 'party',
       revokedSeats: [],
       seats: (expectedState.seats as Record<string, unknown>[]).map((seat) => ({

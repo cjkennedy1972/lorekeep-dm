@@ -78,7 +78,7 @@ describe('origin protection is scoped to route groups', () => {
         method: method as 'POST',
         url,
         headers: foreign,
-        payload: {},
+        payload: url === '/api/sessions' ? { name: 'x', mode: 'party' } : {},
       });
       await app.close();
       expect(res.statusCode).toBe(403);
@@ -110,7 +110,7 @@ describe('origin protection is scoped to route groups', () => {
       method: 'POST',
       url: '/api/sessions',
       headers: foreign,
-      payload: {},
+      payload: { name: 'x', mode: 'party' },
     });
     await app.close();
     const span = exporter

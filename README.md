@@ -2,6 +2,8 @@
 
 A web-based, AI-driven tabletop RPG game master for groups of 1–6 players. A deterministic rules engine owns dice and state; the LLM narrates and proposes typed actions.
 
+`POST /api/rooms` (also `/api/sessions`) requires explicit `mode: "party"`; missing, invalid, and `solo` modes are rejected. Create solo games through `POST /api/tables`.
+
 **Status:** design phase. See [docs/spec.md](docs/spec.md), [docs/architecture.md](docs/architecture.md), [docs/adr/](docs/adr/), [docs/research.md](docs/research.md), [docs/reuse-audit.md](docs/reuse-audit.md).
 
 ## Attribution

@@ -32,7 +32,7 @@ export async function signedIn(context: BrowserContext, name: string) {
 
 export async function openTable(host: BrowserContext, name: string) {
   const response = await host.request.post(`${API}/api/rooms`, {
-    data: { name },
+    data: { name, mode: 'party' },
   });
   expect(response.ok()).toBe(true);
   const { room } = (await response.json()) as { room: TestRoom };

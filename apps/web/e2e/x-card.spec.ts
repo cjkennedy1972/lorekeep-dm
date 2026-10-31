@@ -6,7 +6,7 @@ const API = 'http://localhost:8787';
 
 async function createTable(context: BrowserContext, name: string) {
   const response = await context.request.post(`${API}/api/rooms`, {
-    data: { name },
+    data: { name, mode: 'party' },
   });
   expect(response.ok()).toBe(true);
   return (await response.json()) as {

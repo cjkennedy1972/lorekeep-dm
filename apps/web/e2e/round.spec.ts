@@ -27,7 +27,7 @@ async function openTable(
   name: string,
 ) {
   const response = await host.request.post(`${API}/api/rooms`, {
-    data: { name },
+    data: { name, mode: 'party' },
   });
   expect(response.ok()).toBe(true);
   const { room } = (await response.json()) as {

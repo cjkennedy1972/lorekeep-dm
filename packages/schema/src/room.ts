@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { AccountIdSchema, SeatIdSchema, SessionIdSchema } from './ids.js';
 
+export const RoomModeSchema = z.enum(['solo', 'party']);
+export type RoomMode = z.infer<typeof RoomModeSchema>;
+
 export const PresenceSchema = z.enum([
   'connected',
   'returning',
@@ -197,7 +200,7 @@ export const ClientRoomStateSchema = RoomStateSchema.omit({
   revokedSeats: z.array(ClientSeatSchema).optional(),
   lateJoinRequests: z.array(LateJoinHostRequestSchema).optional(),
   /** The persisted session mode. Absent from servers that predate it. */
-  tableMode: z.enum(['solo', 'party']).optional(),
+  tableMode: RoomModeSchema.optional(),
 });
 export type ClientRoomState = z.infer<typeof ClientRoomStateSchema>;
 export type Presence = z.infer<typeof PresenceSchema>;
@@ -209,6 +212,7 @@ export type RestVoteResult = z.infer<typeof RestVoteResultSchema>;
 
 export const CreateRoomInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
+  mode: RoomModeSchema,
 });
 /** `code` is the plaintext invite secret; only present in the response that minted it (host only). */
 export const RoomInfoSchema = z.object({

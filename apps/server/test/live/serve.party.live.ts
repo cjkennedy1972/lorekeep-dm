@@ -266,7 +266,7 @@ it('serves party tables (a round table and a combat table, both bound to seats) 
       method: 'POST',
       url: '/api/rooms',
       headers: { ...cookie(owner.token), 'content-type': 'application/json' },
-      payload: { name },
+      payload: { name, mode: 'party' },
     });
     if (created.statusCode !== 201)
       throw new Error(

@@ -49,7 +49,7 @@ async function party(host: { cookie: string }) {
     method: 'POST',
     url: '/api/rooms',
     headers: { cookie: host.cookie },
-    payload: { name: 'Long Table' },
+    payload: { name: 'Long Table', mode: 'party' },
   });
   expect(made.statusCode).toBe(201);
   return made.json().room as { id: string; code: string };

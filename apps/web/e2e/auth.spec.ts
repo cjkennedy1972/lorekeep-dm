@@ -94,7 +94,7 @@ test('login: same error for unknown email and wrong password; keyboard login ret
   });
   const created = await (
     await hostCtx.request.post('http://localhost:8787/api/rooms', {
-      data: { name: 'Return Trip' },
+      data: { name: 'Return Trip', mode: 'party' },
     })
   ).json();
   const url = `/join/${created.room.code}`;

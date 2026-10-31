@@ -243,11 +243,28 @@ export function registerSessionRoutes(
       if (!accountId) return reply;
       const authToken = tokenFromCookie(request.headers.cookie);
       const authTokenHash = authToken ? hashToken(authToken) : undefined;
+      const body = request.body as { mode?: unknown } | null;
       const parsed = CreateRoomInputSchema.safeParse(request.body);
-      if (!parsed.success)
+      if (!parsed.success) {
+        if (!body || !Object.hasOwn(body, 'mode') || body.mode == null)
+          return reply.code(400).send({
+            code: 'ROOM_MODE_REQUIRED',
+            message: "Specify a room mode: 'solo' or 'party'.",
+          });
+        if (body.mode !== 'solo' && body.mode !== 'party')
+          return reply.code(400).send({
+            code: 'INVALID_ROOM_MODE',
+            message: "Room mode must be 'solo' or 'party'.",
+          });
         return reply
           .code(400)
           .send({ code: 'INVALID_INPUT', message: 'Enter a table name.' });
+      }
+      if (parsed.data.mode === 'solo')
+        return reply.code(400).send({
+          code: 'SOLO_ROOMS_USE_TABLES_ENDPOINT',
+          message: 'Create solo games with POST /api/tables.',
+        });
       if (createHits.hit(accountId) > createPerHour)
         return reply.code(429).send({
           code: 'RATE_LIMITED',
@@ -277,9 +294,16 @@ export function registerSessionRoutes(
       );
       // ponytail: count+insert is not serialized; concurrent creates can overshoot by a few. Add an advisory lock if that matters.
       const inserted = await db.query(
-        `INSERT INTO sessions(id,owner_account_id,name,catalog_version) SELECT $1,$2,$3,$5
-          WHERE (SELECT count(*) FROM sessions WHERE owner_account_id=$2 AND status='active') < $4`,
-        [id, accountId, parsed.data.name, maxRooms, catalog.catalogVersion],
+        `INSERT INTO sessions(id,owner_account_id,name,mode,catalog_version) SELECT $1,$2,$3,$4,$6
+          WHERE (SELECT count(*) FROM sessions WHERE owner_account_id=$2 AND status='active') < $5`,
+        [
+          id,
+          accountId,
+          parsed.data.name,
+          parsed.data.mode,
+          maxRooms,
+          catalog.catalogVersion,
+        ],
       );
       if (!inserted.rowCount)
         return reply.code(409).send({
