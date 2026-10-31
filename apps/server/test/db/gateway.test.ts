@@ -23,7 +23,10 @@ import {
 import * as resumeTokenModule from '../../src/gateway/resumeTokens.js';
 import {
   authorizeSeatSocket,
+  clearSeatResumeTokenInvalidationPending,
   commitSeatResumeToken,
+  invalidateSeatResumeToken,
+  markSeatResumeTokenInvalidationPending,
   releaseSeatSocket,
   rollbackSeatResumeToken,
 } from '../../src/gateway/resumeTokens.js';
@@ -261,7 +264,10 @@ describe('pending first-token handoff', () => {
     return { id, room, token };
   }
 
-  function failSeatAuthenticatedSend(mode: 'callback' | 'throw') {
+  function failSeatAuthenticatedSend(
+    mode: 'callback' | 'throw',
+    onAttempt?: (resumeToken: string) => void,
+  ) {
     const original = WebSocket.prototype.send;
     const send = vi.spyOn(WebSocket.prototype, 'send');
     send.mockImplementation(function (
@@ -270,13 +276,20 @@ describe('pending first-token handoff', () => {
       options?: WebSocket.SendOptions | ((error?: Error) => void),
       callback?: (error?: Error) => void,
     ) {
-      let message: { type?: string } | undefined;
+      let message:
+        | { type?: string; payload?: { resumeToken?: string } }
+        | undefined;
       try {
-        message = JSON.parse(String(data)) as { type?: string };
+        message = JSON.parse(String(data)) as {
+          type?: string;
+          payload?: { resumeToken?: string };
+        };
       } catch {
         // Non-JSON websocket frames are passed through untouched.
       }
       if (message?.type === 'SeatAuthenticated') {
+        if (message.payload?.resumeToken)
+          onAttempt?.(message.payload.resumeToken);
         if (mode === 'throw')
           throw new Error('injected synchronous send failure');
         const done = typeof options === 'function' ? options : callback;
@@ -330,8 +343,125 @@ describe('pending first-token handoff', () => {
     );
   });
 
+  it('does not restore a fenced T1 when a later T2 send fails', async () => {
+    const { id, token: t1 } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    const t1SocketId = randomUUID();
+    const first = await authorizeSeatSocket(db, id, seatId, t1SocketId, t1);
+    expect(first.status).toBe('authorized');
+    if (first.status !== 'authorized') return;
+    expect(
+      await commitSeatResumeToken(
+        db,
+        id,
+        seatId,
+        t1SocketId,
+        first.resumeToken,
+      ),
+    ).toBe(true);
+    clearSeatResumeTokenInvalidationPending(id, seatId);
+
+    // Model failed rollback plus failed invalidation: T1 remains persisted but
+    // is fenced in this process. A tokenless host-approved claim may recover.
+    markSeatResumeTokenInvalidationPending(id, seatId);
+    await db.query(
+      `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '16 seconds'
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId],
+    );
+    const t2SocketId = randomUUID();
+    const second = await authorizeSeatSocket(
+      db,
+      id,
+      seatId,
+      t2SocketId,
+      undefined,
+      true,
+      accounts[0],
+    );
+    expect(second.status).toBe('authorized');
+    if (second.status !== 'authorized') return;
+    expect(second.previousTokenHash).toBe(
+      createHash('sha256').update(first.resumeToken).digest('hex'),
+    );
+    expect(
+      await commitSeatResumeToken(
+        db,
+        id,
+        seatId,
+        t2SocketId,
+        second.resumeToken,
+      ),
+    ).toBe(true);
+
+    // This rollback is the real post-send-failure path. While the fence is
+    // pending it must not put the previously stranded T1 hash back in storage.
+    expect(
+      await rollbackSeatResumeToken(
+        db,
+        id,
+        seatId,
+        t2SocketId,
+        second.resumeToken,
+        second.previousTokenHash,
+      ),
+    ).toBe(true);
+    await releaseSeatSocket(db, id, seatId, t2SocketId);
+    const persisted = await db.query<{ token_hash: string }>(
+      'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [id, seatId],
+    );
+    expect(persisted.rows[0]?.token_hash).not.toBe(
+      createHash('sha256').update(first.resumeToken).digest('hex'),
+    );
+    for (const token of [first.resumeToken, second.resumeToken]) {
+      expect(
+        await authorizeSeatSocket(db, id, seatId, randomUUID(), token),
+      ).toEqual({ status: 'invalid-token' });
+    }
+    clearSeatResumeTokenInvalidationPending(id, seatId);
+  });
+
+  it('does not invalidate a token after another socket takes over its lease', async () => {
+    const { id, token } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    const owner = randomUUID();
+    const authorization = await authorizeSeatSocket(
+      db,
+      id,
+      seatId,
+      owner,
+      token,
+    );
+    expect(authorization.status).toBe('authorized');
+    if (authorization.status !== 'authorized') return;
+    expect(
+      await commitSeatResumeToken(
+        db,
+        id,
+        seatId,
+        owner,
+        authorization.resumeToken,
+      ),
+    ).toBe(true);
+    await db.query(
+      'UPDATE seat_resume_tokens SET active_socket_id=$3 WHERE session_id=$1 AND seat_id=$2',
+      [id, seatId, randomUUID()],
+    );
+    expect(
+      await invalidateSeatResumeToken(
+        db,
+        id,
+        seatId,
+        owner,
+        authorization.resumeToken,
+      ),
+    ).toBe(false);
+  });
+
   it('revokes an undelivered pending credential after rollback retries fail', async () => {
-    const { id, token: undeliveredToken } = await pendingSeat();
+    const { id } = await pendingSeat();
+    let undeliveredToken: string | undefined;
     const room = await rooms.get(id);
     const seatId = room.state.seats[0]!.seatId;
     const unhandled: unknown[] = [];
@@ -340,7 +470,10 @@ describe('pending first-token handoff', () => {
     const rollback = vi
       .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
       .mockRejectedValue(new Error('injected rollback DB failure'));
-    const failSend = failSeatAuthenticatedSend('callback');
+    const failSend = failSeatAuthenticatedSend(
+      'callback',
+      (token) => (undeliveredToken = token),
+    );
     const before = capturedLogs.length;
     try {
       const failed = connect(await ticket(tokens[0]!, id), null, false);
@@ -349,11 +482,14 @@ describe('pending first-token handoff', () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
       expect(unhandled).toEqual([]);
       expect(rollback).toHaveBeenCalledTimes(2);
+      expect(undeliveredToken).toEqual(expect.any(String));
+      failSend.mockRestore();
 
       const retry = connect(await ticket(tokens[0]!, id), null, false);
       const pending = await nextOfType(retry, 'SeatClaimPending', 1_500);
       expect(pending.payload.claimId).toEqual(expect.any(String));
       expect(seenMessageTypes.get(retry)).not.toContain('SeatAuthenticated');
+      await closeSocket(retry);
 
       const logs = capturedLogs.slice(before).join('\n');
       expect(logs).toContain('seat.resume_token.rollback_failed');
@@ -361,10 +497,260 @@ describe('pending first-token handoff', () => {
       expect(logs).toContain('"attempt":2');
       expect(logs).not.toContain(undeliveredToken);
       expect(logs).not.toContain('injected rollback DB failure');
+
+      const replay = connect(
+        await ticket(tokens[0]!, id),
+        undeliveredToken!,
+        false,
+      );
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(seenMessageTypes.get(replay)).not.toContain('SeatAuthenticated');
+      } finally {
+        await closeSocket(replay);
+      }
     } finally {
       process.removeListener('unhandledRejection', onUnhandled);
       failSend.mockRestore();
       rollback.mockRestore();
+    }
+  }, 20_000);
+
+  it('keeps T1 fenced when a stale invalidation races with takeover rollback', async () => {
+    const { id } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    let t1: string | undefined;
+    let takeover:
+      | { socketId: string; resumeToken: string; previousTokenHash: string }
+      | undefined;
+    const rollback = vi
+      .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
+      .mockRejectedValue(new Error('injected rollback DB failure'));
+    const invalidate = vi
+      .spyOn(resumeTokenModule, 'invalidateSeatResumeToken')
+      .mockImplementation(
+        async (_db, sessionId, claimedSeatId, oldSocketId) => {
+          // Model a lease released during the failed rollback window, followed by
+          // a host-approved takeover that commits T2 before A's stale CAS returns.
+          await releaseSeatSocket(db, sessionId, claimedSeatId, oldSocketId);
+          const socketId = randomUUID();
+          const reserved = await authorizeSeatSocket(
+            db,
+            sessionId,
+            claimedSeatId,
+            socketId,
+            undefined,
+            true,
+            accounts[0],
+          );
+          expect(reserved.status).toBe('authorized');
+          if (reserved.status !== 'authorized') return false;
+          expect(reserved.previousTokenHash).toBe(
+            createHash('sha256').update(t1!).digest('hex'),
+          );
+          expect(
+            await commitSeatResumeToken(
+              db,
+              sessionId,
+              claimedSeatId,
+              socketId,
+              reserved.resumeToken,
+            ),
+          ).toBe(true);
+          takeover = {
+            socketId,
+            resumeToken: reserved.resumeToken,
+            previousTokenHash: reserved.previousTokenHash,
+          };
+          return true;
+        },
+      );
+    const failSend = failSeatAuthenticatedSend('callback', (token) => {
+      t1 = token;
+    });
+    try {
+      const failed = connect(await ticket(tokens[0]!, id), null, false);
+      expect(await closed(failed)).toBe(1011);
+      expect(t1).toEqual(expect.any(String));
+      expect(takeover).toBeDefined();
+      expect(rollback).toHaveBeenCalledTimes(2);
+
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      const second = takeover!;
+      expect(
+        await rollbackSeatResumeToken(
+          db,
+          id,
+          seatId,
+          second.socketId,
+          second.resumeToken,
+          second.previousTokenHash,
+        ),
+      ).toBe(true);
+      await releaseSeatSocket(db, id, seatId, second.socketId);
+      expect(
+        await authorizeSeatSocket(db, id, seatId, randomUUID(), t1),
+      ).toEqual({ status: 'invalid-token' });
+    } finally {
+      failSend.mockRestore();
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      clearSeatResumeTokenInvalidationPending(id, seatId);
+    }
+  }, 20_000);
+
+  it('retains the lease and fences a token while invalidation remains unresolved', async () => {
+    const { id } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    let undeliveredToken: string | undefined;
+    const rollback = vi
+      .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
+      .mockRejectedValue(new Error('injected rollback DB failure'));
+    const invalidate = vi
+      .spyOn(resumeTokenModule, 'invalidateSeatResumeToken')
+      .mockRejectedValue(new Error('injected invalidation DB failure'));
+    const failSend = failSeatAuthenticatedSend(
+      'callback',
+      (token) => (undeliveredToken = token),
+    );
+    const before = capturedLogs.length;
+    try {
+      const failed = connect(await ticket(tokens[0]!, id), null, false);
+      expect(await closed(failed)).toBe(1011);
+      expect(undeliveredToken).toEqual(expect.any(String));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const row = await db.query<{
+        token_hash: string;
+        active_socket_id: string | null;
+      }>(
+        'SELECT token_hash,active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+        [id, seatId],
+      );
+      expect(row.rows[0]?.active_socket_id).toEqual(expect.any(String));
+      expect(row.rows[0]?.token_hash).toBe(
+        createHash('sha256').update(undeliveredToken!).digest('hex'),
+      );
+      expect(rollback).toHaveBeenCalledTimes(2);
+      expect(invalidate).toHaveBeenCalledTimes(2);
+
+      await db.query(
+        `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '16 seconds'
+          WHERE session_id=$1 AND seat_id=$2`,
+        [id, seatId],
+      );
+      expect(
+        await authorizeSeatSocket(
+          db,
+          id,
+          seatId,
+          randomUUID(),
+          undeliveredToken,
+        ),
+      ).toEqual({ status: 'invalid-token' });
+      expect(
+        await authorizeSeatSocket(
+          db,
+          id,
+          seatId,
+          randomUUID(),
+          undeliveredToken,
+          true,
+          accounts[0],
+        ),
+      ).toEqual({ status: 'invalid-token' });
+
+      const hostApprovalRetry = connect(
+        await ticket(tokens[0]!, id),
+        null,
+        false,
+      );
+      try {
+        await nextOfType(hostApprovalRetry, 'SeatClaimPending', 1_500);
+        expect(seenMessageTypes.get(hostApprovalRetry)).not.toContain(
+          'SeatAuthenticated',
+        );
+      } finally {
+        await closeSocket(hostApprovalRetry);
+      }
+
+      const logs = capturedLogs.slice(before);
+      const invalidationLog = logs.find((line) =>
+        line.includes('seat.resume_token.invalidation_failed'),
+      );
+      expect(invalidationLog).toContain(
+        'seat.resume_token.invalidation_failed',
+      );
+      expect(invalidationLog).not.toContain(undeliveredToken);
+      expect(invalidationLog).not.toContain(
+        createHash('sha256').update(undeliveredToken!).digest('hex'),
+      );
+      expect(invalidationLog).not.toContain('"attempt"');
+    } finally {
+      failSend.mockRestore();
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      clearSeatResumeTokenInvalidationPending(id, seatId);
+    }
+  }, 20_000);
+
+  it('retains the lease when the socket closes during rollback retry delay', async () => {
+    const { id, token: t1 } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    let t2: string | undefined;
+    let failedSocket: WebSocket | undefined;
+    let closedDuringRetryDelay = false;
+    const rollback = vi
+      .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
+      .mockRejectedValue(new Error('injected rollback DB failure'));
+    const invalidate = vi
+      .spyOn(resumeTokenModule, 'invalidateSeatResumeToken')
+      .mockRejectedValue(new Error('injected invalidation DB failure'));
+    const originalSetTimeout = globalThis.setTimeout;
+    const delay = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (
+        timeout === 20 &&
+        rollback.mock.calls.length === 1 &&
+        failedSocket &&
+        failedSocket.readyState === WebSocket.OPEN
+      ) {
+        closedDuringRetryDelay = true;
+        void closeSocket(failedSocket);
+      }
+      return originalSetTimeout(handler, timeout, ...args);
+    }) as typeof setTimeout);
+    const failSend = failSeatAuthenticatedSend('callback', (token) => {
+      t2 = token;
+    });
+    try {
+      failedSocket = connect(await ticket(tokens[0]!, id), null, false);
+      await closed(failedSocket);
+      expect(closedDuringRetryDelay).toBe(true);
+      expect(t2).toEqual(expect.any(String));
+      await new Promise((resolve) => originalSetTimeout(resolve, 60));
+
+      const row = await db.query<{ active_socket_id: string | null }>(
+        'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+        [id, seatId],
+      );
+      expect(row.rows[0]?.active_socket_id).toEqual(expect.any(String));
+      expect(rollback).toHaveBeenCalledTimes(2);
+      for (const token of [t1, t2!]) {
+        expect(
+          await authorizeSeatSocket(db, id, seatId, randomUUID(), token),
+        ).toEqual({ status: 'invalid-token' });
+      }
+    } finally {
+      failSend.mockRestore();
+      delay.mockRestore();
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      clearSeatResumeTokenInvalidationPending(id, seatId);
     }
   }, 20_000);
 

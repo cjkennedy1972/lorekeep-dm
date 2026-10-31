@@ -63,6 +63,9 @@ import {
   authorizeSeatSocket,
   commitSeatResumeToken,
   heartbeatSeatSocket,
+  invalidateSeatResumeToken,
+  markSeatResumeTokenInvalidationPending,
+  clearSeatResumeTokenInvalidationPending,
   releaseSeatSocket,
   rollbackSeatResumeToken,
 } from './resumeTokens.js';
@@ -450,6 +453,7 @@ export function installGateway(
         );
         const socketId = randomUUID();
         let seatAuthorized = false;
+        let preserveSeatLeaseUntilExpiry = false;
         let pendingClaimId: string | undefined;
         let room: Awaited<ReturnType<RoomRegistry['get']>> | undefined;
         let snapshotAcknowledged = false;
@@ -461,7 +465,7 @@ export function installGateway(
           if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
           if (pendingClaimId && room)
             void room.cancelSeatResumeClaim(pendingClaimId).catch(() => {});
-          if (seatAuthorized)
+          if (seatAuthorized && !preserveSeatLeaseUntilExpiry)
             void releaseSeatSocket(
               db,
               identity.sessionId,
@@ -598,9 +602,14 @@ export function installGateway(
           resumeToken: string,
           previousTokenHash: string,
         ) => {
+          // Fence socket-close cleanup before the first DB await/retry delay.
+          // Confirmed rollback/invalidation can clear this lease guard; only
+          // delivery of a credential clears the separate process-local fence.
+          preserveSeatLeaseUntilExpiry = true;
           for (const attempt of [1, 2] as const) {
+            let restored = false;
             try {
-              await rollbackSeatResumeToken(
+              restored = await rollbackSeatResumeToken(
                 db,
                 identity.sessionId,
                 seatId,
@@ -608,46 +617,109 @@ export function installGateway(
                 resumeToken,
                 previousTokenHash,
               );
-              return true;
             } catch {
+              // A failed rollback is retried below without exposing DB details.
+            }
+            if (restored) {
+              preserveSeatLeaseUntilExpiry = false;
               try {
-                app.log.warn(
-                  {
-                    event: 'seat.resume_token.rollback_failed',
-                    attempt,
-                  },
-                  'Seat resume-token rollback failed',
+                await releaseSeatSocket(
+                  db,
+                  identity.sessionId,
+                  seatId,
+                  socketId,
                 );
               } catch {
-                // Rollback diagnostics must not create another socket failure.
+                try {
+                  app.log.warn(
+                    { event: 'seat.socket.lease_release_failed', attempt },
+                    'Seat socket lease release failed after token rollback',
+                  );
+                } catch {
+                  // Cleanup diagnostics must not create another socket failure.
+                }
               }
-              if (attempt === 1)
-                await new Promise((resolve) => setTimeout(resolve, 20));
+              return true;
             }
+            try {
+              app.log.warn(
+                {
+                  event: 'seat.resume_token.rollback_failed',
+                  attempt,
+                },
+                'Seat resume-token rollback failed',
+              );
+            } catch {
+              // Rollback diagnostics must not create another socket failure.
+            }
+            if (attempt === 1)
+              await new Promise((resolve) => setTimeout(resolve, 20));
           }
 
-          // A first-delivery credential whose DB hash could not be restored must
-          // never be offered again. The next tokenless socket enters host approval.
+          // The pending first-delivery value must not be offered after send failed.
           if (pendingTokenLeaseId && pendingTokenClaimed)
             room.consumePendingSeatResumeToken(
               identity.accountId,
               identity.authTokenHash,
               pendingTokenLeaseId,
             );
-          try {
-            await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
-          } catch {
+
+          // This fence is intentionally process-local; after a process restart,
+          // if both rollback and invalidation failed, the DB can still hold T1's
+          // hash and accept T1 after its lease expires. T1 is a fresh 128-bit
+          // credential not known to be delivered to a client; a send error does
+          // not prove no bytes arrived. If both rollback and invalidation writes
+          // fail, the process-local fence is not durable across a restart. The
+          // lease-preservation guard was set
+          // before rollback awaits so a concurrent close cannot release it.
+          markSeatResumeTokenInvalidationPending(identity.sessionId, seatId);
+          for (const attempt of [1, 2] as const) {
             try {
-              app.log.warn(
-                {
-                  event: 'seat.socket.lease_release_failed',
-                  attempt: 1,
-                },
-                'Seat socket lease release failed after token rollback failure',
+              const invalidated = await invalidateSeatResumeToken(
+                db,
+                identity.sessionId,
+                seatId,
+                socketId,
+                resumeToken,
               );
+              if (invalidated) {
+                preserveSeatLeaseUntilExpiry = false;
+                try {
+                  await releaseSeatSocket(
+                    db,
+                    identity.sessionId,
+                    seatId,
+                    socketId,
+                  );
+                } catch {
+                  try {
+                    app.log.warn(
+                      {
+                        event: 'seat.socket.lease_release_failed',
+                        attempt: 1,
+                      },
+                      'Seat socket lease release failed after token invalidation',
+                    );
+                  } catch {
+                    // Cleanup diagnostics must not create another socket failure.
+                  }
+                }
+                return false;
+              }
             } catch {
-              // Cleanup diagnostics must not create another socket failure.
+              // Retry a failed or stale compare-and-swap once.
             }
+            if (attempt === 1)
+              await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+
+          try {
+            app.log.error(
+              { event: 'seat.resume_token.invalidation_failed' },
+              'Seat resume-token invalidation failed; retaining socket lease until its heartbeat TTL',
+            );
+          } catch {
+            // The fail-closed marker and retained lease do not depend on logging.
           }
           return false;
         };
@@ -810,6 +882,8 @@ export function installGateway(
             });
           let tokenCommitted = false;
           try {
+            // Delivery is permitted only after commit; clearing the process-local
+            // unresolved fence below is safe only because this ordering holds.
             step = 'token-commit';
             tokenCommitted = await commitSeatResumeToken(
               db,
@@ -858,6 +932,7 @@ export function installGateway(
             logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
             return;
           }
+          clearSeatResumeTokenInvalidationPending(identity.sessionId, seatId);
           pendingTokenCredentialDelivered = true;
           if (pendingTokenLeaseId && pendingTokenClaimed)
             room.consumePendingSeatResumeToken(
