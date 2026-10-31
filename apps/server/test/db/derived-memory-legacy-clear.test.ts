@@ -303,29 +303,39 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     ).rejects.toThrow(/matching successful dry run/i);
   });
 
-  it('refuses a dry-run plan outside the maximum age window', async () => {
-    const old = new Date(Date.now() - 25 * 60 * 60_000);
-    await runLegacyDerivedMemoryClear(db.pool, {
-      ...flags,
-      now: () => old,
-    });
+  it('refuses live execution when no dry run exists', async () => {
     await expect(
-      runLegacyDerivedMemoryClear(db.pool, {
-        ...flags,
-        dryRun: false,
-        dryRunMaxAgeMs: 24 * 60 * 60_000,
-      }),
-    ).rejects.toThrow(/recent matching successful dry run/i);
+      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+    ).rejects.toThrow(/matching successful dry run/i);
     expect(
       (
         await db.pool.query(
           "SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE mode='live'",
         )
-      ).rows[0],
-    ).toEqual({
-      outcome: 'aborted',
-      reason_code: 'dry_run_count_mismatch',
-    });
+      ).rows,
+    ).toEqual([{ outcome: 'aborted', reason_code: 'dry_run_count_mismatch' }]);
+  });
+
+  it('refuses a successful dry run outside the configured freshness window', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    await db.pool.query(
+      "UPDATE derived_memory_legacy_clear_audit SET finished_at=now()-interval '2 hours' WHERE run_id=$1",
+      [dry.runId],
+    );
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, {
+        ...flags,
+        dryRun: false,
+        dryRunMaxAgeMs: 60_000,
+      }),
+    ).rejects.toThrow(/matching successful dry run/i);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE mode='live'",
+        )
+      ).rows,
+    ).toEqual([{ outcome: 'aborted', reason_code: 'dry_run_count_mismatch' }]);
   });
 
   it('preserves covered registry and scene rows alongside uncovered legacy rows in the same session', async () => {
