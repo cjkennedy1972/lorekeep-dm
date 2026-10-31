@@ -549,13 +549,24 @@ export function installGateway(
         // Pending tokens are a one-time first-delivery path, not an account-wide
         // fallback. The synchronous claim prevents a second tokenless socket from
         // reusing the first socket's not-yet-delivered credential.
-        const firstDeliveryToken = presentedToken
-          ? undefined
-          : room.claimPendingSeatResumeToken(
+        const pendingTokenLeaseId = presentedToken ? undefined : randomUUID();
+        const firstDeliveryToken = pendingTokenLeaseId
+          ? room.claimPendingSeatResumeToken(
               identity.accountId,
               identity.authTokenHash,
-            );
+              pendingTokenLeaseId,
+            )
+          : undefined;
         const pendingTokenClaimed = firstDeliveryToken !== undefined;
+        let pendingTokenDeliveryCompleted = false;
+        const releasePendingTokenLease = () => {
+          if (pendingTokenLeaseId && pendingTokenClaimed)
+            room.releasePendingSeatResumeToken(
+              identity.accountId,
+              identity.authTokenHash,
+              pendingTokenLeaseId,
+            );
+        };
         type SeatSocketRefusalReason =
           | 'not-seated'
           | 'authorization-error'
@@ -575,12 +586,16 @@ export function installGateway(
           | 'frame-delivery'
           | 'delivery-completion';
         let refusalLogged = false;
+        ws.once('close', () => {
+          if (!pendingTokenDeliveryCompleted) releasePendingTokenLease();
+        });
         const logSeatSocketRefusal = (
           reason: SeatSocketRefusalReason,
           closeCode: number | null,
           step?: SeatSocketStep,
         ) => {
           refusalLogged = true;
+          releasePendingTokenLease();
           try {
             app.log.warn(
               {
@@ -684,6 +699,10 @@ export function installGateway(
             );
             return;
           }
+          if (ws.readyState !== WebSocket.OPEN) {
+            releasePendingTokenLease();
+            return;
+          }
           authPhase = 'resume-authorized';
           app.log.info(
             {
@@ -768,7 +787,9 @@ export function installGateway(
           room.completeSeatResumeTokenDelivery(
             identity.accountId,
             identity.authTokenHash,
+            pendingTokenLeaseId,
           );
+          pendingTokenDeliveryCompleted = true;
         } catch (error) {
           if (!refusalLogged) {
             logSeatSocketRefusal(

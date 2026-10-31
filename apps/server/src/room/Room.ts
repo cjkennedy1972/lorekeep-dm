@@ -832,6 +832,7 @@ export class Room {
     {
       token: string;
       authTokenHash: string;
+      leaseId?: string;
       expiresAt: number;
       expiryTimer: NodeJS.Timeout;
     }
@@ -2318,6 +2319,7 @@ export class Room {
     const pending = {
       token,
       authTokenHash,
+      leaseId: undefined as string | undefined,
       expiresAt: Date.now() + 30_000,
       expiryTimer: setTimeout(() => {
         if (this.pendingSeatResumeTokens.get(accountId) === pending)
@@ -2332,6 +2334,7 @@ export class Room {
   claimPendingSeatResumeToken(
     accountId: string,
     authTokenHash: string,
+    leaseId: string,
     now = Date.now(),
   ): string | undefined {
     const pending = this.pendingSeatResumeTokens.get(accountId);
@@ -2342,24 +2345,38 @@ export class Room {
       return undefined;
     }
     if (pending.authTokenHash !== authTokenHash) return undefined;
-    clearTimeout(pending.expiryTimer);
-    this.pendingSeatResumeTokens.delete(accountId);
-    // The first-delivery token is the admission proof; after it is consumed,
-    // the separate late-join claim authorization is no longer needed.
-    for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
-      if (authorization.accountId === accountId)
-        this.lateJoinClaimAuthorizations.delete(seatId);
+    if (pending.leaseId && pending.leaseId !== leaseId) return undefined;
+    pending.leaseId = leaseId;
     return pending.token;
+  }
+
+  releasePendingSeatResumeToken(
+    accountId: string,
+    authTokenHash: string,
+    leaseId: string,
+  ): void {
+    const pending = this.pendingSeatResumeTokens.get(accountId);
+    if (pending?.authTokenHash === authTokenHash && pending.leaseId === leaseId)
+      pending.leaseId = undefined;
   }
 
   completeSeatResumeTokenDelivery(
     accountId: string,
     authTokenHash: string,
+    leaseId?: string,
   ): void {
     const pending = this.pendingSeatResumeTokens.get(accountId);
-    if (pending?.authTokenHash === authTokenHash) {
+    if (
+      pending?.authTokenHash === authTokenHash &&
+      (leaseId ? pending.leaseId === leaseId : !pending.leaseId)
+    ) {
       clearTimeout(pending.expiryTimer);
       this.pendingSeatResumeTokens.delete(accountId);
+      // The first-delivery token is the admission proof; after it is consumed,
+      // the separate late-join claim authorization is no longer needed.
+      for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
+        if (authorization.accountId === accountId)
+          this.lateJoinClaimAuthorizations.delete(seatId);
     }
   }
 

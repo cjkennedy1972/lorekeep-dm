@@ -262,13 +262,77 @@ describe('pending first-token handoff', () => {
   it('delivers only to the exact authenticated session, once', async () => {
     const { room, token } = await pendingSeat();
     expect(
-      room.claimPendingSeatResumeToken(accounts[0]!, hashToken(tokens[1]!)),
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[1]!),
+        randomUUID(),
+      ),
     ).toBeUndefined();
     expect(
-      room.claimPendingSeatResumeToken(accounts[0]!, hashToken(tokens[0]!)),
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        'lease-one',
+      ),
     ).toBe(token);
     expect(
-      room.claimPendingSeatResumeToken(accounts[0]!, hashToken(tokens[0]!)),
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        'lease-two',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('releases a pending-token lease for retry and prevents concurrent reuse', async () => {
+    const { room, token } = await pendingSeat();
+    const firstLease = 'lease-first';
+    const concurrentLease = 'lease-concurrent';
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        firstLease,
+      ),
+    ).toBe(token);
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        concurrentLease,
+      ),
+    ).toBeUndefined();
+    room.completeSeatResumeTokenDelivery(accounts[0]!, hashToken(tokens[0]!));
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        concurrentLease,
+      ),
+    ).toBeUndefined();
+    room.releasePendingSeatResumeToken(
+      accounts[0]!,
+      hashToken(tokens[0]!),
+      firstLease,
+    );
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        concurrentLease,
+      ),
+    ).toBe(token);
+    room.completeSeatResumeTokenDelivery(
+      accounts[0]!,
+      hashToken(tokens[0]!),
+      concurrentLease,
+    );
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        'replay',
+      ),
     ).toBeUndefined();
   });
 
@@ -278,6 +342,7 @@ describe('pending first-token handoff', () => {
       room.claimPendingSeatResumeToken(
         accounts[0]!,
         hashToken(tokens[0]!),
+        randomUUID(),
         Date.now() + 30_001,
       ),
     ).toBeUndefined();
@@ -313,6 +378,20 @@ describe('pending first-token handoff', () => {
     expect(
       entries.find((entry) => entry.event === 'seat.socket.refused'),
     ).not.toHaveProperty('socketId');
+    spy.mockRestore();
+  });
+
+  it('allows a retry after pending-token authorization is refused', async () => {
+    const { id } = await pendingSeat();
+    const spy = vi.spyOn(resumeTokenModule, 'authorizeSeatSocket');
+    spy.mockRejectedValueOnce(new Error('injected authorization failure'));
+    const refused = connect(await ticket(tokens[0]!, id), null);
+    expect(await closed(refused)).toBe(1008);
+
+    const retry = connect(await ticket(tokens[0]!, id), null);
+    const authenticated = await nextOfType(retry, 'SeatAuthenticated');
+    expect(authenticated.type).toBe('SeatAuthenticated');
+    await closeSocket(retry);
     spy.mockRestore();
   });
 
