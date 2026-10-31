@@ -3,9 +3,18 @@ import type { Pool } from 'pg';
 import { CharacterSchema, type Character } from '@game/schema';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { validateCharacter } from '@game/rules-engine';
+import { getIndexedDerivedMemoryRows } from '../dm/characterReferences.js';
 
 const catalog = loadCatalog();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUnverifiedReferenceCoverage(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message.startsWith('Reference-index coverage') ||
+      error.message === 'Session is held; refusing indexed lookup')
+  );
+}
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -215,7 +224,9 @@ export class SeatCharacterRepository {
          WHERE s.character_id=$1
          UNION
          SELECT b.session_id FROM session_seat_characters b
-         WHERE b.character_id=$1::uuid`,
+         WHERE b.character_id=$1::uuid
+         UNION
+         SELECT token.session_id FROM session_character_tokens token WHERE token.character_id=$1::uuid`,
         [characterId],
       );
       const sessionIds = referencedSessions.rows
@@ -244,6 +255,10 @@ export class SeatCharacterRepository {
       }
       if (sessionIds.length) {
         await client.query(
+          'DELETE FROM derived_memory_character_refs WHERE session_id = ANY($1::uuid[])',
+          [sessionIds],
+        );
+        await client.query(
           'DELETE FROM scene_summaries WHERE session_id = ANY($1::uuid[])',
           [sessionIds],
         );
@@ -256,6 +271,16 @@ export class SeatCharacterRepository {
           [sessionIds],
         );
       }
+      // No character FK is used because held sessions retain mapping/refs; the
+      // hold check above covers every token-mapped session before this cleanup.
+      await client.query(
+        'DELETE FROM derived_memory_character_refs WHERE character_id=$1::uuid',
+        [characterId],
+      );
+      await client.query(
+        'DELETE FROM session_character_tokens WHERE character_id=$1::uuid',
+        [characterId],
+      );
       const deleted = await client.query(
         'DELETE FROM account_characters WHERE id=$1 AND account_id=$2',
         [characterId, accountId],
@@ -451,11 +476,107 @@ export class SeatCharacterRepository {
     client: import('pg').PoolClient,
     accountId: string,
   ) {
+    const mappings = await client.query<{
+      session_id: string;
+      character_id: string;
+      held: boolean;
+    }>(
+      `SELECT t.session_id,t.character_id,
+              EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=t.session_id::text) AS held
+       FROM session_character_tokens t
+       JOIN account_characters c ON c.id=t.character_id WHERE c.account_id=$1
+       UNION
+       SELECT r.session_id,r.character_id,
+              EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=r.session_id::text) AS held
+       FROM derived_memory_character_refs r
+       JOIN account_characters c ON c.id=r.character_id WHERE c.account_id=$1`,
+      [accountId],
+    );
+    if (mappings.rows.some(({ held }) => held))
+      throw new SeatCharacterError('SESSION_HELD');
+    const indexedRows: Array<{
+      sessionId: string;
+      rowKind: 'scene_summary' | 'registry_entry';
+      rowId: string;
+    }> = [];
+    try {
+      for (const mapping of mappings.rows) {
+        const rows = await getIndexedDerivedMemoryRows(
+          client,
+          mapping.session_id,
+          mapping.character_id,
+        );
+        indexedRows.push(
+          ...rows.map((row) => ({ sessionId: mapping.session_id, ...row })),
+        );
+      }
+    } catch (error) {
+      if (!isUnverifiedReferenceCoverage(error)) throw error;
+      throw new Error('Derived-memory reference coverage is incomplete');
+    }
     await client.query(
       `UPDATE session_seat_characters SET account_id=NULL, character_id=NULL, character_revision=NULL,
          character_snapshot = jsonb_set(character_snapshot - 'id' - 'name', '{name}', '"Deleted player"'::jsonb),
          binding_status='redacted', unbound_at=COALESCE(unbound_at,now())
        WHERE account_id=$1`,
+      [accountId],
+    );
+    const summaryIds = indexedRows
+      .filter((row) => row.rowKind === 'scene_summary')
+      .map((row) => row.rowId);
+    if (summaryIds.length)
+      await client.query(
+        'DELETE FROM scene_summaries WHERE id = ANY($1::bigint[])',
+        [summaryIds],
+      );
+    // A removed entry's successors require its row for supersedes_id. Remove only
+    // that forward chain, preserving other entries in this shared session.
+    const registryEntriesBySession = new Map<string, string[]>();
+    for (const row of indexedRows) {
+      if (row.rowKind !== 'registry_entry') continue;
+      const ids = registryEntriesBySession.get(row.sessionId) ?? [];
+      ids.push(row.rowId);
+      registryEntriesBySession.set(row.sessionId, ids);
+    }
+    for (const [sessionId, entryIds] of registryEntriesBySession) {
+      await client.query(
+        `WITH RECURSIVE entries_to_delete(id) AS (
+           SELECT unnest($2::bigint[])
+           UNION
+           SELECT successor.id
+           FROM registry_entries successor
+           JOIN entries_to_delete removed ON successor.supersedes_id=removed.id
+           WHERE successor.session_id=$1
+         )
+         UPDATE registry_entries predecessor SET superseded_by=NULL
+         WHERE predecessor.session_id=$1
+           AND predecessor.superseded_by IN (SELECT id FROM entries_to_delete)
+           AND predecessor.id NOT IN (SELECT id FROM entries_to_delete)`,
+        [sessionId, entryIds],
+      );
+      await client.query(
+        `WITH RECURSIVE entries_to_delete(id) AS (
+           SELECT unnest($2::bigint[])
+           UNION
+           SELECT successor.id
+           FROM registry_entries successor
+           JOIN entries_to_delete removed ON successor.supersedes_id=removed.id
+           WHERE successor.session_id=$1
+         )
+         DELETE FROM registry_entries WHERE id IN (SELECT id FROM entries_to_delete)`,
+        [sessionId, entryIds],
+      );
+    }
+    await client.query(
+      `DELETE FROM derived_memory_character_refs target
+      WHERE target.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
+        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=target.session_id::text)`,
+      [accountId],
+    );
+    await client.query(
+      `DELETE FROM session_character_tokens t
+      WHERE t.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
+        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=t.session_id::text)`,
       [accountId],
     );
     await client.query('DELETE FROM account_characters WHERE account_id=$1', [

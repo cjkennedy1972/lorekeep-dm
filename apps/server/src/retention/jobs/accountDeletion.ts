@@ -6,7 +6,10 @@ import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
 import { AUTHOR_KEY, TEXT_KEYS } from '../../routes/reports.js';
 import { currentMemberEventsSql } from '../../room/membership.js';
-import { SeatCharacterRepository } from '../../persistence/seatCharacters.js';
+import {
+  SeatCharacterError,
+  SeatCharacterRepository,
+} from '../../persistence/seatCharacters.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
@@ -366,11 +369,20 @@ async function deleteAccount(
   if (derivedSessionIds.size) {
     const sessionIds = [...derivedSessionIds];
     await client.query(
+      'DELETE FROM derived_memory_character_refs WHERE session_id = ANY($1::uuid[])',
+      [sessionIds],
+    );
+    await client.query(
       'DELETE FROM scene_summaries WHERE session_id = ANY($1::uuid[])',
       [sessionIds],
     );
     await client.query(
       'DELETE FROM registry_entries WHERE session_id = ANY($1::uuid[])',
+      [sessionIds],
+    );
+    // These sessions are fully scrubbed above, so their token mappings can now be removed safely.
+    await client.query(
+      'DELETE FROM session_character_tokens WHERE session_id = ANY($1::uuid[])',
       [sessionIds],
     );
   }
@@ -558,7 +570,17 @@ async function deleteAccount(
   );
   // ADR-035 binding records retain anonymous mechanics only; the repository owns
   // the single redaction implementation used by this transaction.
-  await SeatCharacterRepository.redactAccount(client, accountId);
+  try {
+    await SeatCharacterRepository.redactAccount(client, accountId);
+  } catch (error) {
+    if (
+      (error instanceof SeatCharacterError && error.code === 'SESSION_HELD') ||
+      (error as Error).message ===
+        'Derived-memory reference coverage is incomplete'
+    )
+      throw new Error(HELD);
+    throw error;
+  }
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }
