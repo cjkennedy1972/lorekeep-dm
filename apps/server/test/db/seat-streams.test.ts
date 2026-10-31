@@ -65,6 +65,24 @@ describe('seat stream persistence', () => {
     }
   });
 
+  it('rejects recovery when the stored binding epoch does not match', async () => {
+    const client = await database.pool.connect();
+    try {
+      const before = await initializeSeatStream(client, sessionId, seatId);
+      await expect(
+        reinitializeSeatStream(
+          client,
+          sessionId,
+          seatId,
+          before.bindingEpoch + 1,
+        ),
+      ).rejects.toThrow('seat_stream_epoch_mismatch');
+      expect(await loadSeatStream(client, sessionId, seatId)).toEqual(before);
+    } finally {
+      client.release();
+    }
+  });
+
   it('advances only the matching generation and recovers at the same binding epoch with a fresh nonce', async () => {
     const client = await database.pool.connect();
     try {

@@ -9,6 +9,7 @@ export interface SeatStream {
   cursor: number;
 }
 
+// Keep nonce creation server-side; no client-supplied value can select a generation.
 function generationNonce(): string {
   return randomBytes(16).toString('base64url');
 }
@@ -20,6 +21,7 @@ function parseRow(row: {
   generation: string;
   cursor: string;
 }): SeatStream | null {
+  // PostgreSQL bigint values arrive as text; reject values JS cannot represent exactly.
   const bindingEpoch = Number(row.binding_epoch);
   const cursor = Number(row.cursor);
   if (
@@ -110,7 +112,10 @@ export async function advanceSeatStream(
   return cursor;
 }
 
-/** Replace a damaged/missing stream with a fresh nonce without changing its binding epoch. */
+/**
+ * Replace a damaged/missing stream at the same binding epoch with a fresh nonce.
+ * Callers must validate current seat membership before using this persistence helper.
+ */
 export async function reinitializeSeatStream(
   client: PoolClient,
   sessionId: string,
@@ -124,10 +129,12 @@ export async function reinitializeSeatStream(
      VALUES ($1,$2,$3,$4,0)
      ON CONFLICT (session_id, seat_id) DO UPDATE SET
        binding_epoch=EXCLUDED.binding_epoch, generation=EXCLUDED.generation, cursor=0
+     WHERE seat_streams.binding_epoch = EXCLUDED.binding_epoch
      RETURNING ${RETURNING}`,
     [sessionId, seatId, bindingEpoch, generationNonce()],
   );
-  const stream = result.rows[0] && parseRow(result.rows[0]);
+  if (result.rows.length === 0) throw new Error('seat_stream_epoch_mismatch');
+  const stream = parseRow(result.rows[0]);
   if (!stream) throw new Error('seat_stream_record_invalid');
   return stream;
 }
