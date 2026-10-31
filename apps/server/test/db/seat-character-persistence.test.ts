@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { quickBuild } from '@game/rules-engine';
 import { loadCatalog } from '@game/rules-engine/catalog-node';
 import { SeatCharacterRepository } from '../../src/persistence/seatCharacters.js';
@@ -10,6 +10,23 @@ import { runAccountDeletions } from '../../src/retention/jobs/accountDeletion.js
 const db = new Pool({ connectionString: process.env.DATABASE_URL, max: 8 });
 afterAll(async () => db.end());
 const catalog = loadCatalog();
+let priorReconciliationComplete: boolean | null = null;
+beforeEach(async () => {
+  const state = await db.query<{ complete: boolean }>(
+    'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
+  );
+  priorReconciliationComplete = state.rows[0]?.complete ?? null;
+  await db.query(
+    'UPDATE derived_memory_reconciliation_state SET complete=true WHERE singleton=true',
+  );
+});
+afterEach(async () => {
+  if (priorReconciliationComplete !== null)
+    await db.query(
+      'UPDATE derived_memory_reconciliation_state SET complete=$1 WHERE singleton=true',
+      [priorReconciliationComplete],
+    );
+});
 
 async function fixture() {
   const accountId = randomUUID();

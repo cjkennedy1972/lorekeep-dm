@@ -182,3 +182,35 @@ Note (M3-38): local-model entries now need the port. Use `LLM_ALLOW_LOCAL_HOSTS=
 Note (M3-38 r2): bare-host `LLM_ALLOW_LOCAL_HOSTS` examples above are superseded. A bare host allows only ports 80 and 443. For a non-default port, list `host:port` exactly (for example `localhost:11434` or `172.31.25.75:8080`). This applies to the server guard, `apps/server/scripts/smoke-production.mjs`, and the live eval path (`packages/evals`).
 
 Note (M3-38 r3): the live eval path now applies the same port rule to `https:` endpoints, so `https://172.31.25.75:9999` is refused when only `172.31.25.75` is listed. It also strips a trailing dot from the URL host (as the guard does), refuses URL credentials, and refuses metadata and link-local IP literals even when listed. It does not follow redirects (a 3xx from the live endpoint is an error). It does not resolve DNS: a hostname that resolves to a private or metadata address is not refused by the live path, so list only hosts you control. Entries are not dot-normalized: `localhost.:11434` in the list matches nothing. The shared verdict corpus is `packages/evals/data/live-url-corpus.json`.
+
+## ADR-039 one-time legacy derived-memory clear (operator gated)
+
+This is a separate job and is **not** part of the retention sweeper, app startup, CI, or a migration side effect. It permanently deletes only `scene_summaries` and `registry_entries` rows with no `derived_memory_character_refs` coverage, after reconciliation is complete for the session. `registry_facts` are removed by the registry-entry FK cascade. It does not rebuild or string-scrub legacy content. Indexed rows are retained.
+
+There is no rollback or rebuild for cleared rows. Run only after ADR-039 steps 1–3 have merged and the database has migrations 0045–0049 applied. Held sessions are skipped while the job holds the session row lock; sessions with unverified/partial coverage are deferred and not deleted. Review the counts before any live run. **A live run still requires Chris (owner)'s go-ahead for that execution.** The standing approval explicitly accepts permanent loss (Gmail INBOX uid 58, 2026-10-31 02:48:16 UTC); it does not replace the live-run go-ahead required by the operator procedure.
+
+### Procedure
+
+1. Select the intended database explicitly and confirm it is the target environment. Confirm steps 1–3 are deployed, migrations 0045–0049 are applied, and reconciliation reports complete. Do not point this job at production without the owner's go-ahead.
+2. Build the exact deployed revision and set `DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION` to that immutable revision identifier. Leave `DERIVED_MEMORY_LEGACY_CLEAR_ENABLED` unset or `false` except for this invocation.
+3. Run the dry run (the mode defaults to dry-run):
+
+   ```sh
+   DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true \
+   DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<immutable-revision> \
+   pnpm --filter @game/server derived-memory:legacy-clear
+   ```
+
+   The structured output and audit row report counts only: sessions considered, sessions skipped as held, sessions deferred for unverified coverage, and uncovered scene-summary, registry-entry, and cascading registry-fact rows that would be removed. It writes no derived-memory rows. Inspect the completed audit row and confirm the outcome is `dry_run_succeeded`.
+4. Obtain the owner's go-ahead for the live execution. Keep the exact same code version and database. Live execution is refused unless `DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true` **and** `DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN=false`, a successful dry run for the same code version is within the default 24-hour window, and all five counts match exactly (default tolerance is zero). A partial run can be resumed by invoking the same version and flags while its dry-run record remains recent. Batches default to 100 sessions and a 2-second budget; `DERIVED_MEMORY_LEGACY_CLEAR_BATCH_SIZE`, `DERIVED_MEMORY_LEGACY_CLEAR_TIME_BUDGET_MS`, `DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN_MAX_AGE_MS`, and `DERIVED_MEMORY_LEGACY_CLEAR_COUNT_TOLERANCE` are operator overrides and should remain at defaults unless reviewed.
+
+   ```sh
+   DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true \
+   DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN=false \
+   DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<same-immutable-revision> \
+   pnpm --filter @game/server derived-memory:legacy-clear
+   ```
+
+5. Read `derived_memory_legacy_clear_audit` ordered by `started_at`. Confirm mode, code version, linked dry-run id, counts, start/finish timestamps and outcome. A `live_partial` outcome requires a resume; `live_succeeded` ends the operation. Audit records include the fixed owner-approval citation and contain no session ids or row text. Disable/remove both flags immediately after completion.
+
+The runner is protected by a PostgreSQL advisory lock and serializes each session against legal-hold changes and derived-memory writes. It never retries with a wider deletion rule. Count drift, missing/incomplete reconciliation, a changed hold/coverage state, or an unavailable matching dry run fails closed. **Rollback: none. The deletion is permanent, and no legacy rebuild path exists.**
