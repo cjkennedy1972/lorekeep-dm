@@ -62,7 +62,7 @@ export async function reconcileDerivedMemoryWithinBudget(
     let processed = 0;
     let complete = false;
     try {
-      do {
+      for (let shouldContinue = true; shouldContinue; ) {
         const state = (
           await db.query<{
             complete: boolean;
@@ -99,7 +99,7 @@ export async function reconcileDerivedMemoryWithinBudget(
         processed += batch.processed;
         complete = batch.complete;
         if (complete || monotonicNowMs() - startedAt >= timeBudgetMs) break;
-      } while (true);
+      }
     } finally {
       await client.query('SELECT pg_advisory_unlock($1)', [
         RECONCILIATION_LOCK_KEY,
