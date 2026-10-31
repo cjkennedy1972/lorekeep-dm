@@ -357,8 +357,8 @@ describe('pending first-token handoff', () => {
 
       const logs = capturedLogs.slice(before).join('\n');
       expect(logs).toContain('seat.resume_token.rollback_failed');
-      expect(logs).toContain('\"attempt\":1');
-      expect(logs).toContain('\"attempt\":2');
+      expect(logs).toContain('"attempt":1');
+      expect(logs).toContain('"attempt":2');
       expect(logs).not.toContain(undeliveredToken);
       expect(logs).not.toContain('injected rollback DB failure');
     } finally {
