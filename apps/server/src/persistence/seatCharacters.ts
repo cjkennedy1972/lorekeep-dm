@@ -607,7 +607,6 @@ export class SeatCharacterRepository {
       rowKind: 'scene_summary' | 'registry_entry';
       rowId: string;
     }> = [];
-    const unindexedSoloSessions = new Set<string>();
     try {
       for (const mapping of mappings.rows) {
         try {
@@ -620,39 +619,21 @@ export class SeatCharacterRepository {
             ...rows.map((row) => ({ sessionId: mapping.session_id, ...row })),
           );
         } catch (error) {
+          if (
+            error instanceof Error &&
+            error.message === 'Session is held; refusing indexed lookup'
+          )
+            throw new SeatCharacterError('SESSION_HELD');
           if (!isUnverifiedReferenceCoverage(error)) throw error;
-          const otherBindings = await client.query(
-            `SELECT 1 FROM session_seat_characters
-             WHERE session_id=$1 AND binding_status='active' AND account_id<>$2
-             LIMIT 1`,
-            [mapping.session_id, accountId],
-          );
-          if (otherBindings.rowCount)
-            throw new Error('Derived-memory reference coverage is incomplete');
-          unindexedSoloSessions.add(mapping.session_id);
+          throw new Error('Derived-memory reference coverage is incomplete');
         }
       }
     } catch (error) {
       if (!isUnverifiedReferenceCoverage(error)) throw error;
       throw new Error('Derived-memory reference coverage is incomplete');
     }
-    // Whole-session fallback is allowed only when no other active account is bound.
-    for (const sessionId of unindexedSoloSessions) {
-      await client.query(
-        'DELETE FROM derived_memory_character_refs WHERE session_id=$1',
-        [sessionId],
-      );
-      await client.query('DELETE FROM scene_summaries WHERE session_id=$1', [
-        sessionId,
-      ]);
-      await client.query('DELETE FROM registry_entries WHERE session_id=$1', [
-        sessionId,
-      ]);
-      await client.query(
-        'DELETE FROM session_character_tokens WHERE session_id=$1',
-        [sessionId],
-      );
-    }
+    // Unverified coverage is deferred; even a nominally solo session can contain
+    // released participants or unreferenced NPC memory that must not be purged.
     await client.query(
       `UPDATE session_seat_characters SET account_id=NULL, character_id=NULL, character_revision=NULL,
          character_snapshot = jsonb_set(character_snapshot - 'id' - 'name', '{name}', '"Deleted player"'::jsonb),

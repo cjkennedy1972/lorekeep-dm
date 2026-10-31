@@ -477,10 +477,16 @@ export class RegistryMemory {
     sessionId: string,
     diff: RegistryDiff | RegistryEvent,
     privacy: RegistryPrivacyOptions = {},
+    expectedLeaseEpoch?: number,
   ): Promise<void> {
+    const epochAtStart = await this.captureLeaseEpoch(
+      sessionId,
+      expectedLeaseEpoch,
+    );
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.assertLeaseEpoch(client, sessionId, epochAtStart);
       await this.upsertManyInTransaction(
         client,
         sessionId,
@@ -501,11 +507,17 @@ export class RegistryMemory {
     sessionId: string,
     diffs: readonly RegistryDiff[],
     privacy: RegistryPrivacyOptions = {},
+    expectedLeaseEpoch?: number,
   ): Promise<void> {
     if (!diffs.length) return;
+    const epochAtStart = await this.captureLeaseEpoch(
+      sessionId,
+      expectedLeaseEpoch,
+    );
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.assertLeaseEpoch(client, sessionId, epochAtStart);
       await this.upsertManyInTransaction(
         client,
         sessionId,
@@ -562,6 +574,32 @@ export class RegistryMemory {
       'DELETE FROM registry_entries WHERE session_id=$1 AND turn_id = ANY($2::text[])',
       [sessionId, turnIds],
     );
+  }
+
+  private async captureLeaseEpoch(
+    sessionId: string,
+    expectedLeaseEpoch?: number,
+  ): Promise<number | null> {
+    if (expectedLeaseEpoch !== undefined) return expectedLeaseEpoch;
+    const lease = await this.pool.query<{ epoch: string }>(
+      'SELECT epoch FROM session_lease WHERE session_id=$1',
+      [sessionId],
+    );
+    return lease.rows[0] ? Number(lease.rows[0].epoch) : null;
+  }
+
+  private async assertLeaseEpoch(
+    client: PoolClient,
+    sessionId: string,
+    expectedLeaseEpoch: number | null,
+  ): Promise<void> {
+    await lockSessionForDerivedMemoryWrite(client, sessionId);
+    const lease = await client.query<{ epoch: string }>(
+      'SELECT epoch FROM session_lease WHERE session_id=$1 FOR SHARE',
+      [sessionId],
+    );
+    const actual = lease.rows[0] ? Number(lease.rows[0].epoch) : null;
+    if (actual !== expectedLeaseEpoch) throw new DerivedMemoryLeaseLostError();
   }
 
   private async upsertManyInTransaction(

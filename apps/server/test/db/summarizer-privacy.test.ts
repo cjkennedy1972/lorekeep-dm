@@ -93,6 +93,42 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
   }, 30_000);
   afterAll(async () => db?.close());
 
+  it('rejects registry upserts when the captured lease epoch is stale', async () => {
+    const registry = new RegistryMemory(db.pool);
+    await db.pool.query(
+      `INSERT INTO session_lease(session_id,node_id,expires_at,epoch) VALUES($1,'worker',now()+interval '1 hour',1)`,
+      [sessionId],
+    );
+    await expect(
+      registry.upsertMany(
+        sessionId,
+        [
+          {
+            kind: 'npc',
+            id: 'npc_stale_lease',
+            after: {
+              id: 'npc_stale_lease',
+              name: 'Stale Guard',
+              role: 'guard',
+              disposition: 'neutral',
+              facts: [],
+            },
+          },
+        ],
+        {},
+        0,
+      ),
+    ).rejects.toMatchObject({ name: 'DerivedMemoryLeaseLostError' });
+    const rows = await db.pool.query(
+      "SELECT id FROM registry_entries WHERE session_id=$1 AND entity_id='npc_stale_lease'",
+      [sessionId],
+    );
+    expect(rows.rowCount).toBe(0);
+    await db.pool.query('DELETE FROM session_lease WHERE session_id=$1', [
+      sessionId,
+    ]);
+  });
+
   it('sends only projected fields and opaque tokens; retries name collisions and indexes summary/registry references', async () => {
     let call = 0;
     adapter.complete = async function* (req: {

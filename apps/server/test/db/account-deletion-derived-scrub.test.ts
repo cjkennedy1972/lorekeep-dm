@@ -747,6 +747,181 @@ describe('account deletion scrubs DM-authored derived memory', () => {
     }
   });
 
+  it('defers unverified solo-session cleanup without deleting released-player or NPC rows', async () => {
+    const owner = randomUUID();
+    const coOwner = randomUUID();
+    const roomOwner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    const releasedCharacterId = randomUUID();
+    const targetToken = 'W'.repeat(32);
+    const releasedToken = 'X'.repeat(32);
+    const prior = await q(
+      'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
+    );
+    await account(owner);
+    await account(coOwner);
+    await account(roomOwner);
+    try {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=false WHERE singleton=true',
+      );
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, owner, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [
+          releasedCharacterId,
+          coOwner,
+          { id: releasedCharacterId, name: 'Released Co-player' },
+        ],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          session,
+          roomOwner,
+          'Unverified solo fallback',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      await q(
+        `INSERT INTO session_seat_characters(session_id,seat_id,account_id,character_id,character_revision,character_snapshot,binding_status)
+        VALUES($1,$2,$3,$4,1,$5,'released')`,
+        [
+          session,
+          randomUUID(),
+          coOwner,
+          releasedCharacterId,
+          { id: releasedCharacterId, name: 'Released Co-player' },
+        ],
+      );
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3),($1,$4,$5)',
+        [session, characterId, targetToken, releasedCharacterId, releasedToken],
+      );
+      const summary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
+        [session, 'released-co-player', `Released text ${releasedToken}`],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)`,
+        [session, releasedCharacterId, summary[0].id],
+      );
+      const npc = await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document) VALUES($1,'npc','npc-safe',1,'Town Guard',$2,'Town Guard protects the gate') RETURNING id`,
+        [session, { description: 'NPC-only fact' }],
+      );
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [owner],
+      );
+      const result = await runSweep(db, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+      });
+      expect(result?.accounts.held).toBeGreaterThan(0);
+      expect(
+        await q(
+          'SELECT token FROM session_character_tokens WHERE session_id=$1 ORDER BY token',
+          [session],
+        ),
+      ).toEqual(
+        [{ token: targetToken }, { token: releasedToken }].sort((a, b) =>
+          a.token.localeCompare(b.token),
+        ),
+      );
+      expect(
+        await q('SELECT id FROM scene_summaries WHERE id=$1', [summary[0].id]),
+      ).toHaveLength(1);
+      expect(
+        await q('SELECT id FROM registry_entries WHERE id=$1', [npc[0].id]),
+      ).toHaveLength(1);
+      expect(
+        await q('SELECT status FROM accounts WHERE id=$1', [owner]),
+      ).toEqual([{ status: 'deleting' }]);
+    } finally {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=$1 WHERE singleton=true',
+        [prior[0]?.complete ?? false],
+      );
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id=ANY($1)', [
+        [owner, coOwner, roomOwner],
+      ]);
+    }
+  });
+
+  it('deletes only referenced rows in a proven-solo session and preserves unreferenced NPC memory', async () => {
+    const owner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    const token = 'Y'.repeat(32);
+    await account(owner);
+    try {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=true WHERE singleton=true',
+      );
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, owner, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          session,
+          owner,
+          'Solo indexed session',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, characterId, token],
+      );
+      const summary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
+        [session, 'targeted-summary', `Target ${token}`],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)`,
+        [session, characterId, summary[0].id],
+      );
+      const npc = await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document) VALUES($1,'npc','npc_survives',1,'Town Guard',$2,'Town Guard protects the gate') RETURNING id`,
+        [session, { role: 'guard', facts: ['Keeps watch'] }],
+      );
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        await SeatCharacterRepository.redactAccount(client, owner);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      expect(
+        await q('SELECT id FROM scene_summaries WHERE id=$1', [summary[0].id]),
+      ).toHaveLength(0);
+      expect(
+        await q(
+          'SELECT token FROM session_character_tokens WHERE session_id=$1',
+          [session],
+        ),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT id FROM registry_entries WHERE id=$1', [npc[0].id]),
+      ).toHaveLength(1);
+    } finally {
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id=$1', [owner]);
+    }
+  });
+
   it('deletes only indexed registry versions in a shared session', async () => {
     const owner = randomUUID();
     const roomOwner = randomUUID();
