@@ -34,6 +34,26 @@ describe('schema-driven combat event visibility', () => {
     expect(projectEventForViewer(reveal, hidden, none)).toEqual(reveal);
     expect(projectEventForViewer(reveal, hidden, owner)).toEqual(reveal);
   });
+  it('same-commit reveal does not expose reaction events to non-controllers', () => {
+    const historicalHidden = new Set(['rogue']);
+    for (const event of [
+      { type: 'OpportunityTriggered', moverId: 'pc', attackerId: 'rogue' },
+      { type: 'ReactionAvailable', entityId: 'rogue' },
+      { type: 'ReactionResolved', entityId: 'rogue' },
+    ])
+      expect(projectEventForViewer(event, historicalHidden, none)).toBeNull();
+    expect(
+      projectEventForViewer(
+        { type: 'EntityRevealed', entityId: 'rogue', cause: 'opportunity' },
+        historicalHidden,
+        none,
+      ),
+    ).toEqual({
+      type: 'EntityRevealed',
+      entityId: 'rogue',
+      cause: 'opportunity',
+    });
+  });
   for (const [type, rule] of Object.entries(EVENT_ID_RULES)) {
     const idFields = [...(rule.scalars ?? []), ...(rule.lists ?? [])];
     if (idFields.length === 0) continue;

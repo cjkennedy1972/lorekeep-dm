@@ -669,11 +669,11 @@ export function createCombatRuntime(
             ) {
               if (x < 0 || y < 0 || x >= state.map.w || y >= state.map.h)
                 continue;
-              const candidate = path(mv, actorId, { x, y });
+              const candidate = path(routeState, actorId, { x, y });
               if ('path' in candidate) adjacent.push({ x, y });
             }
           const choices = adjacent
-            .map((pos) => path(mv, actorId, pos))
+            .map((pos) => path(routeState, actorId, pos))
             .filter((item) => 'path' in item);
           choices.sort(
             (a, b) =>

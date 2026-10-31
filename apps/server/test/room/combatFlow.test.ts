@@ -1334,6 +1334,50 @@ describe('monster turns', () => {
     expect(damage?.damageType).toBe('piercing');
   });
 
+  it('hidden bump approach is invariant to a second hidden occupant', () => {
+    const { runtime, state } = bootstrapped();
+    const hiddenId = 'ent_goblin-minion_1';
+    const secondId = 'ent_goblin-minion_2';
+    const run = (withSecond: boolean) => {
+      const staged = placed(state, {
+        ent_aria: { x: 1, y: 1 },
+        [hiddenId]: { x: 3, y: 1 },
+        [secondId]: { x: 2, y: 0 },
+      });
+      staged.entities = staged.entities
+        .filter((entity) => withSecond || entity.id !== secondId)
+        .map((entity) =>
+          entity.id === hiddenId || entity.id === secondId
+            ? { ...entity, hidden: true }
+            : entity,
+        );
+      staged.combat.resources.ent_aria!.movementRemaining = 30;
+      return ok(
+        runtime.execute(
+          staged,
+          'ent_aria',
+          { command: 'move', destination: { x: 3, y: 1 } },
+          { now: NOW },
+        ),
+      );
+    };
+    const alone = run(false);
+    const together = run(true);
+    const heroPos = (result: typeof alone) =>
+      result.state.entities.find((entity) => entity.id === 'ent_aria')?.pos;
+    expect(heroPos(alone)).toEqual(heroPos(together));
+    expect(alone.events).toEqual(together.events);
+    expect(heroPos(alone)).not.toEqual({ x: 3, y: 1 });
+    expect(alone.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: hiddenId,
+      cause: 'bump',
+    });
+    expect(alone.events).not.toContainEqual(
+      expect.objectContaining({ entityId: secondId }),
+    );
+  });
+
   it('approach from across the map, then end combat when the rules say so', () => {
     const { runtime, state } = bootstrapped();
     let current = state;
@@ -2538,7 +2582,7 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
       ),
     ).toBe(true);
     expect(payloads(table, 'ReactionDeclined')).toMatchObject([
-      { cause: 'no-controller' },
+      { cause: 'cap' },
     ]);
     expect(reactorInbox.some((m) => m.type.startsWith('ReactionPrompt'))).toBe(
       false,

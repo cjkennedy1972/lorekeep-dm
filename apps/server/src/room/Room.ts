@@ -6436,8 +6436,7 @@ export class Room {
       );
       if (!reactor?.hidden) break;
       this.rememberPrompt(promptIdOf(pending), pending.entityId);
-      const cause =
-        this.immediateDeclineCause(committed.state) ?? 'no-controller';
+      const cause = this.immediateDeclineCause(committed.state) ?? 'cap';
       const declined = this.combatRuntime.decline(
         committed.state,
         cause,
@@ -6456,7 +6455,7 @@ export class Room {
     let combatState = committed.state;
     const priorTurnEvents = beforeCombat?.turnNarrationEvents ?? [];
     const priorTurnEventIds = beforeCombat?.turnNarrationEventIds ?? [];
-    const hiddenEntityIds = hiddenIdsOf(combatState);
+    const hiddenEntityIds = hiddenIdsOf(beforeCombat ?? { entities: [] });
     const currentTurnEventIds = committed.events.flatMap((event, index) =>
       namesHiddenEntity(event, hiddenEntityIds)
         ? []
@@ -6540,7 +6539,16 @@ export class Room {
       console.error(
         `Combat turn events were stored with non-contiguous seq for ${this.sessionId}`,
       );
-    this.announceCombat(combatState, committedEvents, accountId, actionId);
+    this.announceCombat(
+      combatState,
+      committedEvents,
+      accountId,
+      actionId,
+      new Set([
+        ...hiddenIdsOf(beforeCombat ?? { entities: [] }),
+        ...hiddenIdsOf(combatState ?? { entities: [] }),
+      ]),
+    );
   }
 
   /** Broadcast what changed, arm the reaction deadline and queue the DM's narration. */
@@ -6549,6 +6557,7 @@ export class Room {
     events: readonly Record<string, unknown>[],
     accountId: string | undefined,
     actionId?: string,
+    concealedAtCommit?: ReadonlySet<string>,
   ): void {
     for (const event of events)
       if (event.type === 'ReactionPromptOpened')
@@ -6562,7 +6571,7 @@ export class Room {
       (event) => event.type !== 'TurnResolved',
     );
     // ADR-034 §3: a committed event naming a hidden entity reaches only its controller.
-    const hidden = hiddenIdsOf(state);
+    const hidden = concealedAtCommit ?? hiddenIdsOf(state);
     const pcIds = new Set(
       state.entities.filter((e) => e.kind === 'character').map((e) => e.id),
     );
