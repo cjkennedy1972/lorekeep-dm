@@ -60,8 +60,8 @@ const seat = (seatId: string, accountId: string, isHost: boolean) => ({
   presence: 'online',
 });
 
-function mount(extra: Record<string, unknown> = {}) {
-  hoisted.room = {
+function roomState(extra: Record<string, unknown> = {}) {
+  return {
     seats: [seat('seat-self', 'acct-1', true)],
     gameState: {
       characters: {},
@@ -69,16 +69,24 @@ function mount(extra: Record<string, unknown> = {}) {
     },
     ...extra,
   };
-  return render(
+}
+
+function tree() {
+  return (
     <MemoryRouter initialEntries={['/']}>
       <Routes>
         <Route path="/" element={<Game />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
 }
 
-describe('Game screen table drawers by table size', () => {
+function mount(extra: Record<string, unknown> = {}) {
+  hoisted.room = roomState(extra);
+  return render(tree());
+}
+
+describe('Game screen Party chat follows the table mode', () => {
   beforeEach(() => {
     http.fetch = async () =>
       new Response(
@@ -89,26 +97,73 @@ describe('Game screen table drawers by table size', () => {
       new Proxy({}, { get: () => () => undefined })) as never;
     gameStore.setCharacter(null);
     gameStore.setCombatState(initialGameState().combat);
+    hoisted.account = { id: 'acct-1' };
   });
 
-  it('a solo host keeps Host tools, which always carry round and timer controls', () => {
-    mount();
+  it('a solo-mode host keeps Host tools but gets no empty Party chat card', () => {
+    mount({ tableMode: 'solo' });
     expect(screen.getByText('Host tools')).toBeInTheDocument();
     expect(screen.queryByText('Party chat')).not.toBeInTheDocument();
   });
 
-  it('a party host keeps Host tools and Party chat', () => {
+  it('a party-mode table with only its host seated keeps Party chat', () => {
+    mount({ tableMode: 'party' });
+    expect(screen.getByText('Host tools')).toBeInTheDocument();
+    expect(screen.getByText('Party chat')).toBeInTheDocument();
+  });
+
+  it('a party-mode table keeps Party chat for a seated non-host, without Host tools', () => {
+    hoisted.account = { id: 'acct-2' };
+    mount({
+      tableMode: 'party',
+      seats: [
+        seat('seat-host', 'acct-1', true),
+        { ...seat('seat-self', 'acct-2', false), isSelf: true },
+      ],
+    });
+    expect(screen.getByText('Party chat')).toBeInTheDocument();
+    expect(screen.queryByText('Host tools')).not.toBeInTheDocument();
+  });
+
+  it('a solo-mode table hides Party chat even while a late-join request waits', () => {
+    mount({
+      tableMode: 'solo',
+      lateJoinRequests: [
+        {
+          requestId: '6f1d2c3a-4b5e-4f70-8a9b-0c1d2e3f4a5b',
+          accountId: 'acct-2',
+          expiresAt: Date.now() + 60_000,
+        },
+      ],
+    });
+    expect(screen.queryByText('Party chat')).not.toBeInTheDocument();
+  });
+
+  it('a reconnect that carries the party mode brings Party chat back', () => {
+    mount({ tableMode: 'solo' });
+    expect(screen.queryByText('Party chat')).not.toBeInTheDocument();
+    hoisted.room = roomState({ tableMode: 'party' });
+    const { rerender } = render(tree());
+    rerender(tree());
+    expect(screen.getByText('Party chat')).toBeInTheDocument();
+  });
+
+  it('an older server with no tableMode keeps Party chat for a second seat', () => {
     mount({
       seats: [
         seat('seat-self', 'acct-1', true),
         seat('seat-guest', 'acct-2', false),
       ],
     });
-    expect(screen.getByText('Host tools')).toBeInTheDocument();
     expect(screen.getByText('Party chat')).toBeInTheDocument();
   });
 
-  it('a solo host gets Party chat back while a late-join request waits', () => {
+  it('an older server with no tableMode hides Party chat for a lone host', () => {
+    mount();
+    expect(screen.queryByText('Party chat')).not.toBeInTheDocument();
+  });
+
+  it('an older server with no tableMode keeps Party chat while a late-join request waits', () => {
     mount({
       lateJoinRequests: [
         {
@@ -118,11 +173,10 @@ describe('Game screen table drawers by table size', () => {
         },
       ],
     });
-    expect(screen.getByText('Host tools')).toBeInTheDocument();
     expect(screen.getByText('Party chat')).toBeInTheDocument();
   });
 
-  it('a solo host gets Party chat back while a device claim waits for approval', () => {
+  it('an older server with no tableMode keeps Party chat while a device claim waits', () => {
     mount();
     act(() => {
       hoisted.onMessage!({

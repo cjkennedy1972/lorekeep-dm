@@ -196,6 +196,8 @@ export const ClientRoomStateSchema = RoomStateSchema.omit({
   seats: z.array(ClientSeatSchema).max(6),
   revokedSeats: z.array(ClientSeatSchema).optional(),
   lateJoinRequests: z.array(LateJoinHostRequestSchema).optional(),
+  /** The persisted session mode. Absent from servers that predate it. */
+  tableMode: z.enum(['solo', 'party']).optional(),
 });
 export type ClientRoomState = z.infer<typeof ClientRoomStateSchema>;
 export type Presence = z.infer<typeof PresenceSchema>;

@@ -1010,14 +1010,15 @@ export function Game() {
         onRetry={live.removed ? undefined : retryRoomConnection}
       />
     );
-  // A solo table has one seat and nobody to chat with, so its Party chat drawer would be an empty shell.
-  // It stays while anything needs the party: a second seat, a late-join request, or a device claim waiting
-  // for approval. The client sees no session mode, so seat count is the signal. Host tools always stays for
-  // the host: it carries round and turn-timer controls even at a solo table.
-  const showTableDrawers =
-    (room?.seats?.length ?? 0) > 1 ||
-    (room?.lateJoinRequests?.length ?? 0) > 0 ||
-    seatClaims.length > 0;
+  // A solo-mode table has nobody to chat with, so its Party chat drawer would be an empty shell. The server
+  // sends the persisted mode. An older server omits it, so seat count, a pending late join, or a device claim
+  // stands in. Host tools always stays for the host: it carries round and turn-timer controls.
+  const showPartyChat =
+    room?.tableMode !== undefined
+      ? room.tableMode === 'party'
+      : (room?.seats?.length ?? 0) > 1 ||
+        (room?.lateJoinRequests?.length ?? 0) > 0 ||
+        seatClaims.length > 0;
   return (
     <div className="game-screen">
       <div className="game-skip-links">
@@ -1645,7 +1646,7 @@ export function Game() {
               )}
             </Drawer>
           )}
-          {showTableDrawers && (
+          {showPartyChat && (
             <Drawer
               id="chat"
               title="Party chat"
