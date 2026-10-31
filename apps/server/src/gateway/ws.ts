@@ -598,29 +598,58 @@ export function installGateway(
           resumeToken: string,
           previousTokenHash: string,
         ) => {
-          try {
-            await rollbackSeatResumeToken(
-              db,
-              identity.sessionId,
-              seatId,
-              socketId,
-              resumeToken,
-              previousTokenHash,
+          for (const attempt of [1, 2] as const) {
+            try {
+              await rollbackSeatResumeToken(
+                db,
+                identity.sessionId,
+                seatId,
+                socketId,
+                resumeToken,
+                previousTokenHash,
+              );
+              return true;
+            } catch {
+              try {
+                app.log.warn(
+                  {
+                    event: 'seat.resume_token.rollback_failed',
+                    attempt,
+                  },
+                  'Seat resume-token rollback failed',
+                );
+              } catch {
+                // Rollback diagnostics must not create another socket failure.
+              }
+              if (attempt === 1)
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          }
+
+          // A first-delivery credential whose DB hash could not be restored must
+          // never be offered again. The next tokenless socket enters host approval.
+          if (pendingTokenLeaseId && pendingTokenClaimed)
+            room.consumePendingSeatResumeToken(
+              identity.accountId,
+              identity.authTokenHash,
+              pendingTokenLeaseId,
             );
+          try {
+            await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
           } catch {
             try {
               app.log.warn(
                 {
-                  event: 'seat.resume_token.rollback_failed',
-                  sessionIdHash: diagnosticHash(identity.sessionId),
-                  seatId,
+                  event: 'seat.socket.lease_release_failed',
+                  attempt: 1,
                 },
-                'Seat resume-token rollback failed',
+                'Seat socket lease release failed after token rollback failure',
               );
             } catch {
-              // Rollback diagnostics must not create another socket failure.
+              // Cleanup diagnostics must not create another socket failure.
             }
           }
+          return false;
         };
         const logSeatSocketRefusal = (
           reason: SeatSocketRefusalReason,
@@ -811,12 +840,14 @@ export function installGateway(
                 (error) => resolve(!error),
               );
             });
-          } catch (error) {
+          } catch {
             await rollbackResumeTokenSafely(
               authorization.resumeToken,
               authorization.previousTokenHash,
             );
-            throw error;
+            ws.close(1011, 'Authentication response could not be sent');
+            logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
+            return;
           }
           if (!authenticatedFrameSent) {
             await rollbackResumeTokenSafely(

@@ -331,7 +331,7 @@ describe('pending first-token handoff', () => {
   });
 
   it('revokes an undelivered pending credential after rollback retries fail', async () => {
-    const { id } = await pendingSeat();
+    const { id, token: undeliveredToken } = await pendingSeat();
     const room = await rooms.get(id);
     const seatId = room.state.seats[0]!.seatId;
     const unhandled: unknown[] = [];
@@ -348,6 +348,7 @@ describe('pending first-token handoff', () => {
       await waitForReleasedSocket(seatId, id);
       await new Promise((resolve) => setTimeout(resolve, 25));
       expect(unhandled).toEqual([]);
+      expect(rollback).toHaveBeenCalledTimes(2);
 
       const retry = connect(await ticket(tokens[0]!, id), null, false);
       const pending = await nextOfType(retry, 'SeatClaimPending', 1_500);
@@ -356,6 +357,9 @@ describe('pending first-token handoff', () => {
 
       const logs = capturedLogs.slice(before).join('\n');
       expect(logs).toContain('seat.resume_token.rollback_failed');
+      expect(logs).toContain('\"attempt\":1');
+      expect(logs).toContain('\"attempt\":2');
+      expect(logs).not.toContain(undeliveredToken);
       expect(logs).not.toContain('injected rollback DB failure');
     } finally {
       process.removeListener('unhandledRejection', onUnhandled);
@@ -391,7 +395,7 @@ describe('pending first-token handoff', () => {
       const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
       const failSend = failSeatAuthenticatedSend(mode);
       const failed = connect(await ticket(tokens[0]!, id), null, false);
-      expect(await closed(failed)).toBe(mode === 'callback' ? 1011 : 1008);
+      expect(await closed(failed)).toBe(1011);
       await waitForReleasedSocket(seatId, id);
 
       failSend.mockRestore();
