@@ -301,7 +301,7 @@ export function registerTableRoutes(
       await new RegistryMemory(db).upsertMany(
         id,
         adventure01RegistrySeed(),
-        room.lease.epoch,
+        room.lease?.epoch ?? null,
       );
     } catch (error) {
       await db.query(
