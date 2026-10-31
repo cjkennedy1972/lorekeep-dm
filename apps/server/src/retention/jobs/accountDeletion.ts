@@ -365,6 +365,10 @@ async function deleteAccount(
   }
   if (derivedSessionIds.size) {
     const sessionIds = [...derivedSessionIds];
+    const coverage = await client.query<{ complete: boolean }>(
+      'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
+    );
+    if (!coverage.rows[0]?.complete) throw new Error(HELD);
     await client.query(
       'DELETE FROM derived_memory_character_refs WHERE session_id = ANY($1::uuid[])',
       [sessionIds],
@@ -562,7 +566,16 @@ async function deleteAccount(
   );
   // ADR-035 binding records retain anonymous mechanics only; the repository owns
   // the single redaction implementation used by this transaction.
-  await SeatCharacterRepository.redactAccount(client, accountId);
+  try {
+    await SeatCharacterRepository.redactAccount(client, accountId);
+  } catch (error) {
+    if (
+      (error as Error).message ===
+      'Derived-memory reference coverage is incomplete'
+    )
+      throw new Error(HELD);
+    throw error;
+  }
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }
