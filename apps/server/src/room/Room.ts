@@ -6436,7 +6436,7 @@ export class Room {
       );
       if (!reactor?.hidden) break;
       this.rememberPrompt(promptIdOf(pending), pending.entityId);
-      const cause = this.immediateDeclineCause(committed.state) ?? 'cap';
+      const cause = this.immediateDeclineCause(committed.state) ?? 'auto';
       const declined = this.combatRuntime.decline(
         committed.state,
         cause,

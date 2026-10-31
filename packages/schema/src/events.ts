@@ -94,6 +94,7 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
       'timeout',
       'presence',
       'no-controller',
+      'auto',
       'cap',
       'combat-ended',
       'restart',

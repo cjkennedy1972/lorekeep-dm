@@ -298,6 +298,7 @@ const events: EngineEvent[] = [
   },
   { type: 'ReactionAnswered', promptId: 'r1', choice: 'take' },
   { type: 'ReactionDeclined', promptId: 'r1', cause: 'cap' },
+  { type: 'ReactionDeclined', promptId: 'r1', cause: 'auto' },
 ];
 
 // Compile-time exhaustiveness: adding an event type without a case fails typecheck.

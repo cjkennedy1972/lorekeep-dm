@@ -9,6 +9,7 @@ export type ReactionDeclineCause =
   | 'timeout'
   | 'presence'
   | 'no-controller'
+  | 'auto'
   | 'cap'
   | 'combat-ended'
   | 'restart';

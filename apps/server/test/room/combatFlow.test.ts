@@ -1340,7 +1340,7 @@ describe('monster turns', () => {
     const secondId = 'ent_goblin-minion_2';
     const run = (withSecond: boolean) => {
       const staged = placed(state, {
-        ent_aria: { x: 1, y: 0 },
+        ent_aria: { x: 0, y: 1 },
         [hiddenId]: { x: 3, y: 1 },
         [secondId]: { x: 2, y: 0 },
       });
@@ -2582,7 +2582,7 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
       ),
     ).toBe(true);
     expect(payloads(table, 'ReactionDeclined')).toMatchObject([
-      { cause: 'cap' },
+      { cause: 'auto' },
     ]);
     expect(reactorInbox.some((m) => m.type.startsWith('ReactionPrompt'))).toBe(
       false,

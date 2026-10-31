@@ -1,4 +1,4 @@
-import type { GridPos, ServerMessage } from '@game/schema';
+import type { ServerMessage } from '@game/schema';
 import type { CombatCommand } from '@game/schema';
 import type { RoomState } from '@game/schema';
 import {
@@ -643,52 +643,10 @@ export function createCombatRuntime(
             (item) => !item.hidden || ctx?.controlledEntityIds?.has(item.id),
           ),
         };
-        let route = path(routeState, actorId, command.destination);
-        let bumpAttempt = false;
-        const hiddenOccupant = state.entities.find(
-          (other) =>
-            other.id !== actorId &&
-            other.hidden &&
-            other.team !== entity.team &&
-            command.destination.x < other.pos.x + other.size &&
-            command.destination.x + entity.size > other.pos.x &&
-            command.destination.y < other.pos.y + other.size &&
-            command.destination.y + entity.size > other.pos.y,
-        );
-        if (hiddenOccupant) {
-          const adjacent: GridPos[] = [];
-          for (
-            let y = hiddenOccupant.pos.y - 1;
-            y <= hiddenOccupant.pos.y + hiddenOccupant.size;
-            y++
-          )
-            for (
-              let x = hiddenOccupant.pos.x - 1;
-              x <= hiddenOccupant.pos.x + hiddenOccupant.size;
-              x++
-            ) {
-              if (x < 0 || y < 0 || x >= state.map.w || y >= state.map.h)
-                continue;
-              const candidate = path(routeState, actorId, { x, y });
-              if ('path' in candidate) adjacent.push({ x, y });
-            }
-          const choices = adjacent
-            .map((pos) => path(routeState, actorId, pos))
-            .filter((item) => 'path' in item);
-          choices.sort(
-            (a, b) =>
-              ('cost' in a ? a.cost : Infinity) -
-              ('cost' in b ? b.cost : Infinity),
-          );
-          const approach = choices[0];
-          if (approach && 'path' in approach) {
-            route = {
-              path: [...approach.path, command.destination],
-              cost: approach.cost,
-            };
-            bumpAttempt = true;
-          }
-        }
+        // Plan once against the viewer-visible map. Execution walks that exact route
+        // against authoritative state; moveAlong stops at and reveals the first
+        // hidden occupant, so no hidden entity can influence route or stop selection.
+        const route = path(routeState, actorId, command.destination);
         if ('error' in route)
           return reject('That destination is not reachable.');
         const moved = moveAlong(mv, actorId, route.path, 'normal');
@@ -709,7 +667,7 @@ export function createCombatRuntime(
           (event) => event.type === 'EntityRevealed',
         );
         const events: Record<string, unknown>[] =
-          moved.pending.length || bumpAttempt || movementRevealed
+          moved.pending.length || movementRevealed
             ? [
                 { type: 'MoveStarted', entityId: actorId, path: route.path },
                 ...engineEvents,
@@ -718,9 +676,7 @@ export function createCombatRuntime(
                       {
                         type: 'MoveEnded',
                         entityId: actorId,
-                        reason:
-                          moved.movementEnd ??
-                          (bumpAttempt ? 'blocked' : 'complete'),
+                        reason: moved.movementEnd ?? 'complete',
                       },
                     ]
                   : []),
