@@ -35,6 +35,7 @@ import {
   type SoloTurnRunner,
 } from './dmTurn.js';
 import type { CombatCommand } from '@game/schema';
+
 import {
   ATTACK_REJECTED,
   createCombatRuntime,
@@ -83,6 +84,7 @@ import {
 } from './restVote.js';
 import { failForward, resolveDeathSave, retryFromCheckpoint } from './death.js';
 
+const PENDING_SEAT_RESUME_LEASE_TTL_MS = 15_000;
 const CLIENT_GAME_STATE_FIELDS = ['characters', 'combatRoom'] as const;
 
 function isSeatOwner(
@@ -832,6 +834,9 @@ export class Room {
     {
       token: string;
       authTokenHash: string;
+      leaseId?: string;
+      leaseExpiresAt?: number;
+      leaseExpiryTimer?: NodeJS.Timeout;
       expiresAt: number;
       expiryTimer: NodeJS.Timeout;
     }
@@ -2314,14 +2319,22 @@ export class Room {
     authTokenHash: string,
   ): void {
     const previous = this.pendingSeatResumeTokens.get(accountId);
-    if (previous) clearTimeout(previous.expiryTimer);
+    if (previous) {
+      clearTimeout(previous.expiryTimer);
+      if (previous.leaseExpiryTimer) clearTimeout(previous.leaseExpiryTimer);
+    }
     const pending = {
       token,
       authTokenHash,
+      leaseId: undefined as string | undefined,
+      leaseExpiresAt: undefined as number | undefined,
+      leaseExpiryTimer: undefined as NodeJS.Timeout | undefined,
       expiresAt: Date.now() + 30_000,
       expiryTimer: setTimeout(() => {
-        if (this.pendingSeatResumeTokens.get(accountId) === pending)
+        if (this.pendingSeatResumeTokens.get(accountId) === pending) {
+          if (pending.leaseExpiryTimer) clearTimeout(pending.leaseExpiryTimer);
           this.pendingSeatResumeTokens.delete(accountId);
+        }
       }, 30_000),
     };
     pending.expiryTimer.unref?.();
@@ -2332,34 +2345,95 @@ export class Room {
   claimPendingSeatResumeToken(
     accountId: string,
     authTokenHash: string,
+    leaseId: string,
     now = Date.now(),
   ): string | undefined {
     const pending = this.pendingSeatResumeTokens.get(accountId);
     if (!pending) return undefined;
     if (pending.expiresAt <= now) {
       clearTimeout(pending.expiryTimer);
+      if (pending.leaseExpiryTimer) clearTimeout(pending.leaseExpiryTimer);
       this.pendingSeatResumeTokens.delete(accountId);
       return undefined;
     }
     if (pending.authTokenHash !== authTokenHash) return undefined;
+    if (pending.leaseId && pending.leaseExpiresAt! <= now) {
+      if (pending.leaseExpiryTimer) clearTimeout(pending.leaseExpiryTimer);
+      pending.leaseId = undefined;
+      pending.leaseExpiresAt = undefined;
+      pending.leaseExpiryTimer = undefined;
+    }
+    if (pending.leaseId && pending.leaseId !== leaseId) return undefined;
+    if (pending.leaseId !== leaseId) {
+      pending.leaseId = leaseId;
+      pending.leaseExpiresAt = now + PENDING_SEAT_RESUME_LEASE_TTL_MS;
+      pending.leaseExpiryTimer = setTimeout(() => {
+        if (
+          this.pendingSeatResumeTokens.get(accountId) === pending &&
+          pending.leaseId === leaseId
+        ) {
+          pending.leaseId = undefined;
+          pending.leaseExpiresAt = undefined;
+          pending.leaseExpiryTimer = undefined;
+        }
+      }, PENDING_SEAT_RESUME_LEASE_TTL_MS);
+      pending.leaseExpiryTimer.unref?.();
+    }
+    return pending.token;
+  }
+
+  releasePendingSeatResumeToken(
+    accountId: string,
+    authTokenHash: string,
+    leaseId: string,
+  ): void {
+    const pending = this.pendingSeatResumeTokens.get(accountId);
+    if (
+      pending?.authTokenHash === authTokenHash &&
+      pending.leaseId === leaseId
+    ) {
+      if (pending.leaseExpiryTimer) clearTimeout(pending.leaseExpiryTimer);
+      pending.leaseId = undefined;
+      pending.leaseExpiresAt = undefined;
+      pending.leaseExpiryTimer = undefined;
+    }
+  }
+
+  /** Permanently consumes a delivered first-token credential for its lease. */
+  consumePendingSeatResumeToken(
+    accountId: string,
+    authTokenHash: string,
+    leaseId: string,
+  ): void {
+    const pending = this.pendingSeatResumeTokens.get(accountId);
+    if (pending?.authTokenHash !== authTokenHash || pending.leaseId !== leaseId)
+      return;
     clearTimeout(pending.expiryTimer);
+    if (pending.leaseExpiryTimer) clearTimeout(pending.leaseExpiryTimer);
     this.pendingSeatResumeTokens.delete(accountId);
-    // The first-delivery token is the admission proof; after it is consumed,
-    // the separate late-join claim authorization is no longer needed.
+    this.clearLateJoinClaimAuthorization(accountId);
+  }
+
+  private clearLateJoinClaimAuthorization(accountId: string): void {
     for (const [seatId, authorization] of this.lateJoinClaimAuthorizations)
       if (authorization.accountId === accountId)
         this.lateJoinClaimAuthorizations.delete(seatId);
-    return pending.token;
   }
 
   completeSeatResumeTokenDelivery(
     accountId: string,
     authTokenHash: string,
+    leaseId?: string,
   ): void {
     const pending = this.pendingSeatResumeTokens.get(accountId);
-    if (pending?.authTokenHash === authTokenHash) {
+    if (
+      pending?.authTokenHash === authTokenHash &&
+      (leaseId ? pending.leaseId === leaseId : !pending.leaseId)
+    ) {
       clearTimeout(pending.expiryTimer);
+      if (pending.leaseExpiryTimer) clearTimeout(pending.leaseExpiryTimer);
       this.pendingSeatResumeTokens.delete(accountId);
+      this.clearLateJoinClaimAuthorization(accountId);
     }
   }
 
