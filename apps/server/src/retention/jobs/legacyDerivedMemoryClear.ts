@@ -121,16 +121,28 @@ async function readPlanRows(
   }));
 }
 
+async function purgePlan(client: PoolClient, dryRunId: string): Promise<void> {
+  await client.query(
+    'DELETE FROM derived_memory_legacy_clear_plan WHERE dry_run_id=$1',
+    [dryRunId],
+  );
+  await client.query(
+    'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
+    [dryRunId],
+  );
+}
+
 async function planMatchesCurrent(
   client: PoolClient,
   dryRunId: string,
   sessions: SessionRow[],
-): Promise<{ matches: boolean; rows: PlanRow[] }> {
+): Promise<{ matches: boolean; markerExists: boolean; rows: PlanRow[] }> {
   const marker = await client.query(
     'SELECT 1 FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
     [dryRunId],
   );
-  if (!marker.rowCount) return { matches: false, rows: [] };
+  if (!marker.rowCount)
+    return { matches: false, markerExists: false, rows: [] };
   const rows = await readPlanRows(client, dryRunId);
   const currentBySession = new Map(
     sessions.map((session) => [session.session_id, session]),
@@ -142,11 +154,11 @@ async function planMatchesCurrent(
       !session.deferred &&
       !plansBySession.has(session.session_id)
     )
-      return { matches: false, rows };
+      return { matches: false, markerExists: true, rows };
   }
   for (const plan of rows) {
     const current = currentBySession.get(plan.session_id);
-    if (current?.deferred) return { matches: false, rows };
+    if (current?.deferred) return { matches: false, markerExists: true, rows };
     const ids =
       current && !current.held
         ? {
@@ -161,7 +173,7 @@ async function planMatchesCurrent(
         ids.registryEntryIds.length ||
         ids.registryFactIds.length
       )
-        return { matches: false, rows };
+        return { matches: false, markerExists: true, rows };
       continue;
     }
     if (
@@ -170,9 +182,9 @@ async function planMatchesCurrent(
       plan.counts.registryEntries !== plan.registryEntryIds.length ||
       plan.counts.registryFacts !== plan.registryFactIds.length
     )
-      return { matches: false, rows };
+      return { matches: false, markerExists: true, rows };
   }
-  return { matches: true, rows };
+  return { matches: true, markerExists: true, rows };
 }
 const zeroCounts = (): LegacyClearCounts => ({
   sessionsConsidered: 0,
@@ -487,10 +499,6 @@ export async function runLegacyDerivedMemoryClear(
         ),
       'running audit staleness window',
     );
-    await runner.query(
-      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=clock_timestamp() WHERE mode='live' AND outcome='running' AND heartbeat_at < clock_timestamp() - ($1::bigint * interval '1 millisecond')",
-      [staleAfter],
-    );
     const now = options.now ?? (() => new Date());
     const maxAge = positiveInt(
       options.dryRunMaxAgeMs ??
@@ -530,6 +538,36 @@ export async function runLegacyDerivedMemoryClear(
       'SELECT clock_timestamp() AS now',
     );
     const started = startedAt.rows[0]!.now;
+    const newestDry = !dryRun
+      ? await runner.query<{ run_id: string }>(
+          `SELECT run_id FROM derived_memory_legacy_clear_audit
+           WHERE mode='dry_run' AND code_version=$1 AND outcome='dry_run_succeeded'
+             AND finished_at >= $2::timestamptz - ($3::bigint * interval '1 millisecond')
+           ORDER BY finished_at DESC LIMIT 1`,
+          [codeVersion, started, maxAge],
+        )
+      : null;
+    let dryRunId: string | null = newestDry?.rows[0]?.run_id ?? null;
+    activeDryRunId = dryRunId;
+    await runner.query('BEGIN');
+    await runner.query(
+      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=clock_timestamp() WHERE mode='live' AND outcome='running' AND heartbeat_at < clock_timestamp() - ($1::bigint * interval '1 millisecond')",
+      [staleAfter],
+    );
+    const expiredPlans = await runner.query<{ dry_run_id: string }>(
+      `SELECT DISTINCT ids.dry_run_id::text
+       FROM (
+         SELECT dry_run_id FROM derived_memory_legacy_clear_plan_runs
+         UNION
+         SELECT dry_run_id FROM derived_memory_legacy_clear_plan
+       ) ids
+       JOIN derived_memory_legacy_clear_audit d ON d.run_id=ids.dry_run_id
+       WHERE d.mode='dry_run' AND d.finished_at < $1::timestamptz - ($2::bigint * interval '1 millisecond')`,
+      [started, maxAge],
+    );
+    for (const expired of expiredPlans.rows)
+      await purgePlan(runner, expired.dry_run_id);
+    await runner.query('COMMIT');
     let runId: string = randomUUID();
     activeRunId = runId;
     await runner.query('BEGIN');
@@ -544,16 +582,16 @@ export async function runLegacyDerivedMemoryClear(
     }
     if (!dryRun && !backupConfirmedAt) {
       await runner.query(
-        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code)
-         VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4,'backup_not_confirmed')`,
-        [runId, codeVersion, JSON.stringify(counts), started],
+        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
+         VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'backup_not_confirmed')`,
+        [runId, codeVersion, dryRunId, JSON.stringify(counts), started],
       );
+      if (dryRunId) await purgePlan(runner, dryRunId);
       await runner.query('COMMIT');
       throw new Error(
         'Live clear requires a valid backup attestation from the last 24 hours',
       );
     }
-    let dryRunId: string | null = null;
     let resumeCounts: Record<string, number> | null = null;
     let removedSummaries = 0;
     let removedEntries = 0;
@@ -561,14 +599,15 @@ export async function runLegacyDerivedMemoryClear(
     let idempotentCompletion = false;
     if (!dryRun && !reconciliationComplete) {
       await runner.query(
-        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code)
-         VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4,'global_reconciliation_incomplete')`,
-        [runId, codeVersion, JSON.stringify(counts), started],
+        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
+         VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'global_reconciliation_incomplete')`,
+        [runId, codeVersion, dryRunId, JSON.stringify(counts), started],
       );
       await runner.query(
         'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
         [runId, backupConfirmedAt],
       );
+      if (dryRunId) await purgePlan(runner, dryRunId);
       await runner.query('COMMIT');
       emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
       throw new Error(
@@ -576,21 +615,14 @@ export async function runLegacyDerivedMemoryClear(
       );
     }
     if (!dryRun) {
-      const newestDry = await runner.query<{ run_id: string }>(
-        `SELECT run_id FROM derived_memory_legacy_clear_audit
-         WHERE mode='dry_run' AND code_version=$1 AND outcome='dry_run_succeeded'
-           AND finished_at >= $2::timestamptz - ($3::bigint * interval '1 millisecond')
-         ORDER BY finished_at DESC LIMIT 1`,
-        [codeVersion, started, maxAge],
-      );
-      const newestDryRunId = newestDry.rows[0]?.run_id ?? null;
-      dryRunId = newestDryRunId;
-      activeDryRunId = newestDryRunId;
+      const newestDryRunId = dryRunId;
       if (newestDryRunId) {
-        await runner.query(
-          "UPDATE derived_memory_legacy_clear_audit SET reason_code='superseded_by_new_dry_run',finished_at=clock_timestamp() WHERE mode='live' AND code_version=$1 AND outcome='failed' AND reason_code='process_died' AND dry_run_id IS DISTINCT FROM $2 AND started_at >= $3::timestamptz - ($4::bigint * interval '1 millisecond')",
+        const supersededLives = await runner.query<{ dry_run_id: string }>(
+          "UPDATE derived_memory_legacy_clear_audit SET reason_code='superseded_by_new_dry_run',finished_at=clock_timestamp() WHERE mode='live' AND code_version=$1 AND outcome='failed' AND reason_code='process_died' AND dry_run_id IS DISTINCT FROM $2 AND started_at >= $3::timestamptz - ($4::bigint * interval '1 millisecond') RETURNING dry_run_id::text",
           [codeVersion, newestDryRunId, started, maxAge],
         );
+        for (const superseded of supersededLives.rows)
+          await purgePlan(runner, superseded.dry_run_id);
       }
       if (newestDryRunId) {
         const identityPlan = await planMatchesCurrent(
@@ -599,6 +631,29 @@ export async function runLegacyDerivedMemoryClear(
           sessions,
         );
         activePlanRows = identityPlan.rows;
+        if (!identityPlan.markerExists) {
+          await runner.query(
+            `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
+             VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'plan_missing_run_dry_run_again')`,
+            [
+              runId,
+              codeVersion,
+              newestDryRunId,
+              JSON.stringify(counts),
+              started,
+            ],
+          );
+          if (backupConfirmedAt)
+            await runner.query(
+              'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
+              [runId, backupConfirmedAt],
+            );
+          await purgePlan(runner, newestDryRunId);
+          await runner.query('COMMIT');
+          throw new Error(
+            'plan_missing_run_dry_run_again: plan metadata is unavailable; run a fresh dry run before live execution',
+          );
+        }
         if (!identityPlan.matches) {
           await runner.query(
             `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
@@ -616,10 +671,7 @@ export async function runLegacyDerivedMemoryClear(
               'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
               [runId, backupConfirmedAt],
             );
-          await runner.query(
-            'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
-            [newestDryRunId],
-          );
+          await purgePlan(runner, newestDryRunId);
           await runner.query('COMMIT');
           emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
           throw new PlanDigestMismatchError();
@@ -682,6 +734,7 @@ export async function runLegacyDerivedMemoryClear(
               'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
               [runId, backupConfirmedAt],
             );
+          await purgePlan(runner, resume.dry_run_id);
           await runner.query('COMMIT');
           emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
           throw new Error(
@@ -749,6 +802,7 @@ export async function runLegacyDerivedMemoryClear(
               'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
               [runId, backupConfirmedAt],
             );
+          if (dryRunId) await purgePlan(runner, dryRunId);
           await runner.query('COMMIT');
           emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
           throw new Error(
@@ -1081,10 +1135,7 @@ export async function runLegacyDerivedMemoryClear(
       await runner.query('BEGIN');
       await saveAudit(runner, runId, auditCounts, outcome);
       if (outcome === 'live_succeeded' && dryRunId)
-        await runner.query(
-          'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
-          [dryRunId],
-        );
+        await purgePlan(runner, dryRunId);
       await runner.query('COMMIT');
       emit(
         options,
@@ -1098,10 +1149,28 @@ export async function runLegacyDerivedMemoryClear(
     }
     await runner.query('BEGIN');
     await saveAudit(runner, runId, counts, outcome);
-    await runner.query(
-      'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id<>$1',
-      [runId],
+    const supersededPlans = await runner.query<{ dry_run_id: string }>(
+      `SELECT DISTINCT ids.dry_run_id::text
+       FROM (
+         SELECT dry_run_id FROM derived_memory_legacy_clear_plan_runs
+         UNION
+         SELECT dry_run_id FROM derived_memory_legacy_clear_plan
+       ) ids
+       JOIN derived_memory_legacy_clear_audit d ON d.run_id=ids.dry_run_id
+       WHERE d.mode='dry_run' AND d.code_version=$1 AND d.outcome='dry_run_succeeded'
+         AND ids.dry_run_id<>$2`,
+      [codeVersion, runId],
     );
+    for (const oldPlan of supersededPlans.rows) {
+      await runner.query(
+        `UPDATE derived_memory_legacy_clear_audit
+         SET outcome='failed',reason_code='superseded_by_new_dry_run',finished_at=clock_timestamp()
+         WHERE mode='live' AND dry_run_id=$1 AND outcome IN ('live_partial','failed')
+           AND (outcome='live_partial' OR reason_code='process_died')`,
+        [oldPlan.dry_run_id],
+      );
+      await purgePlan(runner, oldPlan.dry_run_id);
+    }
     await runner.query('COMMIT');
     emit(options, 'legacy_clear_dry_run_completed', counts, outcome);
     return { runId, dryRunId, outcome, counts };
@@ -1113,16 +1182,20 @@ export async function runLegacyDerivedMemoryClear(
     }
     if (activeRunId) {
       try {
-        await runner.query(
-          "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code=CASE WHEN $2 THEN 'plan_digest_mismatch' ELSE NULL END,finished_at=clock_timestamp() WHERE run_id=$1 AND outcome IN ('running','live_partial')",
+        await runner.query('BEGIN');
+        const failed = await runner.query(
+          "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code=CASE WHEN $2 THEN 'plan_digest_mismatch' ELSE NULL END,finished_at=clock_timestamp() WHERE run_id=$1 AND outcome IN ('running','live_partial') RETURNING run_id",
           [activeRunId, error instanceof PlanDigestMismatchError],
         );
-        if (!dryRun && activeDryRunId)
-          await runner.query(
-            'DELETE FROM derived_memory_legacy_clear_plan_runs WHERE dry_run_id=$1',
-            [activeDryRunId],
-          );
+        if (!dryRun && activeDryRunId && failed.rowCount)
+          await purgePlan(runner, activeDryRunId);
+        await runner.query('COMMIT');
       } catch {
+        try {
+          await runner.query('ROLLBACK');
+        } catch {
+          /* no transaction */
+        }
         /* audit table may not exist, or preflight may not have inserted a run */
       }
     }
