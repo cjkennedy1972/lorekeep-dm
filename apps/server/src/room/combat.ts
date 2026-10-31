@@ -635,13 +635,11 @@ export function createCombatRuntime(
         const entity = state.entities.find((item) => item.id === actorId);
         if (!entity) return reject('That actor is not on the map.');
         const mv = movementState(state, actorId);
-        // Match the viewer's preview: hidden, uncontrolled entities do not participate
-        // in path planning, so a listed destination through one resolves as a bump.
+        // Hidden entities never participate in route planning; movement execution sees
+        // authoritative state and stops at the first hidden occupant as a bump.
         const routeState = {
           ...mv,
-          entities: mv.entities.filter(
-            (item) => !item.hidden || ctx?.controlledEntityIds?.has(item.id),
-          ),
+          entities: mv.entities.filter((item) => !item.hidden),
         };
         // Plan once against the viewer-visible map. Execution walks that exact route
         // against authoritative state; moveAlong stops at and reveals the first
