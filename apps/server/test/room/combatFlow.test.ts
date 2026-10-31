@@ -1340,7 +1340,7 @@ describe('monster turns', () => {
     const secondId = 'ent_goblin-minion_2';
     const run = (withSecond: boolean) => {
       const staged = placed(state, {
-        ent_aria: { x: 1, y: 1 },
+        ent_aria: { x: 1, y: 0 },
         [hiddenId]: { x: 3, y: 1 },
         [secondId]: { x: 2, y: 0 },
       });
