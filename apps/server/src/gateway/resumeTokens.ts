@@ -73,7 +73,6 @@ export async function activateSeatResumeCandidate(
   socketId: string,
   rotationId: string,
   candidate: string,
-  _callerOwnerRecovery = false,
 ): Promise<SeatResumeCandidateActivation> {
   const result = await db.query(
     `UPDATE seat_resume_tokens SET token_hash=pending_token_hash, rotated_at=clock_timestamp(),

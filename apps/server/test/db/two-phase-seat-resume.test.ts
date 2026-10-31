@@ -30,7 +30,7 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
     await database.pool.query(
       await readFile(
         new URL(
-          '../../migrations/0054_two_phase_seat_resume.sql',
+          '../../migrations/0055_two_phase_seat_resume.sql',
           import.meta.url,
         ),
         'utf8',
@@ -202,7 +202,6 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
           socketId,
           recovery.rotationId,
           recovery.candidate,
-          true,
         ),
       ).toBe('activated');
     }
@@ -238,7 +237,6 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
         socketId,
         pending.rotationId,
         pending.candidate,
-        true,
       ),
     ).toBe('activated');
     const row = await database!.pool.query(
