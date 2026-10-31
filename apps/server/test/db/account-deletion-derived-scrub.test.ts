@@ -875,4 +875,79 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       ]);
     }
   }, 90_000);
+
+  it('holds account deletion when an owned token mapping points at a legal-held indexed session', async () => {
+    const owner = randomUUID();
+    const roomOwner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    const token = 'M'.repeat(32);
+    await account(owner);
+    await account(roomOwner);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, owner, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          session,
+          roomOwner,
+          'Held token mapping',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      const summary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
+        [session, 'held-token-scene', `Indexed token ${token}`],
+      );
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, characterId, token],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)`,
+        [session, characterId, summary[0].id],
+      );
+      await q("INSERT INTO legal_holds(kind,item_id) VALUES('session',$1)", [
+        session,
+      ]);
+      await q(
+        "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
+        [owner],
+      );
+
+      const result = await runSweep(db, {
+        store: new LocalObjectStore(dir),
+        log: () => {},
+      });
+
+      expect(result?.accounts.held).toBeGreaterThan(0);
+      expect(
+        await q('SELECT status FROM accounts WHERE id=$1', [owner]),
+      ).toEqual([{ status: 'deleting' }]);
+      expect(
+        await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
+          session,
+        ]),
+      ).toEqual([{ summary: `Indexed token ${token}` }]);
+      expect(
+        await q(
+          'SELECT 1 FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
+      ).toHaveLength(1);
+      expect(
+        await q(
+          'SELECT 1 FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2',
+          [session, characterId],
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await q('DELETE FROM legal_holds WHERE item_id=$1', [session]);
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id = ANY($1)', [[owner, roomOwner]]);
+    }
+  }, 90_000);
 });

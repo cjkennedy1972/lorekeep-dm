@@ -479,16 +479,21 @@ export class SeatCharacterRepository {
     const mappings = await client.query<{
       session_id: string;
       character_id: string;
+      held: boolean;
     }>(
-      `SELECT t.session_id,t.character_id FROM session_character_tokens t
+      `SELECT t.session_id,t.character_id,
+              EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=t.session_id::text) AS held
+       FROM session_character_tokens t
        JOIN account_characters c ON c.id=t.character_id WHERE c.account_id=$1
-         AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=t.session_id::text)
        UNION
-       SELECT r.session_id,r.character_id FROM derived_memory_character_refs r
-       JOIN account_characters c ON c.id=r.character_id WHERE c.account_id=$1
-         AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=r.session_id::text)`,
+       SELECT r.session_id,r.character_id,
+              EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=r.session_id::text) AS held
+       FROM derived_memory_character_refs r
+       JOIN account_characters c ON c.id=r.character_id WHERE c.account_id=$1`,
       [accountId],
     );
+    if (mappings.rows.some(({ held }) => held))
+      throw new SeatCharacterError('SESSION_HELD');
     const indexedRows: Array<{
       sessionId: string;
       rowKind: 'scene_summary' | 'registry_entry';

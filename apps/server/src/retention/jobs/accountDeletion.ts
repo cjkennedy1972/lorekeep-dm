@@ -6,7 +6,10 @@ import { advanceTurn, settle } from '../../room/combatEngine.js';
 import type { RoomCombatState } from '../../room/combatTypes.js';
 import { AUTHOR_KEY, TEXT_KEYS } from '../../routes/reports.js';
 import { currentMemberEventsSql } from '../../room/membership.js';
-import { SeatCharacterRepository } from '../../persistence/seatCharacters.js';
+import {
+  SeatCharacterError,
+  SeatCharacterRepository,
+} from '../../persistence/seatCharacters.js';
 
 const ANON_NAME = 'Deleted player';
 const PLAYER_TEXT_KEYS = ['playerName', 'text', 'narrative'];
@@ -571,8 +574,9 @@ async function deleteAccount(
     await SeatCharacterRepository.redactAccount(client, accountId);
   } catch (error) {
     if (
+      (error instanceof SeatCharacterError && error.code === 'SESSION_HELD') ||
       (error as Error).message ===
-      'Derived-memory reference coverage is incomplete'
+        'Derived-memory reference coverage is incomplete'
     )
       throw new Error(HELD);
     throw error;
