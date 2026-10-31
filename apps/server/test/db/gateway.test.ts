@@ -25,6 +25,8 @@ import {
   authorizeSeatSocket,
   clearSeatResumeTokenInvalidationPending,
   commitSeatResumeToken,
+  invalidateSeatResumeToken,
+  markSeatResumeTokenInvalidationPending,
   releaseSeatSocket,
   rollbackSeatResumeToken,
 } from '../../src/gateway/resumeTokens.js';
@@ -339,6 +341,122 @@ describe('pending first-token handoff', () => {
     expect(restored.rows[0]?.token_hash).toBe(
       createHash('sha256').update(previousToken).digest('hex'),
     );
+  });
+
+  it('does not restore a fenced T1 when a later T2 send fails', async () => {
+    const { id, token: t1 } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    const t1SocketId = randomUUID();
+    const first = await authorizeSeatSocket(db, id, seatId, t1SocketId, t1);
+    expect(first.status).toBe('authorized');
+    if (first.status !== 'authorized') return;
+    expect(
+      await commitSeatResumeToken(
+        db,
+        id,
+        seatId,
+        t1SocketId,
+        first.resumeToken,
+      ),
+    ).toBe(true);
+    clearSeatResumeTokenInvalidationPending(id, seatId);
+
+    // Model failed rollback plus failed invalidation: T1 remains persisted but
+    // is fenced in this process. A tokenless host-approved claim may recover.
+    markSeatResumeTokenInvalidationPending(id, seatId);
+    await db.query(
+      `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '16 seconds'
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId],
+    );
+    const t2SocketId = randomUUID();
+    const second = await authorizeSeatSocket(
+      db,
+      id,
+      seatId,
+      t2SocketId,
+      undefined,
+      true,
+      accounts[0],
+    );
+    expect(second.status).toBe('authorized');
+    if (second.status !== 'authorized') return;
+    expect(second.previousTokenHash).toBe(
+      createHash('sha256').update(first.resumeToken).digest('hex'),
+    );
+    expect(
+      await commitSeatResumeToken(
+        db,
+        id,
+        seatId,
+        t2SocketId,
+        second.resumeToken,
+      ),
+    ).toBe(true);
+
+    // This rollback is the real post-send-failure path. While the fence is
+    // pending it must not put the previously stranded T1 hash back in storage.
+    expect(
+      await rollbackSeatResumeToken(
+        db,
+        id,
+        seatId,
+        t2SocketId,
+        second.resumeToken,
+        second.previousTokenHash,
+      ),
+    ).toBe(true);
+    await releaseSeatSocket(db, id, seatId, t2SocketId);
+    const persisted = await db.query<{ token_hash: string }>(
+      'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [id, seatId],
+    );
+    expect(persisted.rows[0]?.token_hash).not.toBe(
+      createHash('sha256').update(first.resumeToken).digest('hex'),
+    );
+    for (const token of [first.resumeToken, second.resumeToken]) {
+      expect(
+        await authorizeSeatSocket(db, id, seatId, randomUUID(), token),
+      ).toEqual({ status: 'invalid-token' });
+    }
+    clearSeatResumeTokenInvalidationPending(id, seatId);
+  });
+
+  it('does not invalidate a token after another socket takes over its lease', async () => {
+    const { id, token } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    const owner = randomUUID();
+    const authorization = await authorizeSeatSocket(
+      db,
+      id,
+      seatId,
+      owner,
+      token,
+    );
+    expect(authorization.status).toBe('authorized');
+    if (authorization.status !== 'authorized') return;
+    expect(
+      await commitSeatResumeToken(
+        db,
+        id,
+        seatId,
+        owner,
+        authorization.resumeToken,
+      ),
+    ).toBe(true);
+    await db.query(
+      'UPDATE seat_resume_tokens SET active_socket_id=$3 WHERE session_id=$1 AND seat_id=$2',
+      [id, seatId, randomUUID()],
+    );
+    expect(
+      await invalidateSeatResumeToken(
+        db,
+        id,
+        seatId,
+        owner,
+        authorization.resumeToken,
+      ),
+    ).toBe(false);
   });
 
   it('revokes an undelivered pending credential after rollback retries fail', async () => {

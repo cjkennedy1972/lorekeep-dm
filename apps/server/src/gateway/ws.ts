@@ -640,7 +640,14 @@ export function installGateway(
               pendingTokenLeaseId,
             );
 
-          // Fence presented credentials while an invalidation result is uncertain.
+          // This fence is intentionally process-local; after a process restart,
+          // if both rollback and invalidation failed, the DB can still hold T1's
+          // hash and accept T1 after its lease expires. T1 is a fresh 128-bit
+          // credential never delivered to a client, and this requires two DB
+          // writes to fail; this restart window is an accepted residual risk,
+          // not a durable revocation. Preserve the lease before retry awaits so
+          // a concurrent close cannot release it early.
+          preserveSeatLeaseUntilExpiry = true;
           markSeatResumeTokenInvalidationPending(identity.sessionId, seatId);
           for (const attempt of [1, 2] as const) {
             try {
@@ -685,11 +692,10 @@ export function installGateway(
               await new Promise((resolve) => setTimeout(resolve, 20));
           }
 
-          preserveSeatLeaseUntilExpiry = true;
           try {
             app.log.error(
               { event: 'seat.resume_token.invalidation_failed' },
-              'Seat resume-token invalidation failed; retaining socket lease',
+              'Seat resume-token invalidation failed; retaining socket lease until its heartbeat TTL',
             );
           } catch {
             // The fail-closed marker and retained lease do not depend on logging.
@@ -855,6 +861,8 @@ export function installGateway(
             });
           let tokenCommitted = false;
           try {
+            // Delivery is permitted only after commit; clearing the process-local
+            // unresolved fence below is safe only because this ordering holds.
             step = 'token-commit';
             tokenCommitted = await commitSeatResumeToken(
               db,

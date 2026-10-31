@@ -5,6 +5,8 @@ const hash = (token: string) =>
   createHash('sha256').update(token).digest('hex');
 const unresolvedInvalidations = new Set<string>();
 const seatKey = (sessionId: string, seatId: string) => `${sessionId}:${seatId}`;
+const unmatchableTokenHash = () =>
+  createHash('sha256').update(randomBytes(32)).digest('hex');
 
 export function markSeatResumeTokenInvalidationPending(
   sessionId: string,
@@ -182,13 +184,19 @@ export async function rollbackSeatResumeToken(
   resumeToken: string,
   previousTokenHash: string,
 ): Promise<boolean> {
+  const key = seatKey(sessionId, seatId);
+  // Never restore a credential whose invalidation is still unresolved. Keep the
+  // CAS against T2, but replace the row with a hash no client can know.
+  const restoreHash = unresolvedInvalidations.has(key)
+    ? unmatchableTokenHash()
+    : previousTokenHash;
   const result = await db.query(
     `UPDATE seat_resume_tokens
         SET token_hash=$5,rotated_at=clock_timestamp()
       WHERE session_id=$1 AND seat_id=$2
         AND (active_socket_id=$3 OR active_socket_id IS NULL)
         AND token_hash=$4`,
-    [sessionId, seatId, socketId, hash(resumeToken), previousTokenHash],
+    [sessionId, seatId, socketId, hash(resumeToken), restoreHash],
   );
   return result.rowCount === 1;
 }
@@ -201,9 +209,7 @@ export async function invalidateSeatResumeToken(
   socketId: string,
   resumeToken: string,
 ): Promise<boolean> {
-  const replacementHash = createHash('sha256')
-    .update(randomBytes(32))
-    .digest('hex');
+  const replacementHash = unmatchableTokenHash();
   const result = await db.query(
     `UPDATE seat_resume_tokens
         SET token_hash=$5,rotated_at=clock_timestamp()
