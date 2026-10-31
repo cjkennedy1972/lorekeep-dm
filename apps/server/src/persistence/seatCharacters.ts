@@ -529,19 +529,44 @@ export class SeatCharacterRepository {
         'DELETE FROM scene_summaries WHERE id = ANY($1::bigint[])',
         [summaryIds],
       );
-    // Registry rows form self-referencing supersession chains; remove the full chain per session.
-    const registrySessions = [
-      ...new Set(
-        indexedRows
-          .filter((row) => row.rowKind === 'registry_entry')
-          .map((row) => row.sessionId),
-      ),
-    ];
-    if (registrySessions.length)
+    // A removed entry's successors require its row for supersedes_id. Remove only
+    // that forward chain, preserving other entries in this shared session.
+    const registryEntriesBySession = new Map<string, string[]>();
+    for (const row of indexedRows) {
+      if (row.rowKind !== 'registry_entry') continue;
+      const ids = registryEntriesBySession.get(row.sessionId) ?? [];
+      ids.push(row.rowId);
+      registryEntriesBySession.set(row.sessionId, ids);
+    }
+    for (const [sessionId, entryIds] of registryEntriesBySession) {
       await client.query(
-        'DELETE FROM registry_entries WHERE session_id = ANY($1::uuid[])',
-        [registrySessions],
+        `WITH RECURSIVE entries_to_delete(id) AS (
+           SELECT unnest($2::bigint[])
+           UNION
+           SELECT successor.id
+           FROM registry_entries successor
+           JOIN entries_to_delete removed ON successor.supersedes_id=removed.id
+           WHERE successor.session_id=$1
+         )
+         UPDATE registry_entries predecessor SET superseded_by=NULL
+         WHERE predecessor.session_id=$1
+           AND predecessor.superseded_by IN (SELECT id FROM entries_to_delete)
+           AND predecessor.id NOT IN (SELECT id FROM entries_to_delete)`,
+        [sessionId, entryIds],
       );
+      await client.query(
+        `WITH RECURSIVE entries_to_delete(id) AS (
+           SELECT unnest($2::bigint[])
+           UNION
+           SELECT successor.id
+           FROM registry_entries successor
+           JOIN entries_to_delete removed ON successor.supersedes_id=removed.id
+           WHERE successor.session_id=$1
+         )
+         DELETE FROM registry_entries WHERE id IN (SELECT id FROM entries_to_delete)`,
+        [sessionId, entryIds],
+      );
+    }
     await client.query(
       `DELETE FROM derived_memory_character_refs target
       WHERE target.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
