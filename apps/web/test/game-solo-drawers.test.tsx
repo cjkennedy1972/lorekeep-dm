@@ -91,9 +91,9 @@ describe('Game screen table drawers by table size', () => {
     gameStore.setCombatState(initialGameState().combat);
   });
 
-  it('a solo host sees no empty Host tools or Party chat cards', () => {
+  it('a solo host keeps Host tools, which always carry round and timer controls', () => {
     mount();
-    expect(screen.queryByText('Host tools')).not.toBeInTheDocument();
+    expect(screen.getByText('Host tools')).toBeInTheDocument();
     expect(screen.queryByText('Party chat')).not.toBeInTheDocument();
   });
 
@@ -108,7 +108,7 @@ describe('Game screen table drawers by table size', () => {
     expect(screen.getByText('Party chat')).toBeInTheDocument();
   });
 
-  it('a solo host still sees Host tools and Party chat while a late-join request waits', () => {
+  it('a solo host gets Party chat back while a late-join request waits', () => {
     mount({
       lateJoinRequests: [
         {
@@ -122,7 +122,7 @@ describe('Game screen table drawers by table size', () => {
     expect(screen.getByText('Party chat')).toBeInTheDocument();
   });
 
-  it('a solo host still sees Host tools while a device claim waits for approval', () => {
+  it('a solo host gets Party chat back while a device claim waits for approval', () => {
     mount();
     act(() => {
       hoisted.onMessage!({
@@ -136,6 +136,6 @@ describe('Game screen table drawers by table size', () => {
         },
       } as ServerMessage);
     });
-    expect(screen.getByText('Host tools')).toBeInTheDocument();
+    expect(screen.getByText('Party chat')).toBeInTheDocument();
   });
 });

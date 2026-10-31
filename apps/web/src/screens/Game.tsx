@@ -1010,9 +1010,10 @@ export function Game() {
         onRetry={live.removed ? undefined : retryRoomConnection}
       />
     );
-  // A solo table has one seat and nobody to chat with, so its Host tools and Party chat drawers would
-  // be empty shells. They stay while anything needs the host or the party: a second seat, a late-join
-  // request, or a device claim waiting for approval. The client sees no session mode, so seat count is the signal.
+  // A solo table has one seat and nobody to chat with, so its Party chat drawer would be an empty shell.
+  // It stays while anything needs the party: a second seat, a late-join request, or a device claim waiting
+  // for approval. The client sees no session mode, so seat count is the signal. Host tools always stays for
+  // the host: it carries round and turn-timer controls even at a solo table.
   const showTableDrawers =
     (room?.seats?.length ?? 0) > 1 ||
     (room?.lateJoinRequests?.length ?? 0) > 0 ||
@@ -1586,7 +1587,7 @@ export function Game() {
               }
             />
           )}
-          {isHost && showTableDrawers && (
+          {isHost && (
             <Drawer
               id="host"
               title="Host tools"
