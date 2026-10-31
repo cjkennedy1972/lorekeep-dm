@@ -5,7 +5,12 @@ const hash = (token: string) =>
   createHash('sha256').update(token).digest('hex');
 
 export type SeatSocketAuthorization =
-  | { status: 'authorized'; resumeToken: string; soloOwnerRecovery: boolean }
+  | {
+      status: 'authorized';
+      resumeToken: string;
+      soloOwnerRecovery: boolean;
+      previousTokenHash: string;
+    }
   | { status: 'active-socket' | 'invalid-token' };
 
 /** Atomically checks the current seat token and claims its sole controlling socket. */
@@ -103,17 +108,26 @@ export async function authorizeSeatSocket(
       return { status: 'invalid-token' };
     }
     const resumeToken = randomBytes(16).toString('base64url');
-    await client.query(
+    const reserved = await client.query<{ token_hash: string }>(
       `INSERT INTO seat_resume_tokens
          (session_id,seat_id,token_hash,rotated_at,active_socket_id,heartbeat_at)
        VALUES($1,$2,md5(random()::text || clock_timestamp()::text),clock_timestamp(),$3,clock_timestamp())
        ON CONFLICT(session_id,seat_id) DO UPDATE SET
          active_socket_id=EXCLUDED.active_socket_id,
-         heartbeat_at=EXCLUDED.heartbeat_at`,
+         heartbeat_at=EXCLUDED.heartbeat_at
+       RETURNING token_hash`,
       [sessionId, seatId, socketId],
     );
+    const previousTokenHash = reserved.rows[0]?.token_hash;
+    if (!previousTokenHash)
+      throw new Error('seat resume token reservation failed');
     await client.query('COMMIT');
-    return { status: 'authorized', resumeToken, soloOwnerRecovery };
+    return {
+      status: 'authorized',
+      resumeToken,
+      soloOwnerRecovery,
+      previousTokenHash,
+    };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
     throw error;
@@ -135,6 +149,24 @@ export async function commitSeatResumeToken(
         SET token_hash=$4,rotated_at=clock_timestamp()
       WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$3`,
     [sessionId, seatId, socketId, hash(resumeToken)],
+  );
+  return result.rowCount === 1;
+}
+
+/** Restores the prior credential only while this socket still owns this rotation. */
+export async function rollbackSeatResumeToken(
+  db: Pool,
+  sessionId: string,
+  seatId: string,
+  socketId: string,
+  resumeToken: string,
+  previousTokenHash: string,
+): Promise<boolean> {
+  const result = await db.query(
+    `UPDATE seat_resume_tokens
+        SET token_hash=$5,rotated_at=clock_timestamp()
+      WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$3 AND token_hash=$4`,
+    [sessionId, seatId, socketId, hash(resumeToken), previousTokenHash],
   );
   return result.rowCount === 1;
 }

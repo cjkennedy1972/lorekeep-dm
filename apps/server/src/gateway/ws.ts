@@ -64,6 +64,7 @@ import {
   commitSeatResumeToken,
   heartbeatSeatSocket,
   releaseSeatSocket,
+  rollbackSeatResumeToken,
 } from './resumeTokens.js';
 
 const MAX_BYTES = 10 * 1024;
@@ -769,8 +770,9 @@ export function installGateway(
             return;
           }
           step = 'frame-delivery';
-          const authenticatedFrameSent = await new Promise<boolean>(
-            (resolve) => {
+          let authenticatedFrameSent = false;
+          try {
+            authenticatedFrameSent = await new Promise<boolean>((resolve) => {
               if (ws.readyState !== WebSocket.OPEN) return resolve(false);
               ws.send(
                 JSON.stringify({
@@ -780,9 +782,27 @@ export function installGateway(
                 }),
                 (error) => resolve(!error),
               );
-            },
-          );
+            });
+          } catch (error) {
+            await rollbackSeatResumeToken(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+              authorization.resumeToken,
+              authorization.previousTokenHash,
+            );
+            throw error;
+          }
           if (!authenticatedFrameSent) {
+            await rollbackSeatResumeToken(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+              authorization.resumeToken,
+              authorization.previousTokenHash,
+            );
             ws.close(1011, 'Authentication response could not be sent');
             logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
             return;

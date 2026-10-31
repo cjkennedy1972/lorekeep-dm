@@ -259,6 +259,92 @@ describe('pending first-token handoff', () => {
     return { id, room, token };
   }
 
+  function failSeatAuthenticatedSend(mode: 'callback' | 'throw') {
+    const original = WebSocket.prototype.send;
+    const send = vi.spyOn(WebSocket.prototype, 'send');
+    send.mockImplementation(function (
+      this: WebSocket,
+      data: WebSocket.RawData,
+      options?: WebSocket.SendOptions | ((error?: Error) => void),
+      callback?: (error?: Error) => void,
+    ) {
+      let message: { type?: string } | undefined;
+      try {
+        message = JSON.parse(String(data)) as { type?: string };
+      } catch {
+        // Non-JSON websocket frames are passed through untouched.
+      }
+      if (message?.type === 'SeatAuthenticated') {
+        if (mode === 'throw')
+          throw new Error('injected synchronous send failure');
+        const done = typeof options === 'function' ? options : callback;
+        done?.(new Error('injected callback send failure'));
+        return this;
+      }
+      return original.call(this, data, options, callback);
+    });
+    return send;
+  }
+
+  it.each(['callback', 'throw'] as const)(
+    'restores the pending credential after a %s send failure so a tokenless retry can receive it',
+    async (mode) => {
+      const { id } = await pendingSeat();
+      const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+      const failSend = failSeatAuthenticatedSend(mode);
+      const failed = connect(await ticket(tokens[0]!, id), null, false);
+      expect(await closed(failed)).toBe(mode === 'callback' ? 1011 : 1008);
+      await waitForReleasedSocket(seatId, id);
+
+      failSend.mockRestore();
+      const retry = connect(await ticket(tokens[0]!, id), null, false);
+      expect(
+        (await nextOfType(retry, 'SeatAuthenticated', 1_500)).payload
+          .resumeToken,
+      ).toEqual(expect.any(String));
+      await closeSocket(retry);
+    },
+    20_000,
+  );
+
+  it('does not let a concurrent tokenless socket obtain the pending credential while send rollback is pending', async () => {
+    const { id } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    let sendStarted!: () => void;
+    let finishSend!: (error?: Error) => void;
+    const started = new Promise<void>((resolve) => (sendStarted = resolve));
+    const original = WebSocket.prototype.send;
+    const failSend = vi.spyOn(WebSocket.prototype, 'send');
+    failSend.mockImplementation(function (
+      this: WebSocket,
+      data: WebSocket.RawData,
+      options?: WebSocket.SendOptions | ((error?: Error) => void),
+      callback?: (error?: Error) => void,
+    ) {
+      if (JSON.parse(String(data)).type === 'SeatAuthenticated') {
+        const done = typeof options === 'function' ? options : callback;
+        sendStarted();
+        finishSend = (error) => done?.(error);
+        return this;
+      }
+      return original.call(this, data, options, callback);
+    });
+    const first = connect(await ticket(tokens[0]!, id), null, false);
+    await started;
+    const second = connect(await ticket(tokens[0]!, id), null, false);
+    expect(await closed(second)).toBe(1008);
+    finishSend(new Error('injected callback send failure'));
+    expect(await closed(first)).toBe(1011);
+    await waitForReleasedSocket(seatId, id);
+    failSend.mockRestore();
+
+    const retry = connect(await ticket(tokens[0]!, id), null, false);
+    expect(
+      (await nextOfType(retry, 'SeatAuthenticated', 1_500)).payload.resumeToken,
+    ).toEqual(expect.any(String));
+    await closeSocket(retry);
+  }, 20_000);
+
   it('delivers only to the exact authenticated session, once', async () => {
     const { room, token } = await pendingSeat();
     expect(
