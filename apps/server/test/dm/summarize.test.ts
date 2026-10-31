@@ -64,10 +64,13 @@ describe('scene summaries and recap', () => {
     expect(result.summary).toContain('HpChanged');
     expect(result.summary).not.toContain('z'.repeat(32));
   });
-  it('screens Unicode-normalized name fragments and common-word possessives on Unicode boundaries', () => {
+  it('matches complete multiword identities without matching common components', () => {
     expect(
-      containsIdentityVariant('WILL’S lantern glows', ['Will Harper']),
+      containsIdentityVariant('Will Harper finds a lantern.', ['Will Harper']),
     ).toBe(true);
+    expect(
+      containsIdentityVariant('The party will continue.', ['Will Harper']),
+    ).toBe(false);
     expect(containsIdentityVariant('The café is quiet', ['Café'])).toBe(true);
     expect(
       containsIdentityVariant('The unrelated village', ['Will Harper']),
@@ -91,6 +94,9 @@ describe('scene summaries and recap', () => {
     expect(
       containsIdentityVariant('The lantern follows Alice.', ['Bob Smith']),
     ).toBe(false);
+    expect(
+      containsIdentityVariant('Will Harper’s map is here.', ['Will Harper']),
+    ).toBe(true);
   });
 
   it.each([

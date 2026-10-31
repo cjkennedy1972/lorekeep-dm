@@ -94,9 +94,12 @@ const leaks = (text: string) => /ent_shade_77|Vexra/i.test(text);
 
 describe('scene close uses the public view (ADR-034 §3)', () => {
   it('matches bound names with plural and possessive suffixes', () => {
+    expect(containsIdentityVariant('Will Harper’s map', ['Will Harper'])).toBe(
+      true,
+    );
     expect(
-      containsIdentityVariant('Wills and Will’s map', ['Will Harper']),
-    ).toBe(true);
+      containsIdentityVariant('The party will continue.', ['Will Harper']),
+    ).toBe(false);
     expect(
       containsIdentityVariant('The Willows are quiet.', ['Will Harper']),
     ).toBe(false);

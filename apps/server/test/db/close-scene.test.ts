@@ -309,6 +309,8 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     await room.drain(100);
 
     expect(persisted).toBeDefined();
+    expect(calls.length).toBeGreaterThan(0);
+    expect(persisted?.summary).toBeTruthy();
     expect(persisted?.summary).not.toContain(quote);
     expect(persisted?.summary).not.toContain('Solo');
   });

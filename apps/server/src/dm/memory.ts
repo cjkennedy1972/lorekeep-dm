@@ -6,11 +6,7 @@ import {
   RulingSchema,
 } from '@game/schema';
 import type { Pool, PoolClient } from 'pg';
-import {
-  identityPartPattern,
-  identityParts,
-  mentionsIdentityPart,
-} from './identityMatcher.js';
+import { identityParts, identityPattern } from './identityMatcher.js';
 import {
   ensureSessionCharacterToken,
   indexDerivedMemoryRow,
@@ -199,24 +195,13 @@ const foldPrivacyText = (text: string) =>
       (char) => PRIVACY_CONFUSABLES[char] ?? char,
     );
 
-function identityPattern(identity: string): RegExp {
-  const parts = identityParts(identity);
-  if (!parts.length) return /$a/u;
-  return new RegExp(
-    parts.map((part) => identityPartPattern(part).source).join('|'),
-    'giu',
-  );
-}
-
 function containsRegistryIdentity(
   text: string,
   identities: readonly string[],
 ): boolean {
   const folded = foldPrivacyText(text);
   return identities.some((identity) =>
-    identityParts(identity).some((part) =>
-      mentionsIdentityPart(folded, foldPrivacyText(part)),
-    ),
+    identityPattern(foldPrivacyText(identity)).test(folded),
   );
 }
 

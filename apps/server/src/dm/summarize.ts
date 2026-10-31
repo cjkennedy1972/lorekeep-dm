@@ -9,7 +9,11 @@ import {
 import type { LlmAdapter, LlmRequest } from '../llm/adapter.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
-import { identityParts, mentionsIdentityPart } from './identityMatcher.js';
+import {
+  identityParts,
+  mentionsIdentity,
+  mentionsIdentityPart,
+} from './identityMatcher.js';
 
 export const MAX_SCENE_SUMMARY_WORDS = 120;
 export const MAX_SCENE_SUMMARY_CHARS = 1_200;
@@ -542,9 +546,7 @@ export function containsIdentityVariant(
 ): boolean {
   const folded = foldIdentity(text);
   return identities.some((identity) => {
-    return identityParts(identity).some((part) =>
-      mentionsIdentityPart(folded, foldIdentity(part)),
-    );
+    return mentionsIdentity(folded, foldIdentity(identity));
   });
 }
 
