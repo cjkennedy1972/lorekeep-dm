@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { loadConfig } from '../../src/config.js';
 import { createSession } from '../../src/accounts/sessions.js';
 import { installGateway } from '../../src/gateway/ws.js';
 import { ConnectionRegistry } from '../../src/gateway/connections.js';
@@ -23,7 +24,10 @@ import type {
   LlmRequest,
 } from '../../src/llm/adapter.js';
 import { scriptedDm } from '../room/scriptedDm.js';
-import type { RoomCombatState } from '../../src/room/combat.js';
+import {
+  hiddenEntityIds,
+  type RoomCombatState,
+} from '../../src/room/combat.js';
 import {
   bootstrapped,
   hero,
@@ -34,7 +38,7 @@ import {
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
 
-type Wire = { seq: number; type: string; payload?: Record<string, unknown> };
+type Wire = { seq?: number; type: string; payload?: Record<string, unknown> };
 const accountIds: string[] = [];
 const sessionIds: string[] = [];
 const saved = {
@@ -507,6 +511,231 @@ afterAll(async () => {
 }, 60_000);
 
 describe('Room combat over the websocket (real Room, Postgres, scripted DM)', () => {
+  const probeEnabled = loadConfig().WIRE_VIEWER_SEQ_ENABLED;
+
+  it('ADR-040 probe: complete viewer frame streams are independent of hidden area-attack events', async () => {
+    const hiddenId = 'ent_goblin-minion_1';
+    const run = async (hiddenPresent: boolean) => {
+      stack = await Stack.boot(
+        `adr040-area-${hiddenPresent ? 'hidden' : 'absent'}`,
+      );
+      const user = await newUser();
+      const observer = await newUser();
+      const fireballHero = {
+        ...hero,
+        spellsKnown: ['spell:fireball'],
+        spellsPrepared: ['spell:fireball'],
+        slots: { ...hero.slots, '3': { max: 1, used: 0 } },
+      };
+      const b = bootstrapped(7);
+      const state = {
+        ...b.state,
+        entities: b.state.entities
+          .map((entity) =>
+            entity.id === hiddenId
+              ? { ...entity, pos: { x: 8, y: 2 }, hidden: true }
+              : entity.id === 'ent_aria'
+                ? { ...entity, pos: { x: 7, y: 2 } }
+                : entity.id === 'ent_goblin-minion_2'
+                  ? { ...entity, pos: { x: 8, y: 3 } }
+                  : entity,
+          )
+          .filter((entity) => hiddenPresent || entity.id !== hiddenId),
+        combat: {
+          ...b.state.combat,
+          initiative: b.state.combat.initiative.filter(
+            (entry) => hiddenPresent || entry.entityId !== hiddenId,
+          ),
+          resources: Object.fromEntries(
+            Object.entries(b.state.combat.resources).filter(
+              ([entityId]) => hiddenPresent || entityId !== hiddenId,
+            ),
+          ),
+        },
+      };
+      const table = await seedTable(stack, user, (account) => ({
+        ...preCombatGame(fireballHero),
+        characters: { [account]: fireballHero },
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: state,
+      }));
+      const room = await stack.rooms.get(table);
+      const observerResumeToken = await room.seat(observer.id, 'Observer');
+      if (observerResumeToken)
+        Client.resumeTokens.set(`${table}:${observer.id}`, observerResumeToken);
+      const controller = await Client.open(stack, user, table);
+      const nonController = await Client.open(stack, observer, table);
+      try {
+        await controller.command({ command: 'options' });
+        const controllerBaseline = controller.log.find(
+          (frame) => frame.type === 'StateSync',
+        )!;
+        const observerBaseline = nonController.log.find(
+          (frame) => frame.type === 'StateSync',
+        )!;
+        const observerControlled = (
+          room as unknown as {
+            controlledBy: (accountId: string) => Set<string>;
+          }
+        ).controlledBy(observer.id);
+        expect(
+          observerControlled.size,
+          'non-controlling viewer must control no entities',
+        ).toBe(0);
+        const controllerBefore = controller.log.length;
+        const observerBefore = nonController.log.length;
+        const hiddenFromController = hiddenEntityIds(state).has(hiddenId);
+        const hiddenFromObserver = hiddenEntityIds(state).has(hiddenId);
+        await controller.command({
+          command: 'cast',
+          spellId: 'spell:fireball',
+          slotLevel: 3,
+          target: { kind: 'anchor', ref: '7,2' },
+        });
+        await Promise.all([
+          controller.until(
+            (frame) => frame.type === 'CombatTracker',
+            controllerBefore,
+          ),
+          nonController.until(
+            (frame) => frame.type === 'CombatTracker',
+            observerBefore,
+          ),
+        ]);
+        const safeFrames = (frames: Wire[]) =>
+          JSON.parse(
+            JSON.stringify(frames)
+              .replaceAll(hiddenId, 'hidden-creature')
+              .replace(
+                /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi,
+                '<uuid>',
+              ),
+          ) as Wire[];
+        const normalizeFrames = (frames: Wire[], baselineSeq: number) => {
+          const counts = new Map<string, number>();
+          return safeFrames(frames).map((frame) => {
+            const count = (counts.get(frame.type) ?? 0) + 1;
+            counts.set(frame.type, count);
+            return {
+              type: frame.type,
+              count,
+              seq:
+                typeof frame.seq === 'number' ? frame.seq - baselineSeq : null,
+              body: frame.payload ?? null,
+            };
+          });
+        };
+        const controllerFrames = controller.log.slice(controllerBefore);
+        const observerFrames = nonController.log.slice(observerBefore);
+        return {
+          controllerFrames: normalizeFrames(
+            controllerFrames,
+            controllerBaseline.seq ?? 0,
+          ),
+          observerFrames: normalizeFrames(
+            observerFrames,
+            observerBaseline.seq ?? 0,
+          ),
+          visibleEffect: controllerFrames.some(
+            (frame) =>
+              frame.type === 'CombatEvents' &&
+              JSON.stringify(frame.payload).includes('ent_goblin-minion_2'),
+          ),
+          trackers: {
+            controller: controllerFrames
+              .filter((frame) => frame.type === 'CombatTracker')
+              .map((f) => f.seq ?? null),
+            observer: observerFrames
+              .filter((frame) => frame.type === 'CombatTracker')
+              .map((f) => f.seq ?? null),
+          },
+          visibility: {
+            controllerHiddenFromPerspective: hiddenFromController,
+            observerHiddenFromPerspective: hiddenFromObserver,
+          },
+        };
+      } finally {
+        controller.close();
+        nonController.close();
+        await stack.stop();
+        stack = undefined;
+      }
+    };
+
+    const withHidden = await run(true);
+    const withoutHidden = await run(false);
+    expect(withHidden.visibleEffect).toBe(true);
+    expect(withoutHidden.visibleEffect).toBe(true);
+    const equal = (left: unknown, right: unknown) =>
+      JSON.stringify(left) === JSON.stringify(right);
+    const controllerEqual = equal(
+      withHidden.controllerFrames,
+      withoutHidden.controllerFrames,
+    );
+    const observerEqual = equal(
+      withHidden.observerFrames,
+      withoutHidden.observerFrames,
+    );
+    const signature =
+      'CombatTracker seq delta differs between hidden-creature-present and hidden-creature-absent runs';
+    const seqDeltaDiffers = (
+      a: typeof withHidden.controllerFrames,
+      b: typeof withHidden.controllerFrames,
+    ) =>
+      !equal(
+        a
+          .filter((frame) => frame.type === 'CombatTracker')
+          .map((frame) => frame.seq),
+        b
+          .filter((frame) => frame.type === 'CombatTracker')
+          .map((frame) => frame.seq),
+      );
+    const seqsByType = (frames: typeof withHidden.controllerFrames) => {
+      const result: Record<string, number[]> = {};
+      for (const frame of frames) {
+        if (frame.seq === null) continue;
+        (result[frame.type] ??= []).push(frame.seq);
+      }
+      return result;
+    };
+    console.info(
+      'ADR-040 sequenced frames (generic):',
+      JSON.stringify({
+        controller: {
+          present: seqsByType(withHidden.controllerFrames),
+          absent: seqsByType(withoutHidden.controllerFrames),
+        },
+        nonController: {
+          present: seqsByType(withHidden.observerFrames),
+          absent: seqsByType(withoutHidden.observerFrames),
+        },
+      }),
+    );
+    const assertIndependentStreams = () => {
+      if (
+        seqDeltaDiffers(
+          withHidden.controllerFrames,
+          withoutHidden.controllerFrames,
+        ) ||
+        seqDeltaDiffers(withHidden.observerFrames, withoutHidden.observerFrames)
+      )
+        throw new Error(signature);
+      expect(
+        controllerEqual,
+        'controller complete ordered frame stream differs',
+      ).toBe(true);
+      expect(
+        observerEqual,
+        'non-controller complete ordered frame stream differs',
+      ).toBe(true);
+    };
+    if (probeEnabled) {
+      assertIndependentStreams();
+    } else {
+      // Expected failure is narrowly pinned to the known hidden-count cursor signature.
+      expect(assertIndependentStreams).toThrow(signature);
+    }
+  }, 60_000);
   it('covers X-card, pause/resume, report, and double rewind in one recorded room session', async () => {
     stack = await Stack.boot('safety-controls-and-rewind');
     const host = await newUser();

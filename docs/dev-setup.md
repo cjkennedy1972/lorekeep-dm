@@ -64,3 +64,7 @@ pnpm --filter @game/e2e exec vitest run m2-scenarios
 ```
 
 To point a local server at a model, see [the operator guide](operator-guide.md): endpoint slots are saved through `/api/operator/endpoints/:slot`, plain-HTTP or loopback model hosts need `LLM_ALLOW_LOCAL_HOSTS`, and `LLM_FIXTURE_MODE` (`strict`, `lenient`, `record`) selects recorded-LLM replay. Set `OPERATOR_EMAILS` to your account email to use the operator routes. Never commit a real API key or a recorded fixture you have not reviewed.
+
+### ADR-040 staged wire cutover
+
+`WIRE_VIEWER_SEQ_ENABLED` is a documented server configuration flag and defaults to `false`. Stage 1 adds only this inert flag; it does not change wire behavior. Keep it disabled until the coordinated server/schema/web cutover is ready.
