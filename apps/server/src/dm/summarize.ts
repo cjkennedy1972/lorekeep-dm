@@ -1,4 +1,5 @@
 import { RegistryMemory, type RegistryDiff } from './memory.js';
+import { EngineEventSchema } from '@game/schema';
 import type { Pool } from 'pg';
 import {
   EVENT_ID_RULES,
@@ -43,18 +44,71 @@ export function boundSummary(text: string): string {
     .trim();
 }
 
-function deterministicSummary(events: SceneSummaryInput['events']): string {
-  const lines = events.slice(-12).map(({ type, payload }) => {
-    const data =
-      payload && typeof payload === 'object'
-        ? (payload as Record<string, unknown>)
-        : {};
-    const detail = [data.summary, data.description, data.name, data.text].find(
-      (value): value is string =>
-        typeof value === 'string' && value.trim().length > 0,
-    );
-    return `${type}${detail ? `: ${detail}` : ''}`;
+const SUMMARIZER_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  CombatStarted: ['combatId', 'entityIds', 'order', 'encounterId'],
+  InitiativeRolled: ['entityId', 'total'],
+  TurnOpened: ['turnId', 'entityId', 'deadline'],
+  TurnTimedOut: ['turnId', 'entityId', 'action'],
+  TurnResolved: ['turnId', 'entityId', 'eventIds'],
+  ReactionPromptOpened: ['promptId', 'reactorEntityId', 'deadline'],
+  ReactionAnswered: ['promptId', 'choice'],
+  ReactionDeclined: ['promptId', 'cause'],
+  CombatEnded: ['combatId', 'encounterId'],
+  EntityPlaced: ['entityId', 'pos'],
+  LateJoinSpawned: [
+    'seatId',
+    'entityId',
+    'sceneId',
+    'pos',
+    'initiativeEffectiveRound',
+  ],
+  EntityMoved: ['entityId', 'path', 'cost'],
+  MoveStarted: ['entityId', 'path', 'turnId'],
+  MoveEnded: ['entityId', 'turnId', 'reason'],
+  OpportunityTriggered: ['moverId', 'attackerId'],
+  AreaResolved: ['cells', 'affected'],
+  HpChanged: ['entityId', 'delta', 'hp'],
+  ConditionApplied: ['entityId', 'conditionId'],
+  ConditionRemoved: ['entityId', 'conditionId'],
+  SlotSpent: ['entityId', 'level'],
+  ContentTierChanged: ['from', 'to'],
+};
+
+/** Version 1 server projection. Unknown types and events with extra fields are discarded. */
+export function projectSummarizerEvents(
+  events: SceneSummaryInput['events'],
+): SceneSummaryInput['events'] {
+  return events.flatMap(({ type, payload }) => {
+    const fields = SUMMARIZER_FIELDS[type];
+    if (
+      !fields ||
+      !payload ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload)
+    )
+      return [];
+    const data = payload as Record<string, unknown>;
+    if (Object.keys(data).some((key) => !fields.includes(key))) return [];
+    const validated = EngineEventSchema.safeParse({ type, ...data });
+    if (!validated.success) return [];
+    const validatedData = validated.data as unknown as Record<string, unknown>;
+    return [
+      {
+        type,
+        payload: Object.fromEntries(
+          fields.flatMap((key) =>
+            key in validatedData ? [[key, validatedData[key]]] : [],
+          ),
+        ),
+      },
+    ];
   });
+}
+
+function deterministicSummary(events: SceneSummaryInput['events']): string {
+  const lines = events
+    .slice(-12)
+    .map(({ type, payload }) => `${type} ${canonical(payload)}`);
   return (
     boundSummary(lines.join(' ')) ||
     'The scene closed without additional recorded events.'
@@ -192,6 +246,7 @@ function parseSummary(text: string): {
 export async function summarizeScene(
   input: SceneSummaryInput,
 ): Promise<SceneSummaryResult> {
+  const events = projectSummarizerEvents(input.events);
   const request: LlmRequest = {
     messages: [
       {
@@ -201,7 +256,7 @@ export async function summarizeScene(
       },
       {
         role: 'user',
-        content: `<<<EVENT_DATA>>>\n${canonical({ sceneId: input.sceneId, events: input.events })}\n<<<END_EVENT_DATA>>>`,
+        content: `<<<EVENT_DATA>>>\n${canonical({ version: 1, sceneId: input.sceneId, events })}\n<<<END_EVENT_DATA>>>`,
       },
     ],
     maxTokens: 300,
@@ -248,7 +303,7 @@ export async function summarizeScene(
     return { ...parsed, fallback: false };
   } catch {
     return {
-      summary: deterministicSummary(input.events),
+      summary: deterministicSummary(events),
       registryDiffs: [],
       fallback: true,
     };
@@ -312,11 +367,81 @@ export function publicSceneEvents(
   });
 }
 
+const foldIdentity = (value: string) =>
+  value
+    .normalize('NFKC')
+    .toLocaleLowerCase('und')
+    .replace(/ß/g, 'ss')
+    .replace(/ς/g, 'σ');
+
+/** Match complete Unicode letter/number components, including possessives. */
+export function containsIdentityVariant(
+  text: string,
+  identities: readonly string[],
+): boolean {
+  const folded = foldIdentity(text);
+  return identities.some((identity) => {
+    const parts = identity
+      .trim()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean);
+    return parts.some((part) => {
+      if ([...part].length === 1) {
+        const needle = foldIdentity(part).replace(
+          /[.*+?^${}()|[\]\\]/g,
+          '\\$&',
+        );
+        return new RegExp(
+          `(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`,
+          'u',
+        ).test(folded);
+      }
+      const needle = foldIdentity(part).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(
+        `(?<![\\p{L}\\p{N}])${needle}(?:['’]s|['’])?(?![\\p{L}\\p{N}])`,
+        'u',
+      ).test(folded);
+    });
+  });
+}
+
+async function captureIdentityVariants(
+  db: Pick<Pool, 'query'>,
+  sessionId: string,
+): Promise<string[]> {
+  const { rows } = await db.query<{
+    display_name: string;
+    email: string;
+    character_snapshot: unknown;
+  }>(
+    `SELECT a.display_name,a.email,b.character_snapshot FROM session_seat_characters b
+      JOIN accounts a ON a.id=b.account_id WHERE b.session_id=$1 AND b.binding_status='active'`,
+    [sessionId],
+  );
+  const values: string[] = [];
+  for (const row of rows) {
+    values.push(row.display_name, row.email);
+    const snapshot =
+      row.character_snapshot && typeof row.character_snapshot === 'object'
+        ? (row.character_snapshot as Record<string, unknown>)
+        : {};
+    if (typeof snapshot.name === 'string') values.push(snapshot.name);
+    if (Array.isArray(snapshot.aliases))
+      values.push(
+        ...snapshot.aliases.filter(
+          (value): value is string => typeof value === 'string',
+        ),
+      );
+  }
+  return values.filter(Boolean);
+}
+
 /** Persist a summary exactly once, then apply validated registry updates. */
 export async function closeScene(
   input: CloseSceneInput,
 ): Promise<SceneSummaryResult & { persisted: boolean }> {
   const hidden = input.hidden ?? [];
+  const identities = await captureIdentityVariants(input.db, input.sessionId);
   const result = await summarizeScene({
     ...input,
     events: publicSceneEvents(input.events, hidden),
@@ -325,6 +450,17 @@ export async function closeScene(
   let registryDiffs = result.registryDiffs.filter(
     (diff) => !hiddenMatcher(hidden).mentions(diff),
   );
+  if (
+    containsIdentityVariant(summary, identities) ||
+    registryDiffs.some((diff) =>
+      containsIdentityVariant(JSON.stringify(diff), identities),
+    )
+  ) {
+    summary = deterministicSummary(projectSummarizerEvents(input.events));
+    registryDiffs = [];
+    if (containsIdentityVariant(summary, identities))
+      summary = 'The scene has ended.';
+  }
   let fallback = result.fallback;
   const allowed = async (text: string) => {
     try {

@@ -13,6 +13,8 @@ import {
   closeScene,
   summarizeScene,
   MAX_SCENE_SUMMARY_WORDS,
+  containsIdentityVariant,
+  projectSummarizerEvents,
 } from '../../src/dm/summarize.js';
 import type {
   Moderator,
@@ -23,11 +25,15 @@ import { JudgeBudget } from '../../src/safety/judgeBudget.js';
 
 class FixtureAdapter implements LlmAdapter {
   calls = 0;
+  lastRequest?: { messages: { content: string }[] };
   constructor(private readonly response: string | Error) {}
   capabilities() {
     return { streaming: true, nativeTools: false, jsonSchema: true };
   }
-  async *complete(): AsyncIterable<LlmChunk> {
+  async *complete(request: {
+    messages: { content: string }[];
+  }): AsyncIterable<LlmChunk> {
+    this.lastRequest = request;
     this.calls++;
     if (this.response instanceof Error) throw this.response;
     yield { type: 'text', delta: this.response };
@@ -38,6 +44,80 @@ class FixtureAdapter implements LlmAdapter {
 }
 
 describe('scene summaries and recap', () => {
+  it('screens Unicode-normalized name fragments and common-word possessives on Unicode boundaries', () => {
+    expect(
+      containsIdentityVariant('WILL’S lantern glows', ['Will Harper']),
+    ).toBe(true);
+    expect(containsIdentityVariant('The café is quiet', ['Café'])).toBe(true);
+    expect(
+      containsIdentityVariant('The unrelated village', ['Will Harper']),
+    ).toBe(false);
+    expect(containsIdentityVariant('X enters', ['X'])).toBe(true);
+  });
+
+  it('rejects unknown fields and free-text event types from the summarizer projection', () => {
+    expect(
+      projectSummarizerEvents([
+        {
+          type: 'ConditionApplied',
+          payload: {
+            entityId: 'ent_1',
+            conditionId: 'prone',
+            source: 'PLAYER QUOTE',
+          },
+        },
+        { type: 'SeatJoined', payload: { displayName: 'A Name' } },
+      ]),
+    ).toEqual([]);
+  });
+  it('sends only exact allowlisted event fields to the summarizer and fallback', async () => {
+    const adapter = new FixtureAdapter(
+      JSON.stringify({ summary: 'A turn resolved.', registryDiffs: [] }),
+    );
+    const result = await summarizeScene({
+      sceneId: 's1',
+      events: [
+        { type: 'InitiativeRolled', payload: { entityId: 'ent_1', total: 12 } },
+        {
+          type: 'HpChanged',
+          payload: {
+            entityId: 'ent_1',
+            delta: -2,
+            hp: 8,
+            playerText: 'NEVER_FORWARD_THIS',
+          },
+        },
+        {
+          type: 'TurnOpened',
+          payload: { turnId: 'turn_1', entityId: 'ent_1', deadline: 123 },
+        },
+        {
+          type: 'SeatJoined',
+          payload: {
+            seatId: 'seat_1',
+            displayName: 'NEVER_FORWARD_NAME',
+            accountId: 'account_1',
+          },
+        },
+      ],
+      adapter,
+    });
+    const request = (
+      adapter as unknown as {
+        lastRequest?: { messages: { content: string }[] };
+      }
+    ).lastRequest;
+    expect(
+      request?.messages.map((message) => message.content).join(' '),
+    ).not.toContain('NEVER_FORWARD');
+    expect(
+      request?.messages.map((message) => message.content).join(' '),
+    ).toContain('InitiativeRolled');
+    expect(
+      request?.messages.map((message) => message.content).join(' '),
+    ).not.toContain('SeatJoined');
+    expect(result.summary).toBe('A turn resolved.');
+  });
   it('replaces a blocked or unavailable recap with authored safe text', async () => {
     const requests: ModerationRequest[] = [];
     const moderator: Moderator = {
@@ -426,7 +506,9 @@ describe('scene summaries and recap', () => {
     });
     expect(result.fallback).toBe(true);
     expect(result.registryDiffs).toEqual([]);
-    expect(result.summary).toContain('LocationChanged');
+    expect(result.summary).toBe(
+      'The scene closed without additional recorded events.',
+    );
     expect(events).toEqual(before);
   });
 
