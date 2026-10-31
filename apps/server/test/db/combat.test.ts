@@ -507,6 +507,111 @@ afterAll(async () => {
 }, 60_000);
 
 describe('Room combat over the websocket (real Room, Postgres, scripted DM)', () => {
+  const adr040Probe =
+    process.env.WIRE_VIEWER_SEQ_ENABLED === 'true' ? it : it.fails;
+
+  adr040Probe(
+    'ADR-040 probe: CombatTracker seq delta is independent of hidden area-attack events',
+    async () => {
+      const run = async (hiddenPresent: boolean) => {
+        stack = await Stack.boot(
+          `adr040-area-${hiddenPresent ? 'hidden' : 'absent'}`,
+        );
+        const user = await newUser();
+        const observer = await newUser();
+        const fireballHero = {
+          ...hero,
+          spellsKnown: ['spell:fireball'],
+          spellsPrepared: ['spell:fireball'],
+          slots: { ...hero.slots, '3': { max: 1, used: 0 } },
+        };
+        const b = bootstrapped(7);
+        const state = {
+          ...b.state,
+          entities: b.state.entities.map((entity) =>
+            entity.id === 'ent_goblin-minion_1'
+              ? {
+                  ...entity,
+                  pos: { x: 8, y: 2 },
+                  hidden: hiddenPresent,
+                }
+              : entity.id === 'ent_aria'
+                ? { ...entity, pos: { x: 7, y: 2 } }
+                : entity.id === 'ent_goblin-minion_2'
+                  ? { ...entity, pos: { x: 12, y: 16 } }
+                  : entity,
+          ),
+        };
+        const table = await seedTable(stack, user, (account) => ({
+          ...preCombatGame(fireballHero),
+          characters: { [account]: fireballHero },
+          combatActors: { [account]: 'ent_aria' },
+          combatRoom: state,
+        }));
+        const observerResumeToken = await (
+          await stack.rooms.get(table)
+        ).seat(observer.id, 'Observer');
+        if (observerResumeToken)
+          Client.resumeTokens.set(
+            `${table}:${observer.id}`,
+            observerResumeToken,
+          );
+        const controller = await Client.open(stack, user, table);
+        const nonController = await Client.open(stack, observer, table);
+        try {
+          await controller.command({ command: 'options' });
+          const before = controller.log.length;
+          await controller.command({
+            command: 'cast',
+            spellId: 'spell:fireball',
+            slotLevel: 3,
+            target: { kind: 'anchor', ref: '7,2' },
+          });
+          const tracker = await controller.until(
+            (frame) => frame.type === 'CombatTracker',
+            before,
+          );
+          const observerTracker = await nonController.until(
+            (frame) => frame.type === 'CombatTracker',
+            0,
+          );
+          const baseline = controller.log.find(
+            (frame) => frame.type === 'StateSync',
+          )!;
+          return {
+            controllerDelta: tracker.seq - baseline.seq,
+            observerSeq: observerTracker.seq,
+            visibleCombatEvents: controller.log
+              .slice(before)
+              .filter((frame) => frame.type === 'CombatEvents')
+              .map((frame) => ({
+                type: frame.type,
+                seq: frame.seq,
+                body: frame.payload,
+              })),
+          };
+        } finally {
+          controller.close();
+          nonController.close();
+          await stack.stop();
+          stack = undefined;
+        }
+      };
+
+      const withHidden = await run(true);
+      const withoutHidden = await run(false);
+      const signature =
+        'CombatTracker seq delta differs between hidden-creature-present and hidden-creature-absent runs';
+      expect(withHidden.controllerDelta, signature).toBe(
+        withoutHidden.controllerDelta,
+      );
+      expect(withHidden.visibleCombatEvents, signature).toEqual(
+        withoutHidden.visibleCombatEvents,
+      );
+      expect(withHidden.observerSeq).toBe(withoutHidden.observerSeq);
+    },
+    60_000,
+  );
   it('covers X-card, pause/resume, report, and double rewind in one recorded room session', async () => {
     stack = await Stack.boot('safety-controls-and-rewind');
     const host = await newUser();
