@@ -6577,11 +6577,48 @@ export class Room {
     );
     for (const [viewer, connection] of this.connections) {
       const controlled = this.controlledBy(viewer);
-      const visible = clientEvents.flatMap((event) => {
+      let visible = clientEvents.flatMap((event) => {
         if (this.promptHiddenFrom(event, hidden, controlled)) return [];
         const shown = projectEventForViewer(event, hidden, controlled);
         return shown ? [shown] : [];
       });
+      // Preserve the engine's split events in the durable log, but do not let
+      // a non-controller infer a hidden reactor's reach from the movement pause.
+      if (
+        clientEvents.some(
+          (event) =>
+            event.type === 'ReactionDeclined' && event.cause === 'auto',
+        )
+      ) {
+        const moved = visible.filter((event) => event.type === 'EntityMoved');
+        if (moved.length > 1) {
+          const first = moved[0]!;
+          const sameMover = moved.every(
+            (event) => event.entityId === first.entityId,
+          );
+          if (sameMover) {
+            const path = moved.flatMap((event, index) => {
+              const part = Array.isArray(event.path) ? event.path : [];
+              return index > 0 ? part.slice(1) : part;
+            });
+            const combined = {
+              ...first,
+              path,
+              cost: moved.reduce(
+                (sum, event) => sum + Number(event.cost ?? 0),
+                0,
+              ),
+            };
+            let emitted = false;
+            visible = visible.flatMap((event) => {
+              if (event.type !== 'EntityMoved') return [event];
+              if (emitted) return [];
+              emitted = true;
+              return [combined];
+            });
+          }
+        }
+      }
       if (visible.length)
         connection.send(
           this.projectMessageForViewer(

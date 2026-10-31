@@ -2760,6 +2760,14 @@ describe('party reaction prompt lifecycle (ADR-033 §3, §4; ADR-034 §5)', () =
     const { table, reactorInbox } = await stage({ hidden: true });
     expect(combatOf(table).pendingReaction).toBeUndefined();
     expect(names(table)).toContain('MoveEnded');
+    const deliveredEvents = table.messages.flatMap((message) =>
+      message.type === 'CombatEvents'
+        ? (message.payload as { events: { type: string }[] }).events
+        : [],
+    );
+    expect(
+      deliveredEvents.filter((event) => event.type === 'EntityMoved'),
+    ).toHaveLength(1);
     const moveBatches = table.messages.filter(
       (message) =>
         message.type === 'CombatEvents' &&

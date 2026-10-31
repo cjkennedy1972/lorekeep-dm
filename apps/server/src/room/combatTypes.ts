@@ -3,7 +3,7 @@ import type { CharacterInput, PendingReaction } from '@game/rules-engine';
 
 /** A reaction prompt auto-declines this long after it was issued. */
 export const REACTION_TIMEOUT_MS = 15_000;
-/** Cumulative open-window time one turn may spend on reactions before further triggers decline with `cap` (ADR-033 §3.8). */
+/** Cumulative open-window time one turn may spend on reactions; only exhaustion of this budget declines further triggers with `cap` (ADR-033 §3.8). */
 export const REACTION_BUDGET_MS = 45_000;
 export type ReactionDeclineCause =
   | 'timeout'

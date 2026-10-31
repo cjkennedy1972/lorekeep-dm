@@ -92,6 +92,35 @@ describe('movement and opportunity attacks', () => {
     },
   );
 
+  test('bumps and reveals a hidden ally on the planned route', () => {
+    const s = state();
+    s.entities = [
+      { ...s.entities[0]!, pos: { x: 0, y: 0 } },
+      { ...s.entities[1]!, team: 'heroes', pos: { x: 2, y: 0 }, hidden: true },
+    ];
+    const result = moveAlong(s, 'mover', [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+    ]);
+    expect('ok' in result).toBe(true);
+    if (!('ok' in result)) return;
+    expect(result.state.entities.find((e) => e.id === 'mover')?.pos).toEqual({
+      x: 1,
+      y: 0,
+    });
+    expect(result.state.entities.find((e) => e.id === 'orc')?.hidden).toBe(
+      false,
+    );
+    expect(result.events).toContainEqual({
+      type: 'EntityRevealed',
+      entityId: 'orc',
+      cause: 'bump',
+    });
+    expect(result.movementEnd).toBe('blocked');
+  });
+
   test('spends only walked cells when the remaining budget reaches the hidden blocker', () => {
     const s = state();
     s.entities = [

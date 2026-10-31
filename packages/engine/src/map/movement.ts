@@ -195,7 +195,6 @@ export function moveAlong(
     const hiddenBlocker = current.entities.find(
       (other) =>
         other.id !== mover.id &&
-        other.team !== mover.team &&
         other.hidden &&
         next.x < other.pos.x + other.size &&
         next.x + mover.size > other.pos.x &&
