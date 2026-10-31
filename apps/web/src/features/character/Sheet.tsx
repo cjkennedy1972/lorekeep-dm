@@ -14,6 +14,12 @@ export interface SheetProps {
   loadFailed?: boolean;
   /** Offered with loadFailed so the player can try reconnecting. */
   onRetry?: () => void;
+  /** False for a spectator with no seat at the table. Defaults to true. */
+  seated?: boolean;
+  /** The viewer's seat is the host seat. */
+  isHost?: boolean;
+  /** The viewer's seat has a bound party character whose sheet has not arrived yet. */
+  hasBoundCharacter?: boolean;
 }
 
 const abilityNames = {
@@ -50,6 +56,9 @@ export function Sheet({
   loading = false,
   loadFailed = false,
   onRetry,
+  seated = true,
+  isHost = false,
+  hasBoundCharacter = false,
 }: SheetProps) {
   const state = useSyncExternalStore(
     store.subscribe,
@@ -72,14 +81,30 @@ export function Sheet({
               </button>
             )}
           </>
-        ) : loading ? (
+        ) : loading || hasBoundCharacter ? (
           <p role="status" className="loading">
             <span className="spinner" aria-hidden="true" />
             Loading your character…
           </p>
+        ) : !seated ? (
+          <p>
+            You’re watching this table. Your character sheet appears here once
+            you take a seat.
+          </p>
+        ) : isHost ? (
+          <>
+            <p>
+              You’re hosting without a character. Build or choose one to play,
+              or keep running the table.
+            </p>
+            {emptyAction}
+          </>
         ) : (
           <>
-            <p>No character selected.</p>
+            <p>
+              You don’t have a character at this table yet. Build or choose one
+              to join the story.
+            </p>
             {emptyAction}
           </>
         )}

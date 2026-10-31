@@ -12,6 +12,7 @@ import {
   initialNarrationLog,
   narrationLogReducer,
   visibleChunks,
+  type LogEntry,
   type RollPayload,
 } from './logState.js';
 import {
@@ -267,20 +268,20 @@ export function NarrationLog({
   useLayoutEffect(() => {
     const node = listRef.current;
     if (!node) return;
-    const priorKeys = new Set(
-      previousEntries.current.map((entry) =>
-        entry.kind === 'pending'
-          ? `pending:${entry.actionId}`
-          : `turn:${entry.turn.turnId}`,
-      ),
+    const entryKey = (entry: LogEntry) =>
+      entry.kind === 'pending'
+        ? `pending:${entry.actionId}`
+        : `turn:${entry.turn.turnId}`;
+    const priorByKey = new Map(
+      previousEntries.current.map((entry) => [entryKey(entry), entry]),
     );
     const added = state.entries.filter(
+      (entry) => !priorByKey.has(entryKey(entry)),
+    );
+    // A turn whose text grew (streamed chunks) is new narration for a reader who is scrolled away.
+    const turnChanged = state.entries.some(
       (entry) =>
-        !priorKeys.has(
-          entry.kind === 'pending'
-            ? `pending:${entry.actionId}`
-            : `turn:${entry.turn.turnId}`,
-        ),
+        entry.kind === 'turn' && priorByKey.get(entryKey(entry)) !== entry,
     );
     previousEntries.current = state.entries;
     const historyOnly =
@@ -295,7 +296,7 @@ export function NarrationLog({
     }
     if (followingLatest.current) {
       node.scrollTop = node.scrollHeight;
-    } else if (added.some((entry) => entry.kind === 'turn')) {
+    } else if (turnChanged) {
       setUnseen(true);
     }
   }, [state.entries]);
@@ -548,6 +549,12 @@ export function NarrationLog({
           The DM is thinking.
         </p>
       )}
+      {/* Always mounted so the arrival is announced; no role, so it never competes with the status regions. Focus stays put. */}
+      <div aria-live="polite">
+        <span className="sr-only">
+          {scrolledUp && unseen ? 'New narration below.' : ''}
+        </span>
+      </div>
       {scrolledUp && (
         <button
           type="button"

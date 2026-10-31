@@ -538,9 +538,15 @@ export function Game() {
   } | null>(null);
   const room = live.room;
   const selfSeat = room?.seats?.find((seat) => seat.isSelf);
+  const hasBoundCharacter =
+    live.mySeatId !== null &&
+    Boolean(live.boundSeatIds?.includes(live.mySeatId));
   const [sheetRetryAttempt, setSheetRetryAttempt] = useState(0);
   const sheetLoadFailed = useSheetLoadFailure({
-    hasCharacterState: Boolean(room?.gameState),
+    // A bound seat is not served until its sheet arrives, so keep the stall timer running until it does.
+    hasCharacterState:
+      Boolean(room?.gameState) &&
+      (!hasBoundCharacter || Boolean(gameStore.getState().character)),
     connectionStatus: live.status,
     attempt: sheetRetryAttempt,
   });
@@ -1513,6 +1519,9 @@ export function Game() {
             loading={!room?.gameState}
             loadFailed={sheetLoadFailed}
             onRetry={live.removed ? undefined : retrySheetConnection}
+            seated={Boolean(selfSeat)}
+            isHost={isHost}
+            hasBoundCharacter={hasBoundCharacter}
             emptyAction={
               <Link className="sheet-empty__link" to={`/rooms/${id}`}>
                 Build or choose a character
