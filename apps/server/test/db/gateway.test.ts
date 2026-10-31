@@ -336,6 +336,32 @@ describe('pending first-token handoff', () => {
     ).toBeUndefined();
   });
 
+  it('expires a lease independently before the pending token expires', async () => {
+    const { room, token } = await pendingSeat();
+    const now = Date.now();
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        'short-lease',
+        now,
+      ),
+    ).toBe(token);
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        'lease-after-timeout',
+        now + 15_001,
+      ),
+    ).toBe(token);
+    room.releasePendingSeatResumeToken(
+      accounts[0]!,
+      hashToken(tokens[0]!),
+      'lease-after-timeout',
+    );
+  });
+
   it('does not deliver an expired pending token', async () => {
     const { room } = await pendingSeat();
     expect(
@@ -395,7 +421,7 @@ describe('pending first-token handoff', () => {
     spy.mockRestore();
   });
 
-  it('preserves the outer close when token delivery completion throws after authentication', async () => {
+  it('consumes the pending credential when completion throws after authentication', async () => {
     const { id, room } = await pendingSeat();
     const completion = vi
       .spyOn(room, 'completeSeatResumeTokenDelivery')
@@ -427,6 +453,13 @@ describe('pending first-token handoff', () => {
       pendingTokenClaimed: true,
       closeCode: null,
     });
+    expect(
+      room.claimPendingSeatResumeToken(
+        accounts[0]!,
+        hashToken(tokens[0]!),
+        'replay-after-delivered-completion-failure',
+      ),
+    ).toBeUndefined();
     completion.mockRestore();
   });
 

@@ -558,9 +558,13 @@ export function installGateway(
             )
           : undefined;
         const pendingTokenClaimed = firstDeliveryToken !== undefined;
-        let pendingTokenDeliveryCompleted = false;
+        let pendingTokenCredentialDelivered = false;
         const releasePendingTokenLease = () => {
-          if (pendingTokenLeaseId && pendingTokenClaimed)
+          if (
+            pendingTokenLeaseId &&
+            pendingTokenClaimed &&
+            !pendingTokenCredentialDelivered
+          )
             room.releasePendingSeatResumeToken(
               identity.accountId,
               identity.authTokenHash,
@@ -587,7 +591,7 @@ export function installGateway(
           | 'delivery-completion';
         let refusalLogged = false;
         ws.once('close', () => {
-          if (!pendingTokenDeliveryCompleted) releasePendingTokenLease();
+          if (!pendingTokenCredentialDelivered) releasePendingTokenLease();
         });
         const logSeatSocketRefusal = (
           reason: SeatSocketRefusalReason,
@@ -783,13 +787,19 @@ export function installGateway(
             logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
             return;
           }
+          pendingTokenCredentialDelivered = true;
+          if (pendingTokenLeaseId && pendingTokenClaimed)
+            room.consumePendingSeatResumeToken(
+              identity.accountId,
+              identity.authTokenHash,
+              pendingTokenLeaseId,
+            );
           step = 'delivery-completion';
           room.completeSeatResumeTokenDelivery(
             identity.accountId,
             identity.authTokenHash,
             pendingTokenLeaseId,
           );
-          pendingTokenDeliveryCompleted = true;
         } catch (error) {
           if (!refusalLogged) {
             logSeatSocketRefusal(
