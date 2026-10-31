@@ -6,7 +6,7 @@ import {
   RulingSchema,
 } from '@game/schema';
 import type { Pool, PoolClient } from 'pg';
-import { identityPattern } from './identityMatcher.js';
+import { identityPatterns, mentionsIdentity } from './identityMatcher.js';
 import {
   ensureSessionCharacterToken,
   indexDerivedMemoryRow,
@@ -201,7 +201,7 @@ function containsRegistryIdentity(
 ): boolean {
   const folded = foldPrivacyText(text);
   return identities.some((identity) =>
-    identityPattern(foldPrivacyText(identity)).test(folded),
+    mentionsIdentity(text, identity, folded),
   );
 }
 
@@ -280,12 +280,18 @@ function screenRegistryText(
     ([a], [b]) => b.length - a.length,
   )) {
     if (!identity.trim()) continue;
-    const matcher = identityPattern(identity);
-    if (!matcher.test(replaced)) continue;
-    matcher.lastIndex = 0;
+    const matchers = identityPatterns(identity);
+    const matches = matchers.some((matcher) => {
+      matcher.lastIndex = 0;
+      return matcher.test(replaced);
+    });
+    if (!matches) continue;
     if (!token)
       throw new Error('Unbound character identity; refusing registry write');
-    replaced = replaced.replace(matcher, token);
+    for (const matcher of matchers) {
+      matcher.lastIndex = 0;
+      replaced = replaced.replace(matcher, token);
+    }
   }
   if (containsRegistryIdentity(replaced, [...context.tokenByIdentity.keys()]))
     throw new Error(

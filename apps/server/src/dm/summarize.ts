@@ -542,7 +542,7 @@ export function containsIdentityVariant(
 ): boolean {
   const folded = foldIdentity(text);
   return identities.some((identity) => {
-    return mentionsIdentity(folded, foldIdentity(identity));
+    return mentionsIdentity(text, identity, folded);
   });
 }
 
