@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 export const up = (pgm) =>
   pgm.sql(
     readFileSync(
-      new URL('./0055_two_phase_seat_resume.sql', import.meta.url),
+      new URL('./0054_two_phase_seat_resume.sql', import.meta.url),
       'utf8',
     ),
   );
@@ -20,6 +20,7 @@ export const down = (pgm) =>
       DROP COLUMN last_activated_at,
       DROP COLUMN last_activated_socket_id,
       DROP COLUMN last_activated_rotation_id,
+      DROP COLUMN pending_owner_recovery,
       DROP COLUMN pending_started_at,
       DROP COLUMN pending_expires_at,
       DROP COLUMN pending_socket_id,

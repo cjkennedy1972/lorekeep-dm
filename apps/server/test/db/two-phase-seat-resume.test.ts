@@ -30,7 +30,7 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
     await database.pool.query(
       await readFile(
         new URL(
-          '../../migrations/0055_two_phase_seat_resume.sql',
+          '../../migrations/0054_two_phase_seat_resume.sql',
           import.meta.url,
         ),
         'utf8',
@@ -84,7 +84,7 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
         pending.rotationId,
         'wrong-candidate',
       ),
-    ).toBe(false);
+    ).toBe('rejected');
     expect(
       await activateSeatResumeCandidate(
         database!.pool,
@@ -94,7 +94,7 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
         pending.rotationId,
         pending.candidate,
       ),
-    ).toBe(true);
+    ).toBe('activated');
     expect(
       await activateSeatResumeCandidate(
         database!.pool,
@@ -104,7 +104,17 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
         pending.rotationId,
         pending.candidate,
       ),
-    ).toBe(false);
+    ).toBe('already-activated');
+    expect(
+      await activateSeatResumeCandidate(
+        database!.pool,
+        sessionId,
+        seatId,
+        socketId,
+        randomUUID(),
+        pending.candidate,
+      ),
+    ).toBe('rejected');
     const activated = await database!.pool.query(
       'SELECT token_hash,pending_rotation_id,last_activated_rotation_id,last_activated_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
       [sessionId, seatId],
@@ -194,7 +204,7 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
           recovery.candidate,
           true,
         ),
-      ).toBe(true);
+      ).toBe('activated');
     }
     const afterRecovery = await database!.pool.query(
       'SELECT token_hash,rotation_starts_in_window FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
@@ -204,5 +214,37 @@ describe.skipIf(!databaseUrl)('two-phase seat resume storage', () => {
       token_hash: hash(recovery.candidate),
       rotation_starts_in_window: 6,
     });
+  });
+  it('refunds from the pending tuple, not a caller-supplied recovery flag', async () => {
+    const { sessionId, seatId, socketId } = await seat();
+    await database!.pool.query(
+      `UPDATE seat_resume_tokens SET rotation_window_started_at=clock_timestamp(),
+         rotation_starts_in_window=2 WHERE session_id=$1 AND seat_id=$2`,
+      [sessionId, seatId],
+    );
+    const pending = await beginSeatResumeCandidate(
+      database!.pool,
+      sessionId,
+      seatId,
+      socketId,
+    );
+    expect(pending.status).toBe('started');
+    if (pending.status !== 'started') return;
+    expect(
+      await activateSeatResumeCandidate(
+        database!.pool,
+        sessionId,
+        seatId,
+        socketId,
+        pending.rotationId,
+        pending.candidate,
+        true,
+      ),
+    ).toBe('activated');
+    const row = await database!.pool.query(
+      'SELECT rotation_starts_in_window FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [sessionId, seatId],
+    );
+    expect(row.rows[0]!.rotation_starts_in_window).toBe(2);
   });
 });

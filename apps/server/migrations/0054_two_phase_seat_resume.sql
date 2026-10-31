@@ -4,6 +4,7 @@ ALTER TABLE seat_resume_tokens
   ADD COLUMN pending_socket_id uuid,
   ADD COLUMN pending_expires_at timestamptz,
   ADD COLUMN pending_started_at timestamptz,
+  ADD COLUMN pending_owner_recovery boolean NOT NULL DEFAULT false,
   ADD COLUMN last_activated_rotation_id uuid,
   ADD COLUMN last_activated_socket_id uuid,
   ADD COLUMN last_activated_at timestamptz,
@@ -11,7 +12,7 @@ ALTER TABLE seat_resume_tokens
   ADD COLUMN rotation_starts_in_window smallint NOT NULL DEFAULT 0,
   ADD CONSTRAINT seat_resume_pending_tuple CHECK (
     (pending_token_hash IS NULL AND pending_rotation_id IS NULL AND pending_socket_id IS NULL
-      AND pending_expires_at IS NULL AND pending_started_at IS NULL)
+      AND pending_expires_at IS NULL AND pending_started_at IS NULL AND NOT pending_owner_recovery)
     OR
     (pending_token_hash IS NOT NULL AND pending_rotation_id IS NOT NULL AND pending_socket_id IS NOT NULL
       AND pending_expires_at IS NOT NULL AND pending_started_at IS NOT NULL)
