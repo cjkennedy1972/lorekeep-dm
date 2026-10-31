@@ -27,11 +27,12 @@ export type LegacyClearOptions = {
   dryRun?: boolean;
   codeVersion?: string;
   dryRunMaxAgeMs?: number;
-  countTolerance?: number;
   batchSize?: number;
   timeBudgetMs?: number;
   sessionLockTimeoutMs?: number;
   runningStaleAfterMs?: number;
+  /** Test seam for exercising long-batch heartbeat behavior; CLI never supplies this. */
+  heartbeatIntervalMsForTests?: number;
   now?: () => Date;
   log?: (event: string, counts: LegacyClearCounts, outcome: string) => void;
 };
@@ -250,11 +251,10 @@ async function saveAudit(
   runId: string,
   counts: Record<string, number>,
   outcome: string,
-  finished: Date | null,
 ) {
   await client.query(
-    'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,outcome=$3,finished_at=$4,heartbeat_at=now() WHERE run_id=$1',
-    [runId, JSON.stringify(counts), outcome, finished],
+    "UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,outcome=$3,reason_code=CASE WHEN $3='live_succeeded' THEN NULL ELSE reason_code END,finished_at=CASE WHEN $3 IN ('live_succeeded','live_partial','dry_run_succeeded') THEN clock_timestamp() ELSE finished_at END,heartbeat_at=clock_timestamp() WHERE run_id=$1",
+    [runId, JSON.stringify(counts), outcome],
   );
 }
 
@@ -285,19 +285,19 @@ export async function runLegacyDerivedMemoryClear(
   let backupConfirmedAt: Date | null = null;
   if (!dryRun) {
     const parsed = attestationText ? new Date(attestationText) : null;
-    const nowMs = (options.now ?? (() => new Date()))().getTime();
     if (
       parsed &&
       Number.isFinite(parsed.getTime()) &&
-      parsed.toISOString() === attestationText &&
-      parsed.getTime() <= nowMs &&
-      nowMs - parsed.getTime() <= 24 * 60 * 60_000
+      parsed.toISOString() === attestationText
     )
       backupConfirmedAt = parsed;
   }
   const runner = await pool.connect();
   let lockHeld = false;
   let activeRunId: string | null = null;
+  let heartbeatClient: PoolClient | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  const heartbeatState: { pending: Promise<void> | null } = { pending: null };
   try {
     lockHeld = Boolean(
       (
@@ -320,7 +320,7 @@ export async function runLegacyDerivedMemoryClear(
       'running audit staleness window',
     );
     await runner.query(
-      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=now() WHERE mode='live' AND outcome='running' AND heartbeat_at < now() - ($1::bigint * interval '1 millisecond')",
+      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=clock_timestamp() WHERE mode='live' AND outcome='running' AND heartbeat_at < clock_timestamp() - ($1::bigint * interval '1 millisecond')",
       [staleAfter],
     );
     const now = options.now ?? (() => new Date());
@@ -332,11 +332,7 @@ export async function runLegacyDerivedMemoryClear(
         ),
       'dry-run maximum age',
     );
-    const tolerance =
-      options.countTolerance ??
-      Number(process.env.DERIVED_MEMORY_LEGACY_CLEAR_COUNT_TOLERANCE ?? 0);
-    if (!Number.isSafeInteger(tolerance) || tolerance < 0)
-      throw new Error('count tolerance must be a non-negative integer');
+    const tolerance = 0;
     const batchSize = positiveInt(
       options.batchSize ??
         Number(
@@ -362,12 +358,22 @@ export async function runLegacyDerivedMemoryClear(
         ),
       'session lock timeout',
     );
-    const started = now();
+    const startedAt = await runner.query<{ now: Date }>(
+      'SELECT clock_timestamp() AS now',
+    );
+    const started = startedAt.rows[0]!.now;
     let runId: string = randomUUID();
     activeRunId = runId;
     await runner.query('BEGIN');
     const { sessions, counts, reconciliationComplete } =
       await classifySessions(runner);
+    if (!dryRun && backupConfirmedAt) {
+      const fresh = await runner.query<{ fresh: boolean }>(
+        "SELECT $1::timestamptz <= clock_timestamp() AND $1::timestamptz >= clock_timestamp() - interval '24 hours' AS fresh",
+        [backupConfirmedAt],
+      );
+      if (!fresh.rows[0]?.fresh) backupConfirmedAt = null;
+    }
     if (!dryRun && !backupConfirmedAt) {
       await runner.query(
         `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code)
@@ -402,13 +408,27 @@ export async function runLegacyDerivedMemoryClear(
       );
     }
     if (!dryRun) {
+      const newestDry = await runner.query<{ run_id: string }>(
+        `SELECT run_id FROM derived_memory_legacy_clear_audit
+         WHERE mode='dry_run' AND code_version=$1 AND outcome='dry_run_succeeded'
+           AND finished_at >= $2::timestamptz - ($3::bigint * interval '1 millisecond')
+         ORDER BY finished_at DESC LIMIT 1`,
+        [codeVersion, started, maxAge],
+      );
+      const newestDryRunId = newestDry.rows[0]?.run_id ?? null;
+      if (newestDryRunId) {
+        await runner.query(
+          "UPDATE derived_memory_legacy_clear_audit SET reason_code='superseded_by_new_dry_run',finished_at=clock_timestamp() WHERE mode='live' AND code_version=$1 AND outcome='failed' AND reason_code='process_died' AND dry_run_id IS DISTINCT FROM $2 AND started_at >= $3::timestamptz - ($4::bigint * interval '1 millisecond')",
+          [codeVersion, newestDryRunId, started, maxAge],
+        );
+      }
       const resumable = await runner.query<AuditRow>(
         `SELECT run_id,dry_run_id,counts,finished_at,outcome FROM derived_memory_legacy_clear_audit
-         WHERE mode='live' AND code_version=$1 AND outcome IN ('live_partial','failed')
-           AND (outcome='live_partial' OR reason_code='process_died')
-           AND started_at >= $2::timestamptz - ($3::bigint * interval '1 millisecond')
+         WHERE mode='live' AND code_version=$1 AND dry_run_id=$2
+           AND (outcome='live_partial' OR (outcome='failed' AND reason_code='process_died'))
+           AND started_at >= $3::timestamptz - ($4::bigint * interval '1 millisecond')
          ORDER BY started_at DESC LIMIT 1`,
-        [codeVersion, started, maxAge],
+        [codeVersion, newestDryRunId, started, maxAge],
       );
       const resume = resumable.rows[0];
       if (resume?.dry_run_id) {
@@ -469,7 +489,7 @@ export async function runLegacyDerivedMemoryClear(
         activeRunId = runId;
         dryRunId = resume.dry_run_id;
         await runner.query(
-          "UPDATE derived_memory_legacy_clear_audit SET outcome='running',finished_at=NULL,heartbeat_at=now() WHERE run_id=$1",
+          "UPDATE derived_memory_legacy_clear_audit SET outcome='running',finished_at=NULL,heartbeat_at=clock_timestamp() WHERE run_id=$1",
           [runId],
         );
         resumeCounts = {
@@ -560,6 +580,32 @@ export async function runLegacyDerivedMemoryClear(
         );
     }
     await runner.query('COMMIT');
+    if (!dryRun) {
+      heartbeatClient = await pool.connect();
+      const heartbeatInterval = Math.min(
+        30_000,
+        positiveInt(
+          options.heartbeatIntervalMsForTests ?? 30_000,
+          'heartbeat interval',
+        ),
+      );
+      heartbeatTimer = setInterval(() => {
+        if (heartbeatState.pending) return;
+        heartbeatState.pending = heartbeatClient!
+          .query(
+            "UPDATE derived_memory_legacy_clear_audit SET heartbeat_at=clock_timestamp() WHERE run_id=$1 AND outcome='running'",
+            [runId],
+          )
+          .then(
+            () => undefined,
+            () => undefined,
+          )
+          .finally(() => {
+            heartbeatState.pending = null;
+          });
+      }, heartbeatInterval);
+      heartbeatTimer.unref();
+    }
     emit(
       options,
       dryRun ? 'legacy_clear_dry_run_started' : 'legacy_clear_live_started',
@@ -588,7 +634,7 @@ export async function runLegacyDerivedMemoryClear(
           registryFactsRemoved: removedFacts,
         };
         await runner.query(
-          'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,heartbeat_at=now() WHERE run_id=$1',
+          'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,heartbeat_at=clock_timestamp() WHERE run_id=$1',
           [runId, JSON.stringify(progressCounts)],
         );
         await runner.query('COMMIT');
@@ -745,7 +791,7 @@ export async function runLegacyDerivedMemoryClear(
         registryFactsRemoved: removedFacts,
       };
       await runner.query('BEGIN');
-      await saveAudit(runner, runId, auditCounts, outcome, now());
+      await saveAudit(runner, runId, auditCounts, outcome);
       await runner.query('COMMIT');
       emit(
         options,
@@ -758,7 +804,7 @@ export async function runLegacyDerivedMemoryClear(
       return { runId, dryRunId, outcome, counts: actualCounts };
     }
     await runner.query('BEGIN');
-    await saveAudit(runner, runId, counts, outcome, now());
+    await saveAudit(runner, runId, counts, outcome);
     await runner.query('COMMIT');
     emit(options, 'legacy_clear_dry_run_completed', counts, outcome);
     return { runId, dryRunId, outcome, counts };
@@ -771,7 +817,7 @@ export async function runLegacyDerivedMemoryClear(
     if (activeRunId) {
       try {
         await runner.query(
-          "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',finished_at=now() WHERE run_id=$1 AND outcome IN ('running','live_partial')",
+          "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',finished_at=clock_timestamp() WHERE run_id=$1 AND outcome IN ('running','live_partial')",
           [activeRunId],
         );
       } catch {
@@ -780,6 +826,9 @@ export async function runLegacyDerivedMemoryClear(
     }
     throw error;
   } finally {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (heartbeatState.pending) await heartbeatState.pending;
+    heartbeatClient?.release();
     if (lockHeld)
       await runner.query('SELECT pg_advisory_unlock($1)', [
         LEGACY_CLEAR_LOCK_KEY,

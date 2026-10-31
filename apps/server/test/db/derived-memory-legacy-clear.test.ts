@@ -655,11 +655,6 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
         registryFactsRemoved: 0,
       },
     });
-    const resumed = await runLegacyDerivedMemoryClear(db.pool, {
-      ...flags,
-      dryRun: false,
-    });
-    expect(resumed.outcome).toBe('live_succeeded');
     expect(
       (
         await db.pool.query(
@@ -667,7 +662,51 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
           [runId],
         )
       ).rows[0],
-    ).toMatchObject({ outcome: 'live_succeeded', reason_code: 'process_died' });
+    ).toMatchObject({
+      outcome: 'failed',
+      reason_code: 'process_died',
+      counts: {
+        ...originalDryRun.counts,
+        sessionsProcessed: 0,
+        sceneSummariesRemoved: 0,
+        registryEntriesRemoved: 0,
+        registryFactsRemoved: 0,
+      },
+    });
+  });
+
+  it('successful same-plan resume clears the stale process_died reason', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const runId = randomUUID();
+    const counts = {
+      ...dry.counts,
+      sessionsProcessed: 0,
+      sceneSummariesRemoved: 0,
+      registryEntriesRemoved: 0,
+      registryFactsRemoved: 0,
+    };
+    await db.pool.query(
+      `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,reason_code,started_at,finished_at,heartbeat_at)
+       VALUES($1,'live',$2,$3,$4::jsonb,'failed','process_died',now(),now(),now()-interval '20 minutes')`,
+      [runId, codeVersion, dry.runId, JSON.stringify(counts)],
+    );
+    const resumed = await runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      dryRun: false,
+    });
+    expect(resumed.runId).toBe(runId);
+    expect(resumed.outcome).toBe('live_succeeded');
+    const finalAudit = await db.pool.query<{
+      outcome: string;
+      reason_code: string | null;
+    }>(
+      'SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+      [runId],
+    );
+    expect(finalAudit.rows[0]).toEqual({
+      outcome: 'live_succeeded',
+      reason_code: null,
+    });
   });
 
   it('resumes a SIGKILLed child runner from its persisted batch counts', async () => {
@@ -770,10 +809,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     await db.pool.query(
       "UPDATE derived_memory_legacy_clear_audit SET heartbeat_at=now()-interval '20 minutes' WHERE mode='live' AND outcome='running'",
     );
-    await runLegacyDerivedMemoryClear(db.pool, {
-      ...flags,
-      runningStaleAfterMs: 1,
-    });
+    const freshDry = await runLegacyDerivedMemoryClear(db.pool, flags);
     const failed = await db.pool.query<{
       outcome: string;
       reason_code: string;
@@ -798,7 +834,78 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       runningStaleAfterMs: 1,
     });
     expect(resumed.outcome).toBe('live_succeeded');
-    expect(resumed.dryRunId).toBe(dry.runId);
+    expect(resumed.dryRunId).toBe(freshDry.runId);
+    expect(resumed.dryRunId).not.toBe(dry.runId);
+    const superseded = await db.pool.query<{
+      reason_code: string;
+      counts: Record<string, number>;
+    }>(
+      "SELECT reason_code,counts FROM derived_memory_legacy_clear_audit WHERE mode='live' AND dry_run_id=$1",
+      [dry.runId],
+    );
+    expect(superseded.rows[0]?.reason_code).toBe('superseded_by_new_dry_run');
+    expect(superseded.rows[0]?.counts.sceneSummariesRemoved).toBeGreaterThan(0);
+  });
+
+  it('does not resume a failed live audit without reason_code process_died', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const counts = {
+      ...dry.counts,
+      sessionsProcessed: 0,
+      sceneSummariesRemoved: 0,
+      registryEntriesRemoved: 0,
+      registryFactsRemoved: 0,
+    };
+    const runId = randomUUID();
+    await db.pool.query(
+      `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,reason_code,started_at,finished_at,heartbeat_at)
+       VALUES($1,'live',$2,$3,$4::jsonb,'failed',NULL,now(),now(),now())`,
+      [runId, codeVersion, dry.runId, JSON.stringify(counts)],
+    );
+    const fresh = await runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      dryRun: false,
+    });
+    expect(fresh.outcome).toBe('live_succeeded');
+    expect(fresh.runId).not.toBe(runId);
+    expect(fresh.dryRunId).toBe(dry.runId);
+  });
+
+  it('fresh dry run supersedes a process_died resume target without losing its counts', async () => {
+    const originalDry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const runId = randomUUID();
+    const persistedCounts = {
+      ...originalDry.counts,
+      sessionsProcessed: 1,
+      sceneSummariesRemoved: 1,
+      registryEntriesRemoved: 0,
+      registryFactsRemoved: 0,
+    };
+    await db.pool.query(
+      `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,reason_code,started_at,finished_at,heartbeat_at)
+       VALUES($1,'live',$2,$3,$4::jsonb,'failed','process_died',now()-interval '1 minute',now(),now()-interval '20 minutes')`,
+      [runId, codeVersion, originalDry.runId, JSON.stringify(persistedCounts)],
+    );
+    const freshDry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const freshLive = await runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      dryRun: false,
+    });
+    expect(freshLive.outcome).toBe('live_succeeded');
+    expect(freshLive.dryRunId).toBe(freshDry.runId);
+    const prior = await db.pool.query<{
+      outcome: string;
+      reason_code: string;
+      counts: Record<string, number>;
+    }>(
+      'SELECT outcome,reason_code,counts FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+      [runId],
+    );
+    expect(prior.rows[0]).toMatchObject({
+      outcome: 'failed',
+      reason_code: 'superseded_by_new_dry_run',
+      counts: persistedCounts,
+    });
   });
 
   it('rolls back the current session batch when a later delete fails', async () => {
@@ -1009,6 +1116,43 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     ).toBe('aborted');
   });
 
+  it('ignores the count-tolerance environment variable and refuses unreviewed rows', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    await db.pool.query(
+      "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'after-dry-run','new legacy')",
+      [sessionIds[0]],
+    );
+    process.env.DERIVED_MEMORY_LEGACY_CLEAR_COUNT_TOLERANCE = '5';
+    try {
+      await expect(
+        runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+      ).rejects.toThrow(/matching successful dry run/i);
+    } finally {
+      delete process.env.DERIVED_MEMORY_LEGACY_CLEAR_COUNT_TOLERANCE;
+    }
+  });
+
+  it('does not let a caller-supplied old clock make a 30-hour backup attestation fresh', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    const actualAttestation =
+      process.env.DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT;
+    process.env.DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT = new Date(
+      Date.now() - 30 * 60 * 60_000,
+    ).toISOString();
+    try {
+      await expect(
+        runLegacyDerivedMemoryClear(db.pool, {
+          ...flags,
+          dryRun: false,
+          now: () => new Date(Date.now() - 29 * 60 * 60_000),
+        }),
+      ).rejects.toThrow(/backup attestation/i);
+    } finally {
+      process.env.DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT =
+        actualAttestation!;
+    }
+  });
+
   it('resumes a bounded partial run using the same dry-run plan and audit row', async () => {
     const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
     let calls = 0;
@@ -1048,6 +1192,41 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
         )
       ).rows[0]?.n,
     ).toBe(2);
+  });
+
+  it('refreshes heartbeat during a slow single-session batch', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    await db.pool.query(
+      `CREATE FUNCTION slow_legacy_clear_summary_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.45); RETURN OLD; END $$`,
+    );
+    await db.pool.query(
+      'CREATE TRIGGER slow_legacy_clear_summary_delete BEFORE DELETE ON scene_summaries FOR EACH ROW EXECUTE FUNCTION slow_legacy_clear_summary_delete()',
+    );
+    try {
+      const live = runLegacyDerivedMemoryClear(db.pool, {
+        ...flags,
+        dryRun: false,
+        heartbeatIntervalMsForTests: 25,
+        runningStaleAfterMs: 100,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 220));
+      const heartbeat = await db.pool.query<{
+        outcome: string;
+        age_ms: number;
+      }>(
+        "SELECT outcome,(extract(epoch FROM clock_timestamp()-heartbeat_at)*1000)::int AS age_ms FROM derived_memory_legacy_clear_audit WHERE mode='live' ORDER BY started_at DESC LIMIT 1",
+      );
+      expect(heartbeat.rows[0]?.outcome).toBe('running');
+      expect(heartbeat.rows[0]?.age_ms).toBeLessThan(100);
+      expect((await live).outcome).toBe('live_succeeded');
+    } finally {
+      await db.pool.query(
+        'DROP TRIGGER IF EXISTS slow_legacy_clear_summary_delete ON scene_summaries',
+      );
+      await db.pool.query(
+        'DROP FUNCTION IF EXISTS slow_legacy_clear_summary_delete()',
+      );
+    }
   });
 
   it('bounds waits for concurrent session writers with lock_timeout', async () => {
