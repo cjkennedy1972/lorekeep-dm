@@ -191,7 +191,7 @@ Worst case: after a fresh dry run with global reconciliation complete, every unc
 
 ### Procedure
 
-1. Select the target database explicitly. Confirm ADR-039 steps 1–3 are deployed and migrations 0045–0052 are applied. Global reconciliation must be complete for live mode. Per-session reconciliation-skipped sessions are deferred and untouched in dry-run and live.
+1. Select the target database explicitly. Confirm ADR-039 steps 1–3 are deployed and migrations 0045–0052 are applied. Global reconciliation must be complete for live mode. Dry-run reports per-session reconciliation-skipped sessions as deferred; live refuses the entire run if any in-scope session remains in the skipped table.
 2. Required backup and restore check before live execution: create a custom-format dump, inspect it, and restore it to a separate empty scratch database. Keep the file and database URLs in a protected local environment; never store them in the repository, PR, logs, or audit.
 
        test -n "$DATABASE_URL" || exit 1
@@ -224,4 +224,4 @@ Worst case: after a fresh dry run with global reconciliation complete, every unc
        pnpm --filter @game/server derived-memory:legacy-clear
 6. Review derived_memory_legacy_clear_audit ordered by started_at, including mode, counts, dry-run link, heartbeat, backup_confirmed_at, outcome, and fixed reason_code. Disable both gates after completion. Never run against real data without the owner's go-ahead.
 
-Each committed session batch persists cumulative removed counts and refreshes heartbeat_at. Once a later invocation owns the advisory lock, it marks a stale running audit (default heartbeat window 15 minutes) failed with reason process_died, preserving the last counts. Resume uses the same still-recent dry-run id and permits remaining candidate counts less than or equal to the dry-run plan; any increase refuses before deletion, while decreases from already committed batches are expected. The per-session lock timeout defaults to 5000 ms. Rollback: none; completed deletion is permanent.
+Each committed session batch persists cumulative removed counts and refreshes heartbeat_at. Once a later invocation owns the advisory lock, it marks a stale running audit (default heartbeat window 15 minutes) aborted with reason process_died, preserving the last counts. Resume uses the same still-recent dry-run id and permits remaining candidate counts less than or equal to the dry-run plan; any increase refuses before deletion, while decreases from already committed batches are expected. The per-session lock timeout defaults to 5000 ms. Rollback: none; completed deletion is permanent.

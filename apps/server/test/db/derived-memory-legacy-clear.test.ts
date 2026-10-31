@@ -429,19 +429,25 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     ]);
   });
 
-  it('defers coverage-skipped sessions in dry-run and live', async () => {
+  it('aborts live when any in-scope session is coverage-skipped', async () => {
     await db.pool.query(
       'INSERT INTO derived_memory_reconcile_skipped(session_id) VALUES($1)',
       [sessionIds[0]],
     );
     const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
     expect(dry.counts.sessionsDeferred).toBe(1);
-    const live = await runLegacyDerivedMemoryClear(db.pool, {
-      ...flags,
-      dryRun: false,
-    });
-    expect(live.outcome).toBe('live_succeeded');
-    expect(live.counts.sessionsDeferred).toBe(1);
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+    ).rejects.toThrow(/skipped|coverage/i);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE mode='live'",
+        )
+      ).rows,
+    ).toEqual([
+      { outcome: 'aborted', reason_code: 'reconciliation_skipped_in_scope' },
+    ]);
     expect(
       (
         await db.pool.query(
@@ -593,7 +599,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     }
   });
 
-  it('records orphaned running audits as failed before resuming', async () => {
+  it('records orphaned running audits as aborted before resuming', async () => {
     const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
     const runId = randomUUID();
     await db.pool.query(
@@ -608,7 +614,7 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
           [runId],
         )
       ).rows[0],
-    ).toEqual({ outcome: 'failed', reason_code: 'process_died' });
+    ).toEqual({ outcome: 'aborted', reason_code: 'process_died' });
   });
 
   it('marks stale running audits and resumes them with their same dry-run plan', async () => {
