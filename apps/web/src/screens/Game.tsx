@@ -538,10 +538,16 @@ export function Game() {
   } | null>(null);
   const room = live.room;
   const selfSeat = room?.seats?.find((seat) => seat.isSelf);
+  const [sheetRetryAttempt, setSheetRetryAttempt] = useState(0);
   const sheetLoadFailed = useSheetLoadFailure({
     hasCharacterState: Boolean(room?.gameState),
     connectionStatus: live.status,
+    attempt: sheetRetryAttempt,
   });
+  const retrySheetConnection = () => {
+    setSheetRetryAttempt((attempt) => attempt + 1);
+    live.retry();
+  };
   const [roomRetryAttempt, setRoomRetryAttempt] = useState(0);
   const roomStateStalled = useRoomStateFailure({
     hasRoom: Boolean(room),
@@ -1506,7 +1512,7 @@ export function Game() {
             store={gameStore}
             loading={!room?.gameState}
             loadFailed={sheetLoadFailed}
-            onRetry={live.removed ? undefined : () => live.retry()}
+            onRetry={live.removed ? undefined : retrySheetConnection}
             emptyAction={
               <Link className="sheet-empty__link" to={`/rooms/${id}`}>
                 Build or choose a character

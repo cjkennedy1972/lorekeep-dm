@@ -11,14 +11,17 @@ export const SHEET_CLOSED_GRACE_MS = 2_000;
 
 /**
  * True once the sheet has waited too long for room state to arrive. Any status
- * change restarts the wait, so a reconnect gets a fresh chance to deliver state.
+ * change, or a new `attempt` from a retry, restarts the wait so a reconnect gets
+ * a fresh chance to deliver state, including when the status was already `connecting`.
  */
 export function useSheetLoadFailure({
   hasCharacterState,
   connectionStatus,
+  attempt = 0,
 }: {
   hasCharacterState: boolean;
   connectionStatus: ConnectionStatus;
+  attempt?: number;
 }): boolean {
   const [stalled, setStalled] = useState(false);
 
@@ -31,7 +34,7 @@ export function useSheetLoadFailure({
         : SHEET_LOAD_TIMEOUT_MS;
     const timer = setTimeout(() => setStalled(true), delay);
     return () => clearTimeout(timer);
-  }, [hasCharacterState, connectionStatus]);
+  }, [hasCharacterState, connectionStatus, attempt]);
 
   return !hasCharacterState && stalled;
 }

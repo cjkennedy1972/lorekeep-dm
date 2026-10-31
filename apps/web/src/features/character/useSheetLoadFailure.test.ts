@@ -92,6 +92,27 @@ test('clears a failure when the connection starts again and state is still pendi
   expect(result.current).toBe(false);
 });
 
+test('a retry restarts the wait even when the status is already connecting', () => {
+  const { result, rerender } = renderHook(
+    ({ attempt }) =>
+      useSheetLoadFailure({
+        hasCharacterState: false,
+        connectionStatus: 'connecting',
+        attempt,
+      }),
+    { initialProps: { attempt: 0 } },
+  );
+
+  act(() => {
+    vi.advanceTimersByTime(SHEET_LOAD_TIMEOUT_MS);
+  });
+  expect(result.current).toBe(true);
+
+  rerender({ attempt: 1 });
+
+  expect(result.current).toBe(false);
+});
+
 test('unmounting clears the pending stall timer', () => {
   const before = vi.getTimerCount();
   const { unmount } = renderHook(() =>
