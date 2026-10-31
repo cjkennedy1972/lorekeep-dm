@@ -1,6 +1,6 @@
 # ADR-039: Reference-based derived DM memory and no stored player quotes
 
-Status: Accepted (legacy-clear implementation and execution remain blocked pending recorded owner reconfirmation) · Date: 2026-10-30 · Refines ADR-006, ADR-017, ADR-024 (Proposed) and ADR-025 (Accepted) · Workboard: fe153f81 (c691a4a5 unverified; Atlas checking board)
+Status: Accepted (legacy-clear execution remains gated as implementation step 4; reconfirmation recorded, Gmail uid 58) · Date: 2026-10-30 · Refines ADR-006, ADR-017, ADR-024 (Proposed) and ADR-025 (Accepted) · Workboard: fe153f81 (c691a4a5 unverified; Atlas checking board)
 
 ## Context
 
@@ -36,7 +36,7 @@ Stored values are untrusted. Re-screen each retrieved summary and registry value
 
 Legal holds are an approved exception to derived-memory deletion. **Approved by Chris (owner), 2026-10-30 21:49 UTC (Gmail uid 57).** The hold-detection source is the existing `legal_holds` table defined in `apps/server/migrations/0006_retention.sql` (session holds match `kind='session'` and `item_id=session_id::text`). For held sessions, 'derived memory' includes the derived rows, token map, and token-to-row index; all are retained unchanged, even after a deletion request. Hold detection must occur before any mutation and fail closed for the entire affected session; no partial scrub. Reply to a deletion request by confirming the request is recorded but that specified held data cannot be erased while the hold applies, identifying the hold basis/process without disclosing another party's data, and offer no claim that deletion is complete. The legal-hold release path remains an open owner decision (workboard card `560fa0f6`) and is not settled by this ADR; later deletion requires an authorized release under a process still to be decided. The legacy clear also skips held sessions and cannot bypass hold checks through bulk migration.
 
-Code inspection: `registry_entries` are written from validated registry events and scene-close diffs; no replay/rebuild path reconstructs them from canonical events. Therefore a one-time legacy clear loses registry continuity (and legacy summaries) and cannot promise reconstruction. The one-time clear causes documented continuity loss: registry entries cannot be reconstructed, so registry continuity (and legacy summaries) is permanently lost. Chris reconfirmed approval of the permanent clear after Atlas clarified that there is no rebuild path (2026-10-31 02:48 UTC, Gmail uid 58). Steps 1–3 may proceed; the separate clear job remains gated as step 4. Until the gated clear runs after that reconfirmation, legacy rows may continue retaining player names/quoted text; rollout must not clear legacy rows or claim the invariant for pre-existing rows. New writes still enforce it. Clear only unheld sessions; run a dry run first, then run step 4 only after steps 1–3 have merged. Execution must reference the 2026-10-31 02:48 UTC reconfirmation (Gmail uid 58) in an idempotent, counts-only audit. Do not attempt string replacement or heuristic classification.
+Code inspection: `registry_entries` are written from validated registry events and scene-close diffs; no replay/rebuild path reconstructs them from canonical events. Therefore a one-time legacy clear permanently loses registry continuity (and legacy summaries), which cannot be reconstructed. Chris reconfirmed approval of the permanent clear after Atlas clarified that there is no rebuild path (2026-10-31 02:48 UTC, Gmail uid 58). Steps 1–3 may proceed; the separate clear job remains gated as step 4. Until the gated clear runs after that reconfirmation, legacy rows may continue retaining player names/quoted text; rollout must not clear legacy rows or claim the invariant for pre-existing rows. New writes still enforce it. Clear only unheld sessions; run a dry run first, then run step 4 only after steps 1–3 have merged. Execution must reference the 2026-10-31 02:48 UTC reconfirmation (Gmail uid 58) in an idempotent, counts-only audit. Do not attempt string replacement or heuristic classification.
 
 ### Migration, deployment, rollback and operational retention
 
@@ -92,7 +92,7 @@ Deliver steps 1–3 as ordered, independently reviewable PRs. Each carries scope
 
 ## Owner approval history
 
-- **2026-10-30 21:49 UTC (Gmail uid 57):** Chris approved the legal-hold exception to derived-memory deletion and delegated remaining open ADR-039 questions to Atlas.
+- **2026-10-30 21:49 UTC (Gmail uid 57):** Chris approved the legal-hold exception to derived-memory deletion and said: “If you will research remaining open questions, then make an informed decision, you have my approval to move forward.”
 - **2026-10-31 02:48 UTC (Gmail uid 58):** After Atlas clarified that the legacy clear is permanent and has no rebuild path, Chris replied affirmatively, reconfirming approval of the permanent legacy-row clear.
 
 Hold-aware deletion must not ship before owner sign-off; the required sign-off is recorded above.
