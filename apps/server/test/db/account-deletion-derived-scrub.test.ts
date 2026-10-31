@@ -214,6 +214,12 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         ]),
       ).toHaveLength(0);
       expect(
+        await q(
+          'SELECT 1 FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id WHERE e.session_id=$1',
+          [session],
+        ),
+      ).toHaveLength(0);
+      expect(
         await q('SELECT 1 FROM account_characters WHERE id=$1', [characterId]),
       ).toHaveLength(0);
       expect(
@@ -349,7 +355,7 @@ describe('account deletion scrubs DM-authored derived memory', () => {
     }
   }, 30_000);
 
-  it('removes derived rows from sessions referencing a deleted released character', async () => {
+  it('deletes only indexed derived rows for a deleted released character', async () => {
     const owner = randomUUID();
     const session = randomUUID();
     const otherSession = randomUUID();
@@ -394,6 +400,10 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         ],
       );
       await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3)',
+        [session, 'unrelated-scene', 'Unrelated memory survives.'],
+      );
+      await q(
         'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
         [
           otherSession,
@@ -424,6 +434,15 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         entry[0].id,
         `${CHAR_NAME} said yes to the guard`,
       ]);
+      const unrelatedEntry = await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document)
+         VALUES($1,'npc','npc_unrelated',1,'Mira',$2,'Mira trades maps') RETURNING id`,
+        [session, { role: 'A cartographer' }],
+      );
+      await q('INSERT INTO registry_facts(entry_id,fact) VALUES($1,$2)', [
+        unrelatedEntry[0].id,
+        'Mira trades maps at the river market',
+      ]);
       await q(
         'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
         [session, characterId, token],
@@ -441,11 +460,40 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         ),
       ).toBe(true);
       expect(
-        await q('SELECT 1 FROM scene_summaries WHERE session_id=$1', [session]),
-      ).toHaveLength(0);
+        await q(
+          'SELECT scene_id,summary FROM scene_summaries WHERE session_id=$1',
+          [session],
+        ),
+      ).toEqual([
+        { scene_id: 'unrelated-scene', summary: 'Unrelated memory survives.' },
+      ]);
       expect(
-        await q('SELECT 1 FROM registry_entries WHERE session_id=$1', [
-          session,
+        await q(
+          'SELECT entity_id,name,payload,search_document FROM registry_entries WHERE session_id=$1',
+          [session],
+        ),
+      ).toEqual([
+        {
+          entity_id: 'npc_unrelated',
+          name: 'Mira',
+          payload: { role: 'A cartographer' },
+          search_document: 'Mira trades maps',
+        },
+      ]);
+      expect(
+        await q('SELECT fact FROM registry_facts WHERE entry_id=$1', [
+          unrelatedEntry[0].id,
+        ]),
+      ).toEqual([{ fact: 'Mira trades maps at the river market' }]);
+      expect(
+        await new SeatCharacterRepository(db).deleteOwnedCharacter(
+          owner,
+          characterId,
+        ),
+      ).toBe(false);
+      expect(
+        await q('SELECT 1 FROM registry_facts WHERE entry_id=$1', [
+          entry[0].id,
         ]),
       ).toHaveLength(0);
       expect(
@@ -618,7 +666,7 @@ describe('account deletion scrubs DM-authored derived memory', () => {
     }
   });
 
-  it('deletes only the targeted registry chain in a shared session', async () => {
+  it('deletes only indexed registry versions in a shared session', async () => {
     const owner = randomUUID();
     const roomOwner = randomUUID();
     const session = randomUUID();
@@ -650,8 +698,8 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document) VALUES($1,'npc','chain-npc',1,'Guard',$2,$3) RETURNING id`,
         [session, { note: token }, token],
       );
-      await q(
-        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document,supersedes_id) VALUES($1,'npc','chain-npc',2,'Guard',$2,'successor',$3)`,
+      const successor = await q(
+        `INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document,supersedes_id) VALUES($1,'npc','chain-npc',2,'Guard',$2,'successor',$3) RETURNING id`,
         [session, { note: 'successor' }, first[0].id],
       );
       const unrelated = await q(
@@ -686,10 +734,10 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       ).toHaveLength(0);
       expect(
         await q(
-          'SELECT id FROM registry_entries WHERE session_id=$1 AND entity_id=$2',
+          'SELECT id,supersedes_id FROM registry_entries WHERE session_id=$1 AND entity_id=$2',
           [session, 'chain-npc'],
         ),
-      ).toHaveLength(0);
+      ).toEqual([{ id: successor[0].id, supersedes_id: null }]);
       expect(
         await q('SELECT entity_id,payload FROM registry_entries WHERE id=$1', [
           unrelated[0].id,
@@ -761,7 +809,11 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       );
       const heldSummary = await q(
         'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
-        [session, 'held-character-scene', 'Held memory stays.'],
+        [
+          session,
+          'held-character-scene',
+          `Held memory stays. ${'H'.repeat(32)}`,
+        ],
       );
       await q(
         'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
@@ -803,9 +855,23 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         await q('SELECT summary FROM scene_summaries WHERE session_id=$1', [
           session,
         ]),
-      ).toEqual([{ summary: 'Held memory stays.' }]);
+      ).toEqual([{ summary: `Held memory stays. ${'H'.repeat(32)}` }]);
       expect(
         await q('SELECT node_id FROM session_lease WHERE session_id=$1', [
+          session,
+        ]),
+      ).toHaveLength(0);
+      await q("DELETE FROM legal_holds WHERE kind='session' AND item_id=$1", [
+        session,
+      ]);
+      expect(
+        await new SeatCharacterRepository(db).deleteOwnedCharacter(
+          owner,
+          characterId,
+        ),
+      ).toBe(true);
+      expect(
+        await q('SELECT 1 FROM session_character_tokens WHERE session_id=$1', [
           session,
         ]),
       ).toHaveLength(0);

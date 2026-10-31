@@ -561,17 +561,17 @@ async function deleteAccount(
       xCardSeatIds,
     ]);
   await client.query(
-    "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1) AND node_id=$2",
-    [[...fenced], FENCE_NODE],
-  );
-  await client.query(
     "UPDATE message_reports SET reason='' WHERE reporter_account_id=$1",
     [accountId],
   );
   // ADR-035 binding records retain anonymous mechanics only; the repository owns
   // the single redaction implementation used by this transaction.
   try {
-    await SeatCharacterRepository.redactAccount(client, accountId);
+    await SeatCharacterRepository.redactAccount(
+      client,
+      accountId,
+      (sessionId) => fenceSession(ctx, client, fenced, sessionId),
+    );
   } catch (error) {
     if (
       (error instanceof SeatCharacterError && error.code === 'SESSION_HELD') ||
@@ -581,6 +581,10 @@ async function deleteAccount(
       throw new Error(HELD);
     throw error;
   }
+  await client.query(
+    "UPDATE session_lease SET node_id='', expires_at=clock_timestamp() WHERE session_id = ANY($1) AND node_id=$2",
+    [[...fenced], FENCE_NODE],
+  );
   await client.query('DELETE FROM accounts WHERE id=$1', [accountId]);
   return counts;
 }
