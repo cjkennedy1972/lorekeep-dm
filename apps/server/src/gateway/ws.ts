@@ -64,6 +64,7 @@ import {
   commitSeatResumeToken,
   heartbeatSeatSocket,
   releaseSeatSocket,
+  rollbackSeatResumeToken,
 } from './resumeTokens.js';
 
 const MAX_BYTES = 10 * 1024;
@@ -593,6 +594,63 @@ export function installGateway(
         ws.once('close', () => {
           if (!pendingTokenCredentialDelivered) releasePendingTokenLease();
         });
+        const rollbackResumeTokenSafely = async (
+          resumeToken: string,
+          previousTokenHash: string,
+        ) => {
+          for (const attempt of [1, 2] as const) {
+            try {
+              await rollbackSeatResumeToken(
+                db,
+                identity.sessionId,
+                seatId,
+                socketId,
+                resumeToken,
+                previousTokenHash,
+              );
+              return true;
+            } catch {
+              try {
+                app.log.warn(
+                  {
+                    event: 'seat.resume_token.rollback_failed',
+                    attempt,
+                  },
+                  'Seat resume-token rollback failed',
+                );
+              } catch {
+                // Rollback diagnostics must not create another socket failure.
+              }
+              if (attempt === 1)
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          }
+
+          // A first-delivery credential whose DB hash could not be restored must
+          // never be offered again. The next tokenless socket enters host approval.
+          if (pendingTokenLeaseId && pendingTokenClaimed)
+            room.consumePendingSeatResumeToken(
+              identity.accountId,
+              identity.authTokenHash,
+              pendingTokenLeaseId,
+            );
+          try {
+            await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
+          } catch {
+            try {
+              app.log.warn(
+                {
+                  event: 'seat.socket.lease_release_failed',
+                  attempt: 1,
+                },
+                'Seat socket lease release failed after token rollback failure',
+              );
+            } catch {
+              // Cleanup diagnostics must not create another socket failure.
+            }
+          }
+          return false;
+        };
         const logSeatSocketRefusal = (
           reason: SeatSocketRefusalReason,
           closeCode: number | null,
@@ -769,8 +827,9 @@ export function installGateway(
             return;
           }
           step = 'frame-delivery';
-          const authenticatedFrameSent = await new Promise<boolean>(
-            (resolve) => {
+          let authenticatedFrameSent = false;
+          try {
+            authenticatedFrameSent = await new Promise<boolean>((resolve) => {
               if (ws.readyState !== WebSocket.OPEN) return resolve(false);
               ws.send(
                 JSON.stringify({
@@ -780,9 +839,21 @@ export function installGateway(
                 }),
                 (error) => resolve(!error),
               );
-            },
-          );
+            });
+          } catch {
+            await rollbackResumeTokenSafely(
+              authorization.resumeToken,
+              authorization.previousTokenHash,
+            );
+            ws.close(1011, 'Authentication response could not be sent');
+            logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
+            return;
+          }
           if (!authenticatedFrameSent) {
+            await rollbackResumeTokenSafely(
+              authorization.resumeToken,
+              authorization.previousTokenHash,
+            );
             ws.close(1011, 'Authentication response could not be sent');
             logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
             return;
