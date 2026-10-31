@@ -384,23 +384,12 @@ export async function summarizeScene(
   const validTokens = new Set(input.validReferenceTokens ?? []);
   const screen = (parsed: ReturnType<typeof parseSummary>) => {
     const text = `${parsed.summary}\n${JSON.stringify(parsed.registryDiffs)}`;
-    const candidates =
-      text.match(/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32}(?![A-Za-z0-9_-])/g) ?? [];
-    if (candidates.some((token) => !validTokens.has(token))) return false;
-    if (
-      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i.test(
-        text,
-      )
-    )
-      return false;
-    const foldedText = foldIdentity(text);
-    if (
-      (input.forbiddenPlayerText ?? []).some((quote) =>
-        foldedText.includes(foldIdentity(quote).trim()),
-      )
-    )
-      return false;
-    return !containsIdentityVariant(text, input.identityVariants ?? []);
+    return isSafePlayerVisibleText(
+      text,
+      input.forbiddenPlayerText ?? [],
+      input.identityVariants ?? [],
+      [...validTokens],
+    );
   };
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -619,6 +608,49 @@ async function captureIdentityVariants(
     tokenByCharacter,
     characterByToken,
   };
+}
+
+function isSafePlayerVisibleText(
+  text: string,
+  forbiddenPlayerText: readonly string[],
+  identityVariants: readonly string[],
+  validReferenceTokens: readonly string[],
+): boolean {
+  const candidates =
+    text.match(/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32}(?![A-Za-z0-9_-])/g) ?? [];
+  if (candidates.some((token) => !validReferenceTokens.includes(token)))
+    return false;
+  if (
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i.test(
+      text,
+    )
+  )
+    return false;
+  const foldedText = foldIdentity(text);
+  if (
+    forbiddenPlayerText
+      .map((quote) => foldIdentity(quote).trim())
+      .filter(Boolean)
+      .some((quote) => foldedText.includes(quote))
+  )
+    return false;
+  return !containsIdentityVariant(text, identityVariants);
+}
+
+/** Apply the persisted-summary privacy checks before emitting a SceneClosed event. */
+export async function screenSceneCloseSummary(
+  db: Pick<Pool, 'query' | 'connect'>,
+  sessionId: string,
+  text: string,
+  forbiddenPlayerText: readonly string[],
+): Promise<boolean> {
+  const inventory = await captureIdentityVariants(db, sessionId);
+  return isSafePlayerVisibleText(
+    text,
+    forbiddenPlayerText,
+    inventory.variants,
+    [...inventory.characterByToken.keys()],
+  );
 }
 
 /** Persist a summary exactly once, then apply validated registry updates. */

@@ -93,6 +93,27 @@ describe('scene summaries and recap', () => {
     ).toBe(false);
   });
 
+  it.each([
+    ['Harper', 'Harpers'],
+    ['Harper', "Harper's"],
+    ['Harper', 'Harper’s'],
+    ['Jones', 'Joneses'],
+    ['Jones', "Joneses'"],
+    ['Jones', 'Joneses’'],
+    ['Ember', 'Embers'],
+    ['Alex', 'Alexes'],
+    ['Lopez', 'Lopezes'],
+    ['Church', 'Churches'],
+    ['Ash', 'Ashes'],
+    ['James', 'Jameses'],
+    ['James', "James'"],
+    ['James', 'James’'],
+  ])('screens identity tail %s -> %s in shared paths', (name, variant) => {
+    expect(containsIdentityVariant(`The ${variant} arrived.`, [name])).toBe(
+      true,
+    );
+  });
+
   it('rejects unknown fields and free-text event types from the summarizer projection', () => {
     expect(
       projectSummarizerEvents([

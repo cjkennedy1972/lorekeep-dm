@@ -15,6 +15,9 @@ import type {
 } from '../../src/safety/moderator.js';
 import { ProductionSoloTurnRunner } from '../../src/room/productionTurnRunner.js';
 import { deleteTestSessions } from './testCleanup.js';
+import { Persistence } from '../../src/persistence/index.js';
+import { SessionLease } from '../../src/room/lease.js';
+import { Room } from '../../src/room/Room.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL required');
@@ -81,10 +84,34 @@ async function table() {
   );
   await db.query(
     `INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)`,
-    [sessionId, JSON.stringify({ accountId, displayName: 'Solo' })],
+    [
+      sessionId,
+      JSON.stringify({
+        accountId,
+        displayName: 'Solo',
+        seatId: randomUUID(),
+        presence: 'connected',
+      }),
+    ],
   );
   sessionIds.push(sessionId);
   return { accountId, sessionId };
+}
+
+async function bindCharacterIdentity(
+  sessionId: string,
+  accountId: string,
+  name: string,
+) {
+  const characterId = randomUUID();
+  await db.query(
+    'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+    [characterId, accountId, JSON.stringify({ name })],
+  );
+  await db.query(
+    `INSERT INTO session_seat_characters(session_id,account_id,seat_id,character_id,binding_status,character_snapshot) VALUES($1,$2,$3,$4,'active',$5)`,
+    [sessionId, accountId, randomUUID(), characterId, JSON.stringify({ name })],
+  );
 }
 
 async function turn(
@@ -92,6 +119,7 @@ async function turn(
   args: Record<string, unknown> | Record<string, unknown>[],
   moderator?: Moderator,
   generatedSummary?: string,
+  forbiddenPlayerText?: string[],
 ) {
   const { accountId, sessionId } = await table();
   const calls: LlmRequest[] = [];
@@ -113,6 +141,7 @@ async function turn(
       accountId,
       actionId: randomUUID(),
       text: 'We finish here and move on.',
+      ...(forbiddenPlayerText ? { forbiddenPlayerText } : {}),
       state: { sceneId, adventureId: ADVENTURE },
     },
     (e) => seen.push(e),
@@ -223,6 +252,119 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     expect(stored.rows[0]?.count).toBe(0);
   });
 
+  it('screens a quoted player line and raw identity from the SceneClosed event', async () => {
+    const quote = 'We finish here and move on.';
+    const { closed } = await turn('scene-marowfell-well', {
+      summary: `Solo said: ${quote}`,
+    });
+
+    expect(closed).toHaveLength(1);
+    const summary = (closed[0] as { summary: string }).summary;
+    expect(summary).not.toContain(quote);
+    expect(summary).not.toContain('Solo');
+  });
+
+  it('persists only screened SceneClosed text when the DM quotes a player line', async () => {
+    const { accountId, sessionId } = await table();
+    await bindCharacterIdentity(sessionId, accountId, 'Solo');
+    const quote = 'We finish here and move on.';
+    const calls: LlmRequest[] = [];
+    const runner = new ProductionSoloTurnRunner(
+      db,
+      undefined,
+      'record',
+      join(dir, `${sessionId}-room.ndjson`),
+      closingDm({ summary: `Solo said: ${quote}` }, calls),
+      true,
+      false,
+      undefined,
+      async () => true,
+    );
+    const store = new Persistence(db);
+    const lease = await new SessionLease(db).acquire(sessionId, randomUUID());
+    if (!lease) throw new Error('session lease unavailable');
+    const room = new Room(
+      store,
+      lease,
+      await store.loadLatest(sessionId),
+      runner,
+    );
+    await room.persistGameState({
+      sceneId: 'scene-marowfell-well',
+      adventureId: ADVENTURE,
+    });
+    await room.submitAction(accountId, randomUUID(), quote, 'Solo');
+    let persisted: { summary?: string } | undefined;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const rows = await db.query<{ payload: { summary?: string } }>(
+        "SELECT payload FROM events WHERE session_id=$1 AND type='SceneClosed' ORDER BY seq DESC LIMIT 1",
+        [sessionId],
+      );
+      if (rows.rows[0]) {
+        persisted = rows.rows[0].payload;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await room.drain(100);
+
+    expect(persisted).toBeDefined();
+    expect(persisted?.summary).not.toContain(quote);
+    expect(persisted?.summary).not.toContain('Solo');
+  });
+
+  it('replaces a bound raw player name in the persisted SceneClosed event', async () => {
+    const { accountId, sessionId } = await table();
+    await bindCharacterIdentity(sessionId, accountId, 'Solo');
+    const calls: LlmRequest[] = [];
+    const runner = new ProductionSoloTurnRunner(
+      db,
+      undefined,
+      'record',
+      join(dir, `${sessionId}-name.ndjson`),
+      closingDm({ summary: 'Solo finds a lantern in the hall.' }, calls),
+      true,
+      false,
+      undefined,
+      async () => true,
+    );
+    const store = new Persistence(db);
+    const lease = await new SessionLease(db).acquire(sessionId, randomUUID());
+    if (!lease) throw new Error('session lease unavailable');
+    const room = new Room(
+      store,
+      lease,
+      await store.loadLatest(sessionId),
+      runner,
+    );
+    await room.persistGameState({
+      sceneId: 'scene-marowfell-well',
+      adventureId: ADVENTURE,
+    });
+    await room.submitAction(
+      accountId,
+      randomUUID(),
+      'I leave the well.',
+      'Solo',
+    );
+    let persisted: { summary?: string } | undefined;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const rows = await db.query<{ payload: { summary?: string } }>(
+        "SELECT payload FROM events WHERE session_id=$1 AND type='SceneClosed' ORDER BY seq DESC LIMIT 1",
+        [sessionId],
+      );
+      if (rows.rows[0]) {
+        persisted = rows.rows[0].payload;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await room.drain(100);
+
+    expect(persisted).toBeDefined();
+    expect(persisted?.summary).not.toContain('Solo');
+  });
+
   it('does not emit a blocked model-authored SceneClosed summary', async () => {
     const requests: ModerationRequest[] = [];
     const { result, closed, sessionId } = await turn(
@@ -308,6 +450,23 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     );
     expect(stored.rows).toHaveLength(1);
     expect(stored.rows[0]?.summary).not.toContain(quote);
+  });
+
+  it('does not persist a summary echoing one seat quote from a multi-seat round', async () => {
+    const seatQuote = 'The brass key is beneath the well.';
+    const { sessionId } = await turn(
+      'scene-marowfell-well',
+      { summary: 'The party leaves the well.' },
+      undefined,
+      seatQuote,
+      ['first seat text', seatQuote, 'third seat text'],
+    );
+    const stored = await db.query<{ summary: string }>(
+      'SELECT summary FROM scene_summaries WHERE session_id=$1',
+      [sessionId],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]?.summary).not.toContain(seatQuote);
   });
 
   it('advances to the authored next scene with exactly one SceneClosed and one summary call', async () => {

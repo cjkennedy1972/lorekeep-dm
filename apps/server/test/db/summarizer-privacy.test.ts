@@ -66,13 +66,13 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       'will-handle@example.test',
     ]);
     await db.pool.query(
-      `INSERT INTO session_seat_characters VALUES($1,$2,$3,$4,'active',$5)`,
+      `INSERT INTO session_seat_characters(session_id,account_id,seat_id,character_id,binding_status,character_snapshot) VALUES($1,$2,$3,$4,'active',$5)`,
       [
         sessionId,
         accountId,
+        seatId,
         characterId,
         JSON.stringify({ id: characterId, name: displayName }),
-        seatId,
       ],
     );
     for (const file of [
@@ -309,13 +309,13 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       'jones@example.test',
     ]);
     await db.pool.query(
-      `INSERT INTO session_seat_characters VALUES($1,$2,$3,$4,'active',$5)`,
+      `INSERT INTO session_seat_characters(session_id,account_id,seat_id,character_id,binding_status,character_snapshot) VALUES($1,$2,$3,$4,'active',$5)`,
       [
         sessionId,
         unboundAccountId,
         randomUUID(),
-        JSON.stringify({ name: 'Jones' }),
         randomUUID(),
+        JSON.stringify({ name: 'Jones' }),
       ],
     );
     const registry = new RegistryMemory(db.pool);
@@ -328,7 +328,11 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
           name: 'Neighbors',
           role: 'group',
           disposition: 'neutral',
-          facts: ['The Joneses gathered at the mill.'],
+          facts: [
+            'The Joneses gathered at the mill.',
+            "Joneses' deed is at the inn.",
+            'Joneses’ seal marks the box.',
+          ],
         },
       },
     ]);
@@ -337,7 +341,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       [sessionId],
     );
     expect(rows.rowCount).toBe(1);
-    expect(rows.rows[0]?.payload).not.toContain('Joneses');
+    expect(rows.rows[0]?.payload).not.toMatch(/Joneses['’]?/);
   });
 
   it('rejects registry persistence when an upserted fact contains player identity and quoted player text', async () => {
