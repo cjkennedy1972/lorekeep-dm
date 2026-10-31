@@ -1607,6 +1607,59 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     ).toBe(2);
   });
 
+  it('does not mark a live run failed when its heartbeat appears older than 15 minutes during deletion', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    let staleHeartbeatChecked = false;
+    const livePromise = runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      dryRun: false,
+      runningStaleAfterMs: 15 * 60_000,
+      afterSessionIdentityCheckForTests: async (_client, sessionId) => {
+        if (sessionId !== sessionIds[0] || staleHeartbeatChecked) return;
+        staleHeartbeatChecked = true;
+        const running = await db.pool.query<{ run_id: string }>(
+          "SELECT run_id FROM derived_memory_legacy_clear_audit WHERE mode='live' AND outcome='running' ORDER BY started_at DESC LIMIT 1",
+        );
+        const runId = running.rows[0]?.run_id;
+        expect(runId).toBeDefined();
+        await db.pool.query(
+          "UPDATE derived_memory_legacy_clear_audit SET heartbeat_at=clock_timestamp()-interval '16 minutes' WHERE run_id=$1",
+          [runId],
+        );
+        await expect(
+          runLegacyDerivedMemoryClear(db.pool, flags),
+        ).rejects.toThrow(/advisory lock/i);
+        expect(
+          (
+            await db.pool.query(
+              'SELECT outcome FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+              [runId],
+            )
+          ).rows[0]?.outcome,
+        ).toBe('running');
+      },
+    });
+
+    const live = await livePromise;
+    expect(staleHeartbeatChecked).toBe(true);
+    expect(live.outcome).toBe('live_succeeded');
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM scene_summaries WHERE scene_id='legacy'",
+        )
+      ).rows[0]?.n,
+    ).toBe(0);
+    expect(
+      (
+        await db.pool.query(
+          'SELECT outcome FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+          [live.runId],
+        )
+      ).rows[0]?.outcome,
+    ).toBe('live_succeeded');
+  });
+
   it('refreshes heartbeat during a slow single-session batch', async () => {
     await runLegacyDerivedMemoryClear(db.pool, flags);
     await db.pool.query(
