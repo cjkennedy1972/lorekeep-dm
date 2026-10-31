@@ -281,6 +281,21 @@ export async function runLegacyDerivedMemoryClear(
     );
   if (!codeVersion)
     throw new Error('DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION is required');
+  const attestationText =
+    process.env.DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT;
+  let backupConfirmedAt: Date | null = null;
+  if (!dryRun) {
+    const parsed = attestationText ? new Date(attestationText) : null;
+    const nowMs = (options.now ?? (() => new Date()))().getTime();
+    if (
+      parsed &&
+      Number.isFinite(parsed.getTime()) &&
+      parsed.toISOString() === attestationText &&
+      parsed.getTime() <= nowMs &&
+      nowMs - parsed.getTime() <= 24 * 60 * 60_000
+    )
+      backupConfirmedAt = parsed;
+  }
   const runner = await pool.connect();
   let lockHeld = false;
   let activeRunId: string | null = null;
@@ -306,7 +321,7 @@ export async function runLegacyDerivedMemoryClear(
       'running audit staleness window',
     );
     await runner.query(
-      "UPDATE derived_memory_legacy_clear_audit SET outcome='aborted',reason_code='process_died',finished_at=now() WHERE mode='live' AND outcome='running' AND heartbeat_at < now() - ($1::bigint * interval '1 millisecond')",
+      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=now() WHERE mode='live' AND outcome='running' AND heartbeat_at < now() - ($1::bigint * interval '1 millisecond')",
       [staleAfter],
     );
     const now = options.now ?? (() => new Date());
@@ -354,35 +369,32 @@ export async function runLegacyDerivedMemoryClear(
     await runner.query('BEGIN');
     const { sessions, counts, reconciliationComplete } =
       await classifySessions(runner);
+    if (!dryRun && !backupConfirmedAt) {
+      await runner.query(
+        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code)
+         VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4,'backup_not_confirmed')`,
+        [runId, codeVersion, JSON.stringify(counts), started],
+      );
+      await runner.query('COMMIT');
+      throw new Error(
+        'Live clear requires a valid backup attestation from the last 24 hours',
+      );
+    }
     let dryRunId: string | null = null;
     let resumeCounts: Record<string, number> | null = null;
     let removedSummaries = 0;
     let removedEntries = 0;
     let removedFacts = 0;
     let idempotentCompletion = false;
-    if (!dryRun && reconciliationComplete) {
-      const skippedInScope = await runner.query(
-        `SELECT 1 FROM sessions s JOIN derived_memory_reconcile_skipped d ON d.session_id=s.id
-          WHERE EXISTS(SELECT 1 FROM scene_summaries x WHERE x.session_id=s.id)
-             OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id) LIMIT 1`,
-      );
-      if (skippedInScope.rowCount) {
-        await runner.query(
-          `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code) VALUES($1,'live',$2,NULL,$3::jsonb,'aborted',$4,$4,'reconciliation_skipped_in_scope')`,
-          [runId, codeVersion, JSON.stringify(counts), started],
-        );
-        await runner.query('COMMIT');
-        emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
-        throw new Error(
-          'Live clear refuses while any in-scope session is coverage-skipped',
-        );
-      }
-    }
     if (!dryRun && !reconciliationComplete) {
       await runner.query(
         `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code)
          VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4,'global_reconciliation_incomplete')`,
         [runId, codeVersion, JSON.stringify(counts), started],
+      );
+      await runner.query(
+        'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
+        [runId, backupConfirmedAt],
       );
       await runner.query('COMMIT');
       emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
@@ -393,7 +405,7 @@ export async function runLegacyDerivedMemoryClear(
     if (!dryRun) {
       const resumable = await runner.query<AuditRow>(
         `SELECT run_id,dry_run_id,counts,finished_at,outcome FROM derived_memory_legacy_clear_audit
-         WHERE mode='live' AND code_version=$1 AND outcome IN ('live_partial','aborted')
+         WHERE mode='live' AND code_version=$1 AND outcome IN ('live_partial','failed')
            AND (outcome='live_partial' OR reason_code='process_died')
            AND started_at >= $2::timestamptz - ($3::bigint * interval '1 millisecond')
          ORDER BY started_at DESC LIMIT 1`,
@@ -443,10 +455,15 @@ export async function runLegacyDerivedMemoryClear(
               started,
             ],
           );
+          if (backupConfirmedAt)
+            await runner.query(
+              'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
+              [runId, backupConfirmedAt],
+            );
           await runner.query('COMMIT');
           emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
           throw new Error(
-            'Resumed live candidate counts exceed or no longer match the original dry-run plan; refusing to continue',
+            'Resumed live candidate counts exceed the original dry-run plan; refusing to continue',
           );
         }
         runId = resume.run_id;
@@ -502,6 +519,11 @@ export async function runLegacyDerivedMemoryClear(
              VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'dry_run_count_mismatch')`,
             [runId, codeVersion, dryRunId, JSON.stringify(counts), started],
           );
+          if (backupConfirmedAt)
+            await runner.query(
+              'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
+              [runId, backupConfirmedAt],
+            );
           await runner.query('COMMIT');
           emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
           throw new Error(
@@ -532,6 +554,11 @@ export async function runLegacyDerivedMemoryClear(
           started,
         ],
       );
+      if (backupConfirmedAt)
+        await runner.query(
+          'UPDATE derived_memory_legacy_clear_audit SET backup_confirmed_at=$2 WHERE run_id=$1',
+          [runId, backupConfirmedAt],
+        );
     }
     await runner.query('COMMIT');
     emit(

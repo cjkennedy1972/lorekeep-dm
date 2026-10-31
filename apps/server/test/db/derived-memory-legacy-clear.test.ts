@@ -115,6 +115,15 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       ),
     );
     await db.pool.query(
+      await readFile(
+        new URL(
+          '../../migrations/0052_derived_memory_legacy_clear_backup_attestation.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    await db.pool.query(
       'INSERT INTO sessions(id,owner_account_id) SELECT * FROM unnest($1::uuid[],$2::uuid[])',
       [sessionIds, accountIds],
     );
@@ -169,6 +178,8 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     );
   });
   beforeEach(async () => {
+    process.env.DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT =
+      new Date().toISOString();
     if (!db) return;
     await db.pool.query('DELETE FROM session_seat_characters');
     await db.pool.query('DELETE FROM derived_memory_reconcile_skipped');
@@ -254,6 +265,34 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     expect(result.outcome).toBe('dry_run_succeeded');
   });
 
+  it('refuses live without a valid recent backup attestation and records only the reason', async () => {
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    for (const value of [
+      undefined,
+      'not-an-iso-date',
+      new Date(Date.now() - 24 * 60 * 60_000 - 1).toISOString(),
+      new Date(Date.now() + 60_000).toISOString(),
+    ]) {
+      if (value === undefined)
+        delete process.env.DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT;
+      else process.env.DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT = value;
+      await expect(
+        runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
+      ).rejects.toThrow(/backup attestation/i);
+      expect(
+        (
+          await db.pool.query(
+            "SELECT outcome,reason_code,backup_confirmed_at FROM derived_memory_legacy_clear_audit WHERE mode='live' ORDER BY started_at DESC LIMIT 1",
+          )
+        ).rows[0],
+      ).toEqual({
+        outcome: 'aborted',
+        reason_code: 'backup_not_confirmed',
+        backup_confirmed_at: null,
+      });
+    }
+  });
+
   it('live refuses without a recent successful dry run of the same build', async () => {
     await runLegacyDerivedMemoryClear(db.pool, {
       ...flags,
@@ -262,6 +301,31 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     await expect(
       runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
     ).rejects.toThrow(/matching successful dry run/i);
+  });
+
+  it('refuses a dry-run plan outside the maximum age window', async () => {
+    const old = new Date(Date.now() - 25 * 60 * 60_000);
+    await runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      now: () => old,
+    });
+    await expect(
+      runLegacyDerivedMemoryClear(db.pool, {
+        ...flags,
+        dryRun: false,
+        dryRunMaxAgeMs: 24 * 60 * 60_000,
+      }),
+    ).rejects.toThrow(/recent matching successful dry run/i);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE mode='live'",
+        )
+      ).rows[0],
+    ).toEqual({
+      outcome: 'aborted',
+      reason_code: 'dry_run_count_mismatch',
+    });
   });
 
   it('preserves covered registry and scene rows alongside uncovered legacy rows in the same session', async () => {
@@ -355,25 +419,19 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     ]);
   });
 
-  it('aborts live when any in-scope session is coverage-skipped', async () => {
+  it('defers coverage-skipped sessions in dry-run and live', async () => {
     await db.pool.query(
       'INSERT INTO derived_memory_reconcile_skipped(session_id) VALUES($1)',
       [sessionIds[0]],
     );
     const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
     expect(dry.counts.sessionsDeferred).toBe(1);
-    await expect(
-      runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
-    ).rejects.toThrow(/skipped|coverage/i);
-    expect(
-      (
-        await db.pool.query(
-          "SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE mode='live'",
-        )
-      ).rows,
-    ).toEqual([
-      { outcome: 'aborted', reason_code: 'reconciliation_skipped_in_scope' },
-    ]);
+    const live = await runLegacyDerivedMemoryClear(db.pool, {
+      ...flags,
+      dryRun: false,
+    });
+    expect(live.outcome).toBe('live_succeeded');
+    expect(live.counts.sessionsDeferred).toBe(1);
     expect(
       (
         await db.pool.query(
@@ -498,6 +556,51 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     );
   });
 
+  it('does not mark a running audit stale unless it owns the advisory lock', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const runId = randomUUID();
+    await db.pool.query(
+      "INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,heartbeat_at) VALUES($1,'live',$2,$3,'{}'::jsonb,'running',now(),now()-interval '20 minutes')",
+      [runId, codeVersion, dry.runId],
+    );
+    const lockHolder = await db.pool.connect();
+    try {
+      await lockHolder.query('SELECT pg_advisory_lock($1)', [7_201_939]);
+      await expect(runLegacyDerivedMemoryClear(db.pool, flags)).rejects.toThrow(
+        /advisory lock/i,
+      );
+      expect(
+        (
+          await db.pool.query(
+            'SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+            [runId],
+          )
+        ).rows[0],
+      ).toEqual({ outcome: 'running', reason_code: null });
+    } finally {
+      await lockHolder.query('SELECT pg_advisory_unlock($1)', [7_201_939]);
+      lockHolder.release();
+    }
+  });
+
+  it('records orphaned running audits as failed before resuming', async () => {
+    const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const runId = randomUUID();
+    await db.pool.query(
+      "INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,heartbeat_at) VALUES($1,'live',$2,$3,'{}'::jsonb,'running',now(),now()-interval '20 minutes')",
+      [runId, codeVersion, dry.runId],
+    );
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    expect(
+      (
+        await db.pool.query(
+          'SELECT outcome,reason_code FROM derived_memory_legacy_clear_audit WHERE run_id=$1',
+          [runId],
+        )
+      ).rows[0],
+    ).toEqual({ outcome: 'failed', reason_code: 'process_died' });
+  });
+
   it('marks stale running audits and resumes them with their same dry-run plan', async () => {
     const originalDryRun = await runLegacyDerivedMemoryClear(db.pool, flags);
     const runId = randomUUID();
@@ -545,6 +648,13 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
 
   it('resumes a SIGKILLed child runner from its persisted batch counts', async () => {
     const dry = await runLegacyDerivedMemoryClear(db.pool, flags);
+    const beforeCounts = await db.pool.query<{
+      summaries: number;
+      entries: number;
+      facts: number;
+    }>(
+      'SELECT (SELECT count(*)::int FROM scene_summaries) summaries, (SELECT count(*)::int FROM registry_entries) entries, (SELECT count(*)::int FROM registry_facts) facts',
+    );
     await db.pool.query(
       "UPDATE scene_summaries SET summary=summary WHERE scene_id='legacy'",
     );
@@ -617,6 +727,22 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       (running.rows[0]?.counts.sceneSummariesRemoved ?? 0) +
         (running.rows[0]?.counts.registryEntriesRemoved ?? 0),
     ).toBeGreaterThan(0);
+    const afterKill = await db.pool.query<{
+      summaries: number;
+      entries: number;
+      facts: number;
+    }>(
+      'SELECT (SELECT count(*)::int FROM scene_summaries) summaries, (SELECT count(*)::int FROM registry_entries) entries, (SELECT count(*)::int FROM registry_facts) facts',
+    );
+    expect(running.rows[0]?.counts.sceneSummariesRemoved).toBe(
+      beforeCounts.rows[0]!.summaries - afterKill.rows[0]!.summaries,
+    );
+    expect(running.rows[0]?.counts.registryEntriesRemoved).toBe(
+      beforeCounts.rows[0]!.entries - afterKill.rows[0]!.entries,
+    );
+    expect(running.rows[0]?.counts.registryFactsRemoved).toBe(
+      beforeCounts.rows[0]!.facts - afterKill.rows[0]!.facts,
+    );
     await db.pool.query(
       "UPDATE derived_memory_legacy_clear_audit SET heartbeat_at=now()-interval '20 minutes' WHERE mode='live' AND outcome='running'",
     );
@@ -747,8 +873,9 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       counts: unknown;
       dry_run_id: string | null;
       approval_reference: string;
+      backup_confirmed_at: Date | null;
     }>(
-      'SELECT mode,counts,dry_run_id,approval_reference FROM derived_memory_legacy_clear_audit ORDER BY started_at',
+      'SELECT mode,counts,dry_run_id,approval_reference,backup_confirmed_at FROM derived_memory_legacy_clear_audit ORDER BY started_at',
     );
     expect(audits.rows).toHaveLength(3);
     expect(
@@ -760,6 +887,11 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       audits.rows.every((row) =>
         row.approval_reference.includes('Gmail INBOX uid 58'),
       ),
+    ).toBe(true);
+    expect(
+      audits.rows
+        .filter((row) => row.mode === 'live')
+        .every((row) => row.backup_confirmed_at instanceof Date),
     ).toBe(true);
     expect(JSON.stringify(audits.rows)).not.toMatch(
       /uncovered legacy summary|held summary|indexed summary|deferred summary/,

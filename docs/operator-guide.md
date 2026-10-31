@@ -185,26 +185,43 @@ Note (M3-38 r3): the live eval path now applies the same port rule to `https:` e
 
 ## ADR-039 one-time legacy derived-memory clear (operator gated)
 
-This is a separate job and is **not** part of the retention sweeper, app startup, CI, or a migration side effect. It permanently deletes `scene_summaries` and `registry_entries` that have no character-token reference-index coverage after reconciliation; `registry_facts` follow their entry by cascade. “Uncovered” is strictly “no character token reference,” not “not a player character”: legacy NPC/world registry entries predating the token index are included and deleted, with registry-continuity loss. This scope was explicitly accepted by the owner and must be re-confirmed before the live run. It does not rebuild or string-scrub legacy content. Indexed rows are retained.
+This is a separate build-only operator job, not part of startup, the retention sweeper, migrations, CI, or package lifecycle scripts. It is disabled by default. Live mode requires a recent successful dry run, an explicit owner go-ahead for that execution, and a recent backup attestation.
 
-There is no rollback or rebuild for cleared rows. Run only after ADR-039 steps 1–3 have merged and migrations 0045–0051 are applied. The runner uses the shared legal-hold check for session, account, and export holds (including the owner account and any associated session-seat accounts); a held session is skipped while holding the same session lock used to serialize hold changes. A global reconciliation-incomplete state or any in-scope row in `derived_memory_reconcile_skipped` aborts live execution with a counts-only `aborted` audit reason; dry-run counts these as deferred. In registry supersession chains, any uncovered entry connected to a covered/indexed entry is retained and counted in `retainedChain`; wholly legacy chains are deleted child-first inside the session transaction. **A live run still requires Chris (owner)'s go-ahead for that execution.** The standing approval accepts permanent loss (Gmail INBOX uid 58, 2026-10-31 02:48:16 UTC); it does not replace the per-execution go-ahead.
+Worst case: after a fresh dry run with global reconciliation complete, every uncovered scene_summaries row and every uncovered registry_entries row eligible under the chain-retention predicate (and the registry_facts cascade) in non-held, non-deferred, non-skipped sessions is deleted permanently, including NPC/world entries without character tokens. Uncovered registry entries connected by any supersession link to a covered/indexed row are retained and counted in retainedChain; wholly legacy chains are deleted child-first, FK-safely. Covered rows are retained. There is no rebuild or rollback.
 
 ### Procedure
 
-1. Select the intended database explicitly. Confirm steps 1–3 are deployed, migrations 0045–0051 are applied, and reconciliation is complete. Do not point this job at real data without the owner's go-ahead.
-2. Build the exact deployed revision and set `DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION` to that immutable revision identifier. Keep `DERIVED_MEMORY_LEGACY_CLEAR_ENABLED` unset/false except during the invocation.
-3. Run the dry run first (mode defaults to dry-run):
+1. Select the target database explicitly. Confirm ADR-039 steps 1–3 are deployed and migrations 0045–0052 are applied. Global reconciliation must be complete for live mode. Per-session reconciliation-skipped sessions are deferred and untouched in dry-run and live.
+2. Required backup and restore check before live execution: create a custom-format dump, inspect it, and restore it to a separate empty scratch database. Keep the file and database URLs in a protected local environment; never store them in the repository, PR, logs, or audit.
 
-   ```sh
-   DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true \
-   DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<immutable-revision> \
-   pnpm --filter @game/server derived-memory:legacy-clear
-   ```
+       test -n "$DATABASE_URL" || exit 1
+       test -n "$BACKUP_FILE" || exit 1
+       test -n "$RESTORE_DATABASE_URL" || exit 1
+       pg_dump --format=custom --no-owner --file="$BACKUP_FILE" "$DATABASE_URL"
+       pg_restore --list "$BACKUP_FILE" >/dev/null
+       pg_restore --exit-on-error --no-owner --dbname="$RESTORE_DATABASE_URL" "$BACKUP_FILE"
+       psql "$RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT current_database(), (SELECT count(*) FROM scene_summaries), (SELECT count(*) FROM registry_entries), (SELECT count(*) FROM registry_facts)"
 
-   The structured output and audit row contain counts only: considered sessions, held sessions skipped, sessions deferred, uncovered summaries/entries/facts, and `retainedChain` rows. Dry-run removes nothing. Inspect the successful audit row and counts, including the explicit scope of NPC/world registry entries.
-4. Obtain Chris's go-ahead for this live execution. Use the same database and immutable revision; set both `DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true` and `DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN=false`. Live requires a successful dry run for this exact code version within 24 hours and exact count equality by default (operator tolerance defaults to zero).
-5. Read `derived_memory_legacy_clear_audit` ordered by `started_at`. Review mode, counts, start/finish, outcome, dry-run link, heartbeat and fixed approval citation. Aborted rows use fixed `reason_code` values (for example `global_reconciliation_incomplete`, `reconciliation_skipped_in_scope`, `process_died`) and never include row/session identifiers or text. Disable both flags after completion.
+   Confirm restore success and that current_database() identifies the separate scratch target. Only then capture the attestation timestamp:
 
-Time-budget partials and killed processes resume against the same recent dry-run id. Each committed session batch stores cumulative removed counts and refreshes `heartbeat_at`. A subsequent invocation marks an old `running` row (heartbeat older than `DERIVED_MEMORY_LEGACY_CLEAR_RUNNING_STALE_AFTER_MS`, default 900000 ms/15 minutes) as `aborted` with reason `process_died`, once it owns the advisory lock. A live resume is accepted only while that original dry-run remains recent and every remaining candidate count is no greater than the original dry-run count; an increase aborts. The default batch size is 100 sessions, default time budget 2 seconds, and default per-session lock timeout 5000 ms; configurable controls include `DERIVED_MEMORY_LEGACY_CLEAR_BATCH_SIZE`, `DERIVED_MEMORY_LEGACY_CLEAR_TIME_BUDGET_MS`, `DERIVED_MEMORY_LEGACY_CLEAR_LOCK_TIMEOUT_MS`, `DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN_MAX_AGE_MS`, `DERIVED_MEMORY_LEGACY_CLEAR_RUNNING_STALE_AFTER_MS`, and `DERIVED_MEMORY_LEGACY_CLEAR_COUNT_TOLERANCE`.
+       export DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT="$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
 
-The runner is protected by a PostgreSQL advisory lock and serializes each session against derived-memory writers and all legal-hold changes. Dry-run and live use the same chain classifier, so the predicted entry/fact counts match deletion counts; all-legacy chains are deleted in FK-safe order in the same per-session transaction. Any failure rolls the current session batch back. **Rollback: none. Completed deletions are permanent and cannot be rebuilt.** Never run this job live against production or any non-throwaway data without the owner's explicit go-ahead for that execution; CI tests use isolated throwaway Postgres schemas only.
+   Live mode rejects a missing, malformed, future, or older-than-24-hour timestamp with an aborted audit row and reason backup_not_confirmed. The timestamp alone is recorded; no path, URL, credential, or dump metadata is stored.
+3. Build the exact deployed revision and set DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION to that immutable revision. Keep DERIVED_MEMORY_LEGACY_CLEAR_ENABLED unset/false except during invocation.
+4. Run a dry-run first:
+
+       export DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true
+       export DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<immutable-revision>
+       pnpm --filter @game/server derived-memory:legacy-clear
+
+   Dry-run deletes nothing. Review the successful audit counts, including held/deferred sessions, uncovered summaries/entries/facts, and retainedChain. The approval citation contains no email address; audit rows and logs are counts-only and have no row/session ids or row text.
+5. Obtain the owner's explicit go-ahead for this live execution. After the backup restore check, use the same database and immutable code version, and set the recent attestation timestamp. Fresh live counts must match the dry-run plan within configured tolerance (default zero). Set both live gates explicitly:
+
+       export DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true
+       export DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN=false
+       export DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<same-immutable-revision>
+       export DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT=<recent-ISO-timestamp>
+       pnpm --filter @game/server derived-memory:legacy-clear
+6. Review derived_memory_legacy_clear_audit ordered by started_at, including mode, counts, dry-run link, heartbeat, backup_confirmed_at, outcome, and fixed reason_code. Disable both gates after completion. Never run against real data without the owner's go-ahead.
+
+Each committed session batch persists cumulative removed counts and refreshes heartbeat_at. Once a later invocation owns the advisory lock, it marks a stale running audit (default heartbeat window 15 minutes) failed with reason process_died, preserving the last counts. Resume uses the same still-recent dry-run id and permits remaining candidate counts less than or equal to the dry-run plan; any increase refuses before deletion, while decreases from already committed batches are expected. The per-session lock timeout defaults to 5000 ms. Rollback: none; completed deletion is permanent.
