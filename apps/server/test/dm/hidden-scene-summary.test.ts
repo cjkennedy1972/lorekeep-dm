@@ -48,7 +48,10 @@ function capture() {
         if (sql.includes('INSERT INTO scene_summaries'))
           rows.push(String(params[2]));
         else if (sql.includes('registry')) rows.push(JSON.stringify(params));
-        return { rows: [], rowCount: 1 };
+        return {
+          rows: [],
+          rowCount: sql.includes('FROM legal_holds') ? 0 : 1,
+        };
       },
       release() {},
     }),
