@@ -1487,6 +1487,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           tableLines,
           turnId: request.actionId,
           hidden: hiddenNow,
+          forbiddenPlayerText: [request.text],
         });
       }
     }

@@ -5,6 +5,7 @@ import {
   closeScene,
   hiddenMatcher,
   publicSceneEvents,
+  containsIdentityVariant,
 } from '../../src/dm/summarize.js';
 import { emptyRoom, reduceRoom } from '../../src/room/reducer.js';
 import { concealedEntities } from '../../src/room/eventVisibility.js';
@@ -92,6 +93,66 @@ const run = (adapter: LlmAdapter, db: never) =>
 const leaks = (text: string) => /ent_shade_77|Vexra/i.test(text);
 
 describe('scene close uses the public view (ADR-034 §3)', () => {
+  it('matches bound names with plural and possessive suffixes', () => {
+    expect(
+      containsIdentityVariant('Wills and Will’s map', ['Will Harper']),
+    ).toBe(true);
+    expect(
+      containsIdentityVariant('The Willows are quiet.', ['Will Harper']),
+    ).toBe(false);
+  });
+
+  it('keeps ordinary combat event facts when unresolved IDs are stripped', async () => {
+    const { rows, db } = capture();
+    prompts.length = 0;
+    await closeScene({
+      sessionId: 's',
+      sceneId: 'combat-projection',
+      db,
+      adapter: echo(),
+      moderator: allow,
+      tier: 'standard',
+      tableLines: [],
+      events: [
+        {
+          type: 'CombatStarted',
+          payload: { combatId: 'combat-42', entityIds: ['ent_enemy'] },
+        },
+        {
+          type: 'InitiativeRolled',
+          payload: { entityId: 'ent_enemy', total: 17 },
+        },
+        {
+          type: 'EntityMoved',
+          payload: { entityId: 'ent_enemy', path: [{ x: 1, y: 2 }], cost: 1 },
+        },
+        {
+          type: 'HpChanged',
+          payload: { entityId: 'ent_enemy', delta: -4, hp: 6 },
+        },
+        {
+          type: 'CombatEnded',
+          payload: { combatId: 'combat-42', encounterId: 'encounter-4' },
+        },
+      ],
+    });
+    const prompt = prompts.join(' ');
+    for (const type of [
+      'CombatStarted',
+      'InitiativeRolled',
+      'EntityMoved',
+      'HpChanged',
+      'CombatEnded',
+    ])
+      expect(prompt).toContain(type);
+    expect(prompt).toContain('"total":17');
+    expect(prompt).toContain('"cost":1');
+    expect(prompt).toContain('"delta":-4');
+    expect(prompt).not.toContain('ent_enemy');
+    expect(prompt).not.toContain('combat-42');
+    expect(rows.join(' ')).not.toContain('ent_enemy');
+  });
+
   it('builds seated recap from player-visible narration, not a DM-authored close summary', async () => {
     prompts.length = 0;
     const db = {

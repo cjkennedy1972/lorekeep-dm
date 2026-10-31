@@ -9,6 +9,7 @@ import {
 import type { LlmAdapter, LlmRequest } from '../llm/adapter.js';
 import type { Moderator } from '../safety/moderator.js';
 import type { ContentTier } from '../safety/tier.js';
+import { identityParts, mentionsIdentityPart } from './identityMatcher.js';
 
 export const MAX_SCENE_SUMMARY_WORDS = 120;
 export const MAX_SCENE_SUMMARY_CHARS = 1_200;
@@ -330,8 +331,9 @@ function parseSummary(text: string): {
 
 export async function summarizeScene(
   input: SceneSummaryInput,
+  projectedEvents?: SceneSummaryInput['events'],
 ): Promise<SceneSummaryResult> {
-  const events = projectSummarizerEvents(input.events);
+  const events = projectedEvents ?? projectSummarizerEvents(input.events);
   const request: LlmRequest = {
     messages: [
       {
@@ -551,27 +553,9 @@ export function containsIdentityVariant(
 ): boolean {
   const folded = foldIdentity(text);
   return identities.some((identity) => {
-    const parts = identity
-      .trim()
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter(Boolean);
-    return parts.some((part) => {
-      if ([...part].length === 1) {
-        const needle = foldIdentity(part).replace(
-          /[.*+?^${}()|[\]\\]/g,
-          '\\$&',
-        );
-        return new RegExp(
-          `(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`,
-          'u',
-        ).test(folded);
-      }
-      const needle = foldIdentity(part).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(
-        `(?<![\\p{L}\\p{N}])${needle}(?:['’]s|['’]|s)?(?![\\p{L}\\p{N}])`,
-        'u',
-      ).test(folded);
-    });
+    return identityParts(identity).some((part) =>
+      mentionsIdentityPart(folded, foldIdentity(part)),
+    );
   });
 }
 
@@ -658,29 +642,35 @@ export async function closeScene(
   };
   const projected = projectSummarizerEvents(
     publicSceneEvents(input.events, hidden),
-  ).filter((event) => {
-    const payload = event.payload as Record<string, unknown>;
-    // These identifiers have no session-scoped resolver in the closeScene input.
-    // Fail closed by omitting the event instead of sending format-valid but
-    // unresolved IDs (or relying on client/event-supplied provenance).
-    if ([...SESSION_SCOPED_OPAQUE_ID_FIELDS].some((key) => key in payload))
-      return false;
-    if (
-      event.type === 'LateJoinSpawned' &&
-      !inventory.seatIds.has(String(payload.seatId))
-    )
-      return false;
-    const ids = [
+  ).map((event) => {
+    const payload = { ...(event.payload as Record<string, unknown>) };
+    // These IDs have no session-scoped resolver here. Strip only those fields;
+    // validated event meaning and non-ID fields remain useful to the recap.
+    for (const key of SESSION_SCOPED_OPAQUE_ID_FIELDS) delete payload[key];
+    for (const key of [
       'entityId',
       'reactorEntityId',
       'moverId',
       'attackerId',
-    ].flatMap((key) =>
-      typeof payload[key] === 'string' ? [payload[key] as string] : [],
-    );
-    for (const key of ['entityIds', 'order', 'affected'])
-      if (Array.isArray(payload[key])) ids.push(...(payload[key] as string[]));
-    return ids.every((id) => resolveEntityToken(id) !== undefined);
+    ]) {
+      const id = payload[key];
+      if (typeof id === 'string' && !resolveEntityToken(id))
+        delete payload[key];
+    }
+    for (const key of ['entityIds', 'order', 'affected']) {
+      const ids = payload[key];
+      if (Array.isArray(ids))
+        payload[key] = ids.filter(
+          (id): id is string =>
+            typeof id === 'string' && resolveEntityToken(id) !== undefined,
+        );
+    }
+    if (
+      event.type === 'LateJoinSpawned' &&
+      !inventory.seatIds.has(String(payload.seatId))
+    )
+      delete payload.seatId;
+    return { ...event, payload };
   });
   const replaceBoundEntityIds = (value: unknown): unknown => {
     if (typeof value === 'string') return resolveEntityToken(value) ?? value;
@@ -698,22 +688,30 @@ export async function closeScene(
     ...event,
     payload: replaceBoundEntityIds(event.payload),
   }));
-  const result = await summarizeScene({
-    ...input,
-    events: tokenized,
-    identityVariants: inventory.variants,
-    validReferenceTokens: [...inventory.characterByToken.keys()],
-    forbiddenPlayerText: input.events.flatMap((event) => {
-      if (
-        event.type !== 'PlayerAction' ||
-        !event.payload ||
-        typeof event.payload !== 'object'
-      )
-        return [];
-      const text = (event.payload as Record<string, unknown>).text;
-      return typeof text === 'string' && text.trim() ? [text] : [];
-    }),
-  });
+  const result = await summarizeScene(
+    {
+      ...input,
+      events: tokenized,
+      identityVariants: inventory.variants,
+      validReferenceTokens: [...inventory.characterByToken.keys()],
+      forbiddenPlayerText: [
+        ...new Set([
+          ...(input.forbiddenPlayerText ?? []),
+          ...input.events.flatMap((event) => {
+            if (
+              event.type !== 'PlayerAction' ||
+              !event.payload ||
+              typeof event.payload !== 'object'
+            )
+              return [];
+            const text = (event.payload as Record<string, unknown>).text;
+            return typeof text === 'string' && text.trim() ? [text] : [];
+          }),
+        ]),
+      ],
+    },
+    tokenized,
+  );
   let summary = hiddenMatcher(hidden).scrub(result.summary);
   let registryDiffs = result.registryDiffs.filter(
     (diff) => !hiddenMatcher(hidden).mentions(diff),
@@ -803,16 +801,21 @@ export async function closeScene(
     registryDiffs,
     input.turnId ?? null,
     {
-      forbiddenPlayerText: input.events.flatMap((event) => {
-        if (
-          event.type !== 'PlayerAction' ||
-          !event.payload ||
-          typeof event.payload !== 'object'
-        )
-          return [];
-        const text = (event.payload as Record<string, unknown>).text;
-        return typeof text === 'string' && text.trim() ? [text] : [];
-      }),
+      forbiddenPlayerText: [
+        ...new Set([
+          ...(input.forbiddenPlayerText ?? []),
+          ...input.events.flatMap((event) => {
+            if (
+              event.type !== 'PlayerAction' ||
+              !event.payload ||
+              typeof event.payload !== 'object'
+            )
+              return [];
+            const text = (event.payload as Record<string, unknown>).text;
+            return typeof text === 'string' && text.trim() ? [text] : [];
+          }),
+        ]),
+      ],
     },
   );
   return { summary, registryDiffs, fallback, persisted };

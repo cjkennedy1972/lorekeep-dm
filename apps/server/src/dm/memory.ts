@@ -7,6 +7,11 @@ import {
 } from '@game/schema';
 import type { Pool, PoolClient } from 'pg';
 import {
+  identityPartPattern,
+  identityParts,
+  mentionsIdentityPart,
+} from './identityMatcher.js';
+import {
   ensureSessionCharacterToken,
   indexDerivedMemoryRow,
   lockSessionForDerivedMemoryWrite,
@@ -195,17 +200,10 @@ const foldPrivacyText = (text: string) =>
     );
 
 function identityPattern(identity: string): RegExp {
-  const parts = identity
-    .trim()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean);
-  const escaped = parts.map((part) =>
-    part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-  );
-  if (!escaped.length) return /$a/u;
-  const separator = String.raw`(?:[^\p{L}\p{N}]+)`;
+  const parts = identityParts(identity);
+  if (!parts.length) return /$a/u;
   return new RegExp(
-    String.raw`(?<![\p{L}\p{N}])${escaped.join(separator)}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
+    parts.map((part) => identityPartPattern(part).source).join('|'),
     'giu',
   );
 }
@@ -216,20 +214,9 @@ function containsRegistryIdentity(
 ): boolean {
   const folded = foldPrivacyText(text);
   return identities.some((identity) =>
-    identity
-      .trim()
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter(Boolean)
-      .some((part) => {
-        const needle = foldPrivacyText(part).replace(
-          /[.*+?^${}()|[\]\\]/g,
-          '\\$&',
-        );
-        return new RegExp(
-          String.raw`(?<![\p{L}\p{N}])${needle}(?:['’]s|['’])?(?![\p{L}\p{N}])`,
-          'u',
-        ).test(folded);
-      }),
+    identityParts(identity).some((part) =>
+      mentionsIdentityPart(folded, foldPrivacyText(part)),
+    ),
   );
 }
 

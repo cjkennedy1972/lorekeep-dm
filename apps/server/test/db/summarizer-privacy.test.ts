@@ -277,7 +277,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
           name: 'Guide',
           role: 'traveler',
           disposition: 'neutral',
-          facts: ['Will Harper crossed the hall.'],
+          facts: ["Wills’ map guides Will's route past Will Harper."],
         },
       },
     ]);
@@ -294,7 +294,7 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       [sessionId],
     );
     expect(safeEntry.rows[0]?.fact).toContain(token);
-    expect(safeEntry.rows[0]?.fact).not.toContain(displayName);
+    expect(safeEntry.rows[0]?.fact).not.toMatch(/Will/i);
     expect(safeEntry.rows[0]?.refs).toBe(1);
   });
 
@@ -334,6 +334,39 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
         )
       ).rowCount,
     ).toBe(0);
+  });
+
+  it('merges caller-supplied player text into the closeScene echo guard', async () => {
+    const prompts: string[] = [];
+    let call = 0;
+    const echoAdapter: LlmAdapter = {
+      ...adapter,
+      async *complete(req: { messages: { content: string }[] }) {
+        prompts.push(req.messages.map((message) => message.content).join('\n'));
+        call += 1;
+        yield {
+          type: 'text',
+          delta: JSON.stringify({
+            summary: call === 1 ? quotedText : 'The combat ended.',
+            registryDiffs: [],
+          }),
+        };
+      },
+    } as unknown as LlmAdapter;
+    const out = await closeScene({
+      sessionId,
+      sceneId: 'scene-caller-player-text',
+      events: [],
+      forbiddenPlayerText: [quotedText],
+      adapter: echoAdapter,
+      db: db.pool,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+    });
+    expect(call).toBe(2);
+    expect(prompts.join('\n')).not.toContain(quotedText);
+    expect(out.summary).toBe('The combat ended.');
   });
 
   it('serializes closeScene against a session hold inserted after its initial check', async () => {
