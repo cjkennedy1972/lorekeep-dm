@@ -27,7 +27,10 @@ describe('seat stream persistence', () => {
   let sessionId: string;
   const seatId = randomUUID();
   beforeEach(async () => {
-    database = await createTestDatabase();
+    // CI runs the public migrations before test:db, so extensions such as
+    // citext already exist in public and CREATE EXTENSION IF NOT EXISTS does
+    // not install them into this isolated test schema.
+    database = await createTestDatabase({ extraSearchPath: ['public'] });
     await migrate(database);
     sessionId = randomUUID();
     const ownerId = randomUUID();
