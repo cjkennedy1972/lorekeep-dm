@@ -64,18 +64,22 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
     await database!.pool.query('INSERT INTO sessions(id) VALUES ($1)', [
       aliasGame,
     ]);
-    await memory.upsert(aliasGame, {
-      kind: 'npc',
-      id: 'npc_ferryman',
-      aliases: ['the ferryman'],
-      after: {
+    await memory.upsert(
+      aliasGame,
+      {
+        kind: 'npc',
         id: 'npc_ferryman',
-        name: 'Mara Vale',
-        role: 'boat keeper',
-        disposition: 'friendly',
-        facts: ['Keeps the east key.'],
+        aliases: ['the ferryman'],
+        after: {
+          id: 'npc_ferryman',
+          name: 'Mara Vale',
+          role: 'boat keeper',
+          disposition: 'friendly',
+          facts: ['Keeps the east key.'],
+        },
       },
-    });
+      null,
+    );
     const context = await memory.contextFor(
       aliasGame,
       'Ask the FERRYMAN about the crossing.',
@@ -394,44 +398,56 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
   });
 
   it('upserts with supersession history, isolates sessions, ranks and bounds retrieval deterministically', async () => {
-    await memory.upsert(gameA, {
-      kind: 'npc',
-      id: 'npc_lyra',
-      aliases: ['Moon Weaver'],
-      after: {
+    await memory.upsert(
+      gameA,
+      {
+        kind: 'npc',
         id: 'npc_lyra',
-        name: 'Lyra Vale',
-        role: 'archivist',
-        disposition: 'friendly',
-        facts: ['Guards the silver archive.'],
+        aliases: ['Moon Weaver'],
+        after: {
+          id: 'npc_lyra',
+          name: 'Lyra Vale',
+          role: 'archivist',
+          disposition: 'friendly',
+          facts: ['Guards the silver archive.'],
+        },
       },
-    });
-    await memory.upsert(gameA, {
-      kind: 'npc',
-      id: 'npc_lyra',
-      aliases: ['Moon Weaver'],
-      supersedesFacts: {
-        'Guards the silver archive.': 'Now trusts the party.',
-      },
-      after: {
+      null,
+    );
+    await memory.upsert(
+      gameA,
+      {
+        kind: 'npc',
         id: 'npc_lyra',
-        name: 'Lyra Vale',
-        role: 'archivist',
-        disposition: 'friendly',
-        facts: ['Guards the silver archive.', 'Now trusts the party.'],
+        aliases: ['Moon Weaver'],
+        supersedesFacts: {
+          'Guards the silver archive.': 'Now trusts the party.',
+        },
+        after: {
+          id: 'npc_lyra',
+          name: 'Lyra Vale',
+          role: 'archivist',
+          disposition: 'friendly',
+          facts: ['Guards the silver archive.', 'Now trusts the party.'],
+        },
       },
-    });
-    await memory.upsert(gameB, {
-      kind: 'npc',
-      id: 'npc_lyra',
-      after: {
+      null,
+    );
+    await memory.upsert(
+      gameB,
+      {
+        kind: 'npc',
         id: 'npc_lyra',
-        name: 'Lyra Vale',
-        role: 'stranger',
-        disposition: 'unfriendly',
-        facts: ['Has a different secret history.'],
+        after: {
+          id: 'npc_lyra',
+          name: 'Lyra Vale',
+          role: 'stranger',
+          disposition: 'unfriendly',
+          facts: ['Has a different secret history.'],
+        },
       },
-    });
+      null,
+    );
     const history = await database!.pool.query(
       'SELECT id, version, supersedes_id, superseded_by FROM registry_entries WHERE session_id=$1 ORDER BY version',
       [gameA],
@@ -490,18 +506,22 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
       results,
     );
     await expect(
-      memory.upsert(gameA, {
-        kind: 'npc',
-        id: 'npc_secret',
-        after: {
+      memory.upsert(
+        gameA,
+        {
+          kind: 'npc',
           id: 'npc_secret',
-          name: 'Secret Holder',
-          role: 'stranger',
-          disposition: 'neutral',
-          facts: [],
-          apiKey: 'never-persist',
+          after: {
+            id: 'npc_secret',
+            name: 'Secret Holder',
+            role: 'stranger',
+            disposition: 'neutral',
+            facts: [],
+            apiKey: 'never-persist',
+          },
         },
-      }),
+        null,
+      ),
     ).rejects.toThrow();
 
     const fixtures = [
@@ -517,16 +537,20 @@ describe.skipIf(!databaseUrl)('registry memory in Postgres', () => {
       ['redwood observatory', 'A telescope points toward the western star.'],
     ] as const;
     for (const [index, [name, fact]] of fixtures.entries()) {
-      await memory.upsert(gameA, {
-        kind: 'location',
-        id: `loc_fixture_${index}`,
-        after: {
+      await memory.upsert(
+        gameA,
+        {
+          kind: 'location',
           id: `loc_fixture_${index}`,
-          name,
-          role: 'place',
-          facts: [fact],
+          after: {
+            id: `loc_fixture_${index}`,
+            name,
+            role: 'place',
+            facts: [fact],
+          },
         },
-      });
+        null,
+      );
     }
     for (const [name, fact] of fixtures) {
       const found = await memory.retrieve(gameA, fact, 3);

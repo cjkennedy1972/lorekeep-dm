@@ -625,12 +625,12 @@ export class SeatCharacterRepository {
           )
             throw new SeatCharacterError('SESSION_HELD');
           if (!isUnverifiedReferenceCoverage(error)) throw error;
-          throw new Error('Derived-memory reference coverage is incomplete');
+          throw new SeatCharacterError('SESSION_HELD');
         }
       }
     } catch (error) {
       if (!isUnverifiedReferenceCoverage(error)) throw error;
-      throw new Error('Derived-memory reference coverage is incomplete');
+      throw new SeatCharacterError('SESSION_HELD');
     }
     // Unverified coverage is deferred; even a nominally solo session can contain
     // released participants or unreferenced NPC memory that must not be purged.

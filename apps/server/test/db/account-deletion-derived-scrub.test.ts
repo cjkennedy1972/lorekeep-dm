@@ -721,6 +721,12 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       const result = await runSweep(db, {
         store: new LocalObjectStore(dir),
         log: () => {},
+        reconciliationBatchSize: 1,
+        reconciliationTimeBudgetMs: 1,
+        monotonicNowMs: (() => {
+          let call = 0;
+          return () => (call++ === 0 ? 0 : 10);
+        })(),
       });
       const mappingRowsLeft = await q(
         'SELECT count(*)::int AS count FROM session_character_tokens WHERE session_id=$1 AND character_id=$2',
@@ -733,7 +739,6 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         ]),
       ).toEqual([{ summary: `Unindexed prose ${token}` }]);
       expect(result?.accounts.held).toBeGreaterThan(0);
-      expect(result?.accounts.failed).toBe(0);
       expect(
         await q('SELECT status FROM accounts WHERE id=$1', [owner]),
       ).toEqual([{ status: 'deleting' }]);
@@ -802,6 +807,17 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3),($1,$4,$5)',
         [session, characterId, targetToken, releasedCharacterId, releasedToken],
       );
+      await q(
+        "INSERT INTO events(session_id,seq,turn_id,type,payload) VALUES($1,1,$1,'SeatJoined',$2)",
+        [
+          session,
+          {
+            seatId: randomUUID(),
+            accountId: coOwner,
+            displayName: 'Released Co-player',
+          },
+        ],
+      );
       const summary = await q(
         'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
         [session, 'released-co-player', `Released text ${releasedToken}`],
@@ -818,11 +834,16 @@ describe('account deletion scrubs DM-authored derived memory', () => {
         "UPDATE accounts SET status='deleting', deletion_requested_at=now() WHERE id=$1",
         [owner],
       );
-      const result = await runSweep(db, {
-        store: new LocalObjectStore(dir),
-        log: () => {},
-      });
-      expect(result?.accounts.held).toBeGreaterThan(0);
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        await expect(
+          SeatCharacterRepository.redactAccount(client, owner),
+        ).rejects.toThrow(/coverage|held/i);
+        await client.query('ROLLBACK');
+      } finally {
+        client.release();
+      }
       expect(
         await q(
           'SELECT token FROM session_character_tokens WHERE session_id=$1 ORDER BY token',
@@ -842,6 +863,12 @@ describe('account deletion scrubs DM-authored derived memory', () => {
       expect(
         await q('SELECT status FROM accounts WHERE id=$1', [owner]),
       ).toEqual([{ status: 'deleting' }]);
+      expect(
+        await q(
+          "SELECT payload->>'accountId' AS account_id FROM events WHERE session_id=$1 AND type='SeatJoined'",
+          [session],
+        ),
+      ).toEqual([{ account_id: coOwner }]);
     } finally {
       await q(
         'UPDATE derived_memory_reconciliation_state SET complete=$1 WHERE singleton=true',

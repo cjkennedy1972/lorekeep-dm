@@ -476,17 +476,13 @@ export class RegistryMemory {
   async upsert(
     sessionId: string,
     diff: RegistryDiff | RegistryEvent,
+    expectedLeaseEpoch: number | null,
     privacy: RegistryPrivacyOptions = {},
-    expectedLeaseEpoch?: number,
   ): Promise<void> {
-    const epochAtStart = await this.captureLeaseEpoch(
-      sessionId,
-      expectedLeaseEpoch,
-    );
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await this.assertLeaseEpoch(client, sessionId, epochAtStart);
+      await this.assertLeaseEpoch(client, sessionId, expectedLeaseEpoch);
       await this.upsertManyInTransaction(
         client,
         sessionId,
@@ -506,18 +502,14 @@ export class RegistryMemory {
   async upsertMany(
     sessionId: string,
     diffs: readonly RegistryDiff[],
+    expectedLeaseEpoch: number | null,
     privacy: RegistryPrivacyOptions = {},
-    expectedLeaseEpoch?: number,
   ): Promise<void> {
     if (!diffs.length) return;
-    const epochAtStart = await this.captureLeaseEpoch(
-      sessionId,
-      expectedLeaseEpoch,
-    );
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await this.assertLeaseEpoch(client, sessionId, epochAtStart);
+      await this.assertLeaseEpoch(client, sessionId, expectedLeaseEpoch);
       await this.upsertManyInTransaction(
         client,
         sessionId,
@@ -574,18 +566,6 @@ export class RegistryMemory {
       'DELETE FROM registry_entries WHERE session_id=$1 AND turn_id = ANY($2::text[])',
       [sessionId, turnIds],
     );
-  }
-
-  private async captureLeaseEpoch(
-    sessionId: string,
-    expectedLeaseEpoch?: number,
-  ): Promise<number | null> {
-    if (expectedLeaseEpoch !== undefined) return expectedLeaseEpoch;
-    const lease = await this.pool.query<{ epoch: string }>(
-      'SELECT epoch FROM session_lease WHERE session_id=$1',
-      [sessionId],
-    );
-    return lease.rows[0] ? Number(lease.rows[0].epoch) : null;
   }
 
   private async assertLeaseEpoch(

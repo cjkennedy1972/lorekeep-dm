@@ -8,6 +8,7 @@ import {
   indexDerivedMemoryRow,
   reconcileDerivedMemoryCharacterRefs,
 } from '../../src/dm/characterReferences.js';
+import { reconcileDerivedMemoryWithinBudget } from '../../src/retention/sweeper.js';
 import { createTestDatabase, type TestDatabase } from './testDb.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -70,6 +71,40 @@ describe.skipIf(!databaseUrl)(
       );
     });
     afterAll(async () => db?.close());
+
+    it('starts incomplete from the migration and resumes bounded sweeps from its durable checkpoint', async () => {
+      const initial = await db.pool.query<{ complete: boolean }>(
+        'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
+      );
+      expect(initial.rows[0]?.complete).toBe(false);
+      await db.pool.query(
+        `INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'budget-1','first'),($1,'budget-2','second'),($1,'budget-3','third')`,
+        [sessionId],
+      );
+      const clockValues = [0, 10];
+      const bounded = await reconcileDerivedMemoryWithinBudget(
+        db.pool,
+        1,
+        1,
+        () => clockValues.shift() ?? 10,
+      );
+      expect(bounded.batches).toBe(1);
+      expect(bounded.complete).toBe(false);
+      const checkpoint = await db.pool.query<{
+        checkpoint_row_id: string | null;
+      }>(
+        'SELECT checkpoint_row_id FROM derived_memory_reconciliation_state WHERE singleton=true',
+      );
+      expect(checkpoint.rows[0]?.checkpoint_row_id).not.toBeNull();
+      const resumed = await reconcileDerivedMemoryWithinBudget(
+        db.pool,
+        1,
+        60_000,
+        () => 20,
+      );
+      expect(resumed.complete).toBe(true);
+      expect(resumed.batches).toBeGreaterThan(0);
+    });
 
     it('adds constraints/indexes transactionally without changing legacy data and remains old-code compatible', async () => {
       expect(

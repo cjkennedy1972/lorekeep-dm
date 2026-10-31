@@ -26,6 +26,7 @@ describe('Adventure #1 registry seed persistence', () => {
     await new RegistryMemory(pool).upsertMany(
       'fresh-table',
       adventure01RegistrySeed(),
+      null,
     );
     expect(calls.some((call) => call[0] === 'BEGIN')).toBe(true);
     expect(

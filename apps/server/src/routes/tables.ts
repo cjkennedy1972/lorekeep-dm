@@ -298,7 +298,11 @@ export function registerTableRoutes(
         difficulty: body.difficulty,
         worldSeeded: true,
       });
-      await new RegistryMemory(db).upsertMany(id, adventure01RegistrySeed());
+      await new RegistryMemory(db).upsertMany(
+        id,
+        adventure01RegistrySeed(),
+        room.lease.epoch,
+      );
     } catch (error) {
       await db.query(
         'DELETE FROM sessions WHERE id=$1 AND owner_account_id=$2',

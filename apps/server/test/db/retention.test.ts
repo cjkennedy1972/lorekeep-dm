@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
@@ -60,6 +60,105 @@ async function seatEvent(
 }
 
 describe('retention sweeper (Postgres)', () => {
+  it('reconciles before deletion and escalates old coverage-blocked requests without identifying data', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'coverage-sweep-'));
+    const store = new LocalObjectStore(dir);
+    const target = await account('deleting', 'Target');
+    const owner = await account('active', 'Room owner');
+    const session = randomUUID();
+    const character = randomUUID();
+    const before = (
+      await q(
+        'SELECT complete,checkpoint_session_id,checkpoint_row_kind,checkpoint_row_id FROM derived_memory_reconciliation_state WHERE singleton=true',
+      )
+    )[0];
+    accountIds.push(target, owner);
+    sessionIds.push(session);
+    try {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=false,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
+      );
+      await q(
+        "UPDATE accounts SET deletion_requested_at=now()-interval '25 hours' WHERE id=$1",
+        [target],
+      );
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [character, target, { id: character, name: 'Target Hero' }],
+      );
+      await q('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+        session,
+        owner,
+      ]);
+      await q(
+        `INSERT INTO session_seat_characters(session_id,account_id,seat_id,character_id,character_snapshot,binding_status)
+         VALUES($1,$2,$3,$4,$5,'active')`,
+        [
+          session,
+          target,
+          randomUUID(),
+          character,
+          { id: character, name: 'Target Hero' },
+        ],
+      );
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, character, 'R'.repeat(32)],
+      );
+      await q(
+        `INSERT INTO scene_summaries(session_id,scene_id,summary) SELECT $1,'reconcile-'||n,'legacy '||n FROM generate_series(1,8) n`,
+        [session],
+      );
+      const emitted: Record<string, unknown>[] = [];
+      const result = await runSweep(pool, {
+        store,
+        log: (entry) => emitted.push(entry),
+        now: () => new Date(),
+        reconciliationBatchSize: 1,
+        reconciliationTimeBudgetMs: 1,
+        monotonicNowMs: (() => {
+          let call = 0;
+          return () => (call++ === 0 ? 0 : 10);
+        })(),
+        coverageEscalationMs: 24 * 60 * 60_000,
+      });
+      expect(result?.reconciliation).toMatchObject({
+        batches: 1,
+        complete: false,
+      });
+      expect(result?.accounts.held).toBeGreaterThan(0);
+      expect(result?.deletionsBlockedByCoverage).toBe(1);
+      expect(emitted).toContainEqual({
+        level: 'error',
+        job: 'accountDeletion',
+        event: 'coverage_escalation',
+        count: 1,
+      });
+      expect(JSON.stringify(emitted)).not.toContain(target);
+      expect(JSON.stringify(emitted)).not.toContain(character);
+      expect(
+        await count(
+          'SELECT count(*)::int AS n FROM scene_summaries WHERE session_id=$1',
+          [session],
+        ),
+      ).toBe(8);
+      expect(
+        (await q('SELECT status FROM accounts WHERE id=$1', [target]))[0]
+          ?.status,
+      ).toBe('deleting');
+    } finally {
+      await q(
+        'UPDATE derived_memory_reconciliation_state SET complete=$1,checkpoint_session_id=$2,checkpoint_row_kind=$3,checkpoint_row_id=$4 WHERE singleton=true',
+        [
+          before.complete,
+          before.checkpoint_session_id,
+          before.checkpoint_row_kind,
+          before.checkpoint_row_id,
+        ],
+      );
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
   it('deletes only expired rows, then a second sweep deletes nothing', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sweep-'));
     const store = new LocalObjectStore(dir);

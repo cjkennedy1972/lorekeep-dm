@@ -80,6 +80,13 @@ const stopSweeper =
         new LocalObjectStore(),
         config.SWEEP_INTERVAL_MS,
         (id) => rooms.evictSession(id),
+        {
+          reconciliationBatchSize:
+            config.DERIVED_MEMORY_RECONCILIATION_BATCH_SIZE,
+          reconciliationTimeBudgetMs:
+            config.DERIVED_MEMORY_RECONCILIATION_BUDGET_MS,
+          coverageEscalationMs: config.ACCOUNT_DELETION_COVERAGE_ESCALATION_MS,
+        },
       );
 let closing = false;
 async function shutdown() {

@@ -339,19 +339,23 @@ describe('rewind plan', () => {
         turn: 1,
       });
       await memory.closeScene(id, 'scene-seed', 'Seeded scene.');
-      await memory.upsertMany(id, [
-        {
-          kind: 'npc',
-          id: 'npc_seed',
-          after: {
+      await memory.upsertMany(
+        id,
+        [
+          {
+            kind: 'npc',
             id: 'npc_seed',
-            name: 'Seed Keeper',
-            role: 'Guard',
-            disposition: 'neutral',
-            facts: [],
+            after: {
+              id: 'npc_seed',
+              name: 'Seed Keeper',
+              role: 'Guard',
+              disposition: 'neutral',
+              facts: [],
+            },
           },
-        },
-      ]);
+        ],
+        null,
+      );
       await persistence.writeTurn(id, [row('b', 'NarrationCompleted')], {
         turn: 2,
       });
