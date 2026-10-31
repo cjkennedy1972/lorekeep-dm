@@ -260,6 +260,11 @@ export function registerSessionRoutes(
           .code(400)
           .send({ code: 'INVALID_INPUT', message: 'Enter a table name.' });
       }
+      if (parsed.data.mode === 'solo')
+        return reply.code(400).send({
+          code: 'SOLO_ROOMS_USE_TABLES_ENDPOINT',
+          message: 'Create solo games with POST /api/tables.',
+        });
       if (createHits.hit(accountId) > createPerHour)
         return reply.code(429).send({
           code: 'RATE_LIMITED',

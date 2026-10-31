@@ -6,7 +6,7 @@ Party play (M4) operator and player behavior, including what is not shipped yet,
 
 ## Room creation API
 
-`POST /api/rooms` (also `/api/sessions`) requires an explicit `mode` in the JSON body: `solo` or `party`, for example `{"name":"My table","mode":"solo"}`. Missing, null, or unsupported values return HTTP 400; there is no server-side default. Use `solo` for one-player games and `party` for tables with party seat-character binding.
+`POST /api/rooms` (also `/api/sessions`) requires an explicit `mode: "party"`, for example `{"name":"My table","mode":"party"}`. Missing, null, unsupported values, and `mode: "solo"` return HTTP 400. The `sessions.mode` database column retains its migration default of `party`, but these API routes validate mode explicitly and only create party rooms. Create solo games with `POST /api/tables`, which applies solo-game validation, limits, and persisted state.
 
 ## 1. Server environment
 

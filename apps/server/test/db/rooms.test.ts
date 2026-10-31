@@ -71,25 +71,47 @@ describe('rooms + invites (postgres)', () => {
     }
   });
 
-  it.each(['solo', 'party'] as const)(
-    'persists %s mode and exposes it in the constructed Room',
-    async (mode) => {
+  it.each(['/api/rooms', '/api/sessions'])(
+    'rejects solo mode on %s without inserting a room',
+    async (endpoint) => {
       const host = await account();
-      const response = await call(host, 'POST', '/api/rooms', {
-        name: `Mode ${mode}`,
-        mode,
-      });
-      expect(response.statusCode).toBe(201);
-      const roomId = response.json().room.id as string;
-      const stored = await db.query('SELECT mode FROM sessions WHERE id=$1', [
-        roomId,
-      ]);
-      expect(stored.rows[0].mode).toBe(mode);
-      expect((await rooms.get(roomId)).clientState(host.id).tableMode).toBe(
-        mode,
+      const before = await db.query(
+        'SELECT count(*)::int AS count FROM sessions WHERE owner_account_id=$1',
+        [host.id],
       );
+      const response = await call(host, 'POST', endpoint, {
+        name: 'Solo through rooms',
+        mode: 'solo',
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        code: 'SOLO_ROOMS_USE_TABLES_ENDPOINT',
+        message: expect.stringContaining('/api/tables'),
+      });
+      const after = await db.query(
+        'SELECT count(*)::int AS count FROM sessions WHERE owner_account_id=$1',
+        [host.id],
+      );
+      expect(after.rows[0].count).toBe(before.rows[0].count);
     },
   );
+
+  it('persists party mode and exposes it in the constructed Room', async () => {
+    const host = await account();
+    const response = await call(host, 'POST', '/api/rooms', {
+      name: 'Mode party',
+      mode: 'party',
+    });
+    expect(response.statusCode).toBe(201);
+    const roomId = response.json().room.id as string;
+    const stored = await db.query('SELECT mode FROM sessions WHERE id=$1', [
+      roomId,
+    ]);
+    expect(stored.rows[0].mode).toBe('party');
+    expect((await rooms.get(roomId)).clientState(host.id).tableMode).toBe(
+      'party',
+    );
+  });
   it('host room fetch omits the invite code and the database stores only its hash', async () => {
     const host = await account();
     const made = await call(host, 'POST', '/api/rooms', {

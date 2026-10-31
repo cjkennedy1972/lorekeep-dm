@@ -583,6 +583,13 @@ export function createMock(
           'INVALID_ROOM_MODE',
           "Room mode must be 'solo' or 'party'.",
         );
+      if (body.mode === 'solo')
+        return err(
+          res,
+          400,
+          'SOLO_ROOMS_USE_TABLES_ENDPOINT',
+          'Create solo games with POST /api/tables.',
+        );
       if (!name || name.length > 80)
         return err(res, 400, 'INVALID_INPUT', 'Enter a table name.');
       const r: MockRoom = {
