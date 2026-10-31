@@ -148,19 +148,6 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
       "INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)",
       [sessionIds[1], characterId, summary.rows[0]?.id],
     );
-    await db.pool.query(
-      'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$3,$4),($2,$3,$4)',
-      [
-        sessionIds[2],
-        sessionIds[3],
-        characterId,
-        'ZYXWVUTSRQPONMLKJIHGFEDCBA654321',
-      ],
-    );
-    await db.pool.query(
-      "INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) SELECT session_id,$1,'scene_summary',id FROM scene_summaries WHERE scene_id IN ('held','deferred')",
-      [characterId],
-    );
     const legacy = await db.pool.query<{ id: string }>(
       "INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload) VALUES($1,'npc','legacy',1,'legacy registry', '{}') RETURNING id",
       [sessionIds[0]],
@@ -225,6 +212,71 @@ describe.skipIf(!databaseUrl)('gated legacy derived-memory clear', () => {
     await expect(
       runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false }),
     ).rejects.toThrow(/matching successful dry run/i);
+  });
+
+  it('preserves covered registry and scene rows alongside uncovered legacy rows in the same session', async () => {
+    const coveredSummary = await db.pool.query<{ id: string }>(
+      "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'covered-same-session','covered summary') RETURNING id",
+      [sessionIds[0]],
+    );
+    await db.pool.query(
+      "INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)",
+      [sessionIds[0], characterId, coveredSummary.rows[0]?.id],
+    );
+    const coveredEntry = await db.pool.query<{ id: string }>(
+      "INSERT INTO registry_entries(session_id,entity_type,entity_id,version,name,payload,search_document) VALUES($1,'npc','covered-same-session',1,'covered registry','{}','covered searchable text') RETURNING id",
+      [sessionIds[0]],
+    );
+    await db.pool.query(
+      "INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'registry_entry',$3)",
+      [sessionIds[0], characterId, coveredEntry.rows[0]?.id],
+    );
+    await db.pool.query(
+      "INSERT INTO registry_facts(entry_id,fact) VALUES($1,'covered fact')",
+      [coveredEntry.rows[0]?.id],
+    );
+
+    await runLegacyDerivedMemoryClear(db.pool, flags);
+    await runLegacyDerivedMemoryClear(db.pool, { ...flags, dryRun: false });
+
+    expect(
+      (
+        await db.pool.query(
+          'SELECT scene_id FROM scene_summaries WHERE session_id=$1 ORDER BY scene_id',
+          [sessionIds[0]],
+        )
+      ).rows.map((row) => row.scene_id),
+    ).toEqual(['covered-same-session']);
+    const entry = await db.pool.query<{
+      entity_id: string;
+      search_document: string;
+      search_vector: string;
+    }>(
+      'SELECT entity_id,search_document,search_vector::text FROM registry_entries WHERE id=$1',
+      [coveredEntry.rows[0]?.id],
+    );
+    expect(entry.rows).toEqual([
+      expect.objectContaining({
+        entity_id: 'covered-same-session',
+        search_document: 'covered searchable text',
+        search_vector: expect.stringContaining("'cover':1"),
+      }),
+    ]);
+    expect(
+      (
+        await db.pool.query(
+          'SELECT fact FROM registry_facts WHERE entry_id=$1',
+          [coveredEntry.rows[0]?.id],
+        )
+      ).rows,
+    ).toEqual([{ fact: 'covered fact' }]);
+    expect(
+      (
+        await db.pool.query(
+          "SELECT count(*)::int AS n FROM registry_entries WHERE entity_id='legacy'",
+        )
+      ).rows[0]?.n,
+    ).toBe(0);
   });
 
   it('live removes only uncovered rows from unheld reconciled sessions, is idempotent, and audits counts only', async () => {
