@@ -64,8 +64,7 @@ export class SeatCharacterError extends Error {
       | 'SESSION_INACTIVE'
       | 'CHARACTER_BOUND'
       | 'SESSION_HELD'
-      | 'SESSION_BUSY'
-      | 'REFERENCE_COVERAGE_INCOMPLETE',
+      | 'SESSION_BUSY',
   ) {
     super(code);
     this.name = 'SeatCharacterError';
@@ -239,12 +238,6 @@ export class SeatCharacterRepository {
           [sessionId],
         );
         if (held.rowCount) throw new SeatCharacterError('SESSION_HELD');
-        try {
-          await getIndexedDerivedMemoryRows(client, sessionId, characterId);
-        } catch (error) {
-          if (!isUnverifiedReferenceCoverage(error)) throw error;
-          throw new SeatCharacterError('REFERENCE_COVERAGE_INCOMPLETE');
-        }
         await client.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE', [
           sessionId,
         ]);

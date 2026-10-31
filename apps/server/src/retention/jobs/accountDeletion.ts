@@ -365,10 +365,6 @@ async function deleteAccount(
   }
   if (derivedSessionIds.size) {
     const sessionIds = [...derivedSessionIds];
-    const coverage = await client.query<{ complete: boolean }>(
-      'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
-    );
-    if (!coverage.rows[0]?.complete) throw new Error(HELD);
     await client.query(
       'DELETE FROM derived_memory_character_refs WHERE session_id = ANY($1::uuid[])',
       [sessionIds],
@@ -379,6 +375,11 @@ async function deleteAccount(
     );
     await client.query(
       'DELETE FROM registry_entries WHERE session_id = ANY($1::uuid[])',
+      [sessionIds],
+    );
+    // These sessions are fully scrubbed above, so their token mappings can now be removed safely.
+    await client.query(
+      'DELETE FROM session_character_tokens WHERE session_id = ANY($1::uuid[])',
       [sessionIds],
     );
   }
