@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeScene } from '../../src/dm/summarize.js';
+import { closeScene, projectSummarizerEvents } from '../../src/dm/summarize.js';
 import { RegistryMemory } from '../../src/dm/memory.js';
 import { Persistence } from '../../src/persistence/index.js';
 import type { LlmAdapter, LlmChunk } from '../../src/llm/adapter.js';
@@ -191,6 +191,114 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
       'registry_entry',
       'scene_summary',
     ]);
+  });
+
+  it('preserves validated combat recap facts while removing opaque IDs before the prompt', async () => {
+    const start = requests.length;
+    const events = [
+      {
+        type: 'CombatStarted',
+        payload: {
+          combatId: 'combat-private-42',
+          entityIds: ['ent_foreign'],
+          order: ['ent_foreign'],
+        },
+      },
+      {
+        type: 'MoveStarted',
+        payload: {
+          entityId: 'ent_foreign',
+          path: [
+            { x: 1, y: 1 },
+            { x: 2, y: 1 },
+          ],
+          turnId: 'turn_private',
+        },
+      },
+      {
+        type: 'ReactionAnswered',
+        payload: { promptId: 'rp_734', choice: 'decline' },
+      },
+      {
+        type: 'TurnResolved',
+        payload: {
+          turnId: 'turn_private',
+          entityId: 'ent_foreign',
+          eventIds: ['88731'],
+        },
+      },
+      {
+        type: 'HpChanged',
+        payload: { entityId: 'ent_foreign', delta: -4, hp: 5 },
+      },
+      {
+        type: 'MoveEnded',
+        payload: {
+          entityId: 'ent_foreign',
+          turnId: 'turn_private',
+          reason: 'complete',
+        },
+      },
+      { type: 'CombatEnded', payload: { combatId: 'combat-private-42' } },
+    ];
+    expect(projectSummarizerEvents(events)).toHaveLength(7);
+    await closeScene({
+      sessionId,
+      sceneId: 'scene-combat-recap',
+      events,
+      adapter,
+      db: db.pool,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+    });
+    const prompt = requests.slice(start).join('\n');
+    for (const fact of [
+      'CombatStarted',
+      'MoveStarted',
+      'ReactionAnswered',
+      'decline',
+      'TurnResolved',
+      'HpChanged',
+      '-4',
+      'MoveEnded',
+      'CombatEnded',
+    ])
+      expect(prompt).toContain(fact);
+    for (const id of [
+      'combat-private-42',
+      'turn_private',
+      'rp_734',
+      '88731',
+      'ent_foreign',
+    ])
+      expect(prompt).not.toContain(id);
+  });
+
+  it('tokenizes plural and possessive identity variants on registry writes', async () => {
+    const registry = new RegistryMemory(db.pool);
+    await registry.upsertMany(sessionId, [
+      {
+        kind: 'npc',
+        id: 'npc_plural_identity',
+        after: {
+          id: 'npc_plural_identity',
+          name: 'The Harpers',
+          role: 'guild',
+          disposition: 'neutral',
+          facts: [
+            'The Harpers hold the mill deed.',
+            "Harper's seal marks the deed.",
+          ],
+        },
+      },
+    ]);
+    const rows = await db.pool.query(
+      "SELECT name, payload::text AS payload, search_document FROM registry_entries WHERE session_id=$1 AND entity_id='npc_plural_identity'",
+      [sessionId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(JSON.stringify(rows.rows)).not.toMatch(/Harpers|Harper's/);
   });
 
   it('rejects registry persistence when an upserted fact contains player identity and quoted player text', async () => {

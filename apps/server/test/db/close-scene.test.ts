@@ -294,6 +294,22 @@ describe('close_scene through ProductionSoloTurnRunner', () => {
     expect(stored.rows[0]?.summary).not.toContain(unsafeGeneratedSummary);
   });
 
+  it('does not persist a quoted production player line in a scene summary', async () => {
+    const quote = 'We finish here and move on.';
+    const { sessionId } = await turn(
+      'scene-marowfell-well',
+      { summary: 'The party leaves the well.' },
+      undefined,
+      quote,
+    );
+    const stored = await db.query<{ summary: string }>(
+      'SELECT summary FROM scene_summaries WHERE session_id=$1',
+      [sessionId],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]?.summary).not.toContain(quote);
+  });
+
   it('advances to the authored next scene with exactly one SceneClosed and one summary call', async () => {
     const { result, closed, calls } = await turn('scene-marowfell-well', {
       summary: 'The party leaves the well.',
