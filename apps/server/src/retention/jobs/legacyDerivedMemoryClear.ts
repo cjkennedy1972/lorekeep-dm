@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { hasLegalHold } from '../types.js';
 
 const LEGACY_CLEAR_LOCK_KEY = 7_201_939;
 const DEFAULT_DRY_RUN_MAX_AGE_MS = 24 * 60 * 60_000;
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_TIME_BUDGET_MS = 2_000;
 const DEFAULT_SESSION_LOCK_TIMEOUT_MS = 5_000;
+const DEFAULT_RUNNING_STALE_AFTER_MS = 15 * 60_000;
 
 export type LegacyClearCounts = {
   sessionsConsidered: number;
@@ -14,6 +16,7 @@ export type LegacyClearCounts = {
   sceneSummaries: number;
   registryEntries: number;
   registryFacts: number;
+  retainedChain: number;
 };
 export type LegacyClearOutcome =
   | 'dry_run_succeeded'
@@ -28,6 +31,7 @@ export type LegacyClearOptions = {
   batchSize?: number;
   timeBudgetMs?: number;
   sessionLockTimeoutMs?: number;
+  runningStaleAfterMs?: number;
   now?: () => Date;
   log?: (event: string, counts: LegacyClearCounts, outcome: string) => void;
 };
@@ -60,6 +64,7 @@ const zeroCounts = (): LegacyClearCounts => ({
   sceneSummaries: 0,
   registryEntries: 0,
   registryFacts: 0,
+  retainedChain: 0,
 });
 const safeCount = (v: string | number | undefined): number => Number(v ?? 0);
 const positiveInt = (
@@ -77,27 +82,64 @@ async function legacyCountsForSession(client: PoolClient, sessionId: string) {
     summaries: string;
     entries: string;
     facts: string;
+    retained_chain: string;
   }>(
-    `SELECT
-      (SELECT count(*) FROM scene_summaries s WHERE s.session_id=$1 AND NOT EXISTS (
-        SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id
-      ))::text AS summaries,
-      (SELECT count(*) FROM registry_entries e WHERE e.session_id=$1 AND NOT EXISTS (
-        SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=e.session_id AND r.row_kind='registry_entry' AND r.row_id=e.id
-      ))::text AS entries,
-      (SELECT count(*) FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id WHERE e.session_id=$1 AND NOT EXISTS (
-        SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=e.session_id AND r.row_kind='registry_entry' AND r.row_id=e.id
-      ))::text AS facts`,
+    `WITH RECURSIVE entries AS (
+       SELECT e.id,e.supersedes_id,e.superseded_by,
+              EXISTS(SELECT 1 FROM derived_memory_character_refs r
+                      WHERE r.row_kind='registry_entry' AND r.row_id=e.id) AS covered
+         FROM registry_entries e WHERE e.session_id=$1
+     ), protected(id) AS (
+       SELECT id FROM entries WHERE covered
+       UNION
+       SELECT e.id
+         FROM entries e JOIN protected p ON e.supersedes_id=p.id OR e.superseded_by=p.id
+     ), candidates AS (SELECT id FROM entries WHERE NOT covered AND id NOT IN (SELECT id FROM protected))
+     SELECT
+       (SELECT count(*) FROM scene_summaries s WHERE s.session_id=$1 AND NOT EXISTS (
+         SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id
+       ))::text AS summaries,
+       (SELECT count(*) FROM candidates)::text AS entries,
+       (SELECT count(*) FROM registry_facts f WHERE f.entry_id IN (SELECT id FROM candidates))::text AS facts,
+       (SELECT count(*) FROM entries e WHERE NOT e.covered AND e.id IN (SELECT id FROM protected))::text AS retained_chain`,
     [sessionId],
   );
   return {
     sceneSummaries: safeCount(result.rows[0]?.summaries),
     registryEntries: safeCount(result.rows[0]?.entries),
     registryFacts: safeCount(result.rows[0]?.facts),
+    retainedChain: safeCount(result.rows[0]?.retained_chain),
   };
 }
 
-/** Read-only count pass; session ids are used internally and never leave this module or enter audit/logs. */
+async function sessionIsHeld(
+  client: PoolClient,
+  sessionId: string,
+  ownerId: string,
+) {
+  if (await hasLegalHold(client, 'session', sessionId)) return true;
+  const seatAccounts = await client.query<{ account_id: string }>(
+    'SELECT DISTINCT account_id::text FROM session_seat_characters WHERE session_id=$1 AND account_id IS NOT NULL',
+    [sessionId],
+  );
+  const accountIds = new Set([
+    ownerId,
+    ...seatAccounts.rows.map((r) => r.account_id),
+  ]);
+  for (const accountId of accountIds) {
+    if (await hasLegalHold(client, 'account', accountId)) return true;
+  }
+  const exports = await client.query<{ id: string }>(
+    'SELECT id::text FROM export_jobs WHERE account_id=ANY($1::uuid[])',
+    [[...accountIds]],
+  );
+  for (const exp of exports.rows) {
+    if (await hasLegalHold(client, 'export', exp.id)) return true;
+  }
+  return false;
+}
+
+/** Count-only classification; ids stay inside this module and never enter logs/audit. */
 async function classifySessions(client: PoolClient): Promise<{
   sessions: SessionRow[];
   counts: LegacyClearCounts;
@@ -110,57 +152,60 @@ async function classifySessions(client: PoolClient): Promise<{
     throw new Error(
       'Reference reconciliation state is missing; refusing legacy clear',
     );
-  const result = await client.query<SessionRow>(
-    `SELECT s.id::text AS session_id,
-      (EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=s.id::text)
-       OR EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='account' AND
-                  (h.item_id=s.owner_account_id::text OR EXISTS(
-                    SELECT 1 FROM session_seat_characters b
-                     WHERE b.session_id=s.id AND b.account_id::text=h.item_id)))
-       OR EXISTS(SELECT 1 FROM legal_holds h JOIN export_jobs x ON x.id::text=h.item_id
-                  WHERE h.kind='export' AND
-                    (x.account_id=s.owner_account_id OR EXISTS(
-                      SELECT 1 FROM session_seat_characters b
-                       WHERE b.session_id=s.id AND b.account_id=x.account_id)))) AS held,
-      (NOT $1::boolean
-       OR EXISTS(SELECT 1 FROM derived_memory_reconcile_skipped d WHERE d.session_id=s.id)
-       OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id
-                  AND (e.supersedes_id IS NOT NULL OR e.superseded_by IS NOT NULL))
-       OR EXISTS(SELECT 1 FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
-                  WHERE e.session_id=s.id AND (f.supersedes_id IS NOT NULL OR f.superseded_by IS NOT NULL))) AS deferred
-     FROM sessions s
-     WHERE EXISTS(SELECT 1 FROM scene_summaries m WHERE m.session_id=s.id)
-        OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id)
-     ORDER BY s.id`,
-    [state.rows[0].complete],
+  const result = await client.query<{
+    session_id: string;
+    owner_account_id: string;
+  }>(
+    `SELECT s.id::text AS session_id,s.owner_account_id::text AS owner_account_id
+       FROM sessions s
+      WHERE EXISTS(SELECT 1 FROM scene_summaries m WHERE m.session_id=s.id)
+         OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id)
+      ORDER BY s.id`,
   );
   const counts = zeroCounts();
   const sessions: SessionRow[] = [];
   for (const row of result.rows) {
-    if (row.held) {
-      sessions.push({
-        ...row,
-        plannedSummaries: 0,
-        plannedEntries: 0,
-        plannedFacts: 0,
-      });
+    const held = await sessionIsHeld(
+      client,
+      row.session_id,
+      row.owner_account_id,
+    );
+    const skipped = await client.query(
+      'SELECT 1 FROM derived_memory_reconcile_skipped WHERE session_id=$1',
+      [row.session_id],
+    );
+    const deferred = !state.rows[0].complete || Boolean(skipped.rowCount);
+    if (held) {
       counts.sessionsSkippedHeld += 1;
-    } else if (row.deferred) {
       sessions.push({
-        ...row,
+        session_id: row.session_id,
+        held,
+        deferred: false,
         plannedSummaries: 0,
         plannedEntries: 0,
         plannedFacts: 0,
       });
+    } else if (deferred) {
       counts.sessionsDeferred += 1;
+      sessions.push({
+        session_id: row.session_id,
+        held,
+        deferred,
+        plannedSummaries: 0,
+        plannedEntries: 0,
+        plannedFacts: 0,
+      });
     } else {
       counts.sessionsConsidered += 1;
       const rows = await legacyCountsForSession(client, row.session_id);
       counts.sceneSummaries += rows.sceneSummaries;
       counts.registryEntries += rows.registryEntries;
       counts.registryFacts += rows.registryFacts;
+      counts.retainedChain += rows.retainedChain;
       sessions.push({
-        ...row,
+        session_id: row.session_id,
+        held,
+        deferred,
         plannedSummaries: rows.sceneSummaries,
         plannedEntries: rows.registryEntries,
         plannedFacts: rows.registryFacts,
@@ -209,7 +254,7 @@ async function saveAudit(
   finished: Date | null,
 ) {
   await client.query(
-    'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,outcome=$3,finished_at=$4 WHERE run_id=$1',
+    'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,outcome=$3,finished_at=$4,heartbeat_at=now() WHERE run_id=$1',
     [runId, JSON.stringify(counts), outcome, finished],
   );
 }
@@ -234,14 +279,6 @@ export async function runLegacyDerivedMemoryClear(
     throw new Error(
       'Legacy derived-memory clear is disabled; set DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true explicitly',
     );
-  if (
-    !dryRun &&
-    process.env.DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN === 'true' &&
-    options.dryRun === undefined
-  )
-    throw new Error(
-      'Live clear requires DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN=false',
-    );
   if (!codeVersion)
     throw new Error('DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION is required');
   const runner = await pool.connect();
@@ -260,8 +297,17 @@ export async function runLegacyDerivedMemoryClear(
       throw new Error(
         'Another legacy derived-memory clear runner holds the advisory lock',
       );
+    const staleAfter = positiveInt(
+      options.runningStaleAfterMs ??
+        Number(
+          process.env.DERIVED_MEMORY_LEGACY_CLEAR_RUNNING_STALE_AFTER_MS ??
+            DEFAULT_RUNNING_STALE_AFTER_MS,
+        ),
+      'running audit staleness window',
+    );
     await runner.query(
-      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',finished_at=now() WHERE mode='live' AND outcome='running'",
+      "UPDATE derived_memory_legacy_clear_audit SET outcome='aborted',reason_code='process_died',finished_at=now() WHERE mode='live' AND outcome='running' AND heartbeat_at < now() - ($1::bigint * interval '1 millisecond')",
+      [staleAfter],
     );
     const now = options.now ?? (() => new Date());
     const maxAge = positiveInt(
@@ -314,10 +360,28 @@ export async function runLegacyDerivedMemoryClear(
     let removedEntries = 0;
     let removedFacts = 0;
     let idempotentCompletion = false;
+    if (!dryRun && reconciliationComplete) {
+      const skippedInScope = await runner.query(
+        `SELECT 1 FROM sessions s JOIN derived_memory_reconcile_skipped d ON d.session_id=s.id
+          WHERE EXISTS(SELECT 1 FROM scene_summaries x WHERE x.session_id=s.id)
+             OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=s.id) LIMIT 1`,
+      );
+      if (skippedInScope.rowCount) {
+        await runner.query(
+          `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code) VALUES($1,'live',$2,NULL,$3::jsonb,'aborted',$4,$4,'reconciliation_skipped_in_scope')`,
+          [runId, codeVersion, JSON.stringify(counts), started],
+        );
+        await runner.query('COMMIT');
+        emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
+        throw new Error(
+          'Live clear refuses while any in-scope session is coverage-skipped',
+        );
+      }
+    }
     if (!dryRun && !reconciliationComplete) {
       await runner.query(
-        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at)
-         VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4)`,
+        `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,counts,outcome,started_at,finished_at,reason_code)
+         VALUES($1,'live',$2,$3::jsonb,'aborted',$4,$4,'global_reconciliation_incomplete')`,
         [runId, codeVersion, JSON.stringify(counts), started],
       );
       await runner.query('COMMIT');
@@ -329,47 +393,69 @@ export async function runLegacyDerivedMemoryClear(
     if (!dryRun) {
       const resumable = await runner.query<AuditRow>(
         `SELECT run_id,dry_run_id,counts,finished_at,outcome FROM derived_memory_legacy_clear_audit
-         WHERE mode='live' AND code_version=$1 AND outcome='live_partial'
+         WHERE mode='live' AND code_version=$1 AND outcome IN ('live_partial','aborted')
+           AND (outcome='live_partial' OR reason_code='process_died')
            AND started_at >= $2::timestamptz - ($3::bigint * interval '1 millisecond')
          ORDER BY started_at DESC LIMIT 1`,
         [codeVersion, started, maxAge],
       );
       const resume = resumable.rows[0];
       if (resume?.dry_run_id) {
-        const validDryRun = await runner.query(
-          `SELECT 1 FROM derived_memory_legacy_clear_audit WHERE run_id=$1 AND mode='dry_run'
+        const validDryRun = await runner.query<{ counts: LegacyClearCounts }>(
+          `SELECT counts FROM derived_memory_legacy_clear_audit WHERE run_id=$1 AND mode='dry_run'
              AND code_version=$2 AND outcome='dry_run_succeeded'
              AND finished_at >= $3::timestamptz - ($4::bigint * interval '1 millisecond')`,
           [resume.dry_run_id, codeVersion, started, maxAge],
         );
         const oldCounts = resume.counts;
+        const dryPlan = validDryRun.rows[0]?.counts;
         removedSummaries = safeCount(oldCounts.sceneSummariesRemoved);
         removedEntries = safeCount(oldCounts.registryEntriesRemoved);
         removedFacts = safeCount(oldCounts.registryFactsRemoved);
         const plan: LegacyClearCounts = {
-          sessionsConsidered: safeCount(oldCounts.sessionsConsidered),
-          sessionsSkippedHeld: safeCount(oldCounts.sessionsSkippedHeld),
-          sessionsDeferred: safeCount(oldCounts.sessionsDeferred),
-          sceneSummaries: safeCount(oldCounts.sceneSummaries),
-          registryEntries: safeCount(oldCounts.registryEntries),
-          registryFacts: safeCount(oldCounts.registryFacts),
+          sessionsConsidered: safeCount(dryPlan?.sessionsConsidered),
+          sessionsSkippedHeld: safeCount(dryPlan?.sessionsSkippedHeld),
+          sessionsDeferred: safeCount(dryPlan?.sessionsDeferred),
+          sceneSummaries: safeCount(dryPlan?.sceneSummaries),
+          registryEntries: safeCount(dryPlan?.registryEntries),
+          registryFacts: safeCount(dryPlan?.registryFacts),
+          retainedChain: safeCount(dryPlan?.retainedChain),
         };
         const resumedMatches =
           Boolean(validDryRun.rowCount) &&
-          counts.sceneSummaries + removedSummaries === plan.sceneSummaries &&
-          counts.registryEntries + removedEntries === plan.registryEntries &&
-          counts.registryFacts + removedFacts === plan.registryFacts &&
+          counts.sceneSummaries <= plan.sceneSummaries &&
+          counts.registryEntries <= plan.registryEntries &&
+          counts.registryFacts <= plan.registryFacts &&
+          counts.retainedChain <= plan.retainedChain &&
           counts.sessionsSkippedHeld === plan.sessionsSkippedHeld &&
           counts.sessionsDeferred === plan.sessionsDeferred;
         if (!resumedMatches) {
           await runner.query('ROLLBACK');
+          await runner.query('BEGIN');
+          await runner.query(
+            `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
+             VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'resume_count_increase')`,
+            [
+              runId,
+              codeVersion,
+              resume.dry_run_id,
+              JSON.stringify(counts),
+              started,
+            ],
+          );
+          await runner.query('COMMIT');
+          emit(options, 'legacy_clear_live_aborted', counts, 'aborted');
           throw new Error(
-            'Resumed live counts no longer match the original dry run; refusing to continue',
+            'Resumed live candidate counts exceed or no longer match the original dry-run plan; refusing to continue',
           );
         }
         runId = resume.run_id;
         activeRunId = runId;
         dryRunId = resume.dry_run_id;
+        await runner.query(
+          "UPDATE derived_memory_legacy_clear_audit SET outcome='running',finished_at=NULL,heartbeat_at=now() WHERE run_id=$1",
+          [runId],
+        );
         resumeCounts = {
           ...plan,
           sessionsProcessed: safeCount(oldCounts.sessionsProcessed),
@@ -412,8 +498,8 @@ export async function runLegacyDerivedMemoryClear(
             !idempotentCompletion)
         ) {
           await runner.query(
-            `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at)
-             VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5)`,
+            `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
+             VALUES($1,'live',$2,$3,$4::jsonb,'aborted',$5,$5,'dry_run_count_mismatch')`,
             [runId, codeVersion, dryRunId, JSON.stringify(counts), started],
           );
           await runner.query('COMMIT');
@@ -487,22 +573,18 @@ export async function runLegacyDerivedMemoryClear(
             processedThisPass += 1;
             continue;
           }
-          const held = await runner.query(
-            `SELECT 1 FROM sessions s
-             WHERE s.id=$1 AND (
-               EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=s.id::text)
-               OR EXISTS(SELECT 1 FROM legal_holds h WHERE h.kind='account' AND
-                          (h.item_id=s.owner_account_id::text OR EXISTS(
-                            SELECT 1 FROM session_seat_characters b
-                             WHERE b.session_id=s.id AND b.account_id::text=h.item_id)))
-               OR EXISTS(SELECT 1 FROM legal_holds h JOIN export_jobs x ON x.id::text=h.item_id
-                          WHERE h.kind='export' AND
-                            (x.account_id=s.owner_account_id OR EXISTS(
-                              SELECT 1 FROM session_seat_characters b
-                               WHERE b.session_id=s.id AND b.account_id=x.account_id))))`,
+          const owner = await runner.query<{ owner_account_id: string }>(
+            'SELECT owner_account_id::text FROM sessions WHERE id=$1',
             [session.session_id],
           );
-          if (held.rowCount) {
+          if (
+            owner.rows[0] &&
+            (await sessionIsHeld(
+              runner,
+              session.session_id,
+              owner.rows[0].owner_account_id,
+            ))
+          ) {
             await runner.query('COMMIT');
             newlyHeld += 1;
             processed += 1;
@@ -513,11 +595,7 @@ export async function runLegacyDerivedMemoryClear(
             'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
           );
           const deferred = await runner.query(
-            `SELECT 1 WHERE EXISTS(SELECT 1 FROM derived_memory_reconcile_skipped WHERE session_id=$1)
-             OR EXISTS(SELECT 1 FROM registry_entries e WHERE e.session_id=$1
-                        AND (e.supersedes_id IS NOT NULL OR e.superseded_by IS NOT NULL))
-             OR EXISTS(SELECT 1 FROM registry_facts f JOIN registry_entries e ON e.id=f.entry_id
-                        WHERE e.session_id=$1 AND (f.supersedes_id IS NOT NULL OR f.superseded_by IS NOT NULL))`,
+            `SELECT 1 WHERE EXISTS(SELECT 1 FROM derived_memory_reconcile_skipped WHERE session_id=$1)`,
             [session.session_id],
           );
           if (!state.rows[0]?.complete || deferred.rowCount)
@@ -536,11 +614,29 @@ export async function runLegacyDerivedMemoryClear(
             throw new Error(
               'Session row counts changed after live preflight; refusing to delete rows not included in the verified counts',
             );
-          await runner.query(
-            `DELETE FROM registry_entries e WHERE e.session_id=$1 AND NOT EXISTS (
-            SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=e.session_id AND r.row_kind='registry_entry' AND r.row_id=e.id)`,
+          const candidates = await runner.query<{ id: string }>(
+            `WITH RECURSIVE entries AS (
+               SELECT e.id,e.supersedes_id,e.superseded_by,EXISTS(SELECT 1 FROM derived_memory_character_refs r WHERE r.row_kind='registry_entry' AND r.row_id=e.id) covered
+                 FROM registry_entries e WHERE e.session_id=$1
+             ), protected(id) AS (
+               SELECT id FROM entries WHERE covered UNION SELECT e.id FROM entries e JOIN protected p ON e.supersedes_id=p.id OR e.superseded_by=p.id
+             ), candidate(id) AS (SELECT id FROM entries WHERE NOT covered AND id NOT IN (SELECT id FROM protected))
+             SELECT c.id::text FROM candidate c JOIN registry_entries e ON e.id=c.id ORDER BY e.version DESC,e.id DESC`,
             [session.session_id],
           );
+          await runner.query(
+            `UPDATE registry_facts SET supersedes_id=NULL,superseded_by=NULL WHERE entry_id=ANY($1::bigint[])`,
+            [candidates.rows.map((row) => row.id)],
+          );
+          await runner.query(
+            `UPDATE registry_entries SET superseded_by=NULL WHERE id=ANY($1::bigint[])`,
+            [candidates.rows.map((row) => row.id)],
+          );
+          for (const candidate of candidates.rows) {
+            await runner.query('DELETE FROM registry_entries WHERE id=$1', [
+              candidate.id,
+            ]);
+          }
           await runner.query(
             `DELETE FROM scene_summaries s WHERE s.session_id=$1 AND NOT EXISTS (
             SELECT 1 FROM derived_memory_character_refs r WHERE r.session_id=s.session_id AND r.row_kind='scene_summary' AND r.row_id=s.id)`,
@@ -556,6 +652,30 @@ export async function runLegacyDerivedMemoryClear(
         }
         processed += 1;
         processedThisPass += 1;
+        const progressCounts = {
+          ...(resumeCounts ?? counts),
+          sessionsSkippedHeld: counts.sessionsSkippedHeld + newlyHeld,
+          sessionsProcessed: processed,
+          sceneSummariesRemoved: removedSummaries,
+          registryEntriesRemoved: removedEntries,
+          registryFactsRemoved: removedFacts,
+        };
+        await runner.query(
+          'UPDATE derived_memory_legacy_clear_audit SET counts=$2::jsonb,heartbeat_at=now() WHERE run_id=$1',
+          [runId, JSON.stringify(progressCounts)],
+        );
+        emit(
+          options,
+          'legacy_clear_live_batch_committed',
+          {
+            ...counts,
+            sessionsSkippedHeld: counts.sessionsSkippedHeld + newlyHeld,
+            sceneSummaries: removedSummaries,
+            registryEntries: removedEntries,
+            registryFacts: removedFacts,
+          },
+          'running',
+        );
       }
       const partial =
         processedThisPass <
