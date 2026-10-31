@@ -541,13 +541,19 @@ export function Game() {
   const hasBoundCharacter =
     live.mySeatId !== null &&
     Boolean(live.boundSeatIds?.includes(live.mySeatId));
+  const [sheetRetryAttempt, setSheetRetryAttempt] = useState(0);
   const sheetLoadFailed = useSheetLoadFailure({
     // A bound seat is not served until its sheet arrives, so keep the stall timer running until it does.
     hasCharacterState:
       Boolean(room?.gameState) &&
       (!hasBoundCharacter || Boolean(gameStore.getState().character)),
     connectionStatus: live.status,
+    attempt: sheetRetryAttempt,
   });
+  const retrySheetConnection = () => {
+    setSheetRetryAttempt((attempt) => attempt + 1);
+    live.retry();
+  };
   const [roomRetryAttempt, setRoomRetryAttempt] = useState(0);
   const roomStateStalled = useRoomStateFailure({
     hasRoom: Boolean(room),
@@ -1512,7 +1518,7 @@ export function Game() {
             store={gameStore}
             loading={!room?.gameState}
             loadFailed={sheetLoadFailed}
-            onRetry={live.removed ? undefined : () => live.retry()}
+            onRetry={live.removed ? undefined : retrySheetConnection}
             seated={Boolean(selfSeat)}
             isHost={isHost}
             hasBoundCharacter={hasBoundCharacter}
