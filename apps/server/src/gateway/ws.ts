@@ -594,6 +594,34 @@ export function installGateway(
         ws.once('close', () => {
           if (!pendingTokenCredentialDelivered) releasePendingTokenLease();
         });
+        const rollbackResumeTokenSafely = async (
+          resumeToken: string,
+          previousTokenHash: string,
+        ) => {
+          try {
+            await rollbackSeatResumeToken(
+              db,
+              identity.sessionId,
+              seatId,
+              socketId,
+              resumeToken,
+              previousTokenHash,
+            );
+          } catch {
+            try {
+              app.log.warn(
+                {
+                  event: 'seat.resume_token.rollback_failed',
+                  sessionIdHash: diagnosticHash(identity.sessionId),
+                  seatId,
+                },
+                'Seat resume-token rollback failed',
+              );
+            } catch {
+              // Rollback diagnostics must not create another socket failure.
+            }
+          }
+        };
         const logSeatSocketRefusal = (
           reason: SeatSocketRefusalReason,
           closeCode: number | null,
@@ -784,22 +812,14 @@ export function installGateway(
               );
             });
           } catch (error) {
-            await rollbackSeatResumeToken(
-              db,
-              identity.sessionId,
-              seatId,
-              socketId,
+            await rollbackResumeTokenSafely(
               authorization.resumeToken,
               authorization.previousTokenHash,
             );
             throw error;
           }
           if (!authenticatedFrameSent) {
-            await rollbackSeatResumeToken(
-              db,
-              identity.sessionId,
-              seatId,
-              socketId,
+            await rollbackResumeTokenSafely(
               authorization.resumeToken,
               authorization.previousTokenHash,
             );

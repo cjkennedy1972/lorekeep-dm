@@ -165,7 +165,9 @@ export async function rollbackSeatResumeToken(
   const result = await db.query(
     `UPDATE seat_resume_tokens
         SET token_hash=$5,rotated_at=clock_timestamp()
-      WHERE session_id=$1 AND seat_id=$2 AND active_socket_id=$3 AND token_hash=$4`,
+      WHERE session_id=$1 AND seat_id=$2
+        AND (active_socket_id=$3 OR active_socket_id IS NULL)
+        AND token_hash=$4`,
     [sessionId, seatId, socketId, hash(resumeToken), previousTokenHash],
   );
   return result.rowCount === 1;
