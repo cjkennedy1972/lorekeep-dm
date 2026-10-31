@@ -18,6 +18,7 @@ describe.skipIf(!databaseUrl)(
     let db: TestDatabase;
     const sessionId = randomUUID();
     const characterId = randomUUID();
+    let migrationInitialComplete: boolean | undefined;
     beforeAll(async () => {
       db = await createTestDatabase({ extraSearchPath: ['public'] });
       await db.pool.query('CREATE TABLE sessions (id uuid PRIMARY KEY)');
@@ -78,14 +79,28 @@ describe.skipIf(!databaseUrl)(
           'utf8',
         ),
       );
+      const initial = await db.pool.query<{ complete: boolean }>(
+        'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
+      );
+      migrationInitialComplete = initial.rows[0]?.complete;
     });
     afterAll(async () => db?.close());
 
     it('starts incomplete from the migration and resumes bounded sweeps from its durable checkpoint', async () => {
-      const initial = await db.pool.query<{ complete: boolean }>(
-        'SELECT complete FROM derived_memory_reconciliation_state WHERE singleton=true',
+      expect(migrationInitialComplete).toBe(false);
+      await db.pool.query('DELETE FROM derived_memory_character_refs');
+      await db.pool.query('DELETE FROM session_character_tokens');
+      await db.pool.query('DELETE FROM legal_holds');
+      await db.pool.query('DELETE FROM derived_memory_reconcile_skipped');
+      await db.pool.query('DELETE FROM registry_entries');
+      await db.pool.query('DELETE FROM scene_summaries');
+      await db.pool.query(
+        'UPDATE derived_memory_reconciliation_state SET complete=false,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
       );
-      expect(initial.rows[0]?.complete).toBe(false);
+      await db.pool.query(
+        "INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,'legacy','legacy text untouched')",
+        [sessionId],
+      );
       await db.pool.query(
         `INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,'budget-1','first'),($1,'budget-2','second'),($1,'budget-3','third')`,
         [sessionId],
