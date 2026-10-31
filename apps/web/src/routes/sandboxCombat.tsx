@@ -30,6 +30,10 @@ import { Canvas2DRenderer } from '../features/map/Canvas2DRenderer.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { createTokenDrawCommands } from '../features/map/tokens.js';
 import { loadCharacterCatalog } from '../features/character/catalog.js';
+import {
+  castableSlotLevels,
+  defaultSlotLevel,
+} from '../features/map/slotLevels.js';
 import cryptData from '../../../../packages/engine/maps/crypt-room.json';
 import './sandboxCombat.css';
 
@@ -404,11 +408,13 @@ export function SandboxCombat() {
     );
   };
   const cast = () => {
+    const caster = characterFor(pc);
     const result = castSpell({
-      caster: characterFor(pc),
+      caster,
       target: { kind: 'anchor', pos: scenario.areaAnchor },
       spellId: scenario.spellId,
-      slotLevel: 1,
+      // Lowest slot the caster can still pay for, so a leveled scenario spell never submits level 0.
+      slotLevel: defaultSlotLevel(castableSlotLevels(caster.slots)),
       seed: scenario.seed,
       catalog,
       map: spellMap(fighters, pc),

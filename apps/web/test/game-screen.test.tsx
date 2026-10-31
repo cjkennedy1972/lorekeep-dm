@@ -1615,3 +1615,145 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     ).toBeTruthy();
   });
 });
+
+describe('Game screen background requests and cast level', () => {
+  const trackerAt = (heroPos: { x: number; y: number }, movement: number) => ({
+    round: 1,
+    activeEntityId: HERO_ID,
+    initiative: [HERO_ID, 'ent_goblin'].map((entityId, i) => ({
+      entityId,
+      total: 20 - i,
+    })),
+    resources: {
+      ...resources,
+      [HERO_ID]: { ...resources[HERO_ID], movementRemaining: movement },
+    },
+    entities: entities.map((entity) =>
+      entity.id === HERO_ID ? { ...entity, pos: heroPos } : entity,
+    ),
+  });
+  const sendCalls = () => hoisted.send.mock.calls as unknown[][];
+  const callsOf = (type: string) =>
+    sendCalls().filter(([sent]) => sent === type);
+  const optionsCalls = () =>
+    sendCalls().filter(
+      ([sent, payload]) =>
+        sent === 'CombatCommand' &&
+        (payload as { command?: string } | undefined)?.command === 'options',
+    );
+
+  beforeEach(() => {
+    hoisted.privateRoundSubmission = undefined;
+    http.fetch = async () =>
+      new Response(
+        JSON.stringify({ game: { recap: 'A short recap.', name: 'Fixture' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    HTMLCanvasElement.prototype.getContext = (() =>
+      new Proxy({}, { get: () => () => undefined })) as never;
+    hoisted.send.mockReset();
+    hoisted.send.mockImplementation((): string | boolean => true);
+    seq = 0;
+    gameStore.setCharacter(null);
+    gameStore.setCombatState(initialGameState().combat);
+  });
+
+  it('asks for chat history once while a request is outstanding, however many syncs arrive', () => {
+    mount();
+    push('StateSync', { state: {} });
+    push('StateSync', { state: {} });
+    push('StateSync', { state: {} });
+    expect(callsOf('ChatHistoryRequest')).toHaveLength(1);
+  });
+
+  it('asks again on the next sync once the history reply has landed', () => {
+    mount();
+    push('StateSync', { state: {} });
+    push('ChatHistory', { messages: [] });
+    push('StateSync', { state: {} });
+    expect(callsOf('ChatHistoryRequest')).toHaveLength(2);
+  });
+
+  it('a refused background history read shows no room error and frees the next sync to ask again', () => {
+    mount();
+    push('StateSync', { state: {} });
+    push('Error', { code: 'RATE_LIMITED', message: 'Too many messages.' });
+    expect(screen.queryByText('Too many messages.')).not.toBeInTheDocument();
+    push('StateSync', { state: {} });
+    expect(callsOf('ChatHistoryRequest')).toHaveLength(2);
+  });
+
+  it('a rate-limited player action still shows its error', async () => {
+    mount();
+    push('Error', {
+      code: 'RATE_LIMITED',
+      message: 'Too many requests. Try again later.',
+      actionId: 'act-1',
+    });
+    expect(
+      await screen.findByText('Too many requests. Try again later.'),
+    ).toBeInTheDocument();
+  });
+
+  it('holds one options request in flight, and asks once more when the board changes during it', () => {
+    mount();
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    expect(optionsCalls()).toHaveLength(1);
+    push('CombatTracker', trackerAt({ x: 4, y: 2 }, 25));
+    expect(optionsCalls()).toHaveLength(1);
+    push('CombatOptions', { actions: [] });
+    expect(optionsCalls()).toHaveLength(2);
+    push('CombatOptions', { actions: [] });
+    expect(optionsCalls()).toHaveLength(2);
+  });
+
+  it('a refused options request frees the guard so the next board change asks again', () => {
+    mount();
+    hoisted.send.mockReturnValueOnce('opt-1');
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'Not your turn.',
+      actionId: 'opt-1',
+    });
+    push('CombatTracker', trackerAt({ x: 4, y: 2 }, 25));
+    expect(optionsCalls()).toHaveLength(2);
+  });
+
+  it('area aim casts at the slot level the seat picks, not always level 1', async () => {
+    const user = userEvent.setup();
+    mount(undefined, {
+      characters: {
+        'acct-1': {
+          ...hero,
+          slots: { '1': { max: 2, used: 0 }, '2': { max: 1, used: 0 } },
+        },
+      },
+    });
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    push('CombatOptions', {
+      actions: [],
+      areas: [
+        {
+          spellId: 'spell:thunderwave',
+          optionId: 'area:thunderwave:2,2:1,0',
+          anchor: { x: 2, y: 2 },
+          direction: { x: 1, y: 0 },
+          cells: [{ x: 2, y: 2 }],
+          affected: [{ id: 'ent_goblin', relation: 'enemy' }],
+        },
+      ],
+    });
+    await user.selectOptions(screen.getByLabelText('Spell slot'), '2');
+    await user.click(
+      screen.getByRole('radio', { name: /facing east; 1 affected/ }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Cast area' }));
+    expect(hoisted.send).toHaveBeenLastCalledWith('CombatCommand', {
+      command: 'cast',
+      spellId: 'spell:thunderwave',
+      slotLevel: 2,
+      target: { kind: 'option', ref: 'area:thunderwave:2,2:1,0' },
+    });
+  });
+});
