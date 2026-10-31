@@ -12,19 +12,30 @@ export interface JobContext {
   drainRoom?: (sessionId: string) => Promise<void>;
 }
 
+export type LegalHoldKind = 'account' | 'export' | 'session';
+
+/** Shared, side-effect-free legal-hold lookup for retention jobs that need counts-only auditing. */
+export async function hasLegalHold(
+  db: Pick<Pool, 'query'>,
+  kind: LegalHoldKind,
+  id: string,
+): Promise<boolean> {
+  const result = await db.query(
+    'SELECT 1 FROM legal_holds WHERE kind=$1 AND item_id=$2',
+    [kind, id],
+  );
+  return Boolean(result.rowCount);
+}
+
 /** Legal-hold stub (ADR-017): a held item is skipped and an audit row is written. */
 export async function skipIfHeld(
   ctx: JobContext,
   job: string,
-  kind: 'account' | 'export' | 'session',
+  kind: LegalHoldKind,
   id: string,
   db: Pick<Pool, 'query'> = ctx.db,
 ): Promise<boolean> {
-  const held = await db.query(
-    'SELECT 1 FROM legal_holds WHERE kind=$1 AND item_id=$2',
-    [kind, id],
-  );
-  if (!held.rowCount) return false;
+  if (!(await hasLegalHold(db, kind, id))) return false;
   await db.query(
     "INSERT INTO retention_audit(job,item_kind,item_id,action) VALUES($1,$2,$3,'skipped_legal_hold')",
     [job, kind, id],

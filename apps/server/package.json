@@ -12,6 +12,7 @@
     "first-token:probe": "pnpm run build && node scripts/first-token-probe.mjs",
     "embed:moderation-rubric": "node scripts/embed-moderation-rubric.mjs",
     "sweep": "node dist/retention/cli.js",
+    "derived-memory:legacy-clear": "node dist/retention/legacyClearCli.js",
     "presweep": "pnpm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "migrate:up": "node-pg-migrate up -m migrations --ignore-pattern \"(.*[.]sql|[.].*)\"",

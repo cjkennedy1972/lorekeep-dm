@@ -186,3 +186,48 @@ Note (M3-38): local-model entries now need the port. Use `LLM_ALLOW_LOCAL_HOSTS=
 Note (M3-38 r2): bare-host `LLM_ALLOW_LOCAL_HOSTS` examples above are superseded. A bare host allows only ports 80 and 443. For a non-default port, list `host:port` exactly (for example `localhost:11434` or `172.31.25.75:8080`). This applies to the server guard, `apps/server/scripts/smoke-production.mjs`, and the live eval path (`packages/evals`).
 
 Note (M3-38 r3): the live eval path now applies the same port rule to `https:` endpoints, so `https://172.31.25.75:9999` is refused when only `172.31.25.75` is listed. It also strips a trailing dot from the URL host (as the guard does), refuses URL credentials, and refuses metadata and link-local IP literals even when listed. It does not follow redirects (a 3xx from the live endpoint is an error). It does not resolve DNS: a hostname that resolves to a private or metadata address is not refused by the live path, so list only hosts you control. Entries are not dot-normalized: `localhost.:11434` in the list matches nothing. The shared verdict corpus is `packages/evals/data/live-url-corpus.json`.
+
+## ADR-039 one-time legacy derived-memory clear (operator gated)
+
+This is a separate build-only operator job, not part of startup, the retention sweeper, migrations, CI, or package lifecycle scripts. It is disabled by default. Live mode requires a recent successful dry run, an explicit owner go-ahead for that execution, and a recent backup attestation.
+
+Worst case: after a fresh dry run with reconciliation complete, only the exact candidate row identities recorded in that approved plan can be deleted: uncovered `scene_summaries` rows and uncovered `registry_entries` rows (and their planned `registry_facts` cascade) in non-held, non-deferred, non-skipped sessions, including NPC/world entries without character tokens. The live job refuses before deletion if any planned session’s candidate identities drift; it rechecks each session under lock and deletes only the planned IDs. A session with any supersession link is deferred whole and none of its derived-memory rows are removed by this job. There is no rebuild or rollback.
+
+### Procedure
+
+1. Select the target database explicitly. Confirm ADR-039 steps 1–3 are deployed and migrations 0045–0052 are applied. Global reconciliation must be complete for live mode; only globally incomplete reconciliation refuses live and writes an `aborted` audit row with reason `global_reconciliation_incomplete`. Sessions in `derived_memory_reconcile_skipped` are deferred and untouched; live may complete other eligible sessions. Any unheld session with any `supersedes_id` or `superseded_by` link is deferred whole and counted in `sessionsDeferredChain`; no rows from that session are deleted.
+2. Required backup and restore check before live execution: create a custom-format dump, inspect it, and restore it to a separate empty scratch database. Keep the file and database URLs in a protected local environment; never store them in the repository, PR, logs, or audit.
+
+       test -n "$DATABASE_URL" || exit 1
+       test -n "$BACKUP_FILE" || exit 1
+       test -n "$RESTORE_DATABASE_URL" || exit 1
+       pg_dump --format=custom --no-owner --file="$BACKUP_FILE" "$DATABASE_URL"
+       pg_restore --list "$BACKUP_FILE" >/dev/null
+       pg_restore --exit-on-error --no-owner --dbname="$RESTORE_DATABASE_URL" "$BACKUP_FILE"
+       psql "$RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT current_database(), (SELECT count(*) FROM scene_summaries), (SELECT count(*) FROM registry_entries), (SELECT count(*) FROM registry_facts)"
+
+   Confirm restore success and that current_database() identifies the separate scratch target. Only then capture the attestation timestamp:
+
+       export DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT="$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
+
+   Live mode rejects a missing, malformed, future, or older-than-24-hour timestamp with an aborted audit row and reason backup_not_confirmed. The timestamp alone is recorded; no path, URL, credential, or dump metadata is stored.
+3. Build the exact deployed revision and set DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION to that immutable revision. Keep DERIVED_MEMORY_LEGACY_CLEAR_ENABLED unset/false except during invocation.
+4. Run a dry-run first:
+
+       export DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true
+       export DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<immutable-revision>
+       pnpm --filter @game/server derived-memory:legacy-clear
+
+   Dry-run deletes nothing. Review the successful audit counts, including held/deferred sessions, `sessionsDeferredChain`, and uncovered summaries/entries/facts. This dry run binds the approved plan to sorted candidate row identities per session in a separate plan table; the live job executes exactly those IDs and refuses on any added, removed, or swapped candidate, globally before deletion and again under each session lock. The plan table stores per-session row IDs, SHA-256 digests, counts, and pending/done state (plus a run marker), but no row text. Plan detail and marker rows are purged atomically with every terminal outcome (success, abort, or failure), when a newer same-version dry run supersedes the plan, or when the dry-run freshness window expires. Rows remain only while the plan is still eligible for a live run or resume; a missing marker requires a fresh dry run. The approval citation contains no email address; audit rows and logs remain counts-only and have no row/session ids or row text.
+5. Obtain the owner's explicit go-ahead for this live execution. After the backup restore check, use the same database and immutable code version, and set the recent attestation timestamp. Fresh live counts must match the dry-run plan exactly; tolerance is always zero and no environment variable can relax it. Set both live gates explicitly:
+
+       export DERIVED_MEMORY_LEGACY_CLEAR_ENABLED=true
+       export DERIVED_MEMORY_LEGACY_CLEAR_DRY_RUN=false
+       export DERIVED_MEMORY_LEGACY_CLEAR_CODE_VERSION=<same-immutable-revision>
+       export DERIVED_MEMORY_LEGACY_CLEAR_BACKUP_CONFIRMED_AT=<recent-ISO-timestamp>
+       pnpm --filter @game/server derived-memory:legacy-clear
+6. Review derived_memory_legacy_clear_audit ordered by started_at, including mode, counts, dry-run link, heartbeat, backup_confirmed_at, outcome, and fixed reason_code. Disable both gates after completion. Never run against real data without the owner's go-ahead.
+
+Each session batch writes cumulative removed counts and refreshes `heartbeat_at` in the same transaction as that session’s deletion, so a crash cannot commit one without the other. During a long batch, an independent heartbeat refreshes at most every 30 seconds. A SIGKILL leaves the audit outcome `running` until a later invocation obtains the advisory lock; the killed backend may still be finishing its in-flight statement and hold the lock briefly, so an immediate retry can report that a runner (or just-killed runner) holds the lock; wait a few seconds and retry; that invocation marks stale rows (default heartbeat window 15 minutes, measured with the database clock) `failed` with reason `process_died`, retaining their last persisted counts. Resume is allowed only for a `live_partial` row or a `failed` row with reason `process_died`, and only against the newest successful same-version dry run. If a fresh dry run supersedes an older process-died row, that old row remains `failed` with reason `superseded_by_new_dry_run` and its counts are preserved; the live run starts fresh against the new plan. A true resume requires exact expected remaining counts: remaining candidates plus the audit’s completed-removal counts must equal the dry-run counts. Any unexplained increase or decrease refuses before deletion; take a fresh dry run before trying again. A fact-level supersession link introduced after the dry run currently fails closed at the registry-facts foreign-key guard: the session transaction rolls back, no superseded fact is deleted, and the failed plan is purged; run a fresh dry run to classify the changed session. The per-session lock timeout defaults to 5000 ms. Rollback: none; completed deletion is permanent.
+
+A legal hold placed while a session is mid-delete is serialized by that session’s lock and lands after the session transaction commits, so that in-flight session is still deleted; holds protect sessions not yet reached. Place all legal holds before the dry run and do not add holds during a live run.
