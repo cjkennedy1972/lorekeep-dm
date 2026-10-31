@@ -128,12 +128,12 @@ export async function reinitializeSeatStream(
     `INSERT INTO seat_streams(session_id, seat_id, binding_epoch, generation, cursor)
      VALUES ($1,$2,$3,$4,0)
      ON CONFLICT (session_id, seat_id) DO UPDATE SET
-       binding_epoch=EXCLUDED.binding_epoch, generation=EXCLUDED.generation, cursor=0
+       generation=EXCLUDED.generation, cursor=0
      WHERE seat_streams.binding_epoch = EXCLUDED.binding_epoch
      RETURNING ${RETURNING}`,
     [sessionId, seatId, bindingEpoch, generationNonce()],
   );
-  if (result.rows.length === 0) throw new Error('seat_stream_epoch_mismatch');
+  if (result.rowCount === 0) throw new Error('seat_stream_epoch_mismatch');
   const stream = parseRow(result.rows[0]);
   if (!stream) throw new Error('seat_stream_record_invalid');
   return stream;

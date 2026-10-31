@@ -65,10 +65,35 @@ describe('seat stream persistence', () => {
     }
   });
 
+  it('creates a missing stream during recovery at the requested binding epoch', async () => {
+    const client = await database.pool.connect();
+    try {
+      const recovered = await reinitializeSeatStream(
+        client,
+        sessionId,
+        seatId,
+        7,
+      );
+      expect(recovered).toMatchObject({
+        sessionId,
+        seatId,
+        bindingEpoch: 7,
+        cursor: 0,
+      });
+      expect(recovered.generation).toMatch(/^[A-Za-z0-9_-]{22}$/);
+      expect(await loadSeatStream(client, sessionId, seatId)).toEqual(
+        recovered,
+      );
+    } finally {
+      client.release();
+    }
+  });
+
   it('rejects recovery when the stored binding epoch does not match', async () => {
     const client = await database.pool.connect();
     try {
       const before = await initializeSeatStream(client, sessionId, seatId);
+      expect(await advanceSeatStream(client, before, 3)).toBe(3);
       await expect(
         reinitializeSeatStream(
           client,
@@ -77,7 +102,10 @@ describe('seat stream persistence', () => {
           before.bindingEpoch + 1,
         ),
       ).rejects.toThrow('seat_stream_epoch_mismatch');
-      expect(await loadSeatStream(client, sessionId, seatId)).toEqual(before);
+      expect(await loadSeatStream(client, sessionId, seatId)).toEqual({
+        ...before,
+        cursor: 3,
+      });
     } finally {
       client.release();
     }
