@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BattlemapSchema, rleEncode, type Battlemap } from '@game/schema';
+import { loadAuthoredMap } from '@game/rules-engine';
 import {
   combatTracker,
   combatOpeningSummary,
@@ -10,6 +12,7 @@ import {
   account,
   bootstrapped,
   catalog,
+  cryptMap,
   hero,
   memoryTable,
   partyCombat,
@@ -56,6 +59,27 @@ function engaged() {
     'ent_goblin-minion_2': { x: 12, y: 16 },
   });
   return { ...b, state };
+}
+
+/** An authored map from rows of '.' (floor) and '#' (stone wall), palette-compatible with the crypt room. */
+function mapFrom(rows: string[]): Battlemap {
+  const grid = rows.flatMap((row) => [...row].map((c) => (c === '#' ? 3 : 0)));
+  const loaded = loadAuthoredMap(
+    BattlemapSchema.parse({
+      mapId: 'hidden-route-fixture',
+      w: rows[0]!.length,
+      h: rows.length,
+      palette: cryptMap.palette,
+      cells: rleEncode(grid),
+      edges: [],
+      features: [],
+      markers: [],
+      zones: [],
+      diagonalRule: '5ft',
+    }),
+  );
+  if (!loaded.ok) throw new Error('hidden-route fixture map failed validation');
+  return loaded.map;
 }
 
 describe('combat bootstrap from the DM start_combat result', () => {
@@ -2323,6 +2347,56 @@ describe('reaction hardening (M4-6d carry-overs)', () => {
   });
 });
 
+describe('hidden bump route invariance (route planning ignores hidden occupants)', () => {
+  const HERO = 'ent_aria';
+  const G1 = 'ent_goblin-minion_1';
+  const G2 = 'ent_goblin-minion_2';
+  // The crypt room walls (0,0) and (2,0), so these cells need an open map.
+  const open = mapFrom(Array.from({ length: 10 }, () => '.'.repeat(10)));
+  /** Hero walks from (0,0) to hidden G1 at (3,1); `second` is a hidden G2 cell, or G2 is absent. */
+  const walk = (
+    second: { x: number; y: number } | null,
+    controlled = false,
+  ) => {
+    const { runtime, state } = bootstrapped();
+    const positioned = placed(state, {
+      [HERO]: { x: 0, y: 0 },
+      [G1]: { x: 3, y: 1 },
+      [G2]: second ?? { x: 7, y: 7 },
+    });
+    const staged = {
+      ...positioned,
+      map: open,
+      entities: positioned.entities
+        .filter((entity) => second !== null || entity.id !== G2)
+        .map((entity) =>
+          entity.id === G1 || entity.id === G2
+            ? { ...entity, hidden: true }
+            : entity,
+        ),
+    };
+    staged.combat.resources[HERO]!.movementRemaining = 30;
+    return ok(
+      runtime.execute(
+        staged,
+        HERO,
+        { command: 'move', destination: { x: 3, y: 1 } },
+        controlled
+          ? { now: NOW, controlledEntityIds: new Set([G2]) }
+          : { now: NOW },
+      ),
+    );
+  };
+  const routeOf = (result: ReturnType<typeof walk>) =>
+    result.events.find((event) => event.type === 'MoveStarted')?.path;
+
+  it('route planning ignores a hidden second even when the mover controls it', () => {
+    const alone = walk(null);
+    const controlled = walk({ x: 2, y: 0 }, true);
+    expect(routeOf(controlled)).toEqual(routeOf(alone));
+  });
+});
+
 describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
   type Msg = import('@game/schema').ServerMessage;
   const inbox = () => {
@@ -2492,6 +2566,125 @@ describe('reaction visibility split (ADR-033 §3.2, ADR-034 §3)', () => {
     ).toEqual([]);
     expect(eventTypes(table.messages)).not.toContain('EntityRevealed');
     expect(mentions(table.messages, 'ent_goblin-minion_1')).toBe(false);
+  });
+
+  // The engine reveals a reactor only when its reaction resolves, so a same-commit reveal
+  // is injected into the move's own output: the reactor is un-hidden in the same commit.
+  const sameCommitReveal = (
+    runtime: ReturnType<typeof engaged>['runtime'],
+    reactorId: string,
+  ) => ({
+    ...runtime,
+    execute: (...args: Parameters<typeof runtime.execute>) => {
+      const result = runtime.execute(...args);
+      if ('code' in result) return result;
+      const at = result.events.findIndex(
+        (event) =>
+          event.type === 'OpportunityTriggered' &&
+          event.attackerId === reactorId,
+      );
+      if (at < 0) return result;
+      return {
+        ...result,
+        state: {
+          ...result.state,
+          entities: result.state.entities.map((entity) =>
+            entity.id === reactorId ? { ...entity, hidden: false } : entity,
+          ),
+        },
+        events: [
+          ...result.events.slice(0, at + 1),
+          { type: 'EntityRevealed', entityId: reactorId, cause: 'opportunity' },
+          ...result.events.slice(at + 1),
+        ],
+      };
+    },
+  });
+
+  it('same-commit reveal: non-controllers get EntityRevealed but no reaction events', async () => {
+    vi.useFakeTimers();
+    const e = engaged();
+    const reactorId = 'ent_goblin-minion_1';
+    const reactorAccount = crypto.randomUUID();
+    const other = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      entities: e.state.entities.map((entity) =>
+        entity.id === reactorId ? { ...entity, hidden: true } : entity,
+      ),
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: { [account]: 'ent_aria', [reactorAccount]: reactorId },
+      combatRoom: combat,
+    });
+    const room = table.boot([], sameCommitReveal(e.runtime, reactorId));
+    await joinSeated(room, account, table.connection);
+    const reactor = inbox();
+    await joinSeated(room, reactorAccount, reactor.connection);
+    const watcher = inbox();
+    await joinSeated(room, other, watcher.connection);
+    reactor.messages.length = 0;
+    watcher.messages.length = 0;
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'move',
+      destination: { x: 7, y: 6 },
+    });
+    await room.drain();
+    expect(eventTypes(watcher.messages)).toContain('EntityRevealed');
+    for (const type of [
+      'OpportunityTriggered',
+      'ReactionAvailable',
+      'ReactionResolved',
+    ])
+      expect(eventTypes(watcher.messages)).not.toContain(type);
+    expect(watcher.messages.filter((m) => m.type === 'ReactionPrompt')).toEqual(
+      [],
+    );
+    expect(eventTypes(reactor.messages)).toEqual(
+      expect.arrayContaining([
+        'EntityRevealed',
+        'OpportunityTriggered',
+        'ReactionAvailable',
+      ]),
+    );
+    await room.drain();
+  });
+
+  it('same-commit reveal with no controller: no reaction events reach any seat', async () => {
+    vi.useFakeTimers();
+    const e = engaged();
+    const reactorId = 'ent_goblin-minion_1';
+    const other = crypto.randomUUID();
+    const combat: RoomCombatState = {
+      ...e.state,
+      entities: e.state.entities.map((entity) =>
+        entity.id === reactorId ? { ...entity, hidden: true } : entity,
+      ),
+    };
+    const table = memoryTable({
+      ...e.game,
+      combatActors: { [account]: 'ent_aria' },
+      combatRoom: combat,
+    });
+    const room = table.boot([], sameCommitReveal(e.runtime, reactorId));
+    await joinSeated(room, account, table.connection);
+    const watcher = inbox();
+    await joinSeated(room, other, watcher.connection);
+    watcher.messages.length = 0;
+    await room.submitCombatCommand(account, crypto.randomUUID(), {
+      command: 'move',
+      destination: { x: 7, y: 6 },
+    });
+    await room.drain();
+    expect(eventTypes(watcher.messages)).toContain('EntityRevealed');
+    for (const type of [
+      'OpportunityTriggered',
+      'ReactionAvailable',
+      'ReactionResolved',
+    ])
+      expect(eventTypes(watcher.messages)).not.toContain(type);
+    await room.drain();
   });
 });
 
