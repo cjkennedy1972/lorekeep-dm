@@ -85,6 +85,9 @@ describe('scene summaries and recap', () => {
     expect(
       containsIdentityVariant('The lantern follows Embers.', ['Ember']),
     ).toBe(true);
+    expect(containsIdentityVariant('The Joneses gathered.', ['Jones'])).toBe(
+      true,
+    );
     expect(
       containsIdentityVariant('The lantern follows Alice.', ['Bob Smith']),
     ).toBe(false);

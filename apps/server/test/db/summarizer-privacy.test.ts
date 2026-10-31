@@ -301,6 +301,45 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(JSON.stringify(rows.rows)).not.toMatch(/Harpers|Harper's/);
   });
 
+  it('blocks Joneses variants on registry writes', async () => {
+    const unboundAccountId = randomUUID();
+    await db.pool.query('INSERT INTO accounts VALUES($1,$2,$3)', [
+      unboundAccountId,
+      'Jones',
+      'jones@example.test',
+    ]);
+    await db.pool.query(
+      `INSERT INTO session_seat_characters VALUES($1,$2,$3,$4,'active',$5)`,
+      [
+        sessionId,
+        unboundAccountId,
+        randomUUID(),
+        JSON.stringify({ name: 'Jones' }),
+        randomUUID(),
+      ],
+    );
+    const registry = new RegistryMemory(db.pool);
+    await registry.upsertMany(sessionId, [
+      {
+        kind: 'npc',
+        id: 'npc_group',
+        after: {
+          id: 'npc_group',
+          name: 'Neighbors',
+          role: 'group',
+          disposition: 'neutral',
+          facts: ['The Joneses gathered at the mill.'],
+        },
+      },
+    ]);
+    const rows = await db.pool.query<{ payload: string }>(
+      "SELECT payload::text AS payload FROM registry_entries WHERE session_id=$1 AND entity_id='npc_group'",
+      [sessionId],
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0]?.payload).not.toContain('Joneses');
+  });
+
   it('rejects registry persistence when an upserted fact contains player identity and quoted player text', async () => {
     const registry = new RegistryMemory(db.pool);
     await expect(
