@@ -3,6 +3,22 @@ import type { Pool } from 'pg';
 
 const hash = (token: string) =>
   createHash('sha256').update(token).digest('hex');
+const unresolvedInvalidations = new Set<string>();
+const seatKey = (sessionId: string, seatId: string) => `${sessionId}:${seatId}`;
+
+export function markSeatResumeTokenInvalidationPending(
+  sessionId: string,
+  seatId: string,
+): void {
+  unresolvedInvalidations.add(seatKey(sessionId, seatId));
+}
+
+export function clearSeatResumeTokenInvalidationPending(
+  sessionId: string,
+  seatId: string,
+): void {
+  unresolvedInvalidations.delete(seatKey(sessionId, seatId));
+}
 
 export type SeatSocketAuthorization =
   | {
@@ -32,6 +48,10 @@ export async function authorizeSeatSocket(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
       [key],
     );
+    if (presentedToken && unresolvedInvalidations.has(key)) {
+      await client.query('ROLLBACK');
+      return { status: 'invalid-token' };
+    }
     const result = await client.query<{
       token_hash: string;
       active_socket_id: string | null;
@@ -171,6 +191,33 @@ export async function rollbackSeatResumeToken(
     [sessionId, seatId, socketId, hash(resumeToken), previousTokenHash],
   );
   return result.rowCount === 1;
+}
+
+/** Replaces an undelivered credential only while its hash and socket lease match. */
+export async function invalidateSeatResumeToken(
+  db: Pool,
+  sessionId: string,
+  seatId: string,
+  socketId: string,
+  resumeToken: string,
+): Promise<boolean> {
+  const replacementHash = createHash('sha256')
+    .update(randomBytes(32))
+    .digest('hex');
+  const result = await db.query(
+    `UPDATE seat_resume_tokens
+        SET token_hash=$5,rotated_at=clock_timestamp()
+      WHERE session_id=$1 AND seat_id=$2
+        AND (active_socket_id=$3 OR active_socket_id IS NULL)
+        AND token_hash=$4`,
+    [sessionId, seatId, socketId, hash(resumeToken), replacementHash],
+  );
+  if (result.rowCount === 1) return true;
+  const current = await db.query<{ token_hash: string }>(
+    'SELECT token_hash FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+    [sessionId, seatId],
+  );
+  return current.rows[0]?.token_hash !== hash(resumeToken);
 }
 
 export async function releaseSeatSocket(

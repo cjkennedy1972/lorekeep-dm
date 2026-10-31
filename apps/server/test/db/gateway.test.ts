@@ -23,6 +23,7 @@ import {
 import * as resumeTokenModule from '../../src/gateway/resumeTokens.js';
 import {
   authorizeSeatSocket,
+  clearSeatResumeTokenInvalidationPending,
   commitSeatResumeToken,
   releaseSeatSocket,
   rollbackSeatResumeToken,
@@ -261,7 +262,10 @@ describe('pending first-token handoff', () => {
     return { id, room, token };
   }
 
-  function failSeatAuthenticatedSend(mode: 'callback' | 'throw') {
+  function failSeatAuthenticatedSend(
+    mode: 'callback' | 'throw',
+    onAttempt?: (resumeToken: string) => void,
+  ) {
     const original = WebSocket.prototype.send;
     const send = vi.spyOn(WebSocket.prototype, 'send');
     send.mockImplementation(function (
@@ -270,13 +274,20 @@ describe('pending first-token handoff', () => {
       options?: WebSocket.SendOptions | ((error?: Error) => void),
       callback?: (error?: Error) => void,
     ) {
-      let message: { type?: string } | undefined;
+      let message:
+        | { type?: string; payload?: { resumeToken?: string } }
+        | undefined;
       try {
-        message = JSON.parse(String(data)) as { type?: string };
+        message = JSON.parse(String(data)) as {
+          type?: string;
+          payload?: { resumeToken?: string };
+        };
       } catch {
         // Non-JSON websocket frames are passed through untouched.
       }
       if (message?.type === 'SeatAuthenticated') {
+        if (message.payload?.resumeToken)
+          onAttempt?.(message.payload.resumeToken);
         if (mode === 'throw')
           throw new Error('injected synchronous send failure');
         const done = typeof options === 'function' ? options : callback;
@@ -331,7 +342,8 @@ describe('pending first-token handoff', () => {
   });
 
   it('revokes an undelivered pending credential after rollback retries fail', async () => {
-    const { id, token: undeliveredToken } = await pendingSeat();
+    const { id } = await pendingSeat();
+    let undeliveredToken: string | undefined;
     const room = await rooms.get(id);
     const seatId = room.state.seats[0]!.seatId;
     const unhandled: unknown[] = [];
@@ -340,7 +352,10 @@ describe('pending first-token handoff', () => {
     const rollback = vi
       .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
       .mockRejectedValue(new Error('injected rollback DB failure'));
-    const failSend = failSeatAuthenticatedSend('callback');
+    const failSend = failSeatAuthenticatedSend(
+      'callback',
+      (token) => (undeliveredToken = token),
+    );
     const before = capturedLogs.length;
     try {
       const failed = connect(await ticket(tokens[0]!, id), null, false);
@@ -349,11 +364,14 @@ describe('pending first-token handoff', () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
       expect(unhandled).toEqual([]);
       expect(rollback).toHaveBeenCalledTimes(2);
+      expect(undeliveredToken).toEqual(expect.any(String));
+      failSend.mockRestore();
 
       const retry = connect(await ticket(tokens[0]!, id), null, false);
       const pending = await nextOfType(retry, 'SeatClaimPending', 1_500);
       expect(pending.payload.claimId).toEqual(expect.any(String));
       expect(seenMessageTypes.get(retry)).not.toContain('SeatAuthenticated');
+      await closeSocket(retry);
 
       const logs = capturedLogs.slice(before).join('\n');
       expect(logs).toContain('seat.resume_token.rollback_failed');
@@ -361,10 +379,117 @@ describe('pending first-token handoff', () => {
       expect(logs).toContain('"attempt":2');
       expect(logs).not.toContain(undeliveredToken);
       expect(logs).not.toContain('injected rollback DB failure');
+
+      const replay = connect(
+        await ticket(tokens[0]!, id),
+        undeliveredToken!,
+        false,
+      );
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(seenMessageTypes.get(replay)).not.toContain('SeatAuthenticated');
+      } finally {
+        await closeSocket(replay);
+      }
     } finally {
       process.removeListener('unhandledRejection', onUnhandled);
       failSend.mockRestore();
       rollback.mockRestore();
+    }
+  }, 20_000);
+
+  it('retains the lease and fences a token while invalidation remains unresolved', async () => {
+    const { id } = await pendingSeat();
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    let undeliveredToken: string | undefined;
+    const rollback = vi
+      .spyOn(resumeTokenModule, 'rollbackSeatResumeToken')
+      .mockRejectedValue(new Error('injected rollback DB failure'));
+    const invalidate = vi
+      .spyOn(resumeTokenModule, 'invalidateSeatResumeToken')
+      .mockRejectedValue(new Error('injected invalidation DB failure'));
+    const failSend = failSeatAuthenticatedSend(
+      'callback',
+      (token) => (undeliveredToken = token),
+    );
+    const before = capturedLogs.length;
+    try {
+      const failed = connect(await ticket(tokens[0]!, id), null, false);
+      expect(await closed(failed)).toBe(1011);
+      expect(undeliveredToken).toEqual(expect.any(String));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const row = await db.query<{
+        token_hash: string;
+        active_socket_id: string | null;
+      }>(
+        'SELECT token_hash,active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+        [id, seatId],
+      );
+      expect(row.rows[0]?.active_socket_id).toEqual(expect.any(String));
+      expect(row.rows[0]?.token_hash).toBe(
+        createHash('sha256').update(undeliveredToken!).digest('hex'),
+      );
+      expect(rollback).toHaveBeenCalledTimes(2);
+      expect(invalidate).toHaveBeenCalledTimes(2);
+
+      await db.query(
+        `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '16 seconds'
+          WHERE session_id=$1 AND seat_id=$2`,
+        [id, seatId],
+      );
+      expect(
+        await authorizeSeatSocket(
+          db,
+          id,
+          seatId,
+          randomUUID(),
+          undeliveredToken,
+        ),
+      ).toEqual({ status: 'invalid-token' });
+      expect(
+        await authorizeSeatSocket(
+          db,
+          id,
+          seatId,
+          randomUUID(),
+          undeliveredToken,
+          true,
+          accounts[0],
+        ),
+      ).toEqual({ status: 'invalid-token' });
+
+      const hostApprovalRetry = connect(
+        await ticket(tokens[0]!, id),
+        null,
+        false,
+      );
+      try {
+        await nextOfType(hostApprovalRetry, 'SeatClaimPending', 1_500);
+        expect(seenMessageTypes.get(hostApprovalRetry)).not.toContain(
+          'SeatAuthenticated',
+        );
+      } finally {
+        await closeSocket(hostApprovalRetry);
+      }
+
+      const logs = capturedLogs.slice(before);
+      const invalidationLog = logs.find((line) =>
+        line.includes('seat.resume_token.invalidation_failed'),
+      );
+      expect(invalidationLog).toContain(
+        'seat.resume_token.invalidation_failed',
+      );
+      expect(invalidationLog).not.toContain(undeliveredToken);
+      expect(invalidationLog).not.toContain(
+        createHash('sha256').update(undeliveredToken!).digest('hex'),
+      );
+      expect(invalidationLog).not.toContain('"attempt"');
+    } finally {
+      failSend.mockRestore();
+      rollback.mockRestore();
+      invalidate.mockRestore();
+      clearSeatResumeTokenInvalidationPending(id, seatId);
     }
   }, 20_000);
 

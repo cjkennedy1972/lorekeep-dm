@@ -63,6 +63,9 @@ import {
   authorizeSeatSocket,
   commitSeatResumeToken,
   heartbeatSeatSocket,
+  invalidateSeatResumeToken,
+  markSeatResumeTokenInvalidationPending,
+  clearSeatResumeTokenInvalidationPending,
   releaseSeatSocket,
   rollbackSeatResumeToken,
 } from './resumeTokens.js';
@@ -450,6 +453,7 @@ export function installGateway(
         );
         const socketId = randomUUID();
         let seatAuthorized = false;
+        let preserveSeatLeaseUntilExpiry = false;
         let pendingClaimId: string | undefined;
         let room: Awaited<ReturnType<RoomRegistry['get']>> | undefined;
         let snapshotAcknowledged = false;
@@ -461,7 +465,7 @@ export function installGateway(
           if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
           if (pendingClaimId && room)
             void room.cancelSeatResumeClaim(pendingClaimId).catch(() => {});
-          if (seatAuthorized)
+          if (seatAuthorized && !preserveSeatLeaseUntilExpiry)
             void releaseSeatSocket(
               db,
               identity.sessionId,
@@ -599,8 +603,9 @@ export function installGateway(
           previousTokenHash: string,
         ) => {
           for (const attempt of [1, 2] as const) {
+            let restored = false;
             try {
-              await rollbackSeatResumeToken(
+              restored = await rollbackSeatResumeToken(
                 db,
                 identity.sessionId,
                 seatId,
@@ -608,46 +613,86 @@ export function installGateway(
                 resumeToken,
                 previousTokenHash,
               );
-              return true;
             } catch {
-              try {
-                app.log.warn(
-                  {
-                    event: 'seat.resume_token.rollback_failed',
-                    attempt,
-                  },
-                  'Seat resume-token rollback failed',
-                );
-              } catch {
-                // Rollback diagnostics must not create another socket failure.
-              }
-              if (attempt === 1)
-                await new Promise((resolve) => setTimeout(resolve, 20));
+              // A failed rollback is retried below without exposing DB details.
             }
+            if (restored) return true;
+            try {
+              app.log.warn(
+                {
+                  event: 'seat.resume_token.rollback_failed',
+                  attempt,
+                },
+                'Seat resume-token rollback failed',
+              );
+            } catch {
+              // Rollback diagnostics must not create another socket failure.
+            }
+            if (attempt === 1)
+              await new Promise((resolve) => setTimeout(resolve, 20));
           }
 
-          // A first-delivery credential whose DB hash could not be restored must
-          // never be offered again. The next tokenless socket enters host approval.
+          // The pending first-delivery value must not be offered after send failed.
           if (pendingTokenLeaseId && pendingTokenClaimed)
             room.consumePendingSeatResumeToken(
               identity.accountId,
               identity.authTokenHash,
               pendingTokenLeaseId,
             );
-          try {
-            await releaseSeatSocket(db, identity.sessionId, seatId, socketId);
-          } catch {
+
+          // Fence presented credentials while an invalidation result is uncertain.
+          markSeatResumeTokenInvalidationPending(identity.sessionId, seatId);
+          for (const attempt of [1, 2] as const) {
             try {
-              app.log.warn(
-                {
-                  event: 'seat.socket.lease_release_failed',
-                  attempt: 1,
-                },
-                'Seat socket lease release failed after token rollback failure',
+              const invalidated = await invalidateSeatResumeToken(
+                db,
+                identity.sessionId,
+                seatId,
+                socketId,
+                resumeToken,
               );
+              if (invalidated) {
+                clearSeatResumeTokenInvalidationPending(
+                  identity.sessionId,
+                  seatId,
+                );
+                try {
+                  await releaseSeatSocket(
+                    db,
+                    identity.sessionId,
+                    seatId,
+                    socketId,
+                  );
+                } catch {
+                  try {
+                    app.log.warn(
+                      {
+                        event: 'seat.socket.lease_release_failed',
+                        attempt: 1,
+                      },
+                      'Seat socket lease release failed after token invalidation',
+                    );
+                  } catch {
+                    // Cleanup diagnostics must not create another socket failure.
+                  }
+                }
+                return false;
+              }
             } catch {
-              // Cleanup diagnostics must not create another socket failure.
+              // Retry a failed or stale compare-and-swap once.
             }
+            if (attempt === 1)
+              await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+
+          preserveSeatLeaseUntilExpiry = true;
+          try {
+            app.log.error(
+              { event: 'seat.resume_token.invalidation_failed' },
+              'Seat resume-token invalidation failed; retaining socket lease',
+            );
+          } catch {
+            // The fail-closed marker and retained lease do not depend on logging.
           }
           return false;
         };
@@ -858,6 +903,7 @@ export function installGateway(
             logSeatSocketRefusal('seat-authenticated-send-failed', 1011);
             return;
           }
+          clearSeatResumeTokenInvalidationPending(identity.sessionId, seatId);
           pendingTokenCredentialDelivered = true;
           if (pendingTokenLeaseId && pendingTokenClaimed)
             room.consumePendingSeatResumeToken(
