@@ -470,6 +470,71 @@ describe('account deletion scrubs DM-authored derived memory', () => {
     }
   });
 
+  it('redacts unheld account character tokens and deletes their indexed token-bearing rows', async () => {
+    const owner = randomUUID();
+    const session = randomUUID();
+    const characterId = randomUUID();
+    await account(owner);
+    try {
+      await q(
+        'INSERT INTO account_characters(id,account_id,character) VALUES($1,$2,$3)',
+        [characterId, owner, { id: characterId, name: CHAR_NAME }],
+      );
+      await q(
+        'INSERT INTO sessions(id,owner_account_id,name,adventure_id) VALUES($1,$2,$3,$4)',
+        [
+          session,
+          owner,
+          'Redaction test',
+          'adventure:01-hollow-under-marrowfell',
+        ],
+      );
+      const token = 'T'.repeat(32);
+      const summary = await q(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES($1,$2,$3) RETURNING id',
+        [session, 'redaction-memory', `Stored token ${token}`],
+      );
+      await q(
+        'INSERT INTO session_character_tokens(session_id,character_id,token) VALUES($1,$2,$3)',
+        [session, characterId, token],
+      );
+      await q(
+        `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id) VALUES($1,$2,'scene_summary',$3)`,
+        [session, characterId, summary[0].id],
+      );
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        await SeatCharacterRepository.redactAccount(client, owner);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      expect(
+        await q('SELECT id FROM scene_summaries WHERE session_id=$1', [
+          session,
+        ]),
+      ).toHaveLength(0);
+      expect(
+        await q('SELECT 1 FROM session_character_tokens WHERE session_id=$1', [
+          session,
+        ]),
+      ).toHaveLength(0);
+      expect(
+        await q(
+          'SELECT 1 FROM derived_memory_character_refs WHERE session_id=$1',
+          [session],
+        ),
+      ).toHaveLength(0);
+    } finally {
+      await q('SELECT purge_session($1)', [session]);
+      await q('DELETE FROM accounts WHERE id=$1', [owner]);
+    }
+  });
+
   it('skips a legal-held session when deleting a reusable character', async () => {
     const owner = randomUUID();
     const session = randomUUID();

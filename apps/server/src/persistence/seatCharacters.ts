@@ -474,10 +474,27 @@ export class SeatCharacterRepository {
        WHERE account_id=$1`,
       [accountId],
     );
+    // ADR-039 requires deleting token-bearing derived rows as well as their mappings:
+    // deleting only the opaque token would leave unresolvable token text in stored prose.
     await client.query(
-      `DELETE FROM derived_memory_character_refs r
-      WHERE r.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
-        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=r.session_id::text)`,
+      `DELETE FROM scene_summaries s USING derived_memory_character_refs target
+      WHERE target.session_id=s.session_id AND target.row_kind='scene_summary' AND target.row_id=s.id
+        AND target.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
+        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=target.session_id::text)`,
+      [accountId],
+    );
+    await client.query(
+      `DELETE FROM registry_entries e USING derived_memory_character_refs target
+      WHERE target.session_id=e.session_id AND target.row_kind='registry_entry' AND target.row_id=e.id
+        AND target.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
+        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=target.session_id::text)`,
+      [accountId],
+    );
+    await client.query(
+      `DELETE FROM derived_memory_character_refs doomed USING derived_memory_character_refs target
+      WHERE doomed.session_id=target.session_id AND doomed.row_kind=target.row_kind AND doomed.row_id=target.row_id
+        AND target.character_id IN (SELECT id FROM account_characters WHERE account_id=$1)
+        AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=target.session_id::text)`,
       [accountId],
     );
     await client.query(

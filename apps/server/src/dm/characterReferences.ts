@@ -21,14 +21,8 @@ type DerivedRow = {
   body: string;
 };
 
-// Token boundaries are defined over base64url characters. A single trailing lowercase
-// "s" is accepted as the conventional plural suffix; other adjacent token characters
-// are not, so a token embedded in a longer opaque string cannot be indexed.
-const TOKEN = '[A-Za-z0-9_-]{32}';
-const TOKEN_PATTERN = new RegExp(
-  `(?<![A-Za-z0-9_-])(${TOKEN})(?:s)?(?![A-Za-z0-9_-])`,
-  'g',
-);
+// The hold read is not locked: token minting, reference writes, and reconciliation are
+// currently unwired from production mutation paths. Serialize with hold creation when writers land.
 const isHeld = async (db: Queryable, sessionId: string): Promise<boolean> => {
   const held = await db.query(
     "SELECT 1 FROM legal_holds WHERE kind='session' AND item_id=$1::uuid::text",
@@ -134,8 +128,9 @@ function afterCursor(row: DerivedRow, cursor: ReferenceCursor | null): boolean {
           BigInt(row.row_id) > BigInt(cursor.rowId))))
   );
 }
-function tokenCandidates(body: string): Set<string> {
-  return new Set([...body.matchAll(TOKEN_PATTERN)].map((match) => match[1]!));
+// Tokens are 24 CSPRNG bytes (192 bits); substring false positives are negligible.
+function containsStoredToken(body: string, token: string): boolean {
+  return body.includes(token);
 }
 
 /** Bounded keyset reconciliation. Per-table keyset queries use session/id indexes; no full UNION scan. */
@@ -177,7 +172,7 @@ export async function reconcileDerivedMemoryCharacterRefs(
     }
     const [summaries, entries] = await Promise.all([
       client.query<{ session_id: string; row_id: string; body: string }>(
-        `SELECT session_id,id AS row_id,summary AS body FROM scene_summaries WHERE $1::uuid IS NULL OR session_id>$1 OR (session_id=$1 AND $2='scene_summary' AND id>$3::bigint) ORDER BY session_id,id LIMIT $4`,
+        `SELECT session_id,id AS row_id,summary AS body FROM scene_summaries WHERE $1::uuid IS NULL OR (session_id,id) > ($1::uuid, CASE WHEN $2='scene_summary' THEN $3::bigint ELSE 9223372036854775807::bigint END) ORDER BY session_id,id LIMIT $4`,
         [
           checkpoint?.sessionId ?? null,
           checkpoint?.rowKind ?? null,
@@ -186,7 +181,7 @@ export async function reconcileDerivedMemoryCharacterRefs(
         ],
       ),
       client.query<{ session_id: string; row_id: string; body: string }>(
-        `SELECT e.session_id,e.id AS row_id,concat_ws(' ',e.name,array_to_string(e.aliases,' '),e.payload::text,e.search_document,(SELECT string_agg(f.fact,' ') FROM registry_facts f WHERE f.entry_id=e.id)) AS body FROM registry_entries e WHERE $1::uuid IS NULL OR e.session_id>$1 OR (e.session_id=$1 AND ($2='scene_summary' OR ($2='registry_entry' AND e.id>$3::bigint))) ORDER BY e.session_id,e.id LIMIT $4`,
+        `SELECT e.session_id,e.id AS row_id,concat_ws(' ',e.name,array_to_string(e.aliases,' '),e.payload::text,e.search_document,(SELECT string_agg(f.fact,' ') FROM registry_facts f WHERE f.entry_id=e.id)) AS body FROM registry_entries e WHERE $1::uuid IS NULL OR (e.session_id,e.id) > ($1::uuid, CASE WHEN $2='scene_summary' THEN 0::bigint ELSE $3::bigint END) ORDER BY e.session_id,e.id LIMIT $4`,
         [
           checkpoint?.sessionId ?? null,
           checkpoint?.rowKind ?? null,
@@ -225,14 +220,35 @@ export async function reconcileDerivedMemoryCharacterRefs(
               : 0),
       )
       .slice(0, limit);
+    const candidateSessionIds = [
+      ...new Set(candidates.map((row) => row.session_id)),
+    ];
+    const storedTokenResult = candidateSessionIds.length
+      ? await client.query<{
+          session_id: string;
+          character_id: string;
+          token: string;
+        }>(
+          'SELECT session_id,character_id,token FROM session_character_tokens WHERE session_id=ANY($1::uuid[])',
+          [candidateSessionIds],
+        )
+      : { rows: [] };
+    const tokensBySession = new Map<string, typeof storedTokenResult.rows>();
+    for (const stored of storedTokenResult.rows) {
+      const sessionTokens = tokensBySession.get(stored.session_id) ?? [];
+      sessionTokens.push(stored);
+      tokensBySession.set(stored.session_id, sessionTokens);
+    }
     for (const row of candidates) {
       if (await isHeld(client, row.session_id)) continue;
-      const tokens = [...tokenCandidates(row.body)];
-      if (tokens.length)
+      const matchingCharacterIds = (tokensBySession.get(row.session_id) ?? [])
+        .filter(({ token }) => containsStoredToken(row.body, token))
+        .map(({ character_id }) => character_id);
+      if (matchingCharacterIds.length)
         await client.query(
           `INSERT INTO derived_memory_character_refs(session_id,character_id,row_kind,row_id)
-        SELECT $1,t.character_id,$2,$3 FROM session_character_tokens t WHERE t.session_id=$1 AND t.token=ANY($4::text[]) ON CONFLICT DO NOTHING`,
-          [row.session_id, row.row_kind, row.row_id, tokens],
+        SELECT $1,character_id,$2,$3 FROM unnest($4::uuid[]) AS matches(character_id) ON CONFLICT DO NOTHING`,
+          [row.session_id, row.row_kind, row.row_id, matchingCharacterIds],
         );
     }
     const last = candidates.at(-1);
@@ -317,7 +333,7 @@ export async function getIndexedDerivedMemoryRows(
   );
   const expected = new Set<string>();
   for (const row of eligible)
-    if (tokens.some((t) => tokenCandidates(row.body).has(t.token)))
+    if (tokens.some((t) => containsStoredToken(row.body, t.token)))
       expected.add(`${row.row_kind}:${row.row_id}`);
   const { rows: refs } = await db.query<{
     row_kind: DerivedMemoryRowKind;

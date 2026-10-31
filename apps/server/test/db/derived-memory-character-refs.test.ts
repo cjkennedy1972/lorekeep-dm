@@ -348,36 +348,112 @@ describe.skipIf(!databaseUrl)(
       ).toBe(0);
     });
 
-    it('matches exact boundary tokens including a plural suffix without matching longer opaque strings', async () => {
+    it('indexes every occurrence of stored tokens by substring, but never joins split rows', async () => {
       const token = await ensureSessionCharacterToken(
         db.pool,
         sessionId,
         characterId,
       );
-      const bodies = [
-        [`at-start ${randomUUID()}`, `${token} starts`],
-        [`at-end ${randomUUID()}`, `ends ${token}`],
-        [`punctuation ${randomUUID()}`, `(${token}),`],
-        [`plural ${randomUUID()}`, `plural ${token}s acted`],
-        [`long-prefix ${randomUUID()}`, `x${token}`],
-        [`long-suffix ${randomUUID()}`, `${token}x`],
+      const forms = [
+        `${token}s`,
+        `(${token})`,
+        `${token}'s`,
+        `${token}.`,
+        `${token}and`,
+        `${token}1`,
+        `${token}-x`,
+        `${token}ss`,
+        `x${token}`,
+        `pre_${token}`,
+        `at-start ${token}`,
+        `at-end ${token}`,
       ];
       const ids: string[] = [];
-      for (const [sceneId, body] of bodies) {
+      for (const [index, body] of forms.entries()) {
         const row = await db.pool.query<{ id: string }>(
           'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3) RETURNING id',
-          [sessionId, sceneId, body],
+          [sessionId, `token-form-${index}-${randomUUID()}`, body],
         );
         ids.push(row.rows[0]!.id);
       }
+      const splitLeft = await db.pool.query<{ id: string }>(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3) RETURNING id',
+        [sessionId, `split-left-${randomUUID()}`, token.slice(0, 16)],
+      );
+      const splitRight = await db.pool.query<{ id: string }>(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3) RETURNING id',
+        [sessionId, `split-right-${randomUUID()}`, token.slice(16)],
+      );
+      const twoTokens = await db.pool.query<{ id: string }>(
+        'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3) RETURNING id',
+        [sessionId, `two-tokens-${randomUUID()}`, `${token} and ${token}`],
+      );
+      ids.push(twoTokens.rows[0]!.id);
       await reconcileDerivedMemoryCharacterRefs(db.pool, null, 500);
       const indexed = await db.pool.query<{ row_id: string }>(
-        'SELECT row_id FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2 AND row_id=ANY($3::bigint[])',
+        `SELECT row_id FROM derived_memory_character_refs WHERE session_id=$1 AND character_id=$2
+          AND row_kind='scene_summary' AND row_id=ANY($3::bigint[])`,
         [sessionId, characterId, ids],
       );
       expect(indexed.rows.map(({ row_id }) => row_id).sort()).toEqual(
-        ids.slice(0, 4).sort(),
+        ids.sort(),
       );
+      expect(indexed.rows.map(({ row_id }) => row_id)).not.toContain(
+        splitLeft.rows[0]!.id,
+      );
+      expect(indexed.rows.map(({ row_id }) => row_id)).not.toContain(
+        splitRight.rows[0]!.id,
+      );
+    });
+
+    it('coverage fails closed when a token-containing row lacks its reference, even beside token characters', async () => {
+      const coverageSession = randomUUID();
+      const coverageCharacter = randomUUID();
+      await db.pool.query('INSERT INTO sessions VALUES ($1)', [
+        coverageSession,
+      ]);
+      await db.pool.query(
+        'INSERT INTO session_seat_characters(session_id,seat_id,character_id) VALUES ($1,$2,$3)',
+        [coverageSession, randomUUID(), coverageCharacter],
+      );
+      const coverageToken = await ensureSessionCharacterToken(
+        db.pool,
+        coverageSession,
+        coverageCharacter,
+      );
+      const coverageForms = [
+        `${coverageToken}s`,
+        `(${coverageToken})`,
+        `${coverageToken}'s`,
+        `${coverageToken}.`,
+        `${coverageToken}and`,
+        `${coverageToken}1`,
+        `${coverageToken}-x`,
+        `${coverageToken}ss`,
+        `x${coverageToken}`,
+        `pre_${coverageToken}`,
+        `at-start ${coverageToken}`,
+        `at-end ${coverageToken}`,
+      ];
+      await db.pool.query(
+        'UPDATE derived_memory_reconciliation_state SET complete=true,checkpoint_session_id=NULL,checkpoint_row_kind=NULL,checkpoint_row_id=NULL WHERE singleton=true',
+      );
+      for (const [index, form] of coverageForms.entries()) {
+        const row = await db.pool.query<{ id: string }>(
+          'INSERT INTO scene_summaries(session_id,scene_id,summary) VALUES ($1,$2,$3) RETURNING id',
+          [coverageSession, `missing-ref-${index}-${randomUUID()}`, form],
+        );
+        await expect(
+          getIndexedDerivedMemoryRows(
+            db.pool,
+            coverageSession,
+            coverageCharacter,
+          ),
+        ).rejects.toThrow(/incomplete/i);
+        await db.pool.query('DELETE FROM scene_summaries WHERE id=$1', [
+          row.rows[0]!.id,
+        ]);
+      }
     });
 
     it('refuses to mint a token unless the character has an active session seat binding', async () => {
