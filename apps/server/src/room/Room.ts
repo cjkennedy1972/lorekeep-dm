@@ -5862,6 +5862,7 @@ export class Room {
       result = await this.turnRunner!.run(
         {
           sessionId: this.sessionId,
+          leaseEpoch: this.lease.epoch,
           accountId,
           actionId,
           text,

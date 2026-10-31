@@ -643,6 +643,32 @@ describe.skipIf(!databaseUrl)('ADR-039 summarizer privacy boundary', () => {
     expect(out.summary).toBe('The combat ended.');
   });
 
+  it('returns a non-persisted fallback when the captured lease epoch is stale', async () => {
+    const out = await closeScene({
+      sessionId,
+      sceneId: 'scene-stale-lease',
+      events: [],
+      adapter,
+      db: db.pool,
+      moderator,
+      tier: 'standard',
+      tableLines: [],
+      leaseEpoch: 99,
+    });
+    expect(out).toMatchObject({
+      summary: '',
+      registryDiffs: [],
+      fallback: true,
+      persisted: false,
+    });
+    expect(
+      await db.pool.query(
+        'SELECT 1 FROM scene_summaries WHERE session_id=$1 AND scene_id=$2',
+        [sessionId, 'scene-stale-lease'],
+      ),
+    ).toMatchObject({ rowCount: 0 });
+  });
+
   it('serializes closeScene against a session hold inserted after its initial check', async () => {
     const heldSession = randomUUID();
     await db.pool.query('INSERT INTO sessions(id) VALUES($1)', [heldSession]);

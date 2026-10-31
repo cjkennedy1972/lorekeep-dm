@@ -1498,6 +1498,7 @@ export class ProductionSoloTurnRunner implements SoloTurnRunner {
           tier,
           tableLines,
           turnId: request.actionId,
+          leaseEpoch: request.leaseEpoch,
           hidden: hiddenNow,
           forbiddenPlayerText: request.forbiddenPlayerText ?? [request.text],
         });

@@ -60,6 +60,13 @@ export type RegistryDiff =
     };
 
 type Pg = Pick<Pool, 'query' | 'connect'>;
+export class DerivedMemoryLeaseLostError extends Error {
+  constructor() {
+    super('Session lease changed during derived-memory generation');
+    this.name = 'DerivedMemoryLeaseLostError';
+  }
+}
+
 export type RegistryPrivacyOptions = {
   /** Locally held player utterances; never included in registry data or logs. */
   forbiddenPlayerText?: readonly string[];
@@ -241,11 +248,17 @@ async function loadRegistryIdentityContext(
     email: string | null;
     character_snapshot: unknown;
     character_id: string | null;
+    binding_status: string;
+    token: string | null;
+    character: unknown;
   }>(
-    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id
+    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id,b.binding_status,
+            t.token,c.character
        FROM session_seat_characters b
        LEFT JOIN accounts a ON a.id=b.account_id
-      WHERE b.session_id=$1 AND b.binding_status='active'`,
+       LEFT JOIN session_character_tokens t ON t.session_id=b.session_id AND t.character_id=b.character_id
+       LEFT JOIN account_characters c ON c.id=b.character_id
+      WHERE b.session_id=$1`,
     [sessionId],
   );
   const tokenByCharacter = new Map<string, string>();
@@ -253,12 +266,15 @@ async function loadRegistryIdentityContext(
   for (const row of identityRows.rows) {
     let token: string | null = null;
     if (row.character_id) {
-      token = await ensureSessionCharacterToken(
-        client,
-        sessionId,
-        row.character_id,
-      );
-      tokenByCharacter.set(row.character_id, token);
+      token = row.token;
+      if (!token && row.binding_status === 'active') {
+        token = await ensureSessionCharacterToken(
+          client,
+          sessionId,
+          row.character_id,
+        );
+      }
+      if (token) tokenByCharacter.set(row.character_id, token);
     }
     const snapshot =
       row.character_snapshot && typeof row.character_snapshot === 'object'
@@ -269,6 +285,16 @@ async function loadRegistryIdentityContext(
       row.email,
       snapshot.name,
       ...(Array.isArray(snapshot.aliases) ? snapshot.aliases : []),
+      ...(() => {
+        const profile =
+          row.character && typeof row.character === 'object'
+            ? (row.character as Record<string, unknown>)
+            : {};
+        return [
+          profile.name,
+          ...(Array.isArray(profile.aliases) ? profile.aliases : []),
+        ];
+      })(),
     ].filter(
       (value): value is string => typeof value === 'string' && !!value.trim(),
     );
@@ -356,6 +382,7 @@ export class RegistryMemory {
     diffs: readonly RegistryDiff[] = [],
     turnId: string | null = null,
     privacy: RegistryPrivacyOptions = {},
+    expectedLeaseEpoch?: number,
   ): Promise<boolean> {
     if (!sceneId.trim()) throw new Error('Scene id is required');
     if (!summary.trim() || summary.trim().length > MAX_SCENE_SUMMARY_CHARS)
@@ -366,6 +393,14 @@ export class RegistryMemory {
     try {
       await client.query('BEGIN');
       await lockSessionForDerivedMemoryWrite(client, sessionId);
+      if (expectedLeaseEpoch !== undefined) {
+        const lease = await client.query<{ epoch: string }>(
+          'SELECT epoch FROM session_lease WHERE session_id=$1',
+          [sessionId],
+        );
+        if (Number(lease.rows[0]?.epoch) !== expectedLeaseEpoch)
+          throw new DerivedMemoryLeaseLostError();
+      }
       const identityContext = await loadRegistryIdentityContext(
         client,
         sessionId,

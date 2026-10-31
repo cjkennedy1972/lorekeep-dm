@@ -11,8 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUnverifiedReferenceCoverage(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error.message.startsWith('Reference-index coverage') ||
-      error.message === 'Session is held; refusing indexed lookup')
+    error.message === 'Reference-index coverage is unverified; defer deletion'
   );
 }
 
@@ -321,6 +320,15 @@ export class SeatCharacterRepository {
            WHERE session_id=$1 AND superseded_by=ANY($2::bigint[]) AND id<>ALL($2::bigint[])`,
           [sessionId, ids],
         );
+        // Surviving facts may point across versions into a removed entry.
+        await client.query(
+          `UPDATE registry_facts surviving SET supersedes_id=NULL
+           WHERE surviving.supersedes_id IN (
+             SELECT removed.id FROM registry_facts removed
+             WHERE removed.entry_id=ANY($1::bigint[])
+           ) AND surviving.entry_id<>ALL($1::bigint[])`,
+          [ids],
+        );
         await client.query(
           'DELETE FROM registry_entries WHERE id = ANY($1::bigint[])',
           [ids],
@@ -561,6 +569,16 @@ export class SeatCharacterRepository {
        FROM session_character_tokens t
        JOIN account_characters c ON c.id=t.character_id WHERE c.account_id=$1
        UNION
+       SELECT b.session_id,b.character_id,
+              EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=b.session_id::text)
+       FROM session_seat_characters b
+       JOIN account_characters c ON c.id=b.character_id WHERE c.account_id=$1
+       UNION
+       SELECT s.id AS session_id,s.character_id::uuid AS character_id,
+              EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=s.id::text)
+       FROM sessions s
+       JOIN account_characters c ON c.id::text=s.character_id WHERE c.account_id=$1
+       UNION
        SELECT r.session_id,r.character_id,
               EXISTS (SELECT 1 FROM legal_holds h WHERE h.kind='session' AND h.item_id=r.session_id::text) AS held
        FROM derived_memory_character_refs r
@@ -589,20 +607,51 @@ export class SeatCharacterRepository {
       rowKind: 'scene_summary' | 'registry_entry';
       rowId: string;
     }> = [];
+    const unindexedSoloSessions = new Set<string>();
     try {
       for (const mapping of mappings.rows) {
-        const rows = await getIndexedDerivedMemoryRows(
-          client,
-          mapping.session_id,
-          mapping.character_id,
-        );
-        indexedRows.push(
-          ...rows.map((row) => ({ sessionId: mapping.session_id, ...row })),
-        );
+        try {
+          const rows = await getIndexedDerivedMemoryRows(
+            client,
+            mapping.session_id,
+            mapping.character_id,
+          );
+          indexedRows.push(
+            ...rows.map((row) => ({ sessionId: mapping.session_id, ...row })),
+          );
+        } catch (error) {
+          if (!isUnverifiedReferenceCoverage(error)) throw error;
+          const otherBindings = await client.query(
+            `SELECT 1 FROM session_seat_characters
+             WHERE session_id=$1 AND binding_status='active' AND account_id<>$2
+             LIMIT 1`,
+            [mapping.session_id, accountId],
+          );
+          if (otherBindings.rowCount)
+            throw new Error('Derived-memory reference coverage is incomplete');
+          unindexedSoloSessions.add(mapping.session_id);
+        }
       }
     } catch (error) {
       if (!isUnverifiedReferenceCoverage(error)) throw error;
       throw new Error('Derived-memory reference coverage is incomplete');
+    }
+    // Whole-session fallback is allowed only when no other active account is bound.
+    for (const sessionId of unindexedSoloSessions) {
+      await client.query(
+        'DELETE FROM derived_memory_character_refs WHERE session_id=$1',
+        [sessionId],
+      );
+      await client.query('DELETE FROM scene_summaries WHERE session_id=$1', [
+        sessionId,
+      ]);
+      await client.query('DELETE FROM registry_entries WHERE session_id=$1', [
+        sessionId,
+      ]);
+      await client.query(
+        'DELETE FROM session_character_tokens WHERE session_id=$1',
+        [sessionId],
+      );
     }
     await client.query(
       `UPDATE session_seat_characters SET account_id=NULL, character_id=NULL, character_revision=NULL,
@@ -665,6 +714,14 @@ export class SeatCharacterRepository {
         `UPDATE registry_entries SET superseded_by=NULL
          WHERE session_id=$1 AND superseded_by=ANY($2::bigint[]) AND id<>ALL($2::bigint[])`,
         [sessionId, entryIds],
+      );
+      await client.query(
+        `UPDATE registry_facts surviving SET supersedes_id=NULL
+         WHERE surviving.supersedes_id IN (
+           SELECT removed.id FROM registry_facts removed
+           WHERE removed.entry_id=ANY($1::bigint[])
+         ) AND surviving.entry_id<>ALL($1::bigint[])`,
+        [entryIds],
       );
       await client.query(
         'DELETE FROM registry_entries WHERE id = ANY($1::bigint[])',

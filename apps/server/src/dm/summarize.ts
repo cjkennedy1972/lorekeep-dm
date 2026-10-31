@@ -1,4 +1,8 @@
-import { RegistryMemory, type RegistryDiff } from './memory.js';
+import {
+  DerivedMemoryLeaseLostError,
+  RegistryMemory,
+  type RegistryDiff,
+} from './memory.js';
 import { EngineEventSchema } from '@game/schema';
 import { ensureSessionCharacterToken } from './characterReferences.js';
 import type { Pool } from 'pg';
@@ -442,6 +446,8 @@ export interface CloseSceneInput extends SceneSummaryInput {
   tier: ContentTier;
   tableLines: readonly string[];
   turnId?: string;
+  /** Lease epoch captured by the Room when this summarizer call began. */
+  leaseEpoch?: number;
   /** Entities hidden from the table (ADR-034 §3); summary inputs and outputs are filtered to the public view. */
   hidden?: readonly HiddenEntity[];
 }
@@ -560,14 +566,22 @@ async function captureIdentityVariants(
   sessionId: string,
 ): Promise<SessionIdentityInventory> {
   const { rows } = await db.query<{
-    display_name: string;
-    email: string;
+    display_name: string | null;
+    email: string | null;
     character_snapshot: unknown;
     character_id: string | null;
     seat_id: string;
+    binding_status: string;
+    token: string | null;
+    character: unknown;
   }>(
-    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id,b.seat_id FROM session_seat_characters b
-      JOIN accounts a ON a.id=b.account_id WHERE b.session_id=$1 AND b.binding_status='active'`,
+    `SELECT a.display_name,a.email,b.character_snapshot,b.character_id,b.seat_id,b.binding_status,
+            t.token,c.character
+       FROM session_seat_characters b
+       LEFT JOIN accounts a ON a.id=b.account_id
+       LEFT JOIN session_character_tokens t ON t.session_id=b.session_id AND t.character_id=b.character_id
+       LEFT JOIN account_characters c ON c.id=b.character_id
+      WHERE b.session_id=$1`,
     [sessionId],
   );
   const variants: string[] = [];
@@ -577,12 +591,24 @@ async function captureIdentityVariants(
   const characterByToken = new Map<string, string>();
   for (const row of rows) {
     seatIds.add(row.seat_id);
-    variants.push(row.display_name, row.email);
+    if (row.display_name) variants.push(row.display_name);
+    if (row.email) variants.push(row.email);
     const snapshot =
       row.character_snapshot && typeof row.character_snapshot === 'object'
         ? (row.character_snapshot as Record<string, unknown>)
         : {};
     if (typeof snapshot.name === 'string') variants.push(snapshot.name);
+    const profile =
+      row.character && typeof row.character === 'object'
+        ? (row.character as Record<string, unknown>)
+        : {};
+    if (typeof profile.name === 'string') variants.push(profile.name);
+    if (Array.isArray(profile.aliases))
+      variants.push(
+        ...profile.aliases.filter(
+          (value): value is string => typeof value === 'string',
+        ),
+      );
     if (Array.isArray(snapshot.aliases))
       variants.push(
         ...snapshot.aliases.filter(
@@ -590,14 +616,16 @@ async function captureIdentityVariants(
         ),
       );
     if (row.character_id) {
-      const token = await ensureSessionCharacterToken(
-        db,
-        sessionId,
-        row.character_id,
-      );
-      tokenByCharacter.set(row.character_id, token);
-      tokenBySeatId.set(row.seat_id, token);
-      characterByToken.set(token, row.character_id);
+      const token =
+        row.token ??
+        (row.binding_status === 'active'
+          ? await ensureSessionCharacterToken(db, sessionId, row.character_id)
+          : null);
+      if (token) {
+        tokenByCharacter.set(row.character_id, token);
+        tokenBySeatId.set(row.seat_id, token);
+        characterByToken.set(token, row.character_id);
+      }
     }
   }
   return {
@@ -826,29 +854,35 @@ export async function closeScene(
   }
   input.signal?.throwIfAborted();
   const memory = new RegistryMemory(input.db);
-  const persisted = await memory.closeScene(
-    input.sessionId,
-    input.sceneId,
-    summary,
-    registryDiffs,
-    input.turnId ?? null,
-    {
-      forbiddenPlayerText: [
-        ...new Set([
-          ...(input.forbiddenPlayerText ?? []),
-          ...input.events.flatMap((event) => {
-            if (
-              event.type !== 'PlayerAction' ||
-              !event.payload ||
-              typeof event.payload !== 'object'
-            )
-              return [];
-            const text = (event.payload as Record<string, unknown>).text;
-            return typeof text === 'string' && text.trim() ? [text] : [];
-          }),
-        ]),
-      ],
-    },
-  );
-  return { summary, registryDiffs, fallback, persisted };
+  try {
+    const persisted = await memory.closeScene(
+      input.sessionId,
+      input.sceneId,
+      summary,
+      registryDiffs,
+      input.turnId ?? null,
+      {
+        forbiddenPlayerText: [
+          ...new Set([
+            ...(input.forbiddenPlayerText ?? []),
+            ...input.events.flatMap((event) => {
+              if (
+                event.type !== 'PlayerAction' ||
+                !event.payload ||
+                typeof event.payload !== 'object'
+              )
+                return [];
+              const text = (event.payload as Record<string, unknown>).text;
+              return typeof text === 'string' && text.trim() ? [text] : [];
+            }),
+          ]),
+        ],
+      },
+      input.leaseEpoch,
+    );
+    return { summary, registryDiffs, fallback, persisted };
+  } catch (error) {
+    if (!(error instanceof DerivedMemoryLeaseLostError)) throw error;
+    return { summary: '', registryDiffs: [], fallback: true, persisted: false };
+  }
 }
