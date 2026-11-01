@@ -149,22 +149,110 @@ describe('login throttle', () => {
     argonWork.mockRestore();
     await app.close();
   });
-  it('checks credentials for an account at the recovery ceiling', async () => {
+  it('queues same-account untrusted checks instead of denying the owner', async () => {
+    const { app, post } = await setup();
+    let releaseFirst!: () => void;
+    const firstWork = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let signalEntered!: () => void;
+    const didEnter = new Promise<void>((resolve) => {
+      signalEntered = resolve;
+    });
+    const run = vi
+      .spyOn(argonLimiter, 'run')
+      .mockImplementation(async <T>(work: () => Promise<T>) => {
+        signalEntered();
+        await firstWork;
+        return work();
+      });
+    try {
+      const first = post('known@example.test', '192.0.2.1', 'wrong-password-1');
+      await didEnter;
+      const second = post(
+        'known@example.test',
+        '192.0.2.2',
+        'correct-password-1',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(run).toHaveBeenCalledTimes(1);
+      releaseFirst();
+      const [firstResponse, secondResponse] = await Promise.all([
+        first,
+        second,
+      ]);
+      expect(firstResponse.statusCode).toBe(401);
+      expect(secondResponse.statusCode).toBe(200);
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally {
+      releaseFirst();
+      run.mockRestore();
+      await app.close();
+    }
+  });
+  it('lets a trusted same-account session bypass the untrusted account queue', async () => {
+    const { app, post } = await setup();
+    let releaseFirst!: () => void;
+    const firstWork = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let signalEntered!: () => void;
+    const didEnter = new Promise<void>((resolve) => {
+      signalEntered = resolve;
+    });
+    let calls = 0;
+    const run = vi
+      .spyOn(argonLimiter, 'run')
+      .mockImplementation(async <T>(work: () => Promise<T>) => {
+        calls++;
+        if (calls === 1) {
+          signalEntered();
+          await firstWork;
+        }
+        return work();
+      });
+    try {
+      const first = post('known@example.test', '192.0.2.1', 'wrong-password-1');
+      await didEnter;
+      const trusted = post(
+        'known@example.test',
+        '192.0.2.2',
+        'correct-password-1',
+        'A'.repeat(43),
+      );
+      expect((await trusted).statusCode).toBe(200);
+      releaseFirst();
+      expect((await first).statusCode).toBe(401);
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally {
+      releaseFirst();
+      run.mockRestore();
+      await app.close();
+    }
+  });
+  it('rejects untrusted credentials before Argon2 at the account recovery ceiling', async () => {
     const { app, post, sender } = await setup();
     for (let i = 0; i < 10; i++) {
       const response = await post('known@example.test', `198.${i}.0.1`);
       expect(response.statusCode).toBe(401);
     }
     const verify = vi.spyOn(password, 'verifyPassword');
-    const owner = await post(
+    const blocked = await post(
       'known@example.test',
       '192.0.1.1',
       'correct-password-1',
     );
-    expect(owner.statusCode).toBe(200);
-    expect(verify).toHaveBeenCalled();
+    expect(blocked.statusCode).toBe(429);
+    expect(verify).not.toHaveBeenCalled();
     expect(sender.sendPasswordReset).not.toHaveBeenCalled();
     verify.mockRestore();
+    const trustedOwner = await post(
+      'known@example.test',
+      '192.0.1.2',
+      'correct-password-1',
+      'A'.repeat(43),
+    );
+    expect(trustedOwner.statusCode).toBe(200);
     await app.close();
   });
   it('allows the owner to log in after the account failure window expires', async () => {
@@ -186,20 +274,28 @@ describe('login throttle', () => {
     }
   });
   it('does not retire a live reset link when automatic recovery is triggered', async () => {
-    const { app, post, queries, sender } = await setup();
+    const { app, post, forgot, queries, sender } = await setup();
+    await forgot('known@example.test');
+    const tokenChecksBeforeLogin = queries.filter((sql) =>
+      /SELECT 1 FROM email_tokens/.test(sql),
+    ).length;
+    const invalidationsBeforeLogin = queries.filter((sql) =>
+      /UPDATE email_tokens SET used_at/.test(sql),
+    ).length;
     for (let i = 0; i < 10; i++) {
       const response = await post('known@example.test', `198.${i}.1.1`);
       expect(response.statusCode).toBe(401);
     }
     await vi.waitFor(() =>
       expect(
-        queries.some((sql) => /SELECT 1 FROM email_tokens/.test(sql)),
-      ).toBe(true),
+        queries.filter((sql) => /SELECT 1 FROM email_tokens/.test(sql)).length,
+      ).toBeGreaterThan(tokenChecksBeforeLogin),
     );
-    expect(sender.sendPasswordReset).not.toHaveBeenCalled();
+    expect(sender.sendPasswordReset).toHaveBeenCalledTimes(1);
     expect(
-      queries.some((sql) => /UPDATE email_tokens SET used_at/.test(sql)),
-    ).toBe(false);
+      queries.filter((sql) => /UPDATE email_tokens SET used_at/.test(sql))
+        .length,
+    ).toBe(invalidationsBeforeLogin);
     await app.close();
   });
   it('reserves Argon2 capacity across accounts from one IPv6 /64', async () => {

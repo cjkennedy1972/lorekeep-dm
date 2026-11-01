@@ -12,6 +12,7 @@ import {
   BoundedCounter,
   BusyError,
   KeyedConcurrencyGate,
+  KeyedSerialQueue,
 } from '../accounts/throttle.js';
 import type { ConnectionRegistry } from '../gateway/connections.js';
 import {
@@ -96,11 +97,11 @@ export function registerAuthRoutes(
     return hits.hit(key) > rateLimit;
   }
   // Login failure buckets are bounded, hashed where email-derived, and rejected before Argon2.
-  // Serialize login checks per account without locking the account out.
+  // Serialize untrusted login checks per account with bounded FIFO waiting.
   const loginNetworkFailures = new BoundedCounter(600_000);
   // Cap concurrent Argon2 checks per broader network bucket.
   const loginNetworkInFlight = new KeyedConcurrencyGate(3);
-  const loginAccountInFlight = new KeyedConcurrencyGate(1);
+  const loginAccountInFlight = new KeyedSerialQueue(10);
   const loginIpFailures = new BoundedCounter(600_000);
   const accountFailures = new BoundedCounter(600_000);
   const recoverySendCooldown = new BoundedCounter(3_600_000);
@@ -226,6 +227,15 @@ export function registerAuthRoutes(
     const trustedDevice =
       trustedSession?.account_id !== undefined &&
       trustedSession.account_id === trustedAccount?.rows[0]?.id;
+    const accountKey = emailBucket(email);
+    const accountFailureCount = accountFailures.count(accountKey);
+    if (!trustedDevice && accountFailureCount >= ACCOUNT_RECOVERY_LIMIT) {
+      const retryMs = accountFailures.remainingMs(accountKey);
+      return reply
+        .code(429)
+        .header('retry-after', String(Math.max(1, Math.ceil(retryMs / 1000))))
+        .send(badCredentials);
+    }
     const networkRetryMs = trustedDevice
       ? 0
       : loginNetworkFailures.count(networkKey) >= NETWORK_FAIL_LIMIT
@@ -235,7 +245,6 @@ export function registerAuthRoutes(
       loginIpFailures.count(ipKey) >= LOGIN_IP_FAIL_LIMIT
         ? loginIpFailures.remainingMs(ipKey)
         : 0;
-    const accountKey = emailBucket(email);
     const retryMs = Math.max(networkRetryMs, ipRetryMs);
     if (retryMs > 0) {
       return reply
@@ -243,14 +252,16 @@ export function registerAuthRoutes(
         .header('retry-after', String(Math.ceil(retryMs / 1000)))
         .send(badCredentials);
     }
-    const releaseAccount = loginAccountInFlight.tryAcquire(accountKey);
-    if (!releaseAccount)
+    const releaseAccount = trustedDevice
+      ? undefined
+      : await loginAccountInFlight.acquire(accountKey);
+    if (!trustedDevice && !releaseAccount)
       return reply.code(429).header('retry-after', '1').send(badCredentials);
     const releaseNetwork = trustedDevice
       ? undefined
       : loginNetworkInFlight.tryAcquire(argonNetworkBucket(loginIp));
     if (!trustedDevice && !releaseNetwork) {
-      releaseAccount();
+      releaseAccount?.();
       return reply.code(429).header('retry-after', '1').send(badCredentials);
     }
     let result;
@@ -270,7 +281,7 @@ export function registerAuthRoutes(
       throw error;
     } finally {
       releaseNetwork?.();
-      releaseAccount();
+      releaseAccount?.();
     }
     if (result.kind === 'invalid') {
       loginNetworkFailures.hit(networkKey);
@@ -279,10 +290,10 @@ export function registerAuthRoutes(
       if (accountFailuresAfterAttempt >= ACCOUNT_RECOVERY_LIMIT) {
         const emailKey = accountKey;
         if (
-          recoverySendCooldown.count(emailKey) === 0 &&
-          !limited(`forgot-email:${emailKey}`)
+          recoverySendCooldown.count(`automatic:${emailKey}`) === 0 &&
+          !limited(`automatic-recovery:${emailKey}`)
         ) {
-          recoverySendCooldown.hit(emailKey);
+          recoverySendCooldown.hit(`automatic:${emailKey}`);
           void requestPasswordResetIfMissing(db, sender, email)
             .then(({ sent }) =>
               sent?.then((sendError) => {

@@ -69,6 +69,52 @@ export class KeyedConcurrencyGate {
     };
   }
 }
+/** Serializes work by key with a bounded FIFO queue and no idle-key retention. */
+export class KeyedSerialQueue {
+  private readonly states = new Map<
+    string,
+    { active: boolean; waiting: Array<(release: () => void) => void> }
+  >();
+
+  constructor(
+    private readonly maxPendingPerKey = 10,
+    private readonly maxKeys = 10_000,
+  ) {}
+
+  acquire(key: string): Promise<(() => void) | undefined> {
+    let state = this.states.get(key);
+    if (!state) {
+      if (this.states.size >= this.maxKeys) return Promise.resolve(undefined);
+      state = { active: false, waiting: [] };
+      this.states.set(key, state);
+    }
+    if (!state.active) {
+      state.active = true;
+      return Promise.resolve(this.releaseFor(key, state));
+    }
+    if (state.waiting.length >= this.maxPendingPerKey)
+      return Promise.resolve(undefined);
+    return new Promise((resolve) => state!.waiting.push(resolve));
+  }
+
+  private releaseFor(
+    key: string,
+    state: { active: boolean; waiting: Array<(release: () => void) => void> },
+  ): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = state.waiting.shift();
+      if (next) next(this.releaseFor(key, state));
+      else {
+        state.active = false;
+        this.states.delete(key);
+      }
+    };
+  }
+}
+
 /** Limits concurrent expensive work; waiters give up after `waitMs`. */
 export class Limiter {
   private active = 0;
