@@ -222,6 +222,18 @@ export function registerAuthRoutes(
       LOGIN_IP_FAIL_LIMIT,
     );
     const accountKey = emailBucket(email);
+    const accountFailureCount = accountFailures.count(accountKey);
+    if (!trustedDevice && accountFailureCount >= ACCOUNT_RECOVERY_LIMIT) {
+      const failures = accountFailures.hit(accountKey);
+      const accountDelay = Math.min(
+        30_000,
+        250 * 2 ** Math.min(failures - ACCOUNT_RECOVERY_LIMIT, 7),
+      );
+      return reply
+        .code(429)
+        .header('retry-after', String(Math.ceil(accountDelay / 1000)))
+        .send(badCredentials);
+    }
     const retryMs = Math.max(networkDelay, ipDelay);
     if (retryMs > 0) {
       return reply
@@ -256,21 +268,6 @@ export function registerAuthRoutes(
       loginNetworkFailures.hit(networkKey);
       loginIpFailures.hit(ipKey);
       const accountFailuresAfterAttempt = accountFailures.hit(accountKey);
-      const accountDelay =
-        !trustedDevice && accountFailuresAfterAttempt >= ACCOUNT_RECOVERY_LIMIT
-          ? Math.min(
-              8_000,
-              250 *
-                2 **
-                  Math.min(
-                    accountFailuresAfterAttempt - ACCOUNT_RECOVERY_LIMIT,
-                    5,
-                  ),
-            )
-          : 0;
-      if (accountDelay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, accountDelay));
-      }
       if (accountFailuresAfterAttempt >= ACCOUNT_RECOVERY_LIMIT) {
         const emailKey = accountKey;
         if (
@@ -296,13 +293,7 @@ export function registerAuthRoutes(
             );
         }
       }
-      const invalidReply = reply.code(401);
-      if (accountDelay > 0)
-        invalidReply.header(
-          'retry-after',
-          String(Math.ceil(accountDelay / 1000)),
-        );
-      return invalidReply.send(badCredentials);
+      return reply.code(401).send(badCredentials);
     }
     if (result.kind === 'deleting')
       return reply.code(403).send({

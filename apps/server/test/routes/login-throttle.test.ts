@@ -1,6 +1,7 @@
 import { allowInputGate } from '../support/allowInputGate.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
+import * as password from '../../src/accounts/password.js';
 import { hashPassword } from '../../src/accounts/password.js';
 import { argonLimiter } from '../../src/accounts/login.js';
 import { BusyError } from '../../src/accounts/throttle.js';
@@ -81,10 +82,10 @@ async function setup(trustProxy?: boolean | number) {
 }
 
 describe('login throttle', () => {
-  it('does not let failures from an attacker IP block the owner on another IP', async () => {
+  it('does not let one account-network bucket block another network before the account ceiling', async () => {
     const { app, post } = await setup();
-    for (let i = 0; i < 10; i++)
-      await post('known@example.test', `203.0.${i}.9`);
+    for (let i = 1; i <= 5; i++)
+      await post('known@example.test', `203.0.113.${i}`);
     const ownerLogin = await post(
       'known@example.test',
       '198.51.100.7',
@@ -147,37 +148,41 @@ describe('login throttle', () => {
     argonWork.mockRestore();
     await app.close();
   });
-  it('applies a capped account-wide delay without blocking the owner', async () => {
+  it('rejects account-wide over-threshold attempts before Argon2 without sleeping', async () => {
     const { app, post, sender } = await setup();
-    let thresholdResponse;
-    for (let i = 0; i < 10; i++) {
-      const ip = `198.51.${i}.1`;
-      thresholdResponse = await post('known@example.test', ip);
-      expect(thresholdResponse.statusCode).toBe(401);
-    }
-    expect(thresholdResponse?.headers['retry-after']).toBe('1');
-    expect(sender.sendPasswordReset).not.toHaveBeenCalled();
-    const owner = await post(
-      'known@example.test',
-      '203.0.113.22',
-      'correct-password-1',
-    );
-    expect(owner.statusCode).toBe(200);
-    await app.close();
-  });
-  it('evaluates credentials after the distributed account guessing threshold', async () => {
-    const { app, post } = await setup();
-    const argonWork = vi.spyOn(argonLimiter, 'run');
     for (let i = 0; i < 10; i++) {
       const response = await post('known@example.test', `198.${i}.0.1`);
       expect(response.statusCode).toBe(401);
     }
-    argonWork.mockClear();
-    const afterThreshold = await post('known@example.test', '192.0.2.1');
-    expect(afterThreshold.statusCode).toBe(401);
-    expect(afterThreshold.headers['retry-after']).toBeDefined();
-    expect(argonWork).toHaveBeenCalledTimes(1);
+    const verify = vi.spyOn(password, 'verifyPassword');
+    const argonWork = vi.spyOn(argonLimiter, 'run');
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    const retryAfter: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      const response = await post('known@example.test', `192.0.${i}.1`);
+      expect(response.statusCode).toBe(429);
+      expect(response.json()).toEqual({
+        code: 'BAD_CREDENTIALS',
+        message: 'Email or password is incorrect.',
+      });
+      retryAfter.push(Number(response.headers['retry-after']));
+    }
+    expect(retryAfter).toEqual([1, 1, 2, 4, 8, 16, 30]);
+    expect(verify).not.toHaveBeenCalled();
+    expect(argonWork).not.toHaveBeenCalled();
+    expect(timer).not.toHaveBeenCalled();
+    expect(sender.sendPasswordReset).not.toHaveBeenCalled();
+    verify.mockRestore();
     argonWork.mockRestore();
+    timer.mockRestore();
+
+    const trusted = await post(
+      'known@example.test',
+      '203.0.113.22',
+      'correct-password-1',
+      'A'.repeat(43),
+    );
+    expect(trusted.statusCode).toBe(200);
     await app.close();
   });
   it('does not retire a live reset link when automatic recovery is triggered', async () => {
