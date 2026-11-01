@@ -140,6 +140,7 @@ export async function authorizeSeatSocket(
   hostApprovedClaim = false,
   accountId?: string,
   allowSoloOwnerRecovery = false,
+  allowActiveSocketTakeover = false,
 ): Promise<SeatSocketAuthorization> {
   const client = await db.connect();
   try {
@@ -165,8 +166,16 @@ export async function authorizeSeatSocket(
       [sessionId, seatId],
     );
     const row = result.rows[0];
-    // A live controller always wins before any token-recovery exception.
-    if (row?.socket_live) {
+    // A live controller cannot be displaced without the current seat credential.
+    // A same-seat token proof authorizes this socket to take over a stranded
+    // transport; the advisory lock fences concurrent claims and the caller's
+    // reservation closes the previous in-memory socket.
+    if (
+      row?.socket_live &&
+      (!allowActiveSocketTakeover ||
+        !presentedToken ||
+        hash(presentedToken) !== row.token_hash)
+    ) {
       await client.query('ROLLBACK');
       return { status: 'active-socket' };
     }

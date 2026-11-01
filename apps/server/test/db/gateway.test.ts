@@ -539,6 +539,28 @@ describe('pending first-token handoff', () => {
     return { id, room, token };
   }
 
+  it('allows a same-seat resume credential to take over a stranded socket', async () => {
+    const { id, token: initialResumeToken } = await pendingSeat();
+    resumeTokens.set(tokens[0]!, initialResumeToken);
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    const socketA = connect(await ticket(tokens[0]!, id));
+    await nextOfType(socketA, 'StateSync');
+    const socketAClosed = closed(socketA);
+
+    // Keep A open so the server never observes a close, but model its browser
+    // having vanished and stopped ponging by aging the database heartbeat.
+    await db.query(
+      `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '14 seconds'
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId],
+    );
+    const socketB = connect(await ticket(tokens[0]!, id));
+    await nextOfType(socketB, 'StateSync');
+    expect(await socketAClosed).toBe(4401);
+
+    await closeSocket(socketB);
+  }, 15_000);
+
   function failSeatAuthenticatedSend(
     mode: 'callback' | 'throw',
     onAttempt?: (resumeToken: string) => void,
