@@ -328,7 +328,7 @@ export function Game() {
               setEntities((current) =>
                 current.map((entity) =>
                   entity.id === event.entityId && event.type === 'HpChanged'
-                    ? { ...entity, hp: event.hp }
+                    ? { ...entity, hp: event.to ?? event.hp ?? entity.hp }
                     : entity,
                 ),
               );

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { EngineEventSchema } from '@game/schema';
+import { attack } from '@game/rules-engine';
 import {
   isNarrationFactType,
   narrationFact,
@@ -6,6 +8,42 @@ import {
 } from '../../src/room/Room.js';
 
 describe('combat narration fact projection (ADR-033 §6.8)', () => {
+  it('validates an engine attack HP event and preserves its narration projection', () => {
+    let attackResult;
+    for (let seed = 0; seed < 100; seed += 1) {
+      const result = attack({
+        attackerId: 'ent_hero',
+        targetId: 'ent_goblin',
+        attackId: 'longsword',
+        seed,
+        attackBonus: 5,
+        damage: '1d4',
+        damageType: 'slashing',
+        targetAc: 1,
+        target: { hp: 100, kind: 'monster' },
+      });
+      if (
+        'ok' in result &&
+        result.events.some((event) => event.type === 'HpChanged')
+      ) {
+        attackResult = result;
+        break;
+      }
+    }
+    expect(attackResult).toBeDefined();
+    const attackEvent = attackResult!.events.find(
+      (event) => event.type === 'HpChanged',
+    )!;
+    expect(EngineEventSchema.safeParse(attackEvent).success).toBe(true);
+    expect(
+      narrationFact(attackEvent as unknown as Record<string, unknown>),
+    ).toEqual({
+      type: 'HpChanged',
+      entityId: 'ent_goblin',
+      hpState: 'wounded',
+    });
+  });
+
   it('keeps allowlisted handle/number fields and drops free text and unknown keys', () => {
     expect(
       narrationFact({

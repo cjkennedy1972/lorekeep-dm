@@ -60,6 +60,8 @@ export type LegalAction =
       attackerId: string;
       targetId: string;
       attackId: string;
+      weaponLabel?: string;
+      rangeFt?: number;
     }
   | {
       kind: 'spell';
@@ -160,6 +162,10 @@ export function legalOptions(
           attackerId: entityId,
           targetId: target.id,
           attackId: attack.id,
+          weaponLabel: attack.name,
+          rangeFt: range
+            ? (range.longFt ?? range.normalFt)
+            : (attack.reachFt ?? 5),
         });
     }
     const caster = state.casters?.[entityId];

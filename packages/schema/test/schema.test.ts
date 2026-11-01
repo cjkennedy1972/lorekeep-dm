@@ -25,6 +25,40 @@ import {
   MeOutputSchema,
 } from '../src/index.js';
 
+test('CombatOptions accepts additive weapon labels and range on attack actions', () => {
+  expect(
+    ServerMessageSchema.parse({
+      seq: 1,
+      type: 'CombatOptions',
+      payload: {
+        actions: [
+          {
+            kind: 'attack',
+            optionId: 'attack:longsword',
+            targetId: 'goblin',
+            attackId: 'longsword',
+            weaponLabel: 'Longsword',
+            rangeFt: 5,
+          },
+        ],
+        areas: [],
+      },
+    }),
+  ).toMatchObject({
+    type: 'CombatOptions',
+    payload: {
+      actions: [{ weaponLabel: 'Longsword', rangeFt: 5 }],
+    },
+  });
+  expect(
+    ServerMessageSchema.safeParse({
+      seq: 2,
+      type: 'CombatOptions',
+      payload: { actions: [{ kind: 'attack', attackId: 'sword' }] },
+    }).success,
+  ).toBe(true);
+});
+
 const uuid = '123e4567-e89b-42d3-a456-426614174000';
 const account = {
   id: uuid,
