@@ -918,23 +918,19 @@ export function Game() {
   const offersSpellCast =
     areas.length > 0 ||
     nonMoveActions.some((value) => asRecord(value).kind === 'spell');
-  // Attack options are de-duplicated by target and weapon; the count per target decides whether to name the weapon.
+  // Attack options are de-duplicated by target and weapon. Every attack button names its weapon.
   const firstAttackIndex = new Set<number>();
-  const attackCountByTarget = new Map<string, number>();
+  const reachableTargets = new Set<string>();
   {
     const seen = new Set<string>();
     nonMoveActions.forEach((value, index) => {
       const item = asRecord(value);
       if (item.kind !== 'attack') return;
+      reachableTargets.add(String(item.targetId));
       const key = `${String(item.targetId)}|${String(item.attackId)}`;
       if (seen.has(key)) return;
       seen.add(key);
       firstAttackIndex.add(index);
-      const target = String(item.targetId);
-      attackCountByTarget.set(
-        target,
-        (attackCountByTarget.get(target) ?? 0) + 1,
-      );
     });
   }
   // The server answers `options` only when asked, and only on this seat's turn. Ask when the turn starts and
@@ -1005,6 +1001,11 @@ export function Game() {
           (typeof item.hp !== 'number' || item.hp > 0),
       )
     : [];
+  // Options list only attacks this seat can make now, so a foe with no attack option is out of reach (or unseen) from here.
+  const outOfReach =
+    yourTurn && options !== null
+      ? foes.filter((foe) => !reachableTargets.has(foe.id))
+      : [];
   if (live.removed === 'kicked')
     return (
       <section className="game-notice">
@@ -1458,6 +1459,13 @@ export function Game() {
                   {attackFeedback}
                 </p>
               )}
+              {outOfReach.length > 0 && (
+                <p className="combat-out-of-reach">
+                  {`Out of reach of your attacks: ${outOfReach
+                    .map((foe) => nameOf(foe.id))
+                    .join(', ')}. Move closer to attack.`}
+                </p>
+              )}
               {offersSpellCast && castLevels.length > 1 && (
                 <SlotLevelPicker
                   levels={castLevels}
@@ -1471,10 +1479,7 @@ export function Game() {
                   // The same target and weapon can be offered twice; show it once.
                   if (!firstAttackIndex.has(index)) return null;
                   const targetName = nameOf(String(item.targetId));
-                  const weapon =
-                    (attackCountByTarget.get(String(item.targetId)) ?? 0) > 1
-                      ? weaponName(String(item.attackId ?? ''))
-                      : undefined;
+                  const weapon = weaponName(String(item.attackId ?? ''));
                   return (
                     <button
                       key={String(item.optionId ?? index)}
