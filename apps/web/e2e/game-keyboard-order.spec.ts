@@ -16,14 +16,23 @@ test('skip link reaches the action box and the composer precedes map controls in
     await page.goto(`/rooms/${room.id}/game`);
     await expect(page.getByText('Connected')).toBeVisible();
     let stops = 0;
+    const seq: string[] = [];
     for (; stops < 30; ) {
       await page.keyboard.press('Tab');
       stops += 1;
+      // DIAGNOSTIC (temporary): record each stop.
+      seq.push(
+        await page.evaluate(() => {
+          const el = document.activeElement as HTMLElement | null;
+          if (!el) return 'none';
+          return `${el.tagName.toLowerCase()}#${el.id}.${String(el.className).slice(0, 40)} [${el.getAttribute('aria-label') ?? ''}] ${(el.textContent ?? '').trim().slice(0, 30)}`;
+        }),
+      );
       const id = await page.evaluate(() => document.activeElement?.id);
       if (id === 'player-action') break;
     }
     // App nav (4 links) and the safety toolbar necessarily come first; was 24+ before.
-    expect(stops).toBeLessThanOrEqual(14);
+    expect(stops, seq.join('\n')).toBeLessThanOrEqual(14);
     // The composer is reached before any map or combat control.
     const mapFocused = await page.evaluate(() =>
       Boolean(document.activeElement?.closest('.game-area--map')),

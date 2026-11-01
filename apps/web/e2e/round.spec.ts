@@ -106,7 +106,16 @@ test('host controls validate the round timer, save it, and pass axe', async ({
     await hostPage.getByRole('button', { name: 'Join table' }).click();
     await hostPage.getByRole('heading', { name: 'Timer table' }).waitFor();
     await hostPage.goto(`/rooms/${room.id}/game`);
-    await expect(hostPage.getByText('Connected')).toBeVisible();
+    // DIAGNOSTIC (temporary): report status and alert regions when Connected never shows.
+    await expect(hostPage.getByText('Connected'))
+      .toBeVisible()
+      .catch(async (error: Error) => {
+        const status = await hostPage.locator('[role="status"]').allTextContents();
+        const alerts = await hostPage.locator('[role="alert"]').allTextContents();
+        throw new Error(
+          `${error.message}\nurl=${hostPage.url()}\nstatus=${JSON.stringify(status)}\nalerts=${JSON.stringify(alerts)}`,
+        );
+      });
 
     const guestPage = await guest.newPage();
     await guestPage.goto(`/join/${room.code}`).catch(rethrowRedacted);
