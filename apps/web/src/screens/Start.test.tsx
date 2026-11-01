@@ -8,6 +8,7 @@ import { validateCharacter } from '@game/rules-engine';
 import { Start } from './Start';
 import { http } from '../api';
 import { loadCharacterCatalog } from '../features/character/catalog';
+import { buildQuickCharacter } from '../features/character/QuickBuild';
 import { gameStore } from '../state/store';
 import {
   renderApp,
@@ -55,6 +56,61 @@ test('My games lists resume link with recap and retries failed loads', async () 
   expect(
     await screen.findByRole('link', { name: 'Resume Memory' }),
   ).toHaveAttribute('href', expect.stringMatching(/\/rooms\/.+\/game/));
+});
+
+const classId = (name: string) => {
+  const entry = loadCharacterCatalog().entries.find(
+    (item) => item.kind === 'class' && item.name === name,
+  );
+  if (!entry) throw new Error(`no class ${name}`);
+  return entry.id;
+};
+
+test('solo start creates the class picked in quick build, even without building first', async () => {
+  const wizard = classId('Wizard');
+  const fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 201,
+    json: async () => ({ game: { id: 'new-game' } }),
+  });
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  gameStore.setCharacter(null);
+  startAt();
+  await userEvent.type(screen.getByLabelText('Game name'), 'Wizard run');
+  await userEvent.selectOptions(
+    screen.getByLabelText('Class (optional)'),
+    wizard,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
+  await screen.findByText('Game ready');
+  const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+  expect(body.character.classId).toBe(wizard);
+});
+
+test('solo start does not reuse a hero built as another class when a different class is picked', async () => {
+  const fighter = classId('Fighter');
+  const wizard = classId('Wizard');
+  buildQuickCharacter(fighter, 1);
+  const fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 201,
+    json: async () => ({ game: { id: 'new-game' } }),
+  });
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  startAt();
+  await userEvent.type(screen.getByLabelText('Game name'), 'Switch');
+  await userEvent.selectOptions(
+    screen.getByLabelText('Class (optional)'),
+    wizard,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
+  await screen.findByText('Game ready');
+  const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+  expect(body.character.classId).toBe(wizard);
 });
 
 afterEach(() => vi.restoreAllMocks());
