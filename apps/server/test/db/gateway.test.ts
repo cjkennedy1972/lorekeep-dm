@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import WebSocket from 'ws';
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -147,13 +148,14 @@ function connect(
   cookieToken?: string | null,
   gatewayBase = base,
   acknowledgeStateSync = true,
+  origin = gatewayBase,
 ) {
   const ownerToken = ticketOwners.get(t);
   const selectedCookie = cookieToken === undefined ? ownerToken : cookieToken;
   const ws = new WebSocket(
     `${gatewayBase.replace('http', 'ws')}/ws?ticket=${t}`,
     {
-      origin: gatewayBase,
+      origin,
       ...(selectedCookie
         ? { headers: { cookie: `sid=${selectedCookie}` } }
         : {}),
@@ -202,6 +204,51 @@ function connect(
   });
   return ws;
 }
+
+async function createOriginGateway(allowConfiguredOriginBypass: boolean) {
+  const originApp = createApp(db, {
+    inputGate: allowInputGate,
+    loggerStream: { write: (chunk) => capturedLogs.push(chunk.toString()) },
+  });
+  originApp.inputGate.checkChat = async () => ({
+    decision: 'allow',
+    category: 'none',
+    source: 'judge',
+    attributable: false,
+  });
+  installGateway(
+    originApp,
+    db,
+    rooms,
+    new ConnectionRegistry(db),
+    15_000,
+    true,
+    allowConfiguredOriginBypass,
+  );
+  const upgradeRequests = new Map<
+    string,
+    import('node:http').IncomingMessage
+  >();
+  originApp.server.on('upgrade', (request) => {
+    const ticket = new URL(
+      request.url ?? '/',
+      'http://localhost',
+    ).searchParams.get('ticket');
+    if (ticket) upgradeRequests.set(ticket, request);
+  });
+  const originBase = await originApp.listen({ host: '127.0.0.1', port: 0 });
+  return {
+    base: originBase,
+    setEstablishedOrigin: (ticket: string, origin: string) => {
+      const request = upgradeRequests.get(ticket);
+      if (!request) throw new Error('WebSocket upgrade request not captured');
+      request.headers.origin = origin;
+    },
+    close: async () => {
+      await originApp.close();
+    },
+  };
+}
 beforeAll(async () => {
   for (const [i, id] of accounts.entries())
     await db.query(
@@ -244,6 +291,233 @@ describe('gateway seat authentication limits', () => {
     for (let attempt = 0; attempt < 5; attempt++)
       expect(connections.consumeSeatAuthAttempt(key, 10_000)).toBe(true);
     expect(connections.consumeSeatAuthAttempt(key, 10_001)).toBe(false);
+  });
+});
+
+describe('configured WebSocket origin bypass paths', () => {
+  async function freshOriginSeat() {
+    const accountId = randomUUID();
+    const id = randomUUID();
+    await db.query(
+      `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'hash','Origin test player','active',true,now(),'v1',now())`,
+      [accountId, `${accountId}@example.test`],
+    );
+    const token = await createSession(db, accountId, 'test');
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      id,
+      accountId,
+    ]);
+    const room = await rooms.get(id);
+    const resumeToken = await room.seat(
+      accountId,
+      'Origin test player',
+      false,
+      hashToken(token),
+    );
+    if (!resumeToken) throw new Error('origin test seat has no resume token');
+    resumeTokens.set(token, resumeToken);
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === accountId,
+    )!.seatId;
+    return { id, seatId, token };
+  }
+
+  const savedOrigins = process.env.WS_ALLOWED_ORIGINS;
+  afterEach(() => {
+    if (savedOrigins === undefined) delete process.env.WS_ALLOWED_ORIGINS;
+    else process.env.WS_ALLOWED_ORIGINS = savedOrigins;
+  });
+
+  it('rejects a configured foreign origin during upgrade when bypass is disabled', async () => {
+    const foreignOrigin = 'https://web.example.test';
+    process.env.WS_ALLOWED_ORIGINS = foreignOrigin;
+    const { id, seatId, token } = await freshOriginSeat();
+    const socket = connect(
+      await ticket(token, id),
+      undefined,
+      true,
+      undefined,
+      base,
+      true,
+      foreignOrigin,
+    );
+    const outcome = await Promise.race([
+      closed(socket).then((code) => ({ code })),
+      nextOfType(socket, 'StateSync').then(() => ({ upgraded: true })),
+    ]);
+    if (socket.readyState === WebSocket.OPEN) await closeSocket(socket);
+    await waitForReleasedSocket(seatId, id);
+    expect(outcome).toEqual({ code: 1008 });
+  });
+
+  it('allows an exact configured foreign origin during upgrade when bypass is enabled and logs it', async () => {
+    const foreignOrigin = 'https://web.example.test';
+    process.env.WS_ALLOWED_ORIGINS = foreignOrigin;
+    const gateway = await createOriginGateway(true);
+    const before = capturedLogs.length;
+    try {
+      const { id, seatId, token } = await freshOriginSeat();
+      const socket = connect(
+        await ticket(token, id),
+        undefined,
+        true,
+        undefined,
+        gateway.base,
+        true,
+        foreignOrigin,
+      );
+      await nextOfType(socket, 'StateSync');
+      await closeSocket(socket);
+      await waitForReleasedSocket(seatId, id);
+      const entries = capturedLogs
+        .slice(before)
+        .map((line) => JSON.parse(line));
+      expect(entries).toContainEqual(
+        expect.objectContaining({
+          event: 'ws_origin_bypass',
+          surface: 'upgrade',
+        }),
+      );
+    } finally {
+      await gateway.close();
+    }
+  });
+
+  it('delivers chat for an exact configured origin when bypass is enabled and logs the delivery check', async () => {
+    const foreignOrigin = 'https://web.example.test';
+    process.env.WS_ALLOWED_ORIGINS = foreignOrigin;
+    const gateway = await createOriginGateway(true);
+    const before = capturedLogs.length;
+    try {
+      const { id, seatId, token } = await freshOriginSeat();
+      const socket = connect(
+        await ticket(token, id),
+        undefined,
+        true,
+        undefined,
+        gateway.base,
+        true,
+        foreignOrigin,
+      );
+      const state = await nextOfType(socket, 'StateSync', 3500).catch(
+        (error) => {
+          throw new Error(`waiting for origin test sync: ${String(error)}`);
+        },
+      );
+      socket.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'ChatSend',
+          payload: { text: 'origin bypass chat delivery' },
+          lastSeq: state.seq,
+        }),
+      );
+      const message = await nextOfType(socket, 'ChatMessage', 3500).catch(
+        (error) => {
+          throw new Error(`waiting for origin test chat: ${String(error)}`);
+        },
+      );
+      expect(message.payload.text).toBe('origin bypass chat delivery');
+      await closeSocket(socket);
+      await waitForReleasedSocket(seatId, id);
+      const entries = capturedLogs
+        .slice(before)
+        .map((line) => JSON.parse(line));
+      expect(entries).toContainEqual(
+        expect.objectContaining({ event: 'ws_origin_bypass', surface: 'chat' }),
+      );
+    } finally {
+      await gateway.close();
+    }
+  });
+
+  it('does not deliver chat to an established socket whose configured origin has bypass disabled', async () => {
+    const foreignOrigin = 'https://web.example.test';
+    process.env.WS_ALLOWED_ORIGINS = foreignOrigin;
+    const gateway = await createOriginGateway(false);
+    let recipient: WebSocket | undefined;
+    let sender: WebSocket | undefined;
+    try {
+      const recipientTicket = await ticket(tokens[0]!);
+      recipient = connect(
+        recipientTicket,
+        undefined,
+        true,
+        undefined,
+        gateway.base,
+      );
+      await nextOfType(recipient, 'StateSync');
+      gateway.setEstablishedOrigin(recipientTicket, foreignOrigin);
+
+      sender = connect(
+        await ticket(tokens[1]!),
+        undefined,
+        true,
+        undefined,
+        gateway.base,
+      );
+      const senderState = await nextOfType(sender, 'StateSync');
+      sender.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'ChatSend',
+          payload: { text: 'configured origin without bypass' },
+          lastSeq: senderState.seq,
+        }),
+      );
+      await nextOfType(sender, 'ChatMessage');
+      await expect(nextOfType(recipient, 'ChatMessage', 300)).rejects.toThrow(
+        'waiting for ChatMessage',
+      );
+    } finally {
+      if (sender) await closeSocket(sender);
+      if (recipient) await closeSocket(recipient);
+      await gateway.close();
+    }
+  });
+
+  it('rejects chat when the established socket origin is no longer on the configured allowlist', async () => {
+    const foreignOrigin = 'https://web.example.test';
+    process.env.WS_ALLOWED_ORIGINS = foreignOrigin;
+    const gateway = await createOriginGateway(true);
+    try {
+      const { id, seatId, token } = await freshOriginSeat();
+      const socket = connect(
+        await ticket(token, id),
+        undefined,
+        true,
+        undefined,
+        gateway.base,
+        true,
+        foreignOrigin,
+      );
+      const state = await nextOfType(socket, 'StateSync', 3500).catch(
+        (error) => {
+          throw new Error(`waiting for origin test sync: ${String(error)}`);
+        },
+      );
+      process.env.WS_ALLOWED_ORIGINS = 'https://other.example.test';
+      socket.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'ChatSend',
+          payload: { text: 'must not be accepted' },
+          lastSeq: state.seq,
+        }),
+      );
+      const rejection = await nextOfType(socket, 'Error', 3500).catch(
+        (error) => {
+          throw new Error(
+            `waiting for origin test rejection: ${String(error)}`,
+          );
+        },
+      );
+      expect(rejection.payload.code).toBe('CHAT_REJECTED');
+      await closeSocket(socket);
+      await waitForReleasedSocket(seatId, id);
+    } finally {
+      await gateway.close();
+    }
   });
 });
 
