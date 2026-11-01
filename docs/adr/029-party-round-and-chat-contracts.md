@@ -219,3 +219,7 @@ From Chris (scope):
 
 - Docs-only change: one new file, `docs/adr/029-party-round-and-chat-contracts.md`. No existing ADR is edited. No code is written.
 - `npm run format:check` (prettier) run against the branch head. Result recorded in the PR.
+
+## Addendum (2026-11-01): origin check on the chat path
+
+This addendum does not change §7. The origin check in §7 step 1 applies `WS_ALLOWED_ORIGINS` only when `WS_TICKET_ORIGIN_BYPASS_ENABLED=true`. Without the flag, a listed origin is rejected on chat delivery with the same generic chat rejection as any other failure, and the same rule applies to ticket creation and WebSocket upgrades (`apps/server/src/gateway/ws.ts`, `apps/server/src/gateway/tickets.ts`).

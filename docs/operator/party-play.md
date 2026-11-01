@@ -72,6 +72,7 @@ Every non-allow writes a moderation log entry.
 | Host mute | Persists; automatic mute does not override it | `chat/mutes.ts` |
 | Table gate | 40 calls per 60 s per table | `policy.ts` |
 | Socket bucket | Capacity 20, refill 10/s | `ws.ts` (`MESSAGE_BUCKET_CAPACITY`, `MESSAGE_REFILL_PER_SECOND`) |
+| Sync bucket | Capacity 40, refill 2/s for `Resync` and `ChatHistoryRequest`; one of each in flight; 10 s deadline, then close 1011 | `ws.ts` (`SYNC_MESSAGE_BUCKET_CAPACITY`, `SYNC_MESSAGE_REFILL_PER_SECOND`, `SYNC_REQUEST_DEADLINE_MS`) |
 | Judge timeout | 4.5 s default | `apps/server/src/safety/moderator.ts` |
 
 **Player-visible rejection.** Every chat rejection, whatever the reason, sends the same message: "That message could not be sent. Try again." (`CHAT_REJECTION`, `ws.ts` L55). Players are not told which rule fired. The paused and mute cases are the exceptions noted above.

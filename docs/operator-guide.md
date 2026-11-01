@@ -33,12 +33,25 @@ Party play (M4) operator and player behavior, including what is not shipped yet,
 | `ROOM_DRAIN_DEADLINE_MS` | No | `30000` | Non-integer or negative fails config load. | Shutdown stops waiting for in-flight turns after this many milliseconds and releases the room lease; `0` gives up immediately. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset (no exporter) | Invalid URL fails config load. | OTLP trace export. |
 | `EXPORT_ARCHIVE_DIR` | Yes, set explicitly | `/tmp/lorekeep-exports` | Not in the config schema. Nothing refuses the `/tmp` default. | Export archives are written here (0700 directory, 0600 files). `/tmp` is not acceptable for production data. Card 1ada4844 tracks a production refusal. |
-| `WS_ALLOWED_ORIGINS` | Only for cross-origin web clients | unset (same-host origins only) | Not in the config schema; read raw. | Comma-separated full origins (e.g. `https://app.example`). A trailing slash or path never matches. |
+| `WS_ALLOWED_ORIGINS` | Only for cross-origin web clients, with `WS_TICKET_ORIGIN_BYPASS_ENABLED=true` | unset (same-host origins only) | Not in the config schema; read raw. Ignored unless `WS_TICKET_ORIGIN_BYPASS_ENABLED=true`. | Comma-separated full origins (e.g. `https://app.example`). Without the bypass flag, listed origins are rejected on ticket creation, upgrade, and chat. A trailing slash or path never matches. |
 | `WS_TICKET_ORIGIN_BYPASS_ENABLED` | No | `false` | `false` or `true`. | When `true`, origins listed in `WS_ALLOWED_ORIGINS` may bypass same-origin checks for ticket creation, WebSocket upgrades, and chat delivery. Keep disabled unless cross-origin clients need these operations. |
 | `LOREKEEP_ADR_038_STORY_COMBAT` | No | `false` | Must be `true` to enable; any other value (including unset) leaves it off. | ADR-038 authored story-to-combat. When `true`, the exploration DM may call `start_combat` with an authored encounter key for the current scene. Off by default; enable only in development or an isolated smoke process until rollout is approved. Read in `apps/server/src/room/productionTurnRunner.ts`. |
 | `LLM_API_KEY` | Do not set | none | Parsed and redacted, but no server code path reads it. | Endpoint keys are stored per slot (encrypted), not from this variable. |
 
 `POST /api/ws-ticket`, WebSocket upgrades, and chat delivery check the `Origin` header. By default, only same-origin requests are accepted (`apps/server/src/middleware/origin.ts` for ticket creation and `apps/server/src/gateway/ws.ts` for WebSockets). `WS_ALLOWED_ORIGINS` is ignored unless `WS_TICKET_ORIGIN_BYPASS_ENABLED=true`; enabling it allows exact configured origins across all three paths. The trade-off: a listed origin that is compromised or hostile can request WebSocket tickets and use the associated browser session. List only origins you control and trust, as exact full HTTP(S) origins with scheme and port (`https://app.example`). Non-HTTP(S) schemes are rejected. Do not use wildcards: the check is an exact string match, so `*` matches nothing. Do not add a trailing slash or path, because those never match.
+
+**Upgrade note.** `WS_ALLOWED_ORIGINS` no longer works alone. If cross-origin clients worked with only the list, they now fail after upgrade: `POST /api/ws-ticket` returns 403, WebSocket upgrades close with 1008 `Policy violation`, and chat delivery shows the generic chat rejection message. Set both `WS_ALLOWED_ORIGINS` and `WS_TICKET_ORIGIN_BYPASS_ENABLED=true` to restore access.
+
+**WebSocket admission limits.** Each socket has two in-memory token buckets, hard-coded in `apps/server/src/gateway/ws.ts` and not configurable:
+
+- Action bucket: capacity 20, refill 10 per second (`MESSAGE_BUCKET_CAPACITY`, `MESSAGE_REFILL_PER_SECOND`). Over-limit messages receive a `RATE_LIMITED` error.
+- Sync bucket: capacity 40, refill 2 per second (`SYNC_MESSAGE_BUCKET_CAPACITY`, `SYNC_MESSAGE_REFILL_PER_SECOND`), for `Resync` and `ChatHistoryRequest`. Only one of each may be in flight per socket. A sync request that does not finish within 10 s closes the socket with 1011 `Sync request deadline exceeded` (`SYNC_REQUEST_DEADLINE_MS`). The client must reconnect.
+
+Both buckets are per process, so the replica note above applies.
+
+**LLM endpoint failures.** An exploration turn that fails with a network error, a timeout, or a 5xx status is not committed. The player who submitted the action receives a `TURN_FAILED` error ("The DM could not complete that round. Try again.") and can resubmit. Refusals and other 4xx responses keep the template fallback narration from ADR-022 §4.2. Combat turns that hit a retryable failure commit the combat fallback text instead of an error.
+
+**Session mode.** A session's `mode` must be `solo` or `party`. The column is `NOT NULL` with `CHECK (mode IN ('solo','party'))` (`apps/server/migrations/0016_solo_game_metadata.sql`). If the stored mode is missing or invalid, `Persistence.loadSessionMode` throws, the room does not load, and a resume socket closes with 1013 `Room unavailable; retry`. The server does not fall back to solo. If a session stops resuming, check its stored `mode` first.
 
 Generate a master key locally (output is a secret; put it in your secret manager, not in the repo):
 
