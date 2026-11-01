@@ -240,13 +240,29 @@ export function registerAuthRoutes(
       return reply
         .code(429)
         .header('retry-after', String(Math.ceil(retryMs / 1000)))
-        .send(badCredentials);
+        .send({
+          code: 'RATE_LIMITED',
+          message: 'Too many login attempts. Try again shortly.',
+        });
     }
     const releaseAccount = trustedDevice
       ? undefined
       : await loginAccountInFlight.acquire(networkKey);
     if (!trustedDevice && !releaseAccount)
       return reply.code(429).header('retry-after', '1').send(badCredentials);
+    const queuedRetryMs = trustedDevice
+      ? 0
+      : loginNetworkFailures.remainingMs(networkKey);
+    if (queuedRetryMs > 0) {
+      releaseAccount?.();
+      return reply
+        .code(429)
+        .header('retry-after', String(Math.ceil(queuedRetryMs / 1000)))
+        .send({
+          code: 'RATE_LIMITED',
+          message: 'Too many login attempts. Try again shortly.',
+        });
+    }
     const releaseNetwork = loginNetworkInFlight.tryAcquire(
       argonNetworkBucket(loginIp),
     );

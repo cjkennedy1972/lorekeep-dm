@@ -104,8 +104,8 @@ describe('login throttle', () => {
     const untrusted = await post('known@example.test', ip(26));
     expect(untrusted.statusCode).toBe(429);
     expect(untrusted.json()).toEqual({
-      code: 'BAD_CREDENTIALS',
-      message: 'Email or password is incorrect.',
+      code: 'RATE_LIMITED',
+      message: 'Too many login attempts. Try again shortly.',
     });
     expect(timer).not.toHaveBeenCalled();
 
@@ -184,6 +184,46 @@ describe('login throttle', () => {
       expect(firstResponse.statusCode).toBe(401);
       expect(secondResponse.statusCode).toBe(200);
       expect(run).toHaveBeenCalledTimes(2);
+    } finally {
+      releaseFirst();
+      run.mockRestore();
+      await app.close();
+    }
+  });
+  it('rechecks progressive throttle after queued requests acquire the account slot', async () => {
+    const { app, post } = await setup(undefined, 100);
+    let releaseFirst!: () => void;
+    const firstWork = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let signalEntered!: () => void;
+    const didEnter = new Promise<void>((resolve) => {
+      signalEntered = resolve;
+    });
+    const run = vi
+      .spyOn(argonLimiter, 'run')
+      .mockImplementation(async <T>(work: () => Promise<T>) => {
+        if (run.mock.calls.length === 1) {
+          signalEntered();
+          await firstWork;
+        }
+        return work();
+      });
+    try {
+      const burst = Array.from({ length: 8 }, () =>
+        post('known@example.test', '192.0.2.1'),
+      );
+      await didEnter;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      releaseFirst();
+      const responses = await Promise.all(burst);
+      expect(run).toHaveBeenCalledTimes(5);
+      expect(
+        responses.slice(0, 5).every((response) => response.statusCode === 401),
+      ).toBe(true);
+      expect(
+        responses.slice(5).every((response) => response.statusCode === 429),
+      ).toBe(true);
     } finally {
       releaseFirst();
       run.mockRestore();
