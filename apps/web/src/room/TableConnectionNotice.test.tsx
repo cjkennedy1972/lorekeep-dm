@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
   RECONNECT_NOTICE_DELAY_MS,
@@ -62,4 +62,21 @@ test('a closed seat is not told the table will reconnect', () => {
     vi.advanceTimersByTime(RECONNECT_NOTICE_DELAY_MS * 5);
   });
   expect(screen.queryByText(NOTICE)).toBeNull();
+});
+
+test('a reconnect that gave up offers a manual retry and stops claiming to reconnect', () => {
+  const onRetry = vi.fn();
+  render(
+    <TableConnectionNotice status="closed" reconnectGaveUp onRetry={onRetry} />,
+  );
+  const notice = screen.getByRole('status');
+  expect(notice).toHaveTextContent('We couldn’t reconnect you to the table');
+  expect(notice).toHaveTextContent('select Retry');
+  expect(notice).not.toHaveTextContent(/reconnecting/i);
+  // Neutral copy: no record ids and no security detail.
+  expect(notice.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
+  expect(notice.textContent).not.toMatch(/authenticat|token|seat/i);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(onRetry).toHaveBeenCalledTimes(1);
 });

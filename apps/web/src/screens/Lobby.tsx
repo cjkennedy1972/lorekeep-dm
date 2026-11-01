@@ -10,6 +10,7 @@ import {
 } from '../features/party/CharacterBinding';
 import { ClaimStatus } from '../features/party/ClaimStatus';
 import { ConnectionStatus } from '../room/ConnectionStatus';
+import { ReconnectGaveUpNotice } from '../room/TableConnectionNotice';
 import { useRoom } from '../room/useRoom';
 import { MatureOptOutField, useMatureOptOut } from './MatureOptOut';
 
@@ -156,6 +157,7 @@ export function Lobby() {
     <>
       <h1>{room.name}</h1>
       <ConnectionStatus status={live.status} />
+      {live.reconnectGaveUp && <ReconnectGaveUpNotice onRetry={live.retry} />}
       <p>
         {mineBound ? (
           <Link className="button" to={`/rooms/${id}/game`}>

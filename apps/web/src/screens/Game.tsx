@@ -1082,6 +1082,7 @@ export function Game() {
         stalled={roomStateStalled}
         lobbyHref={`/rooms/${id}`}
         onRetry={live.removed ? undefined : retryRoomConnection}
+        reconnectGaveUp={live.reconnectGaveUp}
       />
     );
   // A solo-mode table has nobody to chat with, so its Party chat drawer would be an empty shell. The server
@@ -1128,7 +1129,11 @@ export function Game() {
           onDismiss={() => setPartialFailure(null)}
         />
       )}
-      <TableConnectionNotice status={live.status} />
+      <TableConnectionNotice
+        status={live.status}
+        reconnectGaveUp={live.reconnectGaveUp}
+        onRetry={live.removed ? undefined : retryRoomConnection}
+      />
       <p role="status" aria-live="polite">
         {error}
       </p>
