@@ -40,6 +40,31 @@ export class BoundedCounter {
 }
 
 export class BusyError extends Error {}
+
+/** Bounds concurrent expensive operations per key without retaining idle keys. */
+export class KeyedConcurrencyGate {
+  private readonly active = new Map<string, number>();
+
+  constructor(
+    private readonly maxPerKey: number,
+    private readonly maxKeys = 10_000,
+  ) {}
+
+  tryAcquire(key: string): (() => void) | undefined {
+    const count = this.active.get(key) ?? 0;
+    if (count >= this.maxPerKey) return undefined;
+    if (count === 0 && this.active.size >= this.maxKeys) return undefined;
+    this.active.set(key, count + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const current = this.active.get(key);
+      if (current === undefined || current <= 1) this.active.delete(key);
+      else this.active.set(key, current - 1);
+    };
+  }
+}
 /** Limits concurrent expensive work; waiters give up after `waitMs`. */
 export class Limiter {
   private active = 0;

@@ -8,7 +8,11 @@ import { sendBestEffort, type EmailSender } from '../email/sender.js';
 import { signup, signupResponse, signupSchema } from '../accounts/signup.js';
 import { resendVerification, verifyEmail } from '../accounts/verify.js';
 import { login, badCredentials } from '../accounts/login.js';
-import { BoundedCounter, BusyError } from '../accounts/throttle.js';
+import {
+  BoundedCounter,
+  BusyError,
+  KeyedConcurrencyGate,
+} from '../accounts/throttle.js';
 import type { ConnectionRegistry } from '../gateway/connections.js';
 import {
   clearSessionCookie,
@@ -28,6 +32,7 @@ import {
 import { z } from 'zod';
 import {
   requestPasswordReset,
+  requestPasswordResetIfMissing,
   confirmPasswordReset,
   changePassword,
 } from '../accounts/reset.js';
@@ -92,6 +97,8 @@ export function registerAuthRoutes(
   // Login failure buckets are bounded, hashed where email-derived, and rejected before Argon2.
   // The account-wide guard is a progressive Retry-After, never a hard lockout.
   const loginNetworkFailures = new BoundedCounter(600_000);
+  // Limit any one subnet to three of four shared Argon2 slots across all accounts.
+  const loginNetworkInFlight = new KeyedConcurrencyGate(3);
   const loginIpFailures = new BoundedCounter(600_000);
   const accountFailures = new BoundedCounter(600_000);
   const recoverySendCooldown = new BoundedCounter(3_600_000);
@@ -101,7 +108,7 @@ export function registerAuthRoutes(
   const IP_FAIL_LIMIT = 20;
   const NETWORK_FAIL_LIMIT = 5;
   const LOGIN_IP_FAIL_LIMIT = 20;
-  const ACCOUNT_RECOVERY_LIMIT = 100;
+  const ACCOUNT_RECOVERY_LIMIT = 10;
   const emailBucket = (email: string) =>
     createHash('sha256').update(email).digest('hex');
   const loginNetworkKey = (email: string, ip: string) =>
@@ -215,23 +222,18 @@ export function registerAuthRoutes(
       LOGIN_IP_FAIL_LIMIT,
     );
     const accountKey = emailBucket(email);
-    const accountFailureCount = accountFailures.count(accountKey);
-    const accountDelay =
-      trustedDevice || accountFailureCount < ACCOUNT_RECOVERY_LIMIT
-        ? 0
-        : Math.min(
-            30_000,
-            250 *
-              2 ** Math.min(accountFailureCount - ACCOUNT_RECOVERY_LIMIT, 7),
-          );
-    const retryMs = Math.max(networkDelay, ipDelay, accountDelay);
+    const retryMs = Math.max(networkDelay, ipDelay);
     if (retryMs > 0) {
-      if (accountDelay > 0) accountFailures.hit(accountKey);
       return reply
         .code(429)
         .header('retry-after', String(Math.ceil(retryMs / 1000)))
         .send(badCredentials);
     }
+    const releaseNetwork = trustedDevice
+      ? undefined
+      : loginNetworkInFlight.tryAcquire(networkBucket(clientIp));
+    if (!trustedDevice && !releaseNetwork)
+      return reply.code(429).header('retry-after', '1').send(badCredentials);
     let result;
     try {
       result = await login(
@@ -247,19 +249,36 @@ export function registerAuthRoutes(
           message: 'Server is busy. Try again shortly.',
         });
       throw error;
+    } finally {
+      releaseNetwork?.();
     }
     if (result.kind === 'invalid') {
       loginNetworkFailures.hit(networkKey);
       loginIpFailures.hit(ipKey);
-      accountFailures.hit(accountKey);
-      if (accountFailures.count(accountKey) >= ACCOUNT_RECOVERY_LIMIT) {
+      const accountFailuresAfterAttempt = accountFailures.hit(accountKey);
+      const accountDelay =
+        !trustedDevice && accountFailuresAfterAttempt >= ACCOUNT_RECOVERY_LIMIT
+          ? Math.min(
+              8_000,
+              250 *
+                2 **
+                  Math.min(
+                    accountFailuresAfterAttempt - ACCOUNT_RECOVERY_LIMIT,
+                    5,
+                  ),
+            )
+          : 0;
+      if (accountDelay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, accountDelay));
+      }
+      if (accountFailuresAfterAttempt >= ACCOUNT_RECOVERY_LIMIT) {
         const emailKey = accountKey;
         if (
           recoverySendCooldown.count(emailKey) === 0 &&
           !limited(`forgot-email:${emailKey}`)
         ) {
           recoverySendCooldown.hit(emailKey);
-          void requestPasswordReset(db, sender, email)
+          void requestPasswordResetIfMissing(db, sender, email)
             .then(({ sent }) =>
               sent?.then((sendError) => {
                 if (sendError)
@@ -277,7 +296,13 @@ export function registerAuthRoutes(
             );
         }
       }
-      return reply.code(401).send(badCredentials);
+      const invalidReply = reply.code(401);
+      if (accountDelay > 0)
+        invalidReply.header(
+          'retry-after',
+          String(Math.ceil(accountDelay / 1000)),
+        );
+      return invalidReply.send(badCredentials);
     }
     if (result.kind === 'deleting')
       return reply.code(403).send({

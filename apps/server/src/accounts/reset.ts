@@ -13,6 +13,26 @@ export async function requestPasswordReset(
   email: string,
   now = new Date(),
 ): Promise<{ sent?: Promise<string | undefined> }> {
+  return createPasswordReset(db, sender, email, now, false);
+}
+
+/** Automatic login recovery must not invalidate a link the owner already has. */
+export async function requestPasswordResetIfMissing(
+  db: Pool,
+  sender: EmailSender,
+  email: string,
+  now = new Date(),
+): Promise<{ sent?: Promise<string | undefined> }> {
+  return createPasswordReset(db, sender, email, now, true);
+}
+
+async function createPasswordReset(
+  db: Pool,
+  sender: EmailSender,
+  email: string,
+  now: Date,
+  onlyIfMissing: boolean,
+): Promise<{ sent?: Promise<string | undefined> }> {
   // Identical expensive work for known and unknown addresses.
   await hashPassword(randomBytes(32).toString('base64url'));
   const account = await db.query(
@@ -20,19 +40,26 @@ export async function requestPasswordReset(
     [email.trim().toLowerCase()],
   );
   if (!account.rowCount) return {};
+  const accountId = account.rows[0].id as string;
   const token = randomBytes(32).toString('base64url');
-  // Only the latest link works: retire older unused ones in the same transaction.
-  await inAccountLock(db, account.rows[0].id, async (client) => {
-    await invalidateResetTokens(client, account.rows[0].id, now);
+  // Serialize with reset confirmation and re-check inside the account lock so
+  // an automatic trigger cannot retire a link issued just before it acquired the lock.
+  const inserted = await inAccountLock(db, accountId, async (client) => {
+    if (onlyIfMissing) {
+      const existing = await client.query(
+        "SELECT 1 FROM email_tokens WHERE account_id=$1 AND kind='reset' AND used_at IS NULL AND expires_at>$2 LIMIT 1",
+        [accountId, now],
+      );
+      if (existing.rowCount) return false;
+    }
+    await invalidateResetTokens(client, accountId, now);
     await client.query(
       "INSERT INTO email_tokens(token_hash,account_id,kind,expires_at) VALUES ($1,$2,'reset',$3)",
-      [
-        hashToken(token),
-        account.rows[0].id,
-        new Date(now.getTime() + 3600_000),
-      ],
+      [hashToken(token), accountId, new Date(now.getTime() + 3600_000)],
     );
+    return true;
   });
+  if (!inserted) return {};
   // The link is committed; a failed send leaves the user able to request another one. Not awaited: send latency must not distinguish known from unknown addresses.
   const sent = sendBestEffort(async () => {
     await sender.sendPasswordReset?.(email.trim().toLowerCase(), token);

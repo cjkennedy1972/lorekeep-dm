@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { hashPassword } from '../../src/accounts/password.js';
 import { argonLimiter } from '../../src/accounts/login.js';
+import { BusyError } from '../../src/accounts/throttle.js';
 
 async function setup(trustProxy?: boolean | number) {
   const password_hash = await hashPassword('correct-password-1');
@@ -12,6 +13,8 @@ async function setup(trustProxy?: boolean | number) {
     connect: async () => ({
       query: async (sql: string) => {
         queries.push(sql);
+        if (/SELECT 1 FROM email_tokens/.test(sql))
+          return { rows: [{ id: 'live-reset-token' }], rowCount: 1 };
         return { rows: [], rowCount: 1 };
       },
       release: () => undefined,
@@ -21,7 +24,10 @@ async function setup(trustProxy?: boolean | number) {
       if (/UPDATE auth_sessions/.test(sql))
         return { rows: [{ account_id: 'a' }], rowCount: 1 };
       if (/SELECT id FROM accounts WHERE email/.test(sql)) {
-        const rows = args[0] === 'known@example.test' ? [{ id: 'a' }] : [];
+        const rows =
+          typeof args[0] === 'string' && args[0].endsWith('@example.test')
+            ? [{ id: args[0] === 'known@example.test' ? 'a' : args[0] }]
+            : [];
         return { rows, rowCount: rows.length };
       }
       if (/INSERT INTO auth_sessions/.test(sql))
@@ -29,11 +35,11 @@ async function setup(trustProxy?: boolean | number) {
       if (/FROM accounts WHERE email/.test(sql)) {
         return {
           rows:
-            args[0] === 'known@example.test'
+            typeof args[0] === 'string' && args[0].endsWith('@example.test')
               ? [
                   {
-                    id: 'a',
-                    email: 'known@example.test',
+                    id: args[0] === 'known@example.test' ? 'a' : args[0],
+                    email: args[0],
                     password_hash,
                     status: 'active',
                     is_adult: true,
@@ -141,30 +147,109 @@ describe('login throttle', () => {
     argonWork.mockRestore();
     await app.close();
   });
-  it('applies a progressive account-wide Retry-After while trusted sessions retain recovery access', async () => {
-    const { app, post, forgot } = await setup();
-    for (let i = 0; i < 100; i++) {
-      const ip = `198.${(i >> 8) + 20}.${i & 255}.1`;
-      expect((await post('known@example.test', ip)).statusCode).toBe(401);
+  it('applies a capped account-wide delay without blocking the owner', async () => {
+    const { app, post, sender } = await setup();
+    let thresholdResponse;
+    for (let i = 0; i < 10; i++) {
+      const ip = `198.51.${i}.1`;
+      thresholdResponse = await post('known@example.test', ip);
+      expect(thresholdResponse.statusCode).toBe(401);
     }
-    const limited = [];
-    for (let i = 1; i <= 8; i++)
-      limited.push(await post('known@example.test', `100.${i}.1.1`));
-    expect(limited.every((response) => response.statusCode === 429)).toBe(true);
-    expect(Number(limited.at(-1)?.headers['retry-after'])).toBe(30);
-    expect(limited[0]?.json()).toEqual({
-      code: 'BAD_CREDENTIALS',
-      message: 'Email or password is incorrect.',
-    });
-    expect((await forgot('known@example.test')).statusCode).toBe(202);
-    const trusted = await post(
+    expect(thresholdResponse?.headers['retry-after']).toBe('1');
+    expect(sender.sendPasswordReset).not.toHaveBeenCalled();
+    const owner = await post(
       'known@example.test',
-      '100.9.1.1',
+      '203.0.113.22',
       'correct-password-1',
-      'A'.repeat(43),
     );
-    expect(trusted.statusCode).toBe(200);
+    expect(owner.statusCode).toBe(200);
     await app.close();
+  });
+  it('evaluates credentials after the distributed account guessing threshold', async () => {
+    const { app, post } = await setup();
+    const argonWork = vi.spyOn(argonLimiter, 'run');
+    for (let i = 0; i < 10; i++) {
+      const response = await post('known@example.test', `198.${i}.0.1`);
+      expect(response.statusCode).toBe(401);
+    }
+    argonWork.mockClear();
+    const afterThreshold = await post('known@example.test', '192.0.2.1');
+    expect(afterThreshold.statusCode).toBe(401);
+    expect(afterThreshold.headers['retry-after']).toBeDefined();
+    expect(argonWork).toHaveBeenCalledTimes(1);
+    argonWork.mockRestore();
+    await app.close();
+  });
+  it('does not retire a live reset link when automatic recovery is triggered', async () => {
+    const { app, post, queries, sender } = await setup();
+    for (let i = 0; i < 10; i++) {
+      const response = await post('known@example.test', `198.${i}.1.1`);
+      expect(response.statusCode).toBe(401);
+    }
+    await vi.waitFor(() =>
+      expect(
+        queries.some((sql) => /SELECT 1 FROM email_tokens/.test(sql)),
+      ).toBe(true),
+    );
+    expect(sender.sendPasswordReset).not.toHaveBeenCalled();
+    expect(
+      queries.some((sql) => /UPDATE email_tokens SET used_at/.test(sql)),
+    ).toBe(false);
+    await app.close();
+  });
+  it('reserves Argon2 capacity across accounts from one IPv6 /64', async () => {
+    const { app, post } = await setup();
+    let active = 0;
+    let releaseWork!: () => void;
+    const workGate = new Promise<void>((resolve) => {
+      releaseWork = resolve;
+    });
+    let signalThreeActive!: () => void;
+    const threeActive = new Promise<void>((resolve) => {
+      signalThreeActive = resolve;
+    });
+    const run = vi
+      .spyOn(argonLimiter, 'run')
+      .mockImplementation(async <T>(work: () => Promise<T>): Promise<T> => {
+        if (active >= 4) throw new BusyError('busy');
+        active++;
+        if (active === 3) signalThreeActive();
+        try {
+          await workGate;
+          return await work();
+        } finally {
+          active--;
+        }
+      });
+    const attacker = Array.from({ length: 8 }, (_, i) =>
+      post(`spray-${i}@example.test`, `2001:db8:abcd:12::${i + 1}`),
+    );
+    try {
+      await threeActive;
+      const owner = post(
+        'known@example.test',
+        '2001:db8:ffff:34::1',
+        'correct-password-1',
+      );
+      await vi.waitFor(() => expect(active).toBe(4));
+      releaseWork();
+      const [ownerResponse, ...attackerResponses] = await Promise.all([
+        owner,
+        ...attacker,
+      ]);
+      expect(ownerResponse.statusCode).toBe(200);
+      expect(
+        attackerResponses.filter((response) => response.statusCode === 429)
+          .length,
+      ).toBeGreaterThan(0);
+      expect(
+        attackerResponses.every((response) => response.statusCode !== 503),
+      ).toBe(true);
+    } finally {
+      releaseWork();
+      run.mockRestore();
+      await app.close();
+    }
   });
   it('suppresses recovery sends for an hour without retiring the current reset token', async () => {
     const { app, forgot, queries, sender } = await setup();
