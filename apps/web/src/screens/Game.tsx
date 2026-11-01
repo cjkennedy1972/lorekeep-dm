@@ -1007,7 +1007,8 @@ export function Game() {
           item.id !== selfEntity.id &&
           item.team !== selfEntity.team &&
           !item.fled &&
-          (typeof item.hp !== 'number' || item.hp > 0),
+          (typeof item.hp !== 'number' || item.hp > 0) &&
+          item.hpState !== 'down',
       )
     : [];
   // Options list only attacks this seat can make now, so a foe with no attack option is out of reach (or unseen) from here.
@@ -1442,13 +1443,7 @@ export function Game() {
           {tracker && !combatOver && (
             <section aria-label="Combat commands">
               <h2>Combat actions</h2>
-              <button
-                type="button"
-                onClick={() => {
-                  optionsRequestKey.current = optionsKeyRef.current;
-                  send({ command: 'options' });
-                }}
-              >
+              <button type="button" onClick={requestOptions}>
                 Refresh combat options
               </button>
               {foes.map((foe) => {
@@ -1474,9 +1469,9 @@ export function Game() {
               )}
               {outOfReach.length > 0 && (
                 <p className="combat-out-of-reach">
-                  {`Out of reach of your attacks: ${outOfReach
+                  {`Not in reach of your attacks right now: ${outOfReach
                     .map((foe) => nameOf(foe.id))
-                    .join(', ')}. Move closer to attack.`}
+                    .join(', ')}.`}
                 </p>
               )}
               {offersSpellCast && castLevels.length > 1 && (
