@@ -13,6 +13,7 @@ import {
 } from '../dm/memory.js';
 import type { HostCap } from '../safety/tier.js';
 import { appendEvents, type EventInput, type StoredEvent } from './events.js';
+import { advanceSeatStream } from './seatStreams.js';
 import { insertSnapshot, type Snapshot } from './snapshots.js';
 import { currentMemberSql } from '../room/membership.js';
 import { SeatCharacterRepository } from './seatCharacters.js';
@@ -215,6 +216,48 @@ export class Persistence {
     return this.transaction(sessionId, lease, (client) =>
       appendEvents(client, sessionId, events),
     );
+  }
+
+  appendWithSeatCursors(
+    sessionId: string,
+    events: readonly EventInput[],
+    recipients: readonly {
+      seatId: string;
+      bindingEpoch: number;
+      generation: string;
+      updates: number;
+    }[],
+    lease?: LeaseFence,
+  ): Promise<{
+    events: StoredEvent[];
+    cursors: { seatId: string; cursor: number }[];
+  }> {
+    return this.transaction(sessionId, lease, async (client) => {
+      const seenSeats = new Set<string>();
+      for (const recipient of recipients) {
+        if (seenSeats.has(recipient.seatId))
+          throw new Error('seat_stream_recipient_duplicate');
+        seenSeats.add(recipient.seatId);
+      }
+      const stored = await appendEvents(client, sessionId, events);
+      const cursors: { seatId: string; cursor: number }[] = [];
+      for (const recipient of recipients) {
+        if (!Number.isSafeInteger(recipient.updates) || recipient.updates < 1)
+          throw new Error('seat_stream_increment_invalid');
+        const cursor = await advanceSeatStream(
+          client,
+          {
+            sessionId,
+            seatId: recipient.seatId,
+            bindingEpoch: recipient.bindingEpoch,
+            generation: recipient.generation,
+          },
+          recipient.updates,
+        );
+        cursors.push({ seatId: recipient.seatId, cursor });
+      }
+      return { events: stored, cursors };
+    });
   }
 
   writeChat(
