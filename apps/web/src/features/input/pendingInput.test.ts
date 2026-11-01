@@ -6,15 +6,19 @@ const submission = {
   actionId: 'a1',
   text: 'I open the door.',
   queued: true,
+  submittedAt: 250,
 };
 
-test('a reloaded seat shows its private round submission as pending', () => {
-  expect(pendingInputFor(null, submission, 1_000)).toEqual({
+test('a reloaded seat resumes its wait timer from the server submission time', () => {
+  const now = 1_000;
+  const pending = pendingInputFor(null, submission, now);
+  expect(pending).toEqual({
     id: 'a1',
     text: 'I open the door.',
     acknowledged: true,
-    submittedAt: 1_000,
+    submittedAt: 250,
   });
+  expect(Math.floor((now - pending!.submittedAt) / 1000)).toBe(0);
 });
 
 test('local pending state wins over the seeded submission', () => {

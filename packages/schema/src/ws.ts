@@ -348,6 +348,7 @@ export const SeatPrivateRoundSyncSchema = z.object({
           actionId: z.uuid(),
           text: z.string(),
           queued: z.boolean(),
+          submittedAt: z.number().nonnegative().optional(),
         })
         .strict()
         .optional(),

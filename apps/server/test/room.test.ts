@@ -399,7 +399,12 @@ describe('room actor', () => {
         type: 'SeatPrivateRoundSync',
         payload: {
           roundId,
-          submission: { actionId, text: 'private action text', queued: false },
+          submission: {
+            actionId,
+            text: 'private action text',
+            queued: false,
+            submittedAt: expect.any(Number),
+          },
         },
       }),
     );

@@ -611,8 +611,11 @@ export function Game() {
   };
   // Reloading mid-turn loses local pending state; the server's private submission restores it.
   const seededAt = useMemo(
-    () => Date.now(),
-    [live.privateRoundSubmission?.actionId],
+    () => live.privateRoundSubmission?.submittedAt ?? Date.now(),
+    [
+      live.privateRoundSubmission?.actionId,
+      live.privateRoundSubmission?.submittedAt,
+    ],
   );
   const inputPending = pendingInputFor(
     pendingAction,

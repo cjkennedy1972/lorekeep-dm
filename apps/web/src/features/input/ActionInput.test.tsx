@@ -116,3 +116,18 @@ test('Retry empties the box while the retry is pending and after narration compl
   );
   expect(screen.getByLabelText('Your action')).toHaveValue('');
 });
+
+test('a reloaded pending action starts its wait display from the server timestamp', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(10_250);
+  render(
+    <ActionInput
+      onSubmit={vi.fn()}
+      pending
+      pendingText="I open the door."
+      pendingSince={250}
+    />,
+  );
+  expect(screen.getByRole('status')).toHaveTextContent('Waiting 10s');
+  vi.useRealTimers();
+});

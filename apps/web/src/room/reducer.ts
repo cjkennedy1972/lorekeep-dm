@@ -19,6 +19,7 @@ export interface RoomView {
     actionId: string;
     text: string;
     queued: boolean;
+    submittedAt?: number;
   };
   roundCloseAnnouncement?: {
     roundId: string;

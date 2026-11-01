@@ -2142,6 +2142,8 @@ export class Room {
                 actionId: submission.actionId,
                 text: submission.text,
                 queued: round.queuedSubmissions.includes(submission),
+                // Legacy snapshots predate submittedAt; anchor those at first sync.
+                submittedAt: submission.submittedAt ?? Date.now(),
               },
             }
           : {}),
@@ -5293,6 +5295,7 @@ export class Room {
         text,
         playerName: playerName ?? seat.displayName,
         receiptSeq: order,
+        submittedAt: Date.now(),
       } satisfies NonNullable<RoomState['round']>['submissions'][number];
       this.pendingActions.add(actionId);
       await this.persist('RoundActionAccepted', {
@@ -5476,6 +5479,8 @@ export class Room {
       await this.closeClarification(actionId, 'answered');
       this.queuedActions.unshift({
         accountId,
+        // Keep the original ID: clarification continues the same logical action,
+        // preserving pending-state correlation and replay/idempotency identity.
         actionId,
         originalActionId: actionId,
         editActionIds: [],

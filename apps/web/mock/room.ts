@@ -35,6 +35,7 @@ type Submission = {
   text: string;
   playerName: string;
   receiptSeq: number;
+  submittedAt?: number;
   editedAt?: number;
 };
 
@@ -133,6 +134,7 @@ export class Room {
       actionIds: s.actionIds,
       playerName: s.playerName,
       receiptSeq: s.receiptSeq,
+      ...(s.submittedAt === undefined ? {} : { submittedAt: s.submittedAt }),
       ...(s.editedAt === undefined ? {} : { editedAt: s.editedAt }),
     });
     return {
@@ -275,6 +277,7 @@ export class Room {
       text,
       playerName: seat.displayName,
       receiptSeq: this.seq + 1,
+      submittedAt: Date.now(),
     };
   }
 
@@ -339,6 +342,7 @@ export class Room {
                   actionId: submission.actionId,
                   text: submission.text,
                   queued: this.queued.has(accountId),
+                  submittedAt: submission.submittedAt,
                 },
               }
             : {}),
