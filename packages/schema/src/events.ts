@@ -136,7 +136,23 @@ export const EngineEventSchema = z.discriminatedUnion('type', [
     cause: z.enum(['bump', 'attack', 'opportunity']),
   }).strict(),
   ev('AreaResolved', { cells: z.array(pos), affected: z.array(entityId) }),
-  ev('HpChanged', { entityId, delta: z.int(), hp: z.int() }),
+  ev('HpChanged', {
+    entityId,
+    from: z.int().optional(),
+    to: z.int().optional(),
+    damage: z.int().optional(),
+    damageType: z.string().optional(),
+    amount: z.int().optional(),
+    kind: z.enum(['damage', 'healing']).optional(),
+    // Read compatibility for legacy event rows; current combat producers use from/to.
+    delta: z.int().optional(),
+    hp: z.int().optional(),
+  }).refine(
+    (event) =>
+      (event.from !== undefined && event.to !== undefined) ||
+      (event.delta !== undefined && event.hp !== undefined),
+    'HpChanged requires from/to or legacy delta/hp values',
+  ),
   ev('ConditionApplied', {
     entityId,
     conditionId: z.string().min(1),

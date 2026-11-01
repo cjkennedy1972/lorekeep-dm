@@ -368,6 +368,17 @@ export const ErrorMessageSchema = z.object({
     actionId: ActionIdSchema.optional(),
   }),
 });
+export const CombatOptionSchema = z
+  .object({
+    kind: z.string(),
+    weaponLabel: z.string().optional(),
+    rangeFt: z.number().nonnegative().optional(),
+  })
+  .passthrough();
+export const CombatOptionsPayloadSchema = z
+  .object({ actions: z.array(CombatOptionSchema).optional() })
+  .passthrough();
+
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({
     seq: z.int().nonnegative(),
@@ -458,7 +469,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({
     seq: z.int().nonnegative(),
     type: z.literal('CombatOptions'),
-    payload: z.record(z.string(), z.unknown()),
+    payload: CombatOptionsPayloadSchema,
   }),
   z.object({
     seq: z.int().nonnegative(),

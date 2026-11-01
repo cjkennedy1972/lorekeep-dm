@@ -65,8 +65,12 @@ export function applyCharacterEvent(
   if (!character || !('entityId' in event) || event.entityId !== character.id)
     return character;
   switch (event.type) {
-    case 'HpChanged':
-      return { ...character, hp: { ...character.hp, current: event.hp } };
+    case 'HpChanged': {
+      const hp = event.to ?? event.hp;
+      return hp === undefined
+        ? character
+        : { ...character, hp: { ...character.hp, current: hp } };
+    }
     case 'ConditionApplied':
       return {
         ...character,
@@ -143,7 +147,7 @@ export function createGameStore(initial = initialGameState()): GameStore {
         const character = applyCharacterEvent(state.character, event);
         const message =
           event.type === 'HpChanged' && character?.id === event.entityId
-            ? `Hit points changed to ${event.hp} of ${character.hp.max}`
+            ? `Hit points changed to ${event.to ?? event.hp} of ${character.hp.max}`
             : event.type === 'ConditionApplied' &&
                 character?.id === event.entityId
               ? `${event.conditionId.replace(/^condition:/, '').replaceAll('-', ' ')} condition applied`

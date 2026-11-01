@@ -127,6 +127,34 @@ describe('scene summaries and recap', () => {
     );
   });
 
+  it('accepts current combat HP event fields in the summarizer projection', () => {
+    expect(
+      projectSummarizerEvents([
+        {
+          type: 'HpChanged',
+          payload: {
+            entityId: 'ent_1',
+            from: 12,
+            to: 9,
+            damage: 3,
+            damageType: 'slashing',
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        type: 'HpChanged',
+        payload: {
+          entityId: 'ent_1',
+          from: 12,
+          to: 9,
+          damage: 3,
+          damageType: 'slashing',
+        },
+      },
+    ]);
+  });
+
   it('rejects unknown fields and free-text event types from the summarizer projection', () => {
     expect(
       projectSummarizerEvents([

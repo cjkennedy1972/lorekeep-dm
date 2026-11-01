@@ -53,6 +53,50 @@ const state: OptionsState = {
 };
 
 describe('engine-issued legal action options', () => {
+  test('labels weapon options and includes their maximum range', () => {
+    const armed: OptionsState = {
+      ...state,
+      entities: [
+        {
+          ...state.entities[0]!,
+          attacks: [
+            { id: 'longsword', name: 'Longsword', reachFt: 5 },
+            {
+              id: 'shortbow',
+              name: 'Shortbow',
+              range: { normalFt: 80, longFt: 320 },
+            },
+          ],
+        },
+        { ...state.entities[1]!, pos: { x: 2, y: 1 } },
+        { ...state.entities[1]!, id: 'distant', pos: { x: 5, y: 1 } },
+      ],
+    };
+    const result = legalOptions(armed, 'hero');
+    expect('actions' in result).toBe(true);
+    if (!('actions' in result)) return;
+    expect(result.actions.filter((action) => action.kind === 'attack')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetId: 'foe',
+          attackId: 'longsword',
+          weaponLabel: 'Longsword',
+          rangeFt: 5,
+        }),
+        expect.objectContaining({
+          targetId: 'foe',
+          attackId: 'shortbow',
+          weaponLabel: 'Shortbow',
+          rangeFt: 320,
+        }),
+        expect.objectContaining({
+          targetId: 'distant',
+          attackId: 'shortbow',
+          rangeFt: 320,
+        }),
+      ]),
+    );
+  });
   test('provides resolvable attack/move/end handles and rejects stale or unknown ids', () => {
     const result = legalOptions(state, 'hero');
     expect('actions' in result).toBe(true);
