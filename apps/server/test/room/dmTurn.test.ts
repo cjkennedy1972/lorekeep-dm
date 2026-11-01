@@ -671,6 +671,12 @@ describe('Room solo DM turn lifecycle', () => {
     expect(requests[1].clarificationAsked).toBe(true);
     expect(requests[1].allowClarification).toBe(false);
     expect(requests[1].text).toContain('the left one');
+    expect(ownerMessages).toContainEqual(
+      expect.objectContaining({ type: 'ActionQueued', payload: { actionId } }),
+    );
+    expect(otherMessages).toContainEqual(
+      expect.objectContaining({ type: 'ActionQueued', payload: { actionId } }),
+    );
     expect(
       events
         .filter((event) => event.type === 'ActionAccepted')

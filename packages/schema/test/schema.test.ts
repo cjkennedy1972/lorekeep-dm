@@ -13,6 +13,8 @@ import {
   EditActionSchema,
   RewindTurnSchema,
   StateSyncSchema,
+  RoundSnapshotSchema,
+  SeatPrivateRoundSyncSchema,
   PresenceChangedSchema,
   ErrorMessageSchema,
   ServerMessageSchema,
@@ -317,4 +319,42 @@ test('login email length is bounded to the RFC maximum', () => {
   expect(
     LoginInputSchema.safeParse({ email, password: 'secret' }).success,
   ).toBe(false);
+});
+
+test('submission timestamps are private to seat round syncs', () => {
+  const submittedAt = 1_762_000_000_000;
+  const publicRound = {
+    roundId: uuid,
+    status: 'open' as const,
+    eligibleSeatIds: [uuid],
+    deadlineAt: null,
+    submissions: [
+      {
+        seatId: uuid,
+        actionId: uuid,
+        originalActionId: uuid,
+        actionIds: [uuid],
+        playerName: 'A',
+        receiptSeq: 1,
+        submittedAt,
+      },
+    ],
+    queuedSubmissions: [],
+  };
+  expect(RoundSnapshotSchema.safeParse(publicRound).success).toBe(false);
+  expect(
+    SeatPrivateRoundSyncSchema.parse({
+      seq: 1,
+      type: 'SeatPrivateRoundSync',
+      payload: {
+        roundId: uuid,
+        submission: {
+          actionId: uuid,
+          text: 'I act.',
+          queued: false,
+          submittedAt,
+        },
+      },
+    }).payload.submission?.submittedAt,
+  ).toBe(submittedAt);
 });

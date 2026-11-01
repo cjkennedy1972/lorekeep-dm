@@ -37,6 +37,8 @@ export const RoundSubmissionSchema = z.object({
   text: z.string().min(1).max(4000),
   playerName: z.string().min(1),
   receiptSeq: z.int().positive(),
+  /** Epoch-ms when this action first entered the round; optional for old snapshots. */
+  submittedAt: z.number().nonnegative().optional(),
   editedAt: z.number().optional(),
 });
 export const RoundStateSchema = z.object({

@@ -392,16 +392,39 @@ describe('room actor', () => {
       queuedSubmissions: [],
     });
     expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
+    expect(sync.payload.round).not.toHaveProperty('submissions.0.submittedAt');
     expect(JSON.stringify(sync)).not.toContain('private action text');
     expect(JSON.stringify(sync)).not.toContain('other private action');
-    expect(sent).toContainEqual(
+    const firstPrivate = sent.find(
+      (message) =>
+        (message as { type?: string }).type === 'SeatPrivateRoundSync',
+    ) as { payload: { submission: { submittedAt: number } } };
+    expect(firstPrivate).toEqual(
       expect.objectContaining({
         type: 'SeatPrivateRoundSync',
         payload: {
           roundId,
-          submission: { actionId, text: 'private action text', queued: false },
+          submission: {
+            actionId,
+            text: 'private action text',
+            queued: false,
+            submittedAt: expect.any(Number),
+          },
         },
       }),
+    );
+    const resyncedSeatA: unknown[] = [];
+    await room.subscribe(
+      accountId,
+      { send: (message) => resyncedSeatA.push(message) },
+      -1,
+    );
+    const secondPrivate = resyncedSeatA.find(
+      (message) =>
+        (message as { type?: string }).type === 'SeatPrivateRoundSync',
+    ) as { payload: { submission: { submittedAt: number } } };
+    expect(secondPrivate.payload.submission.submittedAt).toBe(
+      firstPrivate.payload.submission.submittedAt,
     );
     const otherPrivate = otherSent.find(
       (message) =>
@@ -508,6 +531,7 @@ describe('room actor', () => {
       queuedSubmissions: [],
     });
     expect(sync.payload.round).not.toHaveProperty('submissions.0.text');
+    expect(sync.payload.round).not.toHaveProperty('submissions.0.submittedAt');
     expect(JSON.stringify(sync)).not.toContain('private action text');
     expect(JSON.stringify(sync)).not.toContain('Secret sheet name');
     expect(JSON.stringify(sync)).not.toContain('never wire this');
