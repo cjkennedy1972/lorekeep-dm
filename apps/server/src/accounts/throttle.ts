@@ -14,6 +14,10 @@ export class BoundedCounter {
   count(key: string, now = Date.now()): number {
     return this.live(key, now)?.count ?? 0;
   }
+  remainingMs(key: string, now = Date.now()): number {
+    const item = this.live(key, now);
+    return item ? Math.max(0, item.reset - now) : 0;
+  }
   /** Increments and returns the new count. */
   hit(key: string, now = Date.now()): number {
     const item = this.live(key, now);

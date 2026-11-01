@@ -292,6 +292,31 @@ describe('login throttle', () => {
     await app.close();
   });
 
+  it('accepts a maximum-length valid email across login, forgot, and resend', async () => {
+    const { app } = await setup();
+    const email = `${'a'.repeat(241)}@example.test`;
+    expect(email.length).toBe(254);
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/login',
+      payload: { email, password: 'wrong-password-1' },
+    });
+    const forgot = await app.inject({
+      method: 'POST',
+      url: '/api/password/forgot',
+      payload: { email },
+    });
+    const resend = await app.inject({
+      method: 'POST',
+      url: '/api/verify-email/resend',
+      payload: { email },
+    });
+    expect(login.statusCode).toBe(401);
+    expect(forgot.statusCode).toBe(202);
+    expect(resend.statusCode).toBe(202);
+    await app.close();
+  });
+
   it('uses the trusted proxy client-IP helper for recovery, reset, and resend limits', async () => {
     const { app } = await setup(true);
     const clientIp = vi.spyOn(app, 'clientIpForUpgrade');
@@ -326,7 +351,7 @@ describe('login throttle', () => {
     );
     await app.close();
   });
-  it('uses distinct trusted forwarded client addresses for login buckets', async () => {
+  it('does not let X-Forwarded-For rotation bypass login throttling with TRUST_PROXY=true', async () => {
     const { app } = await setup(true);
     const attempt = (forwarded: string) =>
       app.inject({
@@ -338,8 +363,75 @@ describe('login throttle', () => {
       });
     for (let i = 0; i < 5; i++)
       expect((await attempt(`203.0.${i}.1`)).statusCode).toBe(401);
-    expect((await attempt('198.51.100.99')).statusCode).toBe(401);
+    expect((await attempt('198.51.100.99')).statusCode).toBe(429);
     await app.close();
+  });
+  it('uses the proxy-appended address for login buckets with one trusted hop', async () => {
+    const { app } = await setup(1);
+    const attempt = (client: string, proxyClient: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/login',
+        remoteAddress: '10.0.0.1',
+        headers: { 'x-forwarded-for': `${client}, ${proxyClient}` },
+        payload: { email: 'known@example.test', password: 'wrong-password-1' },
+      });
+    for (let i = 0; i < 5; i++)
+      expect((await attempt(`203.0.${i}.1`, '198.51.100.23')).statusCode).toBe(
+        401,
+      );
+    expect((await attempt('198.51.100.99', '198.51.100.23')).statusCode).toBe(
+      429,
+    );
+    expect((await attempt('198.51.100.99', '192.0.2.24')).statusCode).toBe(401);
+    await app.close();
+  });
+  it('expires network and IP login locks after their fixed window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { app, post } = await setup();
+    try {
+      for (let i = 1; i <= 5; i++)
+        expect(
+          (await post('known@example.test', `203.0.113.${i}`)).statusCode,
+        ).toBe(401);
+      const locked = await post('known@example.test', '203.0.113.6');
+      expect(locked.statusCode).toBe(429);
+      expect(locked.headers['retry-after']).toBe('600');
+      vi.advanceTimersByTime(600_001);
+      expect(
+        (await post('known@example.test', '203.0.113.6', 'correct-password-1'))
+          .statusCode,
+      ).toBe(200);
+    } finally {
+      vi.useRealTimers();
+      await app.close();
+    }
+  });
+  it('expires the IP login lock after its fixed window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { app, post } = await setup();
+    try {
+      for (let i = 0; i < 20; i++)
+        expect(
+          (await post(`attacker${i}@example.test`, '198.51.100.70')).statusCode,
+        ).toBe(401);
+      const locked = await post('owner@example.test', '198.51.100.70');
+      expect(locked.statusCode).toBe(429);
+      expect(locked.headers['retry-after']).toBe('600');
+      vi.advanceTimersByTime(600_001);
+      expect(
+        (
+          await post(
+            'owner@example.test',
+            '198.51.100.70',
+            'correct-password-1',
+          )
+        ).statusCode,
+      ).toBe(200);
+    } finally {
+      vi.useRealTimers();
+      await app.close();
+    }
   });
   it('rejects login request bodies above the configured limit', async () => {
     const { app } = await setup();
