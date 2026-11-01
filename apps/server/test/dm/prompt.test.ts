@@ -57,6 +57,15 @@ describe('DM prompt builder', () => {
       'A turn ending, narration describing possible travel, or an available encounter is not by itself an established scene transition',
     );
   });
+  it('resolves clear ordinary actions and keeps questions addressed to the player', () => {
+    const { blocks } = buildPrompt(input('I say hello to the sentinel.'));
+    expect(blocks[0]).toContain(
+      'Do not ask for clarification when a sensible, low-risk interpretation is clear; resolve ordinary actions such as greetings without interrupting play.',
+    );
+    expect(blocks[0]).toContain(
+      'When a question is needed, address the player character as “you”; never ask what the named character should do.',
+    );
+  });
   it('narrates only projected resolved combat facts and closes combat without inventing enemies', () => {
     const value = buildPrompt({
       ...input(),
