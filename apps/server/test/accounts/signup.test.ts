@@ -3,6 +3,19 @@ import { validPassword } from '../../src/accounts/password.js';
 import { signupSchema, signupResponse } from '../../src/accounts/signup.js';
 import { checkAdult } from '../../src/accounts/age.js';
 describe('signup validation', () => {
+  it('rejects email addresses longer than the shared 254-character limit', () => {
+    const overlongEmail = `${'a'.repeat(242)}@example.test`;
+    expect(overlongEmail.length).toBe(255);
+    expect(
+      signupSchema.safeParse({
+        email: overlongEmail,
+        password: 'a-long-unique-password',
+        displayName: 'X',
+        birthdate: '2000-01-01',
+        termsVersion: 'v1',
+      }).success,
+    ).toBe(false);
+  });
   it('rejects common passwords and invalid input', () => {
     expect(validPassword('password123456')).toBe(false);
     expect(validPassword('a-long-unique-password')).toBe(true);

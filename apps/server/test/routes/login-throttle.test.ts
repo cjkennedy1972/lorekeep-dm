@@ -6,7 +6,7 @@ import { hashPassword } from '../../src/accounts/password.js';
 import { argonLimiter } from '../../src/accounts/login.js';
 import { BusyError } from '../../src/accounts/throttle.js';
 
-async function setup(trustProxy?: boolean | number) {
+async function setup(trustProxy?: boolean | number, rateLimit = 5) {
   const password_hash = await hashPassword('correct-password-1');
   const queries: string[] = [];
   const sender = { sendPasswordReset: vi.fn(async () => undefined) };
@@ -58,6 +58,7 @@ async function setup(trustProxy?: boolean | number) {
     inputGate: allowInputGate,
     sender: sender as never,
     trustProxy,
+    rateLimit,
   });
   const post = (
     email: string,
@@ -148,7 +149,7 @@ describe('login throttle', () => {
     argonWork.mockRestore();
     await app.close();
   });
-  it('rejects account-wide over-threshold attempts before Argon2 without sleeping', async () => {
+  it('rejects failures spread across networks account-wide before Argon2 without sleeping', async () => {
     const { app, post, sender } = await setup();
     for (let i = 0; i < 10; i++) {
       const response = await post('known@example.test', `198.${i}.0.1`);
@@ -267,6 +268,60 @@ describe('login throttle', () => {
       queries.filter((sql) => /INSERT INTO email_tokens/.test(sql)),
     ).toHaveLength(1);
     expect(sender.sendPasswordReset).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it('rejects overlong emails consistently on forgot and resend', async () => {
+    const { app } = await setup();
+    const email = `${'a'.repeat(242)}@example.test`;
+    expect(email.length).toBe(255);
+    const forgot = await app.inject({
+      method: 'POST',
+      url: '/api/password/forgot',
+      payload: { email },
+    });
+    const resend = await app.inject({
+      method: 'POST',
+      url: '/api/verify-email/resend',
+      payload: { email },
+    });
+    expect(forgot.statusCode).toBe(400);
+    expect(resend.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('uses the trusted proxy client-IP helper for recovery, reset, and resend limits', async () => {
+    const { app } = await setup(true);
+    const clientIp = vi.spyOn(app, 'clientIpForUpgrade');
+    const inject = (url: string, payload: unknown) =>
+      app.inject({
+        method: 'POST',
+        url,
+        remoteAddress: '10.0.0.1',
+        headers: { 'x-forwarded-for': '203.0.113.77' },
+        payload,
+      });
+
+    expect(
+      (await inject('/api/password/forgot', { email: 'a@example.test' }))
+        .statusCode,
+    ).toBe(202);
+    expect(
+      (
+        await inject('/api/password/reset', {
+          token: 'invalid',
+          password: 'a-long-unique-password',
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (await inject('/api/verify-email/resend', { email: 'b@example.test' }))
+        .statusCode,
+    ).toBe(202);
+    expect(clientIp).toHaveBeenCalledTimes(3);
+    expect(clientIp).toHaveBeenCalledWith(
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
     await app.close();
   });
   it('uses the trusted proxy client address for login buckets', async () => {
