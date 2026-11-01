@@ -314,7 +314,9 @@ describe('Game screen (live Room)', () => {
         { kind: 'move', optionId: 'm', destination: { x: 2, y: 2 }, cost: 5 },
       ],
     });
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     expect(hoisted.send).toHaveBeenLastCalledWith('CombatCommand', {
       command: 'attack',
       targetId: 'ent_goblin',
@@ -344,7 +346,7 @@ describe('Game screen (live Room)', () => {
       ],
     });
     expect(
-      screen.getByRole('button', { name: 'Attack Goblin' }),
+      screen.getByRole('button', { name: 'Attack Goblin with Javelin' }),
     ).toBeInTheDocument();
 
     push('CombatEnded', { outcome: 'party-victory' });
@@ -355,7 +357,7 @@ describe('Game screen (live Room)', () => {
       ),
     ).toHaveTextContent('Victory');
     expect(
-      screen.queryByRole('button', { name: 'Attack Goblin' }),
+      screen.queryByRole('button', { name: 'Attack Goblin with Javelin' }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /^Move to / }),
@@ -1183,6 +1185,142 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     ).toHaveLength(2);
   });
 
+  it('names foes that no attack option reaches, and only once options have arrived', () => {
+    mount();
+    const bandit = {
+      id: 'ent_bandit',
+      kind: 'monster',
+      team: 'enemies',
+      pos: { x: 7, y: 4 },
+      size: 1,
+      hp: 9,
+      hpState: 'healthy',
+    };
+    const base = trackerAt({ x: 1, y: 2 }, 30);
+    push('CombatTracker', { ...base, entities: [...base.entities, bandit] });
+    expect(screen.queryByText(/Not in reach/)).not.toBeInTheDocument();
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    expect(
+      screen.getByText('Not in reach of your attacks right now: Bandit.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Not in reach.*Goblin/)).not.toBeInTheDocument();
+  });
+
+  it('hides the out-of-reach hint while a refreshed options request is pending after the board changes', () => {
+    mount();
+    const bandit = {
+      id: 'ent_bandit',
+      kind: 'monster',
+      team: 'enemies',
+      pos: { x: 7, y: 4 },
+      size: 1,
+      hp: 9,
+      hpState: 'healthy',
+    };
+    const withBandit = (pos: { x: number; y: number }) => {
+      const base = trackerAt(pos, 30);
+      return { ...base, entities: [...base.entities, bandit] };
+    };
+    push('CombatTracker', withBandit({ x: 1, y: 2 }));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    expect(
+      screen.getByText('Not in reach of your attacks right now: Bandit.'),
+    ).toBeInTheDocument();
+    // The seat moved: a new options request is sent but its reply has not arrived.
+    push('CombatTracker', withBandit({ x: 2, y: 2 }));
+    expect(screen.queryByText(/Not in reach/)).not.toBeInTheDocument();
+  });
+
+  it('a refresh pressed while an earlier options request is pending does not tag its stale reply as current', () => {
+    mount();
+    const bandit = {
+      id: 'ent_bandit',
+      kind: 'monster',
+      team: 'enemies',
+      pos: { x: 7, y: 4 },
+      size: 1,
+      hp: 9,
+      hpState: 'healthy',
+    };
+    const withBandit = (pos: { x: number; y: number }) => {
+      const base = trackerAt(pos, 30);
+      return { ...base, entities: [...base.entities, bandit] };
+    };
+    push('CombatTracker', withBandit({ x: 1, y: 2 }));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    // Request R1 is sent for this state and stays pending.
+    push('CombatTracker', withBandit({ x: 2, y: 2 }));
+    // The seat moves again while R1 is pending, then the button is pressed.
+    push('CombatTracker', withBandit({ x: 3, y: 2 }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Refresh combat options' }),
+    );
+    // R1 answers the earlier state. It must not be shown as the current answer.
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    expect(screen.queryByText(/Not in reach/)).not.toBeInTheDocument();
+  });
+
+  it('a foe that is down, with no numeric HP on the wire, is never named as out of reach', () => {
+    mount();
+    const downed = {
+      id: 'ent_bandit',
+      kind: 'monster',
+      team: 'enemies',
+      pos: { x: 7, y: 4 },
+      size: 1,
+      hpState: 'down',
+    };
+    const base = trackerAt({ x: 1, y: 2 }, 30);
+    push('CombatTracker', { ...base, entities: [...base.entities, downed] });
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    expect(screen.queryByText(/Not in reach/)).not.toBeInTheDocument();
+  });
+
   it('a rejected attack gets neutral copy beside the attack buttons, and the next attack clears it', async () => {
     const user = userEvent.setup();
     mount();
@@ -1198,7 +1336,9 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       ],
     });
     hoisted.send.mockReturnValueOnce('atk-1');
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     push('Error', {
       code: 'COMMAND_REJECTED',
       message: 'That target is not a legal attack.',
@@ -1213,7 +1353,9 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       screen.queryByText('That target is not a legal attack.'),
     ).not.toBeInTheDocument();
     hoisted.send.mockReturnValueOnce('atk-2');
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -1238,7 +1380,9 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     for (const [index, message] of serverWording.entries()) {
       const actionId = `atk-generic-${index}`;
       hoisted.send.mockReturnValueOnce(actionId);
-      await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+      );
       push('Error', { code: 'COMMAND_REJECTED', message, actionId });
       const feedback = screen.getByRole('alert');
       expect(feedback).toHaveTextContent(
@@ -1264,9 +1408,13 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       ],
     });
     hoisted.send.mockReturnValueOnce('atk-old');
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     hoisted.send.mockReturnValueOnce('atk-new');
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     // The first attack's rejection lands late: it must not show against the second attack.
     push('Error', {
       code: 'COMMAND_REJECTED',
@@ -1303,7 +1451,9 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       ],
     });
     hoisted.send.mockReturnValueOnce('atk-remount');
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     first.unmount();
     mount();
     push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
@@ -1335,9 +1485,13 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       ],
     });
     hoisted.send.mockReturnValueOnce('atk-before');
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     hoisted.send.mockReturnValueOnce('atk-after');
-    await user.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+    );
     first.unmount();
     mount();
     push('CombatTracker', trackerAt({ x: 2, y: 2 }, 30));
@@ -1368,7 +1522,9 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
         ],
       });
       hoisted.send.mockReturnValueOnce('atk-left');
-      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+      );
       first.unmount();
       act(() => {
         vi.advanceTimersByTime(1_000);
@@ -1405,7 +1561,9 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
         ],
       });
       hoisted.send.mockReturnValueOnce('atk-late');
-      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+      );
       act(() => {
         vi.advanceTimersByTime(6_000);
       });
@@ -1441,12 +1599,16 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
         ],
       });
       hoisted.send.mockReturnValueOnce('atk-old');
-      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+      );
       act(() => {
         vi.advanceTimersByTime(6_000);
       });
       hoisted.send.mockReturnValueOnce('atk-new');
-      fireEvent.click(screen.getByRole('button', { name: 'Attack Goblin' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
+      );
       push('Error', {
         code: 'COMMAND_REJECTED',
         message: 'That target is not a legal attack.',
@@ -1518,7 +1680,7 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       ],
     });
     expect(
-      screen.queryByRole('button', { name: 'Attack Goblin' }),
+      screen.queryByRole('button', { name: 'Attack Goblin with Staff' }),
     ).not.toBeInTheDocument();
 
     hoisted.send.mockClear();
@@ -1537,7 +1699,7 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       ],
     });
     expect(
-      screen.getByRole('button', { name: 'Attack Goblin' }),
+      screen.getByRole('button', { name: 'Attack Goblin with Staff' }),
     ).toBeInTheDocument();
   });
 
@@ -1559,7 +1721,7 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
       activeEntityId: 'ent_goblin',
     });
     expect(
-      screen.queryByRole('button', { name: 'Attack Goblin' }),
+      screen.queryByRole('button', { name: 'Attack Goblin with Staff' }),
     ).not.toBeInTheDocument();
   });
 

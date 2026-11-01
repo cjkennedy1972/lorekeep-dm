@@ -2,6 +2,7 @@ import { distance, type Placed } from '@game/rules-engine';
 import { useEffect, useMemo, useState } from 'react';
 import { gameStore, type GameState } from '../../state/gameStore.js';
 import { nameFromCatalogId } from './names.js';
+import { hpWord } from './tokens.js';
 import './token-table.css';
 
 type Props = {
@@ -20,12 +21,6 @@ type Row = {
   feet: number;
   state: string;
 };
-
-/** Maps the server's qualitative HP words to the same wording the token labels use. */
-function stateWord(hpState: string | undefined): string {
-  if (hpState === 'wounded') return 'bloodied';
-  return hpState ?? 'unknown';
-}
 
 /** Screen-reader and keyboard-friendly inventory of every map token and feature. */
 export function TokenTable({
@@ -60,7 +55,11 @@ export function TokenTable({
       state:
         entity.id === ownEntityId && typeof entity.hp === 'number'
           ? `HP ${entity.hp}`
-          : stateWord((entity as { hpState?: string }).hpState),
+          : hpWord(
+              entity.hp,
+              undefined,
+              (entity as { hpState?: string }).hpState,
+            ),
     }));
     const features: Row[] = state.battlemap.features.map((feature) => {
       const cell = feature.cells[0]!;

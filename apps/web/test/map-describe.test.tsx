@@ -173,6 +173,27 @@ describe('battlefield description and token list', () => {
     expect(row(/goblin/)).not.toContain('HP 7');
   });
 
+  it('a monster at 0 HP reads down in the table, the same word its token shows', () => {
+    const store = setup();
+    store.setMapEntities([
+      {
+        id: 'bones',
+        kind: 'monster',
+        pos: { x: 4, y: 2 },
+        size: 1,
+        hp: 0,
+        team: 'foes',
+        speed: 30,
+      },
+    ] as Parameters<typeof store.setMapEntities>[0]);
+    render(<TokenTable store={store} nameOf={rawNames} ownEntityId="hero" />);
+    const row = within(screen.getByRole('table')).getByRole('row', {
+      name: /bones/,
+    });
+    expect(row.textContent).toContain('down');
+    expect(row.textContent).not.toContain('unknown');
+  });
+
   it('passes axe accessibility checks', async () => {
     const store = setup();
     const { container } = render(

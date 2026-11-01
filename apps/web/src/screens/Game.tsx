@@ -350,6 +350,7 @@ export function Game() {
       if (message.type === 'CombatOptions') {
         optionsGate.end();
         optionsRequestId.current = null;
+        setOptionsFor(optionsRequestKey.current);
         setOptions(asRecord(message.payload));
         if (optionsStale.current) requestOptions();
       }
@@ -516,6 +517,9 @@ export function Game() {
   const [optionsGate] = useState(() => createInFlightGate(5_000));
   const optionsStale = useRef(false);
   const optionsRequestId = useRef<string | null>(null);
+  // The board state each options request was sent for, and the state the latest options reply answers.
+  const optionsKeyRef = useRef<string | null>(null);
+  const optionsRequestKey = useRef<string | null>(null);
   // The slot a cast spends; null follows the lowest slot the caster can still pay for.
   const [slotLevel, setSlotLevel] = useState<number | null>(null);
   // Only the controlling reactor gets the decision (ReactionPrompt); other seats get a status-only notice.
@@ -553,6 +557,7 @@ export function Game() {
     return () => window.clearInterval(timer);
   }, [reactionNotice?.reactionId, reactionNotice?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
+  const [optionsFor, setOptionsFor] = useState<string | null>(null);
   const [error, setError] = useState('');
   // The DM applied only part of this player's action; shown as a dismissible alert, not the status line.
   const [partialFailure, setPartialFailure] = useState<string | null>(null);
@@ -918,23 +923,19 @@ export function Game() {
   const offersSpellCast =
     areas.length > 0 ||
     nonMoveActions.some((value) => asRecord(value).kind === 'spell');
-  // Attack options are de-duplicated by target and weapon; the count per target decides whether to name the weapon.
+  // Attack options are de-duplicated by target and weapon. Every attack button names its weapon.
   const firstAttackIndex = new Set<number>();
-  const attackCountByTarget = new Map<string, number>();
+  const reachableTargets = new Set<string>();
   {
     const seen = new Set<string>();
     nonMoveActions.forEach((value, index) => {
       const item = asRecord(value);
       if (item.kind !== 'attack') return;
+      reachableTargets.add(String(item.targetId));
       const key = `${String(item.targetId)}|${String(item.attackId)}`;
       if (seen.has(key)) return;
       seen.add(key);
       firstAttackIndex.add(index);
-      const target = String(item.targetId);
-      attackCountByTarget.set(
-        target,
-        (attackCountByTarget.get(target) ?? 0) + 1,
-      );
     });
   }
   // The server answers `options` only when asked, and only on this seat's turn. Ask when the turn starts and
@@ -953,9 +954,13 @@ export function Game() {
       return;
     }
     optionsStale.current = false;
+    optionsRequestKey.current = optionsKeyRef.current;
     const id = send({ command: 'options' });
     optionsRequestId.current = typeof id === 'string' ? id : null;
   };
+  useEffect(() => {
+    optionsKeyRef.current = optionsKey;
+  }, [optionsKey]);
   useEffect(() => {
     if (optionsKey !== null) requestOptions();
   }, [optionsKey]);
@@ -1002,9 +1007,16 @@ export function Game() {
           item.id !== selfEntity.id &&
           item.team !== selfEntity.team &&
           !item.fled &&
-          (typeof item.hp !== 'number' || item.hp > 0),
+          (typeof item.hp !== 'number' || item.hp > 0) &&
+          item.hpState !== 'down',
       )
     : [];
+  // Options list only attacks this seat can make now, so a foe with no attack option is out of reach (or unseen) from here.
+  // Options answering an earlier board state say nothing about this one, so they are ignored until the reply arrives.
+  const outOfReach =
+    yourTurn && options !== null && optionsFor === optionsKey
+      ? foes.filter((foe) => !reachableTargets.has(foe.id))
+      : [];
   if (live.removed === 'kicked')
     return (
       <section className="game-notice">
@@ -1431,10 +1443,7 @@ export function Game() {
           {tracker && !combatOver && (
             <section aria-label="Combat commands">
               <h2>Combat actions</h2>
-              <button
-                type="button"
-                onClick={() => send({ command: 'options' })}
-              >
+              <button type="button" onClick={requestOptions}>
                 Refresh combat options
               </button>
               {foes.map((foe) => {
@@ -1458,6 +1467,13 @@ export function Game() {
                   {attackFeedback}
                 </p>
               )}
+              {outOfReach.length > 0 && (
+                <p className="combat-out-of-reach">
+                  {`Not in reach of your attacks right now: ${outOfReach
+                    .map((foe) => nameOf(foe.id))
+                    .join(', ')}.`}
+                </p>
+              )}
               {offersSpellCast && castLevels.length > 1 && (
                 <SlotLevelPicker
                   levels={castLevels}
@@ -1471,10 +1487,7 @@ export function Game() {
                   // The same target and weapon can be offered twice; show it once.
                   if (!firstAttackIndex.has(index)) return null;
                   const targetName = nameOf(String(item.targetId));
-                  const weapon =
-                    (attackCountByTarget.get(String(item.targetId)) ?? 0) > 1
-                      ? weaponName(String(item.attackId ?? ''))
-                      : undefined;
+                  const weapon = weaponName(String(item.attackId ?? ''));
                   return (
                     <button
                       key={String(item.optionId ?? index)}
