@@ -98,8 +98,9 @@ export function registerAuthRoutes(
   // Login failure buckets are bounded, hashed where email-derived, and rejected before Argon2.
   // The account-wide guard is a progressive Retry-After, never a hard lockout.
   const loginNetworkFailures = new BoundedCounter(600_000);
-  // Limit any one subnet to three of four shared Argon2 slots across all accounts.
+  // Reserve one of four shared Argon2 slots from concentrated multi-network sprays.
   const loginNetworkInFlight = new KeyedConcurrencyGate(3);
+  const loginAccountInFlight = new KeyedConcurrencyGate(1);
   const loginIpFailures = new BoundedCounter(600_000);
   const accountFailures = new BoundedCounter(600_000);
   const recoverySendCooldown = new BoundedCounter(3_600_000);
@@ -114,6 +115,15 @@ export function registerAuthRoutes(
     createHash('sha256').update(email).digest('hex');
   const loginNetworkKey = (email: string, ip: string) =>
     `login:${emailBucket(email)}:${networkBucket(ip)}`;
+  const argonNetworkBucket = (ip: string) => {
+    const normalized = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+    if (isIP(normalized) === 4)
+      return `${normalized.split('.').slice(0, 2).join('.')}.0.0/16`;
+    const bucket = networkBucket(normalized);
+    return bucket.endsWith('/64')
+      ? `${bucket.slice(0, bucket.indexOf('::')).split(':').slice(0, 3).join(':')}::/48`
+      : bucket;
+  };
   const backoffMs = (failures: number, limit: number) =>
     failures < limit
       ? 0
@@ -176,7 +186,9 @@ export function registerAuthRoutes(
     const ip = clientIp(request);
     if (
       limited(`reset-ip:${ip}`) ||
-      limited(`reset-token:${ip}:${parsed.data.token}`)
+      limited(
+        `reset-token:${ip}:${createHash('sha256').update(parsed.data.token).digest('hex')}`,
+      )
     )
       return reply
         .code(429)
@@ -205,7 +217,7 @@ export function registerAuthRoutes(
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Invalid login details.' });
     const email = parsed.data.email.trim().toLowerCase();
-    const clientIp = app.clientIpForUpgrade(request.raw);
+    const clientIp = request.ip;
     const networkKey = loginNetworkKey(email, clientIp);
     const ipKey = `login-ip:${clientIp}`;
     const cookieToken = tokenFromCookie(request.headers.cookie);
@@ -226,18 +238,6 @@ export function registerAuthRoutes(
       LOGIN_IP_FAIL_LIMIT,
     );
     const accountKey = emailBucket(email);
-    const accountFailureCount = accountFailures.count(accountKey);
-    if (!trustedDevice && accountFailureCount >= ACCOUNT_RECOVERY_LIMIT) {
-      const failures = accountFailures.hit(accountKey);
-      const accountDelay = Math.min(
-        30_000,
-        250 * 2 ** Math.min(failures - ACCOUNT_RECOVERY_LIMIT, 7),
-      );
-      return reply
-        .code(429)
-        .header('retry-after', String(Math.ceil(accountDelay / 1000)))
-        .send(badCredentials);
-    }
     const retryMs = Math.max(networkDelay, ipDelay);
     if (retryMs > 0) {
       return reply
@@ -245,11 +245,16 @@ export function registerAuthRoutes(
         .header('retry-after', String(Math.ceil(retryMs / 1000)))
         .send(badCredentials);
     }
+    const releaseAccount = loginAccountInFlight.tryAcquire(accountKey);
+    if (!releaseAccount)
+      return reply.code(429).header('retry-after', '1').send(badCredentials);
     const releaseNetwork = trustedDevice
       ? undefined
-      : loginNetworkInFlight.tryAcquire(networkBucket(clientIp));
-    if (!trustedDevice && !releaseNetwork)
+      : loginNetworkInFlight.tryAcquire(argonNetworkBucket(clientIp));
+    if (!trustedDevice && !releaseNetwork) {
+      releaseAccount();
       return reply.code(429).header('retry-after', '1').send(badCredentials);
+    }
     let result;
     try {
       result = await login(
@@ -267,6 +272,7 @@ export function registerAuthRoutes(
       throw error;
     } finally {
       releaseNetwork?.();
+      releaseAccount();
     }
     if (result.kind === 'invalid') {
       loginNetworkFailures.hit(networkKey);

@@ -149,42 +149,41 @@ describe('login throttle', () => {
     argonWork.mockRestore();
     await app.close();
   });
-  it('rejects failures spread across networks account-wide before Argon2 without sleeping', async () => {
+  it('checks credentials for an account at the recovery ceiling', async () => {
     const { app, post, sender } = await setup();
     for (let i = 0; i < 10; i++) {
       const response = await post('known@example.test', `198.${i}.0.1`);
       expect(response.statusCode).toBe(401);
     }
     const verify = vi.spyOn(password, 'verifyPassword');
-    const argonWork = vi.spyOn(argonLimiter, 'run');
-    const timer = vi.spyOn(globalThis, 'setTimeout');
-    const retryAfter: number[] = [];
-    for (let i = 0; i < 7; i++) {
-      const response = await post('known@example.test', `192.0.${i}.1`);
-      expect(response.statusCode).toBe(429);
-      expect(response.json()).toEqual({
-        code: 'BAD_CREDENTIALS',
-        message: 'Email or password is incorrect.',
-      });
-      retryAfter.push(Number(response.headers['retry-after']));
-    }
-    expect(retryAfter).toEqual([1, 1, 2, 4, 8, 16, 30]);
-    expect(verify).not.toHaveBeenCalled();
-    expect(argonWork).not.toHaveBeenCalled();
-    expect(timer).not.toHaveBeenCalled();
+    const owner = await post(
+      'known@example.test',
+      '192.0.1.1',
+      'correct-password-1',
+    );
+    expect(owner.statusCode).toBe(200);
+    expect(verify).toHaveBeenCalled();
     expect(sender.sendPasswordReset).not.toHaveBeenCalled();
     verify.mockRestore();
-    argonWork.mockRestore();
-    timer.mockRestore();
-
-    const trusted = await post(
-      'known@example.test',
-      '203.0.113.22',
-      'correct-password-1',
-      'A'.repeat(43),
-    );
-    expect(trusted.statusCode).toBe(200);
     await app.close();
+  });
+  it('allows the owner to log in after the account failure window expires', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { app, post } = await setup();
+    try {
+      for (let i = 0; i < 10; i++)
+        expect(
+          (await post('known@example.test', `198.${i}.1.1`)).statusCode,
+        ).toBe(401);
+      vi.advanceTimersByTime(600_001);
+      expect(
+        (await post('known@example.test', '192.0.1.1', 'correct-password-1'))
+          .statusCode,
+      ).toBe(200);
+    } finally {
+      vi.useRealTimers();
+      await app.close();
+    }
   });
   it('does not retire a live reset link when automatic recovery is triggered', async () => {
     const { app, post, queries, sender } = await setup();
@@ -228,7 +227,10 @@ describe('login throttle', () => {
         }
       });
     const attacker = Array.from({ length: 8 }, (_, i) =>
-      post(`spray-${i}@example.test`, `2001:db8:abcd:12::${i + 1}`),
+      post(
+        `spray-${i}@example.test`,
+        `2001:db8:abcd:${(i + 1).toString(16)}::1`,
+      ),
     );
     try {
       await threeActive;
@@ -324,7 +326,7 @@ describe('login throttle', () => {
     );
     await app.close();
   });
-  it('uses the trusted proxy client address for login buckets', async () => {
+  it('uses distinct trusted forwarded client addresses for login buckets', async () => {
     const { app } = await setup(true);
     const attempt = (forwarded: string) =>
       app.inject({
@@ -336,8 +338,7 @@ describe('login throttle', () => {
       });
     for (let i = 0; i < 5; i++)
       expect((await attempt(`203.0.${i}.1`)).statusCode).toBe(401);
-    const limited = await attempt('198.51.100.99');
-    expect(limited.statusCode).toBe(429);
+    expect((await attempt('198.51.100.99')).statusCode).toBe(401);
     await app.close();
   });
   it('rejects login request bodies above the configured limit', async () => {
