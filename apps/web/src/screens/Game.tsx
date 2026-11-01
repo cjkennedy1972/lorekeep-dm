@@ -418,6 +418,8 @@ export function Game() {
         if (actionId && actionId === optionsRequestId.current) {
           optionsGate.end();
           optionsRequestId.current = null;
+          // A board change that arrived while this request was pending is still owed an answer.
+          if (optionsStale.current) requestOptions();
         }
         if (payload.code === 'narration-in-progress' && actionId) {
           const pending = combatRetries.current.get(actionId);

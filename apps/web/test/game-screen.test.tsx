@@ -1720,6 +1720,20 @@ describe('Game screen background requests and cast level', () => {
     expect(optionsCalls()).toHaveLength(2);
   });
 
+  it('a board change during a refused options request still gets its refetch', () => {
+    mount();
+    hoisted.send.mockReturnValueOnce('opt-1');
+    push('CombatTracker', trackerAt({ x: 1, y: 2 }, 30));
+    push('CombatTracker', trackerAt({ x: 4, y: 2 }, 25));
+    expect(optionsCalls()).toHaveLength(1);
+    push('Error', {
+      code: 'COMMAND_REJECTED',
+      message: 'Not your turn.',
+      actionId: 'opt-1',
+    });
+    expect(optionsCalls()).toHaveLength(2);
+  });
+
   it('area aim casts at the slot level the seat picks, not always level 1', async () => {
     const user = userEvent.setup();
     mount(undefined, {
