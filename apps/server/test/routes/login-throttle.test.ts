@@ -230,29 +230,80 @@ describe('login throttle', () => {
       await app.close();
     }
   });
-  it('rejects untrusted credentials before Argon2 at the account recovery ceiling', async () => {
+  it('lets different networks check the same account concurrently', async () => {
+    const { app, post } = await setup();
+    let releaseWork!: () => void;
+    const workGate = new Promise<void>((resolve) => {
+      releaseWork = resolve;
+    });
+    let entered = 0;
+    let signalBoth!: () => void;
+    const bothEntered = new Promise<void>((resolve) => {
+      signalBoth = resolve;
+    });
+    const run = vi
+      .spyOn(argonLimiter, 'run')
+      .mockImplementation(async <T>(work: () => Promise<T>) => {
+        entered++;
+        if (entered === 2) signalBoth();
+        await workGate;
+        return work();
+      });
+    try {
+      const first = post('known@example.test', '192.0.2.1');
+      const second = post('known@example.test', '198.51.100.1');
+      await Promise.race([
+        bothEntered,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('second network was serialized')),
+            100,
+          ),
+        ),
+      ]);
+      releaseWork();
+      const responses = await Promise.all([first, second]);
+      expect(responses.map((response) => response.statusCode)).toEqual([
+        401, 401,
+      ]);
+    } finally {
+      releaseWork();
+      run.mockRestore();
+      await app.close();
+    }
+  });
+  it('does not let automatic recovery cooldown suppress the owner forgot request', async () => {
+    const { app, post, forgot, sender } = await setup();
+    for (let i = 0; i < 10; i++)
+      expect(
+        (await post('known@example.test', `198.${i}.1.1`)).statusCode,
+      ).toBe(401);
+    await vi.waitFor(() =>
+      expect(sender.sendPasswordReset).toHaveBeenCalledTimes(0),
+    );
+    expect((await forgot('known@example.test')).statusCode).toBe(202);
+    await vi.waitFor(() =>
+      expect(sender.sendPasswordReset).toHaveBeenCalledTimes(1),
+    );
+    await app.close();
+  });
+
+  it('uses the account ceiling only to trigger recovery, not to lock out credentials', async () => {
     const { app, post, sender } = await setup();
     for (let i = 0; i < 10; i++) {
       const response = await post('known@example.test', `198.${i}.0.1`);
       expect(response.statusCode).toBe(401);
     }
     const verify = vi.spyOn(password, 'verifyPassword');
-    const blocked = await post(
+    const owner = await post(
       'known@example.test',
       '192.0.1.1',
       'correct-password-1',
     );
-    expect(blocked.statusCode).toBe(429);
-    expect(verify).not.toHaveBeenCalled();
+    expect(owner.statusCode).toBe(200);
+    expect(verify).toHaveBeenCalled();
     expect(sender.sendPasswordReset).not.toHaveBeenCalled();
     verify.mockRestore();
-    const trustedOwner = await post(
-      'known@example.test',
-      '192.0.1.2',
-      'correct-password-1',
-      'A'.repeat(43),
-    );
-    expect(trustedOwner.statusCode).toBe(200);
     await app.close();
   });
   it('allows the owner to log in after the account failure window expires', async () => {

@@ -228,14 +228,6 @@ export function registerAuthRoutes(
       trustedSession?.account_id !== undefined &&
       trustedSession.account_id === trustedAccount?.rows[0]?.id;
     const accountKey = emailBucket(email);
-    const accountFailureCount = accountFailures.count(accountKey);
-    if (!trustedDevice && accountFailureCount >= ACCOUNT_RECOVERY_LIMIT) {
-      const retryMs = accountFailures.remainingMs(accountKey);
-      return reply
-        .code(429)
-        .header('retry-after', String(Math.max(1, Math.ceil(retryMs / 1000))))
-        .send(badCredentials);
-    }
     const networkRetryMs = trustedDevice
       ? 0
       : loginNetworkFailures.count(networkKey) >= NETWORK_FAIL_LIMIT
@@ -254,7 +246,7 @@ export function registerAuthRoutes(
     }
     const releaseAccount = trustedDevice
       ? undefined
-      : await loginAccountInFlight.acquire(accountKey);
+      : await loginAccountInFlight.acquire(networkKey);
     if (!trustedDevice && !releaseAccount)
       return reply.code(429).header('retry-after', '1').send(badCredentials);
     const releaseNetwork = trustedDevice
