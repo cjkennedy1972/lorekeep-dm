@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Character } from '@game/schema';
 import { api } from '../api';
@@ -14,16 +14,33 @@ export function Start() {
   const [name, setName] = useState('');
   const [difficulty, setDifficulty] = useState('moderate');
   const [level, setLevel] = useState('1');
+  const [droppedHero, setDroppedHero] = useState(false);
   const [creation, setCreation] = useState<'quick' | 'wizard'>('quick');
   const [error, setError] = useState('');
+  const [nameError, setNameError] = useState('');
   const [busy, setBusy] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   async function create(character?: Character) {
     setError('');
-    const selectedCharacter = character ?? gameStore.getState().character;
-    let characterToCreate = selectedCharacter
-      ? { ...selectedCharacter, level: Number(level) }
-      : undefined;
+    const gameName = name.trim();
+    if (!gameName) {
+      setNameError('Enter a name for your game.');
+      nameRef.current?.focus();
+      return;
+    }
+    if (character && character.level !== Number(level)) {
+      setError(
+        `This hero is level ${character.level}. Set the starting level to ${character.level} to save it.`,
+      );
+      return;
+    }
+    setDroppedHero(false);
+    // A stored hero is reused only at the selected level; otherwise a fresh one is built at that level.
+    const storedCharacter = gameStore.getState().character;
+    let characterToCreate =
+      character ??
+      (storedCharacter?.level === Number(level) ? storedCharacter : undefined);
     if (!characterToCreate) {
       try {
         characterToCreate = {
@@ -35,7 +52,7 @@ export function Start() {
     }
     setBusy(true);
     const result = await api<{ game: { id: string } }>('/api/tables', {
-      name,
+      name: gameName,
       adventureId: ADVENTURE,
       difficulty,
       startingLevel: Number(level),
@@ -72,16 +89,27 @@ export function Start() {
         Begin <strong>The Hollow Under Marrowfell</strong>, your first
         adventure.
       </p>
-      <form className="form" onSubmit={submit}>
+      <form className="form" onSubmit={submit} noValidate>
         <div className="field">
           <label htmlFor="game-name">Game name</label>
           <input
             id="game-name"
+            ref={nameRef}
             required
             maxLength={80}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? 'game-name-error' : undefined}
+            onChange={(e) => {
+              setName(e.target.value);
+              setNameError('');
+            }}
           />
+          {nameError && (
+            <p id="game-name-error" className="field-error">
+              {nameError}
+            </p>
+          )}
         </div>
         <div className="field">
           <label htmlFor="difficulty">Difficulty</label>
@@ -100,7 +128,12 @@ export function Start() {
           <select
             id="starting-level"
             value={level}
-            onChange={(e) => setLevel(e.target.value)}
+            onChange={(e) => {
+              setLevel(e.target.value);
+              // A hero is sized for the level it was built at; drop it so the next create builds at this level.
+              setDroppedHero(gameStore.getState().character !== null);
+              gameStore.setCharacter(null);
+            }}
           >
             {[1, 2, 3, 4, 5].map((n) => (
               <option key={n} value={n}>
@@ -108,6 +141,12 @@ export function Start() {
               </option>
             ))}
           </select>
+          {droppedHero && (
+            <p role="status" className="field-hint">
+              Changing the starting level cleared your built hero. Build it
+              again at level {level}.
+            </p>
+          )}
         </div>
         <fieldset>
           <legend>Character creation</legend>
@@ -142,16 +181,12 @@ export function Start() {
         )}
       </form>
       <div hidden={creation !== 'quick'}>
-        <QuickBuild
-          startingLevel={Number(level)}
-          onBuild={(character) => void create(character)}
-        />
+        <QuickBuild startingLevel={Number(level)} />
       </div>
       {creation === 'wizard' && (
         <CreationWizard
-          onSave={(character) =>
-            void create({ ...character, level: Number(level) })
-          }
+          startingLevel={Number(level)}
+          onSave={(character) => void create(character)}
         />
       )}
     </section>

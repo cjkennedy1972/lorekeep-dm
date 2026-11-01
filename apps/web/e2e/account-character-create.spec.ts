@@ -38,9 +38,9 @@ test('a built character is saved to the account, then bound from the lobby picke
 
   await page.goto('/characters/new');
   await page.getByRole('heading', { name: 'Quick build' }).waitFor();
-  await page.getByRole('button', { name: 'Build and save character' }).click();
+  await page.getByRole('button', { name: 'Build character' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Your hero is ready' }),
+    page.getByRole('heading', { name: 'Your hero is built' }),
   ).toBeVisible();
 
   // Keyboard-only: the save offer is reachable and activated with Enter.
@@ -97,9 +97,9 @@ test('a dropped save response is uncertain; "Save again anyway" creates a second
 
   await page.goto('/characters/new');
   await page.getByRole('heading', { name: 'Quick build' }).waitFor();
-  await page.getByRole('button', { name: 'Build and save character' }).click();
+  await page.getByRole('button', { name: 'Build character' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Your hero is ready' }),
+    page.getByRole('heading', { name: 'Your hero is built' }),
   ).toBeVisible();
 
   const seeded = (await ownCharacterNames(context)).length;
@@ -111,18 +111,16 @@ test('a dropped save response is uncertain; "Save again anyway" creates a second
   await page.getByRole('button', { name: 'Save to my account' }).click();
   const alert = page
     .getByRole('alert')
-    .filter({ hasText: 'We may or may not have saved this character' });
+    .filter({ hasText: 'could not confirm whether this character was saved' });
   await expect(alert).toBeFocused();
   // No plain retry: the only way to post again is the explicit button.
   await expect(
     page.getByRole('button', { name: 'Save to my account' }),
   ).toHaveCount(0);
 
-  // Keyboard order: the link comes first, and the explicit button is the last stop.
+  // Keyboard order: Check now comes first, and the explicit save-again button is the last stop.
   await page.keyboard.press('Tab');
-  await expect(
-    page.getByRole('link', { name: 'Check your characters' }),
-  ).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Check now' })).toBeFocused();
   await page.keyboard.press('Tab');
   const again = page.getByRole('button', { name: 'Save again anyway' });
   await expect(again).toBeFocused();
