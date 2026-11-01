@@ -224,8 +224,8 @@ class Client {
       const reply = await this.until(
         (m) =>
           m.type === expectedType ||
-          // The first flood gate (ws.ts, before the actionId is parsed) replies
-          // RATE_LIMITED without an actionId; the second gate echoes it.
+          // The flood gate (ws.ts admission) echoes the command's actionId; a bare
+          // RATE_LIMITED is still accepted so a sync-read refusal never stalls this helper.
           (m.type === 'Error' &&
             (m.payload?.actionId === actionId ||
               (m.payload?.code === 'RATE_LIMITED' &&
@@ -2287,6 +2287,55 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
                 (m) => m.type === 'Error' && m.payload?.code === 'RATE_LIMITED',
               ).length,
           ).toBeGreaterThanOrEqual(150),
+        { timeout: 2000 },
+      );
+    } finally {
+      client.close();
+    }
+  }, 20_000);
+
+  it('echoes the actionId on a CombatCommand refused by the flood gate', async () => {
+    stack = await Stack.boot('combat-flood-action-id');
+    const user = await newUser();
+    const table = await seedTable(stack, user, (account) => {
+      const b = bootstrapped();
+      return {
+        ...preCombatGame(),
+        characters: { [account]: hero },
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: b.state,
+      };
+    });
+    const client = await Client.open(stack, user, table);
+    try {
+      await client.command({ command: 'options' });
+      const mark = client.log.length;
+      const sent = new Set<string>();
+      for (let i = 0; i < 200; i++) {
+        const actionId = randomUUID();
+        sent.add(actionId);
+        client.ws.send(
+          JSON.stringify({
+            type: 'CombatCommand',
+            actionId,
+            lastSeq: 0,
+            payload: { command: 'options' },
+          }),
+        );
+      }
+      // Without the echo the client cannot tell this refusal from a background read
+      // refusal and drops it, so the seat's command fails with no feedback.
+      await vi.waitFor(
+        () => {
+          const refused = client.log
+            .slice(mark)
+            .filter(
+              (m) => m.type === 'Error' && m.payload?.code === 'RATE_LIMITED',
+            );
+          expect(refused.length).toBeGreaterThanOrEqual(150);
+          for (const m of refused)
+            expect(sent.has(String(m.payload?.actionId))).toBe(true);
+        },
         { timeout: 2000 },
       );
     } finally {

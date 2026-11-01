@@ -20,3 +20,14 @@ export function castableSlotLevels(slots: SlotState | undefined): number[] {
 export function defaultSlotLevel(levels: number[]): number {
   return levels.find((level) => level >= 1) ?? 0;
 }
+
+/**
+ * The slot a cast submits for one spell. A cantrip (catalog level 0) always goes out at 0 and never
+ * spends the seat's leveled slot choice; any other spell uses the chosen slot.
+ */
+export function castSlotLevel(
+  spellLevel: number | undefined,
+  chosenSlot: number,
+): number {
+  return spellLevel === 0 ? 0 : chosenSlot;
+}

@@ -23,8 +23,10 @@ import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
 import { SlotLevelPicker } from '../features/map/SlotLevelPicker.js';
 import {
   castableSlotLevels,
+  castSlotLevel,
   defaultSlotLevel,
 } from '../features/map/slotLevels.js';
+import { loadCharacterCatalog } from '../features/character/catalog.js';
 import {
   createInFlightGate,
   isBackgroundRefusal,
@@ -61,6 +63,7 @@ import { PartialFailureBanner } from '../features/game/PartialFailureBanner.js';
 import '../styles/game.css';
 
 const renderer = new Canvas2DRenderer();
+const catalog = loadCharacterCatalog();
 const NARROW_QUERY = '(max-width: 760px)';
 
 /** Narrow screens start in list-driven combat; the canvas is opt-in. */
@@ -1498,7 +1501,10 @@ export function Game() {
                         send({
                           command: 'cast',
                           spellId: String(item.spellId),
-                          slotLevel: chosenSlot,
+                          slotLevel: castSlotLevel(
+                            catalog.get('spell', String(item.spellId))?.level,
+                            chosenSlot,
+                          ),
                           target: {
                             kind: 'entity',
                             ref: String(item.targetId),
@@ -1540,7 +1546,10 @@ export function Game() {
                     send({
                       command: 'cast',
                       spellId: area.spellId,
-                      slotLevel: chosenSlot,
+                      slotLevel: castSlotLevel(
+                        catalog.get('spell', area.spellId)?.level,
+                        chosenSlot,
+                      ),
                       target: { kind: 'option', ref: area.optionId },
                     })
                   }

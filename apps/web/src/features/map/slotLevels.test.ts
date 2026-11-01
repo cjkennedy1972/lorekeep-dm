@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { castableSlotLevels, defaultSlotLevel } from './slotLevels.js';
+import {
+  castableSlotLevels,
+  castSlotLevel,
+  defaultSlotLevel,
+} from './slotLevels.js';
 
 const slot = (max: number, used = 0) => ({ max, used });
 
@@ -29,5 +33,19 @@ describe('defaultSlotLevel', () => {
 
   test('falls back to the cantrip choice when no leveled slot is left', () => {
     expect(defaultSlotLevel([0])).toBe(0);
+  });
+});
+
+describe('castSlotLevel', () => {
+  test('sends a cantrip at level 0 even when a leveled slot is chosen', () => {
+    expect(castSlotLevel(0, 1)).toBe(0);
+  });
+
+  test('sends a leveled spell at the chosen slot', () => {
+    expect(castSlotLevel(2, 3)).toBe(3);
+  });
+
+  test('keeps the chosen slot when the spell level is unknown', () => {
+    expect(castSlotLevel(undefined, 1)).toBe(1);
   });
 });

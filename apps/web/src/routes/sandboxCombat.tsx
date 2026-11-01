@@ -32,6 +32,7 @@ import { createTokenDrawCommands } from '../features/map/tokens.js';
 import { loadCharacterCatalog } from '../features/character/catalog.js';
 import {
   castableSlotLevels,
+  castSlotLevel,
   defaultSlotLevel,
 } from '../features/map/slotLevels.js';
 import cryptData from '../../../../packages/engine/maps/crypt-room.json';
@@ -413,8 +414,11 @@ export function SandboxCombat() {
       caster,
       target: { kind: 'anchor', pos: scenario.areaAnchor },
       spellId: scenario.spellId,
-      // Lowest slot the caster can still pay for, so a leveled scenario spell never submits level 0.
-      slotLevel: defaultSlotLevel(castableSlotLevels(caster.slots)),
+      // A cantrip scenario submits 0; a leveled one uses the lowest slot the caster can still pay for.
+      slotLevel: castSlotLevel(
+        catalog.get('spell', scenario.spellId)?.level,
+        defaultSlotLevel(castableSlotLevels(caster.slots)),
+      ),
       seed: scenario.seed,
       catalog,
       map: spellMap(fighters, pc),
