@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { isIP } from 'node:net';
 import type { Server } from 'node:http';
 import type { Logger } from 'pino';
 import type { Pool } from 'pg';
@@ -15,6 +16,7 @@ import {
   secureCookies,
   sessionCookie,
   tokenFromCookie,
+  getSession,
 } from '../accounts/sessions.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import {
@@ -42,6 +44,29 @@ import {
 import { requestDeletion } from '../accounts/delete.js';
 import { LocalObjectStore } from '../storage/objectStore.js';
 
+/** Group IPv4 clients by /24 and IPv6 clients by /64 for the account bucket. */
+function networkBucket(ip: string): string {
+  const normalized = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  if (isIP(normalized) === 4)
+    return `${normalized.split('.').slice(0, 3).join('.')}.0/24`;
+  if (isIP(normalized) === 6) {
+    const address = normalized.split('%', 1)[0]!.toLowerCase();
+    const [left = '', right = ''] = address.split('::');
+    const before = left ? left.split(':') : [];
+    const after = right ? right.split(':') : [];
+    const expanded = [
+      ...before,
+      ...Array<string>(8 - before.length - after.length).fill('0'),
+      ...after,
+    ];
+    return `${expanded
+      .slice(0, 4)
+      .map((part) => part.padStart(4, '0'))
+      .join(':')}::/64`;
+  }
+  return normalized;
+}
+
 export function registerAuthRoutes(
   app: FastifyInstance<
     Server,
@@ -63,14 +88,29 @@ export function registerAuthRoutes(
   function limited(key: string): boolean {
     return hits.hit(key) > rateLimit;
   }
-  // Failure limiters (bounded, TTL-evicted). Login: per IP+email, per account across IPs, per IP.
-  // Password checks (export, password change, deletion) share one per-account budget.
-  const emailFailures = new BoundedCounter(600_000);
+  // Login failures back off per account/network plus a looser exact-IP bucket.
+  // These are delay budgets, not lockouts: every request still gets normal credential work.
+  const loginNetworkFailures = new BoundedCounter(600_000);
+  const loginIpFailures = new BoundedCounter(600_000);
   const accountFailures = new BoundedCounter(600_000);
+  const recoveryTriggered = new BoundedCounter(600_000);
+  const emailFailures = new BoundedCounter(600_000);
   const ipFailures = new BoundedCounter(600_000);
   const EMAIL_FAIL_LIMIT = 5;
-  const ACCOUNT_FAIL_LIMIT = 10;
   const IP_FAIL_LIMIT = 20;
+  const NETWORK_FAIL_LIMIT = 5;
+  const LOGIN_IP_FAIL_LIMIT = 20;
+  const ACCOUNT_RECOVERY_LIMIT = 100;
+  const loginNetworkKey = (email: string, ip: string) =>
+    `login:${email}:${networkBucket(ip)}`;
+  const backoffMs = (failures: number, limit: number) =>
+    failures < limit
+      ? 0
+      : Math.min(8_000, 250 * 2 ** Math.min(failures - limit, 5));
+  const wait = (ms: number) =>
+    ms > 0
+      ? new Promise<void>((resolve) => setTimeout(resolve, ms))
+      : Promise.resolve();
   const passwordKey = (accountId: string) => `pw:${accountId}`;
   const passwordBlocked = (accountId: string, ip: string) =>
     emailFailures.count(passwordKey(accountId)) >= EMAIL_FAIL_LIMIT ||
@@ -151,14 +191,25 @@ export function registerAuthRoutes(
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Invalid login details.' });
     const email = parsed.data.email.trim().toLowerCase();
-    const key = `${request.ip}:${email}`;
-    // Throttle first so blocked requests never reach argon2.
-    if (
-      emailFailures.count(key) >= EMAIL_FAIL_LIMIT ||
-      accountFailures.count(email) >= ACCOUNT_FAIL_LIMIT ||
-      ipFailures.count(request.ip) >= IP_FAIL_LIMIT
-    )
-      return reply.code(429).send(badCredentials);
+    const networkKey = loginNetworkKey(email, request.ip);
+    const ipKey = `login-ip:${request.ip}`;
+    const cookieToken = tokenFromCookie(request.headers.cookie);
+    const trustedSession = cookieToken
+      ? await getSession(db, cookieToken).catch(() => undefined)
+      : undefined;
+    const trustedAccount = trustedSession
+      ? await db.query('SELECT id FROM accounts WHERE email=$1', [email])
+      : undefined;
+    const trustedDevice =
+      trustedSession?.account_id !== undefined &&
+      trustedSession.account_id === trustedAccount?.rows[0]?.id;
+    const networkDelay = trustedDevice
+      ? 0
+      : backoffMs(loginNetworkFailures.count(networkKey), NETWORK_FAIL_LIMIT);
+    const ipDelay = backoffMs(
+      loginIpFailures.count(ipKey),
+      LOGIN_IP_FAIL_LIMIT,
+    );
     let result;
     try {
       result = await login(
@@ -175,10 +226,33 @@ export function registerAuthRoutes(
         });
       throw error;
     }
+    await wait(Math.max(networkDelay, ipDelay));
     if (result.kind === 'invalid') {
-      emailFailures.hit(key);
+      loginNetworkFailures.hit(networkKey);
+      loginIpFailures.hit(ipKey);
       accountFailures.hit(email);
-      ipFailures.hit(request.ip);
+      if (
+        accountFailures.count(email) === ACCOUNT_RECOVERY_LIMIT &&
+        recoveryTriggered.count(email) === 0
+      ) {
+        recoveryTriggered.hit(email);
+        void requestPasswordReset(db, sender, email)
+          .then(({ sent }) =>
+            sent?.then((sendError) => {
+              if (sendError)
+                request.log.warn(
+                  { errorClass: sendError },
+                  'password recovery email not sent',
+                );
+            }),
+          )
+          .catch((error: unknown) =>
+            request.log.warn(
+              { errorClass: error instanceof Error ? error.name : 'unknown' },
+              'password recovery request failed',
+            ),
+          );
+      }
       return reply.code(401).send(badCredentials);
     }
     if (result.kind === 'deleting')
@@ -191,7 +265,7 @@ export function registerAuthRoutes(
         code: 'EMAIL_UNVERIFIED',
         message: 'Check your email and verify your account before signing in.',
       });
-    emailFailures.clear(key);
+    loginNetworkFailures.clear(networkKey);
     accountFailures.clear(email);
     reply.header('set-cookie', sessionCookie(result.token, secureCookies()));
     const a = result.account;

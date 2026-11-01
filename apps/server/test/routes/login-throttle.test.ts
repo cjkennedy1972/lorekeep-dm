@@ -1,21 +1,34 @@
 import { allowInputGate } from '../support/allowInputGate.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { hashPassword } from '../../src/accounts/password.js';
-import { badCredentials } from '../../src/accounts/login.js';
 
 async function setup() {
   const password_hash = await hashPassword('correct-password-1');
-  let accountQueries = 0;
   const db = {
     connect: async () => undefined,
     query: async (sql: string, args: unknown[]) => {
+      if (/UPDATE auth_sessions/.test(sql))
+        return { rows: [{ account_id: 'a' }], rowCount: 1 };
+      if (/SELECT id FROM accounts WHERE email/.test(sql))
+        return { rows: args[0] === 'known@example.test' ? [{ id: 'a' }] : [] };
+      if (/INSERT INTO auth_sessions/.test(sql))
+        return { rows: [], rowCount: 1 };
       if (/FROM accounts WHERE email/.test(sql)) {
-        accountQueries++;
         return {
           rows:
             args[0] === 'known@example.test'
-              ? [{ id: 'a', password_hash, status: 'active' }]
+              ? [
+                  {
+                    id: 'a',
+                    email: 'known@example.test',
+                    password_hash,
+                    status: 'active',
+                    is_adult: true,
+                    age_checked_at: new Date('2026-01-01T00:00:00.000Z'),
+                    display_name: 'Player',
+                  },
+                ]
               : [],
         };
       }
@@ -23,62 +36,65 @@ async function setup() {
     },
   };
   const app = createApp(db as never, { inputGate: allowInputGate });
-  const post = (email: string, ip: string, password = 'wrong-password-1') =>
+  const post = (
+    email: string,
+    ip: string,
+    password = 'wrong-password-1',
+    cookie?: string,
+  ) =>
     app.inject({
       method: 'POST',
       url: '/api/login',
       remoteAddress: ip,
+      headers: cookie ? { cookie: `sid=${cookie}` } : undefined,
       payload: { email, password },
     });
-  return { app, post, queries: () => accountQueries, password_hash };
+  return { app, post };
 }
 
 describe('login throttle', () => {
-  it('blocks per ip+email before any password work and keeps the body shape', async () => {
-    const { app, post, queries } = await setup();
-    for (let i = 0; i < 5; i++)
-      expect((await post('known@example.test', '10.0.0.1')).statusCode).toBe(
-        401,
-      );
-    const before = queries();
-    const blocked = await post(
-      'known@example.test',
-      '10.0.0.1',
-      'correct-password-1',
-    );
-    expect(blocked.statusCode).toBe(429);
-    expect(blocked.json()).toEqual(badCredentials);
-    expect(queries()).toBe(before); // no db lookup, hence no argon2
-    await app.close();
-  });
-  it('blocks one ip rotating emails after 20 failures', async () => {
-    const { app, post, queries } = await setup();
-    for (let i = 0; i < 20; i++)
-      expect((await post(`u${i}@example.test`, '10.0.0.2')).statusCode).toBe(
-        401,
-      );
-    const before = queries();
-    const blocked = await post('fresh@example.test', '10.0.0.2');
-    expect(blocked.statusCode).toBe(429);
-    expect(queries()).toBe(before);
-    expect((await post('fresh@example.test', '10.0.0.3')).statusCode).toBe(401);
-    await app.close();
-  });
-  it('throttles one account across rotating IPs before any password work', async () => {
-    const { app, post, queries } = await setup();
+  it('does not let failures from an attacker IP block the owner on another IP', async () => {
+    const { app, post } = await setup();
     for (let i = 0; i < 10; i++)
-      expect((await post('known@example.test', `10.0.1.${i}`)).statusCode).toBe(
-        401,
-      );
-    const before = queries();
-    const blocked = await post(
+      await post('known@example.test', `203.0.${i}.9`);
+    const ownerLogin = await post(
       'known@example.test',
-      '10.0.2.1',
+      '198.51.100.7',
       'correct-password-1',
     );
-    expect(blocked.statusCode).toBe(429);
-    expect(blocked.json()).toEqual(badCredentials);
-    expect(queries()).toBe(before);
+    expect(ownerLogin.statusCode).toBe(200);
+    await app.close();
+  });
+  it('lets the same account’s trusted session bypass account-network backoff', async () => {
+    const { app, post } = await setup();
+    const ip = (last: number) => `198.51.100.${last}`;
+    for (let i = 21; i < 26; i++)
+      expect((await post('known@example.test', ip(i))).statusCode).toBe(401);
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    const untrusted = await post('known@example.test', ip(26));
+    expect(untrusted.statusCode).toBe(401);
+    expect(untrusted.json()).toEqual({
+      code: 'BAD_CREDENTIALS',
+      message: 'Email or password is incorrect.',
+    });
+    expect(timer).toHaveBeenCalledWith(expect.any(Function), 250);
+
+    timer.mockClear();
+    const nextUntrusted = await post('known@example.test', ip(28));
+    expect(nextUntrusted.statusCode).toBe(401);
+    expect(timer).toHaveBeenCalledWith(expect.any(Function), 500);
+
+    timer.mockClear();
+    const trustedCookie = 'A'.repeat(43);
+    const trusted = await post(
+      'known@example.test',
+      ip(27),
+      'wrong-password-1',
+      trustedCookie,
+    );
+    expect(trusted.statusCode).toBe(401);
+    expect(timer).not.toHaveBeenCalled();
+    timer.mockRestore();
     await app.close();
   });
   it('unknown email and wrong password bodies are byte-identical', async () => {
