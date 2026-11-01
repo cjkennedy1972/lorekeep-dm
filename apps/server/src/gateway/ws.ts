@@ -783,6 +783,7 @@ export function installGateway(
             false,
             identity.accountId,
             soloOwnerRecoveryEnabled && cookieMatchesTicket,
+            presentedToken !== undefined,
           );
           if (authorization.status === 'invalid-token') {
             if (

@@ -191,3 +191,9 @@ Docs-only decision; implementation estimate **L** because it spans server persis
 ## Verification
 
 This is a proposed design, not implemented behavior. Source reviewed: PRs #436, #441, and #444, including owner/security review comments; `apps/server/src/gateway/ws.ts`; `apps/server/src/gateway/resumeTokens.ts`; migrations 0038–0040 and 0039 socket-lease changes; and relevant tests in `apps/server/test/db/gateway.test.ts`. Implementation acceptance requires the failing-first plan above and green CI; this ADR does not claim those checks ran.
+
+## Addendum: current-credential live-lease takeover
+
+This addendum **supersedes** the earlier “live-lease-first” transition rule, including the rule that a valid active-token reconnect on a live current socket cannot start a concurrent second rotation. It also supersedes the failure-mode and consequences text that says a holder “can win the seat after lease expiry”: a holder of the current active credential may displace a live controller at any time, not only after lease expiry. Under the existing per-seat advisory lock, a request presenting that valid current credential may take over the live socket lease, including while the stored heartbeat satisfies the existing 15-second `socket_live` predicate. The takeover displaces the prior socket and starts a normal credential rotation; after the takeover candidate is activated, the displaced client must reclaim the seat through host approval. Until activation, the old active token still authenticates, so the displaced holder can re-displace the candidate without host approval.
+
+This takeover authority applies only to proof of the current credential. The host-approved retry path does not displace a live lease, and any request without valid current-credential proof—including missing or invalid credentials—continues to be refused while the lease is live with close code 1008. Host-approval and other recovery eligibility rules otherwise remain unchanged.

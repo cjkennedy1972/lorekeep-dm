@@ -539,6 +539,40 @@ describe('pending first-token handoff', () => {
     return { id, room, token };
   }
 
+  it('allows a same-seat resume credential to take over a live socket lease', async () => {
+    const { id, token: initialResumeToken } = await pendingSeat();
+    resumeTokens.set(tokens[0]!, initialResumeToken);
+    const seatId = (await rooms.get(id)).state.seats[0]!.seatId;
+    const socketA = connect(await ticket(tokens[0]!, id));
+    await nextOfType(socketA, 'StateSync');
+    const socketAClosed = closed(socketA);
+
+    // Keep A open so the server never observes a close, but model its browser
+    // having vanished and stopped ponging by aging the database heartbeat.
+    await db.query(
+      `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '14 seconds'
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId],
+    );
+    const socketB = connect(await ticket(tokens[0]!, id));
+    await nextOfType(socketB, 'StateSync');
+    expect(await socketAClosed).toBe(4401);
+    const socketBClosed = closed(socketB);
+
+    // Once the lease is older than the 15-second TTL, the same credential
+    // remains sufficient to recover the seat without relying on takeover.
+    await db.query(
+      `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '16 seconds'
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId],
+    );
+    const socketC = connect(await ticket(tokens[0]!, id));
+    await nextOfType(socketC, 'StateSync');
+    expect(await socketBClosed).toBe(4401);
+
+    await closeSocket(socketC);
+  }, 15_000);
+
   function failSeatAuthenticatedSend(
     mode: 'callback' | 'throw',
     onAttempt?: (resumeToken: string) => void,

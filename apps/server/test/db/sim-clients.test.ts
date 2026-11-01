@@ -244,13 +244,9 @@ describe('ws-ticket abrupt socket recovery repro', () => {
       [t.sessionId, seatId, randomUUID()],
     );
 
-    // The dead socket's still-live claim refuses a resume at first (e), rather
-    // than letting a second controller take over before the lease expires.
-    expect(await owner.connect()).toBe(1008);
-    await new Promise((resolve) => setTimeout(resolve, 15_250));
-
-    // (c) The real HTTP ticket route issues a ticket and the production WS gateway
-    // accepts the owner's retained resume proof after the stale claim expires.
+    // A current seat-token proof authorizes takeover even while the DB lease is
+    // live; without that proof, the active-socket claim remains protected. This
+    // exercises the real HTTP ticket route and production WS gateway.
     expect(await owner.connect()).toBeUndefined();
     await owner.waitForType('SeatAuthenticated');
     await owner.waitForType('StateSync');
