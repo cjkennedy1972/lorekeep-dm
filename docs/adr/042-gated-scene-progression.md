@@ -91,3 +91,20 @@ Closed errors shown to the model may distinguish retryable from terminal cases, 
 ## Verification record
 
 Design-only ADR; no code or tests changed/run. Source inspection in the current `origin/main` worktree: `apps/server/src/room/sceneCloseTool.ts` (current leave-intent gate), `apps/server/src/room/productionTurnRunner.ts` (ADR-038 flag, close executor and transition application), `packages/engine/src/adventure/transition.ts` (authored successor selection), and `apps/server/src/room/Room.ts` (turn resolution, clarification and narration commit paths). Repowise was unavailable because its authorization had expired; claims were checked against source. The running scripted smoke for ADR-038 does not exercise the DM scene-progression path.
+
+## Addendum — atomic-commit feasibility precondition (2026-11-01)
+
+**Open precondition; unverified.** The design above requires one durable atomic outcome spanning turn resolution, narration persistence, scene transition/state, and the durable player-visible update. Whether the existing persistence architecture can provide that boundary has **not** been verified. Do not treat the proposed single transaction as an established capability or begin implementation on that assumption.
+
+Before any implementation card for ADR-042 (including card `5fd8ad52`) is started, inspect the live code and persistence paths and document the actual transaction boundaries and commit ordering for each of:
+
+1. Turn resolution and `TurnResolved` persistence.
+2. Narration persistence, including `NarrationCompleted` and the approved/held-output path.
+3. Scene transition, `SceneClosed`, and resulting scene/completion state.
+4. The player-visible update: its durable record/queueing boundary and its post-commit broadcast/delivery path.
+
+Record whether these writes share one database transaction, which state is persisted versus in-memory, and where a crash or send failure can leave a partial outcome. In particular, distinguish atomically recording a player-visible update from delivering a network broadcast: delivery itself must not be claimed to participate in a database transaction unless the code and transport actually establish that guarantee.
+
+If inspection proves one transaction can cover the required durable writes, update the implementation plan to name that transaction and its boundary. If it cannot, stop before implementation and resolve a follow-up design specifying a safe fallback, such as ordered durable writes with transition-key-based idempotent recovery, or a transactional outbox for the visible update. The fallback must preserve recoverable ordering, prevent duplicate transitions/notifications, and define restart behavior; do not weaken the invariant or substitute process-local state. The resulting design decision and revised acceptance/fault-injection cases must be recorded before implementation proceeds.
+
+This feasibility check is a blocking prerequisite for **all** ADR-042 implementation cards, including schema/persistence, proposal/gating, transition, recovery, and player-update work. Mark the precondition complete only after source inspection has been recorded and the single-transaction design or fallback has been explicitly selected. Until then, ADR-042 remains a design proposal and atomicity remains unverified. This gate does not alter the feature-flag rule: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` remains OFF by default and is enabled only by the exact string `true`, following ADR-038.
