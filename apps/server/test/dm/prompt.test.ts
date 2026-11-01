@@ -48,6 +48,15 @@ function input(playerText = 'I look around') {
   };
 }
 describe('DM prompt builder', () => {
+  it('closes a scene for an established transition, not ordinary scene narration', () => {
+    const { blocks } = buildPrompt(input('We leave this place and move on.'));
+    expect(blocks[0]).toContain(
+      'When the player chooses to leave the current location or the scene objective is resolved, call close_scene',
+    );
+    expect(blocks[0]).toContain(
+      'Do not call close_scene just because a turn ended, narration describes possible travel, or an encounter is available',
+    );
+  });
   it('narrates only projected resolved combat facts and closes combat without inventing enemies', () => {
     const value = buildPrompt({
       ...input(),
