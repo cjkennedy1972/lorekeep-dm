@@ -5958,12 +5958,11 @@ export class Room {
     }
     this.turnAbort = undefined;
     if (turnAbort.signal.aborted) throw new XCardAbortError();
-    // No narration means the submitted action was not accepted; use the normal
-    // failure cleanup path so the submitter can retry and rounds can advance.
+    // No narration means the submitted action was not accepted. Use the normal
+    // failure path so exploration can retry and combat can commit its authored fallback.
     if (
       result.fallback === 'endpoint-error' &&
-      result.endpointRetryable !== false &&
-      !combatTurnId
+      result.endpointRetryable !== false
     )
       throw new EndpointTurnError();
     await this.matureDelivery;

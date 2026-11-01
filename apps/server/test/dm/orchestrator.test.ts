@@ -819,17 +819,19 @@ describe('DM orchestrator', () => {
       ),
     ).toBe(false);
   });
-  it('marks fallback narration on NarrationCompleted for client notices', async () => {
+  it('does not narrate retryable endpoint failures, but marks non-narration fallback completions', async () => {
     const endpoint = setup([
       new LlmEndpointError('endpoint-timeout', 'timeout'),
     ]);
-    await runTurn(endpoint.input);
-    const endpointDone = endpoint.events.find(
-      (event) => (event as { type?: string }).type === 'NarrationCompleted',
-    );
-    expect(DMTurnEventSchema.parse(endpointDone)).toMatchObject({
-      fallback: 'endpoint-error',
-    });
+    const endpointResult = await runTurn(endpoint.input);
+    expect(endpointResult.fallback).toBe('endpoint-error');
+    expect(endpointResult.narration).toBe('');
+    expect(
+      endpoint.events.some(
+        (event) => (event as { type?: string }).type === 'NarrationCompleted',
+      ),
+    ).toBe(false);
+    expect(endpoint.streamed).toHaveLength(0);
 
     const empty = setup([[]]);
     await runTurn(empty.input);
@@ -847,7 +849,7 @@ describe('DM orchestrator', () => {
     ]);
     const result = await runTurn(h.input);
     expect(result.fallback).toBe('endpoint-error');
-    expect(result.narration).toContain('not resolved');
+    expect(result.narration).toBe('');
     expect(result.events).toHaveLength(0);
     // The turn-start state, not prompt.turn.state: that prompt field is a projection whose
     // `characters` is an array, and restoring it persisted character keys "0", "1".

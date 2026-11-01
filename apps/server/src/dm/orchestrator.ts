@@ -939,6 +939,24 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     input.context.state = structuredClone(turnStartState);
     input.context.engineState = cloneEngineState(turnStartEngineState);
   }
+  if (endpointFailed && endpointRetryable) {
+    // Do not stream the authored fallback as completed narration. The Room turns this result
+    // into a retryable Error; sending narration first can clear the pending action in clients.
+    return {
+      narration: '',
+      events,
+      state: input.context.state,
+      turnSeed: seedText,
+      usage: {
+        in: totalIn,
+        out: totalOut,
+        ...(cacheRead ? { cacheRead } : {}),
+      },
+      fallback: 'endpoint-error',
+      endpointRetryable,
+      toolIntentNames: toolObservations.map(({ name }) => name),
+    };
+  }
   const sourceText = finalText;
   const gated: string[] = [];
   const chunks = async function* () {
