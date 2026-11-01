@@ -29,6 +29,7 @@ import {
 import { Canvas2DRenderer } from '../features/map/Canvas2DRenderer.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { createTokenDrawCommands } from '../features/map/tokens.js';
+import { nameFromCatalogId } from '../features/map/names.js';
 import { loadCharacterCatalog } from '../features/character/catalog.js';
 import {
   castableSlotLevels,
@@ -365,7 +366,7 @@ export function SandboxCombat() {
       setPendingState(result.state);
       setStage('reaction');
       setMessage(
-        `Opportunity attack from ${pending.hostileId}. Press Y to accept or N to decline.`,
+        `Opportunity attack from ${nameFromCatalogId(pending.hostileId)}. Press Y to accept or N to decline.`,
       );
     } else {
       setFighters(next);
@@ -397,7 +398,7 @@ export function SandboxCombat() {
       setPendingReaction(nextReaction);
       setPendingState(result.state);
       setMessage(
-        `Opportunity attack from ${nextReaction.hostileId}. Press Y to accept or N to decline.`,
+        `Opportunity attack from ${nameFromCatalogId(nextReaction.hostileId)}. Press Y to accept or N to decline.`,
       );
       return;
     }
@@ -519,7 +520,8 @@ export function SandboxCombat() {
             <div role="dialog" aria-label="Opportunity attack">
               <p>
                 Pending engine reaction: opportunity attack by{' '}
-                {pendingReaction?.hostileId}
+                {pendingReaction &&
+                  nameFromCatalogId(pendingReaction.hostileId)}
               </p>
               <button onClick={() => answerReaction('take')}>Accept (Y)</button>
               <button onClick={() => answerReaction('decline')}>

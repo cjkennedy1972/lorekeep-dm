@@ -5,8 +5,9 @@ type CharacterLike = { id?: string; name?: string };
 type EntityLike = { id: string; name?: string; kind?: string };
 
 const SEAT_PREFIX = 'ent_seat_';
-// Record ids are not names. A UUID anywhere in an id, or a hex run of 8+ characters, is dropped.
-const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+// Record ids are not names. A UUID, or a truncated one that keeps its first 8-hex group, is dropped
+// wherever it sits; so is a hex run of 8+ characters on its own.
+const UUID = /[0-9a-f]{8}(?:-[0-9a-f]{1,12})+/gi;
 const isRecordToken = (token: string) => /^[0-9a-f]{8,}$/i.test(token);
 const titleCase = (word: string) =>
   word ? word[0]!.toUpperCase() + word.slice(1) : word;
