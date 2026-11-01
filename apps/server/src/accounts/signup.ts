@@ -1,13 +1,14 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { z } from 'zod';
+import { EmailSchema } from '@game/schema';
 import { attestAdult } from './retryBlock.js';
 import { hashPassword, validPassword } from './password.js';
 import { sendBestEffort, type EmailSender } from '../email/sender.js';
 
 export const signupSchema = z
   .object({
-    email: z.email(),
+    email: EmailSchema,
     password: z.string(),
     displayName: z.string().trim().min(1).max(80),
     birthdate: z.iso.date(),

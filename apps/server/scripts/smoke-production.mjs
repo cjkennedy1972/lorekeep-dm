@@ -144,7 +144,7 @@ async function main() {
       DATABASE_URL: databaseUrl,
       HOST: '127.0.0.1',
       PORT: String(port),
-      TRUST_PROXY: 'true',
+      TRUST_PROXY: '1',
       AGE_RETRY_SECRET: secrets.ageRetry,
       OPERATOR_EMAILS: operatorEmail,
       OPERATOR_ENDPOINT_MASTER_KEY: secrets.masterKey,
@@ -233,7 +233,7 @@ async function main() {
       'ok: login Set-Cookie is __Host-sid, Secure, HttpOnly with X-Forwarded-Proto: https',
     );
 
-    // Rate-limit buckets follow the forwarded client address.
+    // Login failures are grouped by client network (/24 for IPv4), so exercise a distinct network.
     for (let i = 0; i < 5; i++) {
       const res = await login(
         playerEmail,
@@ -257,14 +257,14 @@ async function main() {
     const otherClient = await login(
       playerEmail,
       'wrong-password-smoke',
-      '203.0.113.8',
+      '203.0.114.8',
     );
     if (otherClient.status !== 401)
       throw new Error(
-        `203.0.113.8 shares 203.0.113.7's bucket (returned ${otherClient.status})`,
+        `203.0.114.8 shares 203.0.113.7's bucket (returned ${otherClient.status})`,
       );
     console.log(
-      'ok: two X-Forwarded-For addresses get separate rate-limit buckets',
+      'ok: two X-Forwarded-For networks get separate rate-limit buckets',
     );
 
     // Point narration and moderation slots at the stub, then play one solo turn.

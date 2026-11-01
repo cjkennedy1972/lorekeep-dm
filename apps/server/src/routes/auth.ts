@@ -1,12 +1,20 @@
 import type { FastifyInstance } from 'fastify';
-import type { Server } from 'node:http';
+import { isIP } from 'node:net';
+import { createHash } from 'node:crypto';
+import type { IncomingMessage, Server } from 'node:http';
 import type { Logger } from 'pino';
 import type { Pool } from 'pg';
 import { sendBestEffort, type EmailSender } from '../email/sender.js';
 import { signup, signupResponse, signupSchema } from '../accounts/signup.js';
 import { resendVerification, verifyEmail } from '../accounts/verify.js';
 import { login, badCredentials } from '../accounts/login.js';
-import { BoundedCounter, BusyError } from '../accounts/throttle.js';
+import {
+  BoundedCounter,
+  BusyError,
+  KeyedConcurrencyGate,
+  KeyedSerialQueue,
+  ProgressiveThrottle,
+} from '../accounts/throttle.js';
 import type { ConnectionRegistry } from '../gateway/connections.js';
 import {
   clearSessionCookie,
@@ -15,9 +23,11 @@ import {
   secureCookies,
   sessionCookie,
   tokenFromCookie,
+  getSession,
 } from '../accounts/sessions.js';
 import { authenticateRequest } from '../middleware/auth.js';
 import {
+  EmailSchema,
   LoginInputSchema,
   ChangePasswordInputSchema,
   DeleteAccountInputSchema,
@@ -25,6 +35,7 @@ import {
 import { z } from 'zod';
 import {
   requestPasswordReset,
+  requestPasswordResetIfMissing,
   confirmPasswordReset,
   changePassword,
 } from '../accounts/reset.js';
@@ -41,6 +52,29 @@ import {
 } from '../accounts/export.js';
 import { requestDeletion } from '../accounts/delete.js';
 import { LocalObjectStore } from '../storage/objectStore.js';
+
+/** Group IPv4 clients by /24 and IPv6 clients by /64 for the account bucket. */
+function networkBucket(ip: string): string {
+  const normalized = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  if (isIP(normalized) === 4)
+    return `${normalized.split('.').slice(0, 3).join('.')}.0/24`;
+  if (isIP(normalized) === 6) {
+    const address = normalized.split('%', 1)[0]!.toLowerCase();
+    const [left = '', right = ''] = address.split('::');
+    const before = left ? left.split(':') : [];
+    const after = right ? right.split(':') : [];
+    const expanded = [
+      ...before,
+      ...Array<string>(8 - before.length - after.length).fill('0'),
+      ...after,
+    ];
+    return `${expanded
+      .slice(0, 4)
+      .map((part) => part.padStart(4, '0'))
+      .join(':')}::/64`;
+  }
+  return normalized;
+}
 
 export function registerAuthRoutes(
   app: FastifyInstance<
@@ -63,14 +97,34 @@ export function registerAuthRoutes(
   function limited(key: string): boolean {
     return hits.hit(key) > rateLimit;
   }
-  // Failure limiters (bounded, TTL-evicted). Login: per IP+email, per account across IPs, per IP.
-  // Password checks (export, password change, deletion) share one per-account budget.
-  const emailFailures = new BoundedCounter(600_000);
+  // Login failure buckets are bounded, hashed where email-derived, and rejected before Argon2.
+  // Serialize untrusted login checks per account with bounded FIFO waiting.
+  const loginNetworkFailures = new ProgressiveThrottle(5, 600_000);
+  // Cap concurrent Argon2 checks per broader network bucket.
+  const loginNetworkInFlight = new KeyedConcurrencyGate(3);
+  const loginAccountInFlight = new KeyedSerialQueue(10);
+  const loginIpFailures = new BoundedCounter(600_000);
   const accountFailures = new BoundedCounter(600_000);
+  const recoverySendCooldown = new BoundedCounter(3_600_000);
+  const emailFailures = new BoundedCounter(600_000);
   const ipFailures = new BoundedCounter(600_000);
   const EMAIL_FAIL_LIMIT = 5;
-  const ACCOUNT_FAIL_LIMIT = 10;
   const IP_FAIL_LIMIT = 20;
+  const LOGIN_IP_FAIL_LIMIT = 20;
+  const ACCOUNT_RECOVERY_LIMIT = 10;
+  const emailBucket = (email: string) =>
+    createHash('sha256').update(email).digest('hex');
+  const loginNetworkKey = (email: string, ip: string) =>
+    `login:${emailBucket(email)}:${networkBucket(ip)}`;
+  const argonNetworkBucket = (ip: string) => {
+    const normalized = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+    if (isIP(normalized) === 4)
+      return `${normalized.split('.').slice(0, 2).join('.')}.0.0/16`;
+    const bucket = networkBucket(normalized);
+    return bucket.endsWith('/64')
+      ? `${bucket.slice(0, bucket.indexOf('::')).split(':').slice(0, 3).join(':')}::/48`
+      : bucket;
+  };
   const passwordKey = (accountId: string) => `pw:${accountId}`;
   const passwordBlocked = (accountId: string, ip: string) =>
     emailFailures.count(passwordKey(accountId)) >= EMAIL_FAIL_LIMIT ||
@@ -80,12 +134,14 @@ export function registerAuthRoutes(
     ipFailures.hit(ip);
   };
   const EXPORTS_PER_WEEK = 10;
-  const forgotSchema = z.object({ email: z.email() }).strict();
+  const forgotSchema = z.object({ email: EmailSchema }).strict();
+  const clientIp = (request: { raw: IncomingMessage }) =>
+    app.clientIpForUpgrade(request.raw);
   const resetSchema = z
     .object({ token: z.string(), password: z.string() })
     .strict();
   const forgot = async (
-    request: { body: unknown; ip: string; log: Logger },
+    request: { body: unknown; raw: IncomingMessage; ip: string; log: Logger },
     reply: { code: (status: number) => { send: (body: unknown) => unknown } },
   ) => {
     const parsed = forgotSchema.safeParse(request.body);
@@ -94,9 +150,13 @@ export function registerAuthRoutes(
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Invalid email.' });
     const email = parsed.data.email.trim().toLowerCase();
+    const emailKey = emailBucket(email);
     const throttled =
-      limited(`forgot-ip:${request.ip}`) || limited(`forgot-email:${email}`);
+      limited(`forgot-ip:${clientIp(request)}`) ||
+      limited(`forgot-email:${emailKey}`) ||
+      recoverySendCooldown.count(emailKey) > 0;
     if (!throttled) {
+      recoverySendCooldown.hit(emailKey);
       const { sent } = await requestPasswordReset(db, sender, email);
       void sent?.then((sendError) => {
         if (sendError)
@@ -111,7 +171,7 @@ export function registerAuthRoutes(
   app.post('/api/password/forgot', forgot);
   app.post('/api/password-reset/request', forgot);
   const reset = async (
-    request: { body: unknown; ip: string },
+    request: { body: unknown; raw: IncomingMessage; ip: string },
     reply: { code: (status: number) => { send: (body: unknown) => unknown } },
   ) => {
     const parsed = resetSchema.safeParse(request.body);
@@ -120,9 +180,12 @@ export function registerAuthRoutes(
         code: 'INVALID_INPUT',
         message: 'Password must be at least 12 characters.',
       });
+    const ip = clientIp(request);
     if (
-      limited(`reset-ip:${request.ip}`) ||
-      limited(`reset-token:${request.ip}:${parsed.data.token}`)
+      limited(`reset-ip:${ip}`) ||
+      limited(
+        `reset-token:${ip}:${createHash('sha256').update(parsed.data.token).digest('hex')}`,
+      )
     )
       return reply
         .code(429)
@@ -151,14 +214,65 @@ export function registerAuthRoutes(
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Invalid login details.' });
     const email = parsed.data.email.trim().toLowerCase();
-    const key = `${request.ip}:${email}`;
-    // Throttle first so blocked requests never reach argon2.
-    if (
-      emailFailures.count(key) >= EMAIL_FAIL_LIMIT ||
-      accountFailures.count(email) >= ACCOUNT_FAIL_LIMIT ||
-      ipFailures.count(request.ip) >= IP_FAIL_LIMIT
-    )
-      return reply.code(429).send(badCredentials);
+    const loginIp = clientIp(request);
+    const networkKey = loginNetworkKey(email, loginIp);
+    const ipKey = `login-ip:${loginIp}`;
+    const cookieToken = tokenFromCookie(request.headers.cookie);
+    const trustedSession = cookieToken
+      ? await getSession(db, cookieToken).catch(() => undefined)
+      : undefined;
+    const trustedAccount = trustedSession
+      ? await db.query('SELECT id FROM accounts WHERE email=$1', [email])
+      : undefined;
+    const trustedDevice =
+      trustedSession?.account_id !== undefined &&
+      trustedSession.account_id === trustedAccount?.rows[0]?.id;
+    const accountKey = emailBucket(email);
+    const networkRetryMs = trustedDevice
+      ? 0
+      : loginNetworkFailures.remainingMs(networkKey);
+    const ipRetryMs =
+      loginIpFailures.count(ipKey) >= LOGIN_IP_FAIL_LIMIT
+        ? loginIpFailures.remainingMs(ipKey)
+        : 0;
+    const retryMs = Math.max(networkRetryMs, ipRetryMs);
+    if (retryMs > 0) {
+      return reply
+        .code(429)
+        .header('retry-after', String(Math.ceil(retryMs / 1000)))
+        .send({
+          code: 'RATE_LIMITED',
+          message: 'Too many login attempts. Try again shortly.',
+        });
+    }
+    const releaseAccount = trustedDevice
+      ? undefined
+      : await loginAccountInFlight.acquire(networkKey);
+    if (!trustedDevice && !releaseAccount)
+      return reply.code(429).header('retry-after', '1').send(badCredentials);
+    const queuedRetryMs = trustedDevice
+      ? 0
+      : loginNetworkFailures.remainingMs(networkKey);
+    if (queuedRetryMs > 0) {
+      releaseAccount?.();
+      return reply
+        .code(429)
+        .header('retry-after', String(Math.ceil(queuedRetryMs / 1000)))
+        .send({
+          code: 'RATE_LIMITED',
+          message: 'Too many login attempts. Try again shortly.',
+        });
+    }
+    const releaseNetwork = loginNetworkInFlight.tryAcquire(
+      argonNetworkBucket(loginIp),
+    );
+    if (!releaseNetwork) {
+      releaseAccount?.();
+      return reply.code(429).header('retry-after', '1').send({
+        code: 'RATE_LIMITED',
+        message: 'Too many login attempts. Try again shortly.',
+      });
+    }
     let result;
     try {
       result = await login(
@@ -174,11 +288,39 @@ export function registerAuthRoutes(
           message: 'Server is busy. Try again shortly.',
         });
       throw error;
+    } finally {
+      releaseNetwork?.();
+      releaseAccount?.();
     }
     if (result.kind === 'invalid') {
-      emailFailures.hit(key);
-      accountFailures.hit(email);
-      ipFailures.hit(request.ip);
+      loginNetworkFailures.hit(networkKey);
+      loginIpFailures.hit(ipKey);
+      const accountFailuresAfterAttempt = accountFailures.hit(accountKey);
+      if (accountFailuresAfterAttempt >= ACCOUNT_RECOVERY_LIMIT) {
+        const emailKey = accountKey;
+        if (
+          recoverySendCooldown.count(`automatic:${emailKey}`) === 0 &&
+          !limited(`automatic-recovery:${emailKey}`)
+        ) {
+          recoverySendCooldown.hit(`automatic:${emailKey}`);
+          void requestPasswordResetIfMissing(db, sender, email)
+            .then(({ sent }) =>
+              sent?.then((sendError) => {
+                if (sendError)
+                  request.log.warn(
+                    { errorClass: sendError },
+                    'password recovery email not sent',
+                  );
+              }),
+            )
+            .catch((error: unknown) =>
+              request.log.warn(
+                { errorClass: error instanceof Error ? error.name : 'unknown' },
+                'password recovery request failed',
+              ),
+            );
+        }
+      }
       return reply.code(401).send(badCredentials);
     }
     if (result.kind === 'deleting')
@@ -191,8 +333,8 @@ export function registerAuthRoutes(
         code: 'EMAIL_UNVERIFIED',
         message: 'Check your email and verify your account before signing in.',
       });
-    emailFailures.clear(key);
-    accountFailures.clear(email);
+    loginNetworkFailures.clear(networkKey);
+    accountFailures.clear(accountKey);
     reply.header('set-cookie', sessionCookie(result.token, secureCookies()));
     const a = result.account;
     return {
@@ -301,7 +443,7 @@ export function registerAuthRoutes(
         code: 'INVALID_INPUT',
         message: 'New password must be at least 12 characters.',
       });
-    if (passwordBlocked(session.account_id, request.ip))
+    if (passwordBlocked(session.account_id, clientIp(request)))
       return reply.code(429).send({
         code: 'RATE_LIMITED',
         message: 'Too many password attempts. Try again later.',
@@ -315,7 +457,7 @@ export function registerAuthRoutes(
       !row ||
       !(await verifyPassword(row.password_hash, parsed.data.currentPassword))
     ) {
-      passwordFailed(session.account_id, request.ip);
+      passwordFailed(session.account_id, clientIp(request));
       return reply.code(403).send({
         code: 'BAD_CREDENTIALS',
         message: 'Current password is incorrect.',
@@ -340,7 +482,7 @@ export function registerAuthRoutes(
       });
     const body = request.body as { password?: unknown } | null;
     // Throttle first so guesses never reach argon2.
-    if (passwordBlocked(session.account_id, request.ip))
+    if (passwordBlocked(session.account_id, clientIp(request)))
       return reply.code(429).send({
         code: 'RATE_LIMITED',
         message: 'Too many password attempts. Try again later.',
@@ -356,7 +498,7 @@ export function registerAuthRoutes(
         !row ||
         !(await verifyPassword(row.password_hash, body.password))
       ) {
-        passwordFailed(session.account_id, request.ip);
+        passwordFailed(session.account_id, clientIp(request));
         return reply
           .code(403)
           .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
@@ -433,7 +575,7 @@ export function registerAuthRoutes(
         code: 'INVALID_INPUT',
         message: 'Type the confirmation phrase exactly.',
       });
-    if (passwordBlocked(session.account_id, request.ip))
+    if (passwordBlocked(session.account_id, clientIp(request)))
       return reply.code(429).send({
         code: 'RATE_LIMITED',
         message: 'Too many password attempts. Try again later.',
@@ -441,7 +583,7 @@ export function registerAuthRoutes(
     if (
       !(await requestDeletion(db, session.account_id, parsed.data.password))
     ) {
-      passwordFailed(session.account_id, request.ip);
+      passwordFailed(session.account_id, clientIp(request));
       return reply
         .code(403)
         .send({ code: 'BAD_CREDENTIALS', message: 'Password is incorrect.' });
@@ -550,7 +692,7 @@ export function registerAuthRoutes(
       message: ok ? 'Email verified' : 'Invalid or expired verification link',
     });
   });
-  const resendSchema = z.object({ email: z.email() }).strict();
+  const resendSchema = z.object({ email: EmailSchema }).strict();
   app.post('/api/verify-email/resend', async (request, reply) => {
     const parsed = resendSchema.safeParse(request.body);
     if (!parsed.success)
@@ -559,7 +701,8 @@ export function registerAuthRoutes(
         .send({ code: 'INVALID_INPUT', message: 'Invalid email.' });
     const email = parsed.data.email.trim().toLowerCase();
     const throttled =
-      limited(`resend-ip:${request.ip}`) || limited(`resend-email:${email}`);
+      limited(`resend-ip:${clientIp(request)}`) ||
+      limited(`resend-email:${email}`);
     if (!throttled) {
       const token = await resendVerification(db, email);
       // Not awaited: send latency must not distinguish known from unknown addresses.

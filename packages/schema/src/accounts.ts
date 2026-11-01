@@ -1,14 +1,17 @@
 import { z } from 'zod';
 import { AccountIdSchema } from './ids.js';
 
+export const MAX_EMAIL_LENGTH = 254;
+export const EmailSchema = z.email().max(MAX_EMAIL_LENGTH);
+
 export const SignupInputSchema = z.object({
-  email: z.email(),
+  email: EmailSchema,
   password: z.string().min(12),
   displayName: z.string().min(1).max(80),
   birthdate: z.iso.date(),
 });
 export const LoginInputSchema = z.object({
-  email: z.email(),
+  email: EmailSchema,
   password: z.string().min(1),
 });
 export const AccountSchema = z.object({
