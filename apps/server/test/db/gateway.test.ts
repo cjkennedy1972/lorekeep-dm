@@ -557,8 +557,20 @@ describe('pending first-token handoff', () => {
     const socketB = connect(await ticket(tokens[0]!, id));
     await nextOfType(socketB, 'StateSync');
     expect(await socketAClosed).toBe(4401);
+    const socketBClosed = closed(socketB);
 
-    await closeSocket(socketB);
+    // Once the lease is older than the 15-second TTL, the same credential
+    // remains sufficient to recover the seat without relying on takeover.
+    await db.query(
+      `UPDATE seat_resume_tokens SET heartbeat_at=clock_timestamp()-interval '16 seconds'
+        WHERE session_id=$1 AND seat_id=$2`,
+      [id, seatId],
+    );
+    const socketC = connect(await ticket(tokens[0]!, id));
+    await nextOfType(socketC, 'StateSync');
+    expect(await socketBClosed).toBe(4401);
+
+    await closeSocket(socketC);
   }, 15_000);
 
   function failSeatAuthenticatedSend(
