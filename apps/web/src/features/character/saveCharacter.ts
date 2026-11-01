@@ -43,7 +43,7 @@ const SAVE_FAILURE_MESSAGE: Record<SaveFailure, string> = {
   other:
     'The character could not be saved. Check your connection, then try again.',
   uncertain:
-    'We may or may not have saved this character. Check your characters in the party lobby before trying again.',
+    'We could not confirm whether this character was saved. Check now to see whether it is on your account before trying again.',
 };
 
 export function saveFailureMessage(failure: SaveFailure): string {

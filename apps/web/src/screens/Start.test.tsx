@@ -57,7 +57,52 @@ test('My games lists resume link with recap and retries failed loads', async () 
 
 afterEach(() => vi.restoreAllMocks());
 
-test('start reports field-level errors and keeps the built character on retry', async () => {
+test('an empty game name is refused in place, before any request is sent', async () => {
+  const fetch = vi.fn();
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  gameStore.setCharacter(null);
+  startAt();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
+  const field = screen.getByLabelText('Game name');
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(field).toHaveAccessibleDescription('Enter a name for your game.');
+  expect(field).toHaveFocus();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test('the empty-name error clears as soon as the name is typed', async () => {
+  gameStore.setCharacter(null);
+  startAt();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
+  await userEvent.type(screen.getByLabelText('Game name'), 'T');
+  expect(screen.getByLabelText('Game name')).not.toHaveAttribute(
+    'aria-invalid',
+  );
+  expect(
+    screen.queryByText('Enter a name for your game.'),
+  ).not.toBeInTheDocument();
+});
+
+test('quick build only builds the character; it does not create a game', async () => {
+  const fetch = vi.fn();
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  gameStore.setCharacter(null);
+  startAt();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Build character' }),
+  );
+  expect(
+    await screen.findByRole('heading', { name: 'Your hero is built' }),
+  ).toBeInTheDocument();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(gameStore.getState().character).not.toBeNull();
+});
+
+test('start reports server field-level errors and keeps the built character on retry', async () => {
   const fetch = vi.fn().mockResolvedValue({
     ok: false,
     status: 400,
@@ -72,7 +117,7 @@ test('start reports field-level errors and keeps the built character on retry', 
   startAt();
   await userEvent.type(screen.getByLabelText('Game name'), 'Test game');
   await userEvent.click(
-    screen.getByRole('button', { name: 'Build and save character' }),
+    screen.getByRole('button', { name: 'Create solo game' }),
   );
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'Character: id: invalid uuid',

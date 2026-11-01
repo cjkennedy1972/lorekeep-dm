@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   quickBuild,
@@ -32,32 +32,31 @@ function asCharacter(input: CharacterInput): Character {
   return character as Character;
 }
 
+/** Builds a legal character on this device. Saving it to the account is a separate, explicit step. */
 export function QuickBuild({
-  onBuild,
   startingLevel = 1,
-}: {
-  onBuild?: (character: Character) => void;
-  startingLevel?: number;
-} = {}) {
+}: { startingLevel?: number } = {}) {
   const [classId, setClassId] = useState('');
-  const [saved, setSaved] = useState(false);
-  const build = () => {
-    const character = buildQuickCharacter(classId || undefined, startingLevel);
-    if (onBuild) onBuild(character);
-    else setSaved(true);
-  };
+  const [built, setBuilt] = useState<Character | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
-  if (saved) {
-    const built = gameStore.getState().character;
+  // The build button leaves the DOM, so move focus to the result heading.
+  useLayoutEffect(() => {
+    if (built) headingRef.current?.focus();
+  }, [built]);
+
+  if (built) {
     return (
       <section aria-labelledby="quick-build-title">
-        <h1 id="quick-build-title">Your hero is ready</h1>
+        <h1 id="quick-build-title" ref={headingRef} tabIndex={-1}>
+          Your hero is built
+        </h1>
         <p>
-          {gameStore.getState().character?.name} was saved as a level-one
-          character.
+          {built.name} is built as a level {built.level} character. It is not
+          saved to your account yet.
         </p>
         <Link to="/characters/edit">Edit this character in the wizard</Link>
-        {built && <SaveToAccount character={built} />}
+        <SaveToAccount character={built} />
       </section>
     );
   }
@@ -82,8 +81,17 @@ export function QuickBuild({
           </option>
         ))}
       </select>
-      <button type="button" onClick={build}>
-        Build and save character
+      <p className="field-hint">
+        Building creates the character on this device only. You can save it to
+        your account afterwards.
+      </p>
+      <button
+        type="button"
+        onClick={() =>
+          setBuilt(buildQuickCharacter(classId || undefined, startingLevel))
+        }
+      >
+        Build character
       </button>
     </section>
   );

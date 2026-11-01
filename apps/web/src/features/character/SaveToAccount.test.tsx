@@ -164,14 +164,12 @@ describe('SaveToAccount', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(
-      'We may or may not have saved this character. Check your characters in the party lobby before trying again.',
+      'We could not confirm whether this character was saved. Check now to see whether it is on your account before trying again.',
     );
     expect(
       screen.queryByRole('button', { name: 'Save to my account' }),
     ).toBeNull();
-    expect(
-      screen.getByRole('link', { name: 'Check your characters' }),
-    ).toHaveAttribute('href', '/rooms');
+    expect(screen.getByRole('button', { name: 'Check now' })).toBeEnabled();
     expect(
       screen.getByText(/Saving again may create a second character/),
     ).toBeInTheDocument();
@@ -182,7 +180,90 @@ describe('SaveToAccount', () => {
     const tabStops = Array.from(
       container.querySelectorAll<HTMLElement>('a[href], button'),
     ).map((el) => el.textContent);
-    expect(tabStops).toEqual(['Check your characters', 'Save again anyway']);
+    expect(tabStops).toEqual(['Check now', 'Save again anyway']);
+  });
+
+  test('Check now confirms a matching character is on the account, without posting again', async () => {
+    failWith(0, 'NETWORK');
+    apiMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { characters: [SAVED] },
+    });
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    expect(
+      await screen.findByText(/Mira is saved to your account/),
+    ).toBeInTheDocument();
+    expect(apiMock).toHaveBeenNthCalledWith(2, '/api/me/characters');
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('Check now says a character is absent and restores a plain save button', async () => {
+    failWith(0, 'NETWORK');
+    apiMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { characters: [] },
+    });
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    expect(
+      await screen.findByText(
+        'We could not find Mira on your account, so this save did not go through. Saving again will not create a duplicate.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Save to my account' }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole('button', { name: 'Save again anyway' }),
+    ).toBeNull();
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('Check now does not treat a same-name character of another class as a match', async () => {
+    failWith(0, 'NETWORK');
+    apiMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { characters: [{ ...SAVED, classId: 'class:wizard' }] },
+    });
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    expect(
+      await screen.findByText(/could not find Mira on your account/),
+    ).toBeInTheDocument();
+  });
+
+  test('a failed Check now keeps the uncertain state and says the check failed', async () => {
+    failWith(0, 'NETWORK');
+    apiMock.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      code: 'INTERNAL',
+      message: 'server text',
+    });
+    renderSave();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    expect(
+      await screen.findByText(/Could not check your characters/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Save again anyway' }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole('button', { name: 'Save to my account' }),
+    ).toBeNull();
   });
 
   test('a thrown network error is treated as uncertain too', async () => {
@@ -190,7 +271,7 @@ describe('SaveToAccount', () => {
     renderSave();
     fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /We may or may not have saved this character/,
+      /could not confirm whether this character was saved/,
     );
     expect(
       screen.queryByRole('button', { name: 'Save to my account' }),

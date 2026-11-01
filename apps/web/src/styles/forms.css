@@ -73,6 +73,13 @@ textarea[aria-invalid='true'] {
   font-size: var(--text-sm);
   margin: 0;
 }
+/* Buttons wrap onto their own lines on narrow screens instead of overflowing the column. */
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
 .checkbox {
   display: flex;
   gap: var(--space-2);

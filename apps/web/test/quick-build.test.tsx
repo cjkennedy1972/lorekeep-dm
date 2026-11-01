@@ -9,7 +9,7 @@ import { gameStore } from '../src/state/store';
 
 const catalog = loadCharacterCatalog();
 
-test('quick build saves a legal character in at most two clicks for every class', () => {
+test('quick build builds a legal character in at most two clicks for every class', () => {
   for (const characterClass of catalog.entries.filter(
     (entry) => entry.kind === 'class',
   )) {
@@ -22,9 +22,7 @@ test('quick build saves a legal character in at most two clicks for every class'
     fireEvent.change(screen.getByLabelText('Class (optional)'), {
       target: { value: characterClass.id },
     });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Build and save character' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Build character' }));
     expect(gameStore.getState().character).not.toBeNull();
     expect(gameStore.getState().character).toMatchObject({
       abilityGeneration: { method: 'standard-array' },
@@ -40,18 +38,34 @@ test('quick build saves a legal character in at most two clicks for every class'
   }
 });
 
-test('class-optional quick build saves in one click', () => {
+test('class-optional quick build builds in one click', () => {
   gameStore.setCharacter(null);
   render(
     <MemoryRouter>
       <QuickBuild />
     </MemoryRouter>,
   );
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Build and save character' }),
-  );
+  fireEvent.click(screen.getByRole('button', { name: 'Build character' }));
   expect(gameStore.getState().character).not.toBeNull();
   expect(validateCharacter(gameStore.getState().character!, catalog)).toEqual(
     [],
   );
+});
+
+test('after building, the copy says the hero is not saved yet and focus moves to the new heading', () => {
+  gameStore.setCharacter(null);
+  render(
+    <MemoryRouter>
+      <QuickBuild />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Build character' }));
+  const heading = screen.getByRole('heading', { name: 'Your hero is built' });
+  expect(heading).toHaveFocus();
+  expect(
+    screen.getByText(
+      /is built as a level 1 character\. It is not saved to your account yet\./,
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/was saved/)).toBeNull();
 });

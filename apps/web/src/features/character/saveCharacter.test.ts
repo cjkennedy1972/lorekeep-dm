@@ -83,11 +83,11 @@ describe('saveFailureMessage', () => {
     expect(new Set(messages).size).toBe(failures.length);
   });
 
-  test('the uncertain copy says the save may have happened and points to the lobby', () => {
+  test('the uncertain copy says the save could not be confirmed and says how to check', () => {
     expect(saveFailureMessage('uncertain')).toMatch(
-      /may or may not have saved/,
+      /could not confirm whether this character was saved/,
     );
-    expect(saveFailureMessage('uncertain')).toMatch(/party lobby/);
+    expect(saveFailureMessage('uncertain')).toMatch(/Check now/);
   });
 
   test('the session-ended copy points to signing in', () => {
