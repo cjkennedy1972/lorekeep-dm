@@ -104,3 +104,7 @@ The implementation must prove the following at the authenticated control-grant s
 - Docs-only change: one new file, `docs/adr/037-solo-owner-seat-recovery.md`. ADR-031 and all other existing ADRs are unchanged.
 - The acceptance tests above are required of the implementation; they were not run for this docs-only decision record.
 - Source reviewed: ADR-031 §2.7, §3.1–§3.6; this ADR records PR #278’s stated solo-recovery behavior and the security choice required to authorize it.
+
+## Addendum (2026-11-01): test coverage
+
+The party-mode refusal in §5 is covered by `apps/server/test/db/gateway.test.ts` (`party seat refused for the owner without token`). That test was added with #461. It was not run for this docs change. The decision text above is unchanged.
