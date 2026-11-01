@@ -56,12 +56,6 @@ const redact = [
   '*.LLM_API_KEY',
   'req.headers["x-api-key"]',
 ];
-declare module 'fastify' {
-  interface FastifyInstance {
-    clientIpForUpgrade(request: IncomingMessage): string;
-  }
-}
-
 export function createLogger(stream?: DestinationStream) {
   return pino(
     {
