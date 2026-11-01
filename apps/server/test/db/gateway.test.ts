@@ -539,7 +539,7 @@ describe('pending first-token handoff', () => {
     return { id, room, token };
   }
 
-  it('allows a same-seat resume credential to take over a stranded socket', async () => {
+  it('allows a same-seat resume credential to take over a live socket lease', async () => {
     const { id, token: initialResumeToken } = await pendingSeat();
     resumeTokens.set(tokens[0]!, initialResumeToken);
     const seatId = (await rooms.get(id)).state.seats[0]!.seatId;

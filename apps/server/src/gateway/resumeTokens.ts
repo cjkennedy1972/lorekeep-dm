@@ -167,9 +167,10 @@ export async function authorizeSeatSocket(
     );
     const row = result.rows[0];
     // A live controller cannot be displaced without the current seat credential.
-    // A same-seat token proof authorizes this socket to take over a stranded
-    // transport; the advisory lock fences concurrent claims and the caller's
-    // reservation closes the previous in-memory socket.
+    // A same-seat token proof authorizes this socket to take over a lease
+    // whose heartbeat still satisfies the live predicate; the advisory lock
+    // fences concurrent claims and the caller's reservation closes the previous
+    // in-memory socket.
     if (
       row?.socket_live &&
       (!allowActiveSocketTakeover ||
