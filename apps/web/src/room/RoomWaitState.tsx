@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { ConnectionStatus as Status } from './client.js';
 import { ConnectionStatus } from './ConnectionStatus.js';
+import { ReconnectGaveUpNotice } from './TableConnectionNotice.js';
 
 export interface RoomWaitStateProps {
   status: Status;
@@ -12,6 +13,8 @@ export interface RoomWaitStateProps {
   lobbyHref: string;
   /** Omit when a retry is unavailable (for example, after a host removal). */
   onRetry?: () => void;
+  /** The client stopped retrying a refused seat; shows the manual retry instead of waiting. */
+  reconnectGaveUp?: boolean;
 }
 
 /**
@@ -25,13 +28,21 @@ export function RoomWaitState({
   stalled,
   lobbyHref,
   onRetry,
+  reconnectGaveUp = false,
 }: RoomWaitStateProps) {
   return (
     <section className="game-notice">
       <h1>Game</h1>
       <ConnectionStatus status={status} />
       {error && <p role="alert">{error}</p>}
-      {stalled ? (
+      {reconnectGaveUp && onRetry ? (
+        <>
+          <ReconnectGaveUpNotice onRetry={onRetry} />
+          <p>
+            <Link to={lobbyHref}>Back to the lobby</Link>
+          </p>
+        </>
+      ) : stalled ? (
         <>
           <p role="alert">
             The table hasn’t answered yet. Give it another try, or head back to

@@ -27,6 +27,8 @@ export interface RoomSnapshot extends RoomView {
   unseated: boolean;
   /** This connection's own seat, from SeatAuthenticated; null until authenticated. */
   mySeatId: string | null;
+  /** Set when repeated seat-auth closes used up their retries; the client stops until a manual retry or rejoin. */
+  reconnectGaveUp: boolean;
 }
 
 // ponytail: Room.ts kickSeat/endTable close with these exact code+reason pairs; the kick pair is the only host-removal signal.
@@ -38,6 +40,11 @@ export function removalForClose(code: number, reason: string): Removal | null {
 }
 
 const UNSEATED_REASON = 'Player is not seated at this table';
+
+/** The server's close reason when a seat resume is rejected (1008). It can be transient, so it gets a bounded retry. */
+export const SEAT_AUTH_FAILED_REASON = 'Seat authentication failed';
+/** Automatic retries after consecutive seat-auth closes before the client stops and waits for the player. */
+export const SEAT_AUTH_RETRY_LIMIT = 3;
 
 export interface RoomClientOptions {
   /** HTTP origin of the API, e.g. http://localhost:8787 */
@@ -61,6 +68,7 @@ const initial: RoomSnapshot = {
   unseated: false,
   mySeatId: null,
   deviceClaim: null,
+  reconnectGaveUp: false,
 };
 
 export function createRoomClient(opts: RoomClientOptions) {
@@ -74,6 +82,7 @@ export function createRoomClient(opts: RoomClientOptions) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let authWatchdog: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
+  let authFailures = 0;
   let generation = 0;
   let resumeToken: string | undefined;
   let pendingClaimId: string | undefined;
@@ -149,12 +158,14 @@ export function createRoomClient(opts: RoomClientOptions) {
         }
       }
       attempt = 0;
+      authFailures = 0;
       clearTimeout(authWatchdog);
       set({
         status: 'connected',
         error: null,
         mySeatId: authenticatedSeatId ?? null,
         deviceClaim: null,
+        reconnectGaveUp: false,
       });
       return;
     }
@@ -308,6 +319,17 @@ export function createRoomClient(opts: RoomClientOptions) {
           set({ status: 'closed', unseated: true });
           return;
         }
+        if (e.code === 1008 && e.reason === SEAT_AUTH_FAILED_REASON) {
+          if (authFailures >= SEAT_AUTH_RETRY_LIMIT) {
+            // Retrying forever only hammers the server; stop and let the player retry on purpose.
+            socket = undefined;
+            stopped = true;
+            clearTimeout(authWatchdog);
+            set({ status: 'closed', reconnectGaveUp: true });
+            return;
+          }
+          authFailures++;
+        }
         scheduleReconnect(connectionGeneration);
       };
       ws.onerror = () => {};
@@ -321,7 +343,13 @@ export function createRoomClient(opts: RoomClientOptions) {
     stopped = false;
     generation++;
     attempt = 0;
-    set({ status: 'connecting', unseated: false, deviceClaim: null });
+    authFailures = 0;
+    set({
+      status: 'connecting',
+      unseated: false,
+      deviceClaim: null,
+      reconnectGaveUp: false,
+    });
     void connect(generation);
   };
 
@@ -347,11 +375,12 @@ export function createRoomClient(opts: RoomClientOptions) {
     clearTimeout(timer);
     generation++;
     attempt = 0;
+    authFailures = 0;
     // Detach the current socket first so its close event is ignored as superseded.
     const current = socket;
     socket = undefined;
     current?.close();
-    set({ status: 'connecting', deviceClaim: null });
+    set({ status: 'connecting', deviceClaim: null, reconnectGaveUp: false });
     void connect(generation);
   };
 

@@ -145,3 +145,14 @@ test('a retry that still gets no state returns to the error after another wait',
     'The table hasn’t answered yet.',
   );
 });
+
+test('a seat that could not reconnect shows the manual retry instead of waiting', () => {
+  const onRetry = vi.fn();
+  renderWait({ status: 'closed', reconnectGaveUp: true, onRetry });
+  expect(screen.queryByText('Waiting for room state…')).toBeNull();
+  expect(
+    screen.getByText(/We couldn’t reconnect you to the table/),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(onRetry).toHaveBeenCalledTimes(1);
+});
