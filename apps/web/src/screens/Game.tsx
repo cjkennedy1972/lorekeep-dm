@@ -1132,6 +1132,7 @@ export function Game() {
       <TableConnectionNotice
         status={live.status}
         reconnectGaveUp={live.reconnectGaveUp}
+        inCombat={Boolean(tracker && !combatOver)}
         onRetry={live.removed ? undefined : retryRoomConnection}
       />
       <p role="status" aria-live="polite">

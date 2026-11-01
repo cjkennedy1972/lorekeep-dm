@@ -80,3 +80,63 @@ test('a reconnect that gave up offers a manual retry and stops claiming to recon
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(onRetry).toHaveBeenCalledTimes(1);
 });
+
+const SERVER_DOWN = /the server is unavailable/i;
+
+test('a brief reconnect during combat does not flash a server-unavailable notice', () => {
+  const { rerender } = render(
+    <TableConnectionNotice status="connected" inCombat />,
+  );
+  rerender(<TableConnectionNotice status="reconnecting" inCombat />);
+  act(() => {
+    vi.advanceTimersByTime(RECONNECT_NOTICE_DELAY_MS - 1);
+  });
+  expect(screen.queryByText(SERVER_DOWN)).toBeNull();
+});
+
+test('a reconnect that lasts during combat says the server is unavailable and the encounter is kept', () => {
+  render(<TableConnectionNotice status="reconnecting" inCombat />);
+  act(() => {
+    vi.advanceTimersByTime(RECONNECT_NOTICE_DELAY_MS);
+  });
+  const notice = screen.getByText(SERVER_DOWN);
+  expect(notice).toHaveTextContent(/combat is paused/i);
+  expect(notice).toHaveTextContent(/your place in the turn order is kept/i);
+  expect(notice).toHaveTextContent(/reconnecting/i);
+  expect(screen.queryByText(NOTICE)).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('outside combat a lasting reconnect keeps the general notice', () => {
+  render(<TableConnectionNotice status="reconnecting" inCombat={false} />);
+  act(() => {
+    vi.advanceTimersByTime(RECONNECT_NOTICE_DELAY_MS);
+  });
+  expect(screen.getByText(NOTICE)).toBeInTheDocument();
+  expect(screen.queryByText(SERVER_DOWN)).toBeNull();
+});
+
+test('the combat notice names no record ids, routes, or security detail', () => {
+  render(<TableConnectionNotice status="reconnecting" inCombat />);
+  act(() => {
+    vi.advanceTimersByTime(RECONNECT_NOTICE_DELAY_MS);
+  });
+  const text = screen.getByRole('status').textContent ?? '';
+  expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
+  expect(text).not.toMatch(/ent_|socket|websocket|1013|token|seat|\/ws/i);
+});
+
+test('a reconnect that gave up during combat still offers Retry, not the reconnecting copy', () => {
+  const onRetry = vi.fn();
+  render(
+    <TableConnectionNotice
+      status="closed"
+      reconnectGaveUp
+      inCombat
+      onRetry={onRetry}
+    />,
+  );
+  expect(screen.queryByText(SERVER_DOWN)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(onRetry).toHaveBeenCalledTimes(1);
+});
