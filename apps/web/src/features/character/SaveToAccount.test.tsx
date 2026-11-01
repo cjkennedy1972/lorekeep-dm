@@ -215,7 +215,7 @@ describe('SaveToAccount', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
     expect(
       await screen.findByText(
-        'We could not find Mira on your account, so this save did not go through. Saving again will not create a duplicate.',
+        'We could not find Mira on your account when we checked, so this save did not appear to go through.',
       ),
     ).toBeInTheDocument();
     expect(

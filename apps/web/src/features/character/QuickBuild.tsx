@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   quickBuild,
@@ -39,6 +39,9 @@ export function QuickBuild({
   const [classId, setClassId] = useState('');
   const [built, setBuilt] = useState<Character | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // A hero is sized for the level it was built at, so a new starting level means building again.
+  useEffect(() => setBuilt(null), [startingLevel]);
 
   // The build button leaves the DOM, so move focus to the result heading.
   useLayoutEffect(() => {

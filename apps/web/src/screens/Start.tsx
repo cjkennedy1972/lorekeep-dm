@@ -119,7 +119,11 @@ export function Start() {
           <select
             id="starting-level"
             value={level}
-            onChange={(e) => setLevel(e.target.value)}
+            onChange={(e) => {
+              setLevel(e.target.value);
+              // A hero is sized for the level it was built at; drop it so the next create builds at this level.
+              gameStore.setCharacter(null);
+            }}
           >
             {[1, 2, 3, 4, 5].map((n) => (
               <option key={n} value={n}>

@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, test, vi } from 'vitest';
+import { validateCharacter } from '@game/rules-engine';
 import { Start } from './Start';
 import { http } from '../api';
+import { loadCharacterCatalog } from '../features/character/catalog';
 import { gameStore } from '../state/store';
 import {
   renderApp,
@@ -139,6 +141,34 @@ test('start reports server field-level errors and keeps the built character on r
   expect(screen.getByRole('alert')).toHaveTextContent(
     'Character: id: invalid uuid',
   );
+});
+
+test('changing the starting level after a build clears the hero and sends a character that matches the new level', async () => {
+  const fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 201,
+    json: async () => ({ game: { id: 'level-game' } }),
+  });
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  gameStore.setCharacter(null);
+  startAt();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Build character' }),
+  );
+  await screen.findByRole('heading', { name: 'Your hero is built' });
+  await userEvent.selectOptions(screen.getByLabelText('Starting level'), '3');
+  expect(
+    screen.queryByRole('heading', { name: 'Your hero is built' }),
+  ).toBeNull();
+  await userEvent.type(screen.getByLabelText('Game name'), 'Level change');
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Create solo game' }),
+  );
+  await screen.findByText('Game ready');
+  expect(fetch).toHaveBeenCalledTimes(1);
+  const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+  expect(body.character.level).toBe(3);
+  expect(validateCharacter(body.character, loadCharacterCatalog())).toEqual([]);
 });
 
 test('solo start auto-builds a character when none has been made', async () => {

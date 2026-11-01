@@ -183,8 +183,8 @@ export function SaveToAccount({ character }: { character: Character }) {
           {checking && <p role="status">Checking your characters…</p>}
           {check.kind === 'absent' && (
             <p role="status" tabIndex={-1} ref={checkNoteRef}>
-              We could not find {check.name} on your account, so this save did
-              not go through. Saving again will not create a duplicate.
+              We could not find {check.name} on your account when we checked, so
+              this save did not appear to go through.
             </p>
           )}
           {check.kind === 'error' && (
