@@ -97,4 +97,9 @@ describe('POST /api/ws-ticket origin check', () => {
     process.env.WS_ALLOWED_ORIGINS = 'https://web.example.test/';
     expect(await postTicket('https://web.example.test', 'https')).toBe(403);
   });
+
+  it('rejects a configured origin with a non-http(s) scheme even when bypass is enabled', async () => {
+    process.env.WS_ALLOWED_ORIGINS = 'ws://web.example.test';
+    expect(await postTicket('ws://web.example.test', 'https', true)).toBe(403);
+  });
 });

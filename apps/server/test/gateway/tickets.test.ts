@@ -21,4 +21,28 @@ describe('origin policy', () => {
       validOrigin('http://web.example', 'api.example', 'https://web.example'),
     ).toBe(false);
   });
+
+  it('keeps WebSocket upgrades same-origin by default, even with WS_ALLOWED_ORIGINS set', () => {
+    const saved = process.env.WS_ALLOWED_ORIGINS;
+    process.env.WS_ALLOWED_ORIGINS = 'https://web.example';
+    expect(validOrigin('https://web.example', 'api.example')).toBe(false);
+    expect(
+      validOrigin('https://web.example', 'api.example', 'https://web.example'),
+    ).toBe(true);
+    if (saved === undefined) delete process.env.WS_ALLOWED_ORIGINS;
+    else process.env.WS_ALLOWED_ORIGINS = saved;
+  });
+
+  it('rejects non-http(s) origins even when listed for chat delivery', () => {
+    expect(
+      validOrigin('ws://web.example', 'api.example', 'ws://web.example'),
+    ).toBe(false);
+  });
+
+  it('allows chat delivery from an exact configured origin only when bypass is explicitly enabled', () => {
+    expect(validOrigin('https://web.example', 'api.example', '')).toBe(false);
+    expect(
+      validOrigin('https://web.example', 'api.example', 'https://web.example'),
+    ).toBe(true);
+  });
 });
