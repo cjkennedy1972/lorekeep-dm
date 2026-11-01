@@ -11,9 +11,9 @@ function persistenceReturning(rows: Array<{ mode: string }>) {
 
 describe('loadSessionMode', () => {
   it('refuses to infer solo mode when the session row is missing', async () => {
-    await expect(persistenceReturning([]).loadSessionMode('missing')).rejects.toThrow(
-      'Session mode is missing or invalid',
-    );
+    await expect(
+      persistenceReturning([]).loadSessionMode('missing'),
+    ).rejects.toThrow('Session mode is missing or invalid');
   });
 
   it('refuses unknown persisted modes instead of treating them as solo', async () => {
