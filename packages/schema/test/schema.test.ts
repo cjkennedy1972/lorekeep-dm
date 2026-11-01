@@ -276,3 +276,11 @@ test('validates bounded, tiered narration history messages', () => {
     }).success,
   ).toBe(false);
 });
+
+test('login email length is bounded to the RFC maximum', () => {
+  const email = `a@${Array(127).fill('b').join('.')}`;
+  expect(email.length).toBe(255);
+  expect(
+    LoginInputSchema.safeParse({ email, password: 'secret' }).success,
+  ).toBe(false);
+});

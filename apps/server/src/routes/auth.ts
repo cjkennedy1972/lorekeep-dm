@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { isIP } from 'node:net';
+import { createHash } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { Logger } from 'pino';
 import type { Pool } from 'pg';
@@ -88,12 +89,12 @@ export function registerAuthRoutes(
   function limited(key: string): boolean {
     return hits.hit(key) > rateLimit;
   }
-  // Login failures back off per account/network plus a looser exact-IP bucket.
-  // These are delay budgets, not lockouts: every request still gets normal credential work.
+  // Login failure buckets are bounded, hashed where email-derived, and rejected before Argon2.
+  // The account-wide guard is a progressive Retry-After, never a hard lockout.
   const loginNetworkFailures = new BoundedCounter(600_000);
   const loginIpFailures = new BoundedCounter(600_000);
   const accountFailures = new BoundedCounter(600_000);
-  const recoveryTriggered = new BoundedCounter(600_000);
+  const recoverySendCooldown = new BoundedCounter(3_600_000);
   const emailFailures = new BoundedCounter(600_000);
   const ipFailures = new BoundedCounter(600_000);
   const EMAIL_FAIL_LIMIT = 5;
@@ -101,16 +102,14 @@ export function registerAuthRoutes(
   const NETWORK_FAIL_LIMIT = 5;
   const LOGIN_IP_FAIL_LIMIT = 20;
   const ACCOUNT_RECOVERY_LIMIT = 100;
+  const emailBucket = (email: string) =>
+    createHash('sha256').update(email).digest('hex');
   const loginNetworkKey = (email: string, ip: string) =>
-    `login:${email}:${networkBucket(ip)}`;
+    `login:${emailBucket(email)}:${networkBucket(ip)}`;
   const backoffMs = (failures: number, limit: number) =>
     failures < limit
       ? 0
       : Math.min(8_000, 250 * 2 ** Math.min(failures - limit, 5));
-  const wait = (ms: number) =>
-    ms > 0
-      ? new Promise<void>((resolve) => setTimeout(resolve, ms))
-      : Promise.resolve();
   const passwordKey = (accountId: string) => `pw:${accountId}`;
   const passwordBlocked = (accountId: string, ip: string) =>
     emailFailures.count(passwordKey(accountId)) >= EMAIL_FAIL_LIMIT ||
@@ -134,9 +133,13 @@ export function registerAuthRoutes(
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Invalid email.' });
     const email = parsed.data.email.trim().toLowerCase();
+    const emailKey = emailBucket(email);
     const throttled =
-      limited(`forgot-ip:${request.ip}`) || limited(`forgot-email:${email}`);
+      limited(`forgot-ip:${request.ip}`) ||
+      limited(`forgot-email:${emailKey}`) ||
+      recoverySendCooldown.count(emailKey) > 0;
     if (!throttled) {
+      recoverySendCooldown.hit(emailKey);
       const { sent } = await requestPasswordReset(db, sender, email);
       void sent?.then((sendError) => {
         if (sendError)
@@ -191,8 +194,9 @@ export function registerAuthRoutes(
         .code(400)
         .send({ code: 'INVALID_INPUT', message: 'Invalid login details.' });
     const email = parsed.data.email.trim().toLowerCase();
-    const networkKey = loginNetworkKey(email, request.ip);
-    const ipKey = `login-ip:${request.ip}`;
+    const clientIp = app.clientIpForUpgrade(request.raw);
+    const networkKey = loginNetworkKey(email, clientIp);
+    const ipKey = `login-ip:${clientIp}`;
     const cookieToken = tokenFromCookie(request.headers.cookie);
     const trustedSession = cookieToken
       ? await getSession(db, cookieToken).catch(() => undefined)
@@ -210,6 +214,24 @@ export function registerAuthRoutes(
       loginIpFailures.count(ipKey),
       LOGIN_IP_FAIL_LIMIT,
     );
+    const accountKey = emailBucket(email);
+    const accountFailureCount = accountFailures.count(accountKey);
+    const accountDelay =
+      trustedDevice || accountFailureCount < ACCOUNT_RECOVERY_LIMIT
+        ? 0
+        : Math.min(
+            30_000,
+            250 *
+              2 ** Math.min(accountFailureCount - ACCOUNT_RECOVERY_LIMIT, 7),
+          );
+    const retryMs = Math.max(networkDelay, ipDelay, accountDelay);
+    if (retryMs > 0) {
+      if (accountDelay > 0) accountFailures.hit(accountKey);
+      return reply
+        .code(429)
+        .header('retry-after', String(Math.ceil(retryMs / 1000)))
+        .send(badCredentials);
+    }
     let result;
     try {
       result = await login(
@@ -226,32 +248,34 @@ export function registerAuthRoutes(
         });
       throw error;
     }
-    await wait(Math.max(networkDelay, ipDelay));
     if (result.kind === 'invalid') {
       loginNetworkFailures.hit(networkKey);
       loginIpFailures.hit(ipKey);
-      accountFailures.hit(email);
-      if (
-        accountFailures.count(email) === ACCOUNT_RECOVERY_LIMIT &&
-        recoveryTriggered.count(email) === 0
-      ) {
-        recoveryTriggered.hit(email);
-        void requestPasswordReset(db, sender, email)
-          .then(({ sent }) =>
-            sent?.then((sendError) => {
-              if (sendError)
-                request.log.warn(
-                  { errorClass: sendError },
-                  'password recovery email not sent',
-                );
-            }),
-          )
-          .catch((error: unknown) =>
-            request.log.warn(
-              { errorClass: error instanceof Error ? error.name : 'unknown' },
-              'password recovery request failed',
-            ),
-          );
+      accountFailures.hit(accountKey);
+      if (accountFailures.count(accountKey) >= ACCOUNT_RECOVERY_LIMIT) {
+        const emailKey = accountKey;
+        if (
+          recoverySendCooldown.count(emailKey) === 0 &&
+          !limited(`forgot-email:${emailKey}`)
+        ) {
+          recoverySendCooldown.hit(emailKey);
+          void requestPasswordReset(db, sender, email)
+            .then(({ sent }) =>
+              sent?.then((sendError) => {
+                if (sendError)
+                  request.log.warn(
+                    { errorClass: sendError },
+                    'password recovery email not sent',
+                  );
+              }),
+            )
+            .catch((error: unknown) =>
+              request.log.warn(
+                { errorClass: error instanceof Error ? error.name : 'unknown' },
+                'password recovery request failed',
+              ),
+            );
+        }
       }
       return reply.code(401).send(badCredentials);
     }
@@ -266,7 +290,7 @@ export function registerAuthRoutes(
         message: 'Check your email and verify your account before signing in.',
       });
     loginNetworkFailures.clear(networkKey);
-    accountFailures.clear(email);
+    accountFailures.clear(accountKey);
     reply.header('set-cookie', sessionCookie(result.token, secureCookies()));
     const a = result.account;
     return {

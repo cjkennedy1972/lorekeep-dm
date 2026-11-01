@@ -102,6 +102,7 @@ export function createApp(
   } = options;
   // ponytail: Fastify 5 ignores numeric trustProxy (fails closed), so count hops here; hop 0 is the socket peer.
   const app = Fastify({
+    bodyLimit: 256 * 1024,
     loggerInstance: createLogger(options.loggerStream),
     trustProxy:
       typeof trustProxy === 'number'
