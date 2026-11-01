@@ -1032,6 +1032,15 @@ describe('Game screen layout', () => {
     expect((await axe(container)).violations).toEqual([]);
   });
 
+  it('the safety disclosure explains the controls in player-facing words', async () => {
+    mount();
+    await screen.findByText(/Combat starts when a fight breaks out/);
+    const about = screen.getByText('About these controls').closest('details');
+    expect(about).not.toBeNull();
+    expect(about).toHaveTextContent('X-card');
+    expect(about).not.toHaveTextContent('No explanation is needed');
+  });
+
   it('in combat: the tracker and the map replace the placeholder, and axe stays clean', async () => {
     const { container } = mount();
     await screen.findByText(/Combat starts when a fight breaks out/);

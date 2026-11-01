@@ -35,8 +35,17 @@ function asCharacter(input: CharacterInput): Character {
 /** Builds a legal character on this device. Saving it to the account is a separate, explicit step. */
 export function QuickBuild({
   startingLevel = 1,
-}: { startingLevel?: number } = {}) {
-  const [classId, setClassId] = useState('');
+  classId: classIdProp,
+  onClassChange,
+}: {
+  startingLevel?: number;
+  /** Controlled class choice, so a parent can build with the same class the player sees. */
+  classId?: string;
+  onClassChange?: (classId: string) => void;
+} = {}) {
+  const [localClassId, setLocalClassId] = useState('');
+  const classId = classIdProp ?? localClassId;
+  const setClassId = onClassChange ?? setLocalClassId;
   const [built, setBuilt] = useState<Character | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 

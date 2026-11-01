@@ -14,6 +14,7 @@ export function Start() {
   const [name, setName] = useState('');
   const [difficulty, setDifficulty] = useState('moderate');
   const [level, setLevel] = useState('1');
+  const [classId, setClassId] = useState('');
   const [droppedHero, setDroppedHero] = useState(false);
   const [creation, setCreation] = useState<'quick' | 'wizard'>('quick');
   const [error, setError] = useState('');
@@ -36,15 +37,17 @@ export function Start() {
       return;
     }
     setDroppedHero(false);
-    // A stored hero is reused only at the selected level; otherwise a fresh one is built at that level.
+    // A stored hero is reused only at the selected level and class; otherwise a fresh one is built with the picked class.
     const storedCharacter = gameStore.getState().character;
+    const storedMatches =
+      storedCharacter?.level === Number(level) &&
+      (!classId || storedCharacter.classId === classId);
     let characterToCreate =
-      character ??
-      (storedCharacter?.level === Number(level) ? storedCharacter : undefined);
+      character ?? (storedMatches ? storedCharacter : undefined);
     if (!characterToCreate) {
       try {
         characterToCreate = {
-          ...buildQuickCharacter(undefined, Number(level)),
+          ...buildQuickCharacter(classId || undefined, Number(level)),
         };
       } catch {
         // Quick build is best-effort; the server still supports its default hero.
@@ -181,7 +184,11 @@ export function Start() {
         )}
       </form>
       <div hidden={creation !== 'quick'}>
-        <QuickBuild startingLevel={Number(level)} />
+        <QuickBuild
+          startingLevel={Number(level)}
+          classId={classId}
+          onClassChange={setClassId}
+        />
       </div>
       {creation === 'wizard' && (
         <CreationWizard

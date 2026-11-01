@@ -1209,7 +1209,7 @@ export function Game() {
           </summary>
           <p>
             Pause stops new narration after the current turn. X-card and pause
-            also apply to party chat. No explanation is needed.
+            also apply to party chat.
           </p>
         </details>
       </section>
