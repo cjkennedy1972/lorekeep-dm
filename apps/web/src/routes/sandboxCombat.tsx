@@ -29,6 +29,7 @@ import {
 import { Canvas2DRenderer } from '../features/map/Canvas2DRenderer.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { createTokenDrawCommands } from '../features/map/tokens.js';
+import { createEntityNamer, nameFromCatalogId } from '../features/map/names.js';
 import { loadCharacterCatalog } from '../features/character/catalog.js';
 import {
   castableSlotLevels,
@@ -63,6 +64,14 @@ const INITIAL: Fighter[] = [
   structuredClone(pcTemplate),
   ...structuredClone(scenario.goblins),
 ];
+// Visible labels for monsters: display names, numbered when twins share a name. PCs are labelled 'Aria' below.
+const monsterName = createEntityNamer({
+  entities: INITIAL.filter((f) => f.kind === 'monster').map((f) => ({
+    id: f.id,
+    kind: 'monster',
+  })),
+});
+const labelOf = (f: Fighter) => (f.kind === 'pc' ? 'Aria' : monsterName(f.id));
 const initiativeState = (() => {
   const combatants = INITIAL.map((fighter) => ({
     id: fighter.id,
@@ -231,7 +240,7 @@ export function SandboxCombat() {
       fighters.map((f) => [
         f.id,
         {
-          name: f.kind === 'pc' ? 'Aria' : f.id,
+          name: labelOf(f),
           team: f.team,
           maxHp: f.maxHp,
         },
@@ -365,7 +374,7 @@ export function SandboxCombat() {
       setPendingState(result.state);
       setStage('reaction');
       setMessage(
-        `Opportunity attack from ${pending.hostileId}. Press Y to accept or N to decline.`,
+        `Opportunity attack from ${nameFromCatalogId(pending.hostileId)}. Press Y to accept or N to decline.`,
       );
     } else {
       setFighters(next);
@@ -397,7 +406,7 @@ export function SandboxCombat() {
       setPendingReaction(nextReaction);
       setPendingState(result.state);
       setMessage(
-        `Opportunity attack from ${nextReaction.hostileId}. Press Y to accept or N to decline.`,
+        `Opportunity attack from ${nameFromCatalogId(nextReaction.hostileId)}. Press Y to accept or N to decline.`,
       );
       return;
     }
@@ -458,7 +467,7 @@ export function SandboxCombat() {
       if (event.key.toLowerCase() === 'a') {
         setAreaPreview(true);
         setMessage(
-          `Burning Hands engine preview: ${affected.map((id) => fighters.find((f) => f.id === id)?.id ?? id).join(', ') || 'no creatures'} affected.`,
+          `Burning Hands engine preview: ${affected.map(monsterName).join(', ') || 'no creatures'} affected.`,
         );
       } else if (event.key === 'Enter' && areaPreview) cast();
       return;
@@ -519,7 +528,8 @@ export function SandboxCombat() {
             <div role="dialog" aria-label="Opportunity attack">
               <p>
                 Pending engine reaction: opportunity attack by{' '}
-                {pendingReaction?.hostileId}
+                {pendingReaction &&
+                  nameFromCatalogId(pendingReaction.hostileId)}
               </p>
               <button onClick={() => answerReaction('take')}>Accept (Y)</button>
               <button onClick={() => answerReaction('decline')}>
@@ -543,7 +553,7 @@ export function SandboxCombat() {
                     key={fighter.id}
                     aria-current={index === 0 ? 'true' : undefined}
                   >
-                    {fighter.kind === 'pc' ? 'Aria' : fighter.id}: {entry.total}
+                    {labelOf(fighter)}: {entry.total}
                     {fighter.kind === 'pc'
                       ? ` · ${fighter.hp}/${fighter.maxHp} HP`
                       : ` · ${fighter.hp > fighter.maxHp / 2 ? 'healthy' : 'bloodied'}`}
@@ -582,7 +592,7 @@ export function SandboxCombat() {
           {areaPreview && (
             <ul aria-label="Affected creatures">
               {affected.map((id) => (
-                <li key={id}>{id}</li>
+                <li key={id}>{monsterName(id)}</li>
               ))}
             </ul>
           )}

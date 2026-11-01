@@ -51,6 +51,7 @@ import { TurnTimerControl } from '../features/round/TurnTimerControl.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { useSheetLoadFailure } from '../features/character/useSheetLoadFailure.js';
 import { ConnectionStatus } from '../room/ConnectionStatus.js';
+import { TableConnectionNotice } from '../room/TableConnectionNotice.js';
 import { RoomWaitState } from '../room/RoomWaitState.js';
 import { useRoom } from '../room/useRoom.js';
 import { useRoomStateFailure } from '../room/useRoomStateFailure.js';
@@ -1124,12 +1125,7 @@ export function Game() {
           onDismiss={() => setPartialFailure(null)}
         />
       )}
-      {(live.status === 'reconnecting' || live.status === 'closed') && (
-        <p role="alert">
-          The connection to the table dropped. Your game is safe. Actions can be
-          sent again once it reconnects.
-        </p>
-      )}
+      <TableConnectionNotice status={live.status} />
       <p role="status" aria-live="polite">
         {error}
       </p>

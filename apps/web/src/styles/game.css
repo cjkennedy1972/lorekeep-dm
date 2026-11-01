@@ -72,6 +72,14 @@
 .game-screen > p[role='status'] {
   margin: 0;
 }
+/* A lasting reconnect: a quiet, boxed line in the page flow, not the danger alert. */
+.table-connection-notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+}
 .game-screen > p[role='status']:empty {
   display: none;
 }
