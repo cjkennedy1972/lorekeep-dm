@@ -1217,6 +1217,42 @@ describe('Combat bar stays current (options, move shortcut, clarification placem
     expect(screen.queryByText(/Out of reach.*Goblin/)).not.toBeInTheDocument();
   });
 
+  it('hides the out-of-reach hint while a refreshed options request is pending after the board changes', () => {
+    mount();
+    const bandit = {
+      id: 'ent_bandit',
+      kind: 'monster',
+      team: 'enemies',
+      pos: { x: 7, y: 4 },
+      size: 1,
+      hp: 9,
+      hpState: 'healthy',
+    };
+    const withBandit = (pos: { x: number; y: number }) => {
+      const base = trackerAt(pos, 30);
+      return { ...base, entities: [...base.entities, bandit] };
+    };
+    push('CombatTracker', withBandit({ x: 1, y: 2 }));
+    push('CombatOptions', {
+      actions: [
+        {
+          kind: 'attack',
+          optionId: 'a1',
+          targetId: 'ent_goblin',
+          attackId: 'staff',
+        },
+      ],
+    });
+    expect(
+      screen.getByText(
+        'Out of reach of your attacks: Bandit. Move closer to attack.',
+      ),
+    ).toBeInTheDocument();
+    // The seat moved: a new options request is sent but its reply has not arrived.
+    push('CombatTracker', withBandit({ x: 2, y: 2 }));
+    expect(screen.queryByText(/Out of reach/)).not.toBeInTheDocument();
+  });
+
   it('a rejected attack gets neutral copy beside the attack buttons, and the next attack clears it', async () => {
     const user = userEvent.setup();
     mount();

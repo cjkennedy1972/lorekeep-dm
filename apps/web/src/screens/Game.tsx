@@ -350,6 +350,7 @@ export function Game() {
       if (message.type === 'CombatOptions') {
         optionsGate.end();
         optionsRequestId.current = null;
+        setOptionsFor(optionsRequestKey.current);
         setOptions(asRecord(message.payload));
         if (optionsStale.current) requestOptions();
       }
@@ -516,6 +517,9 @@ export function Game() {
   const [optionsGate] = useState(() => createInFlightGate(5_000));
   const optionsStale = useRef(false);
   const optionsRequestId = useRef<string | null>(null);
+  // The board state each options request was sent for, and the state the latest options reply answers.
+  const optionsKeyRef = useRef<string | null>(null);
+  const optionsRequestKey = useRef<string | null>(null);
   // The slot a cast spends; null follows the lowest slot the caster can still pay for.
   const [slotLevel, setSlotLevel] = useState<number | null>(null);
   // Only the controlling reactor gets the decision (ReactionPrompt); other seats get a status-only notice.
@@ -553,6 +557,7 @@ export function Game() {
     return () => window.clearInterval(timer);
   }, [reactionNotice?.reactionId, reactionNotice?.timeoutMs]);
   const [options, setOptions] = useState<Record<string, unknown> | null>(null);
+  const [optionsFor, setOptionsFor] = useState<string | null>(null);
   const [error, setError] = useState('');
   // The DM applied only part of this player's action; shown as a dismissible alert, not the status line.
   const [partialFailure, setPartialFailure] = useState<string | null>(null);
@@ -949,9 +954,13 @@ export function Game() {
       return;
     }
     optionsStale.current = false;
+    optionsRequestKey.current = optionsKeyRef.current;
     const id = send({ command: 'options' });
     optionsRequestId.current = typeof id === 'string' ? id : null;
   };
+  useEffect(() => {
+    optionsKeyRef.current = optionsKey;
+  }, [optionsKey]);
   useEffect(() => {
     if (optionsKey !== null) requestOptions();
   }, [optionsKey]);
@@ -1002,8 +1011,9 @@ export function Game() {
       )
     : [];
   // Options list only attacks this seat can make now, so a foe with no attack option is out of reach (or unseen) from here.
+  // Options answering an earlier board state say nothing about this one, so they are ignored until the reply arrives.
   const outOfReach =
-    yourTurn && options !== null
+    yourTurn && options !== null && optionsFor === optionsKey
       ? foes.filter((foe) => !reachableTargets.has(foe.id))
       : [];
   if (live.removed === 'kicked')
@@ -1434,7 +1444,10 @@ export function Game() {
               <h2>Combat actions</h2>
               <button
                 type="button"
-                onClick={() => send({ command: 'options' })}
+                onClick={() => {
+                  optionsRequestKey.current = optionsKeyRef.current;
+                  send({ command: 'options' });
+                }}
               >
                 Refresh combat options
               </button>
