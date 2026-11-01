@@ -45,6 +45,17 @@ test('a reconnect that lasts shows a notice without interrupting as an alert', (
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
+test('a lasting reconnect is announced politely through a live region', () => {
+  const { rerender } = render(<TableConnectionNotice status="connected" />);
+  const region = screen.getByRole('status');
+  expect(region).toHaveAttribute('aria-live', 'polite');
+  rerender(<TableConnectionNotice status="reconnecting" />);
+  act(() => {
+    vi.advanceTimersByTime(RECONNECT_NOTICE_DELAY_MS);
+  });
+  expect(screen.getByRole('status')).toHaveTextContent(NOTICE);
+});
+
 test('a closed seat is not told the table will reconnect', () => {
   render(<TableConnectionNotice status="closed" />);
   act(() => {

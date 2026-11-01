@@ -19,11 +19,15 @@ export function TableConnectionNotice({ status }: { status: Status }) {
     const timer = setTimeout(() => setLasting(true), RECONNECT_NOTICE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [status]);
-  if (status !== 'reconnecting' || !lasting) return null;
+  // The live region stays mounted so a lasting reconnect is announced politely, without interrupting as an alert.
   return (
-    <p className="table-connection-notice">
-      Connection to the table lost. Reconnecting… Your game is safe, and actions
-      can be sent once it reconnects.
-    </p>
+    <div role="status" aria-live="polite">
+      {status === 'reconnecting' && lasting && (
+        <p className="table-connection-notice">
+          Connection to the table lost. Reconnecting… Your game is safe, and
+          actions can be sent once it reconnects.
+        </p>
+      )}
+    </div>
   );
 }
