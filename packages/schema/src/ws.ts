@@ -308,8 +308,6 @@ const RoundSnapshotSubmissionSchema = z
     actionIds: z.array(z.uuid()),
     playerName: z.string().min(1),
     receiptSeq: z.int().positive(),
-    /** Original submission time, also present in public snapshots for wait-time recovery. */
-    submittedAt: z.number().nonnegative().optional(),
     editedAt: z.number().optional(),
   })
   .strict();

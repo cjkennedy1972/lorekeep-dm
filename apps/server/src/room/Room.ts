@@ -2142,8 +2142,8 @@ export class Room {
                 actionId: submission.actionId,
                 text: submission.text,
                 queued: round.queuedSubmissions.includes(submission),
-                // Legacy snapshots predate submittedAt; anchor those at first sync.
-                submittedAt: submission.submittedAt ?? Date.now(),
+                // Legacy snapshots predate submittedAt; anchor once in memory on first sync.
+                submittedAt: (submission.submittedAt ??= Date.now()),
               },
             }
           : {}),
