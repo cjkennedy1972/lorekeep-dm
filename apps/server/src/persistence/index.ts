@@ -781,7 +781,10 @@ export class Persistence {
       'SELECT mode FROM sessions WHERE id=$1',
       [sessionId],
     );
-    return rows[0]?.mode === 'party' ? 'party' : 'solo';
+    const mode = rows[0]?.mode;
+    if (mode !== 'solo' && mode !== 'party')
+      throw new Error('Session mode is missing or invalid');
+    return mode;
   }
 
   async loadActiveSeatCharacterBindings(sessionId: string): Promise<
