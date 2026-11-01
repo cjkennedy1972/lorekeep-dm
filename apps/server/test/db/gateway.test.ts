@@ -1924,6 +1924,49 @@ describe('one-time gateway', () => {
     if (priorResumeToken) resumeTokens.set(tokens[0]!, priorResumeToken);
     else resumeTokens.delete(tokens[0]!);
   });
+  it('party seat refused for the owner without token', async () => {
+    // ADR-037 §5: solo recovery is scoped to mode='solo'. A party-mode owner
+    // presenting no token must fall through to host-approved claim, never recovery.
+    const id = randomUUID();
+    await db.query(
+      "INSERT INTO sessions(id,owner_account_id,mode) VALUES($1,$2,'party')",
+      [id, accounts[0]],
+    );
+    const room = await rooms.get(id);
+    const initialToken = await room.seat(
+      accounts[0]!,
+      'Party owner',
+      false,
+      hashToken(tokens[0]!),
+    );
+    expect(initialToken).toBeTruthy();
+    // The owner already holds the delivered token and then loses it: a tokenless
+    // socket must not inherit the pending first-delivery credential.
+    room.completeSeatResumeTokenDelivery(accounts[0]!, hashToken(tokens[0]!));
+    // Exactly one current seat, so only the mode check can separate this from solo.
+    const seatId = room.state.seats.find(
+      (seat) => seat.accountId === accounts[0],
+    )!.seatId;
+    const claimSpy = vi.spyOn(room, 'requestSeatResumeClaim');
+
+    const tokenless = connect(await ticket(tokens[0]!, id), null, false);
+    await nextOfType(tokenless, 'SeatClaimPending');
+    expect(claimSpy).toHaveBeenCalledWith(
+      accounts[0],
+      expect.any(String),
+      hashToken(tokens[0]!),
+    );
+    expect(seenMessageTypes.get(tokenless)).not.toContain('SeatAuthenticated');
+    expect(seenMessageTypes.get(tokenless)).not.toContain('SeatTakenOver');
+    const control = await db.query<{ active_socket_id: string | null }>(
+      'SELECT active_socket_id FROM seat_resume_tokens WHERE session_id=$1 AND seat_id=$2',
+      [id, seatId],
+    );
+    expect(control.rows[0]?.active_socket_id).toBeNull();
+    await closeSocket(tokenless);
+    claimSpy.mockRestore();
+  });
+
   it('does not hand the initial token to another login session for the same account', async () => {
     const boundSessionId = randomUUID();
     await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
