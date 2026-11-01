@@ -125,7 +125,7 @@ export class Room {
     };
   }
 
-  /** Strips submission text and accountId, which the strict RoundSnapshot schema rejects. */
+  /** Projects only the public submission fields accepted by the strict RoundSnapshot schema. */
   private publicRound(round: NonNullable<RoomState['round']>) {
     const pub = (s: Submission) => ({
       seatId: s.seatId,
@@ -134,7 +134,6 @@ export class Room {
       actionIds: s.actionIds,
       playerName: s.playerName,
       receiptSeq: s.receiptSeq,
-      ...(s.submittedAt === undefined ? {} : { submittedAt: s.submittedAt }),
       ...(s.editedAt === undefined ? {} : { editedAt: s.editedAt }),
     });
     return {
