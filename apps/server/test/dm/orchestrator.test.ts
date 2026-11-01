@@ -531,6 +531,20 @@ describe('DM orchestrator', () => {
       ),
     ).toBe(false);
   });
+  it('describes clarification as a last resort and requires a direct player-facing question', async () => {
+    const h = setup([[{ type: 'text', delta: 'The sentinel nods.' }]]);
+    h.input.allowClarification = true;
+
+    await runTurn(h.input);
+
+    const clarification = h.requests[0]?.tools?.find(
+      (tool) => tool.name === 'ask_clarification',
+    );
+    expect(clarification?.description).toContain(
+      'Only when an unresolved ambiguity materially changes the outcome',
+    );
+    expect(clarification?.description).toContain('address the player as “you”');
+  });
   it('intentionally emits no NarrationCompleted for an approved clarification, so the question is the turn output', async () => {
     const h = setup([
       [

@@ -246,9 +246,11 @@ function toolSchemas(input: TurnInput): LlmTool[] {
         name,
         description:
           input.toolDescriptions?.[name] ??
-          (name === 'start_combat'
-            ? 'Start the offered authored encounter for this scene when the accepted player action initiates hostility, before narrating any combat outcome. Pass the exact offered encounterId; the server supplies the roster and map. Never invent enemies or resolve attacks in narration. On success narrate the engine-established encounter start; on rejection do not claim combat began.'
-            : `Validated ${name} action.`),
+          (name === 'ask_clarification'
+            ? 'Only when an unresolved ambiguity materially changes the outcome and no reasonable default is safe. Never interrupt a clear, low-risk action. Ask at most one short question, address the player as “you”, and never ask what the named character should do.'
+            : name === 'start_combat'
+              ? 'Start the offered authored encounter for this scene when the accepted player action initiates hostility, before narrating any combat outcome. Pass the exact offered encounterId; the server supplies the roster and map. Never invent enemies or resolve attacks in narration. On success narrate the engine-established encounter start; on rejection do not claim combat began.'
+              : `Validated ${name} action.`),
         // Native tool calling needs real JSON schemas; empty parameters made models emit {} args.
         parameters: (input.toolSchemas?.[name] ??
           zodSchema(toolArgsSchema(input, name))) as Record<string, unknown>,
