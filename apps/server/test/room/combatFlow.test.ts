@@ -2230,6 +2230,68 @@ describe('Room: one persisted narration per resolved combat turn', () => {
     ).toHaveLength(1);
   });
 
+  it('uses the authored combat fallback for a retryable endpoint result', async () => {
+    const e = bootstrapped();
+    const combat: RoomCombatState = {
+      ...e.state,
+      phase: 'narrating',
+      turnId: 'retryable-endpoint-failure-turn',
+      narrationAttempts: 0,
+      turnNarrationEvents: [
+        { type: 'HpChanged', entityId: 'ent_aria', delta: -1, hp: 9 },
+      ],
+      combat: { ...e.state.combat, activeEntityId: 'ent_aria' },
+    };
+    let narrationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      narrationStarted = resolve;
+    });
+    const runner = {
+      async run() {
+        narrationStarted();
+        return {
+          narration: '',
+          events: [],
+          state: e.game,
+          turnSeed: 'retryable-endpoint-failure-turn',
+          usage: { in: 0, out: 0 },
+          fallback: 'endpoint-error',
+          endpointRetryable: true,
+        } as never;
+      },
+    };
+    const table = memoryTable(
+      {
+        ...e.game,
+        combatActors: { [account]: 'ent_aria' },
+        combatRoom: combat,
+      },
+      runner,
+    );
+    const room = table.boot();
+    await joinSeated(room, account, table.connection);
+    await room.setPaused(account, false, true);
+    await started;
+    await room.drain();
+
+    const completed = table.events.find(
+      (event) => event.type === 'NarrationCompleted',
+    );
+    expect(completed?.payload).toMatchObject({
+      fallback: 'endpoint-error',
+      narration: expect.stringContaining('storyteller has lost the thread'),
+    });
+    expect(String(completed?.payload.narration).trim().length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      table.events.find((event) => event.type === 'TurnFallback')?.payload,
+    ).toMatchObject({
+      turnId: 'retryable-endpoint-failure-turn',
+      reason: 'endpoint-error',
+    });
+  });
+
   it('commits the ADR-022 fallback without another DM call after two interrupted attempts', async () => {
     const e = bootstrapped();
     const combat: RoomCombatState = {
