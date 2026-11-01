@@ -8,7 +8,7 @@ const hash = (ticket: string) =>
 export function validOrigin(
   origin: string | undefined,
   host: string | undefined,
-  allowed = process.env.WS_ALLOWED_ORIGINS,
+  allowed = '',
 ): boolean {
   if (!origin || !host) return false;
   try {
@@ -36,6 +36,8 @@ export function isConfiguredOriginAllowed(
   try {
     const parsedOrigin = new URL(origin);
     if (
+      (parsedOrigin.protocol !== 'http:' &&
+        parsedOrigin.protocol !== 'https:') ||
       parsedOrigin.pathname !== '/' ||
       parsedOrigin.search ||
       parsedOrigin.hash
