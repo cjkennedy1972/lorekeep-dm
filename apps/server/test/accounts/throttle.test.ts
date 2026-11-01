@@ -3,6 +3,7 @@ import {
   BoundedCounter,
   BusyError,
   Limiter,
+  ProgressiveThrottle,
 } from '../../src/accounts/throttle.js';
 
 describe('BoundedCounter', () => {
@@ -23,6 +24,25 @@ describe('BoundedCounter', () => {
     expect(c.count('a', 3)).toBe(0);
     c.hit('e', 5000);
     expect(c.size).toBe(1);
+  });
+});
+
+describe('ProgressiveThrottle', () => {
+  it('escalates exhausted windows, caps the delay, and resets after quiet time or success', () => {
+    const throttle = new ProgressiveThrottle(2, 100, [60, 120, 300], 1_000, 10);
+    expect(throttle.hit('a', 0)).toBe(0);
+    expect(throttle.hit('a', 1)).toBe(60);
+    expect(throttle.remainingMs('a', 30)).toBe(31);
+    expect(throttle.hit('a', 61)).toBe(0);
+    expect(throttle.hit('a', 62)).toBe(120);
+    expect(throttle.hit('a', 183)).toBe(0);
+    expect(throttle.hit('a', 184)).toBe(300);
+    expect(throttle.hit('a', 485)).toBe(0);
+    expect(throttle.hit('a', 486)).toBe(300);
+    expect(throttle.hit('a', 2_000)).toBe(0);
+    expect(throttle.hit('a', 2_001)).toBe(60);
+    throttle.clear('a');
+    expect(throttle.remainingMs('a', 2_002)).toBe(0);
   });
 });
 

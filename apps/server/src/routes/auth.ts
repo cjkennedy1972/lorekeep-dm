@@ -13,6 +13,7 @@ import {
   BusyError,
   KeyedConcurrencyGate,
   KeyedSerialQueue,
+  ProgressiveThrottle,
 } from '../accounts/throttle.js';
 import type { ConnectionRegistry } from '../gateway/connections.js';
 import {
@@ -98,7 +99,7 @@ export function registerAuthRoutes(
   }
   // Login failure buckets are bounded, hashed where email-derived, and rejected before Argon2.
   // Serialize untrusted login checks per account with bounded FIFO waiting.
-  const loginNetworkFailures = new BoundedCounter(600_000);
+  const loginNetworkFailures = new ProgressiveThrottle(5, 600_000);
   // Cap concurrent Argon2 checks per broader network bucket.
   const loginNetworkInFlight = new KeyedConcurrencyGate(3);
   const loginAccountInFlight = new KeyedSerialQueue(10);
@@ -109,7 +110,6 @@ export function registerAuthRoutes(
   const ipFailures = new BoundedCounter(600_000);
   const EMAIL_FAIL_LIMIT = 5;
   const IP_FAIL_LIMIT = 20;
-  const NETWORK_FAIL_LIMIT = 5;
   const LOGIN_IP_FAIL_LIMIT = 20;
   const ACCOUNT_RECOVERY_LIMIT = 10;
   const emailBucket = (email: string) =>
@@ -230,9 +230,7 @@ export function registerAuthRoutes(
     const accountKey = emailBucket(email);
     const networkRetryMs = trustedDevice
       ? 0
-      : loginNetworkFailures.count(networkKey) >= NETWORK_FAIL_LIMIT
-        ? loginNetworkFailures.remainingMs(networkKey)
-        : 0;
+      : loginNetworkFailures.remainingMs(networkKey);
     const ipRetryMs =
       loginIpFailures.count(ipKey) >= LOGIN_IP_FAIL_LIMIT
         ? loginIpFailures.remainingMs(ipKey)
@@ -249,12 +247,15 @@ export function registerAuthRoutes(
       : await loginAccountInFlight.acquire(networkKey);
     if (!trustedDevice && !releaseAccount)
       return reply.code(429).header('retry-after', '1').send(badCredentials);
-    const releaseNetwork = trustedDevice
-      ? undefined
-      : loginNetworkInFlight.tryAcquire(argonNetworkBucket(loginIp));
-    if (!trustedDevice && !releaseNetwork) {
+    const releaseNetwork = loginNetworkInFlight.tryAcquire(
+      argonNetworkBucket(loginIp),
+    );
+    if (!releaseNetwork) {
       releaseAccount?.();
-      return reply.code(429).header('retry-after', '1').send(badCredentials);
+      return reply.code(429).header('retry-after', '1').send({
+        code: 'RATE_LIMITED',
+        message: 'Too many login attempts. Try again shortly.',
+      });
     }
     let result;
     try {

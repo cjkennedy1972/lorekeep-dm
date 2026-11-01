@@ -533,24 +533,85 @@ describe('login throttle', () => {
     expect((await attempt('198.51.100.99', '192.0.2.24')).statusCode).toBe(401);
     await app.close();
   });
-  it('expires network and IP login locks after their fixed window', async () => {
+  it('progressively delays repeated network-window exhaustion and resets after owner login', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const { app, post } = await setup();
-    try {
+    const exhaust = async () => {
       for (let i = 1; i <= 5; i++)
         expect(
           (await post('known@example.test', `203.0.113.${i}`)).statusCode,
         ).toBe(401);
-      const locked = await post('known@example.test', '203.0.113.6');
+    };
+    try {
+      await exhaust();
+      let locked = await post('known@example.test', '203.0.113.6');
       expect(locked.statusCode).toBe(429);
-      expect(locked.headers['retry-after']).toBe('600');
-      vi.advanceTimersByTime(600_001);
+      expect(locked.headers['retry-after']).toBe('60');
+
+      vi.advanceTimersByTime(60_001);
+      await exhaust();
+      locked = await post('known@example.test', '203.0.113.6');
+      expect(locked.statusCode).toBe(429);
+      expect(locked.headers['retry-after']).toBe('120');
+
+      vi.advanceTimersByTime(120_001);
       expect(
         (await post('known@example.test', '203.0.113.6', 'correct-password-1'))
           .statusCode,
       ).toBe(200);
+      await exhaust();
+      locked = await post('known@example.test', '203.0.113.6');
+      expect(locked.statusCode).toBe(429);
+      expect(locked.headers['retry-after']).toBe('60');
     } finally {
       vi.useRealTimers();
+      await app.close();
+    }
+  });
+  it('keeps trusted logins under the per-network Argon2 concurrency cap', async () => {
+    const { app, post } = await setup();
+    let releaseWork!: () => void;
+    const workGate = new Promise<void>((resolve) => {
+      releaseWork = resolve;
+    });
+    let entered = 0;
+    const run = vi
+      .spyOn(argonLimiter, 'run')
+      .mockImplementation(async <T>(work: () => Promise<T>) => {
+        entered++;
+        await workGate;
+        return work();
+      });
+    try {
+      const firstThree = [
+        post('one@example.test', '192.0.2.1'),
+        post('two@example.test', '192.0.3.1'),
+        post('three@example.test', '192.0.4.1'),
+      ];
+      await vi.waitFor(() => expect(entered).toBe(3), { timeout: 1_000 });
+      const trustedRequest = post(
+        'known@example.test',
+        '192.0.5.1',
+        'correct-password-1',
+        'A'.repeat(43),
+      );
+      releaseWork();
+      const [trusted, ...responses] = await Promise.all([
+        trustedRequest,
+        ...firstThree,
+      ]);
+      expect(entered).toBe(3);
+      expect(trusted.statusCode).toBe(429);
+      expect(trusted.json()).toEqual({
+        code: 'RATE_LIMITED',
+        message: 'Too many login attempts. Try again shortly.',
+      });
+      expect(responses.every((response) => response.statusCode === 401)).toBe(
+        true,
+      );
+    } finally {
+      releaseWork();
+      run.mockRestore();
       await app.close();
     }
   });
