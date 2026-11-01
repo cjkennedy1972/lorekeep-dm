@@ -146,6 +146,7 @@ function connect(
   saveResumeToken = true,
   cookieToken?: string | null,
   gatewayBase = base,
+  acknowledgeStateSync = true,
 ) {
   const ownerToken = ticketOwners.get(t);
   const selectedCookie = cookieToken === undefined ? ownerToken : cookieToken;
@@ -189,7 +190,7 @@ function connect(
       if (saveResumeToken && owner)
         resumeTokens.set(owner, message.payload.resumeToken);
     }
-    if (message.type === 'StateSync')
+    if (message.type === 'StateSync' && acknowledgeStateSync)
       ws.send(
         JSON.stringify({
           actionId: randomUUID(),
@@ -1139,6 +1140,104 @@ describe('pending first-token handoff', () => {
 });
 
 describe('one-time gateway', () => {
+  it('allows the required late-join snapshot ack after an ack flood', async () => {
+    const id = randomUUID();
+    const priorHostToken = resumeTokens.get(tokens[0]!);
+    const priorGuestToken = resumeTokens.get(tokens[1]!);
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      id,
+      accounts[0],
+    ]);
+    const room = await rooms.get(id);
+    const hostToken = await room.seat(
+      accounts[0]!,
+      'Late-join host',
+      false,
+      hashToken(tokens[0]!),
+    );
+    if (!hostToken) throw new Error('late-join host has no resume token');
+    resumeTokens.set(tokens[0]!, hostToken);
+    const host = connect(await ticket(tokens[0]!, id));
+    let guest: WebSocket | undefined;
+    try {
+      await nextOfType(host, 'StateSync');
+      const character = {
+        ...quickBuild(loadCatalog(), undefined, 0x73, 1).character,
+        id: randomUUID(),
+      };
+      const guestRevision = await new SeatCharacterRepository(
+        db,
+      ).saveOwnedCharacter(accounts[1]!, character);
+      const requestId = await room.requestLateJoin(
+        accounts[1]!,
+        character.id,
+        guestRevision,
+        randomUUID(),
+        'Late-join guest',
+      );
+      await room.approveLateJoin(accounts[0]!, randomUUID(), requestId);
+      await (
+        room as unknown as { admitApprovedLateJoins(): Promise<void> }
+      ).admitApprovedLateJoins();
+      const guestSeat = room.state.seats.find(
+        (seat) => seat.accountId === accounts[1],
+      )!;
+      const guestResumeToken = randomUUID();
+      const acknowledgeSnapshot = vi.spyOn(room, 'acknowledgeLateJoinSnapshot');
+      await db.query(
+        'UPDATE seat_resume_tokens SET token_hash=$3 WHERE session_id=$1 AND seat_id=$2',
+        [id, guestSeat.seatId, hashToken(guestResumeToken)],
+      );
+      resumeTokens.set(tokens[1]!, guestResumeToken);
+      guest = connect(
+        await ticket(tokens[1]!, id),
+        undefined,
+        true,
+        undefined,
+        base,
+        false,
+      );
+      const snapshot = await nextOfType(guest, 'StateSync');
+      for (let index = 0; index < 21; index++) {
+        guest.send(
+          JSON.stringify({
+            actionId: randomUUID(),
+            type: 'StateSyncAck',
+            payload: { seq: snapshot.seq - 1 },
+            lastSeq: snapshot.seq,
+          }),
+        );
+      }
+      guest.send(
+        JSON.stringify({
+          actionId: randomUUID(),
+          type: 'StateSyncAck',
+          payload: { seq: snapshot.seq },
+          lastSeq: snapshot.seq,
+        }),
+      );
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (acknowledgeSnapshot.mock.calls.length > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(acknowledgeSnapshot).toHaveBeenCalledWith(
+        accounts[1],
+        guestSeat.seatId,
+        snapshot.seq,
+      );
+    } finally {
+      await Promise.all([
+        closeSocket(host),
+        ...(guest ? [closeSocket(guest)] : []),
+      ]);
+      if (priorHostToken) resumeTokens.set(tokens[0]!, priorHostToken);
+      else resumeTokens.delete(tokens[0]!);
+      if (priorGuestToken) resumeTokens.set(tokens[1]!, priorGuestToken);
+      else resumeTokens.delete(tokens[1]!);
+      await rooms.evictSession(id);
+    }
+  }, 30_000);
+
   it('charges ChatSend and StateSyncAck to the per-socket message budget', async () => {
     const id = randomUUID();
     await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [

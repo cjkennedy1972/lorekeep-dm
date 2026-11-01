@@ -216,9 +216,6 @@ export function createGatewayMessageAdmission() {
     complete(type: SyncMessageType) {
       pendingSync.delete(type);
     },
-    consumeAction(now = Date.now()) {
-      return consumeMessageToken(actionBucket, now);
-    },
   };
 }
 /** Sent when the input judge or its inputs are down; the client keeps the action so the sender can retry. */
@@ -1138,21 +1135,25 @@ export function installGateway(
           }
           const stateAck = StateSyncAckSchema.safeParse(envelope);
           if (stateAck.success) {
-            if (!messageAdmission.admit('StateSyncAck')) {
-              send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'RATE_LIMITED',
-                  message: 'Too many messages.',
-                },
-              });
+            const acknowledgesRequiredSnapshot =
+              !snapshotAcknowledged &&
+              stateAck.data.payload.seq === requiredSnapshotSeq;
+            if (
+              !acknowledgesRequiredSnapshot &&
+              !messageAdmission.admit('StateSyncAck')
+            ) {
+              if (ws.readyState === WebSocket.OPEN)
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'RATE_LIMITED',
+                    message: 'Too many messages.',
+                  },
+                });
               return;
             }
-            if (
-              !snapshotAcknowledged &&
-              stateAck.data.payload.seq === requiredSnapshotSeq
-            ) {
+            if (acknowledgesRequiredSnapshot) {
               snapshotAcknowledged = true;
               if (snapshotAckTimer) clearTimeout(snapshotAckTimer);
               void room
@@ -1178,15 +1179,16 @@ export function installGateway(
           const chat = ChatSendSchema.safeParse(envelope);
           if (chat.success) {
             if (!messageAdmission.admit('ChatSend')) {
-              send({
-                seq: room.seq,
-                type: 'Error',
-                payload: {
-                  code: 'RATE_LIMITED',
-                  message: 'Too many messages.',
-                  actionId: chat.data.actionId,
-                },
-              });
+              if (ws.readyState === WebSocket.OPEN)
+                send({
+                  seq: room.seq,
+                  type: 'Error',
+                  payload: {
+                    code: 'RATE_LIMITED',
+                    message: 'Too many messages.',
+                    actionId: chat.data.actionId,
+                  },
+                });
               return;
             }
             const receivedAt = Math.floor(performance.now());
