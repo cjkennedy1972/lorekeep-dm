@@ -2343,6 +2343,42 @@ describe('Room combat over the websocket (real Room, Postgres, scripted DM)', ()
     }
   }, 20_000);
 
+  it('keeps sync-read refusals actionless so background drops stay silent', async () => {
+    stack = await Stack.boot('sync-flood-no-action-id');
+    const user = await newUser();
+    const table = await seedTable(stack, user, preCombat);
+    const client = await Client.open(stack, user, table);
+    try {
+      const mark = client.log.length;
+      for (let i = 0; i < 200; i++) {
+        client.ws.send(
+          JSON.stringify({
+            type: 'Resync',
+            actionId: randomUUID(),
+            lastSeq: 0,
+            payload: {},
+          }),
+        );
+      }
+      // Resync carries an envelope actionId on the wire, so only the sync exemption keeps
+      // these refusals actionless for isBackgroundRefusal to drop them.
+      await vi.waitFor(
+        () => {
+          const refused = client.log
+            .slice(mark)
+            .filter(
+              (m) => m.type === 'Error' && m.payload?.code === 'RATE_LIMITED',
+            );
+          expect(refused.length).toBeGreaterThan(0);
+          for (const m of refused) expect(m.payload?.actionId).toBeUndefined();
+        },
+        { timeout: 2000 },
+      );
+    } finally {
+      client.close();
+    }
+  }, 20_000);
+
   it('keeps character keys as account ids when a refused mature start is retried', async () => {
     const { adapter, calls } = combatStartDm(2);
     stack = await Stack.boot('retry-refused-character-keys', {

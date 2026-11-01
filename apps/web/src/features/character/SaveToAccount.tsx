@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Character } from '@game/schema';
 import { api } from '../../api';
@@ -35,8 +35,9 @@ export function SaveToAccount({ character }: { character: Character }) {
   const alertRef = useRef<HTMLParagraphElement>(null);
   const uncertain = state.kind === 'failed' && state.failure === 'uncertain';
 
-  // Focus the uncertain alert so the next Tab reaches "Check your characters" before the explicit button.
-  useEffect(() => {
+  // Focus the uncertain alert in the commit that shows it, so the next Tab reaches "Check your characters"
+  // before the explicit button and no frame or passive effect can lose the focus.
+  useLayoutEffect(() => {
     if (uncertain) alertRef.current?.focus();
   }, [uncertain]);
 

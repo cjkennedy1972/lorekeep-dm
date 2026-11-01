@@ -1243,7 +1243,7 @@ export function installGateway(
           // Only sync reads are refused without an actionId; the client drops those
           // refusals as background noise, so any command that carries one echoes it.
           const envelopeActionId =
-            typeof envelope === 'object' && envelope !== null
+            !isSyncRequest && typeof envelope === 'object' && envelope !== null
               ? ActionIdSchema.safeParse(
                   (envelope as { actionId?: unknown }).actionId,
                 ).data
