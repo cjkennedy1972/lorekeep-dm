@@ -13,6 +13,7 @@ import {
   EditActionSchema,
   RewindTurnSchema,
   StateSyncSchema,
+  RoundSnapshotSchema,
   PresenceChangedSchema,
   ErrorMessageSchema,
   ServerMessageSchema,
@@ -317,4 +318,27 @@ test('login email length is bounded to the RFC maximum', () => {
   expect(
     LoginInputSchema.safeParse({ email, password: 'secret' }).success,
   ).toBe(false);
+});
+
+test('round snapshots accept original submission timestamps', () => {
+  expect(
+    RoundSnapshotSchema.parse({
+      roundId: uuid,
+      status: 'open',
+      eligibleSeatIds: [uuid],
+      deadlineAt: null,
+      submissions: [
+        {
+          seatId: uuid,
+          actionId: uuid,
+          originalActionId: uuid,
+          actionIds: [uuid],
+          playerName: 'A',
+          receiptSeq: 1,
+          submittedAt: 1_762_000_000_000,
+        },
+      ],
+      queuedSubmissions: [],
+    }).submissions[0],
+  ).toMatchObject({ submittedAt: 1_762_000_000_000 });
 });
