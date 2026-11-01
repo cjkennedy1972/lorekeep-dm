@@ -1762,6 +1762,7 @@ export function installGateway(
               .catch(() => ws.close(1011));
           }
           if (msg.type === 'CombatCommand') {
+            // Combat shares the action bucket and consumes one token per command (~10/s).
             const action = CombatCommandSchema.safeParse(msg);
             if (!action.success) {
               send({

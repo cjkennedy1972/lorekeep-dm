@@ -1225,6 +1225,7 @@ describe('one-time gateway', () => {
         guestSeat.seatId,
         snapshot.seq,
       );
+      expect(guest.readyState).toBe(WebSocket.OPEN);
     } finally {
       await Promise.all([
         closeSocket(host),
