@@ -20,6 +20,17 @@ import { createEntityNamer } from '../features/map/names.js';
 import { TurnBanner } from '../features/game/TurnBanner.js';
 import { Describe } from '../features/map/Describe.js';
 import { AreaAim, type AreaOption } from '../features/map/AreaAim.js';
+import { SlotLevelPicker } from '../features/map/SlotLevelPicker.js';
+import {
+  castableSlotLevels,
+  castSlotLevel,
+  defaultSlotLevel,
+} from '../features/map/slotLevels.js';
+import { loadCharacterCatalog } from '../features/character/catalog.js';
+import {
+  createInFlightGate,
+  isBackgroundRefusal,
+} from '../room/backgroundRequests.js';
 import { CombatEndCard } from '../features/combat/CombatEndCard.js';
 import {
   attackRecordFor,
@@ -52,6 +63,7 @@ import { PartialFailureBanner } from '../features/game/PartialFailureBanner.js';
 import '../styles/game.css';
 
 const renderer = new Canvas2DRenderer();
+const catalog = loadCharacterCatalog();
 const NARROW_QUERY = '(max-width: 760px)';
 
 /** Narrow screens start in list-driven combat; the canvas is opt-in. */
@@ -214,10 +226,12 @@ export function Game() {
             { seq: message.seq, message: message.payload },
           ]),
         );
-      if (message.type === 'ChatHistory')
+      if (message.type === 'ChatHistory') {
+        historyGate.end();
         setChatMessages((current) =>
           mergeChatHistory(current, message.payload.messages),
         );
+      }
       if (message.type === 'SeatTakenOver')
         setSafetyNotice('Your seat was recovered on another connection.');
       if (message.type === 'SafetyFlag' && message.payload.kind === 'x-card')
@@ -251,7 +265,7 @@ export function Game() {
         );
       }
       if (message.type === 'StateSync') {
-        live.send('ChatHistoryRequest');
+        if (historyGate.begin()) live.send('ChatHistoryRequest');
         const state = asRecord(message.payload.state);
         setSafetyNotice((current) =>
           state.paused === true
@@ -333,8 +347,12 @@ export function Game() {
           timeoutMs: Number(open.timeoutMs),
         });
       }
-      if (message.type === 'CombatOptions')
+      if (message.type === 'CombatOptions') {
+        optionsGate.end();
+        optionsRequestId.current = null;
         setOptions(asRecord(message.payload));
+        if (optionsStale.current) requestOptions();
+      }
       if (message.type === 'CombatEnded') {
         setReaction(null);
         setReactionNotice(null);
@@ -392,6 +410,17 @@ export function Game() {
       if (message.type === 'Error') {
         const payload = asRecord(message.payload);
         const actionId = String(payload.actionId ?? '');
+        // A refused background read is not a failure the seat caused, so it never reaches the room error.
+        if (isBackgroundRefusal(payload)) {
+          historyGate.end();
+          return;
+        }
+        if (actionId && actionId === optionsRequestId.current) {
+          optionsGate.end();
+          optionsRequestId.current = null;
+          // A board change that arrived while this request was pending is still owed an answer.
+          if (optionsStale.current) requestOptions();
+        }
         if (payload.code === 'narration-in-progress' && actionId) {
           const pending = combatRetries.current.get(actionId);
           if (pending && pending.attempts < 2) {
@@ -481,6 +510,14 @@ export function Game() {
   const mapRef = useRef<Battlemap | null>(null);
   mapRef.current = map;
   const resyncAsked = useRef(false);
+  // One ChatHistoryRequest outstanding at a time: every StateSync asks, and the server refuses a burst.
+  const [historyGate] = useState(() => createInFlightGate(5_000));
+  // One options request outstanding. A board change while one is out asks again when its reply lands.
+  const [optionsGate] = useState(() => createInFlightGate(5_000));
+  const optionsStale = useRef(false);
+  const optionsRequestId = useRef<string | null>(null);
+  // The slot a cast spends; null follows the lowest slot the caster can still pay for.
+  const [slotLevel, setSlotLevel] = useState<number | null>(null);
   // Only the controlling reactor gets the decision (ReactionPrompt); other seats get a status-only notice.
   const [reaction, setReaction] = useState<Reaction | null>(null);
   const [reactionNotice, setReactionNotice] = useState<ReactionNotice | null>(
@@ -873,6 +910,14 @@ export function Game() {
   const nonMoveActions = actions.filter(
     (value) => asRecord(value).kind !== 'move',
   );
+  const castLevels = castableSlotLevels(gameStore.getState().character?.slots);
+  const chosenSlot =
+    slotLevel !== null && castLevels.includes(slotLevel)
+      ? slotLevel
+      : defaultSlotLevel(castLevels);
+  const offersSpellCast =
+    areas.length > 0 ||
+    nonMoveActions.some((value) => asRecord(value).kind === 'spell');
   // Attack options are de-duplicated by target and weapon; the count per target decides whether to name the weapon.
   const firstAttackIndex = new Set<number>();
   const attackCountByTarget = new Map<string, number>();
@@ -902,12 +947,25 @@ export function Game() {
         entities.map((item) => [item.id, item.pos.x, item.pos.y, item.hp]),
       ])
     : null;
+  const requestOptions = () => {
+    if (!optionsGate.begin()) {
+      optionsStale.current = true;
+      return;
+    }
+    optionsStale.current = false;
+    const id = send({ command: 'options' });
+    optionsRequestId.current = typeof id === 'string' ? id : null;
+  };
   useEffect(() => {
-    if (optionsKey !== null) send({ command: 'options' });
+    if (optionsKey !== null) requestOptions();
   }, [optionsKey]);
   // Options from an earlier turn are not valid once the turn passes to someone else.
   useEffect(() => {
-    if (!yourTurn) setOptions(null);
+    if (!yourTurn) {
+      setOptions(null);
+      optionsStale.current = false;
+      optionsGate.end();
+    }
   }, [yourTurn]);
   // The reachable cell that leaves the seat nearest the target; ties go to the cheaper move.
   const nearestStepTo = (foe: Entity) => {
@@ -1400,6 +1458,13 @@ export function Game() {
                   {attackFeedback}
                 </p>
               )}
+              {offersSpellCast && castLevels.length > 1 && (
+                <SlotLevelPicker
+                  levels={castLevels}
+                  value={chosenSlot}
+                  onChange={setSlotLevel}
+                />
+              )}
               {nonMoveActions.map((value, index) => {
                 const item = asRecord(value);
                 if (item.kind === 'attack') {
@@ -1438,7 +1503,10 @@ export function Game() {
                         send({
                           command: 'cast',
                           spellId: String(item.spellId),
-                          slotLevel: 1,
+                          slotLevel: castSlotLevel(
+                            catalog.get('spell', String(item.spellId))?.level,
+                            chosenSlot,
+                          ),
                           target: {
                             kind: 'entity',
                             ref: String(item.targetId),
@@ -1480,7 +1548,10 @@ export function Game() {
                     send({
                       command: 'cast',
                       spellId: area.spellId,
-                      slotLevel: 1,
+                      slotLevel: castSlotLevel(
+                        catalog.get('spell', area.spellId)?.level,
+                        chosenSlot,
+                      ),
                       target: { kind: 'option', ref: area.optionId },
                     })
                   }

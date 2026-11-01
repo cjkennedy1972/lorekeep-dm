@@ -11,6 +11,7 @@ import {
   type ActionId,
   CombatCommandSchema,
   CastRestVoteSchema,
+  ActionIdSchema,
   PlayerActionSchema,
   BindCharacterSchema,
   EditActionSchema,
@@ -1290,6 +1291,14 @@ export function installGateway(
             typeof envelope === 'object' && envelope !== null
               ? String((envelope as { type?: unknown }).type)
               : '';
+          // Only sync reads are refused without an actionId; the client drops those
+          // refusals as background noise, so any command that carries one echoes it.
+          const envelopeActionId =
+            !isSyncRequest && typeof envelope === 'object' && envelope !== null
+              ? ActionIdSchema.safeParse(
+                  (envelope as { actionId?: unknown }).actionId,
+                ).data
+              : undefined;
           // Admission is synchronous and precedes queueing, so floods cannot
           // grow the chain or overlap mailbox/DB work for a given sync read.
           if (!messageAdmission.admit(messageType)) {
@@ -1300,6 +1309,7 @@ export function installGateway(
                 payload: {
                   code: 'RATE_LIMITED',
                   message: 'Too many messages.',
+                  actionId: envelopeActionId,
                 },
               });
             return;

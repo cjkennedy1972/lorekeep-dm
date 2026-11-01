@@ -142,6 +142,22 @@ describe('SaveToAccount', () => {
     );
   });
 
+  test('the uncertain alert already has focus in the commit that inserts it', async () => {
+    failWith(0, 'NETWORK');
+    const { container } = renderSave();
+    // Record focus at the moment the alert joins the DOM, before any passive effect can run.
+    const focusAtInsert: unknown[] = [];
+    const observer = new MutationObserver(() => {
+      if (container.querySelector('[role="alert"]'))
+        focusAtInsert.push(document.activeElement);
+    });
+    observer.observe(container, { childList: true, subtree: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my account' }));
+    const alert = await screen.findByRole('alert');
+    observer.disconnect();
+    expect(focusAtInsert[0]).toBe(alert);
+  });
+
   test('a dropped response says the save may have happened and offers no plain retry', async () => {
     failWith(0, 'NETWORK');
     const { container } = renderSave();

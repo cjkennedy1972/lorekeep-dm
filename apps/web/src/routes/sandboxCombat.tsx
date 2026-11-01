@@ -30,6 +30,11 @@ import { Canvas2DRenderer } from '../features/map/Canvas2DRenderer.js';
 import { Sheet } from '../features/character/Sheet.js';
 import { createTokenDrawCommands } from '../features/map/tokens.js';
 import { loadCharacterCatalog } from '../features/character/catalog.js';
+import {
+  castableSlotLevels,
+  castSlotLevel,
+  defaultSlotLevel,
+} from '../features/map/slotLevels.js';
 import cryptData from '../../../../packages/engine/maps/crypt-room.json';
 import './sandboxCombat.css';
 
@@ -404,11 +409,16 @@ export function SandboxCombat() {
     );
   };
   const cast = () => {
+    const caster = characterFor(pc);
     const result = castSpell({
-      caster: characterFor(pc),
+      caster,
       target: { kind: 'anchor', pos: scenario.areaAnchor },
       spellId: scenario.spellId,
-      slotLevel: 1,
+      // A cantrip scenario submits 0; a leveled one uses the lowest slot the caster can still pay for.
+      slotLevel: castSlotLevel(
+        catalog.get('spell', scenario.spellId)?.level,
+        defaultSlotLevel(castableSlotLevels(caster.slots)),
+      ),
       seed: scenario.seed,
       catalog,
       map: spellMap(fighters, pc),
