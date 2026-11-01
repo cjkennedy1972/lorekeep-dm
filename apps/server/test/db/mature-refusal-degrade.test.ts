@@ -458,6 +458,48 @@ describe('endpoint refusal of a mature prompt', () => {
     expect(narrationText(seen.sent)).not.toContain('PARTIAL STANDARD');
   });
 
+  it('surfaces an unreachable endpoint as a retryable error and releases the room', async () => {
+    const owner = await account();
+    const sessionId = await session(owner);
+    let reachable = false;
+    const adapter: LlmAdapter = {
+      capabilities: () => ({
+        streaming: true,
+        nativeTools: true,
+        jsonSchema: true,
+      }),
+      probe: async () => true,
+      async *complete() {
+        if (!reachable) throw new Error('connect ECONNREFUSED');
+        yield { type: 'text', delta: STANDARD_TEXT } as LlmChunk;
+      },
+    };
+    const room = await openRoom(sessionId, adapter);
+    const seen = recorder();
+    await joinSeated(room, owner, seen.connection, 'Owner');
+    const failedAction = randomUUID();
+
+    await room.submitAction(owner, failedAction, 'We open the door.', 'Owner');
+    await waitForTurnFailed(seen.sent);
+
+    expect(seen.sent.some((message) => message.type === 'NarrationChunk')).toBe(
+      false,
+    );
+    expect(
+      seen.sent.some((message) => message.type === 'NarrationCompleted'),
+    ).toBe(false);
+    expect(seen.sent.find((message) => message.type === 'Error')).toMatchObject(
+      {
+        payload: { code: 'TURN_FAILED', actionId: failedAction },
+      },
+    );
+
+    reachable = true;
+    await room.submitAction(owner, randomUUID(), 'We try again.', 'Owner');
+    await waitForNarrationSent(seen.sent, 1);
+    expect(narrationText(seen.sent)).toBe(STANDARD_TEXT);
+  });
+
   it('emits no ContentTierChanged for a standard turn at standard', async () => {
     const owner = await account();
     const sessionId = await session(owner);
