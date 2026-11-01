@@ -14,6 +14,7 @@ export function Start() {
   const [name, setName] = useState('');
   const [difficulty, setDifficulty] = useState('moderate');
   const [level, setLevel] = useState('1');
+  const [droppedHero, setDroppedHero] = useState(false);
   const [creation, setCreation] = useState<'quick' | 'wizard'>('quick');
   const [error, setError] = useState('');
   const [nameError, setNameError] = useState('');
@@ -28,10 +29,18 @@ export function Start() {
       nameRef.current?.focus();
       return;
     }
-    const selectedCharacter = character ?? gameStore.getState().character;
-    let characterToCreate = selectedCharacter
-      ? { ...selectedCharacter, level: Number(level) }
-      : undefined;
+    if (character && character.level !== Number(level)) {
+      setError(
+        `This hero is level ${character.level}. Set the starting level to ${character.level} to save it.`,
+      );
+      return;
+    }
+    setDroppedHero(false);
+    // A stored hero is reused only at the selected level; otherwise a fresh one is built at that level.
+    const storedCharacter = gameStore.getState().character;
+    let characterToCreate =
+      character ??
+      (storedCharacter?.level === Number(level) ? storedCharacter : undefined);
     if (!characterToCreate) {
       try {
         characterToCreate = {
@@ -122,6 +131,7 @@ export function Start() {
             onChange={(e) => {
               setLevel(e.target.value);
               // A hero is sized for the level it was built at; drop it so the next create builds at this level.
+              setDroppedHero(gameStore.getState().character !== null);
               gameStore.setCharacter(null);
             }}
           >
@@ -131,6 +141,12 @@ export function Start() {
               </option>
             ))}
           </select>
+          {droppedHero && (
+            <p role="status" className="field-hint">
+              Changing the starting level cleared your built hero. Build it
+              again at level {level}.
+            </p>
+          )}
         </div>
         <fieldset>
           <legend>Character creation</legend>
@@ -169,9 +185,8 @@ export function Start() {
       </div>
       {creation === 'wizard' && (
         <CreationWizard
-          onSave={(character) =>
-            void create({ ...character, level: Number(level) })
-          }
+          startingLevel={Number(level)}
+          onSave={(character) => void create(character)}
         />
       )}
     </section>

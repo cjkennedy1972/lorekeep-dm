@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -160,6 +160,9 @@ test('changing the starting level after a build clears the hero and sends a char
   expect(
     screen.queryByRole('heading', { name: 'Your hero is built' }),
   ).toBeNull();
+  expect(
+    screen.getByText(/Changing the starting level cleared your built hero/),
+  ).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText('Game name'), 'Level change');
   await userEvent.click(
     screen.getByRole('button', { name: 'Create solo game' }),
@@ -168,6 +171,65 @@ test('changing the starting level after a build clears the hero and sends a char
   expect(fetch).toHaveBeenCalledTimes(1);
   const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
   expect(body.character.level).toBe(3);
+  expect(validateCharacter(body.character, loadCharacterCatalog())).toEqual([]);
+});
+
+async function buildFighterInWizard(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('radio', { name: /Guided wizard/ }));
+  await user.click(screen.getByRole('radio', { name: /Fighter/ }));
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.click(screen.getByRole('radio', { name: /Soldier/ }));
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.click(screen.getByRole('radio', { name: /Human/ }));
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.click(screen.getByRole('radio', { name: /Standard array/ }));
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  const choices = screen.getAllByRole('checkbox');
+  await user.click(choices[0]!);
+  await user.click(choices[1]!);
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.click(
+    within(
+      screen.getByRole('group', { name: 'Choose starting equipment' }),
+    ).getAllByRole('radio')[0]!,
+  );
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await user.type(screen.getByLabelText('Character name'), 'Talia');
+}
+
+test('the guided wizard refuses a starting level above 1 and sends no create request', async () => {
+  const fetch = vi.fn();
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  gameStore.setCharacter(null);
+  const user = userEvent.setup();
+  startAt();
+  await user.type(screen.getByLabelText('Game name'), 'Wizard level');
+  await user.selectOptions(screen.getByLabelText('Starting level'), '3');
+  await buildFighterInWizard(user);
+  expect(
+    screen.getByRole('list', { name: 'Character validation issues' }),
+  ).toHaveTextContent('The guided wizard creates level-one heroes');
+  await user.click(screen.getByRole('button', { name: 'Save character' }));
+  expect(fetch).not.toHaveBeenCalled();
+  expect(gameStore.getState().character).toBeNull();
+});
+
+test('the guided wizard at starting level 1 sends a create request that validates', async () => {
+  const fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 201,
+    json: async () => ({ game: { id: 'wizard-game' } }),
+  });
+  vi.spyOn(http, 'fetch').mockImplementation(fetch);
+  gameStore.setCharacter(null);
+  const user = userEvent.setup();
+  startAt();
+  await user.type(screen.getByLabelText('Game name'), 'Wizard level one');
+  await buildFighterInWizard(user);
+  await user.click(screen.getByRole('button', { name: 'Save character' }));
+  await screen.findByText('Game ready');
+  const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+  expect(body.character.level).toBe(1);
   expect(validateCharacter(body.character, loadCharacterCatalog())).toEqual([]);
 });
 

@@ -23,7 +23,11 @@ const steps = [
   'Equipment',
   'Name & personality',
 ];
-type Props = { onSave?: (character: Character) => void };
+type Props = {
+  onSave?: (character: Character) => void;
+  /** The wizard builds level-one heroes; a higher starting level cannot be saved from here. */
+  startingLevel?: number;
+};
 type Picks = {
   classId: string;
   backgroundId: string;
@@ -92,7 +96,7 @@ function asCharacter(input: CharacterInput): Character {
   return character as Character;
 }
 
-export function CreationWizard({ onSave }: Props) {
+export function CreationWizard({ onSave, startingLevel = 1 }: Props) {
   const [step, setStep] = useState(0);
   const [picks, setPicks] = useState<Picks>(initial);
   const [pointBuy, setPointBuy] = useState([15, 15, 13, 10, 8, 8]);
@@ -176,15 +180,29 @@ export function CreationWizard({ onSave }: Props) {
     picks.method === 'point-buy' && spent > 27
       ? `Point buy uses ${spent} points; the limit is 27.`
       : '';
-  const violations = pointBuyViolation
-    ? [
-        {
-          code: 'POINT_BUY_TOTAL' as const,
-          path: 'abilityGeneration.baseAbilities',
-          message: pointBuyViolation,
-        },
-      ]
-    : built.violations;
+  const levelViolations: RuleViolation[] =
+    startingLevel > 1
+      ? [
+          {
+            code: 'LEVEL_OUT_OF_RANGE',
+            path: 'startingLevel',
+            message:
+              'The guided wizard creates level-one heroes. Set the starting level to 1 to save this hero, or use Quick build for a higher level.',
+          },
+        ]
+      : [];
+  const violations = [
+    ...levelViolations,
+    ...(pointBuyViolation
+      ? [
+          {
+            code: 'POINT_BUY_TOTAL' as const,
+            path: 'abilityGeneration.baseAbilities',
+            message: pointBuyViolation,
+          },
+        ]
+      : built.violations),
+  ];
   const shownViolations = violations.filter(
     (v) => v.path !== 'wizard' || attempted,
   );
