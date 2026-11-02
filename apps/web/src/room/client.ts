@@ -1,5 +1,6 @@
 import { ServerMessageSchema, type ClientEnvelope } from '@game/schema';
 import { initialRoomView, roomReducer, type RoomView } from './reducer.js';
+import { roomErrorAfter } from './backgroundRequests.js';
 
 export type ConnectionStatus =
   | 'connecting'
@@ -232,7 +233,7 @@ export function createRoomClient(opts: RoomClientOptions) {
     }
     set({
       ...next,
-      error: msg.type === 'Error' ? msg.payload.message : snap.error,
+      error: roomErrorAfter(msg, snap.error),
     });
     if (msg.type === 'StateSync') send('StateSyncAck', { seq: msg.seq });
     if (next.needsResync && !wasResync) send('Resync');

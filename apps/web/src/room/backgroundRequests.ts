@@ -29,3 +29,17 @@ export function createInFlightGate(
 export function isBackgroundRefusal(payload: Record<string, unknown>): boolean {
   return payload.code === 'RATE_LIMITED' && !payload.actionId;
 }
+
+/**
+ * The room error after a server message. An error reply to a background read is absorbed: the room keeps
+ * the error it already showed, and only errors the seat's own requests caused replace it.
+ */
+export function roomErrorAfter(
+  message: { type: string; payload?: unknown },
+  previous: string | null,
+): string | null {
+  if (message.type !== 'Error') return previous;
+  const payload = (message.payload ?? {}) as Record<string, unknown>;
+  if (isBackgroundRefusal(payload)) return previous;
+  return typeof payload.message === 'string' ? payload.message : previous;
+}
