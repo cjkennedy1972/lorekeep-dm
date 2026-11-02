@@ -1318,7 +1318,7 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(JSON.stringify(rolls(f.accountB))).not.toContain(entB);
   });
 
-  it("hides a PC's roll modifier, weapon and spell name from other seats, not from its controller", async () => {
+  it('hides a PC attacker’s damage roll from the target PC’s controller', async () => {
     const { f, entA } = await twoSeatCombat();
     const state = f.room.state.gameState as { combatRoom: unknown };
     const roll = (

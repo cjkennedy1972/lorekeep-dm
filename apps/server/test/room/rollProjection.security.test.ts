@@ -306,6 +306,134 @@ describe('roll projection security', () => {
     expect(summarize(inbox.b!)).toEqual([]);
   });
 
+  it('reveals exact damage rolls to the controlling seat of the targeted PC only', async () => {
+    let targetEntityId = '';
+    const turnRunner = {
+      async run(_req: unknown, emit: (event: Record<string, unknown>) => void) {
+        emit({
+          type: 'RollEvent',
+          entityId: 'goblin',
+          targetId: targetEntityId,
+          kind: 'damage',
+          attackId: 'claw',
+          publicDamage: 5,
+          breakdown: {
+            expression: '1d6+3',
+            dice: [{ sides: 6, value: 2, kept: true }],
+            modifiers: [{ label: 'damage', value: 3 }],
+            total: 5,
+          },
+        });
+        return {
+          narration: 'The goblin strikes.',
+          events: [],
+          state: {},
+          turnSeed: '0x0000000000000001',
+          usage: { in: 1, out: 1 },
+        };
+      },
+    } as unknown as SoloTurnRunner;
+    const { f, entB } = await probeFixture(turnRunner);
+    targetEntityId = entB;
+    const outsider = randomUUID();
+    f.room.state.seats.push({
+      seatId: randomUUID(),
+      accountId: outsider,
+      displayName: 'Outsider',
+      presence: 'connected',
+    });
+    const inbox = new Map<string, Record<string, unknown>[]>([
+      [f.accountA, []],
+      [f.accountB, []],
+      [outsider, []],
+    ]);
+    for (const account of inbox.keys())
+      await f.room.subscribe(account, {
+        send: (message: Record<string, unknown>) =>
+          inbox.get(account)!.push(message),
+      });
+    for (const messages of inbox.values()) messages.length = 0;
+
+    await f.room.submitAction(f.accountA, randomUUID(), 'Hold position', 'A');
+
+    const rolls = (account: string) =>
+      inbox.get(account)!.filter((message) => message.type === 'RollEvent');
+    expect(rolls(f.accountA)[0]?.payload).not.toHaveProperty('total');
+    expect(rolls(f.accountA)[0]?.payload).toHaveProperty('damage', 5);
+    expect(rolls(f.accountB)[0]?.payload).toHaveProperty('total', 5);
+    expect(rolls(outsider)[0]?.payload).not.toHaveProperty('total');
+    expect(rolls(outsider)[0]?.payload).not.toHaveProperty('rolls');
+    expect(rolls(outsider)[0]?.payload).not.toHaveProperty('modifier');
+  });
+
+  it('reveals committed damage rolls only to the controlling seat of the targeted PC', async () => {
+    const { f, entB } = await probeFixture();
+    const outsider = randomUUID();
+    f.room.state.seats.push({
+      seatId: randomUUID(),
+      accountId: outsider,
+      displayName: 'Outsider',
+      presence: 'connected',
+    });
+    const inbox = new Map<string, Record<string, unknown>[]>([
+      [f.accountA, []],
+      [f.accountB, []],
+      [outsider, []],
+    ]);
+    for (const account of inbox.keys())
+      await f.room.subscribe(account, {
+        send: (message: Record<string, unknown>) =>
+          inbox.get(account)!.push(message),
+      });
+    for (const messages of inbox.values()) messages.length = 0;
+
+    const state = (
+      f.room.state.gameState as { combatRoom: Record<string, unknown> }
+    ).combatRoom;
+    (
+      f.room as unknown as { announceCombat(...args: unknown[]): void }
+    ).announceCombat(
+      state,
+      [
+        {
+          type: 'RollEvent',
+          entityId: 'goblin',
+          targetId: entB,
+          kind: 'damage',
+          attackId: 'claw',
+          breakdown: {
+            expression: '1d6+3',
+            dice: [{ sides: 6, value: 2, kept: true }],
+            modifiers: [{ label: 'damage', value: 3 }],
+            total: 5,
+          },
+        },
+      ],
+      f.accountA,
+    );
+
+    const committedDamageRoll = (account: string) =>
+      inbox
+        .get(account)!
+        .filter((message) => message.type === 'CombatEvents')
+        .flatMap(
+          (message) =>
+            (message.payload as { events: Record<string, unknown>[] }).events,
+        )
+        .find((event) => event.type === 'RollEvent');
+    expect(committedDamageRoll(f.accountB)).toMatchObject({
+      total: 5,
+      rolls: [2],
+      modifier: 3,
+    });
+    for (const account of [f.accountA, outsider]) {
+      expect(committedDamageRoll(account)).not.toHaveProperty('damage');
+      expect(committedDamageRoll(account)).not.toHaveProperty('total');
+      expect(committedDamageRoll(account)).not.toHaveProperty('rolls');
+      expect(committedDamageRoll(account)).not.toHaveProperty('modifier');
+    }
+  });
+
   it('projects a committed attack against a visible monster without damage roll details', async () => {
     const { f, entA, entB } = await probeFixture();
     const inbox: Record<string, Record<string, unknown>[]> = { a: [], b: [] };
