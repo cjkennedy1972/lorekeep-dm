@@ -2894,11 +2894,11 @@ export class Room {
       () => {
         void this.enqueue(async () => {
           const current = this.asRestVote();
-          if (
-            current?.voteId === vote.voteId &&
-            Date.now() >= current.deadlineAt
-          )
+          if (current?.voteId === vote.voteId) {
             await this.finishRestVote(current, 'timer');
+            if (this.state.restVote?.voteId === current.voteId)
+              this.scheduleRestVoteTimer();
+          }
         }).catch((error) =>
           console.error(`Rest vote timer failed for ${this.sessionId}`, error),
         );
@@ -2916,11 +2916,7 @@ export class Room {
     let close =
       trigger === 'combat'
         ? cancelRestVoteForCombat()
-        : evaluateRestVote(
-            vote,
-            trigger === 'timer' ? vote.deadlineAt : Date.now(),
-            trigger === 'host-revoked',
-          );
+        : evaluateRestVote(vote, Date.now(), trigger === 'host-revoked');
     if (!close && trigger !== 'timer')
       close = evaluateRestVote(
         vote,
