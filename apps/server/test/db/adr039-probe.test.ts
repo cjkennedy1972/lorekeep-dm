@@ -421,9 +421,11 @@ describe('ADR-039 step 3 probe (f2b5c15e)', () => {
     await db.query(
       'UPDATE derived_memory_reconciliation_state SET complete=true WHERE singleton=true',
     );
-    await expect(repo().deleteOwnedCharacter(gone, brann)).rejects.toThrow(
-      /coverage is incomplete/,
-    );
+    await expect(
+      repo().deleteOwnedCharacter(gone, brann),
+    ).rejects.toMatchObject({
+      code: 'SESSION_HELD',
+    });
     expect(
       await q('SELECT 1 FROM scene_summaries WHERE id=$1', [sum]),
     ).toHaveLength(1);

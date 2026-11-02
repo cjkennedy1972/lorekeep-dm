@@ -8,10 +8,19 @@ import { getIndexedDerivedMemoryRows } from '../dm/characterReferences.js';
 const catalog = loadCatalog();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function isUnverifiedReferenceCoverage(error: unknown): boolean {
+function isIncompleteReferenceCoverage(error: unknown): boolean {
   return (
     error instanceof Error &&
-    error.message === 'Reference-index coverage is unverified; defer deletion'
+    error.message === 'Reference-index coverage is incomplete; defer deletion'
+  );
+}
+
+function isReferenceCoverageDeferred(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message ===
+      'Reference-index coverage is unverified; defer deletion' ||
+      isIncompleteReferenceCoverage(error))
   );
 }
 
@@ -242,11 +251,18 @@ export class SeatCharacterRepository {
           [sessionId],
         );
         if (held.rowCount) throw new SeatCharacterError('SESSION_HELD');
-        const rows = await getIndexedDerivedMemoryRows(
-          client,
-          sessionId,
-          characterId,
-        );
+        let rows: Awaited<ReturnType<typeof getIndexedDerivedMemoryRows>>;
+        try {
+          rows = await getIndexedDerivedMemoryRows(
+            client,
+            sessionId,
+            characterId,
+          );
+        } catch (error) {
+          if (isIncompleteReferenceCoverage(error))
+            throw new SeatCharacterError('SESSION_HELD');
+          throw error;
+        }
         indexedRows.push(...rows.map((row) => ({ sessionId, ...row })));
       }
       // Fence active session writers before removing indexed rows. A busy session
@@ -624,12 +640,12 @@ export class SeatCharacterRepository {
             error.message === 'Session is held; refusing indexed lookup'
           )
             throw new SeatCharacterError('SESSION_HELD');
-          if (!isUnverifiedReferenceCoverage(error)) throw error;
+          if (!isReferenceCoverageDeferred(error)) throw error;
           throw new SeatCharacterError('SESSION_HELD');
         }
       }
     } catch (error) {
-      if (!isUnverifiedReferenceCoverage(error)) throw error;
+      if (!isReferenceCoverageDeferred(error)) throw error;
       throw new SeatCharacterError('SESSION_HELD');
     }
     // Unverified coverage is deferred; even a nominally solo session can contain
