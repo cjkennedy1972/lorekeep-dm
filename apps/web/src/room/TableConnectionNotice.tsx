@@ -29,14 +29,18 @@ export function ReconnectGaveUpNotice({ onRetry }: { onRetry: () => void }) {
  * Shown only while a reconnect has lasted. A closed seat is not shown here: it is not reconnecting, and
  * a removed or unseated seat never will, so it gets its own message elsewhere. A reconnect that gave up
  * is shown regardless of status, because it stays closed until the player retries.
+ * During combat a lasting reconnect names the server outage and says the encounter is held, so the player
+ * knows their place in the turn order survives the wait.
  */
 export function TableConnectionNotice({
   status,
   reconnectGaveUp = false,
+  inCombat = false,
   onRetry,
 }: {
   status: Status;
   reconnectGaveUp?: boolean;
+  inCombat?: boolean;
   onRetry?: () => void;
 }) {
   const [lasting, setLasting] = useState(false);
@@ -53,12 +57,18 @@ export function TableConnectionNotice({
         <ReconnectGaveUpNotice onRetry={onRetry} />
       ) : (
         status === 'reconnecting' &&
-        lasting && (
+        lasting &&
+        (inCombat ? (
+          <p className="table-connection-notice">
+            The server is unavailable, so combat is paused. Your place in the
+            turn order is kept. Reconnecting…
+          </p>
+        ) : (
           <p className="table-connection-notice">
             Connection to the table lost. Reconnecting… Your game is safe, and
             actions can be sent once it reconnects.
           </p>
-        )
+        ))
       )}
     </div>
   );

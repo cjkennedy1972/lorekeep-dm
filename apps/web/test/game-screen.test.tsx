@@ -19,13 +19,14 @@ const hoisted = vi.hoisted(() => ({
   privateRoundSubmission: undefined as
     | { roundId: string; actionId: string; text: string; queued: boolean }
     | undefined,
+  status: 'connected' as 'connecting' | 'connected' | 'reconnecting' | 'closed',
 }));
 vi.mock('../src/room/useRoom.js', () => ({
   useRoom: (opts: { onMessage: (m: ServerMessage) => void }) => {
     hoisted.onMessage = opts.onMessage;
     return {
       room: hoisted.room,
-      status: 'connected',
+      status: hoisted.status,
       send: hoisted.send,
       privateRoundSubmission: hoisted.privateRoundSubmission,
     };
@@ -150,6 +151,7 @@ function mount(
 describe('Game screen (live Room)', () => {
   beforeEach(() => {
     hoisted.privateRoundSubmission = undefined;
+    hoisted.status = 'connected';
     http.fetch = async () =>
       new Response(
         JSON.stringify({ game: { recap: 'A short recap.', name: 'Fixture' } }),
@@ -1940,5 +1942,27 @@ describe('Game screen background requests and cast level', () => {
       slotLevel: 2,
       target: { kind: 'option', ref: 'area:thunderwave:2,2:1,0' },
     });
+  });
+
+  it('a lasting connection loss mid-combat shows the server-unavailable notice', async () => {
+    hoisted.status = 'reconnecting';
+    mount();
+    push('CombatTracker', tracker(['ent_goblin', HERO_ID]));
+    expect(
+      await screen.findByText(/the server is unavailable/i, undefined, {
+        timeout: 3000,
+      }),
+    ).toHaveTextContent(/combat is paused/i);
+  });
+
+  it('no combat means the general connection notice, not the combat one', async () => {
+    hoisted.status = 'reconnecting';
+    mount();
+    expect(
+      await screen.findByText(/connection to the table lost/i, undefined, {
+        timeout: 3000,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/the server is unavailable/i)).toBeNull();
   });
 });
