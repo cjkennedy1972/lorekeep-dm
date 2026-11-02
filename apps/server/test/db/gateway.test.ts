@@ -2581,6 +2581,87 @@ describe('one-time gateway', () => {
     );
   });
 
+  it('returns a neutral rejection for an inactive TransferHost target', async () => {
+    const isolatedSessionId = randomUUID();
+    const isolatedAccounts = [randomUUID(), randomUUID()];
+    for (const [index, accountId] of isolatedAccounts.entries())
+      await db.query(
+        `INSERT INTO accounts(id,email,password_hash,display_name,status,is_adult,age_checked_at,terms_version,terms_accepted_at) VALUES($1,$2,'hash',$3,'active',true,now(),'v1',now())`,
+        [accountId, `${accountId}@example.test`, `Isolated player ${index}`],
+      );
+    await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
+      isolatedSessionId,
+      isolatedAccounts[0],
+    ]);
+    const isolatedTokens = await Promise.all(
+      isolatedAccounts.map((accountId) => createSession(db, accountId, 'test')),
+    );
+    const room = await rooms.get(isolatedSessionId);
+    for (const [index, accountId] of isolatedAccounts.entries()) {
+      const resumeToken = await room.seat(
+        accountId,
+        `Isolated player ${index}`,
+        false,
+        hashToken(isolatedTokens[index]!),
+      );
+      if (!resumeToken)
+        throw new Error('isolated test seat has no resume token');
+      resumeTokens.set(isolatedTokens[index]!, resumeToken);
+    }
+    const targetSeatId = room.state.seats.find(
+      (seat) => seat.accountId === isolatedAccounts[1],
+    )!.seatId;
+    const host = connect(await ticket(isolatedTokens[0]!, isolatedSessionId));
+    try {
+      await nextOfType(host, 'StateSync');
+      await db.query("UPDATE accounts SET status='suspended' WHERE id=$1", [
+        isolatedAccounts[1],
+      ]);
+
+      const inactiveActionId = randomUUID();
+      host.send(
+        JSON.stringify({
+          type: 'TransferHost',
+          payload: { seatId: targetSeatId },
+          actionId: inactiveActionId,
+          lastSeq: room.seq,
+        }),
+      );
+      const inactiveRejection = await nextOfType(host, 'Error');
+      expect(inactiveRejection).toMatchObject({
+        payload: {
+          code: 'ACTION_REJECTED',
+          message: 'Host command could not be accepted.',
+          actionId: inactiveActionId,
+        },
+      });
+
+      vi.spyOn(room, 'transferHost').mockRejectedValueOnce(
+        new Error('unrelated transfer failure'),
+      );
+      const otherActionId = randomUUID();
+      host.send(
+        JSON.stringify({
+          type: 'TransferHost',
+          payload: { seatId: targetSeatId },
+          actionId: otherActionId,
+          lastSeq: room.seq,
+        }),
+      );
+      const otherRejection = await nextOfType(host, 'Error');
+      expect(otherRejection.payload).toMatchObject({
+        code: inactiveRejection.payload.code,
+        message: inactiveRejection.payload.message,
+        actionId: otherActionId,
+      });
+    } finally {
+      await db.query("UPDATE accounts SET status='active' WHERE id=$1", [
+        isolatedAccounts[1],
+      ]);
+      await closeSocket(host);
+    }
+  });
+
   it('rejects a host command after its seat is revoked in persisted membership', async () => {
     const revokedSessionId = randomUUID();
     await db.query('INSERT INTO sessions(id,owner_account_id) VALUES($1,$2)', [
