@@ -464,6 +464,13 @@ class EndpointTurnError extends Error {
   }
 }
 
+export class InactiveAccountError extends Error {
+  constructor() {
+    super('Account is unavailable');
+    this.name = 'InactiveAccountError';
+  }
+}
+
 export class NotTableHostError extends Error {
   constructor(message = 'Only the table host can resume') {
     super(message);
@@ -4813,6 +4820,8 @@ export class Room {
       await this.requireHost(accountId);
       const target = this.state.seats.find((seat) => seat.seatId === seatId);
       if (!target) throw new RoomSeatRequiredError();
+      if (!(await this.store.isAccountActive(target.accountId)))
+        throw new InactiveAccountError();
       if (target.accountId === accountId) return;
       if (!this.store.transferTableHost)
         throw new Error('Host transfer unavailable');

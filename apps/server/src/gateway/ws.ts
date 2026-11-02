@@ -39,6 +39,7 @@ import { validOrigin as validRequestOrigin } from '../middleware/origin.js';
 import type { RoomRegistry } from '../room/registry.js';
 import {
   NotTableHostError,
+  InactiveAccountError,
   RoomPausedError,
   RewindRefusedError,
   RoomSeatRequiredError,
@@ -1714,11 +1715,15 @@ export function installGateway(
                         ? 'NOT_HOST'
                         : error instanceof RoomSeatRequiredError
                           ? 'SEAT_REVOKED'
-                          : 'ACTION_REJECTED',
+                          : error instanceof InactiveAccountError
+                            ? 'ACCOUNT_UNAVAILABLE'
+                            : 'ACTION_REJECTED',
                     message:
                       error instanceof NotTableHostError
                         ? 'Only the table host can do that.'
-                        : 'Host command could not be accepted.',
+                        : error instanceof InactiveAccountError
+                          ? 'Host command could not be accepted.'
+                          : 'Host command could not be accepted.',
                     actionId: msg.actionId,
                   },
                 }),

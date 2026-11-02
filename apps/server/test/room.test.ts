@@ -1269,6 +1269,22 @@ describe('room actor', () => {
       await room.configureRoundTimer(owner, 30_000);
     });
 
+    it('refuses to transfer host to an inactive account', async () => {
+      const { store, inactiveAccounts } = fixture();
+      const host = randomUUID();
+      const target = randomUUID();
+      store.isTableHost = async (_sessionId, accountId) => accountId === host;
+      let transfers = 0;
+      store.transferTableHost = async () => { transfers += 1; };
+      const room = new Room(store, lease, await store.loadLatest(id));
+      await room.seat(host, 'Host');
+      await room.seat(target, 'Target');
+      inactiveAccounts.add(target);
+      const targetSeatId = room.state.seats.find((seat) => seat.accountId === target)!.seatId;
+      await expect(room.transferHost(host, randomUUID(), targetSeatId)).rejects.toThrow('Account is unavailable');
+      expect(transfers).toBe(0);
+    });
+
     it('kicks a current seat with actor attribution and preserves transfer, mute, and end state on replay', async () => {
       const { store, events, latest } = fixture();
       let owner = randomUUID();
