@@ -1318,7 +1318,7 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(JSON.stringify(rolls(f.accountB))).not.toContain(entB);
   });
 
-  it('reveals a targeted damage roll to its controller without exposing PC sheet details', async () => {
+  it('hides a PC attacker’s damage roll from the target PC’s controller', async () => {
     const { f, entA } = await twoSeatCombat();
     const state = f.room.state.gameState as { combatRoom: unknown };
     const roll = (
@@ -1395,12 +1395,11 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
     expect(otherEvents[0]).not.toHaveProperty('rolls');
     expect(otherEvents[0]).not.toHaveProperty('modifier');
     expect(otherEvents[2]).toMatchObject({
-      dice: '1d8',
-      rolls: [14],
-      total: 17,
+      damage: 6,
       targetId: seatEntityId(f.seatB),
     });
-    expect(otherEvents[2]).not.toHaveProperty('damage');
+    expect(otherEvents[2]).not.toHaveProperty('total');
+    expect(otherEvents[2]).not.toHaveProperty('rolls');
     expect(otherEvents[2]).not.toHaveProperty('modifier');
   });
 

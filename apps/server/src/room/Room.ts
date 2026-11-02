@@ -5912,12 +5912,18 @@ export class Room {
               const target = combat?.entities.find(
                 (entity) => entity.id === targetId,
               );
+              const actorIsPc =
+                combat?.entities.some(
+                  (entity) =>
+                    entity.id === actorId && entity.kind === 'character',
+                ) === true;
               const revealAttack =
                 projected.kind !== 'attack' || controlled.has(actorId);
               const revealDamage =
                 projected.kind !== 'damage' ||
                 (target?.team === 'party' &&
-                  (controlled.has(actorId) || controlled.has(targetId))) ||
+                  (controlled.has(actorId) ||
+                    (!actorIsPc && controlled.has(targetId)))) ||
                 (target?.team !== 'party' && controlled.has(targetId));
               connection.send({
                 seq: this.seq,
@@ -6907,7 +6913,8 @@ export class Room {
                     event.kind !== 'damage' ||
                     (target?.team === 'party' &&
                       (controlled.has(String(event.entityId)) ||
-                        controlled.has(String(event.targetId)))) ||
+                        (!pcIds.has(String(event.entityId)) &&
+                          controlled.has(String(event.targetId))))) ||
                     (target?.team !== 'party' &&
                       controlled.has(String(event.targetId)));
                   return [
