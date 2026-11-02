@@ -109,6 +109,34 @@ describe('narration history sync', () => {
     ).toEqual({ turns: [] });
   });
 
+  it('replays persisted narration on a same-sequence reconnect', async () => {
+    const accountId = randomUUID();
+    const room = setup(false, accountId);
+    const first = recorder();
+    await joinSeated(room, accountId, first, 'Player');
+    const reconnect = recorder();
+
+    await room.subscribe(accountId, reconnect, room.seq);
+
+    expect(reconnect.sent).not.toContain(
+      expect.objectContaining({ type: 'StateSync' }),
+    );
+    expect(
+      reconnect.sent.find((message) => message.type === 'NarrationHistory')
+        ?.payload,
+    ).toEqual({
+      turns: [
+        { turnId: 'old', text: 'Old scene.', tier: 'standard' },
+        {
+          turnId: 'new',
+          text: 'New scene.',
+          tier: 'family',
+          actionText: 'I search the room.',
+        },
+      ],
+    });
+  });
+
   it('sends bounded committed viewer history on reconnect and withholds mature narration when ineligible', async () => {
     const accountId = randomUUID();
     const room = setup(false, accountId);
