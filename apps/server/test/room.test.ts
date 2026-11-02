@@ -1275,13 +1275,19 @@ describe('room actor', () => {
       const target = randomUUID();
       store.isTableHost = async (_sessionId, accountId) => accountId === host;
       let transfers = 0;
-      store.transferTableHost = async () => { transfers += 1; };
+      store.transferTableHost = async () => {
+        transfers += 1;
+      };
       const room = new Room(store, lease, await store.loadLatest(id));
       await room.seat(host, 'Host');
       await room.seat(target, 'Target');
       inactiveAccounts.add(target);
-      const targetSeatId = room.state.seats.find((seat) => seat.accountId === target)!.seatId;
-      await expect(room.transferHost(host, randomUUID(), targetSeatId)).rejects.toThrow('Account is unavailable');
+      const targetSeatId = room.state.seats.find(
+        (seat) => seat.accountId === target,
+      )!.seatId;
+      await expect(
+        room.transferHost(host, randomUUID(), targetSeatId),
+      ).rejects.toThrow('Account is unavailable');
       expect(transfers).toBe(0);
     });
 
