@@ -45,6 +45,13 @@ const UNSEATED_REASON = 'Player is not seated at this table';
 export const SEAT_AUTH_FAILED_REASON = 'Seat authentication failed';
 /** Automatic retries after consecutive seat-auth closes before the client stops and waits for the player. */
 export const SEAT_AUTH_RETRY_LIMIT = 3;
+/** Seat-auth refusals are counted in one anchored window, matching the server's per-seat attempt window (ADR-041). */
+export const SEAT_AUTH_WINDOW_MS = 60_000;
+/**
+ * The server keeps a seat's lease for up to 15 s after its last heartbeat. A refusal that arrives inside this grace
+ * after our own socket dropped is that lease clearing, not a bad credential, so it does not count toward the cap.
+ */
+export const SEAT_LEASE_GRACE_MS = 20_000;
 
 export interface RoomClientOptions {
   /** HTTP origin of the API, e.g. http://localhost:8787 */
@@ -83,6 +90,8 @@ export function createRoomClient(opts: RoomClientOptions) {
   let authWatchdog: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
   let authFailures = 0;
+  let authFailureWindowStart: number | undefined;
+  let leaseGraceUntil = 0;
   let generation = 0;
   let resumeToken: string | undefined;
   let pendingClaimId: string | undefined;
@@ -159,6 +168,7 @@ export function createRoomClient(opts: RoomClientOptions) {
       }
       attempt = 0;
       authFailures = 0;
+      authFailureWindowStart = undefined;
       clearTimeout(authWatchdog);
       set({
         status: 'connected',
@@ -294,6 +304,11 @@ export function createRoomClient(opts: RoomClientOptions) {
       };
       ws.onclose = (e) => {
         if (socket !== ws) return;
+        const now = Date.now();
+        const inLeaseGrace = now < leaseGraceUntil;
+        // Only a socket that had authenticated can leave the server holding its seat lease.
+        if (snap.status === 'connected')
+          leaseGraceUntil = now + SEAT_LEASE_GRACE_MS;
         const removed = removalForClose(e.code, e.reason);
         const unseated = e.code === 1008 && e.reason === UNSEATED_REASON;
         if (removed) resumeToken = undefined;
@@ -319,7 +334,18 @@ export function createRoomClient(opts: RoomClientOptions) {
           set({ status: 'closed', unseated: true });
           return;
         }
-        if (e.code === 1008 && e.reason === SEAT_AUTH_FAILED_REASON) {
+        if (
+          e.code === 1008 &&
+          e.reason === SEAT_AUTH_FAILED_REASON &&
+          !inLeaseGrace
+        ) {
+          if (
+            authFailureWindowStart === undefined ||
+            now - authFailureWindowStart >= SEAT_AUTH_WINDOW_MS
+          ) {
+            authFailureWindowStart = now;
+            authFailures = 0;
+          }
           if (authFailures >= SEAT_AUTH_RETRY_LIMIT) {
             // Retrying forever only hammers the server; stop and let the player retry on purpose.
             socket = undefined;
@@ -338,12 +364,10 @@ export function createRoomClient(opts: RoomClientOptions) {
     }
   }
 
-  const start = () => {
-    if (!stopped) return;
+  const startConnection = () => {
     stopped = false;
     generation++;
     attempt = 0;
-    authFailures = 0;
     set({
       status: 'connecting',
       unseated: false,
@@ -351,6 +375,14 @@ export function createRoomClient(opts: RoomClientOptions) {
       reconnectGaveUp: false,
     });
     void connect(generation);
+  };
+
+  /** A rejoin is a new user action on a stopped client, so it starts with a fresh seat-auth budget. */
+  const start = () => {
+    if (!stopped) return;
+    authFailures = 0;
+    authFailureWindowStart = undefined;
+    startConnection();
   };
 
   const stop = () => {
@@ -369,13 +401,16 @@ export function createRoomClient(opts: RoomClientOptions) {
    * (a reconnect is pending, or the socket is up but state never arrived).
    * A host-removed seat is final, so this is a no-op there.
    */
+  /**
+   * A manual Retry is one fresh attempt, not a new budget (ADR-041): the seat-auth count stays in its window, so a
+   * refusal inside that window gives up again at once. The window and the count reset only after SEAT_AUTH_WINDOW_MS.
+   */
   const retry = () => {
     if (snap.removed) return;
-    if (stopped) return start();
+    if (stopped) return startConnection();
     clearTimeout(timer);
     generation++;
     attempt = 0;
-    authFailures = 0;
     // Detach the current socket first so its close event is ignored as superseded.
     const current = socket;
     socket = undefined;
