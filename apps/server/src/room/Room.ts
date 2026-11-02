@@ -6906,7 +6906,8 @@ export class Room {
                     event.type !== 'RollEvent' ||
                     event.kind !== 'damage' ||
                     (target?.team === 'party' &&
-                      controlled.has(String(event.entityId))) ||
+                      (controlled.has(String(event.entityId)) ||
+                        controlled.has(String(event.targetId)))) ||
                     (target?.team !== 'party' &&
                       controlled.has(String(event.targetId)));
                   return [
