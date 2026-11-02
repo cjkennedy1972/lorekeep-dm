@@ -551,7 +551,7 @@ export async function runLegacyDerivedMemoryClear(
     activeDryRunId = dryRunId;
     await runner.query('BEGIN');
     await runner.query(
-      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=clock_timestamp() WHERE mode='live' AND outcome='running' AND heartbeat_at < clock_timestamp() - ($1::bigint * interval '1 millisecond')",
+      "UPDATE derived_memory_legacy_clear_audit SET outcome='failed',reason_code='process_died',finished_at=clock_timestamp() WHERE mode IN ('live','dry_run') AND outcome='running' AND heartbeat_at < clock_timestamp() - ($1::bigint * interval '1 millisecond')",
       [staleAfter],
     );
     const expiredPlans = await runner.query<{ dry_run_id: string }>(
@@ -562,7 +562,10 @@ export async function runLegacyDerivedMemoryClear(
          SELECT dry_run_id FROM derived_memory_legacy_clear_plan
        ) ids
        JOIN derived_memory_legacy_clear_audit d ON d.run_id=ids.dry_run_id
-       WHERE d.mode='dry_run' AND d.finished_at < $1::timestamptz - ($2::bigint * interval '1 millisecond')`,
+       WHERE d.mode='dry_run' AND (
+         d.outcome IN ('failed','aborted') OR
+         d.finished_at < $1::timestamptz - ($2::bigint * interval '1 millisecond')
+       )`,
       [started, maxAge],
     );
     for (const expired of expiredPlans.rows)
@@ -596,7 +599,6 @@ export async function runLegacyDerivedMemoryClear(
     let removedSummaries = 0;
     let removedEntries = 0;
     let removedFacts = 0;
-    let idempotentCompletion = false;
     if (!dryRun && !reconciliationComplete) {
       await runner.query(
         `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
@@ -770,27 +772,9 @@ export async function runLegacyDerivedMemoryClear(
         activePlanRows = dryRunId ? await readPlanRows(runner, dryRunId) : [];
         const priorCounts = dry?.counts;
         if (
-          dryRunId &&
-          priorCounts &&
-          !matchesCounts(counts, priorCounts, tolerance)
-        ) {
-          const earlierLive = await runner.query(
-            `SELECT 1 FROM derived_memory_legacy_clear_audit WHERE mode='live' AND dry_run_id=$1 AND outcome='live_succeeded' LIMIT 1`,
-            [dryRunId],
-          );
-          idempotentCompletion =
-            counts.sceneSummaries === 0 &&
-            counts.registryEntries === 0 &&
-            counts.registryFacts === 0 &&
-            counts.sessionsSkippedHeld === priorCounts.sessionsSkippedHeld &&
-            counts.sessionsDeferred === priorCounts.sessionsDeferred &&
-            Boolean(earlierLive.rowCount);
-        }
-        if (
           !dryRunId ||
           !priorCounts ||
-          (!matchesCounts(counts, priorCounts, tolerance) &&
-            !idempotentCompletion)
+          !matchesCounts(counts, priorCounts, tolerance)
         ) {
           await runner.query(
             `INSERT INTO derived_memory_legacy_clear_audit(run_id,mode,code_version,dry_run_id,counts,outcome,started_at,finished_at,reason_code)
