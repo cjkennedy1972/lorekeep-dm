@@ -146,6 +146,27 @@ describe('rest vote close races through the Room mailbox', () => {
     expect(seats).toHaveLength(4);
   });
 
+  it('reschedules when the deadline timer fires before wall-clock expiry', async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const deadline = start + 500;
+    const { room, events, voteId } = setup(deadline);
+    await connectAll(room, []);
+
+    vi.setSystemTime(start - 500);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(room.state.restVote?.voteId).toBe(voteId);
+    expect(events.some((event) => event.type === 'RestVoteClosed')).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(room.state.restVote).toBeUndefined();
+    expect(
+      events.find((event) => event.type === 'RestVoteClosed')?.payload,
+    ).toMatchObject({
+      closeReason: 'expired',
+    });
+  });
+
   it('timer close wins before a late cast and the cast cannot append a second close', async () => {
     vi.useFakeTimers();
     const deadline = Date.now() + 500;

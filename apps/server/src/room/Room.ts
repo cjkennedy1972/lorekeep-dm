@@ -2894,11 +2894,11 @@ export class Room {
       () => {
         void this.enqueue(async () => {
           const current = this.asRestVote();
-          if (
-            current?.voteId === vote.voteId &&
-            Date.now() >= current.deadlineAt
-          )
-            await this.finishRestVote(current, 'timer');
+          if (current?.voteId === vote.voteId) {
+            if (Date.now() >= current.deadlineAt)
+              await this.finishRestVote(current, 'timer');
+            else this.scheduleRestVoteTimer();
+          }
         }).catch((error) =>
           console.error(`Rest vote timer failed for ${this.sessionId}`, error),
         );
