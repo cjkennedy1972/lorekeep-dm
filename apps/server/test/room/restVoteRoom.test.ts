@@ -6,7 +6,11 @@ import type { LatestState, StoredEvent } from '../../src/persistence/index.js';
 
 afterEach(() => vi.useRealTimers());
 
-function setup(deadlineAt: number, runner?: SoloTurnRunner) {
+function setup(
+  deadlineAt: number,
+  runner?: SoloTurnRunner,
+  restoredTieBreak?: 'yes' | 'no',
+) {
   const sessionId = randomUUID();
   const accounts = Array.from({ length: 4 }, () => randomUUID());
   const seats = accounts.map((accountId) => ({
@@ -48,12 +52,22 @@ function setup(deadlineAt: number, runner?: SoloTurnRunner) {
           voteId,
           type: 'short',
           eligibleSeats: seats.map((seat) => seat.seatId),
-          ballots: [
-            { seat: seats[0]!.seatId, choice: 'yes' },
-            { seat: seats[1]!.seatId, choice: 'no' },
-            { seat: seats[2]!.seatId, choice: 'no' },
-          ],
-          castSeatIds: seats.slice(0, 3).map((seat) => seat.seatId),
+          ballots: restoredTieBreak
+            ? [
+                { seat: seats[0]!.seatId, choice: 'yes' },
+                { seat: seats[1]!.seatId, choice: 'no' },
+                { seat: seats[2]!.seatId, choice: 'yes' },
+                { seat: seats[3]!.seatId, choice: 'no' },
+              ]
+            : [
+                { seat: seats[0]!.seatId, choice: 'yes' },
+                { seat: seats[1]!.seatId, choice: 'no' },
+                { seat: seats[2]!.seatId, choice: 'no' },
+              ],
+          castSeatIds: restoredTieBreak
+            ? seats.map((seat) => seat.seatId)
+            : seats.slice(0, 3).map((seat) => seat.seatId),
+          ...(restoredTieBreak ? { tieBreak: restoredTieBreak } : {}),
           openedByTurnId: randomUUID(),
           deadlineAt,
         },
@@ -165,6 +179,27 @@ describe('rest vote close races through the Room mailbox', () => {
     ).toMatchObject({
       closeReason: 'expired',
     });
+  });
+
+  it('closes a restored tied vote with its recorded tie-break before the future deadline', async () => {
+    vi.useFakeTimers();
+    const deadline = Date.now() + 60_000;
+    const { room, events, voteId } = setup(deadline, undefined, 'no');
+    await connectAll(room, []);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(room.state.restVote).toBeUndefined();
+    expect(
+      events.find((event) => event.type === 'RestVoteClosed')?.payload,
+    ).toMatchObject({
+      voteId,
+      outcome: 'failed',
+      closeReason: 'host-tiebreak',
+      yes: 2,
+      no: 2,
+    });
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('timer close wins before a late cast and the cast cannot append a second close', async () => {
