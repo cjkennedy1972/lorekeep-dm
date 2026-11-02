@@ -5916,7 +5916,8 @@ export class Room {
                 projected.kind !== 'attack' || controlled.has(actorId);
               const revealDamage =
                 projected.kind !== 'damage' ||
-                (target?.team === 'party' && controlled.has(actorId)) ||
+                (target?.team === 'party' &&
+                  (controlled.has(actorId) || controlled.has(targetId))) ||
                 (target?.team !== 'party' && controlled.has(targetId));
               connection.send({
                 seq: this.seq,
