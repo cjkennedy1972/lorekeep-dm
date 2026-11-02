@@ -202,3 +202,31 @@ This clarification supersedes any conflicting wording above. `StateSync` always 
 Each committed transition receives a server-random opaque `transitionKey`, persisted with the committed transition. It is independent of session/action identity and sequence/order; it must not expose which action caused a transition or when it occurred. Internal commit/retry handling may use its private authoritative identity but must not encode that identity in this token.
 
 Reconnect recovery is StateSync-only: reconnecting seats receive current scene state from the authoritative StateSync projection, which replaces their scene projection. No sequence-numbered scene-change record or message replay is used. `lastClosed` remains metadata in the projection and never advances state by itself. The feature flag remains default OFF and enabled only by exact string `true`.
+
+## Addendum — deterministic progression triggers (2026-11-02, proposed)
+
+This addendum proposes replacing model-invoked `close_scene` as the progression trigger; it does not authorize implementation. It supersedes the earlier rule that combat ending alone never advances a scene, if this proposal is accepted.
+
+### Trigger and ownership
+
+Progression is an effect of committed authoritative state, never an LLM tool call or a text classifier. On the server's serialized turn/command path, evaluate the current scene's authored progression policy against committed facts: a terminal `CombatEnded` event for the scene's active encounter, or a server-produced `ObjectiveResolved` event for an authored objective. Only a matching authored trigger can close the scene. Combat outcome policy must be explicit in authored data (default proposal: all terminal outcomes resolve the encounter, matching ADR-038); objective completion must be a deterministic rules/command predicate. The model may narrate or suggest, but cannot assert either fact or select an un-authored target. Existing `nextSceneAfterClose` remains the deterministic successor selector: the first authored successor by default; no successor means adventure completion.
+
+**Open domain prerequisite:** current `AdventureSceneSchema` has `nextSceneIds` but no objective definitions, and no `ObjectiveResolved` domain event exists. Before implementation, choose and validate the minimal authored objective predicate vocabulary and its authoritative producer. Do not infer objective completion from narration, player text, or an LLM judgment. Until that decision exists, only the combat-ended trigger is implementable; this proposal does not claim objective-trigger support is already deterministic.
+
+### Commit, replay, and idempotency
+
+The server owns trigger evaluation, source-scene validation, successor selection, and the resulting `SceneClosed`/scene-state transition. Evaluate only after the triggering fact is durable, under the room's serialized write path. Bind the transition to the durable trigger identity plus source scene; replaying the same trigger reconstructs the same closed/current scene state and cannot advance twice. A different trigger against a no-longer-current source is a no-op/conflict. `transitionKey` remains opaque response/projection metadata only and is not an idempotency key. Commit/recovery ordering must follow the unresolved ADR-042 atomic-commit feasibility precondition: do not claim a single transaction or start implementation until the actual event, state, summary, and notification write boundaries are verified and an atomic or recoverable/outbox design is selected. Generate summaries from the committed transition as retryable derived data, not as a prerequisite or an earlier side effect.
+
+### Hidden-information safety
+
+Evaluate against full authoritative server state, but disclose only the existing ADR-042 StateSync allowlist (`currentSceneId` and opaque `lastClosed` metadata) plus player-safe authored destination title. Never project objective definitions, hidden trigger facts, gate reasons, internal trigger identity, or canonical event sequence. A public scene change can reveal that some gate fired; accept only the previously recorded ADR-040 class of visible-outcome inference, and ensure the projection does not reveal which hidden objective or entity caused it. Repeated StateSync snapshots replace client scene state; they are not replayed as transition commands.
+
+### Failing-first acceptance tests (not run)
+
+1. With a terminal `CombatEnded` fact for the active scene's encounter, prove one deterministic close/advance (including victory, flee, defeat policy); unrelated combat end, nonterminal combat state, or a stale source scene does not advance.
+2. For each authored objective predicate, prove its server-side condition emits/resolves exactly once; near-miss state, narration claiming success, quoted player instructions, and model-supplied `ObjectiveResolved` data do not advance. Missing/invalid objective definitions fail adventure validation.
+3. Prove successor selection is authored-only, default ordering is deterministic, terminal scenes complete, and invalid/missing scenes never persist `SceneClosed` without a matching state transition.
+4. Replay the same durable trigger across duplicate delivery and process restart: one logical transition/summary/notification; a distinct trigger on the now-closed source cannot advance again. Inject failure at each actual persistence boundary and prove recovery yields either the old or the fully committed outcome, including notification/outbox behavior.
+5. For every seat, assert projected state contains only the ADR-042 allowlist and safe destination title; hidden objective/encounter identifiers, trigger cause, canonical sequence, and gate reason are absent. Repeated snapshots replace state without applying another transition.
+
+**Implementation remains blocked** until (a) the objective data model/producer is decided and (b) the pre-existing ADR-042 atomic-commit feasibility precondition is completed. This is a design proposal, not a rollout authorization; the ADR-042 flag remains default OFF.
