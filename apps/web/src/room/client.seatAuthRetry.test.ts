@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
   SEAT_AUTH_FAILED_REASON,
   SEAT_AUTH_RETRY_LIMIT,
+  SEAT_AUTH_WINDOW_MS,
+  SEAT_LEASE_GRACE_MS,
   createRoomClient,
 } from './client.js';
 
@@ -138,6 +140,9 @@ test('a successful seat authentication resets the seat-auth retry counter', asyn
 
   for (let i = 0; i < SEAT_AUTH_RETRY_LIMIT - 1; i++) await failAuthAndRetry();
   authenticate(client);
+  // The authenticated socket drops; wait out its lease grace so refusals count again.
+  sockets.at(-1)!.drop(1006, '');
+  await vi.advanceTimersByTimeAsync(SEAT_LEASE_GRACE_MS);
 
   // After a good connect, a full new budget of retries is available again.
   for (let i = 0; i < SEAT_AUTH_RETRY_LIMIT; i++) await failAuthAndRetry();
@@ -149,7 +154,29 @@ test('a successful seat authentication resets the seat-auth retry counter', asyn
   client.stop();
 });
 
-test('manual retry after giving up reconnects and restores the full retry budget', async () => {
+test('refusals inside the lease grace after our own socket dropped do not count toward the cap', async () => {
+  const client = makeClient();
+  client.start();
+  await settle();
+  authenticate(client);
+  sockets.at(-1)!.drop(1006, '');
+
+  // The server still holds the seat lease for up to 15 s, so each refusal here is expected and retried.
+  const graceRefusals = Math.floor(SEAT_LEASE_GRACE_MS / MAX_DELAY_MS) - 2;
+  for (let i = 0; i < graceRefusals; i++) await failAuthAndRetry();
+  expect(client.getSnapshot().reconnectGaveUp).toBe(false);
+  expect(client.getSnapshot().status).toBe('reconnecting');
+
+  // Past the grace, the same refusals are a real failure and the cap applies.
+  await vi.advanceTimersByTimeAsync(SEAT_LEASE_GRACE_MS);
+  for (let i = 0; i < SEAT_AUTH_RETRY_LIMIT; i++) await failAuthAndRetry();
+  expect(client.getSnapshot().reconnectGaveUp).toBe(false);
+  sockets.at(-1)!.drop(1008, SEAT_AUTH_FAILED_REASON);
+  expect(client.getSnapshot().reconnectGaveUp).toBe(true);
+  client.stop();
+});
+
+test('manual retry inside the seat-auth window is one attempt, and a refusal gives up again at once', async () => {
   const client = makeClient();
   client.start();
   await settle();
@@ -164,7 +191,28 @@ test('manual retry after giving up reconnects and restores the full retry budget
   expect(client.getSnapshot().status).toBe('connecting');
   expect(sockets).toHaveLength(stopped + 1);
 
-  // The manual attempt gets its own full budget of automatic retries.
+  // ADR-041: the manual Retry does not reset the window, so its refusal gives up without more automatic retries.
+  sockets.at(-1)!.drop(1008, SEAT_AUTH_FAILED_REASON);
+  await vi.advanceTimersByTimeAsync(MAX_DELAY_MS * 5);
+  expect(sockets).toHaveLength(stopped + 1);
+  expect(client.getSnapshot().reconnectGaveUp).toBe(true);
+  client.stop();
+});
+
+test('manual retry after the seat-auth window has elapsed gets a fresh budget', async () => {
+  const client = makeClient();
+  client.start();
+  await settle();
+  for (let i = 0; i < SEAT_AUTH_RETRY_LIMIT; i++) await failAuthAndRetry();
+  sockets.at(-1)!.drop(1008, SEAT_AUTH_FAILED_REASON);
+  expect(client.getSnapshot().reconnectGaveUp).toBe(true);
+
+  await vi.advanceTimersByTimeAsync(SEAT_AUTH_WINDOW_MS);
+  client.retry();
+  await settle();
+  expect(client.getSnapshot().reconnectGaveUp).toBe(false);
+  expect(client.getSnapshot().status).toBe('connecting');
+
   for (let i = 0; i < SEAT_AUTH_RETRY_LIMIT; i++) await failAuthAndRetry();
   expect(client.getSnapshot().reconnectGaveUp).toBe(false);
   expect(client.getSnapshot().status).toBe('reconnecting');

@@ -15,8 +15,8 @@ export function ReconnectGaveUpNotice({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="table-connection-notice">
       <p>
-        We couldn’t reconnect you to the table. Check your network connection,
-        then select Retry.
+        We couldn’t reconnect you to the table yet. Give it a moment, then
+        select Retry.
       </p>
       <button type="button" onClick={onRetry}>
         Retry

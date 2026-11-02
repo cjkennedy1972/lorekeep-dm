@@ -73,6 +73,8 @@ test('a reconnect that gave up offers a manual retry and stops claiming to recon
   expect(notice).toHaveTextContent('We couldn’t reconnect you to the table');
   expect(notice).toHaveTextContent('select Retry');
   expect(notice).not.toHaveTextContent(/reconnecting/i);
+  // A refused seat resume is not a network fault, so the copy must not blame the network.
+  expect(notice).not.toHaveTextContent(/network/i);
   // Neutral copy: no record ids and no security detail.
   expect(notice.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
   expect(notice.textContent).not.toMatch(/authenticat|token|seat/i);
