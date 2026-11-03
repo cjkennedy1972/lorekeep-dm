@@ -205,11 +205,11 @@ Reconnect recovery is StateSync-only: reconnecting seats receive current scene s
 
 ## Addendum — deterministic progression triggers (2026-11-02, proposed)
 
-This addendum proposes replacing model-invoked `close_scene` as the progression trigger; it does not authorize implementation. It supersedes the earlier rule that combat ending alone never advances a scene, if this proposal is accepted.
+This addendum proposes replacing model-invoked `close_scene` as the progression trigger; it does not authorize implementation. Its effect on the earlier rule that combat ending alone never advances a scene is narrowed and stated exactly in the 2026-11-03 addendum below (Decision 1).
 
 ### Trigger and ownership
 
-Progression is an effect of committed authoritative state, never an LLM tool call or a text classifier. On the server's serialized turn/command path, evaluate the current scene's authored progression policy against committed facts: a terminal `CombatEnded` event for the scene's active encounter, or a server-produced `ObjectiveResolved` event for an authored objective. Only a matching authored trigger can close the scene. Combat outcome policy must be explicit in authored data (default proposal: all terminal outcomes resolve the encounter, matching ADR-038); objective completion must be a deterministic rules/command predicate. The model may narrate or suggest, but cannot assert either fact or select an un-authored target. Existing `nextSceneAfterClose` remains the deterministic successor selector: the first authored successor by default; no successor means adventure completion.
+Progression is an effect of committed authoritative state, never an LLM tool call or a text classifier. On the server's serialized turn/command path, evaluate the current scene's authored progression policy against committed facts: a terminal `CombatEnded` event for the scene's active encounter, or a server-produced `ObjectiveResolved` event for an authored objective. Only a matching authored trigger can close the scene. Combat outcome policy must be explicit in authored data, with no default outcome set (see the 2026-11-03 addendum's `allowedOutcomes`); objective completion must be a deterministic rules/command predicate. The model may narrate or suggest, but cannot assert either fact or select an un-authored target. Existing `nextSceneAfterClose` remains the deterministic successor selector: the first authored successor by default; no successor means adventure completion.
 
 **Open domain prerequisite:** current `AdventureSceneSchema` has `nextSceneIds` but no objective definitions, and no `ObjectiveResolved` domain event exists. Before implementation, choose and validate the minimal authored objective predicate vocabulary and its authoritative producer. Do not infer objective completion from narration, player text, or an LLM judgment. Until that decision exists, only the combat-ended trigger is implementable; this proposal does not claim objective-trigger support is already deterministic.
 
@@ -219,15 +219,15 @@ The server owns trigger evaluation, source-scene validation, successor selection
 
 ### Hidden-information safety
 
-Evaluate against full authoritative server state, but disclose only the existing ADR-042 StateSync allowlist (`currentSceneId` and opaque `lastClosed` metadata) plus player-safe authored destination title. Never project objective definitions, hidden trigger facts, gate reasons, internal trigger identity, or canonical event sequence. A public scene change can reveal that some gate fired; accept only the previously recorded ADR-040 class of visible-outcome inference, and ensure the projection does not reveal which hidden objective or entity caused it. Repeated StateSync snapshots replace client scene state; they are not replayed as transition commands.
+Evaluate against full authoritative server state, but disclose only the existing ADR-042 StateSync allowlist (`currentSceneId` and opaque `lastClosed` metadata). No scene title, destination title, or other authored scene text is added to the projection; any title exposure would require a separate ADR revision. Never project objective definitions, hidden trigger facts, gate reasons, internal trigger identity, or canonical event sequence. A public scene change can reveal that some gate fired; accept only the previously recorded ADR-040 class of visible-outcome inference, and ensure the projection does not reveal which hidden objective or entity caused it. Repeated StateSync snapshots replace client scene state; they are not replayed as transition commands.
 
 ### Failing-first acceptance tests (not run)
 
-1. With a terminal `CombatEnded` fact for the active scene's encounter, prove one deterministic close/advance (including victory, flee, defeat policy); unrelated combat end, nonterminal combat state, or a stale source scene does not advance.
+1. With a terminal `CombatEnded` fact for the active scene's encounter, prove one deterministic close/advance only when the outcome is in the objective's authored `allowedOutcomes` (victory and flee each tested listed and unlisted; defeat never resolves); unrelated combat end, nonterminal combat state, or a stale source scene does not advance.
 2. For each authored objective predicate, prove its server-side condition emits/resolves exactly once; near-miss state, narration claiming success, quoted player instructions, and model-supplied `ObjectiveResolved` data do not advance. Missing/invalid objective definitions fail adventure validation.
 3. Prove successor selection is authored-only, default ordering is deterministic, terminal scenes complete, and invalid/missing scenes never persist `SceneClosed` without a matching state transition.
 4. Replay the same durable trigger across duplicate delivery and process restart: one logical transition/summary/notification; a distinct trigger on the now-closed source cannot advance again. Inject failure at each actual persistence boundary and prove recovery yields either the old or the fully committed outcome, including notification/outbox behavior.
-5. For every seat, assert projected state contains only the ADR-042 allowlist and safe destination title; hidden objective/encounter identifiers, trigger cause, canonical sequence, and gate reason are absent. Repeated snapshots replace state without applying another transition.
+5. For every seat, assert projected state contains only the ADR-042 allowlist (no scene or destination title); hidden objective/encounter identifiers, trigger cause, canonical sequence, and gate reason are absent. Repeated snapshots replace state without applying another transition.
 
 **Implementation remains blocked** until (a) the objective data model/producer is decided and (b) the pre-existing ADR-042 atomic-commit feasibility precondition is completed. This is a design proposal, not a rollout authorization; the ADR-042 flag remains default OFF.
 
@@ -239,6 +239,8 @@ Append-only. This resolves the two blockers recorded in the deterministic-trigge
 
 Combat and non-combat progression use one concept. An encounter outcome is an objective; a combat ending does not close a scene directly. Every close therefore goes through one evaluator and one event path.
 
+**Scope of the supersession.** The earlier rule "combat ending alone never advances a scene" (Failure behavior, "Active combat") is superseded only in one case: a scene with an authored `encounter` objective whose `allowedOutcomes` lists the committed outcome. In every other case it is unchanged. A combat end with no matching authored encounter objective, or with an outcome that objective does not list, does not advance the scene.
+
 Add to `AdventureSceneSchema` (`packages/schema/src/adventure.ts`):
 
 ```ts
@@ -249,8 +251,7 @@ const ObjectiveBase = {
 export const AdventureObjectiveSchema = z.discriminatedUnion('kind', [
   z.object({ ...ObjectiveBase, kind: z.literal('encounter'),
     encounterId: z.string().min(1),                // must be in the scene's encounterIds
-    outcomes: z.array(z.enum(['party-victory', 'enemies-fled'])).min(1)
-      .default(['party-victory', 'enemies-fled']) }).strict(),
+    allowedOutcomes: z.array(z.enum(['party-victory', 'enemies-fled'])).min(1) }).strict(), // required; no default
   z.object({ ...ObjectiveBase, kind: z.literal('check'),
     ability: AbilitySchema, skill: SkillSchema.optional(),
     dc: z.int().min(5).max(30) }).strict(),
@@ -262,7 +263,7 @@ completion: z.enum(['any', 'all']).default('any'),
 
 There are exactly two predicates, and each resolves from facts the server already owns:
 
-- **`encounter`** resolves when the room combat state for that encounter has `ended.outcome` in `outcomes`. The outcome comes from `combatOutcome` (`apps/server/src/room/combatEngine.ts:150–157`), a pure function of entity HP and liveness. `party-defeated` cannot be authored, because the TPK resolution flow (`Room.chooseTpkResolution`) owns that outcome. `dm-ended` (`combatBootstrap.ts:516`, emitted when the model clears engine combat) is never a resolving outcome, because it is a model assertion and not a rules result.
+- **`encounter`** resolves when the room combat state for that encounter has `ended.outcome` in the authored `allowedOutcomes`. `allowedOutcomes` is required and has no default: `enemies-fled` counts as completion only when the author lists it, and `party-victory` likewise. The outcome comes from `combatOutcome` (`apps/server/src/room/combatEngine.ts:150–157`), a pure function of entity HP and liveness. `party-defeated` cannot be authored, because the TPK resolution flow (`Room.chooseTpkResolution`) owns that outcome. `dm-ended` (`combatBootstrap.ts:516`, emitted when the model clears engine combat) is never a resolving outcome, because it is a model assertion and not a rules result.
 - **`check`** resolves when the server rolls a success against the **authored** ability, skill, and DC. The existing `request_check` tool takes `dc` and `advantage` from the model (`packages/engine/src/tools/check.ts:34–42`), so it cannot resolve an objective. Add one DM tool, `attempt_objective({ objectiveId, actorId })`. It accepts only an objective id offered for the current scene and an actor in the session. It reads ability, skill, and DC from authored data, rolls through the existing `abilityCheck`, and ignores any model advantage (conditions still apply). It emits the normal `RollEvent` plus `ObjectiveAttempted { objectiveId, success }`. The model decides *when* to attempt, the same way it decides when to call `start_combat` with an authored encounter key. The server decides the outcome.
 
 Validation, added to `validateAdventure` (`packages/engine/src/adventure/validate.ts`): objective ids are unique across the adventure; `encounterId` belongs to the same scene's `encounterIds`; `nextSceneId` belongs to the same scene's `nextSceneIds`; a scene with `completion: 'all'` has at least one objective. A scene with no objectives cannot progress while the flag is ON. That is intentional: progression requires authored intent. See "Needs Chris" for adventure #1 content.
@@ -284,7 +285,7 @@ Progress lives in the snapshotted game state as `resolvedObjectiveIds: string[]`
 
 **Idempotency** follows from state, not from a key. An objective resolves only if it is absent from `resolvedObjectiveIds`. A scene closes only if `sceneId` still equals the source. Both checks run under the room mailbox and the `writeTurn` session-row lock plus lease fence. A duplicate delivery is rejected earlier by the existing `actionIds` dedupe in the snapshot. `transitionKey` stays opaque metadata and is never an idempotency input.
 
-**Hidden information.** `ObjectiveAttempted`, `ObjectiveResolved`, and the new combat-state fields are server-only. Add them to the visibility table as send-to-no-one, which is the existing fail-closed default for unlisted types (`eventVisibility.ts:1–5`). Objective definitions go to the DM prompt for the current scene only, like encounter keys today; they never go to the client. The player-visible surface is unchanged from the earlier addenda: the normal roll display for the attempt, plus the `sceneProgression` StateSync allowlist and the safe destination title. The accepted inference residual is the same as before: a scene change shows that some authored gate fired, but not which one.
+**Hidden information.** `ObjectiveAttempted`, `ObjectiveResolved`, and the new combat-state fields are server-only. Add them to the visibility table as send-to-no-one, which is the existing fail-closed default for unlisted types (`eventVisibility.ts:1–5`). Objective definitions go to the DM prompt for the current scene only, like encounter keys today; they never go to the client. The player-visible surface is unchanged from the earlier addenda: the normal roll display for the attempt, plus the `sceneProgression` StateSync allowlist, which is unchanged: scene ids, opaque `lastClosed` transition metadata, and the completion bit. No scene or destination title is projected; this also governs the earlier "Player experience" wording about naming the destination by title. Any title exposure would require a separate ADR revision. The accepted inference residual is the same as before: a scene change shows that some authored gate fired, but not which one.
 
 ### Decision 3 — feasibility settled: one existing transaction covers the durable outcome
 
@@ -310,8 +311,8 @@ This **marks the atomic-commit feasibility precondition complete** for the durab
 
 Every slice is flag-gated and default OFF. Each lands with its failing tests first, and each is mergeable alone.
 
-1. **Schema + validation.** Add `AdventureObjectiveSchema`, the scene `objectives`/`completion` fields, the `ObjectiveAttempted`/`ObjectiveResolved` schemas, an optional `SceneClosed.summary`, and the validation rules. Tests: valid and invalid authored data (duplicate id, foreign encounter, foreign successor, `party-defeated`/`dm-ended` rejected); legacy adventure and legacy `SceneClosed` still parse. *No runtime change.*
-2. **Pure evaluator** in `packages/engine/src/adventure/progression.ts`: `evaluateProgression(adventure, gameState, turnFacts) → { events, statePatch }`, with no I/O and with `nextSceneAfterClose` inside it. Tests: encounter outcome matrix, check success and failure, stale source scene, already-resolved objective, `any` versus `all`, same-commit authored-order tie-break, terminal completion, invalid successor (no close).
+1. **Schema + validation.** Add `AdventureObjectiveSchema`, the scene `objectives`/`completion` fields, the `ObjectiveAttempted`/`ObjectiveResolved` schemas, an optional `SceneClosed.summary`, and the validation rules. Tests: valid and invalid authored data (duplicate id, foreign encounter, foreign successor, `party-defeated`/`dm-ended` rejected, missing or empty `allowedOutcomes` rejected); legacy adventure and legacy `SceneClosed` still parse. *No runtime change.*
+2. **Pure evaluator** in `packages/engine/src/adventure/progression.ts`: `evaluateProgression(adventure, gameState, turnFacts) → { events, statePatch }`, with no I/O and with `nextSceneAfterClose` inside it. Tests: encounter outcome matrix (each outcome listed and unlisted in `allowedOutcomes`; an unlisted `enemies-fled` does not resolve), check success and failure, stale source scene, already-resolved objective, `any` versus `all`, same-commit authored-order tie-break, terminal completion, invalid successor (no close).
 3. **Room commit seam.** Record `encounterId`/`sceneId` on combat state at `start_combat`. Behind the flag, strip runner `ObjectiveResolved`/`SceneClosed`, apply the gates, call the evaluator, extend `writes` and the snapshot in the step-2 `writeTurn`, generate `transitionKey`, set `lastClosed`, and derive the late-join scene boundary from it. Tests: the gate matrix (each gate failing alone means no events and no state change); the deferred-trigger case (held or fallback final narration, then resolution on the next commit); a forged runner `ObjectiveResolved` dropped; a fault injected inside `writeTurn` rolls back all progression; duplicate action and restart recovery produce one transition.
 4. **`attempt_objective` tool.** Offer the tool only with the flag ON and only for the current scene's unresolved `check` objectives. Authored DC, no model advantage. Tests: unknown/foreign/resolved objective rejected; the model cannot pass a DC or advantage; a success resolves exactly once.
 5. **Summary relocation + legacy cutover.** With the flag ON, remove the `close_scene` affordance and the runner's pre-commit `closeScene` call; run the post-commit idempotent summary plus the on-load retry. Tests: summary failure leaves the scene advanced; the orphan-summary ordering (summary persisted, turn commit failed) is impossible; retry writes one row; rewind removes it.
@@ -320,11 +321,13 @@ Every slice is flag-gated and default OFF. Each lands with its failing tests fir
 
 Slices 1, 2, and 4's tool schema can proceed in parallel. Slice 3 depends on 1 and 2. Slice 5 depends on 3. Slice 7 gates any flag enablement.
 
+### Decision 4 — flag-OFF keeps the legacy path (decided by Chris)
+
+While `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is OFF, the legacy `close_scene` path is unchanged from current behavior. It is removed only when the flag is ON, where every close goes through the evaluator and commit seam above. This supersedes the earlier flag-OFF wording ("Feature flag": reject and do not fall through to the legacy path; "Consequences": feature-off sessions cannot progress; acceptance test 1 and revision case (c): no legacy ungated route with the flag OFF). With the flag ON those requirements still hold: no legacy or leave-judge route may bypass the gate, and the flag is re-checked at commit. Slice 5 tests both settings: flag OFF leaves legacy `close_scene` behavior unchanged; flag ON removes it.
+
 ### Needs Chris
 
-1. **Flag-OFF behaviour.** The earlier text says that flag OFF rejects *all* progression, including the legacy `close_scene` path. If kept, production sessions (flag OFF) stop progressing scenes as soon as slice 5 lands. Recommendation: while the flag is OFF, leave the legacy path exactly as it is today, and remove it only when the flag is ON. Then the flag is a clean A/B switch and its default does not regress live play. This reverses an earlier recorded decision, so it needs explicit sign-off.
-2. **Adventure #1 objectives.** Choose which encounter outcome or authored check completes each scene, and which branch each one selects. This is design and content work, not engineering.
-3. **Encounter outcome default.** The proposed default is `party-victory` and `enemies-fled`, with defeat routed only through TPK. Confirm that fleeing enemies should count as success.
+1. **Adventure #1 objectives.** Choose which encounter outcome or authored check completes each scene, which `allowedOutcomes` each encounter objective lists, and which branch each one selects. This is design and content work, not engineering.
 
 ### Verification record
 
