@@ -230,3 +230,102 @@ Evaluate against full authoritative server state, but disclose only the existing
 5. For every seat, assert projected state contains only the ADR-042 allowlist and safe destination title; hidden objective/encounter identifiers, trigger cause, canonical sequence, and gate reason are absent. Repeated snapshots replace state without applying another transition.
 
 **Implementation remains blocked** until (a) the objective data model/producer is decided and (b) the pre-existing ADR-042 atomic-commit feasibility precondition is completed. This is a design proposal, not a rollout authorization; the ADR-042 flag remains default OFF.
+
+## Addendum — authored objectives and commit feasibility resolved (2026-11-03, proposed)
+
+Append-only. This resolves the two blockers recorded in the deterministic-trigger addendum above: (a) no authored objective model or `ObjectiveResolved` producer, and (b) the open atomic-commit feasibility precondition. It narrows that addendum where they conflict. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
+
+### Decision 1 — one authored concept: the scene objective
+
+Combat and non-combat progression use one concept. An encounter outcome is an objective; a combat ending does not close a scene directly. Every close therefore goes through one evaluator and one event path.
+
+Add to `AdventureSceneSchema` (`packages/schema/src/adventure.ts`):
+
+```ts
+const ObjectiveBase = {
+  id: z.string().min(1),                           // unique across the adventure
+  nextSceneId: z.string().min(1).optional(),       // must be in the scene's nextSceneIds
+};
+export const AdventureObjectiveSchema = z.discriminatedUnion('kind', [
+  z.object({ ...ObjectiveBase, kind: z.literal('encounter'),
+    encounterId: z.string().min(1),                // must be in the scene's encounterIds
+    outcomes: z.array(z.enum(['party-victory', 'enemies-fled'])).min(1)
+      .default(['party-victory', 'enemies-fled']) }).strict(),
+  z.object({ ...ObjectiveBase, kind: z.literal('check'),
+    ability: AbilitySchema, skill: SkillSchema.optional(),
+    dc: z.int().min(5).max(30) }).strict(),
+]);
+// AdventureSceneSchema gains:
+objectives: z.array(AdventureObjectiveSchema).default([]),
+completion: z.enum(['any', 'all']).default('any'),
+```
+
+There are exactly two predicates, and each resolves from facts the server already owns:
+
+- **`encounter`** resolves when the room combat state for that encounter has `ended.outcome` in `outcomes`. The outcome comes from `combatOutcome` (`apps/server/src/room/combatEngine.ts:150–157`), a pure function of entity HP and liveness. `party-defeated` cannot be authored, because the TPK resolution flow (`Room.chooseTpkResolution`) owns that outcome. `dm-ended` (`combatBootstrap.ts:516`, emitted when the model clears engine combat) is never a resolving outcome, because it is a model assertion and not a rules result.
+- **`check`** resolves when the server rolls a success against the **authored** ability, skill, and DC. The existing `request_check` tool takes `dc` and `advantage` from the model (`packages/engine/src/tools/check.ts:34–42`), so it cannot resolve an objective. Add one DM tool, `attempt_objective({ objectiveId, actorId })`. It accepts only an objective id offered for the current scene and an actor in the session. It reads ability, skill, and DC from authored data, rolls through the existing `abilityCheck`, and ignores any model advantage (conditions still apply). It emits the normal `RollEvent` plus `ObjectiveAttempted { objectiveId, success }`. The model decides *when* to attempt, the same way it decides when to call `start_combat` with an authored encounter key. The server decides the outcome.
+
+Validation, added to `validateAdventure` (`packages/engine/src/adventure/validate.ts`): objective ids are unique across the adventure; `encounterId` belongs to the same scene's `encounterIds`; `nextSceneId` belongs to the same scene's `nextSceneIds`; a scene with `completion: 'all'` has at least one objective. A scene with no objectives cannot progress while the flag is ON. That is intentional: progression requires authored intent. See "Needs Chris" for adventure #1 content.
+
+**Successor selection** stays inside `nextSceneAfterClose`. The evaluator passes the `nextSceneId` of the objective that satisfied completion. If several objectives resolve in the same commit, the first one in authored array order wins. When that objective has no `nextSceneId`, selection falls back to the authored default (`nextSceneIds[0]`), and an empty `nextSceneIds` completes the adventure. The server never selects a successor from model text.
+
+### Decision 2 — `ObjectiveResolved` has exactly one producer
+
+```ts
+ObjectiveResolved: { type: 'ObjectiveResolved', sceneId, objectiveId,
+                     cause: 'encounter-ended' | 'check-succeeded' }   // .strict()
+```
+
+Only the room progression evaluator produces it, at the commit seam below. No tool executor emits it. `Room` drops any `ObjectiveResolved` or `SceneClosed` in a runner `result.events`. That makes model-originated or forged events impossible by construction, with no need to verify their provenance. `ObjectiveAttempted` is an input fact. The evaluator re-validates it before resolving: the objective must belong to the *current* scene, must be unresolved, and the attempt must have succeeded.
+
+Progress lives in the snapshotted game state as `resolvedObjectiveIds: string[]`, next to the existing `sceneId`/`adventureCompleted` fields (`productionTurnRunner.ts:111–128`). Room combat state gains `encounterId` and `sceneId`, set when `start_combat` succeeds. Today the encounter key reaches only `resolvedEncounters`, which records encounter *starts* (`productionTurnRunner.ts:757–763`), so a `CombatEnded` cannot currently be tied to an authored encounter. These are additive optional fields; legacy snapshots parse unchanged.
+
+**Replay.** Snapshots carry `sceneId`, `resolvedObjectiveIds`, and `lastClosed`. The event log carries `ObjectiveResolved` and `SceneClosed` in the same turn as the state change. Recovery through `recoverRoom` and the latest snapshot therefore restores progression without re-evaluating anything. Rewind restores the prior snapshot, which un-resolves objectives and un-closes the scene together. `writeTurn` already deletes the scene summary for a reverted turn in the same transaction (`persistence/index.ts:615–623`).
+
+**Idempotency** follows from state, not from a key. An objective resolves only if it is absent from `resolvedObjectiveIds`. A scene closes only if `sceneId` still equals the source. Both checks run under the room mailbox and the `writeTurn` session-row lock plus lease fence. A duplicate delivery is rejected earlier by the existing `actionIds` dedupe in the snapshot. `transitionKey` stays opaque metadata and is never an idempotency input.
+
+**Hidden information.** `ObjectiveAttempted`, `ObjectiveResolved`, and the new combat-state fields are server-only. Add them to the visibility table as send-to-no-one, which is the existing fail-closed default for unlisted types (`eventVisibility.ts:1–5`). Objective definitions go to the DM prompt for the current scene only, like encounter keys today; they never go to the client. The player-visible surface is unchanged from the earlier addenda: the normal roll display for the attempt, plus the `sceneProgression` StateSync allowlist and the safe destination title. The accepted inference residual is the same as before: a scene change shows that some authored gate fired, but not which one.
+
+### Decision 3 — feasibility settled: one existing transaction covers the durable outcome
+
+Verified against `origin/main` 2fb099e (repowise `get_context` on `Persistence.writeTurn`, `Room.ts`, and `transition.ts`, index at 956fbb7, then confirmed in source):
+
+1. `Persistence.transaction` (`apps/server/src/persistence/index.ts:150–191`) opens one `BEGIN`, locks the session row `FOR UPDATE`, locks and checks the `session_lease` fence, runs the work, and then commits or rolls back. `writeTurn` (`:428–678`) runs inside it: registry events, `appendEvents`, the reverted-summary delete, and `insertSnapshot` all share that client.
+2. The exploration and combat-narration commit is one `writeTurn` call (`Room.ts:6396–6404`), made inside `this.enqueue` (`:5987`). Its `writes` already contain the runner's events, `NarrationCompleted` and `ActionAccepted` (`:6056–6073`), combat events from `combatRuntime.reconcile`, `NarrationCommitted` for a combat turn (`:6252–6258`), and `GameStateCommitted` (`:6377–6382`). The snapshot it writes carries the full next game state.
+3. `CombatEnded` from a rules outcome commits **earlier**, in `commitCombat`'s own `writeTurn` (`Room.ts:6659`, write at `:6758`). The final combat turn's narration is then queued and committed later through step 2 with `combatTurnId`. This is acceptable: `CombatEnded` is an *input* fact that is already durable, and the progression outcome (`ObjectiveResolved` + `SceneClosed` + new state) does not need to share its transaction.
+4. Broadcast happens after `writeTurn` returns (`Room.ts:6405–6510`). On a write failure, `withCommittedHeadRecovery` reloads seq and state from storage (`:1594–1613`), so the in-memory head the evaluator reads equals the committed head for the leaseholder.
+
+**Selected design.** The evaluator runs inside the step-2 commit, after `writes` and `nextState` are built and before `writeTurn`. It appends `ObjectiveResolved…` and, when completion is met, a server-built `SceneClosed`, and it patches `sceneId`/`adventureCompleted`/`resolvedObjectiveIds`/`lastClosed` into the snapshot. That single existing transaction makes the durable outcome atomic. No outbox and no new table are needed.
+
+- **Summary** is moved out of the runner. Today `closeScene` commits its own transaction *before* the room commit (`productionTurnRunner.ts:1487–1504`, `dm/memory.ts:395–415`). Under the new design it becomes a post-commit derived step keyed by the committing turn id, which is the private commit identity and is already stored as `scene_summaries.turn_id`. It is already idempotent through the unique `(session_id, scene_id)` index with `ON CONFLICT DO NOTHING` (`migrations/0015`). Recovery needs no queue: on room load and after each commit, any committed `SceneClosed` without a summary row is retried. A failed summary never affects progression. The server-built `SceneClosed` carries no model-written `summary` field. The current schema requires one (`packages/schema/src/dm-events.ts:63–70`); make it optional, so that legacy events still parse.
+- **Delivery** stays post-commit StateSync. Reconnect recovery uses the StateSync projection, as already decided. A network send is not claimed to be transactional.
+
+**Gates, restated against real events.** The evaluator runs only when this commit contains a non-fallback `NarrationCompleted` for the action; it is not a clarification turn (`result.clarification` unset); `moderationHeld` is false; `openClarifications` is empty after the commit; no combat is active (no `combatRoom`, or `combatRoom.ended`); the flag is ON; and the adventure loaded. If any gate fails, nothing is emitted. **A trigger is deferred, not lost:** resolution reads committed state (`combatRoom.ended` plus its `encounterId`, or the commit's `ObjectiveAttempted`), so a combat whose final narration was held or hit the fallback (`commitCombatFallback`, `Room.ts:3133`, which never runs the evaluator) still resolves the encounter objective at the next eligible commit. A failed `ObjectiveAttempted` resolves nothing and can be attempted again later.
+
+This **marks the atomic-commit feasibility precondition complete** for the durable outcome. Other `writeTurn` callers (`commitGameState`, TPK/checkpoint paths, seat/presence `persist`) never run the evaluator and cannot close a scene.
+
+**Pre-existing gap noted, not fixed here.** `sceneBoundaryPending` (`Room.ts:918`, set at `:6407`) is process-local, so a restart between a close and the next turn drops that late-join boundary. Slice 3 below derives it from `lastClosed` instead.
+
+### Ordered implementation plan (card-sized, tests first)
+
+Every slice is flag-gated and default OFF. Each lands with its failing tests first, and each is mergeable alone.
+
+1. **Schema + validation.** Add `AdventureObjectiveSchema`, the scene `objectives`/`completion` fields, the `ObjectiveAttempted`/`ObjectiveResolved` schemas, an optional `SceneClosed.summary`, and the validation rules. Tests: valid and invalid authored data (duplicate id, foreign encounter, foreign successor, `party-defeated`/`dm-ended` rejected); legacy adventure and legacy `SceneClosed` still parse. *No runtime change.*
+2. **Pure evaluator** in `packages/engine/src/adventure/progression.ts`: `evaluateProgression(adventure, gameState, turnFacts) → { events, statePatch }`, with no I/O and with `nextSceneAfterClose` inside it. Tests: encounter outcome matrix, check success and failure, stale source scene, already-resolved objective, `any` versus `all`, same-commit authored-order tie-break, terminal completion, invalid successor (no close).
+3. **Room commit seam.** Record `encounterId`/`sceneId` on combat state at `start_combat`. Behind the flag, strip runner `ObjectiveResolved`/`SceneClosed`, apply the gates, call the evaluator, extend `writes` and the snapshot in the step-2 `writeTurn`, generate `transitionKey`, set `lastClosed`, and derive the late-join scene boundary from it. Tests: the gate matrix (each gate failing alone means no events and no state change); the deferred-trigger case (held or fallback final narration, then resolution on the next commit); a forged runner `ObjectiveResolved` dropped; a fault injected inside `writeTurn` rolls back all progression; duplicate action and restart recovery produce one transition.
+4. **`attempt_objective` tool.** Offer the tool only with the flag ON and only for the current scene's unresolved `check` objectives. Authored DC, no model advantage. Tests: unknown/foreign/resolved objective rejected; the model cannot pass a DC or advantage; a success resolves exactly once.
+5. **Summary relocation + legacy cutover.** With the flag ON, remove the `close_scene` affordance and the runner's pre-commit `closeScene` call; run the post-commit idempotent summary plus the on-load retry. Tests: summary failure leaves the scene advanced; the orphan-summary ordering (summary persisted, turn commit failed) is impossible; retry writes one row; rewind removes it.
+6. **Projection + client** (the earlier addendum's cards 1 and 3, unchanged): `sceneProgression` in StateSync, and a client reducer that replaces state from snapshots.
+7. **Adventure #1 content.** Author objectives for every scene of `adventure:01-hollow-under-marrowfell`, then run an end-to-end flag-ON play-through fixture. This slice is blocked on the content decision below.
+
+Slices 1, 2, and 4's tool schema can proceed in parallel. Slice 3 depends on 1 and 2. Slice 5 depends on 3. Slice 7 gates any flag enablement.
+
+### Needs Chris
+
+1. **Flag-OFF behaviour.** The earlier text says that flag OFF rejects *all* progression, including the legacy `close_scene` path. If kept, production sessions (flag OFF) stop progressing scenes as soon as slice 5 lands. Recommendation: while the flag is OFF, leave the legacy path exactly as it is today, and remove it only when the flag is ON. Then the flag is a clean A/B switch and its default does not regress live play. This reverses an earlier recorded decision, so it needs explicit sign-off.
+2. **Adventure #1 objectives.** Choose which encounter outcome or authored check completes each scene, and which branch each one selects. This is design and content work, not engineering.
+3. **Encounter outcome default.** The proposed default is `party-victory` and `enemies-fled`, with defeat routed only through TPK. Confirm that fleeing enemies should count as success.
+
+### Verification record
+
+Source read in the worktree at `origin/main` 2fb099e plus this branch: `apps/server/src/persistence/index.ts:150–191, 428–678`; `apps/server/src/room/Room.ts:918, 1381–1392, 1581–1613, 3133–3224, 5987–6512, 6659–6760, 6947–6990`; `apps/server/src/room/productionTurnRunner.ts:111–128, 368–395, 745–770, 1050–1063, 1430–1530`; `apps/server/src/room/combatEngine.ts:150–190`; `apps/server/src/room/combatBootstrap.ts:500–518`; `apps/server/src/room/eventVisibility.ts:1–30`; `packages/engine/src/tools/check.ts`; `packages/engine/src/adventure/{transition,validate}.ts`; `packages/schema/src/{adventure,events,dm-events}.ts`; `apps/server/src/dm/memory.ts:390–420`; `apps/server/migrations/0015_scene_summary_idempotency.sql`. Repowise `get_context` was used for orientation (index 956fbb7); every claim above was confirmed in source. This is a documentation-only change, and no tests were run.
