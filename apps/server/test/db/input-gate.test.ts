@@ -220,6 +220,60 @@ describe('gateway input gate', () => {
     }
   }, 30_000);
 
+  it('a same-actionId retry reaches the Room after the gate throws', async () => {
+    let gateCalls = 0;
+    gate = {
+      check: async () => 'allow',
+      checkDetailed: async () => {
+        gateCalls += 1;
+        if (gateCalls === 1) throw new Error('connect ECONNREFUSED 10.0.0.5');
+        return { decision: 'allow', attributable: false, source: 'judge' };
+      },
+    } as InputGate;
+    const submit = vi
+      .spyOn(Room.prototype, 'submitAction')
+      .mockImplementation(async function (
+        this: Room,
+        _account,
+        _actionId,
+        _text,
+        _name,
+        receiptSeq,
+      ) {
+        this.completeActionReceipt(receiptSeq);
+        return true;
+      });
+    connections.resetAuthAttemptHistory();
+    // A second seat keeps this test's two submissions off the first account's
+    // per-account action budget, which the later parallel test relies on.
+    const ws = await openSocket(tokens[1]!);
+    try {
+      const actionId = randomUUID();
+      const envelope = JSON.stringify({
+        actionId,
+        type: 'PlayerAction',
+        payload: { text: 'A calm plan.' },
+        lastSeq: 0,
+      });
+      ws.send(envelope);
+      let failure = await nextMessage(ws);
+      while (failure.type !== 'Error') failure = await nextMessage(ws);
+      expect(failure).toMatchObject({
+        type: 'Error',
+        payload: { code: 'TURN_FAILED', actionId },
+      });
+      expect(submit).not.toHaveBeenCalled();
+
+      ws.send(envelope);
+      await vi.waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+      expect(submit.mock.calls[0]?.[1]).toBe(actionId);
+      await expect(submit.mock.results[0]?.value).resolves.toBe(true);
+    } finally {
+      ws.close();
+      submit.mockRestore();
+    }
+  }, 30_000);
+
   it('a capacity-limited action gets a neutral retryable busy response', async () => {
     gate = testGate(async () => 'busy');
     const submit = vi.spyOn(Room.prototype, 'submitAction');

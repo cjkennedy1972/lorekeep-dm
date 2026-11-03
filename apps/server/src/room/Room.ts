@@ -5260,7 +5260,7 @@ export class Room {
       const seat = this.state.seats.find(
         (item) => item.accountId === accountId,
       );
-      if (!seat) throw new Error('Account is not seated');
+      if (!seat) throw new RoomSeatRequiredError();
       this.assertSeatBound(seat);
       if (!this.turnRunner) throw new Error('Solo turn runner unavailable');
       if (receiptSeq !== undefined)
@@ -5307,17 +5307,25 @@ export class Room {
         submission,
         queued,
       });
-      this.broadcast({
-        seq: this.seq,
-        type: queued ? 'RoundActionQueued' : 'RoundActionAccepted',
-        payload: {
-          roundId: round.roundId,
-          seatId: seat.seatId,
-          actionId,
-          receiptSeq: order,
-        },
-      } as ServerMessage);
-      this.sendSeatPrivateRoundSync(accountId);
+      // The action is durable once persisted; a failed notification must not report it as failed.
+      try {
+        this.broadcast({
+          seq: this.seq,
+          type: queued ? 'RoundActionQueued' : 'RoundActionAccepted',
+          payload: {
+            roundId: round.roundId,
+            seatId: seat.seatId,
+            actionId,
+            receiptSeq: order,
+          },
+        } as ServerMessage);
+        this.sendSeatPrivateRoundSync(accountId);
+      } catch (error) {
+        console.error(
+          `Round action notification failed for ${this.sessionId}`,
+          error,
+        );
+      }
       if (!queued) {
         const required = this.state.round!.eligibleSeatIds.filter((seatId) =>
           this.state.seats.some(
@@ -5351,7 +5359,7 @@ export class Room {
       const seat = this.state.seats.find(
         (item) => item.accountId === accountId,
       );
-      if (!seat) throw new Error('Account is not seated');
+      if (!seat) throw new RoomSeatRequiredError();
       this.assertSeatBound(seat);
       if (!this.turnRunner) throw new Error('Solo turn runner unavailable');
       if (this.actionIds.has(actionId) || this.pendingActions.has(actionId))
@@ -7671,7 +7679,7 @@ export class Room {
   /** Current seat for an account; in party mode it must also hold a live binding. */
   private requireBoundSeat(accountId: string): Seat {
     const seat = this.state.seats.find((item) => item.accountId === accountId);
-    if (!seat) throw new Error('Account is not seated');
+    if (!seat) throw new RoomSeatRequiredError();
     this.assertSeatBound(seat);
     return seat;
   }

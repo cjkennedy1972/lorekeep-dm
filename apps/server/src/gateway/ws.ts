@@ -2458,13 +2458,15 @@ export function installGateway(
                     },
                   });
               })
-              .catch((error: unknown) =>
+              .catch((error: unknown) => {
+                // Release the receipt first so a same-actionId retry is not seen as a duplicate.
+                room.completeActionReceipt(actionReceiptSeq);
                 send({
                   seq: room.seq,
                   type: 'Error',
                   payload: actionFailureErrorPayload(error, msg.actionId),
-                }),
-              );
+                });
+              });
             return;
           }
           send({

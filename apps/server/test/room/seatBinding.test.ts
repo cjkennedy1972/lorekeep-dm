@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   Room,
   RoomSeatRequiredError,
@@ -613,6 +613,43 @@ describe('ADR-035 party seat gating', () => {
     await expect(
       room.submitAction(accountA, randomUUID(), 'I look around'),
     ).resolves.toBe(true);
+  });
+
+  it('keeps a persisted round action accepted when only its broadcast throws', async () => {
+    const { room, accountA } = party({ roundsEnabled: true });
+    const original = (
+      room as unknown as { broadcast: (message: { type: string }) => void }
+    ).broadcast.bind(room);
+    let threw = false;
+    const broadcast = vi
+      .spyOn(room as unknown as { broadcast: () => void }, 'broadcast')
+      .mockImplementation((message: { type: string }) => {
+        if (
+          (message.type === 'RoundActionAccepted' ||
+            message.type === 'RoundActionQueued') &&
+          !threw
+        ) {
+          threw = true;
+          throw new Error('socket closed');
+        }
+        original(message);
+      });
+    await expect(
+      room.submitAction(accountA, randomUUID(), 'I look around'),
+    ).resolves.toBe(true);
+    expect(threw).toBe(true);
+    broadcast.mockRestore();
+  });
+
+  it('refuses round actions and edits from an account with no seat as a seat refusal', async () => {
+    const { room } = party({ roundsEnabled: true });
+    const stranger = randomUUID();
+    await expect(
+      room.submitAction(stranger, randomUUID(), 'I attack'),
+    ).rejects.toBeInstanceOf(RoomSeatRequiredError);
+    await expect(
+      room.editAction(stranger, randomUUID(), randomUUID(), 'I attack'),
+    ).rejects.toBeInstanceOf(RoomSeatRequiredError);
   });
 
   it('resolves the combat actor from the bound seat and rejects unbound seats', async () => {
