@@ -332,3 +332,92 @@ While `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is OFF, the legacy `close_scene
 ### Verification record
 
 Source read in the worktree at `origin/main` 2fb099e plus this branch: `apps/server/src/persistence/index.ts:150–191, 428–678`; `apps/server/src/room/Room.ts:918, 1381–1392, 1581–1613, 3133–3224, 5987–6512, 6659–6760, 6947–6990`; `apps/server/src/room/productionTurnRunner.ts:111–128, 368–395, 745–770, 1050–1063, 1430–1530`; `apps/server/src/room/combatEngine.ts:150–190`; `apps/server/src/room/combatBootstrap.ts:500–518`; `apps/server/src/room/eventVisibility.ts:1–30`; `packages/engine/src/tools/check.ts`; `packages/engine/src/adventure/{transition,validate}.ts`; `packages/schema/src/{adventure,events,dm-events}.ts`; `apps/server/src/dm/memory.ts:390–420`; `apps/server/migrations/0015_scene_summary_idempotency.sql`. Repowise `get_context` was used for orientation (index 956fbb7); every claim above was confirmed in source. This is a documentation-only change, and no tests were run.
+
+## Revision — Bastion security review of the 2026-11-03 addendum (2026-11-03, proposed)
+
+Append-only. This revision answers Bastion's NO-GO on the 2026-11-03 addendum (eight findings). Where it conflicts with that addendum or anything earlier, this revision wins. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
+
+### R1 (High) — `attempt_objective` gets one attempt, made by the acting seat
+
+**One attempt per objective per scene.** The first committed attempt spends the objective, whether it succeeds or fails. A failed objective cannot be attempted again in that scene. There is no authored retry count in this revision. Snapshotted game state replaces the `ObjectiveAttempted`-as-input idea with `objectiveAttempts: Record<objectiveId, 'succeeded' | 'failed'>`, written in the same `writeTurn` as the turn that made the attempt. That write happens whatever the narration gates decide, so a successful attempt whose narration was held or fell back is recorded, and it resolves at the next eligible commit. This is the same deferral that encounter objectives get. The evaluator resolves a check objective only when it is `'succeeded'` in `objectiveAttempts` and is absent from `resolvedObjectiveIds`. Rewind restores the earlier snapshot, so it un-spends attempts together with everything else. Rewind is already an authoritative host action and is not a re-roll vector the model can reach.
+
+The tool rejects an attempt, without rolling, when the objective is not an unresolved `check` objective of the current scene or already appears in `objectiveAttempts`. It also rejects a second `attempt_objective` call in the same turn, using the same single-use pattern as `start_combat`'s `attemptState.startCombatCalled` (`productionTurnRunner.ts:838–847`). A turn that does not commit never spends the objective. Its roll must come from the committed RNG seed, so retrying the same action reproduces the same roll; a commit failure cannot be used to re-roll.
+
+**Dead-end authoring rule.** Spend-on-failure means a scene can become unable to progress. `validateAdventure` therefore rejects (a) a `completion: 'all'` scene that contains any `check` objective, and (b) a `completion: 'any'` scene whose objectives are all `check` objectives. Each scene must keep an encounter path, or a mix of objectives, that a failed check cannot close off. A fail-forward successor such as `onFailureNextSceneId` is out of scope. See "Needs Chris" item 2.
+
+**Actor binding.** The tool schema is `attempt_objective({ objectiveId })`. The model does not supply an actor. The server sets the actor to the character bound to the seat whose accepted action is being resolved (`actors[request.accountId]`, the same binding behind the existing `otherSeatIds` guard at `productionTurnRunner.ts:647–649, 945–951`). If any `actorId`, `dc`, `advantage`, or `skill` key is present, the call fails with `schema-violation` (strict schema). An NPC, another seat's character, or an unseated entity can never be the actor.
+
+**Not during combat.** `attempt_objective` is rejected with `illegal-transition` while combat is active, meaning `combatRoom` exists without `ended`, or engine combat has initiative. The tool is not offered on combat turns. Checks during combat stay on the existing combat rules path, and encounter objectives cover combat progression.
+
+Acceptance tests (add to slice 4):
+- A failed attempt spends the objective. A second attempt on that objective in the same scene, on the same turn or a later one, is rejected without a roll, and `objectiveAttempts` and the RNG state stay unchanged.
+- A second `attempt_objective` call in one turn is rejected.
+- A turn commit failure after an attempt leaves the objective unspent, and retrying the same action yields the identical roll.
+- A success under held or fallback narration is recorded and resolves at the next eligible commit, exactly once.
+- Any call carrying `actorId`, `dc`, `advantage`, or `skill` is rejected. In a two-seat party, seat B's accepted action rolls with seat B's character; it can never roll for seat A's character or for an NPC.
+- The call is rejected during active combat.
+- Validation rejects both dead-end shapes above.
+
+### R2 (High) — the attempt's wire roll carries no DC, reason, or objective label
+
+**Verified current behavior.** `RollEvent` (`packages/schema/src/events.ts:24–36`) carries `label`, `dc`, and `success`, and its schema is not strict. Its visibility rule masks only hidden entity ids (`eventVisibility.ts:30`). For a player character actor, the event therefore reaches every seat. `toWireEvent` (`combat.ts:735–786`) keeps `dc`/`success` on breakdown events and returns any other event unchanged (`{ ...event }`), so a `dcReason` or other extra field on a live `RollEvent` would pass through to `Room`'s per-viewer broadcast (`Room.ts:5904–5944`). The web client already renders `dc` and `dcReason` from the payload (`apps/web/src/features/narration/NarrationLog.tsx:54–63`, `RollBreakdown.tsx:18–60`). Today `request_check` emits no structured `RollEvent`. Its executor returns `{ result, rng }` without `events` (`check.ts:110–114`), so `executeTool` forwards `output.events = []` (`orchestrator.ts:378–395`). The only DC disclosure today is the model-facing tool summary `… vs DC N …` (`check.ts:113`), which the model can repeat in narration. The 2026-11-03 sentence "It emits the normal `RollEvent`" would therefore create a new channel that sends `dc`, `dcReason`, and `label` to all seats. That sentence is superseded.
+
+**Decision.** The attempt persists one server-only internal roll record, `ObjectiveRoll { objectiveId, actorId, total, autoFail, breakdown }`, which is send-to-no-one. It produces exactly one player-visible roll. That roll is built from an allowlist, and passing the internal event through is not allowed:
+
+`{ type: 'RollEvent', actorId, label, dice, rolls, modifier, total }`
+
+Here `label` is the skill's display name, or the ability's when there is no skill (for example `"Athletics check"`). It never contains the objective id or any authored text. The wire roll omits `dc`, `dcReason`, `success`, `breakdown.dc`, and any objective-naming field. `success` is omitted because, together with `total`, it bounds the hidden DC; the narration states the outcome. The model-facing tool summary says only success or failure, without the DC or the total. Objective definitions in the DM prompt give the id, ability, and skill, but not the DC. `abilityCheck` requires a non-empty `dcReason` (`checks.ts:40–43`), so the server passes a fixed internal constant that never leaves the server.
+
+Acceptance tests (slice 4): for every seat, including the actor's, the live and persisted-replay wire roll for an attempt has exactly the allowlisted keys, and `dc`, `dcReason`, `success`, the objective id, and the authored DC value are absent from the frame. The tool summary given to the model contains no DC and no total. The narration-history and StateSync payloads contain no objective id.
+
+### R3 (Med) — the runner `SceneClosed` strip applies only with the flag ON
+
+Supersedes "`Room` drops any `ObjectiveResolved` or `SceneClosed` in a runner `result.events`" (Decision 2) and slice 3's "strip runner `ObjectiveResolved`/`SceneClosed`" wording. With the flag OFF, `Room` does not touch a runner `SceneClosed`, and legacy `close_scene` behaves exactly as it does today (Decision 4). With the flag ON, `Room` drops every runner `SceneClosed`, and the evaluator is the only producer. Runner-supplied `ObjectiveResolved`, `ObjectiveAttempted`, and `ObjectiveRoll` (see R4) are dropped in both modes, because none of them has a legitimate legacy producer. Tests (slice 3 and slice 5): with the flag OFF, a legacy `close_scene` result commits its `SceneClosed` and transition unchanged, and runner `ObjectiveResolved`/`ObjectiveAttempted` are dropped. With the flag ON, a runner `SceneClosed` is dropped and nothing closes without the evaluator.
+
+### R4 (Med) — `Room` derives attempt success itself
+
+`Room` drops any runner-supplied `ObjectiveAttempted`. It never reads a success boolean from an event. The runner's `attempt_objective` executor hands the commit only the internal `ObjectiveRoll` from R2. At the commit seam, `Room` re-validates that roll against authoritative data:
+
+1. `objectiveId` is a `check` objective of the committed current scene, and it is absent from both `objectiveAttempts` and `resolvedObjectiveIds`.
+2. `actorId` equals the character bound to the committing action's seat.
+3. There is exactly one `ObjectiveRoll` in the commit.
+
+`Room` then computes `success = !autoFail && total >= dc`, using the DC it looks up itself from the loaded authored adventure. `Room` writes `objectiveAttempts[objectiveId]` and its own server-only `ObjectiveAttempted { objectiveId, success }`. A roll that fails validation is dropped: no attempt is recorded and no objective is spent. Tests (slice 3):
+- A forged runner `ObjectiveAttempted { success: true }` with no roll resolves nothing.
+- An `ObjectiveRoll` whose total is below the authored DC records `'failed'`, even if the runner's event says otherwise.
+- An `ObjectiveRoll` for another seat's actor, a foreign-scene objective, or a duplicate roll is dropped.
+
+### R5 (Med) — encounter resolution reads only room combat state
+
+The evaluator resolves an `encounter` objective only from the authoritative room state `combatRoom.ended.outcome`, together with the `combatRoom.encounterId`/`sceneId` recorded at `start_combat`. It never reads a `CombatEnded` event from `result.events`, the commit's writes, or the event log. This supersedes the 2026-11-02 trigger wording ("a terminal `CombatEnded` event"). Only `settle` sets `combatRoom.ended` (`combatEngine.ts:184–188`), from `combatOutcome`. The model-driven `dm-ended` path emits a `CombatEnded` event and deletes `combatRoom` instead of setting `ended` (`combatBootstrap.ts:510–517`). That path can therefore never resolve an encounter objective, and its encounter is already spent in `resolvedEncounters`. An author should not rely on an encounter objective as a scene's only path out if the DM is likely to end that encounter by hand; the R1 dead-end rule covers check objectives only. Tests (slice 2 and slice 3):
+- A forged or tool-emitted `CombatEnded { outcome: 'party-victory' }` with no matching `combatRoom.ended` resolves nothing.
+- A `dm-ended` combat resolves nothing.
+- A `combatRoom.ended` whose `encounterId` or `sceneId` differs from the objective's resolves nothing.
+
+### R6 (Med) — line 42's title wording is superseded
+
+The "Player experience" section (line 42) said to name the destination "using its player-safe authored title" and to "refresh scene-specific objectives/context". Both are explicitly superseded. No scene title, destination title, objective, or authored scene text goes on the wire for progression. The only player-visible progression data is the `sceneProgression` allowlist, with R7's aliases. The client shows a fixed generic message, such as "The scene has changed" or "The adventure has ended", driven by `lastClosed`/`completed`. The destination is introduced only by normal moderated DM narration on a later turn. Objectives are never projected to clients. "Refresh scene-specific context" applies only to the server-side DM prompt.
+
+### R7 (Low) — scene ids on the wire are opaque aliases
+
+Authored scene ids such as `scene:ambush-at-the-mill` can be spoilers. `currentSceneId`, `lastClosed.sceneId`, and `lastClosed.currentSceneId` are therefore never the authored id on the wire. The projection emits `sceneRef = base64url(HMAC-SHA256(serverKey, sessionId ‖ authoredSceneId))`, truncated to 22 characters. Because it is derived from a key, it needs no new storage and stays stable across restarts and reconnects for that session. It can't be reversed or guessed without the server key, and each session gets different aliases. Clients may only compare it for equality. Authored ids stay internal, in events, snapshots, and the prompt. Rotating the key changes the aliases; that is acceptable because StateSync replaces the client's scene view. The allowlist keys are unchanged; only their values are aliases. Pre-existing and out of scope: `CombatStarted.encounterId` is in the wire schema (`events.ts:41–46`) and its visibility rule does not strip it. I did not verify whether it is populated today. The new combat-state `encounterId`/`sceneId` fields stay server-only. Test (slice 6): for every seat, no StateSync or live frame contains an authored scene id. The alias is stable across reconnect and restart and differs between two sessions of the same adventure.
+
+### R8 (Low) — `enemies-fled` includes mixed kill-and-flee endings
+
+`combatOutcome` (`combatEngine.ts:150–156`) returns `party-victory` only when every enemy has `hp <= 0`. When no enemy is left standing but at least one fled instead of dying, it returns `enemies-fled`, even if the rest were killed. An objective that lists only `party-victory` therefore does not resolve if a single enemy flees. Authoring guidance: for "the party overcomes this encounter", list both `party-victory` and `enemies-fled`. List only `party-victory` when the story needs every enemy dead, for example when a survivor would raise the alarm, and accept that a flee then leaves that objective unresolved. Use separate objectives with different `nextSceneId`s when the two endings should branch. The engine does not add a partial-kill outcome. Slice 2's outcome matrix adds a mixed case: one enemy killed and one fled yields `enemies-fled`, and it resolves only an objective that lists `enemies-fled`.
+
+### Needs Chris (additions)
+
+2. **Fail-forward.** Under R1, a failed check spends its objective, and validation rejects scenes where that could leave no path out. Decide whether a later revision should add an authored failure successor so check-only scenes can be written.
+
+### Verification record
+
+Source read in the branch worktree at d395d56:
+- `packages/schema/src/events.ts:15–46`
+- `packages/engine/src/tools/check.ts:22–115`, `packages/engine/src/tools/{index,result}.ts`, `packages/engine/src/combat/checks.ts:20–100`
+- `apps/server/src/dm/orchestrator.ts:341–395, 790–810`
+- `apps/server/src/room/productionTurnRunner.ts:647–653, 780–1070`
+- `apps/server/src/room/eventVisibility.ts:1–80`, `apps/server/src/room/combat.ts:728–786`, `apps/server/src/room/Room.ts:5890–5944`, `apps/server/src/room/combatEngine.ts:149–188`, `apps/server/src/room/combatBootstrap.ts:505–518`
+- `apps/web/src/features/narration/NarrationLog.tsx:47–63`
+
+Repowise was not used; I read the files directly. Documentation-only change, no tests run.
