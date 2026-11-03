@@ -240,6 +240,36 @@ export function inputBlockErrorPayload<T extends string>(
       };
 }
 
+const ACTION_NOT_SENT = 'Your action could not be sent. It is kept; try again.';
+
+/**
+ * Sent when the gate or the room throws while taking a PlayerAction. The room's own refusals keep
+ * a non-retryable code (retrying would fail the same way); anything else (a store write, a lookup)
+ * is retryable and the cause stays server-side.
+ */
+export function actionFailureErrorPayload<T extends string>(
+  error: unknown,
+  actionId: T,
+) {
+  if (error instanceof RoomSeatRequiredError)
+    return {
+      code: 'ACTION_REJECTED' as const,
+      message: 'Action could not be accepted.',
+      actionId,
+    };
+  if (error instanceof Error && error.message === 'ACTION_REJECTED')
+    return {
+      code: 'ACTION_REJECTED' as const,
+      message: 'Action could not be accepted.',
+      actionId,
+    };
+  return {
+    code: 'TURN_FAILED' as const,
+    message: ACTION_NOT_SENT,
+    actionId,
+  };
+}
+
 export function installGateway(
   app: ReturnType<typeof createApp>,
   db: Pool,
@@ -2428,15 +2458,11 @@ export function installGateway(
                     },
                   });
               })
-              .catch(() =>
+              .catch((error: unknown) =>
                 send({
                   seq: room.seq,
                   type: 'Error',
-                  payload: {
-                    code: 'ACTION_REJECTED',
-                    message: 'Action could not be accepted.',
-                    actionId: msg.actionId,
-                  },
+                  payload: actionFailureErrorPayload(error, msg.actionId),
                 }),
               );
             return;
