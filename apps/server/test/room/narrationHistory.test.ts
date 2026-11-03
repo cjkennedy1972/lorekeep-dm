@@ -109,7 +109,9 @@ describe('narration history sync', () => {
     ).toEqual({ turns: [] });
   });
 
-  it('replays persisted narration on a same-sequence reconnect', async () => {
+  // Pins existing behavior: Room.subscribe already replays narration history on
+  // a same-sequence reconnect (no StateSync). This is coverage, not a regression fix.
+  it('pins existing same-sequence reconnect replay of persisted narration without StateSync', async () => {
     const accountId = randomUUID();
     const room = setup(false, accountId);
     const first = recorder();
@@ -118,8 +120,8 @@ describe('narration history sync', () => {
 
     await room.subscribe(accountId, reconnect, room.seq);
 
-    expect(reconnect.sent).not.toContain(
-      expect.objectContaining({ type: 'StateSync' }),
+    expect(reconnect.sent.some((message) => message.type === 'StateSync')).toBe(
+      false,
     );
     expect(
       reconnect.sent.find((message) => message.type === 'NarrationHistory')
