@@ -1643,3 +1643,111 @@ describe('combatRoom per-viewer projection (ADR-034 §3, ADR-035)', () => {
       ]);
   });
 });
+
+describe('action receipts after a refused or failed action', () => {
+  type Internals = {
+    state: {
+      round?: {
+        roundId: string;
+        submissions: { accountId: string; actionId: string; text: string }[];
+      };
+    };
+    flushCompletedActionDecisions(roundId: string): Promise<void>;
+    assertSeatBound(seat: unknown): void;
+    requireBoundSeat(accountId: string): unknown;
+  };
+  const internals = (room: Room) => room as unknown as Internals;
+  const submissionsFor = (room: Room, accountId: string) =>
+    internals(room).state.round!.submissions.filter(
+      (item) => item.accountId === accountId,
+    );
+
+  it('releases a submit receipt whose action throws, so a same-actionId retry is accepted and nothing is replayed at round close', async () => {
+    const { room, accountA, accountB } = party({
+      roundsEnabled: true,
+      bindB: true,
+    });
+    await expect(
+      room.submitAction(accountA, randomUUID(), 'I look around'),
+    ).resolves.toBe(true);
+    const roundId = internals(room).state.round!.roundId;
+    const actionId = randomUUID();
+    const failedSeq = room.registerActionReceipt(actionId, accountB);
+    vi.spyOn(internals(room), 'assertSeatBound').mockImplementationOnce(() => {
+      throw new Error('simulated seat failure');
+    });
+    await expect(
+      room.submitAction(accountB, actionId, 'I attack', undefined, failedSeq),
+    ).rejects.toThrow('simulated seat failure');
+    await internals(room).flushCompletedActionDecisions(roundId);
+    expect(submissionsFor(room, accountB)).toEqual([]);
+
+    const retrySeq = room.registerActionReceipt(actionId, accountB);
+    await expect(
+      room.submitAction(accountB, actionId, 'I attack', undefined, retrySeq),
+    ).resolves.toBe(true);
+    expect(submissionsFor(room, accountB).map((item) => item.actionId)).toEqual(
+      [actionId],
+    );
+  });
+
+  it('releases an edit receipt whose edit throws, so a same-actionId retry is applied and the old text is kept at round close', async () => {
+    const { room, accountA } = party({ roundsEnabled: true, bindB: true });
+    const originalId = randomUUID();
+    await expect(
+      room.submitAction(accountA, originalId, 'I look around'),
+    ).resolves.toBe(true);
+    const roundId = internals(room).state.round!.roundId;
+    const editId = randomUUID();
+    const failedSeq = room.registerActionReceipt(editId, accountA);
+    vi.spyOn(internals(room), 'requireBoundSeat').mockImplementationOnce(() => {
+      throw new Error('simulated seat failure');
+    });
+    await expect(
+      room.editAction(accountA, editId, originalId, 'I attack', failedSeq),
+    ).rejects.toThrow('simulated seat failure');
+    await internals(room).flushCompletedActionDecisions(roundId);
+    expect(submissionsFor(room, accountA).map((item) => item.text)).toEqual([
+      'I look around',
+    ]);
+
+    const retrySeq = room.registerActionReceipt(editId, accountA);
+    await expect(
+      room.editAction(accountA, editId, originalId, 'I attack', retrySeq),
+    ).resolves.toBe('edited');
+    expect(submissionsFor(room, accountA).map((item) => item.text)).toEqual([
+      'I attack',
+    ]);
+  });
+
+  it('keeps delivering RoundActionAccepted to the second seat when the first seat send throws, and resyncs the failed seat', async () => {
+    const { room, accountA, accountB } = party({
+      roundsEnabled: true,
+      bindB: true,
+    });
+    const failingSend = vi.fn(() => {
+      throw new Error('socket closed');
+    });
+    const failing = {
+      send: (message: { type: string }) => {
+        if (message.type === 'RoundActionAccepted') failingSend();
+      },
+      close: vi.fn(),
+    };
+    const received: string[] = [];
+    const healthy = {
+      send: (message: { type: string }) => received.push(message.type),
+    };
+    const connections = (
+      room as unknown as { connections: Map<string, unknown> }
+    ).connections;
+    connections.set(accountA, failing);
+    connections.set(accountB, healthy);
+    await expect(
+      room.submitAction(accountB, randomUUID(), 'I look around'),
+    ).resolves.toBe(true);
+    expect(failingSend).toHaveBeenCalled();
+    expect(received).toContain('RoundActionAccepted');
+    expect(failing.close).toHaveBeenCalledWith(1011, expect.any(String));
+  });
+});

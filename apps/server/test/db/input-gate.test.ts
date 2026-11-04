@@ -446,6 +446,51 @@ describe('gateway input gate', () => {
     ws.close();
     submit.mockRestore();
   });
+
+  it('classifies a thrown edit like a PlayerAction failure: transient retryable, refusal not', async () => {
+    gate = testGate(async () => 'allow');
+    // Mirror Room.editAction, which releases its receipt before it can throw.
+    const failEdit = (message: string) =>
+      function (this: Room, ...args: unknown[]) {
+        this.completeActionReceipt(args[4] as number | undefined);
+        return Promise.reject(new Error(message));
+      };
+    const edit = vi
+      .spyOn(Room.prototype, 'editAction')
+      .mockImplementationOnce(
+        failEdit('connect ECONNREFUSED 10.0.0.5') as never,
+      )
+      .mockImplementationOnce(failEdit('ACTION_REJECTED') as never);
+    const ws = await openSocket(tokens[1]!);
+    try {
+      const actionId = randomUUID();
+      const envelope = JSON.stringify({
+        actionId,
+        type: 'EditAction',
+        payload: { editedActionId: randomUUID(), text: 'A calm revision.' },
+        lastSeq: 0,
+      });
+      ws.send(envelope);
+      let transient = await nextMessage(ws);
+      while (transient.type !== 'Error') transient = await nextMessage(ws);
+      expect(transient).toMatchObject({
+        type: 'Error',
+        payload: { code: 'TURN_FAILED', actionId },
+      });
+      expect(JSON.stringify(transient)).not.toContain('ECONNREFUSED');
+
+      ws.send(envelope);
+      let refusal = await nextMessage(ws);
+      while (refusal.type !== 'Error') refusal = await nextMessage(ws);
+      expect(refusal).toMatchObject({
+        type: 'Error',
+        payload: { code: 'ACTION_REJECTED', actionId },
+      });
+    } finally {
+      ws.close();
+      edit.mockRestore();
+    }
+  }, 30_000);
 });
 
 describe('moderation_log row', () => {

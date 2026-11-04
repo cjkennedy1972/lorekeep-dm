@@ -5339,13 +5339,21 @@ export class Room {
         closeAllIn = required.every((seatId) => accepted.has(seatId));
       }
       return true;
-    }).then(async (accepted) => {
-      if (accepted && closeAllIn)
-        queueMicrotask(() => {
-          void this.resolveRound('all-submitted').catch(() => undefined);
-        });
-      return accepted;
-    });
+    }).then(
+      async (accepted) => {
+        if (accepted && closeAllIn)
+          queueMicrotask(() => {
+            void this.resolveRound('all-submitted').catch(() => undefined);
+          });
+        return accepted;
+      },
+      (error: unknown) => {
+        // A refused or failed attempt must not stay replayable at round close or block a retry.
+        if (receiptSeq !== undefined)
+          this.completedActionDecisions.delete(receiptSeq);
+        throw error;
+      },
+    );
   }
 
   private submitLegacyAction(
@@ -5467,6 +5475,11 @@ export class Room {
       await this.persist('RoundActionEdited', { submission: updated, queued });
       this.sendSeatPrivateRoundSync(accountId);
       return 'edited';
+    }).catch((error: unknown) => {
+      // A refused or failed edit must not stay replayable at round close or block a retry.
+      if (receiptSeq !== undefined)
+        this.completedActionDecisions.delete(receiptSeq);
+      throw error;
     });
   }
 
@@ -7791,18 +7804,31 @@ export class Room {
 
   private broadcast(message: ServerMessage): void {
     for (const [accountId, connection] of this.connections) {
-      const personalized =
-        message.type === 'StateSync'
-          ? {
-              ...message,
-              payload: {
-                ...this.clientSyncPayload(accountId),
-              },
-            }
-          : message;
-      connection.send(
-        this.projectMessageForViewer(personalized, accountId) as ServerMessage,
-      );
+      try {
+        const personalized =
+          message.type === 'StateSync'
+            ? {
+                ...message,
+                payload: {
+                  ...this.clientSyncPayload(accountId),
+                },
+              }
+            : message;
+        connection.send(
+          this.projectMessageForViewer(
+            personalized,
+            accountId,
+          ) as ServerMessage,
+        );
+      } catch (error) {
+        // One dead socket must not starve the other seats; the failed seat resyncs on reconnect.
+        console.error(`Broadcast to seat failed for ${this.sessionId}`, error);
+        try {
+          connection.close?.(1011, 'Delivery failed; resync on reconnect');
+        } catch {
+          // The socket is already unusable; the close path cleans up the connection.
+        }
+      }
     }
   }
 

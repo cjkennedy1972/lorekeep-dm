@@ -2157,7 +2157,14 @@ export function installGateway(
               return;
             }
             // A retry of a committed edit is an idempotent no-op; do not invoke the judge again.
-            if (room.hasActionId(edit.data.actionId)) return;
+            if (
+              room.hasActionId(
+                edit.data.actionId,
+                actionReceiptSeq,
+                identity.accountId,
+              )
+            )
+              return;
             return app.inputGate
               .checkDetailed({
                 text: edit.data.payload.text,
@@ -2216,15 +2223,14 @@ export function installGateway(
                         },
                       });
                   })
-                  .catch(() =>
+                  .catch((error: unknown) =>
                     send({
                       seq: room.seq,
                       type: 'Error',
-                      payload: {
-                        code: 'ACTION_REJECTED',
-                        message: 'Edit request could not be accepted.',
-                        actionId: edit.data.actionId,
-                      },
+                      payload: actionFailureErrorPayload(
+                        error,
+                        edit.data.actionId,
+                      ),
                     }),
                   );
               });
