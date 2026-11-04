@@ -335,7 +335,7 @@ Source read in the worktree at `origin/main` 2fb099e plus this branch: `apps/ser
 
 ## Revision — Bastion security review of the 2026-11-03 addendum (2026-11-03, proposed)
 
-Append-only. This revision answers Bastion's NO-GO on the 2026-11-03 addendum (eight findings). Where it conflicts with that addendum or anything earlier, this revision wins. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
+Append-only. This revision responds to Bastion's NO-GO on the 2026-11-03 addendum (eight findings) by specifying the required behavior; nothing in it is implemented (see "Implementation status" at the end of this ADR). Where it conflicts with that addendum or anything earlier, this revision wins. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
 
 ### R1 (High) — `attempt_objective` gets one attempt, made by the acting seat
 
@@ -424,11 +424,11 @@ Repowise was not used; I read the files directly. Documentation-only change, no 
 
 ## Revision — Sentinel dead-end and Bastion round-2 findings (2026-11-03, proposed)
 
-Append-only. This revision answers Sentinel's NO-GO (a scene can become unable to progress) and Bastion's NO-GO on the R1–R8 revision. The decisions below were made by Atlas under Chris's delegation. Where this revision conflicts with anything above, this revision wins. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
+Append-only. This revision responds to Sentinel's NO-GO (a scene can become unable to progress) and Bastion's NO-GO on the R1–R8 revision. It specifies the required behavior; it does not close those findings in code. Each item is verified only by the slice acceptance tests listed with it, and none of it is implemented yet (see "Implementation status" at the end of this ADR). The decisions below were made by Atlas under Chris's delegation. Where this revision conflicts with anything above, this revision wins. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
 
 ### L1 — every scene has a guaranteed-liveness path (Sentinel)
 
-**What this guarantees.** No committed state can leave a scene unable to progress. It does not guarantee that the model takes the open path; the model still decides when to start combat or attempt a check.
+**Required behavior.** No committed state may leave a scene unable to progress. This is a specification, verified by the slice 1–3 acceptance tests below; current code does not provide it. It does not require that the model takes the open path; the model still decides when to start combat or attempt a check.
 
 **Schema addition.** A `check` objective gains an optional authored fail-forward successor:
 
@@ -476,9 +476,9 @@ Tests (slices 1–3):
 
 **Decision.**
 
-1. **Persist at acceptance.** When an action is accepted, `Room` draws the seed with `createTurnSeed()`. It persists the seed in a server-only `TurnSeedAssigned { actionId, seed }` event in the same `persist` write as `ActionAccepted`/`RoundActionAccepted`, using `persist`'s `additionalEvents` (`Room.ts:1258–1265`; call sites `:3406`, `:5306`). This happens before any roll. Recovery restores the pending `actionId → seed` map from the committed log and snapshot. The seed is removed from the pending map when that action's turn commits. `TurnSeedAssigned` has no `EVENT_ID_RULES` entry, so it is sent to no one (`eventVisibility.ts:1–5`).
+1. **Persist at acceptance.** When an action is accepted, `Room` draws the seed with `createTurnSeed()`. It persists the seed in a server-only `TurnSeedAssigned { actionId, seed }` event in the same `persist` write as `ActionAccepted`/`RoundActionAccepted`, using `persist`'s `additionalEvents` (`Room.ts:1258–1265`; call sites `:3406`, `:5306`). This happens before any roll. Recovery restores the pending `actionId → seed` map from the committed event log only; it is never stored in a snapshot (see "Seed storage" at the end of this ADR). The seed is removed from the pending map when that action's turn commits. `TurnSeedAssigned` has no `EVENT_ID_RULES` entry, so it is sent to no one (`eventVisibility.ts:1–5`).
 2. **Pass on every retry.** `ProductionSoloTurnRunner` passes the persisted seed as `turnSeed` on every `runTurn` call for that action. That includes every output-gate attempt and every Room-level retry after a failed commit or a restart. `runTurn` gains a production input for a server-persisted seed. This is not the test-only `fixedSeed`: `createTurnSeed`'s test-mode guard stays for `fixedSeed`, and the `LLM_FIXTURE_MODE` override is unchanged.
-3. **Independent of tool order.** The per-call RNG is `turnSeed ^ rollIndex` (`orchestrator.ts:749`). `rollIndex` advances with the earlier rolling tool calls in the turn (`:807–809`), and the model may make different calls on a retry. `attempt_objective` therefore ignores `context.seed`. It derives its RNG from `HMAC-SHA256(key = turnSeed as 8 bytes, "lorekeep/adr-042/objective-roll/v1\0" ‖ objectiveId)`, truncated to 64 bits. A given action and objective always produce the same roll.
+3. **Independent of tool order.** Two separate mechanisms make today's per-call seed order-dependent. *Seed derivation:* each tool call's `context.seed` is the low 32 bits of `turnSeed ^ BigInt(rollIndex)` (`orchestrator.ts:749`). *Roll-index advancement:* after each call, `rollIndex` grows by that call's `rollCount`, or by its `RollEvent` count when `rollCount` is absent (`orchestrator.ts:807–809`). The model may make different rolling calls before the attempt on a retry, so the same `turnSeed` can still yield a different `context.seed` for it. `attempt_objective` therefore ignores `context.seed`. It derives its RNG from `HMAC-SHA256(key = turnSeed as 8 bytes, "lorekeep/adr-042/objective-roll/v1\0" ‖ objectiveId)`, truncated to 64 bits. A given action and objective always produce the same roll.
 4. **Server-only.** The seed never goes into a prompt, a wire frame, or telemetry. The DM-stream `TurnStarted` already carries `seed: seedText` (`orchestrator.ts:456–461`). `Room` does not persist it (`Room.ts:6011–6018`), but I did not verify whether the live stream forwards it to clients. Slice 4 must prove that it does not.
 
 Residual: a retry may not repeat the attempt, because the model chooses again. It cannot produce a different roll for that objective. A commit failure is a server fault that a player cannot trigger at will.
@@ -536,7 +536,7 @@ This supersedes R1's separate wording for these cases and slice 4's "unknown/for
 
 ### Needs Chris (update)
 
-- Item 2 (fail-forward) is resolved by L1's `onFailure`.
+- Item 2 (fail-forward) is decided: L1's `onFailure` specifies the required behavior. It is not implemented yet.
 - Item 1 (adventure #1 objectives) gains one constraint: each encounter-free scene needs a check objective with an authored `onFailure` successor, and every encounter objective used as a scene's path out must list both `party-victory` and `enemies-fled`.
 
 ### Verification record
@@ -551,3 +551,54 @@ Source read in the branch worktree at 4170794:
 - grep of `apps/server/src` for `createHmac` and for event-log read routes
 
 Not verified: whether the live DM stream forwards `TurnStarted.seed` to clients (B1 item 4 makes that a test). Repowise was not used. This is a documentation-only change, and no tests were run.
+
+## Revision — implementation status and final pinning (2026-11-03, proposed)
+
+Append-only. This revision changes no design decision. It states what exists in code today and pins four details the reviewers flagged. Where it conflicts with wording above, this revision wins. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
+
+### Implementation status
+
+**Everything in the 2026-11-02 and 2026-11-03 addenda and revisions is PROPOSED and is not yet in code.** That includes the authored objective model (`AdventureObjectiveSchema`, scene `objectives`/`completion`, `onFailure`), the progression evaluator, `ObjectiveAttempted`/`ObjectiveResolved`/`ObjectiveRoll`, the `attempt_objective` tool, `TurnSeedAssigned` and the persisted turn seed, `transitionKey`, `lastClosed`, the `sceneProgression` projection, the `sceneRef` alias and its `LOREKEEP_SCENE_REF_KEY` key, L1's re-offer and fail-forward rules, and B1's seed persistence.
+
+L1 and B1 do not answer or close the Sentinel and Bastion findings in code. They specify the required behavior, which is verified only by the slice acceptance tests attached to each item. Until those tests exist and pass, treat each finding as open in the implementation.
+
+**Current-code gaps the proposal must change** (verified in source at 586da5d):
+
+- `start_combat` spends an encounter when combat *starts*: the committed state appends the started key to `resolvedEncounters` (`apps/server/src/room/productionTurnRunner.ts:757–763`). It does not wait for a rules outcome.
+- The offer filter drops any non-repeatable encounter already in that set: `offeredEncounters` returns only ids with `encounter.repeatable || !resolvedSet.has(id)` (`apps/server/src/dm/encounters.ts:94–103`). So a `dm-ended` combat today leaves its encounter permanently unoffered.
+- `Room.chooseTpkResolution` (`apps/server/src/room/Room.ts:3067–3125`): only `retry-checkpoint` restores an earlier state; `fail-forward` and `resurrection-or-new-character` commit through `commitGameState` without touching `resolvedEncounters`.
+- `Room.persist` already accepts `additionalEvents` (`Room.ts:1258–1265`, consumed at `:1304`), but no accept path uses it for a seed: the `ActionAccepted` write (`:3406`) and the `RoundActionAccepted` write (`:3561`) pass none. No turn seed is persisted anywhere.
+- `runTurn` forwards a supplied `turnSeed` to `createTurnSeed` as `fixedSeed` (`apps/server/src/dm/orchestrator.ts:424–427`), which throws outside test mode (`apps/server/src/dm/seed.ts:11–21`). There is no production path for a server-persisted seed yet.
+
+### Rollout prerequisite — provision `LOREKEEP_SCENE_REF_KEY` before slice 6
+
+E1 makes the server refuse to start without `LOREKEEP_SCENE_REF_KEY` outside test mode, and the `sceneProgression` projection runs with the ADR-042 flag OFF as well as ON. Shipping slice 6 without the key would therefore stop the server even though the flag is OFF. Add this as the first step of the rollout above, before step 1 applies to any build that contains slice 6:
+
+0. Provision `LOREKEEP_SCENE_REF_KEY` (at least 32 random bytes, dedicated to `sceneRef`) in the secret store for every environment — development, staging, canary, and production — and confirm it is readable by the server **before** a build containing slice 6 is deployed there. Verify with a startup check in each environment. This is independent of the flag and must not be skipped for flag-OFF deployments.
+
+### Seed storage — event log only
+
+The pending `actionId → seed` map exists only as server-only `TurnSeedAssigned` events in the committed event log, plus the room's in-memory copy rebuilt from them. Specifically:
+
+- It is never written into `gameState`, the room snapshot, or any other snapshot key. Recovery rebuilds the in-memory map by reading `TurnSeedAssigned` events whose action has no committed turn, regardless of where the latest snapshot sits.
+- It is never added to the account-export allowlist (`SHARED_STATE_KEYS`/`SOLO_NARRATIVE_KEYS`, `apps/server/src/accounts/export.ts:133–143`). That export reads snapshots, not the event log, so keeping the seed out of snapshots also keeps it out of exports.
+- It never appears in `StateSync` (`clientSyncPayload`/`clientState`), in any live frame, in a prompt, or in telemetry. `TurnSeedAssigned` stays absent from `EVENT_ID_RULES`, so it is sent to no one.
+
+Required tests (slice 4): an account export for a session with a pending seed, and one after that action's turn commits, contains no seed value and no `TurnSeedAssigned` content; every `StateSync` frame for every seat, including after restart, contains neither; a snapshot written while a seed is pending contains no seed.
+
+### Slice-4 seed tests use distinct fixed seeds
+
+In test mode `createTurnSeed` returns `0n` whenever no `fixedSeed` is given (`seed.ts:17`). If every test action got that seed, "same roll on retry" and "different action, different roll" would pass trivially. Slice 4's B1 tests must therefore assign explicit, distinct non-zero `fixedSeed` values per action through the test seed path, and must:
+
+- assert that retrying one action under its seed reproduces the identical objective roll (dice, total, outcome), as B1's retry tests require; and
+- add a test that two different actions with different seeds attempting the same objective (in separate sessions or after a rewind) produce different objective rolls for at least one chosen seed pair, so that the HMAC derivation actually depends on the seed.
+
+No test may rely on the implicit `0n` seed for these assertions.
+
+### B1 citation — derivation versus advancement
+
+B1 item 3 now cites the two mechanisms separately: seed derivation at `orchestrator.ts:749` (`context.seed` = low 32 bits of `turnSeed ^ BigInt(rollIndex)`) and roll-index advancement at `orchestrator.ts:807–809` (`rollIndex += rollCount`, or the `RollEvent` count). `attempt_objective` avoids both by deriving its RNG from the turn seed and objective id only.
+
+### Verification record
+
+Source read in the branch worktree at 586da5d: `apps/server/src/room/productionTurnRunner.ts:752–766`; `apps/server/src/dm/encounters.ts:88–105`; `apps/server/src/room/Room.ts:1258–1310, 3067–3125, 3406, 3561`; `apps/server/src/dm/orchestrator.ts:424–428, 745–752, 804–811`; `apps/server/src/dm/seed.ts`; `apps/server/src/accounts/export.ts:55–143`. Repowise was not used. This is a documentation-only change, and no tests were run.
