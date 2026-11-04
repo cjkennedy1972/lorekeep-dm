@@ -370,7 +370,7 @@ describe('revoked seat', () => {
     expect(await p3.reconnect()).toBe(1008);
     await expect(
       room.submitAction(p3.accountId, randomUUID(), 'late'),
-    ).rejects.toThrow('Account is not seated');
+    ).rejects.toThrow('Player is not seated at this table');
     await expect(room.loadChatHistory(p3.accountId)).rejects.toThrow();
     expect(
       (await t.events('RoundActionAccepted')).filter(
