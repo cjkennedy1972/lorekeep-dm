@@ -421,3 +421,133 @@ Source read in the branch worktree at d395d56:
 - `apps/web/src/features/narration/NarrationLog.tsx:47–63`
 
 Repowise was not used; I read the files directly. Documentation-only change, no tests run.
+
+## Revision — Sentinel dead-end and Bastion round-2 findings (2026-11-03, proposed)
+
+Append-only. This revision answers Sentinel's NO-GO (a scene can become unable to progress) and Bastion's NO-GO on the R1–R8 revision. The decisions below were made by Atlas under Chris's delegation. Where this revision conflicts with anything above, this revision wins. The flag rule is unchanged: `LOREKEEP_ADR_042_GATED_SCENE_PROGRESSION` is default OFF and enabled only by the exact string `true`.
+
+### L1 — every scene has a guaranteed-liveness path (Sentinel)
+
+**What this guarantees.** No committed state can leave a scene unable to progress. It does not guarantee that the model takes the open path; the model still decides when to start combat or attempt a check.
+
+**Schema addition.** A `check` objective gains an optional authored fail-forward successor:
+
+```ts
+// added to the 'check' member of AdventureObjectiveSchema
+onFailure: z.object({ nextSceneId: z.string().min(1) }).strict().optional(), // must be in the scene's nextSceneIds
+```
+
+When a check objective with `onFailure` is spent by a failed attempt (`objectiveAttempts[id] === 'failed'`), the evaluator resolves it with `ObjectiveResolved { cause: 'check-failed-forward' }`, and successor selection uses `onFailure.nextSceneId` for that objective. Everything else about progression is unchanged. The server evaluates it at the same commit seam, under the same gates and the same flag, from snapshotted `objectiveAttempts`. A held or fallback narration defers it in the same way as a success. The model cannot choose the failure branch: the outcome comes from the server's roll (B1, C1). Add `'check-failed-forward'` to the `ObjectiveResolved.cause` enum.
+
+**Live objective.** An objective is *live* when no committed outcome can spend it without resolving it:
+
+1. an `encounter` objective whose `allowedOutcomes` contains both `party-victory` and `enemies-fled`, whose `encounterId` appears in no other scene's `encounterIds`; or
+2. a `check` objective with `onFailure`.
+
+**Validator rule.** Add a progression mode to `validateAdventure` (`packages/engine/src/adventure/validate.ts`). With the flag ON, the room loads an adventure for progression only if it passes this mode. An adventure that fails is refused at load with an operator diagnostic, so no session can start on it and later strand. The flag-OFF validation is unchanged, and legacy adventures without objectives still parse. In progression mode:
+
+- every scene has at least one objective;
+- a `completion: 'any'` scene has at least one live objective;
+- in a `completion: 'all'` scene, every objective is live;
+- the scene graph formed by `nextSceneIds` is acyclic, because a re-entered scene would find its objectives already spent.
+
+This replaces R1's two dead-end shapes ((a) and (b)) and its "an encounter path, or a mix of objectives" sentence. A mix is not a guarantee. It also replaces R5's author-guidance sentence ("An author should not rely on an encounter objective…"), Decision 1's "A scene with no objectives cannot progress while the flag is ON. That is intentional", R1's "A fail-forward successor such as `onFailureNextSceneId` is out of scope", and R8's "accept that a flee then leaves that objective unresolved" as a way out of a scene. An objective that lists only `party-victory` is still valid, but it is not live and cannot be a scene's only path. Adventure #1 is linear and has no shared encounter keys (`packages/engine/adventures/01/adventure.json`). Its four encounter-free scenes will each need a check objective with `onFailure` (see "Needs Chris").
+
+**Combat endings that are not rules outcomes do not spend the encounter.** Today `start_combat` adds the key to `resolvedEncounters` when combat *starts* (`productionTurnRunner.ts:757–763`). `offeredEncounters`/`resolveEncounter` then refuse it (`apps/server/src/dm/encounters.ts:88`, `ENCOUNTER_ALREADY_USED` at `productionTurnRunner.ts:880–901`). With the flag ON:
+
+- **`dm-ended`.** In the same write that commits the `dm-ended` `CombatEnded` (`combatBootstrap.ts:510–517`), `Room` removes `combatRoom.encounterId` from `resolvedEncounters`. It reads that id before the path deletes `combatRoom`. The encounter objective is not resolved. On later turns `offeredEncounters` offers the key again, so the DM can call `start_combat` with it. The re-started encounter is built fresh from authored data. A DM-ended combat therefore cannot strand a scene.
+- **`party-defeated`.** `settle` records it (`combatEngine.ts:150–157, 159–188`), and it cannot be authored. After the TPK choice (`Room.chooseTpkResolution`, `Room.ts:3066–3125`), `retry-checkpoint` restores the pre-combat checkpoint and with it the earlier `resolvedEncounters`. `fail-forward` and `resurrection-or-new-character` keep play in the scene, so with the flag ON they also remove the encounter key from `resolvedEncounters` in the same `commitGameState`. Atlas's decision named only `dm-ended`. I extended it to this case because otherwise a TPK followed by fail-forward would strand a scene whose only live path was that encounter. **Atlas to confirm.**
+
+With the flag OFF, both paths behave as they do today.
+
+**Entry check.** The static rules (unique encounter key per scene, acyclic graph) mean a live encounter key cannot already be in `resolvedEncounters` when a scene is entered. The realistic exception is a legacy session that started encounters before the flag was turned ON. Therefore, at the closing commit for the destination scene, and at room load for the current scene, the server checks every live encounter objective that is still unresolved. If its key is in `resolvedEncounters` while no combat for that encounter is active or ended-pending-evaluation, validation fails. Progression is refused for that session and the server records an operator diagnostic. The session is reported, not silently stranded.
+
+Tests (slices 1–3):
+- The validator rejects each shape: a scene with no objectives; an `any` scene with no live objective; an `all` scene with a non-live objective; an encounter objective missing `enemies-fled` as the only path; a liveness encounter key shared across two scenes; a cycle; an `onFailure.nextSceneId` outside `nextSceneIds`.
+- A failed check with `onFailure` resolves exactly once to that successor, deferred under held or fallback narration.
+- `dm-ended` leaves the objective unresolved, removes the key from `resolvedEncounters`, re-offers the key to `start_combat`, and a re-started rules victory then resolves it.
+- TPK followed by `fail-forward` re-offers the key.
+- A session whose current scene's live encounter key is already in `resolvedEncounters` at entry or at load is refused with a diagnostic.
+- All of the above are unchanged with the flag OFF.
+
+### B1 (High) — the turn seed is persisted before the roll and reused on retry
+
+**Verified gap.** `runTurn` draws a fresh random seed whenever `turnSeed` is absent (`apps/server/src/dm/orchestrator.ts:423–427`). The production runner passes none outside fixture mode (`productionTurnRunner.ts:1223–1232`). Its output-gate `attempt` closure (`:1209`) can run several times within one turn, and each run is a new `runTurn` with a new seed. A Room-level retry of the same action also draws a new seed. `createTurnSeed` accepts a fixed seed only in test mode (`apps/server/src/dm/seed.ts:11–21`). R1's sentence "Its roll must come from the committed RNG seed" therefore named no mechanism, and both kinds of retry re-roll today.
+
+**Decision.**
+
+1. **Persist at acceptance.** When an action is accepted, `Room` draws the seed with `createTurnSeed()`. It persists the seed in a server-only `TurnSeedAssigned { actionId, seed }` event in the same `persist` write as `ActionAccepted`/`RoundActionAccepted`, using `persist`'s `additionalEvents` (`Room.ts:1258–1265`; call sites `:3406`, `:5306`). This happens before any roll. Recovery restores the pending `actionId → seed` map from the committed log and snapshot. The seed is removed from the pending map when that action's turn commits. `TurnSeedAssigned` has no `EVENT_ID_RULES` entry, so it is sent to no one (`eventVisibility.ts:1–5`).
+2. **Pass on every retry.** `ProductionSoloTurnRunner` passes the persisted seed as `turnSeed` on every `runTurn` call for that action. That includes every output-gate attempt and every Room-level retry after a failed commit or a restart. `runTurn` gains a production input for a server-persisted seed. This is not the test-only `fixedSeed`: `createTurnSeed`'s test-mode guard stays for `fixedSeed`, and the `LLM_FIXTURE_MODE` override is unchanged.
+3. **Independent of tool order.** The per-call RNG is `turnSeed ^ rollIndex` (`orchestrator.ts:749`). `rollIndex` advances with the earlier rolling tool calls in the turn (`:807–809`), and the model may make different calls on a retry. `attempt_objective` therefore ignores `context.seed`. It derives its RNG from `HMAC-SHA256(key = turnSeed as 8 bytes, "lorekeep/adr-042/objective-roll/v1\0" ‖ objectiveId)`, truncated to 64 bits. A given action and objective always produce the same roll.
+4. **Server-only.** The seed never goes into a prompt, a wire frame, or telemetry. The DM-stream `TurnStarted` already carries `seed: seedText` (`orchestrator.ts:456–461`). `Room` does not persist it (`Room.ts:6011–6018`), but I did not verify whether the live stream forwards it to clients. Slice 4 must prove that it does not.
+
+Residual: a retry may not repeat the attempt, because the model chooses again. It cannot produce a different roll for that objective. A commit failure is a server fault that a player cannot trigger at will.
+
+Acceptance tests (slice 4; **retry-same-roll**):
+- Inject a `writeTurn` failure after a failed `attempt_objective`, then retry the same action. The objective is unspent after the failure, and the retry's dice, total, and outcome are identical.
+- Force an output-gate re-attempt (refusal or retry nudge) within one turn. The objective roll is identical across attempts.
+- On a retry, the model calls `request_check` before `attempt_objective`, unlike the first try. The objective roll is unchanged.
+- Restart between the failed commit and the retry. The seed is recovered and the roll is identical.
+- No wire frame, prompt, or telemetry record contains the seed.
+
+### C1 (Med) — the objective roll travels in its own internal carrier
+
+Supersedes R2's "persists one server-only internal roll record" wording and R4's "hands the commit only the internal `ObjectiveRoll`" wording, where those could be read as an event in `result.events`.
+
+- The `attempt_objective` executor writes `ObjectiveRoll { objectiveId, actorId, total, autoFail, dice, rolls, modifier }` into a dedicated internal field of the runner's turn output, `objectiveRolls: ObjectiveRoll[]`. The field is carried from `runTurn` through `ProductionSoloTurnRunner` to `Room`. It is never placed in `result.events`, never persisted as its own event type, and never serialized to a client.
+- In both flag modes, `Room` drops every event in a runner's `result.events` whose type is `ObjectiveRoll`, `ObjectiveAttempted`, `ObjectiveResolved`, or `TurnSeedAssigned`. With the flag ON it also drops runner `SceneClosed` (R3 is unchanged on that point).
+- `Room` validates the carrier as R4 describes. It then persists its own server-only `ObjectiveAttempted { objectiveId, actorId, total, autoFail, success }`, with `success` computed by `Room` from the authored DC. It also builds the one allowlisted wire `RollEvent` from R2 itself. If the carrier fails validation, nothing is recorded, nothing is spent, and no roll is shown.
+
+Tests (slice 3): a runner `result.events` containing each stripped type is dropped in both modes. An `objectiveRolls` entry never appears in any wire frame or persisted event. A carrier that fails validation produces no visible roll.
+
+### D1 (Med) — the DC bound from total plus outcome is an accepted residual
+
+Supersedes R2's reason for omitting `success` ("together with `total`, it bounds the hidden DC"). The wire roll keeps `total`. The narrated outcome, and a later scene change, together with `total` bound the authored DC. **This is an accepted residual, in the same class as ADR-040's visible-outcome residuals.** It is not mitigated further. Apart from R2's exclusions (`dc`, `dcReason`, `success`, `breakdown.dc`, and any objective-naming field), the attempt roll omits nothing that an ordinary roll display shows. The model-facing summary still states only success or failure. R2's allowlist and tests are otherwise unchanged.
+
+### E1 (Low) — `LateJoinSpawned.sceneId` and the `sceneRef` key
+
+**`LateJoinSpawned` (verified, source read only).** The event carries the authored `sceneId` (`packages/schema/src/events.ts:110–116`). `Room` writes it from `game.sceneId` in the late-join batch (`Room.ts:4494–4499`, write at `:4596–4634`). After that write, the late-join path broadcasts only `StateSync` (`Room.ts:4644–4648`). `LateJoinSpawned` has no `EVENT_ID_RULES` entry, so `projectEventForViewer` returns `null` for it (`eventVisibility.ts:57–62`). Reconnect is StateSync-only, not an event-tail replay (see "Verified current behavior" above). The gateway has no event-log read route. So today the authored id reaches the DM prompt through `summarize.ts` (`:70–76`), which is server-side, but no client. **Implementation requirement:** `LateJoinSpawned` must stay out of every client path. If any later change adds it to the visibility table or to a client projection, that change must strip `sceneId` (preferred) or replace it with the `sceneRef` alias. Slice 6's test that no frame contains an authored scene id covers a late join while the flag is ON and while it is OFF.
+
+**`sceneRef` key.** Supersedes R7's unnamed `serverKey`. The key is `LOREKEEP_SCENE_REF_KEY`, a dedicated server secret of at least 32 random bytes. It is provisioned through the server's secret store and is never shared with any other HMAC use, such as export signing or retry-block cookies. Projection runs whether the flag is ON or OFF, so the key is required once slice 6 ships. Outside test mode the server refuses to start without it. It never falls back to a constant or to the authored id. Tests use a fixed key.
+
+**Rotation.** Replacing the key is a deploy-time action and needs no dual-key window. Every alias changes at once. Each StateSync computes `currentSceneId`, `lastClosed.sceneId`, and `lastClosed.currentSceneId` with the same key, so a single payload is always consistent. Because the client replaces its scene view from each StateSync, it must not infer a scene change from an alias change alone. The generic scene-change message (R6) is driven only by a new `lastClosed.transitionKey`. Test (slice 6): after a key rotation, a reconnect shows no scene-change message, and the aliases within one payload are consistent.
+
+### F1 (Low) — `transitionKey` is a random 128-bit token
+
+Each committed transition's `transitionKey` is 16 bytes from `crypto.randomBytes`, encoded as base64url (22 characters). It is generated at the commit seam and persisted in the `SceneClosed` record and in `lastClosed`. It is not derived from authored scene, objective, or encounter ids, nor from the session, action, turn, or sequence. It is metadata only and never an idempotency input. Test (slice 3): two sessions that make the same authored transition get unrelated keys, and a key never contains or hashes an authored id.
+
+### G1 (Low) — `attempt_objective` rejects every non-actionable id the same way
+
+The tool checks in this order. Each of the first two checks is independent of the id.
+
+1. Active combat → `illegal-transition` (R1).
+2. A rolled attempt already happened this turn → `turn-budget-exhausted`. Only an attempt that rolled consumes the turn's budget.
+3. Every non-actionable `objectiveId` gets one uniform rejection: `{ ok: false, error: 'illegal-transition', hint: 'That objective is not available.' }`, with no roll, no RNG use, and no state change. This covers an unknown id, an id from another scene, an `encounter` objective, an already-attempted objective, and an already-resolved objective. Error, hint, summary, and side effects are byte-identical across these cases, and the rejection happens before any roll.
+
+This supersedes R1's separate wording for these cases and slice 4's "unknown/foreign/resolved objective rejected". Test (slice 4): the five non-actionable cases produce identical tool results and leave the RNG and state unchanged.
+
+### H1 — line-cite corrections
+
+- R1's `startCombatCalled` cite is `productionTurnRunner.ts:840–848` (was `:838–847`).
+- R1's `otherSeatIds` guard is defined at `productionTurnRunner.ts:647–649` and applied at `:936`. The earlier `:945–951` points at the world-mutation executors.
+- R2's `executeTool` cite is `orchestrator.ts:378–396`, with the return at `:383–396`.
+- R5's `combatOutcome` is `combatEngine.ts:150–157` and `settle` is `:159–188`.
+- `runTurn` begins at `orchestrator.ts:423`.
+
+### Needs Chris (update)
+
+- Item 2 (fail-forward) is resolved by L1's `onFailure`.
+- Item 1 (adventure #1 objectives) gains one constraint: each encounter-free scene needs a check objective with an authored `onFailure` successor, and every encounter objective used as a scene's path out must list both `party-victory` and `enemies-fled`.
+
+### Verification record
+
+Source read in the branch worktree at 4170794:
+- `apps/server/src/dm/seed.ts`; `apps/server/src/dm/orchestrator.ts:376–396, 423–461, 740–809, 868–878, 1030–1040`
+- `apps/server/src/room/productionTurnRunner.ts:372–392, 645–651, 740–770, 836–848, 878–905, 936, 1205–1240`
+- `apps/server/src/room/Room.ts:1258–1265, 3040–3125, 3402–3409, 4480–4648, 5990–6025`
+- `apps/server/src/room/eventVisibility.ts:1–80`, `apps/server/src/room/combatEngine.ts:150–188`, `apps/server/src/room/combatBootstrap.ts:505–518`, `apps/server/src/room/death.ts:75–86`
+- `apps/server/src/dm/encounters.ts:88–105`, `apps/server/src/dm/summarize.ts:60–80, 730–745`
+- `packages/schema/src/events.ts:22–47, 100–117`; `packages/engine/src/tools/check.ts:108–115`; `packages/engine/src/combat/checks.ts:38–44`; `packages/engine/src/adventure/validate.ts:120–156`; `packages/engine/adventures/01/adventure.json` (scene graph and encounter keys)
+- grep of `apps/server/src` for `createHmac` and for event-log read routes
+
+Not verified: whether the live DM stream forwards `TurnStarted.seed` to clients (B1 item 4 makes that a test). Repowise was not used. This is a documentation-only change, and no tests were run.
